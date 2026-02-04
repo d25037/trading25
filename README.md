@@ -27,6 +27,13 @@ recreate the virtualenv so `uv run pytest` works:
 uv sync --reinstall --locked
 ```
 
+## Monorepo Scripts
+```bash
+./scripts/test.sh       # apps/ts + apps/bt tests
+./scripts/lint.sh       # apps/ts biome + apps/bt ruff
+./scripts/typecheck.sh  # apps/ts tsc + apps/bt pyright
+```
+
 ## Tests (Smoke)
 ```bash
 cd apps/ts
@@ -35,5 +42,8 @@ bun run test
 
 ```bash
 cd apps/bt
-pytest
+uv run pytest
 ```
+
+## CI
+GitHub Actions runs `./scripts/test.sh` on each push and pull request.
