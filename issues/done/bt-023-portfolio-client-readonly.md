@@ -1,5 +1,5 @@
 ---
-id: bt-019
+id: bt-023
 title: PortfolioAPIClient を read-only に縮小
 status: done
 priority: low
@@ -12,7 +12,7 @@ blocks: []
 parent: null
 ---
 
-# bt-019 PortfolioAPIClient を read-only に縮小
+# bt-023 PortfolioAPIClient を read-only に縮小
 
 ## 目的
 apps/bt/で未使用の Portfolio write系メソッドを削除し、apps/ts/ との責務境界を明確にする。

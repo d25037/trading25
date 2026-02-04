@@ -1,5 +1,5 @@
 ---
-id: bt-020
+id: bt-024
 title: cli_market/ のranking/screeningをapps/ts/cliに一本化
 status: done
 priority: medium
@@ -12,7 +12,7 @@ blocks: []
 parent: null
 ---
 
-# bt-020 cli_market/ のranking/screeningをapps/ts/cliに一本化
+# bt-024 cli_market/ のranking/screeningをapps/ts/cliに一本化
 
 ## 目的
 apps/bt/とapps/ts/で重複するマーケット分析CLIコマンドを整理し、apps/bt/をバックテスト専用エンジンとしての責務に集中させる。

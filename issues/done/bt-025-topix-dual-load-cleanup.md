@@ -1,5 +1,5 @@
 ---
-id: bt-021
+id: bt-025
 title: TOPIX二重ロードパスの整理
 status: done
 priority: medium
@@ -12,7 +12,7 @@ blocks: []
 parent: null
 ---
 
-# bt-021 TOPIX二重ロードパスの整理
+# bt-025 TOPIX二重ロードパスの整理
 
 ## 目的
 MarketAPIClient と DatasetAPIClient の両方から TOPIX をロード可能な現状を整理し、データソースの使い分けを明確にする。

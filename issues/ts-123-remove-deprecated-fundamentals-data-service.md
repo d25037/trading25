@@ -1,5 +1,5 @@
 ---
-id: ts-118
+id: ts-123
 title: Remove deprecated fundamentals-data.ts service
 status: open
 priority: low
@@ -12,7 +12,7 @@ blocks: []
 parent: null
 ---
 
-# ts-118 Remove deprecated fundamentals-data.ts service
+# ts-123 Remove deprecated fundamentals-data.ts service
 
 ## 目的
 Single Source of Truth原則に基づき、fundamentals計算がapps/bt/ APIに移行完了したため、
