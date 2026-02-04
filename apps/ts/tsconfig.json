@@ -1,0 +1,41 @@
+{
+  "compilerOptions": {
+    "lib": ["ESNext"],
+    "target": "ESNext",
+    "module": "ESNext",
+    "moduleDetection": "force",
+    "allowJs": true,
+    "types": ["bun-types"],
+
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "verbatimModuleSyntax": true,
+    "noEmit": true,
+
+    "strict": true,
+    "skipLibCheck": true,
+    "noFallthroughCasesInSwitch": true,
+    "noUncheckedIndexedAccess": true,
+    "noImplicitOverride": true,
+    "strictNullChecks": true,
+
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
+    "noPropertyAccessFromIndexSignature": false,
+
+    "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true,
+    "resolveJsonModule": true,
+
+    "baseUrl": "./",
+    "paths": {
+      "@trading25/shared": ["packages/shared/src"],
+      "@trading25/shared/*": ["packages/shared/src/*"],
+      "@trading25/web": ["packages/web/src"],
+      "@trading25/api": ["packages/api/src"],
+      "@trading25/cli": ["packages/cli/src"]
+    }
+  },
+  "include": ["packages/shared/src/**/*", "packages/cli/src/**/*", "node_modules/bun-types/**/*.d.ts"],
+  "exclude": ["node_modules", "**/dist", "**/*.disabled/**", "**/examples.disabled/**"]
+}

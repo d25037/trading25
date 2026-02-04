@@ -1,0 +1,46 @@
+{
+  "name": "trading25",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "cli": "bun packages/cli/src/index.ts",
+    "dev": "bun run dev:web & bun run dev:api",
+    "dev:full": "(bun run --filter @trading25/shared bt:sync || echo '[WARNING] bt:sync failed - continuing with existing types') && bun run dev",
+    "dev:web": "bun run --filter @trading25/web dev",
+    "dev:api": "bun run --filter @trading25/api dev",
+    "dev:cli": "bun run --filter @trading25/cli dev",
+    "build": "bun run build:shared && bun run build:web && bun run build:api && bun run build:cli",
+    "build:shared": "bun run --filter @trading25/shared build",
+    "build:web": "bun run --filter @trading25/web build",
+    "build:api": "bun run --filter @trading25/api build",
+    "build:cli": "bun run --filter @trading25/cli build",
+    "start": "bun run --filter @trading25/api start",
+    "test": "bun run --filter @trading25/shared test && bun run --filter @trading25/cli test && bun run --filter @trading25/api test && bun run --filter @trading25/web test",
+    "test:backend": "bun run --filter @trading25/shared test && bun run --filter @trading25/cli test && bun run --filter @trading25/api test",
+    "test:web": "bun run --filter @trading25/web test",
+    "test:coverage": "bun run --filter @trading25/shared test:coverage && bun run --filter @trading25/cli test:coverage && bun run --filter @trading25/api test:coverage && bun run --filter @trading25/web test:coverage",
+    "check:coverage": "bun scripts/check-coverage.ts",
+    "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules pnpm-lock.yaml bun.lockb",
+    "format": "biome format",
+    "lint": "biome lint",
+    "lint:fix": "biome lint . --write",
+    "check:fix": "biome check . --write",
+    "typecheck": "tsc --noEmit",
+    "typecheck:web": "bun run --filter @trading25/web typecheck",
+    "typecheck:api": "bun run --filter @trading25/api typecheck",
+    "typecheck:all": "bun run typecheck && bun run typecheck:web && bun run typecheck:api"
+  },
+  "devDependencies": {
+    "@biomejs/biome": "^2.1.4",
+    "@gunshi/docs": "0.27.0",
+    "bun-types": "^1.3.6",
+    "tsx": "^4.19.1",
+    "typescript": "^5.9.2"
+  },
+  "dependencies": {
+    "gunshi": "0.27.0"
+  }
+}

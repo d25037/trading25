@@ -1,0 +1,57 @@
+# SMAクロス戦略設定
+
+
+entry_filter_params:
+  crossover:
+    enabled: true # SMAゴールデンクロス有効化
+    type: "sma" # 指標タイプ: 単純移動平均
+    direction: "golden" # クロス方向: ゴールデンクロス（短期>長期）
+    fast_period: 50 # 短期SMA期間
+    slow_period: 250 # 長期SMA期間
+    lookback_days: 5 # クロス検出期間
+
+  volume:
+    enabled: true # 出来高フィルター
+    direction: "surge" # "surge"（急増）/"drop"（減少）
+    threshold: 1.5 # 出来高倍率閾値
+    short_period: 20
+    long_period: 100
+
+  fundamental:
+    per:
+      enabled: false # PERフィルター
+      threshold: 15.0
+    roe:
+      enabled: false
+      threshold: 10.0
+    forward_eps_growth:
+      enabled: false
+      threshold: 0.1
+    peg_ratio:
+      enabled: false
+      threshold: 1.0
+
+  beta:
+    enabled: false # β値フィルター
+    lookback_period: 200
+    min_beta: 0.5
+    max_beta: 1.5
+
+# エグジットトリガー設定（戦略の基本エグジット条件にOR条件で追加発火）
+exit_trigger_params:
+  # SMAデッドクロスシグナル（戦略特有条件）
+  crossover:
+    enabled: true # SMAデッドクロス有効化
+    type: "sma" # 指標タイプ: 単純移動平均
+    direction: "dead" # クロス方向: デッドクロス（短期<長期）
+    fast_period: 50 # 短期SMA期間
+    slow_period: 250 # 長期SMA期間
+    lookback_days: 1 # クロス検出期間
+
+  # 追加トリガー（任意で有効化可能）
+  volume:
+    enabled: false # 出来高トリガー
+    direction: "drop" # "surge"（急増）/"drop"（減少）
+    threshold: 0.5 # 出来高倍率閾値
+    short_period: 5
+    long_period: 20

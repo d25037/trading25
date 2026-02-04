@@ -1,0 +1,21 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "lib": ["ESNext"],
+    "module": "ESNext",
+    "target": "ESNext",
+    "moduleResolution": "bundler",
+    "esModuleInterop": true,
+    "allowSyntheticDefaultImports": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@": ["./src"],
+      "@trading25/shared/*": ["../shared/src/*"],
+      "@trading25/shared": ["../shared/src"]
+    }
+  },
+  "include": ["src/**/*", "../shared/src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}

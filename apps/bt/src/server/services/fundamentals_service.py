@@ -1,0 +1,934 @@
+"""
+Fundamentals Service
+
+Calculates fundamental metrics from JQuants financial statements data.
+This is a Python port of apps/ts/packages/api/src/services/fundamentals-data.ts.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from datetime import datetime
+
+import pandas as pd
+from loguru import logger
+
+from src.api.jquants_client import JQuantsAPIClient, JQuantsStatement, StockInfo
+from src.api.market_client import MarketAPIClient
+from src.server.schemas.fundamentals import (
+    DailyValuationDataPoint,
+    FundamentalDataPoint,
+    FundamentalsComputeRequest,
+    FundamentalsComputeResponse,
+)
+
+
+@dataclass
+class FYDataPoint:
+    """FY data point for daily valuation calculation."""
+
+    disclosed_date: str
+    eps: float | None
+    bps: float | None
+
+
+# Empty previous period cash flow dict (used as return value)
+_EMPTY_PREV_CASH_FLOW: dict[str, float | None] = {
+    "prevCashFlowOperating": None,
+    "prevCashFlowInvesting": None,
+    "prevCashFlowFinancing": None,
+    "prevCashAndEquivalents": None,
+}
+
+
+class FundamentalsService:
+    """Service for computing fundamental metrics."""
+
+    def __init__(self) -> None:
+        self._jquants_client: JQuantsAPIClient | None = None
+        self._market_client: MarketAPIClient | None = None
+
+    def __del__(self) -> None:
+        """Cleanup on garbage collection."""
+        self.close()
+
+    @property
+    def jquants_client(self) -> JQuantsAPIClient:
+        """Lazy-initialized JQuants API client."""
+        if self._jquants_client is None:
+            self._jquants_client = JQuantsAPIClient()
+        return self._jquants_client
+
+    @property
+    def market_client(self) -> MarketAPIClient:
+        """Lazy-initialized Market API client."""
+        if self._market_client is None:
+            self._market_client = MarketAPIClient()
+        return self._market_client
+
+    def close(self) -> None:
+        """Close all API clients."""
+        if self._jquants_client is not None:
+            self._jquants_client.close()
+            self._jquants_client = None
+        if self._market_client is not None:
+            self._market_client.close()
+            self._market_client = None
+
+    def compute_fundamentals(
+        self, request: FundamentalsComputeRequest
+    ) -> FundamentalsComputeResponse:
+        """Compute fundamental metrics for a stock.
+
+        Args:
+            request: Computation request parameters
+
+        Returns:
+            FundamentalsComputeResponse with computed metrics
+        """
+        logger.debug(f"Computing fundamentals for {request.symbol}")
+
+        # Fetch financial statements from apps/ts/api
+        statements = self.jquants_client.get_statements(request.symbol)
+
+        if not statements:
+            logger.debug(f"No financial statements found for {request.symbol}")
+            return FundamentalsComputeResponse(
+                symbol=request.symbol,
+                data=[],
+                lastUpdated=datetime.now().isoformat(),
+            )
+
+        logger.debug(f"Found {len(statements)} statements")
+
+        # Get stock info for company name
+        stock_info = self._get_stock_info(request.symbol)
+
+        # Get daily stock prices for valuation calculation
+        daily_prices = self._get_daily_stock_prices(request.symbol)
+
+        # Calculate daily valuation time-series
+        daily_valuation = self._calculate_daily_valuation(
+            statements, daily_prices, request.prefer_consolidated
+        )
+
+        # Filter statements by criteria
+        filtered_statements = self._filter_statements(
+            statements, request.period_type, request.from_date, request.to_date
+        )
+
+        if not filtered_statements:
+            logger.debug("No statements match filter criteria")
+            return FundamentalsComputeResponse(
+                symbol=request.symbol,
+                companyName=stock_info.companyName if stock_info else None,
+                data=[],
+                dailyValuation=daily_valuation if daily_valuation else None,
+                lastUpdated=datetime.now().isoformat(),
+            )
+
+        # Get stock prices for disclosure dates
+        price_map = self._get_stock_prices_for_statements(
+            request.symbol, filtered_statements
+        )
+
+        # Calculate metrics for each statement
+        data = [
+            self._calculate_all_metrics(stmt, price_map, request.prefer_consolidated)
+            for stmt in filtered_statements
+        ]
+
+        # Sort by date descending
+        data.sort(key=lambda x: x.date, reverse=True)
+
+        # Get latest metrics with actual financial data
+        latest_metrics = self._find_latest_with_actual_data(data)
+
+        # Update latest metrics with daily valuation
+        latest_metrics = self._update_latest_with_daily_valuation(
+            latest_metrics, daily_valuation, data
+        )
+
+        # Enhance latest metrics with forecast EPS and previous period CF
+        latest_metrics = self._enhance_latest_metrics(
+            latest_metrics, statements, request.prefer_consolidated
+        )
+
+        # Annotate latest FY with revised forecast from latest Q
+        self._annotate_latest_fy_with_revision(
+            data, latest_metrics, statements, request.prefer_consolidated
+        )
+
+        logger.debug(
+            f"Fundamentals calculation complete: {len(data)} data points, "
+            f"{len(daily_valuation) if daily_valuation else 0} daily valuation points"
+        )
+
+        return FundamentalsComputeResponse(
+            symbol=request.symbol,
+            companyName=stock_info.companyName if stock_info else None,
+            data=data,
+            latestMetrics=latest_metrics,
+            dailyValuation=daily_valuation if daily_valuation else None,
+            lastUpdated=datetime.now().isoformat(),
+        )
+
+    def _get_stock_info(self, symbol: str) -> StockInfo | None:
+        """Get stock info from market.db."""
+        try:
+            return self.jquants_client.get_stock_info(symbol)
+        except Exception as e:
+            logger.warning(f"Failed to get stock info for {symbol}: {e}")
+            return None
+
+    def _get_daily_stock_prices(self, symbol: str) -> dict[str, float]:
+        """Get daily stock prices from market.db."""
+        try:
+            df = self.market_client.get_stock_ohlcv(symbol)
+            if df.empty:
+                return {}
+            # Vectorized operation - much faster than iterrows()
+            close_series: pd.Series[float] = df["Close"]
+            return {k.strftime("%Y-%m-%d"): v for k, v in close_series.items()}
+        except Exception as e:
+            logger.warning(f"Failed to get daily stock prices for {symbol}: {e}")
+            return {}
+
+    def _get_stock_prices_for_statements(
+        self, symbol: str, statements: list[JQuantsStatement]
+    ) -> dict[str, float]:
+        """Get stock prices at statement disclosure dates."""
+        if not statements:
+            return {}
+
+        try:
+            # Get all daily prices
+            daily_prices = self._get_daily_stock_prices(symbol)
+            if not daily_prices:
+                return {}
+
+            # Map disclosure dates to prices
+            result: dict[str, float] = {}
+            sorted_dates = sorted(daily_prices.keys())
+
+            for stmt in statements:
+                disc_date = stmt.DiscDate
+                # Find the price on or before disclosure date
+                price = self._find_price_at_date(disc_date, sorted_dates, daily_prices)
+                if price is not None:
+                    result[disc_date] = price
+
+            return result
+        except Exception as e:
+            logger.warning(
+                f"Failed to get stock prices for statements {symbol}: {e}"
+            )
+            return {}
+
+    def _find_price_at_date(
+        self,
+        target_date: str,
+        sorted_dates: list[str],
+        price_map: dict[str, float],
+    ) -> float | None:
+        """Find the price at or before a target date using binary search."""
+        if target_date in price_map:
+            return price_map[target_date]
+
+        # Binary search for closest prior date
+        left, right = 0, len(sorted_dates) - 1
+        closest_date: str | None = None
+
+        while left <= right:
+            mid = (left + right) // 2
+            mid_date = sorted_dates[mid]
+
+            if mid_date <= target_date:
+                closest_date = mid_date
+                left = mid + 1
+            else:
+                right = mid - 1
+
+        return price_map.get(closest_date) if closest_date else None
+
+    def _filter_statements(
+        self,
+        statements: list[JQuantsStatement],
+        period_type: str,
+        from_date: str | None,
+        to_date: str | None,
+    ) -> list[JQuantsStatement]:
+        """Filter statements by date range and period type."""
+        filtered = []
+
+        for stmt in statements:
+            # Filter by period type
+            if period_type != "all" and stmt.CurPerType != period_type:
+                continue
+
+            # Filter by date range
+            period_end = stmt.CurPerEn
+
+            if from_date and period_end < from_date:
+                continue
+
+            if to_date and period_end > to_date:
+                continue
+
+            filtered.append(stmt)
+
+        return filtered
+
+    def _calculate_all_metrics(
+        self,
+        stmt: JQuantsStatement,
+        price_map: dict[str, float],
+        prefer_consolidated: bool,
+    ) -> FundamentalDataPoint:
+        """Calculate all fundamental metrics for a statement."""
+        stock_price = price_map.get(stmt.DiscDate)
+
+        # Calculate core metrics
+        eps = self._calculate_eps(stmt, prefer_consolidated)
+        diluted_eps = stmt.DEPS
+        bps = self._calculate_bps(stmt, prefer_consolidated)
+
+        # Calculate ROE
+        roe = self._calculate_roe(stmt, prefer_consolidated)
+
+        # Calculate valuation metrics
+        per = self._calculate_per(eps, stock_price)
+        pbr = self._calculate_pbr(bps, stock_price)
+
+        # Calculate profitability metrics
+        roa = self._calculate_roa(stmt, prefer_consolidated)
+        operating_margin = self._calculate_operating_margin(stmt, prefer_consolidated)
+        net_margin = self._calculate_net_margin(stmt, prefer_consolidated)
+
+        # Get raw financial data
+        net_profit = self._get_net_profit(stmt, prefer_consolidated)
+        equity = self._get_equity(stmt, prefer_consolidated)
+        total_assets = self._get_total_assets(stmt, prefer_consolidated)
+        net_sales = self._get_net_sales(stmt, prefer_consolidated)
+        operating_profit = self._get_operating_profit(stmt, prefer_consolidated)
+
+        # Calculate FCF metrics
+        fcf = self._calculate_simple_fcf(stmt.CFO, stmt.CFI)
+        fcf_yield = self._calculate_fcf_yield(
+            fcf, stock_price, stmt.ShOutFY, stmt.TrShFY
+        )
+        fcf_margin = self._calculate_fcf_margin(fcf, net_sales)
+
+        # Get forecast EPS
+        forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
+            stmt, eps, prefer_consolidated
+        )
+
+        return FundamentalDataPoint(
+            date=stmt.CurPerEn,
+            disclosedDate=stmt.DiscDate,
+            periodType=stmt.CurPerType,
+            isConsolidated=self._is_consolidated_statement(stmt),
+            accountingStandard=self._get_accounting_standard(stmt),
+            roe=self._round_or_none(roe),
+            eps=self._round_or_none(eps),
+            dilutedEps=self._round_or_none(diluted_eps),
+            bps=self._round_or_none(bps),
+            per=self._round_or_none(per),
+            pbr=self._round_or_none(pbr),
+            roa=self._round_or_none(roa),
+            operatingMargin=self._round_or_none(operating_margin),
+            netMargin=self._round_or_none(net_margin),
+            stockPrice=stock_price,
+            netProfit=self._to_millions(net_profit),
+            equity=self._to_millions(equity),
+            totalAssets=self._to_millions(total_assets),
+            netSales=self._to_millions(net_sales),
+            operatingProfit=self._to_millions(operating_profit),
+            cashFlowOperating=self._to_millions(stmt.CFO),
+            cashFlowInvesting=self._to_millions(stmt.CFI),
+            cashFlowFinancing=self._to_millions(stmt.CFF),
+            cashAndEquivalents=self._to_millions(stmt.CashEq),
+            fcf=self._to_millions(self._round_or_none(fcf)),
+            fcfYield=self._round_or_none(fcf_yield),
+            fcfMargin=self._round_or_none(fcf_margin),
+            forecastEps=self._round_or_none(forecast_eps),
+            forecastEpsChangeRate=self._round_or_none(forecast_eps_change_rate),
+            revisedForecastEps=None,
+            revisedForecastSource=None,
+            prevCashFlowOperating=None,
+            prevCashFlowInvesting=None,
+            prevCashFlowFinancing=None,
+            prevCashAndEquivalents=None,
+        )
+
+    # ===== Metric Calculation Methods =====
+
+    def _calculate_eps(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Calculate EPS."""
+        return self._get_value_with_fallback(stmt.EPS, stmt.NCEPS, prefer_consolidated)
+
+    def _calculate_bps(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Calculate BPS."""
+        return self._get_value_with_fallback(stmt.BPS, stmt.NCBPS, prefer_consolidated)
+
+    def _calculate_roe(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Calculate ROE with annualization for quarterly data."""
+        net_profit = self._get_net_profit(stmt, prefer_consolidated)
+        equity = self._get_equity(stmt, prefer_consolidated)
+
+        if net_profit is None or equity is None or equity <= 0:
+            return None
+
+        # Annualize quarterly profit
+        adjusted_profit = net_profit
+        if stmt.CurPerType in ("Q1", "Q2", "Q3"):
+            adjusted_profit = self._annualize_quarterly_profit(
+                net_profit, stmt.CurPerType
+            )
+
+        return (adjusted_profit / equity) * 100
+
+    def _annualize_quarterly_profit(
+        self, quarterly_profit: float, period_type: str
+    ) -> float:
+        """Annualize quarterly profit figures."""
+        multipliers = {"Q1": 4.0, "Q2": 2.0, "Q3": 4.0 / 3.0}
+        return quarterly_profit * multipliers.get(period_type, 1.0)
+
+    def _calculate_roa(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Calculate ROA."""
+        net_profit = self._get_net_profit(stmt, prefer_consolidated)
+        total_assets = self._get_total_assets(stmt, prefer_consolidated)
+
+        if net_profit is None or total_assets is None or total_assets <= 0:
+            return None
+
+        return (net_profit / total_assets) * 100
+
+    def _calculate_operating_margin(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Calculate operating margin."""
+        operating_profit = self._get_operating_profit(stmt, prefer_consolidated)
+        net_sales = self._get_net_sales(stmt, prefer_consolidated)
+
+        if operating_profit is None or net_sales is None or net_sales <= 0:
+            return None
+
+        return (operating_profit / net_sales) * 100
+
+    def _calculate_net_margin(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Calculate net margin."""
+        net_profit = self._get_net_profit(stmt, prefer_consolidated)
+        net_sales = self._get_net_sales(stmt, prefer_consolidated)
+
+        if net_profit is None or net_sales is None or net_sales <= 0:
+            return None
+
+        return (net_profit / net_sales) * 100
+
+    def _calculate_per(
+        self, eps: float | None, stock_price: float | None
+    ) -> float | None:
+        """Calculate PER."""
+        if eps is None or stock_price is None or eps == 0:
+            return None
+        return stock_price / eps
+
+    def _calculate_pbr(
+        self, bps: float | None, stock_price: float | None
+    ) -> float | None:
+        """Calculate PBR."""
+        if bps is None or stock_price is None or bps <= 0:
+            return None
+        return stock_price / bps
+
+    def _calculate_simple_fcf(
+        self, cfo: float | None, cfi: float | None
+    ) -> float | None:
+        """Calculate simple FCF = CFO + CFI."""
+        if cfo is None or cfi is None:
+            return None
+        return cfo + cfi
+
+    def _calculate_fcf_yield(
+        self,
+        fcf: float | None,
+        stock_price: float | None,
+        shares_outstanding: float | None,
+        treasury_shares: float | None,
+    ) -> float | None:
+        """Calculate FCF yield = (FCF / Market Cap) * 100."""
+        if (
+            fcf is None
+            or stock_price is None
+            or shares_outstanding is None
+            or stock_price <= 0
+        ):
+            return None
+
+        actual_shares = shares_outstanding - (treasury_shares or 0)
+        if actual_shares <= 0:
+            return None
+
+        market_cap = stock_price * actual_shares
+        return (fcf / market_cap) * 100
+
+    def _calculate_fcf_margin(
+        self, fcf: float | None, net_sales: float | None
+    ) -> float | None:
+        """Calculate FCF margin = (FCF / Net Sales) * 100."""
+        if fcf is None or net_sales is None or net_sales <= 0:
+            return None
+        return (fcf / net_sales) * 100
+
+    # ===== Financial Data Extraction Methods =====
+
+    def _get_value_with_fallback(
+        self,
+        consolidated: float | None,
+        non_consolidated: float | None,
+        prefer_consolidated: bool,
+    ) -> float | None:
+        """Get value with consolidated/non-consolidated fallback.
+
+        Args:
+            consolidated: Consolidated value
+            non_consolidated: Non-consolidated value
+            prefer_consolidated: Whether to prefer consolidated
+
+        Returns:
+            Value based on preference with fallback to other type
+        """
+        if prefer_consolidated:
+            return consolidated if consolidated is not None else non_consolidated
+        return non_consolidated if non_consolidated is not None else consolidated
+
+    def _get_net_profit(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Get net profit."""
+        return self._get_value_with_fallback(stmt.NP, stmt.NCNP, prefer_consolidated)
+
+    def _get_equity(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Get equity."""
+        return self._get_value_with_fallback(stmt.Eq, stmt.NCEq, prefer_consolidated)
+
+    def _get_total_assets(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Get total assets."""
+        return self._get_value_with_fallback(stmt.TA, stmt.NCTA, prefer_consolidated)
+
+    def _get_net_sales(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Get net sales."""
+        return self._get_value_with_fallback(stmt.Sales, stmt.NCSales, prefer_consolidated)
+
+    def _get_operating_profit(
+        self, stmt: JQuantsStatement, prefer_consolidated: bool
+    ) -> float | None:
+        """Get operating profit."""
+        return self._get_value_with_fallback(stmt.OP, stmt.NCOP, prefer_consolidated)
+
+    def _is_consolidated_statement(self, stmt: JQuantsStatement) -> bool:
+        """Check if statement is consolidated."""
+        doc_type = stmt.DocType.lower()
+        if "非連結" in doc_type or "nonconsolidated" in doc_type:
+            return False
+        if "連結" in doc_type or "consolidated" in doc_type:
+            return True
+        # Default: check if consolidated data is available
+        return stmt.NP is not None or stmt.Eq is not None
+
+    def _get_accounting_standard(self, stmt: JQuantsStatement) -> str:
+        """Extract accounting standard from document type."""
+        doc_type = stmt.DocType.lower()
+
+        if "ifrs" in doc_type:
+            return "IFRS"
+        if "us" in doc_type and "gaap" in doc_type:
+            return "US GAAP"
+        if "jp" in doc_type or "japanese" in doc_type:
+            return "JGAAP"
+
+        return "JGAAP"  # Default for Japanese companies
+
+    def _get_forecast_eps(
+        self,
+        stmt: JQuantsStatement,
+        actual_eps: float | None,
+        prefer_consolidated: bool,
+    ) -> tuple[float | None, float | None]:
+        """Get forecast EPS and calculate change rate.
+
+        Priority logic:
+        - FY: NxFEPS (next FY forecast = forward-looking)
+        - Q: FEPS (current FY forecast = forward-looking)
+        """
+        is_fy = stmt.CurPerType == "FY"
+
+        # Select primary/fallback based on period type
+        if prefer_consolidated:
+            primary, fallback = (stmt.NxFEPS, stmt.FEPS) if is_fy else (stmt.FEPS, stmt.NxFEPS)
+        else:
+            primary, fallback = (stmt.NxFNCEPS, stmt.FNCEPS) if is_fy else (stmt.FNCEPS, stmt.NxFNCEPS)
+
+        forecast_eps = primary if primary is not None else fallback
+
+        # Calculate change rate
+        forecast_eps_change_rate: float | None = None
+        if forecast_eps is not None and actual_eps is not None and actual_eps != 0:
+            forecast_eps_change_rate = ((forecast_eps - actual_eps) / abs(actual_eps)) * 100
+
+        return forecast_eps, forecast_eps_change_rate
+
+    # ===== Daily Valuation Methods =====
+
+    def _calculate_daily_valuation(
+        self,
+        statements: list[JQuantsStatement],
+        daily_prices: dict[str, float],
+        prefer_consolidated: bool,
+    ) -> list[DailyValuationDataPoint]:
+        """Calculate daily PER/PBR time-series."""
+        if not daily_prices:
+            return []
+
+        fy_data_points = self._get_applicable_fy_data(statements, prefer_consolidated)
+        if not fy_data_points:
+            return []
+
+        result: list[DailyValuationDataPoint] = []
+        sorted_dates = sorted(daily_prices.keys())
+
+        for date_str in sorted_dates:
+            close = daily_prices[date_str]
+            applicable_fy = self._find_applicable_fy(fy_data_points, date_str)
+
+            if applicable_fy is None:
+                continue
+
+            per = None
+            pbr = None
+
+            if (
+                applicable_fy.eps is not None
+                and applicable_fy.eps != 0
+            ):
+                per = round(close / applicable_fy.eps, 2)
+
+            if applicable_fy.bps is not None and applicable_fy.bps > 0:
+                pbr = round(close / applicable_fy.bps, 2)
+
+            result.append(
+                DailyValuationDataPoint(
+                    date=date_str, close=close, per=per, pbr=pbr
+                )
+            )
+
+        return result
+
+    def _get_applicable_fy_data(
+        self, statements: list[JQuantsStatement], prefer_consolidated: bool
+    ) -> list[FYDataPoint]:
+        """Get FY data points sorted by disclosure date for daily valuation."""
+        fy_data: list[FYDataPoint] = []
+
+        for stmt in statements:
+            if stmt.CurPerType != "FY":
+                continue
+
+            eps = self._calculate_eps(stmt, prefer_consolidated)
+            bps = self._calculate_bps(stmt, prefer_consolidated)
+
+            # Exclude forecasts (eps=0/None and bps=0/None)
+            if not self._has_valid_valuation_metrics(eps, bps):
+                continue
+
+            fy_data.append(
+                FYDataPoint(
+                    disclosed_date=stmt.DiscDate,
+                    eps=eps,
+                    bps=bps,
+                )
+            )
+
+        # Sort by disclosure date ascending
+        fy_data.sort(key=lambda x: x.disclosed_date)
+        return fy_data
+
+    def _has_valid_valuation_metrics(
+        self, eps: float | None, bps: float | None
+    ) -> bool:
+        """Check if valuation metrics are valid."""
+        eps_valid = eps is not None and eps != 0
+        bps_valid = bps is not None and bps > 0
+        return eps_valid or bps_valid
+
+    def _find_applicable_fy(
+        self, fy_data_points: list[FYDataPoint], date_str: str
+    ) -> FYDataPoint | None:
+        """Find the most recent FY data disclosed before or on a given date."""
+        applicable_fy: FYDataPoint | None = None
+
+        for fy in fy_data_points:
+            if fy.disclosed_date <= date_str:
+                applicable_fy = fy
+            else:
+                break  # Data is sorted, so we can stop early
+
+        return applicable_fy
+
+    # ===== Latest Metrics Methods =====
+
+    def _find_latest_with_actual_data(
+        self, data: list[FundamentalDataPoint]
+    ) -> FundamentalDataPoint | None:
+        """Find the first data point with actual financial data."""
+        for d in data:
+            if self._has_actual_financial_data(d):
+                return d
+        return None
+
+    def _has_actual_financial_data(self, data: FundamentalDataPoint) -> bool:
+        """Check if data point has actual financial data (not just forecast)."""
+        return (
+            data.roe is not None
+            or (data.eps is not None and data.eps != 0)
+            or data.netProfit is not None
+            or data.equity is not None
+        )
+
+    def _update_latest_with_daily_valuation(
+        self,
+        metrics: FundamentalDataPoint | None,
+        daily_valuation: list[DailyValuationDataPoint],
+        data: list[FundamentalDataPoint],
+    ) -> FundamentalDataPoint | None:
+        """Update latest metrics with daily valuation data."""
+        if metrics is None:
+            return None
+
+        if not daily_valuation:
+            return self._apply_fy_data_to_metrics(metrics, data)
+
+        latest_daily = daily_valuation[-1]
+
+        # Find latest FY with actual data
+        latest_fy = next(
+            (d for d in data if d.periodType == "FY" and self._has_actual_financial_data(d)),
+            None,
+        )
+
+        return FundamentalDataPoint(
+            **{
+                **metrics.model_dump(),
+                "per": latest_daily.per,
+                "pbr": latest_daily.pbr,
+                "stockPrice": latest_daily.close,
+                "eps": latest_fy.eps if latest_fy else metrics.eps,
+                "bps": latest_fy.bps if latest_fy else metrics.bps,
+            }
+        )
+
+    def _apply_fy_data_to_metrics(
+        self,
+        metrics: FundamentalDataPoint,
+        data: list[FundamentalDataPoint],
+    ) -> FundamentalDataPoint:
+        """Apply FY EPS/BPS to metrics for PER/PBR calculation (fallback)."""
+        latest_fy = next(
+            (d for d in data if d.periodType == "FY" and self._has_actual_financial_data(d)),
+            None,
+        )
+
+        if latest_fy is None or latest_fy.eps is None or latest_fy.eps == 0:
+            return metrics
+
+        fy_per = None
+        fy_pbr = None
+
+        if metrics.stockPrice is not None:
+            fy_per = round(metrics.stockPrice / latest_fy.eps, 2)
+
+            if latest_fy.bps is not None and latest_fy.bps > 0:
+                fy_pbr = round(metrics.stockPrice / latest_fy.bps, 2)
+
+        return FundamentalDataPoint(
+            **{
+                **metrics.model_dump(),
+                "per": fy_per,
+                "pbr": fy_pbr,
+                "eps": latest_fy.eps,
+                "bps": latest_fy.bps,
+            }
+        )
+
+    def _enhance_latest_metrics(
+        self,
+        metrics: FundamentalDataPoint | None,
+        statements: list[JQuantsStatement],
+        prefer_consolidated: bool,
+    ) -> FundamentalDataPoint | None:
+        """Enhance latest metrics with forecast EPS and previous period CF."""
+        if metrics is None:
+            return None
+
+        # Sort statements by period end date descending
+        sorted_statements = sorted(
+            statements, key=lambda s: s.CurPerEn, reverse=True
+        )
+
+        # Find the statement corresponding to latestMetrics
+        current_statement = next(
+            (s for s in sorted_statements if s.CurPerEn == metrics.date), None
+        )
+
+        # Get forecast EPS from current statement
+        forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
+            current_statement, metrics.eps, prefer_consolidated
+        ) if current_statement else (None, None)
+
+        # Find previous period CF data
+        prev_cf = self._get_previous_period_cash_flow(
+            metrics.date, metrics.periodType, sorted_statements
+        )
+
+        return FundamentalDataPoint(
+            **{
+                **metrics.model_dump(),
+                "forecastEps": self._round_or_none(forecast_eps),
+                "forecastEpsChangeRate": self._round_or_none(forecast_eps_change_rate),
+                **prev_cf,
+            }
+        )
+
+    def _get_previous_period_cash_flow(
+        self,
+        current_date: str,
+        period_type: str,
+        statements: list[JQuantsStatement],
+    ) -> dict[str, float | None]:
+        """Get cash flow data from previous period (same type, one year earlier)."""
+        try:
+            current_dt = datetime.fromisoformat(current_date)
+            target_dt = current_dt.replace(year=current_dt.year - 1)
+        except ValueError:
+            return _EMPTY_PREV_CASH_FLOW
+
+        # Find statement with same period type from ~1 year earlier
+        for stmt in statements:
+            if stmt.CurPerType != period_type:
+                continue
+
+            try:
+                stmt_dt = datetime.fromisoformat(stmt.CurPerEn)
+                # Allow +-45 days tolerance
+                days_diff = abs((stmt_dt - target_dt).days)
+                if days_diff < 45:
+                    return {
+                        "prevCashFlowOperating": self._to_millions(stmt.CFO),
+                        "prevCashFlowInvesting": self._to_millions(stmt.CFI),
+                        "prevCashFlowFinancing": self._to_millions(stmt.CFF),
+                        "prevCashAndEquivalents": self._to_millions(stmt.CashEq),
+                    }
+            except ValueError:
+                continue
+
+        return _EMPTY_PREV_CASH_FLOW
+
+    def _annotate_latest_fy_with_revision(
+        self,
+        data: list[FundamentalDataPoint],
+        latest_metrics: FundamentalDataPoint | None,
+        statements: list[JQuantsStatement],
+        prefer_consolidated: bool,
+    ) -> None:
+        """Annotate latest FY with revised forecast from latest Q."""
+        if latest_metrics is None:
+            return
+
+        # Find latest FY in data
+        latest_fy_idx = next(
+            (
+                i
+                for i, d in enumerate(data)
+                if d.periodType == "FY" and self._has_actual_financial_data(d)
+            ),
+            None,
+        )
+
+        if latest_fy_idx is None:
+            return
+
+        latest_fy = data[latest_fy_idx]
+
+        # Find latest Q statement newer than latest FY
+        q_statements = [
+            s for s in statements if s.CurPerType in ("Q1", "Q2", "Q3")
+        ]
+        q_statements.sort(key=lambda s: s.DiscDate, reverse=True)
+
+        if not q_statements:
+            return
+
+        latest_q = q_statements[0]
+
+        # Ensure Q is disclosed after latest FY
+        if latest_q.DiscDate <= latest_fy.disclosedDate:
+            return
+
+        # Get Q's forecast EPS (FEPS = current FY in progress)
+        q_forecast = (
+            latest_q.FEPS if prefer_consolidated else latest_q.FNCEPS
+        )
+
+        if q_forecast is None:
+            return
+
+        rounded_q_forecast = round(q_forecast, 2)
+
+        # Annotate when Q forecast differs from FY forecast
+        if latest_fy.forecastEps is None or rounded_q_forecast != latest_fy.forecastEps:
+            # Create a new FundamentalDataPoint with revised forecast
+            updated_fy = FundamentalDataPoint(
+                **{
+                    **latest_fy.model_dump(),
+                    "revisedForecastEps": rounded_q_forecast,
+                    "revisedForecastSource": latest_q.CurPerType,
+                }
+            )
+            data[latest_fy_idx] = updated_fy
+
+    # ===== Utility Methods =====
+
+    def _round_or_none(self, value: float | None) -> float | None:
+        """Round to 2 decimal places or return None."""
+        if value is None:
+            return None
+        return round(value, 2)
+
+    def _to_millions(self, value: float | None) -> float | None:
+        """Convert JPY to millions of JPY."""
+        if value is None:
+            return None
+        return value / 1_000_000
+
+
+# Global service instance
+fundamentals_service = FundamentalsService()

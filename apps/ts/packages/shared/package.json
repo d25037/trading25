@@ -1,0 +1,120 @@
+{
+  "name": "@trading25/shared",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./ta": {
+      "import": "./dist/ta/index.js",
+      "types": "./dist/ta/index.d.ts"
+    },
+    "./ta/*": {
+      "import": "./dist/ta/*.js",
+      "types": "./dist/ta/*.d.ts"
+    },
+    "./dataset": {
+      "import": "./dist/dataset/index.js",
+      "types": "./dist/dataset/index.d.ts"
+    },
+    "./dataset/*": {
+      "import": "./dist/dataset/*.js",
+      "types": "./dist/dataset/*.d.ts"
+    },
+    "./market-sync": {
+      "import": "./dist/market-sync/index.js",
+      "types": "./dist/market-sync/index.d.ts"
+    },
+    "./market-sync/*": {
+      "import": "./dist/market-sync/*.js",
+      "types": "./dist/market-sync/*.d.ts"
+    },
+    "./clients/backtest": {
+      "import": "./dist/clients/backtest/index.js",
+      "types": "./dist/clients/backtest/index.d.ts"
+    },
+    "./clients/*": {
+      "import": "./dist/clients/*.js",
+      "types": "./dist/clients/*.d.ts"
+    },
+    "./utils/*": {
+      "import": "./dist/utils/*.js",
+      "types": "./dist/utils/*.d.ts"
+    },
+    "./types/api-types": {
+      "import": "./dist/types/api-types.js",
+      "types": "./dist/types/api-types.d.ts"
+    },
+    "./types/api-response-types": {
+      "import": "./dist/types/api-response-types.js",
+      "types": "./dist/types/api-response-types.d.ts"
+    },
+    "./portfolio": {
+      "import": "./dist/portfolio/index.js",
+      "types": "./dist/portfolio/index.d.ts"
+    },
+    "./portfolio/*": {
+      "import": "./dist/portfolio/*.js",
+      "types": "./dist/portfolio/*.d.ts"
+    },
+    "./portfolio-performance": {
+      "import": "./dist/portfolio-performance/index.js",
+      "types": "./dist/portfolio-performance/index.d.ts"
+    },
+    "./portfolio-performance/*": {
+      "import": "./dist/portfolio-performance/*.js",
+      "types": "./dist/portfolio-performance/*.d.ts"
+    },
+    "./fundamental-analysis": {
+      "import": "./dist/fundamental-analysis/index.js",
+      "types": "./dist/fundamental-analysis/index.d.ts"
+    },
+    "./fundamental-analysis/*": {
+      "import": "./dist/fundamental-analysis/*.js",
+      "types": "./dist/fundamental-analysis/*.d.ts"
+    },
+    "./factor-regression": {
+      "import": "./dist/factor-regression/index.js",
+      "types": "./dist/factor-regression/index.d.ts"
+    },
+    "./factor-regression/*": {
+      "import": "./dist/factor-regression/*.js",
+      "types": "./dist/factor-regression/*.d.ts"
+    },
+    "./watchlist": {
+      "import": "./dist/watchlist/index.js",
+      "types": "./dist/watchlist/index.d.ts"
+    },
+    "./watchlist/*": {
+      "import": "./dist/watchlist/*.js",
+      "types": "./dist/watchlist/*.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit",
+    "bt:fetch-schema": "bun scripts/fetch-bt-openapi.ts",
+    "bt:generate-types": "bunx openapi-typescript openapi/bt-openapi.json -o src/clients/backtest/generated/bt-api-types.ts",
+    "bt:sync": "bun run bt:fetch-schema && bun run bt:generate-types",
+    "bt:check": "bun scripts/check-bt-types.ts"
+  },
+  "dependencies": {
+    "drizzle-orm": "^0.44.0",
+    "zod": "^4.1.5"
+  },
+  "devDependencies": {
+    "drizzle-kit": "^0.30.0",
+    "openapi-typescript": "^7.10.1"
+  }
+}

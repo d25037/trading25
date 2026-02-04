@@ -1,0 +1,20 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "outDir": "./dist",
+    "lib": ["DOM", "DOM.Iterable", "ESNext"],
+    "jsx": "react-jsx",
+    "moduleResolution": "bundler",
+    "allowSyntheticDefaultImports": true,
+    "esModuleInterop": true,
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./src/*"],
+      "@": ["./src"],
+      "@trading25/shared/*": ["../shared/src/*"],
+      "@trading25/shared": ["../shared/src"]
+    }
+  },
+  "include": ["src/**/*", "../shared/src/**/*.d.ts"],
+  "exclude": ["node_modules", "dist"]
+}
