@@ -1,5 +1,5 @@
 ---
-id: bt-018
+id: bt-022
 title: MarketAPIClient.perform_screening() デッドコード削除
 status: done
 priority: low
@@ -12,7 +12,7 @@ blocks: []
 parent: null
 ---
 
-# bt-018 MarketAPIClient.perform_screening() デッドコード削除
+# bt-022 MarketAPIClient.perform_screening() デッドコード削除
 
 ## 目的
 apps/bt/内で未使用のデッドコードを削除し、API結合の責務を明確にする。

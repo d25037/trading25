@@ -1,4 +1,4 @@
-import { renderHook } from '@testing-library/react';
+import { act, renderHook } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { useChartStore } from '@/stores/chartStore';
 import { useUiStore } from '@/stores/uiStore';
@@ -102,11 +102,14 @@ describe('useHistorySync', () => {
       });
 
       // Reset init state for each iteration
-      useUiStore.setState({ activeTab: 'charts' });
+      act(() => {
+        useUiStore.setState({ activeTab: 'charts' });
+      });
 
-      renderHook(() => useHistorySync());
+      const { unmount } = renderHook(() => useHistorySync());
 
       expect(useUiStore.getState().activeTab).toBe(tab);
+      unmount();
     }
   });
 
@@ -121,7 +124,9 @@ describe('useHistorySync', () => {
         indexCode: 'N225',
       },
     });
-    window.dispatchEvent(popStateEvent);
+    act(() => {
+      window.dispatchEvent(popStateEvent);
+    });
 
     expect(useUiStore.getState().activeTab).toBe('analysis');
     expect(useChartStore.getState().selectedSymbol).toBe('9984');
@@ -143,7 +148,9 @@ describe('useHistorySync', () => {
     const popStateEvent = new PopStateEvent('popstate', {
       state: null,
     });
-    window.dispatchEvent(popStateEvent);
+    act(() => {
+      window.dispatchEvent(popStateEvent);
+    });
 
     expect(useUiStore.getState().activeTab).toBe('backtest');
   });
@@ -159,7 +166,9 @@ describe('useHistorySync', () => {
         indexCode: null,
       },
     });
-    window.dispatchEvent(popStateEvent);
+    act(() => {
+      window.dispatchEvent(popStateEvent);
+    });
 
     expect(useUiStore.getState().activeTab).toBe('charts');
   });

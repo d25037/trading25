@@ -199,7 +199,7 @@ uv run pytest tests/
 - **`ask-codex`** — Plan mode でプラン確定前に Codex CLI へ評価を依頼する。
 
 ### Issue管理
-- **ディレクトリ**: `issues/`（オープンIssue）、`issues/done/`（クローズ済み）
+- **ディレクトリ**: プロジェクトルート `../../issues/`（オープンIssue）、`../../issues/done/`（クローズ済み）
 - **フォーマット**: `{id}-{slug}.md`（例: `bt-016-test-coverage-70.md`）
 - **/finish 時**: オープンIssueを確認し、該当するものがあればクローズまたは進捗更新する
 
