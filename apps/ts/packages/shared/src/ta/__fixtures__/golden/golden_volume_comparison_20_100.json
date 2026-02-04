@@ -1,0 +1,1722 @@
+{
+  "indicator": "volume_comparison",
+  "params": {
+    "short_period": 20,
+    "long_period": 100,
+    "lower_multiplier": 1,
+    "higher_multiplier": 1.5,
+    "ma_type": "sma"
+  },
+  "version": "phase2.5-v1",
+  "source_commit": "ae407994f3f61cb6605f5ad93f45ae03555b67e6",
+  "data": [
+    {
+      "date": "2024-08-13",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-14",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-15",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-16",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-19",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-20",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-21",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-22",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-23",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-26",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-27",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-28",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-29",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-08-30",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-02",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-03",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-04",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-05",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-06",
+      "value": null,
+      "shortMA": null,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-09",
+      "value": 29518865,
+      "shortMA": 29518865,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-10",
+      "value": 29262775,
+      "shortMA": 29262775,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-11",
+      "value": 28850170,
+      "shortMA": 28850170,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-12",
+      "value": 28684185,
+      "shortMA": 28684185,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-13",
+      "value": 28370040,
+      "shortMA": 28370040,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-17",
+      "value": 28623570,
+      "shortMA": 28623570,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-18",
+      "value": 28951490,
+      "shortMA": 28951490,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-19",
+      "value": 30049430,
+      "shortMA": 30049430,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-20",
+      "value": 30842350,
+      "shortMA": 30842350,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-24",
+      "value": 31356630,
+      "shortMA": 31356630,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-25",
+      "value": 31291645,
+      "shortMA": 31291645,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-26",
+      "value": 32214225,
+      "shortMA": 32214225,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-27",
+      "value": 31905650,
+      "shortMA": 31905650,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-09-30",
+      "value": 33836215,
+      "shortMA": 33836215,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-01",
+      "value": 32792735,
+      "shortMA": 32792735,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-02",
+      "value": 32851665,
+      "shortMA": 32851665,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-03",
+      "value": 33534690,
+      "shortMA": 33534690,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-04",
+      "value": 32794370,
+      "shortMA": 32794370,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-07",
+      "value": 32911495,
+      "shortMA": 32911495,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-08",
+      "value": 32867810,
+      "shortMA": 32867810,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-09",
+      "value": 32285155,
+      "shortMA": 32285155,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-10",
+      "value": 32431100,
+      "shortMA": 32431100,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-11",
+      "value": 31902465,
+      "shortMA": 31902465,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-15",
+      "value": 31567565,
+      "shortMA": 31567565,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-16",
+      "value": 31055195,
+      "shortMA": 31055195,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-17",
+      "value": 30543475,
+      "shortMA": 30543475,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-18",
+      "value": 30022800,
+      "shortMA": 30022800,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-21",
+      "value": 28871420,
+      "shortMA": 28871420,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-22",
+      "value": 27970895,
+      "shortMA": 27970895,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-23",
+      "value": 28283275,
+      "shortMA": 28283275,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-24",
+      "value": 28234835,
+      "shortMA": 28234835,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-25",
+      "value": 27258640,
+      "shortMA": 27258640,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-28",
+      "value": 27068845,
+      "shortMA": 27068845,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-29",
+      "value": 25032835,
+      "shortMA": 25032835,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-30",
+      "value": 25509710,
+      "shortMA": 25509710,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-10-31",
+      "value": 25599980,
+      "shortMA": 25599980,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-01",
+      "value": 25199195,
+      "shortMA": 25199195,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-05",
+      "value": 25149400,
+      "shortMA": 25149400,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-06",
+      "value": 27016220,
+      "shortMA": 27016220,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-07",
+      "value": 28443500,
+      "shortMA": 28443500,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-08",
+      "value": 29048830,
+      "shortMA": 29048830,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-11",
+      "value": 28704850,
+      "shortMA": 28704850,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-12",
+      "value": 29173205,
+      "shortMA": 29173205,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-13",
+      "value": 29043825,
+      "shortMA": 29043825,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-14",
+      "value": 29114770,
+      "shortMA": 29114770,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-15",
+      "value": 29283830,
+      "shortMA": 29283830,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-18",
+      "value": 29247245,
+      "shortMA": 29247245,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-19",
+      "value": 29333205,
+      "shortMA": 29333205,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-20",
+      "value": 28989115,
+      "shortMA": 28989115,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-21",
+      "value": 28017240,
+      "shortMA": 28017240,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-22",
+      "value": 27565995,
+      "shortMA": 27565995,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-25",
+      "value": 28191690,
+      "shortMA": 28191690,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-26",
+      "value": 27701305,
+      "shortMA": 27701305,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-27",
+      "value": 28065405,
+      "shortMA": 28065405,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-28",
+      "value": 26972670,
+      "shortMA": 26972670,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-11-29",
+      "value": 26811660,
+      "shortMA": 26811660,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-02",
+      "value": 26637260,
+      "shortMA": 26637260,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-03",
+      "value": 26999910,
+      "shortMA": 26999910,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-04",
+      "value": 24510405,
+      "shortMA": 24510405,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-05",
+      "value": 22788890,
+      "shortMA": 22788890,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-06",
+      "value": 21772315,
+      "shortMA": 21772315,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-09",
+      "value": 21692765,
+      "shortMA": 21692765,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-10",
+      "value": 21665660,
+      "shortMA": 21665660,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-11",
+      "value": 21542935,
+      "shortMA": 21542935,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-12",
+      "value": 21509940,
+      "shortMA": 21509940,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-13",
+      "value": 21299175,
+      "shortMA": 21299175,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-16",
+      "value": 21133140,
+      "shortMA": 21133140,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-17",
+      "value": 21042810,
+      "shortMA": 21042810,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-18",
+      "value": 21343040,
+      "shortMA": 21343040,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-19",
+      "value": 21438520,
+      "shortMA": 21438520,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-20",
+      "value": 23154585,
+      "shortMA": 23154585,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-23",
+      "value": 22882975,
+      "shortMA": 22882975,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-24",
+      "value": 22620965,
+      "shortMA": 22620965,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-25",
+      "value": 23903385,
+      "shortMA": 23903385,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-26",
+      "value": 26118455,
+      "shortMA": 26118455,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-27",
+      "value": 27359375,
+      "shortMA": 27359375,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2024-12-30",
+      "value": 27557905,
+      "shortMA": 27557905,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2025-01-06",
+      "value": 28194215,
+      "shortMA": 28194215,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2025-01-07",
+      "value": 29478980,
+      "shortMA": 29478980,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2025-01-08",
+      "value": 29672760,
+      "shortMA": 29672760,
+      "longThresholdLower": null,
+      "longThresholdHigher": null
+    },
+    {
+      "date": "2025-01-09",
+      "value": 30382260,
+      "shortMA": 30382260,
+      "longThresholdLower": 28601485,
+      "longThresholdHigher": 42902227.5
+    },
+    {
+      "date": "2025-01-10",
+      "value": 30841615,
+      "shortMA": 30841615,
+      "longThresholdLower": 28586621,
+      "longThresholdHigher": 42879931.5
+    },
+    {
+      "date": "2025-01-14",
+      "value": 30783140,
+      "shortMA": 30783140,
+      "longThresholdLower": 28474928,
+      "longThresholdHigher": 42712392
+    },
+    {
+      "date": "2025-01-15",
+      "value": 30932265,
+      "shortMA": 30932265,
+      "longThresholdLower": 28354155,
+      "longThresholdHigher": 42531232.5
+    },
+    {
+      "date": "2025-01-16",
+      "value": 31055060,
+      "shortMA": 31055060,
+      "longThresholdLower": 28221001,
+      "longThresholdHigher": 42331501.5
+    },
+    {
+      "date": "2025-01-17",
+      "value": 31071265,
+      "shortMA": 31071265,
+      "longThresholdLower": 28164263,
+      "longThresholdHigher": 42246394.5
+    },
+    {
+      "date": "2025-01-20",
+      "value": 31638220,
+      "shortMA": 31638220,
+      "longThresholdLower": 28198579,
+      "longThresholdHigher": 42297868.5
+    },
+    {
+      "date": "2025-01-21",
+      "value": 32200700,
+      "shortMA": 32200700,
+      "longThresholdLower": 28299513,
+      "longThresholdHigher": 42449269.5
+    },
+    {
+      "date": "2025-01-22",
+      "value": 32320835,
+      "shortMA": 32320835,
+      "longThresholdLower": 28293247,
+      "longThresholdHigher": 42439870.5
+    },
+    {
+      "date": "2025-01-23",
+      "value": 32511515,
+      "shortMA": 32511515,
+      "longThresholdLower": 28321436,
+      "longThresholdHigher": 42482154
+    },
+    {
+      "date": "2025-01-24",
+      "value": 31188430,
+      "shortMA": 31188430,
+      "longThresholdLower": 28287098,
+      "longThresholdHigher": 42430647
+    },
+    {
+      "date": "2025-01-27",
+      "value": 30836305,
+      "shortMA": 30836305,
+      "longThresholdLower": 28276767,
+      "longThresholdHigher": 42415150.5
+    },
+    {
+      "date": "2025-01-28",
+      "value": 30756690,
+      "shortMA": 30756690,
+      "longThresholdLower": 28010691,
+      "longThresholdHigher": 42016036.5
+    },
+    {
+      "date": "2025-01-29",
+      "value": 28900895,
+      "shortMA": 28900895,
+      "longThresholdLower": 27947747,
+      "longThresholdHigher": 41921620.5
+    },
+    {
+      "date": "2025-01-30",
+      "value": 26641325,
+      "shortMA": 26641325,
+      "longThresholdLower": 27606979,
+      "longThresholdHigher": 41410468.5
+    },
+    {
+      "date": "2025-01-31",
+      "value": 25223770,
+      "shortMA": 25223770,
+      "longThresholdLower": 27569290,
+      "longThresholdHigher": 41353935
+    },
+    {
+      "date": "2025-02-03",
+      "value": 26021045,
+      "shortMA": 26021045,
+      "longThresholdLower": 27790019,
+      "longThresholdHigher": 41685028.5
+    },
+    {
+      "date": "2025-02-04",
+      "value": 25252710,
+      "shortMA": 25252710,
+      "longThresholdLower": 27678121,
+      "longThresholdHigher": 41517181.5
+    },
+    {
+      "date": "2025-02-05",
+      "value": 26070080,
+      "shortMA": 26070080,
+      "longThresholdLower": 27997436,
+      "longThresholdHigher": 41996154
+    },
+    {
+      "date": "2025-02-06",
+      "value": 26733255,
+      "shortMA": 26733255,
+      "longThresholdLower": 28101243,
+      "longThresholdHigher": 42151864.5
+    },
+    {
+      "date": "2025-02-07",
+      "value": 26819010,
+      "shortMA": 26819010,
+      "longThresholdLower": 28061514,
+      "longThresholdHigher": 42092271
+    },
+    {
+      "date": "2025-02-10",
+      "value": 26443960,
+      "shortMA": 26443960,
+      "longThresholdLower": 28022858,
+      "longThresholdHigher": 42034287
+    },
+    {
+      "date": "2025-02-12",
+      "value": 26488345,
+      "shortMA": 26488345,
+      "longThresholdLower": 28002563,
+      "longThresholdHigher": 42003844.5
+    },
+    {
+      "date": "2025-02-13",
+      "value": 26775810,
+      "shortMA": 26775810,
+      "longThresholdLower": 27972480,
+      "longThresholdHigher": 41958720
+    },
+    {
+      "date": "2025-02-14",
+      "value": 26677160,
+      "shortMA": 26677160,
+      "longThresholdLower": 27882425,
+      "longThresholdHigher": 41823637.5
+    },
+    {
+      "date": "2025-02-17",
+      "value": 26795815,
+      "shortMA": 26795815,
+      "longThresholdLower": 27798712,
+      "longThresholdHigher": 41698068
+    },
+    {
+      "date": "2025-02-18",
+      "value": 26457475,
+      "shortMA": 26457475,
+      "longThresholdLower": 27699776,
+      "longThresholdHigher": 41549664
+    },
+    {
+      "date": "2025-02-19",
+      "value": 26004545,
+      "shortMA": 26004545,
+      "longThresholdLower": 27490536,
+      "longThresholdHigher": 41235804
+    },
+    {
+      "date": "2025-02-20",
+      "value": 25935780,
+      "shortMA": 25935780,
+      "longThresholdLower": 27311933,
+      "longThresholdHigher": 40967899.5
+    },
+    {
+      "date": "2025-02-21",
+      "value": 25907165,
+      "shortMA": 25907165,
+      "longThresholdLower": 27231543,
+      "longThresholdHigher": 40847314.5
+    },
+    {
+      "date": "2025-02-25",
+      "value": 25685355,
+      "shortMA": 25685355,
+      "longThresholdLower": 27165840,
+      "longThresholdHigher": 40748760
+    },
+    {
+      "date": "2025-02-26",
+      "value": 25785835,
+      "shortMA": 25785835,
+      "longThresholdLower": 26991089,
+      "longThresholdHigher": 40486633.5
+    },
+    {
+      "date": "2025-02-27",
+      "value": 26000885,
+      "shortMA": 26000885,
+      "longThresholdLower": 26829738,
+      "longThresholdHigher": 40244607
+    },
+    {
+      "date": "2025-02-28",
+      "value": 29789345,
+      "shortMA": 29789345,
+      "longThresholdLower": 27138373,
+      "longThresholdHigher": 40707559.5
+    },
+    {
+      "date": "2025-03-03",
+      "value": 30057335,
+      "shortMA": 30057335,
+      "longThresholdLower": 27059899,
+      "longThresholdHigher": 40589848.5
+    },
+    {
+      "date": "2025-03-04",
+      "value": 30264105,
+      "shortMA": 30264105,
+      "longThresholdLower": 27051778,
+      "longThresholdHigher": 40577667
+    },
+    {
+      "date": "2025-03-05",
+      "value": 30100555,
+      "shortMA": 30100555,
+      "longThresholdLower": 27103192,
+      "longThresholdHigher": 40654788
+    },
+    {
+      "date": "2025-03-06",
+      "value": 30039660,
+      "shortMA": 30039660,
+      "longThresholdLower": 27127179,
+      "longThresholdHigher": 40690768.5
+    },
+    {
+      "date": "2025-03-07",
+      "value": 28246955,
+      "shortMA": 28246955,
+      "longThresholdLower": 27064528,
+      "longThresholdHigher": 40596792
+    },
+    {
+      "date": "2025-03-10",
+      "value": 27224470,
+      "shortMA": 27224470,
+      "longThresholdLower": 26972575,
+      "longThresholdHigher": 40458862.5
+    },
+    {
+      "date": "2025-03-11",
+      "value": 27415900,
+      "shortMA": 27415900,
+      "longThresholdLower": 27087663,
+      "longThresholdHigher": 40631494.5
+    },
+    {
+      "date": "2025-03-12",
+      "value": 27670545,
+      "shortMA": 27670545,
+      "longThresholdLower": 27070747,
+      "longThresholdHigher": 40606120.5
+    },
+    {
+      "date": "2025-03-13",
+      "value": 27552645,
+      "shortMA": 27552645,
+      "longThresholdLower": 27132599,
+      "longThresholdHigher": 40698898.5
+    },
+    {
+      "date": "2025-03-14",
+      "value": 27866325,
+      "shortMA": 27866325,
+      "longThresholdLower": 27232232,
+      "longThresholdHigher": 40848348
+    },
+    {
+      "date": "2025-03-17",
+      "value": 27700110,
+      "shortMA": 27700110,
+      "longThresholdLower": 27211408,
+      "longThresholdHigher": 40817112
+    },
+    {
+      "date": "2025-03-18",
+      "value": 27910300,
+      "shortMA": 27910300,
+      "longThresholdLower": 27272077,
+      "longThresholdHigher": 40908115.5
+    },
+    {
+      "date": "2025-03-19",
+      "value": 28276420,
+      "shortMA": 28276420,
+      "longThresholdLower": 27350500,
+      "longThresholdHigher": 41025750
+    },
+    {
+      "date": "2025-03-21",
+      "value": 28787415,
+      "shortMA": 28787415,
+      "longThresholdLower": 27473735,
+      "longThresholdHigher": 41210602.5
+    },
+    {
+      "date": "2025-03-24",
+      "value": 28507050,
+      "shortMA": 28507050,
+      "longThresholdLower": 27419164,
+      "longThresholdHigher": 41128746
+    },
+    {
+      "date": "2025-03-25",
+      "value": 28698295,
+      "shortMA": 28698295,
+      "longThresholdLower": 27314547,
+      "longThresholdHigher": 40971820.5
+    },
+    {
+      "date": "2025-03-26",
+      "value": 28935780,
+      "shortMA": 28935780,
+      "longThresholdLower": 27306029,
+      "longThresholdHigher": 40959043.5
+    },
+    {
+      "date": "2025-03-27",
+      "value": 30090090,
+      "shortMA": 30090090,
+      "longThresholdLower": 27557379,
+      "longThresholdHigher": 41336068.5
+    },
+    {
+      "date": "2025-03-28",
+      "value": 31190200,
+      "shortMA": 31190200,
+      "longThresholdLower": 27654009,
+      "longThresholdHigher": 41481013.5
+    },
+    {
+      "date": "2025-03-31",
+      "value": 28675190,
+      "shortMA": 28675190,
+      "longThresholdLower": 27866844,
+      "longThresholdHigher": 41800266
+    },
+    {
+      "date": "2025-04-01",
+      "value": 28778920,
+      "shortMA": 28778920,
+      "longThresholdLower": 27713741,
+      "longThresholdHigher": 41570611.5
+    },
+    {
+      "date": "2025-04-02",
+      "value": 28913970,
+      "shortMA": 28913970,
+      "longThresholdLower": 27714576,
+      "longThresholdHigher": 41571864
+    },
+    {
+      "date": "2025-04-03",
+      "value": 30244375,
+      "shortMA": 30244375,
+      "longThresholdLower": 28112228,
+      "longThresholdHigher": 42168342
+    },
+    {
+      "date": "2025-04-04",
+      "value": 32067050,
+      "shortMA": 32067050,
+      "longThresholdLower": 28510709,
+      "longThresholdHigher": 42766063.5
+    },
+    {
+      "date": "2025-04-07",
+      "value": 34437820,
+      "shortMA": 34437820,
+      "longThresholdLower": 28548848,
+      "longThresholdHigher": 42823272
+    },
+    {
+      "date": "2025-04-08",
+      "value": 36195910,
+      "shortMA": 36195910,
+      "longThresholdLower": 28523057,
+      "longThresholdHigher": 42784585.5
+    },
+    {
+      "date": "2025-04-09",
+      "value": 36854870,
+      "shortMA": 36854870,
+      "longThresholdLower": 28648871,
+      "longThresholdHigher": 42973306.5
+    },
+    {
+      "date": "2025-04-10",
+      "value": 37951300,
+      "shortMA": 37951300,
+      "longThresholdLower": 28920037,
+      "longThresholdHigher": 43380055.5
+    },
+    {
+      "date": "2025-04-11",
+      "value": 38966135,
+      "shortMA": 38966135,
+      "longThresholdLower": 29091185,
+      "longThresholdHigher": 43636777.5
+    },
+    {
+      "date": "2025-04-14",
+      "value": 38642930,
+      "shortMA": 38642930,
+      "longThresholdLower": 29152053,
+      "longThresholdHigher": 43728079.5
+    },
+    {
+      "date": "2025-04-15",
+      "value": 39103810,
+      "shortMA": 39103810,
+      "longThresholdLower": 29209216,
+      "longThresholdHigher": 43813824
+    },
+    {
+      "date": "2025-04-16",
+      "value": 38858975,
+      "shortMA": 38858975,
+      "longThresholdLower": 29187106,
+      "longThresholdHigher": 43780659
+    },
+    {
+      "date": "2025-04-17",
+      "value": 38744755,
+      "shortMA": 38744755,
+      "longThresholdLower": 29250002,
+      "longThresholdHigher": 43875003
+    },
+    {
+      "date": "2025-04-18",
+      "value": 38104695,
+      "shortMA": 38104695,
+      "longThresholdLower": 29228033,
+      "longThresholdHigher": 43842049.5
+    },
+    {
+      "date": "2025-04-21",
+      "value": 38347395,
+      "shortMA": 38347395,
+      "longThresholdLower": 29290820,
+      "longThresholdHigher": 43936230
+    },
+    {
+      "date": "2025-04-22",
+      "value": 38085185,
+      "shortMA": 38085185,
+      "longThresholdLower": 29328136,
+      "longThresholdHigher": 43992204
+    },
+    {
+      "date": "2025-04-23",
+      "value": 38526645,
+      "shortMA": 38526645,
+      "longThresholdLower": 29498159,
+      "longThresholdHigher": 44247238.5
+    },
+    {
+      "date": "2025-04-24",
+      "value": 38453305,
+      "shortMA": 38453305,
+      "longThresholdLower": 29609702,
+      "longThresholdHigher": 44414553
+    },
+    {
+      "date": "2025-04-25",
+      "value": 37698605,
+      "shortMA": 37698605,
+      "longThresholdLower": 29653469,
+      "longThresholdHigher": 44480203.5
+    },
+    {
+      "date": "2025-04-28",
+      "value": 38235485,
+      "shortMA": 38235485,
+      "longThresholdLower": 29900860,
+      "longThresholdHigher": 44851290
+    },
+    {
+      "date": "2025-04-30",
+      "value": 39004665,
+      "shortMA": 39004665,
+      "longThresholdLower": 30120140,
+      "longThresholdHigher": 45180210
+    },
+    {
+      "date": "2025-05-01",
+      "value": 38567105,
+      "shortMA": 38567105,
+      "longThresholdLower": 30065665,
+      "longThresholdHigher": 45098497.5
+    },
+    {
+      "date": "2025-05-02",
+      "value": 37194160,
+      "shortMA": 37194160,
+      "longThresholdLower": 30223608,
+      "longThresholdHigher": 45335412
+    },
+    {
+      "date": "2025-05-07",
+      "value": 35634870,
+      "shortMA": 35634870,
+      "longThresholdLower": 30237701,
+      "longThresholdHigher": 45356551.5
+    },
+    {
+      "date": "2025-05-08",
+      "value": 34398485,
+      "shortMA": 34398485,
+      "longThresholdLower": 30526464,
+      "longThresholdHigher": 45789696
+    },
+    {
+      "date": "2025-05-09",
+      "value": 33646075,
+      "shortMA": 33646075,
+      "longThresholdLower": 30694494,
+      "longThresholdHigher": 46041741
+    },
+    {
+      "date": "2025-05-12",
+      "value": 32370435,
+      "shortMA": 32370435,
+      "longThresholdLower": 30768495,
+      "longThresholdHigher": 46152742.5
+    },
+    {
+      "date": "2025-05-13",
+      "value": 31838370,
+      "shortMA": 31838370,
+      "longThresholdLower": 30949158,
+      "longThresholdHigher": 46423737
+    },
+    {
+      "date": "2025-05-14",
+      "value": 30739370,
+      "shortMA": 30739370,
+      "longThresholdLower": 30905927,
+      "longThresholdHigher": 46358890.5
+    },
+    {
+      "date": "2025-05-15",
+      "value": 31008945,
+      "shortMA": 31008945,
+      "longThresholdLower": 31045255,
+      "longThresholdHigher": 46567882.5
+    },
+    {
+      "date": "2025-05-16",
+      "value": 30705695,
+      "shortMA": 30705695,
+      "longThresholdLower": 31048367,
+      "longThresholdHigher": 46572550.5
+    },
+    {
+      "date": "2025-05-19",
+      "value": 30473235,
+      "shortMA": 30473235,
+      "longThresholdLower": 31021918,
+      "longThresholdHigher": 46532877
+    },
+    {
+      "date": "2025-05-20",
+      "value": 30558175,
+      "shortMA": 30558175,
+      "longThresholdLower": 31135009,
+      "longThresholdHigher": 46702513.5
+    },
+    {
+      "date": "2025-05-21",
+      "value": 30727445,
+      "shortMA": 30727445,
+      "longThresholdLower": 31164960,
+      "longThresholdHigher": 46747440
+    },
+    {
+      "date": "2025-05-22",
+      "value": 30596060,
+      "shortMA": 30596060,
+      "longThresholdLower": 31141424,
+      "longThresholdHigher": 46712136
+    },
+    {
+      "date": "2025-05-23",
+      "value": 30365580,
+      "shortMA": 30365580,
+      "longThresholdLower": 31113548,
+      "longThresholdHigher": 46670322
+    },
+    {
+      "date": "2025-05-26",
+      "value": 29385990,
+      "shortMA": 29385990,
+      "longThresholdLower": 30744440,
+      "longThresholdHigher": 46116660
+    },
+    {
+      "date": "2025-05-27",
+      "value": 28012895,
+      "shortMA": 28012895,
+      "longThresholdLower": 30635686,
+      "longThresholdHigher": 45953529
+    },
+    {
+      "date": "2025-05-28",
+      "value": 27492700,
+      "shortMA": 27492700,
+      "longThresholdLower": 30627816,
+      "longThresholdHigher": 45941724
+    },
+    {
+      "date": "2025-05-29",
+      "value": 26320105,
+      "shortMA": 26320105,
+      "longThresholdLower": 30384204,
+      "longThresholdHigher": 45576306
+    },
+    {
+      "date": "2025-05-30",
+      "value": 27120675,
+      "shortMA": 27120675,
+      "longThresholdLower": 30320584,
+      "longThresholdHigher": 45480876
+    },
+    {
+      "date": "2025-06-02",
+      "value": 27335345,
+      "shortMA": 27335345,
+      "longThresholdLower": 30060859,
+      "longThresholdHigher": 45091288.5
+    },
+    {
+      "date": "2025-06-03",
+      "value": 26393105,
+      "shortMA": 26393105,
+      "longThresholdLower": 29990648,
+      "longThresholdHigher": 44985972
+    },
+    {
+      "date": "2025-06-04",
+      "value": 26149155,
+      "shortMA": 26149155,
+      "longThresholdLower": 29828689,
+      "longThresholdHigher": 44743033.5
+    },
+    {
+      "date": "2025-06-05",
+      "value": 25004930,
+      "shortMA": 25004930,
+      "longThresholdLower": 29631654,
+      "longThresholdHigher": 44447481
+    },
+    {
+      "date": "2025-06-06",
+      "value": 24058620,
+      "shortMA": 24058620,
+      "longThresholdLower": 29571666,
+      "longThresholdHigher": 44357499
+    },
+    {
+      "date": "2025-06-09",
+      "value": 23727405,
+      "shortMA": 23727405,
+      "longThresholdLower": 29437524,
+      "longThresholdHigher": 44156286
+    },
+    {
+      "date": "2025-06-10",
+      "value": 22942825,
+      "shortMA": 22942825,
+      "longThresholdLower": 29369400,
+      "longThresholdHigher": 44054100
+    },
+    {
+      "date": "2025-06-11",
+      "value": 22512500,
+      "shortMA": 22512500,
+      "longThresholdLower": 29251799,
+      "longThresholdHigher": 43877698.5
+    },
+    {
+      "date": "2025-06-12",
+      "value": 22068740,
+      "shortMA": 22068740,
+      "longThresholdLower": 29272550,
+      "longThresholdHigher": 43908825
+    },
+    {
+      "date": "2025-06-13",
+      "value": 22680195,
+      "shortMA": 22680195,
+      "longThresholdLower": 29373394,
+      "longThresholdHigher": 44060091
+    },
+    {
+      "date": "2025-06-16",
+      "value": 22658220,
+      "shortMA": 22658220,
+      "longThresholdLower": 29339309,
+      "longThresholdHigher": 44008963.5
+    },
+    {
+      "date": "2025-06-17",
+      "value": 22320915,
+      "shortMA": 22320915,
+      "longThresholdLower": 29271548,
+      "longThresholdHigher": 43907322
+    },
+    {
+      "date": "2025-06-18",
+      "value": 22215490,
+      "shortMA": 22215490,
+      "longThresholdLower": 29167918,
+      "longThresholdHigher": 43751877
+    },
+    {
+      "date": "2025-06-19",
+      "value": 22067070,
+      "shortMA": 22067070,
+      "longThresholdLower": 29090671,
+      "longThresholdHigher": 43636006.5
+    },
+    {
+      "date": "2025-06-20",
+      "value": 25351575,
+      "shortMA": 25351575,
+      "longThresholdLower": 29681560,
+      "longThresholdHigher": 44522340
+    },
+    {
+      "date": "2025-06-23",
+      "value": 25548485,
+      "shortMA": 25548485,
+      "longThresholdLower": 29616451,
+      "longThresholdHigher": 44424676.5
+    },
+    {
+      "date": "2025-06-24",
+      "value": 25837455,
+      "shortMA": 25837455,
+      "longThresholdLower": 29635916,
+      "longThresholdHigher": 44453874
+    },
+    {
+      "date": "2025-06-25",
+      "value": 26010850,
+      "shortMA": 26010850,
+      "longThresholdLower": 29678648,
+      "longThresholdHigher": 44517972
+    },
+    {
+      "date": "2025-06-26",
+      "value": 25850515,
+      "shortMA": 25850515,
+      "longThresholdLower": 29774128,
+      "longThresholdHigher": 44661192
+    },
+    {
+      "date": "2025-06-27",
+      "value": 24620750,
+      "shortMA": 24620750,
+      "longThresholdLower": 29916469,
+      "longThresholdHigher": 44874703.5
+    },
+    {
+      "date": "2025-06-30",
+      "value": 24917835,
+      "shortMA": 24917835,
+      "longThresholdLower": 29999672,
+      "longThresholdHigher": 44999508
+    },
+    {
+      "date": "2025-07-01",
+      "value": 25272590,
+      "shortMA": 25272590,
+      "longThresholdLower": 29840957,
+      "longThresholdHigher": 44761435.5
+    },
+    {
+      "date": "2025-07-02",
+      "value": 25231520,
+      "shortMA": 25231520,
+      "longThresholdLower": 29824451,
+      "longThresholdHigher": 44736676.5
+    },
+    {
+      "date": "2025-07-03",
+      "value": 25686580,
+      "shortMA": 25686580,
+      "longThresholdLower": 29554954,
+      "longThresholdHigher": 44332431
+    },
+    {
+      "date": "2025-07-04",
+      "value": 25751865,
+      "shortMA": 25751865,
+      "longThresholdLower": 29375388,
+      "longThresholdHigher": 44063082
+    },
+    {
+      "date": "2025-07-07",
+      "value": 26112090,
+      "shortMA": 26112090,
+      "longThresholdLower": 29296140,
+      "longThresholdHigher": 43944210
+    },
+    {
+      "date": "2025-07-08",
+      "value": 26751070,
+      "shortMA": 26751070,
+      "longThresholdLower": 29430822,
+      "longThresholdHigher": 44146233
+    },
+    {
+      "date": "2025-07-09",
+      "value": 27498715,
+      "shortMA": 27498715,
+      "longThresholdLower": 29453873,
+      "longThresholdHigher": 44180809.5
+    },
+    {
+      "date": "2025-07-10",
+      "value": 27672345,
+      "shortMA": 27672345,
+      "longThresholdLower": 29451857,
+      "longThresholdHigher": 44177785.5
+    },
+    {
+      "date": "2025-07-11",
+      "value": 27165745,
+      "shortMA": 27165745,
+      "longThresholdLower": 29471111,
+      "longThresholdHigher": 44206666.5
+    },
+    {
+      "date": "2025-07-14",
+      "value": 27036590,
+      "shortMA": 27036590,
+      "longThresholdLower": 29387464,
+      "longThresholdHigher": 44081196
+    },
+    {
+      "date": "2025-07-15",
+      "value": 27175290,
+      "shortMA": 27175290,
+      "longThresholdLower": 29415111,
+      "longThresholdHigher": 44122666.5
+    },
+    {
+      "date": "2025-07-16",
+      "value": 27163070,
+      "shortMA": 27163070,
+      "longThresholdLower": 29399623,
+      "longThresholdHigher": 44099434.5
+    },
+    {
+      "date": "2025-07-17",
+      "value": 27169345,
+      "shortMA": 27169345,
+      "longThresholdLower": 29337384,
+      "longThresholdHigher": 44006076
+    },
+    {
+      "date": "2025-07-18",
+      "value": 23777395,
+      "shortMA": 23777395,
+      "longThresholdLower": 29255606,
+      "longThresholdHigher": 43883409
+    },
+    {
+      "date": "2025-07-22",
+      "value": 23961100,
+      "shortMA": 23961100,
+      "longThresholdLower": 29271600,
+      "longThresholdHigher": 43907400
+    },
+    {
+      "date": "2025-07-23",
+      "value": 32156395,
+      "shortMA": 32156395,
+      "longThresholdLower": 30910028,
+      "longThresholdHigher": 46365042
+    },
+    {
+      "date": "2025-07-24",
+      "value": 34838960,
+      "shortMA": 34838960,
+      "longThresholdLower": 31446263,
+      "longThresholdHigher": 47169394.5
+    },
+    {
+      "date": "2025-07-25",
+      "value": 35310570,
+      "shortMA": 35310570,
+      "longThresholdLower": 30878373,
+      "longThresholdHigher": 46317559.5
+    },
+    {
+      "date": "2025-07-28",
+      "value": 35064935,
+      "shortMA": 35064935,
+      "longThresholdLower": 30917989,
+      "longThresholdHigher": 46376983.5
+    },
+    {
+      "date": "2025-07-29",
+      "value": 34812165,
+      "shortMA": 34812165,
+      "longThresholdLower": 30909284,
+      "longThresholdHigher": 46363926
+    },
+    {
+      "date": "2025-07-30",
+      "value": 34741850,
+      "shortMA": 34741850,
+      "longThresholdLower": 30769216,
+      "longThresholdHigher": 46153824
+    },
+    {
+      "date": "2025-07-31",
+      "value": 35114485,
+      "shortMA": 35114485,
+      "longThresholdLower": 30839416,
+      "longThresholdHigher": 46259124
+    },
+    {
+      "date": "2025-08-01",
+      "value": 34815650,
+      "shortMA": 34815650,
+      "longThresholdLower": 30868693,
+      "longThresholdHigher": 46303039.5
+    },
+    {
+      "date": "2025-08-04",
+      "value": 35035690,
+      "shortMA": 35035690,
+      "longThresholdLower": 30937632,
+      "longThresholdHigher": 46406448
+    },
+    {
+      "date": "2025-08-05",
+      "value": 34977430,
+      "shortMA": 34977430,
+      "longThresholdLower": 30808446,
+      "longThresholdHigher": 46212669
+    },
+    {
+      "date": "2025-08-06",
+      "value": 34588600,
+      "shortMA": 34588600,
+      "longThresholdLower": 30814433,
+      "longThresholdHigher": 46221649.5
+    },
+    {
+      "date": "2025-08-07",
+      "value": 35820920,
+      "shortMA": 35820920,
+      "longThresholdLower": 31107528,
+      "longThresholdHigher": 46661292
+    },
+    {
+      "date": "2025-08-08",
+      "value": 37142265,
+      "shortMA": 37142265,
+      "longThresholdLower": 31307045,
+      "longThresholdHigher": 46960567.5
+    },
+    {
+      "date": "2025-08-12",
+      "value": 37904015,
+      "shortMA": 37904015,
+      "longThresholdLower": 31511892,
+      "longThresholdHigher": 47267838
+    }
+  ]
+}

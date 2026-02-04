@@ -1,0 +1,58 @@
+# デフォルト設定
+default:
+  # 実行設定
+  execution:
+    template_notebook: "notebooks/templates/marimo/strategy_analysis.py"
+    output_directory: null  # XDG準拠パスを使用（get_backtest_results_dir()）
+    create_output_dir: true
+
+  # デフォルトパラメータ（Marimoに渡される）
+  parameters:
+    shared_config:
+      initial_cash: 10000000 # 初期資金
+      fees: 0.001
+      slippage: 0.0 # スリッページ（比例コスト）
+      spread: 0.0 # スプレッド（比例コスト）
+      borrow_fee: 0.0 # 借株費用（比例コスト）
+      max_concurrent_positions:  # 日次新規エントリー数の上限（既存保有ポジションは含まない）
+      max_exposure:  # 1ポジションあたりの最大エクスポージャ（0-1）
+      stock_codes: ["all"] # 実行対象銘柄リスト
+      start_date: ""
+      end_date: ""
+      dataset: "primeExTopix500" # "primeExTopix500" or "topix500"
+      optimize_params: false
+      include_margin_data: true # 信用残高データを含めるか
+      include_statements_data: true # 財務諸表データを含めるか（PERフィルター等で使用）
+      relative_mode: false # 相対価格モード（個別銘柄OHLC ÷ ベンチマークOHLC）
+      benchmark_table: "topix" # ベンチマークテーブル名
+      group_by: true # VectorBTポートフォリオ統合設定（複数銘柄を一つのポートフォリオとして扱う）
+      cash_sharing: true # VectorBT資金共有設定（複数銘柄間で資金を共有する）
+      direction: "longonly" # VectorBT取引方向設定 ('longonly', 'shortonly', 'both')
+      timeframe: "daily" # データの時間軸 ('daily'=日足, 'weekly'=週足)
+      printlog: false # ログ出力設定
+
+      # Portfolio Optimization Settings (Kelly Criterion Only)
+      kelly_fraction: 1.0 # ケリー係数（0.5=Half Kelly, 1.0=Full Kelly, 2.0=Double Kelly）
+      min_allocation: 0.01 # 最小配分率（1%）
+      max_allocation: 0.5 # 最大配分率（50%）
+
+      # Parameter Optimization Settings
+      parameter_optimization:
+        enabled: false # パラメータ最適化有効化
+        method: "grid_search" # "grid_search" or "random_search"
+        n_trials: 100 # ランダムサーチ用試行回数
+        n_jobs: -1 # 並列処理数（1=シングルプロセス、-1=全CPUコア）
+
+        # 複合スコアリング設定（正規化後の重み付け合計）
+        scoring_weights:
+          sharpe_ratio: 0.5 # シャープレシオ（リスク調整後リターン）
+          calmar_ratio: 0.3 # カルマーレシオ（ドローダウン考慮）
+          total_return: 0.2 # トータルリターン（絶対リターン）
+
+      # Walk-forward Settings
+      walk_forward:
+        enabled: false # ウォークフォワード有効化
+        train_window: 252 # 学習期間（営業日数）
+        test_window: 63 # 検証期間（営業日数）
+        step: null # ステップ幅（Noneでtest_window）
+        max_splits: null # 最大分割数（Noneで制限なし）

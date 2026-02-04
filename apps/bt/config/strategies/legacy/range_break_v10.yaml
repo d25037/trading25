@@ -1,0 +1,47 @@
+entry_filter_params:
+  period_breakout:
+    enabled: true
+    direction: "high"
+    condition: "break"
+    lookback_days: 10
+    period: 100
+
+  bollinger_bands:
+    enabled: true
+    window: 13
+    alpha: 1.0
+    position: "below_upper"
+
+  rsi_threshold:
+    enabled: true
+    period: 7
+    threshold: 40
+    condition: "above"
+
+  volume:
+    enabled: true
+    ma_type: "ema"
+    direction: "surge"
+    threshold: 1.7
+    short_period: 30
+    long_period: 120
+
+exit_trigger_params:
+  atr_support_break:
+    enabled: true
+    direction: "break"
+    lookback_period: 20
+    atr_multiplier: 2.5
+    price_column: "low"
+
+  volume:
+    enabled: true
+    ma_type: "ema"
+    direction: "drop"
+    threshold: 1.3
+    short_period: 30
+    long_period: 120
+
+shared_config:
+  dataset: "primeExTopix500"
+  kelly_fraction: 2.0

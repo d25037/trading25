@@ -1,0 +1,410 @@
+{
+  "indicator": "margin_flow_pressure",
+  "params": {
+    "average_period": 15
+  },
+  "version": "phase2.5-v1",
+  "source_commit": "ae407994f3f61cb6605f5ad93f45ae03555b67e6",
+  "data": [
+    {
+      "date": "2024-08-16",
+      "value": -0.05377773659740463,
+      "flowPressure": -0.05377773659740463,
+      "currentNetMargin": 21135100,
+      "previousNetMargin": 23006900,
+      "avgVolume": 34806225
+    },
+    {
+      "date": "2024-08-23",
+      "value": 0.005040761269514453,
+      "flowPressure": 0.005040761269514453,
+      "currentNetMargin": 21275900,
+      "previousNetMargin": 21135100,
+      "avgVolume": 27932288.888888888
+    },
+    {
+      "date": "2024-08-30",
+      "value": -0.03103024005994732,
+      "flowPressure": -0.03103024005994732,
+      "currentNetMargin": 20342400,
+      "previousNetMargin": 21275900,
+      "avgVolume": 30083557.14285714
+    },
+    {
+      "date": "2024-09-06",
+      "value": 0.03308154067475016,
+      "flowPressure": 0.03308154067475016,
+      "currentNetMargin": 21265300,
+      "previousNetMargin": 20342400,
+      "avgVolume": 27897733.333333332
+    },
+    {
+      "date": "2024-09-13",
+      "value": 0.0316880222988078,
+      "flowPressure": 0.0316880222988078,
+      "currentNetMargin": 22227000,
+      "previousNetMargin": 21265300,
+      "avgVolume": 30349006.666666668
+    },
+    {
+      "date": "2024-09-20",
+      "value": -0.04937304270743767,
+      "flowPressure": -0.04937304270743767,
+      "currentNetMargin": 20643700,
+      "previousNetMargin": 22227000,
+      "avgVolume": 32068106.666666668
+    },
+    {
+      "date": "2024-09-27",
+      "value": -0.04945231771227471,
+      "flowPressure": -0.04945231771227471,
+      "currentNetMargin": 19057900,
+      "previousNetMargin": 20643700,
+      "avgVolume": 32067253.333333332
+    },
+    {
+      "date": "2024-10-04",
+      "value": 0.07298877962643473,
+      "flowPressure": 0.07298877962643473,
+      "currentNetMargin": 21553400,
+      "previousNetMargin": 19057900,
+      "avgVolume": 34190186.666666664
+    },
+    {
+      "date": "2024-10-11",
+      "value": 0.013469088568443687,
+      "flowPressure": 0.013469088568443687,
+      "currentNetMargin": 21978600,
+      "previousNetMargin": 21553400,
+      "avgVolume": 31568580
+    },
+    {
+      "date": "2024-10-18",
+      "value": 0.0009910595378723468,
+      "flowPressure": 0.0009910595378723468,
+      "currentNetMargin": 22006700,
+      "previousNetMargin": 21978600,
+      "avgVolume": 28353493.333333332
+    },
+    {
+      "date": "2024-10-25",
+      "value": -0.12986093625347703,
+      "flowPressure": -0.12986093625347703,
+      "currentNetMargin": 18943200,
+      "previousNetMargin": 22006700,
+      "avgVolume": 23590620
+    },
+    {
+      "date": "2024-11-01",
+      "value": -0.024719832611873955,
+      "flowPressure": -0.024719832611873955,
+      "currentNetMargin": 18322000,
+      "previousNetMargin": 18943200,
+      "avgVolume": 25129620
+    },
+    {
+      "date": "2024-11-08",
+      "value": -0.06759102133109646,
+      "flowPressure": -0.06759102133109646,
+      "currentNetMargin": 16221600,
+      "previousNetMargin": 18322000,
+      "avgVolume": 31075133.333333332
+    },
+    {
+      "date": "2024-11-15",
+      "value": -0.05201901551841651,
+      "flowPressure": -0.05201901551841651,
+      "currentNetMargin": 14604600,
+      "previousNetMargin": 16221600,
+      "avgVolume": 31084786.666666668
+    },
+    {
+      "date": "2024-11-22",
+      "value": 0.034907401647673614,
+      "flowPressure": 0.034907401647673614,
+      "currentNetMargin": 15551100,
+      "previousNetMargin": 14604600,
+      "avgVolume": 27114593.333333332
+    },
+    {
+      "date": "2024-11-29",
+      "value": 0.07584133464227565,
+      "flowPressure": 0.07584133464227565,
+      "currentNetMargin": 17240400,
+      "previousNetMargin": 15551100,
+      "avgVolume": 22274133.333333332
+    },
+    {
+      "date": "2024-12-06",
+      "value": -0.10115490285273636,
+      "flowPressure": -0.10115490285273636,
+      "currentNetMargin": 15110100,
+      "previousNetMargin": 17240400,
+      "avgVolume": 21059780
+    },
+    {
+      "date": "2024-12-13",
+      "value": -0.08733765986166293,
+      "flowPressure": -0.08733765986166293,
+      "currentNetMargin": 13125000,
+      "previousNetMargin": 15110100,
+      "avgVolume": 22729026.666666668
+    },
+    {
+      "date": "2024-12-20",
+      "value": -0.10412126241166218,
+      "flowPressure": -0.10412126241166218,
+      "currentNetMargin": 10809500,
+      "previousNetMargin": 13125000,
+      "avgVolume": 22238493.333333332
+    },
+    {
+      "date": "2024-12-27",
+      "value": -0.07023387967160491,
+      "flowPressure": -0.07023387967160491,
+      "currentNetMargin": 8721900,
+      "previousNetMargin": 10809500,
+      "avgVolume": 29723546.666666668
+    },
+    {
+      "date": "2025-01-10",
+      "value": 0.08765205959066111,
+      "flowPressure": 0.08765205959066111,
+      "currentNetMargin": 11703400,
+      "previousNetMargin": 8721900,
+      "avgVolume": 34015173.333333336
+    },
+    {
+      "date": "2025-01-17",
+      "value": 0.03634413512555356,
+      "flowPressure": 0.03634413512555356,
+      "currentNetMargin": 12913100,
+      "previousNetMargin": 11703400,
+      "avgVolume": 33284600
+    },
+    {
+      "date": "2025-01-24",
+      "value": -0.059889042894393264,
+      "flowPressure": -0.059889042894393264,
+      "currentNetMargin": 11275500,
+      "previousNetMargin": 12913100,
+      "avgVolume": 27343900
+    },
+    {
+      "date": "2025-01-31",
+      "value": -0.038046780205869324,
+      "flowPressure": -0.038046780205869324,
+      "currentNetMargin": 10406300,
+      "previousNetMargin": 11275500,
+      "avgVolume": 22845560
+    },
+    {
+      "date": "2025-02-07",
+      "value": 0.15123876005937262,
+      "flowPressure": 0.15123876005937262,
+      "currentNetMargin": 14565500,
+      "previousNetMargin": 10406300,
+      "avgVolume": 27500886.666666668
+    },
+    {
+      "date": "2025-02-14",
+      "value": 0.024647853082896135,
+      "flowPressure": 0.024647853082896135,
+      "currentNetMargin": 15241400,
+      "previousNetMargin": 14565500,
+      "avgVolume": 27422266.666666668
+    },
+    {
+      "date": "2025-02-21",
+      "value": 0.021456145140013407,
+      "flowPressure": 0.021456145140013407,
+      "currentNetMargin": 15841900,
+      "previousNetMargin": 15241400,
+      "avgVolume": 27987320
+    },
+    {
+      "date": "2025-02-28",
+      "value": -0.02474765044211885,
+      "flowPressure": -0.02474765044211885,
+      "currentNetMargin": 15134300,
+      "previousNetMargin": 15841900,
+      "avgVolume": 28592613.333333332
+    },
+    {
+      "date": "2025-03-07",
+      "value": -0.03817120622568093,
+      "flowPressure": -0.03817120622568093,
+      "currentNetMargin": 14055200,
+      "previousNetMargin": 15134300,
+      "avgVolume": 28270000
+    },
+    {
+      "date": "2025-03-14",
+      "value": 0.00027475405602882995,
+      "flowPressure": 0.00027475405602882995,
+      "currentNetMargin": 14063400,
+      "previousNetMargin": 14055200,
+      "avgVolume": 29844873.333333332
+    },
+    {
+      "date": "2025-03-21",
+      "value": -0.05395682301235443,
+      "flowPressure": -0.05395682301235443,
+      "currentNetMargin": 12378600,
+      "previousNetMargin": 14063400,
+      "avgVolume": 31224966.666666668
+    },
+    {
+      "date": "2025-03-28",
+      "value": 0.12730529725443382,
+      "flowPressure": 0.12730529725443382,
+      "currentNetMargin": 15936200,
+      "previousNetMargin": 12378600,
+      "avgVolume": 27945420
+    },
+    {
+      "date": "2025-04-04",
+      "value": 0.050306195179426014,
+      "flowPressure": 0.050306195179426014,
+      "currentNetMargin": 17665400,
+      "previousNetMargin": 15936200,
+      "avgVolume": 34373500
+    },
+    {
+      "date": "2025-04-11",
+      "value": -0.06855271418132963,
+      "flowPressure": -0.06855271418132963,
+      "currentNetMargin": 14734500,
+      "previousNetMargin": 17665400,
+      "avgVolume": 42753960
+    },
+    {
+      "date": "2025-04-18",
+      "value": -0.02390695745456631,
+      "flowPressure": -0.02390695745456631,
+      "currentNetMargin": 13767600,
+      "previousNetMargin": 14734500,
+      "avgVolume": 40444293.333333336
+    },
+    {
+      "date": "2025-04-25",
+      "value": -0.08835352466396044,
+      "flowPressure": -0.08835352466396044,
+      "currentNetMargin": 10635100,
+      "previousNetMargin": 13767600,
+      "avgVolume": 35454160
+    },
+    {
+      "date": "2025-05-02",
+      "value": -0.054614275878764565,
+      "flowPressure": -0.054614275878764565,
+      "currentNetMargin": 8938600,
+      "previousNetMargin": 10635100,
+      "avgVolume": 31063306.666666668
+    },
+    {
+      "date": "2025-05-09",
+      "value": 0.003914698878727355,
+      "flowPressure": 0.003914698878727355,
+      "currentNetMargin": 9063400,
+      "previousNetMargin": 8938600,
+      "avgVolume": 31879846.666666668
+    },
+    {
+      "date": "2025-05-16",
+      "value": 0.06842147558051452,
+      "flowPressure": 0.06842147558051452,
+      "currentNetMargin": 11379300,
+      "previousNetMargin": 9063400,
+      "avgVolume": 33847560
+    },
+    {
+      "date": "2025-05-23",
+      "value": -0.02118615886884977,
+      "flowPressure": -0.02118615886884977,
+      "currentNetMargin": 10805900,
+      "previousNetMargin": 11379300,
+      "avgVolume": 27064840
+    },
+    {
+      "date": "2025-05-30",
+      "value": -0.10895664075763943,
+      "flowPressure": -0.10895664075763943,
+      "currentNetMargin": 8104100,
+      "previousNetMargin": 10805900,
+      "avgVolume": 24797020
+    },
+    {
+      "date": "2025-06-06",
+      "value": 0.16477329009587663,
+      "flowPressure": 0.16477329009587663,
+      "currentNetMargin": 11896700,
+      "previousNetMargin": 8104100,
+      "avgVolume": 23017080
+    },
+    {
+      "date": "2025-06-13",
+      "value": 0.15448480066846382,
+      "flowPressure": 0.15448480066846382,
+      "currentNetMargin": 15542600,
+      "previousNetMargin": 11896700,
+      "avgVolume": 23600380
+    },
+    {
+      "date": "2025-06-20",
+      "value": 0.07925997043637913,
+      "flowPressure": 0.07925997043637913,
+      "currentNetMargin": 17500800,
+      "previousNetMargin": 15542600,
+      "avgVolume": 24706040
+    },
+    {
+      "date": "2025-06-27",
+      "value": -0.024398620138575914,
+      "flowPressure": -0.024398620138575914,
+      "currentNetMargin": 16877500,
+      "previousNetMargin": 17500800,
+      "avgVolume": 25546526.666666668
+    },
+    {
+      "date": "2025-07-04",
+      "value": 0.07935044318812184,
+      "flowPressure": 0.07935044318812184,
+      "currentNetMargin": 19028900,
+      "previousNetMargin": 16877500,
+      "avgVolume": 27112640
+    },
+    {
+      "date": "2025-07-11",
+      "value": -0.023740094201964646,
+      "flowPressure": -0.023740094201964646,
+      "currentNetMargin": 18411200,
+      "previousNetMargin": 19028900,
+      "avgVolume": 26019273.333333332
+    },
+    {
+      "date": "2025-07-18",
+      "value": 0.012480086847495289,
+      "flowPressure": 0.012480086847495289,
+      "currentNetMargin": 18705500,
+      "previousNetMargin": 18411200,
+      "avgVolume": 23581566.666666668
+    },
+    {
+      "date": "2025-07-25",
+      "value": -0.18406054119238938,
+      "flowPressure": -0.18406054119238938,
+      "currentNetMargin": 11818800,
+      "previousNetMargin": 18705500,
+      "avgVolume": 37415406.666666664
+    },
+    {
+      "date": "2025-08-01",
+      "value": 0.04777602037425389,
+      "flowPressure": 0.04777602037425389,
+      "currentNetMargin": 13620700,
+      "previousNetMargin": 11818800,
+      "avgVolume": 37715573.333333336
+    }
+  ]
+}

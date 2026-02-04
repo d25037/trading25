@@ -1,0 +1,5440 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "trading25-bt API",
+    "description": "バックテスト実行のためのREST API",
+    "version": "0.1.0"
+  },
+  "paths": {
+    "/api/health": {
+      "get": {
+        "tags": [
+          "Health"
+        ],
+        "summary": "Health Check",
+        "description": "ヘルスチェック\n\nサーバーの状態を確認",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HealthResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies": {
+      "get": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "List Strategies",
+        "description": "戦略一覧を取得\n\n全カテゴリの戦略メタデータを返却",
+        "operationId": "list_strategies_api_strategies_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies/{strategy_name}": {
+      "get": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Get Strategy Detail",
+        "description": "戦略詳細を取得\n\nArgs:\n    strategy_name: 戦略名（例: 'range_break_v5', 'production/range_break_v5'）",
+        "operationId": "get_strategy_detail_api_strategies__strategy_name__get",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyDetailResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Update Strategy",
+        "description": "戦略設定を更新\n\nArgs:\n    strategy_name: 戦略名\n    request: 更新する設定\n\nNote:\n    experimentalカテゴリのみ更新可能",
+        "operationId": "update_strategy_api_strategies__strategy_name__put",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyUpdateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Delete Strategy",
+        "description": "戦略を削除\n\nArgs:\n    strategy_name: 戦略名\n\nNote:\n    experimentalカテゴリのみ削除可能",
+        "operationId": "delete_strategy_api_strategies__strategy_name__delete",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies/{strategy_name}/validate": {
+      "post": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Validate Strategy",
+        "description": "戦略設定を検証\n\nArgs:\n    strategy_name: 戦略名\n    request: 検証する設定（省略時は既存の設定を検証）",
+        "operationId": "validate_strategy_api_strategies__strategy_name__validate_post",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/StrategyValidationRequest"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Request"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyValidationResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies/{strategy_name}/duplicate": {
+      "post": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Duplicate Strategy",
+        "description": "戦略を複製\n\nArgs:\n    strategy_name: 複製元の戦略名\n    request: 複製先の新しい戦略名\n\nNote:\n    複製先は常にexperimentalカテゴリ",
+        "operationId": "duplicate_strategy_api_strategies__strategy_name__duplicate_post",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyDuplicateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyDuplicateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/strategies/{strategy_name}/rename": {
+      "post": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Rename Strategy",
+        "description": "戦略をリネーム\n\nArgs:\n    strategy_name: 現在の戦略名\n    request: リネームリクエスト（新しい戦略名）\n\nNote:\n    experimentalカテゴリのみリネーム可能",
+        "operationId": "rename_strategy_api_strategies__strategy_name__rename_post",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyRenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyRenameResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/config/default": {
+      "get": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Get Default Config",
+        "description": "デフォルト設定をraw YAML文字列として取得\n\nコメントを保持するためYAML文字列をそのまま返却",
+        "operationId": "get_default_config_api_config_default_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultConfigResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Update Default Config",
+        "description": "デフォルト設定を更新\n\nYAML文字列を受け取り、パース検証後にdefault.yamlに書き込み、\nConfigLoaderのメモリ内デフォルト設定をリロード",
+        "operationId": "update_default_config_api_config_default_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefaultConfigUpdateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DefaultConfigUpdateResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/run": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Run Backtest",
+        "description": "バックテストを実行\n\n非同期でバックテストをサブミットし、ジョブIDを返却\n結果は /api/backtest/jobs/{job_id} で確認",
+        "operationId": "run_backtest_api_backtest_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BacktestRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Get Job Status",
+        "description": "ジョブステータスを取得\n\nArgs:\n    job_id: ジョブID",
+        "operationId": "get_job_status_api_backtest_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/jobs": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "List Jobs",
+        "description": "ジョブ一覧を取得\n\nArgs:\n    limit: 取得件数上限（デフォルト50）",
+        "operationId": "list_jobs_api_backtest_jobs_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/BacktestJobResponse"
+                  },
+                  "title": "Response List Jobs Api Backtest Jobs Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Cancel Job",
+        "description": "ジョブをキャンセル\n\nPENDING/RUNNING → キャンセル実行 → 200\nCANCELLED → 200（冪等）\nCOMPLETED/FAILED → 409 Conflict",
+        "operationId": "cancel_job_api_backtest_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/result/{job_id}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Get Result",
+        "description": "バックテスト結果を取得\n\nArgs:\n    job_id: ジョブID\n    include_html: HTMLコンテンツを含めるか（base64エンコード）",
+        "operationId": "get_result_api_backtest_result__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          },
+          {
+            "name": "include_html",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": false,
+              "title": "Include Html"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BacktestResultResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/html-files": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "List Html Files",
+        "description": "バックテスト結果HTMLファイル一覧を取得\n\nArgs:\n    strategy: 戦略名でフィルタ（オプション）\n    limit: 取得件数上限（デフォルト100）",
+        "operationId": "list_html_files_api_backtest_html_files_get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlFileListResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/html-files/{strategy}/{filename}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Get Html File Content",
+        "description": "特定のHTMLファイルのコンテンツを取得\n\nArgs:\n    strategy: 戦略名\n    filename: ファイル名",
+        "operationId": "get_html_file_content_api_backtest_html_files__strategy___filename__get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlFileContentResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Delete Html File Endpoint",
+        "description": "HTMLファイルを削除\n\nArgs:\n    strategy: 戦略名\n    filename: ファイル名",
+        "operationId": "delete_html_file_endpoint_api_backtest_html_files__strategy___filename__delete",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlFileDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/html-files/{strategy}/{filename}/rename": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Rename Html File Endpoint",
+        "description": "HTMLファイルをリネーム\n\nArgs:\n    strategy: 戦略名\n    filename: 現在のファイル名\n    request: リネームリクエスト（新しいファイル名）",
+        "operationId": "rename_html_file_endpoint_api_backtest_html_files__strategy___filename__rename_post",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HtmlFileRenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlFileRenameResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/jobs/{job_id}/stream": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Stream Job Events",
+        "description": "ジョブの進捗をSSEでストリーミング\n\nArgs:\n    job_id: ジョブID",
+        "operationId": "stream_job_events_api_backtest_jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/run": {
+      "post": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Run Optimization",
+        "description": "パラメータ最適化を実行",
+        "operationId": "run_optimization_api_optimize_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptimizationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Get Optimization Status",
+        "description": "最適化ジョブのステータスを取得",
+        "operationId": "get_optimization_status_api_optimize_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizationJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/jobs/{job_id}/stream": {
+      "get": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Stream Optimization Events",
+        "description": "最適化ジョブの進捗をSSEでストリーミング\n\nArgs:\n    job_id: ジョブID",
+        "operationId": "stream_optimization_events_api_optimize_jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/grid-configs": {
+      "get": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "List Grid Configs",
+        "description": "Grid設定一覧を取得",
+        "operationId": "list_grid_configs_api_optimize_grid_configs_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizationGridListResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/grid-configs/{strategy}": {
+      "get": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Get Grid Config",
+        "description": "Grid設定を取得",
+        "operationId": "get_grid_config_api_optimize_grid_configs__strategy__get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizationGridConfig"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Save Grid Config",
+        "description": "Grid設定を保存",
+        "operationId": "save_grid_config_api_optimize_grid_configs__strategy__put",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OptimizationGridSaveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OptimizationGridSaveResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Delete Grid Config",
+        "description": "Grid設定を削除",
+        "operationId": "delete_grid_config_api_optimize_grid_configs__strategy__delete",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Grid Config Api Optimize Grid Configs  Strategy  Delete"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/html-files": {
+      "get": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "List Optimization Html Files",
+        "description": "最適化結果HTMLファイル一覧を取得",
+        "operationId": "list_optimization_html_files_api_optimize_html_files_get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response List Optimization Html Files Api Optimize Html Files Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/html-files/{strategy}/{filename}": {
+      "get": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Get Optimization Html File Content",
+        "description": "最適化結果HTMLファイルのコンテンツを取得",
+        "operationId": "get_optimization_html_file_content_api_optimize_html_files__strategy___filename__get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Get Optimization Html File Content Api Optimize Html Files  Strategy   Filename  Get"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Delete Optimization Html File",
+        "description": "最適化結果HTMLファイルを削除\n\nArgs:\n    strategy: 戦略名\n    filename: ファイル名",
+        "operationId": "delete_optimization_html_file_api_optimize_html_files__strategy___filename__delete",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlFileDeleteResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/optimize/html-files/{strategy}/{filename}/rename": {
+      "post": {
+        "tags": [
+          "Optimization"
+        ],
+        "summary": "Rename Optimization Html File",
+        "description": "最適化結果HTMLファイルをリネーム\n\nArgs:\n    strategy: 戦略名\n    filename: 現在のファイル名\n    request: リネームリクエスト（新しいファイル名）",
+        "operationId": "rename_optimization_html_file_api_optimize_html_files__strategy___filename__rename_post",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/HtmlFileRenameRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HtmlFileRenameResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/signals/reference": {
+      "get": {
+        "tags": [
+          "Signals"
+        ],
+        "summary": "Get Signal Reference",
+        "description": "シグナルリファレンスデータを取得",
+        "operationId": "get_signal_reference_api_signals_reference_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalReferenceResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/signals/schema": {
+      "get": {
+        "tags": [
+          "Signals"
+        ],
+        "summary": "Get Signal Schema",
+        "description": "SignalParams の JSON Schema を返却\n\nPydanticモデル変更が自動的にスキーマに反映される。",
+        "operationId": "get_signal_schema_api_signals_schema_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "type": "object",
+                  "title": "Response Get Signal Schema Api Signals Schema Get"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/signals/compute": {
+      "post": {
+        "tags": [
+          "Signals"
+        ],
+        "summary": "Compute Signals",
+        "description": "シグナル計算を実行し、発火日を返却\n\nPhase 1: OHLCV系シグナルのみ対応\n- oscillator: rsi_threshold, rsi_spread\n- breakout: period_breakout, ma_breakout, atr_support_break, retracement,\n            mean_reversion, crossover, buy_and_hold\n- volatility: bollinger_bands\n- volume: volume, trading_value, trading_value_range\n\nExample request:\n```json\n{\n    \"stock_code\": \"7203\",\n    \"source\": \"market\",\n    \"timeframe\": \"daily\",\n    \"signals\": [\n        {\"type\": \"rsi_threshold\", \"params\": {\"threshold\": 30}, \"mode\": \"entry\"},\n        {\"type\": \"period_breakout\", \"params\": {\"period\": 20}, \"mode\": \"entry\"}\n    ]\n}\n```\n\nExample response:\n```json\n{\n    \"stock_code\": \"7203\",\n    \"timeframe\": \"daily\",\n    \"signals\": {\n        \"rsi_threshold\": {\"trigger_dates\": [\"2025-01-15\"], \"count\": 1},\n        \"period_breakout\": {\"trigger_dates\": [\"2025-02-01\"], \"count\": 1}\n    }\n}\n```",
+        "operationId": "compute_signals_api_signals_compute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalComputeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalComputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/generate": {
+      "post": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Run Lab Generate",
+        "description": "戦略自動生成ジョブをサブミット",
+        "operationId": "run_lab_generate_api_lab_generate_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabGenerateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/evolve": {
+      "post": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Run Lab Evolve",
+        "description": "GA進化ジョブをサブミット",
+        "operationId": "run_lab_evolve_api_lab_evolve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabEvolveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/optimize": {
+      "post": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Run Lab Optimize",
+        "description": "Optuna最適化ジョブをサブミット",
+        "operationId": "run_lab_optimize_api_lab_optimize_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabOptimizeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/improve": {
+      "post": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Run Lab Improve",
+        "description": "戦略改善ジョブをサブミット",
+        "operationId": "run_lab_improve_api_lab_improve_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LabImproveRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Get Lab Job Status",
+        "description": "Labジョブのステータスを取得",
+        "operationId": "get_lab_job_status_api_lab_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/jobs/{job_id}/stream": {
+      "get": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Stream Lab Job Events",
+        "description": "LabジョブのSSEストリーミング",
+        "operationId": "stream_lab_job_events_api_lab_jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/lab/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "Lab"
+        ],
+        "summary": "Cancel Lab Job",
+        "description": "Labジョブをキャンセル",
+        "operationId": "cancel_lab_job_api_lab_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabJobResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/indicators/compute": {
+      "post": {
+        "tags": [
+          "Indicators"
+        ],
+        "summary": "Compute Indicators",
+        "description": "複数インジケーターを一括計算\n\noutput='ohlcv'の場合、インジケーター計算をスキップし、\n変換後のOHLCVのみを返却する。",
+        "operationId": "compute_indicators_api_indicators_compute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndicatorComputeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/IndicatorComputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/indicators/margin": {
+      "post": {
+        "tags": [
+          "Indicators"
+        ],
+        "summary": "Compute Margin Indicators",
+        "description": "信用指標を計算",
+        "operationId": "compute_margin_indicators_api_indicators_margin_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/MarginIndicatorRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarginIndicatorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/ohlcv/resample": {
+      "post": {
+        "tags": [
+          "OHLCV"
+        ],
+        "summary": "OHLCVデータのTimeframe変換",
+        "description": "OHLCVデータを指定したTimeframe（週足/月足）に変換します。\n\n**機能**:\n- 日足→週足/月足のリサンプル\n- 相対OHLC（ベンチマーク比較）変換（オプション）\n\n**仕様**: docs/spec-timeframe-resample.md を参照\n\n**計算順序**: Relative OHLC計算 → Timeframe Resample\n\n**集約ルール**:\n- Open: first（期間最初の始値）\n- High: max（期間中の最高値）\n- Low: min（期間中の最安値）\n- Close: last（期間最後の終値）\n- Volume: sum（期間の出来高合計）",
+        "operationId": "resample_ohlcv_api_ohlcv_resample_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/OHLCVResampleRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/OHLCVResampleResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/fundamentals/compute": {
+      "post": {
+        "tags": [
+          "Fundamentals"
+        ],
+        "summary": "Compute fundamental metrics for a stock",
+        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: JQuants API via apps/ts/api proxy\n- Stock prices: market.db via apps/ts/api proxy\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Latest metrics with daily valuation applied\n- `dailyValuation`: Daily PER/PBR time-series for charting",
+        "operationId": "compute_fundamentals_api_fundamentals_compute_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FundamentalsComputeRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundamentalsComputeResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "BacktestJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "進捗（0.0 - 1.0）"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "ステータスメッセージ"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "開始日時"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "完了日時"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラーメッセージ"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BacktestResultSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "結果サマリー（完了時のみ）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at"
+        ],
+        "title": "BacktestJobResponse",
+        "description": "バックテストジョブレスポンス"
+      },
+      "BacktestRequest": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Strategy Name",
+            "description": "戦略名（例: 'range_break_v5', 'production/range_break_v5'）"
+          },
+          "strategy_config_override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Config Override",
+            "description": "戦略設定のオーバーライド（オプション）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "BacktestRequest",
+        "description": "バックテスト実行リクエスト"
+      },
+      "BacktestResultResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name",
+            "description": "データセット名"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/BacktestResultSummary",
+            "description": "結果サマリー"
+          },
+          "execution_time": {
+            "type": "number",
+            "title": "Execution Time",
+            "description": "実行時間（秒）"
+          },
+          "html_content": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html Content",
+            "description": "HTMLコンテンツ（base64エンコード）"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "strategy_name",
+          "dataset_name",
+          "summary",
+          "execution_time",
+          "created_at"
+        ],
+        "title": "BacktestResultResponse",
+        "description": "バックテスト結果レスポンス（詳細）"
+      },
+      "BacktestResultSummary": {
+        "properties": {
+          "total_return": {
+            "type": "number",
+            "title": "Total Return",
+            "description": "トータルリターン (%)"
+          },
+          "sharpe_ratio": {
+            "type": "number",
+            "title": "Sharpe Ratio",
+            "description": "シャープレシオ"
+          },
+          "calmar_ratio": {
+            "type": "number",
+            "title": "Calmar Ratio",
+            "description": "カルマーレシオ"
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown",
+            "description": "最大ドローダウン (%)"
+          },
+          "win_rate": {
+            "type": "number",
+            "title": "Win Rate",
+            "description": "勝率 (%)"
+          },
+          "trade_count": {
+            "type": "integer",
+            "title": "Trade Count",
+            "description": "取引回数"
+          },
+          "html_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Html Path",
+            "description": "結果HTMLファイルのパス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_return",
+          "sharpe_ratio",
+          "calmar_ratio",
+          "max_drawdown",
+          "win_rate",
+          "trade_count"
+        ],
+        "title": "BacktestResultSummary",
+        "description": "バックテスト結果サマリー"
+      },
+      "DailyValuationDataPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Date (YYYY-MM-DD)"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "Closing price"
+          },
+          "per": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per",
+            "description": "PER at this date"
+          },
+          "pbr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbr",
+            "description": "PBR at this date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "close"
+        ],
+        "title": "DailyValuationDataPoint",
+        "description": "Daily valuation data point."
+      },
+      "DefaultConfigResponse": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "default.yamlの内容（YAML文字列）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "DefaultConfigResponse",
+        "description": "デフォルト設定レスポンス（raw YAML文字列）"
+      },
+      "DefaultConfigUpdateRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "更新するYAML文字列"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "DefaultConfigUpdateRequest",
+        "description": "デフォルト設定更新リクエスト"
+      },
+      "DefaultConfigUpdateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "更新成功フラグ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "DefaultConfigUpdateResponse",
+        "description": "デフォルト設定更新レスポンス"
+      },
+      "EvolutionHistoryItem": {
+        "properties": {
+          "generation": {
+            "type": "integer",
+            "title": "Generation",
+            "description": "世代番号"
+          },
+          "best_score": {
+            "type": "number",
+            "title": "Best Score",
+            "description": "最良スコア"
+          },
+          "avg_score": {
+            "type": "number",
+            "title": "Avg Score",
+            "description": "平均スコア"
+          },
+          "worst_score": {
+            "type": "number",
+            "title": "Worst Score",
+            "description": "最悪スコア"
+          }
+        },
+        "type": "object",
+        "required": [
+          "generation",
+          "best_score",
+          "avg_score",
+          "worst_score"
+        ],
+        "title": "EvolutionHistoryItem",
+        "description": "進化履歴アイテム"
+      },
+      "FieldConstraints": {
+        "properties": {
+          "gt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Gt"
+          },
+          "ge": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ge"
+          },
+          "lt": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lt"
+          },
+          "le": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Le"
+          }
+        },
+        "type": "object",
+        "title": "FieldConstraints",
+        "description": "フィールド制約情報"
+      },
+      "FundamentalDataPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "Period end date (YYYY-MM-DD)"
+          },
+          "disclosedDate": {
+            "type": "string",
+            "title": "Discloseddate",
+            "description": "Disclosure date (YYYY-MM-DD)"
+          },
+          "periodType": {
+            "type": "string",
+            "title": "Periodtype",
+            "description": "Period type (FY, Q1, Q2, Q3)"
+          },
+          "isConsolidated": {
+            "type": "boolean",
+            "title": "Isconsolidated",
+            "description": "Whether data is consolidated"
+          },
+          "accountingStandard": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Accountingstandard",
+            "description": "Accounting standard (IFRS, US GAAP, JGAAP)"
+          },
+          "roe": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roe",
+            "description": "Return on Equity (%)"
+          },
+          "eps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Eps",
+            "description": "Earnings per share (JPY)"
+          },
+          "dilutedEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dilutedeps",
+            "description": "Diluted EPS (JPY)"
+          },
+          "bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bps",
+            "description": "Book value per share (JPY)"
+          },
+          "per": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Per",
+            "description": "Price to earnings ratio"
+          },
+          "pbr": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Pbr",
+            "description": "Price to book ratio"
+          },
+          "roa": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Roa",
+            "description": "Return on Assets (%)"
+          },
+          "operatingMargin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operatingmargin",
+            "description": "Operating margin (%)"
+          },
+          "netMargin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Netmargin",
+            "description": "Net profit margin (%)"
+          },
+          "stockPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Stockprice",
+            "description": "Stock price at disclosure"
+          },
+          "netProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Netprofit",
+            "description": "Net profit (millions JPY)"
+          },
+          "equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity",
+            "description": "Equity (millions JPY)"
+          },
+          "totalAssets": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalassets",
+            "description": "Total assets (millions JPY)"
+          },
+          "netSales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Netsales",
+            "description": "Net sales (millions JPY)"
+          },
+          "operatingProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operatingprofit",
+            "description": "Operating profit (millions JPY)"
+          },
+          "cashFlowOperating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashflowoperating",
+            "description": "Cash flow from operating activities (millions JPY)"
+          },
+          "cashFlowInvesting": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashflowinvesting",
+            "description": "Cash flow from investing activities (millions JPY)"
+          },
+          "cashFlowFinancing": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashflowfinancing",
+            "description": "Cash flow from financing activities (millions JPY)"
+          },
+          "cashAndEquivalents": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashandequivalents",
+            "description": "Cash and equivalents (millions JPY)"
+          },
+          "fcf": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fcf",
+            "description": "Free cash flow (millions JPY)"
+          },
+          "fcfYield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fcfyield",
+            "description": "FCF yield (%)"
+          },
+          "fcfMargin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fcfmargin",
+            "description": "FCF margin (%)"
+          },
+          "forecastEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecasteps",
+            "description": "Forecast EPS (JPY)"
+          },
+          "forecastEpsChangeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastepschangerate",
+            "description": "Forecast EPS change rate (%)"
+          },
+          "revisedForecastEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisedforecasteps",
+            "description": "Revised forecast EPS from latest Q (JPY)"
+          },
+          "revisedForecastSource": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Revisedforecastsource",
+            "description": "Source of revised forecast (Q1, Q2, Q3)"
+          },
+          "prevCashFlowOperating": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevcashflowoperating",
+            "description": "Previous period CFO (millions JPY)"
+          },
+          "prevCashFlowInvesting": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevcashflowinvesting",
+            "description": "Previous period CFI (millions JPY)"
+          },
+          "prevCashFlowFinancing": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevcashflowfinancing",
+            "description": "Previous period CFF (millions JPY)"
+          },
+          "prevCashAndEquivalents": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevcashandequivalents",
+            "description": "Previous period cash (millions JPY)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "disclosedDate",
+          "periodType",
+          "isConsolidated"
+        ],
+        "title": "FundamentalDataPoint",
+        "description": "Single fundamental data point."
+      },
+      "FundamentalsComputeRequest": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol",
+            "description": "Stock code (4-5 digits)",
+            "example": "7203"
+          },
+          "from_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "From Date",
+            "description": "Start date (YYYY-MM-DD)",
+            "example": "2020-01-01"
+          },
+          "to_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "To Date",
+            "description": "End date (YYYY-MM-DD)",
+            "example": "2025-12-31"
+          },
+          "period_type": {
+            "type": "string",
+            "enum": [
+              "all",
+              "FY",
+              "Q1",
+              "Q2",
+              "Q3"
+            ],
+            "title": "Period Type",
+            "description": "Filter by period type",
+            "default": "all"
+          },
+          "prefer_consolidated": {
+            "type": "boolean",
+            "title": "Prefer Consolidated",
+            "description": "Prefer consolidated statements",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol"
+        ],
+        "title": "FundamentalsComputeRequest",
+        "description": "Request body for fundamentals computation."
+      },
+      "FundamentalsComputeResponse": {
+        "properties": {
+          "symbol": {
+            "type": "string",
+            "title": "Symbol",
+            "description": "Stock code"
+          },
+          "companyName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companyname",
+            "description": "Company name"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalDataPoint"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "Fundamental data points sorted by date descending"
+          },
+          "latestMetrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FundamentalDataPoint"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Latest metrics with daily valuation"
+          },
+          "dailyValuation": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/DailyValuationDataPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dailyvaluation",
+            "description": "Daily PER/PBR time-series"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "title": "Lastupdated",
+            "description": "Last updated timestamp (ISO 8601)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "symbol",
+          "data",
+          "lastUpdated"
+        ],
+        "title": "FundamentalsComputeResponse",
+        "description": "Response for fundamentals computation."
+      },
+      "GenerateResultItem": {
+        "properties": {
+          "strategy_id": {
+            "type": "string",
+            "title": "Strategy Id",
+            "description": "戦略ID"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "評価スコア"
+          },
+          "sharpe_ratio": {
+            "type": "number",
+            "title": "Sharpe Ratio",
+            "description": "シャープレシオ",
+            "default": 0
+          },
+          "calmar_ratio": {
+            "type": "number",
+            "title": "Calmar Ratio",
+            "description": "カルマーレシオ",
+            "default": 0
+          },
+          "total_return": {
+            "type": "number",
+            "title": "Total Return",
+            "description": "トータルリターン",
+            "default": 0
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown",
+            "description": "最大ドローダウン",
+            "default": 0
+          },
+          "win_rate": {
+            "type": "number",
+            "title": "Win Rate",
+            "description": "勝率",
+            "default": 0
+          },
+          "trade_count": {
+            "type": "integer",
+            "title": "Trade Count",
+            "description": "取引回数",
+            "default": 0
+          },
+          "entry_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Entry Signals",
+            "description": "エントリーシグナル"
+          },
+          "exit_signals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Exit Signals",
+            "description": "エグジットシグナル"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_id",
+          "score"
+        ],
+        "title": "GenerateResultItem",
+        "description": "生成結果アイテム"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "type": "array",
+            "title": "Detail"
+          }
+        },
+        "type": "object",
+        "title": "HTTPValidationError"
+      },
+      "HealthResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "service": {
+            "type": "string",
+            "title": "Service"
+          },
+          "version": {
+            "type": "string",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "service",
+          "version"
+        ],
+        "title": "HealthResponse",
+        "description": "ヘルスチェックレスポンス"
+      },
+      "HtmlFileContentResponse": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "ファイル名"
+          },
+          "html_content": {
+            "type": "string",
+            "title": "Html Content",
+            "description": "HTMLコンテンツ（base64エンコード）"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/HtmlFileMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "メトリクス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "filename",
+          "html_content"
+        ],
+        "title": "HtmlFileContentResponse",
+        "description": "HTMLファイルコンテンツレスポンス"
+      },
+      "HtmlFileDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "削除成功フラグ"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "削除されたファイル名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "strategy_name",
+          "filename"
+        ],
+        "title": "HtmlFileDeleteResponse",
+        "description": "HTMLファイル削除レスポンス"
+      },
+      "HtmlFileInfo": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "ファイル名"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name",
+            "description": "データセット名"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "ファイルサイズ（バイト）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "filename",
+          "dataset_name",
+          "created_at",
+          "size_bytes"
+        ],
+        "title": "HtmlFileInfo",
+        "description": "HTMLファイル情報"
+      },
+      "HtmlFileListResponse": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/HtmlFileInfo"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "HTMLファイル一覧"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "総ファイル数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files",
+          "total"
+        ],
+        "title": "HtmlFileListResponse",
+        "description": "HTMLファイル一覧レスポンス"
+      },
+      "HtmlFileMetrics": {
+        "properties": {
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Drawdown"
+          },
+          "sharpe_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe Ratio"
+          },
+          "sortino_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sortino Ratio"
+          },
+          "calmar_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Calmar Ratio"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Win Rate"
+          },
+          "profit_factor": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit Factor"
+          },
+          "total_trades": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Trades"
+          }
+        },
+        "type": "object",
+        "title": "HtmlFileMetrics",
+        "description": "HTMLファイルから抽出したメトリクス"
+      },
+      "HtmlFileRenameRequest": {
+        "properties": {
+          "new_filename": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "New Filename",
+            "description": "新しいファイル名（.html拡張子必須）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_filename"
+        ],
+        "title": "HtmlFileRenameRequest",
+        "description": "HTMLファイルリネームリクエスト"
+      },
+      "HtmlFileRenameResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "リネーム成功フラグ"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "old_filename": {
+            "type": "string",
+            "title": "Old Filename",
+            "description": "変更前のファイル名"
+          },
+          "new_filename": {
+            "type": "string",
+            "title": "New Filename",
+            "description": "変更後のファイル名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "strategy_name",
+          "old_filename",
+          "new_filename"
+        ],
+        "title": "HtmlFileRenameResponse",
+        "description": "HTMLファイルリネームレスポンス"
+      },
+      "ImprovementItem": {
+        "properties": {
+          "improvement_type": {
+            "type": "string",
+            "title": "Improvement Type",
+            "description": "改善タイプ"
+          },
+          "target": {
+            "type": "string",
+            "title": "Target",
+            "description": "対象 (entry/exit)"
+          },
+          "signal_name": {
+            "type": "string",
+            "title": "Signal Name",
+            "description": "シグナル名"
+          },
+          "changes": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Changes",
+            "description": "変更内容"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason",
+            "description": "理由"
+          },
+          "expected_impact": {
+            "type": "string",
+            "title": "Expected Impact",
+            "description": "期待される効果"
+          }
+        },
+        "type": "object",
+        "required": [
+          "improvement_type",
+          "target",
+          "signal_name",
+          "reason",
+          "expected_impact"
+        ],
+        "title": "ImprovementItem",
+        "description": "改善アイテム"
+      },
+      "IndicatorComputeRequest": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "market",
+              "dataset"
+            ],
+            "title": "Source",
+            "description": "データソース",
+            "default": "dataset"
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Timeframe",
+            "description": "時間枠",
+            "default": "daily"
+          },
+          "indicators": {
+            "items": {
+              "$ref": "#/components/schemas/IndicatorSpec"
+            },
+            "type": "array",
+            "title": "Indicators",
+            "description": "計算するインジケーター一覧 (output='ohlcv'時は空でも可)"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date",
+            "description": "開始日"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "終了日"
+          },
+          "nan_handling": {
+            "type": "string",
+            "enum": [
+              "include",
+              "omit"
+            ],
+            "title": "Nan Handling",
+            "description": "NaN処理方式",
+            "default": "include"
+          },
+          "benchmark_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Code",
+            "description": "ベンチマークコード (e.g., 'topix')"
+          },
+          "relative_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelativeOHLCOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "相対OHLCオプション"
+          },
+          "output": {
+            "type": "string",
+            "enum": [
+              "indicators",
+              "ohlcv"
+            ],
+            "title": "Output",
+            "description": "出力形式: indicators=インジケーター計算結果, ohlcv=変換後OHLCVのみ",
+            "default": "indicators"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code"
+        ],
+        "title": "IndicatorComputeRequest",
+        "description": "インジケーター計算リクエスト"
+      },
+      "IndicatorComputeResponse": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe",
+            "description": "時間枠"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta",
+            "description": "メタ情報（データ件数等）"
+          },
+          "indicators": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Indicators",
+            "description": "インジケーター結果 {key: [{date, value, ...}]} (output='ohlcv'時は空)"
+          },
+          "ohlcv": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ohlcv",
+            "description": "OHLCVデータ (output='ohlcv'時のみ)"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code",
+          "timeframe"
+        ],
+        "title": "IndicatorComputeResponse",
+        "description": "インジケーター計算レスポンス"
+      },
+      "IndicatorSpec": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "sma",
+              "ema",
+              "rsi",
+              "macd",
+              "ppo",
+              "bollinger",
+              "atr",
+              "atr_support",
+              "nbar_support",
+              "volume_comparison",
+              "trading_value_ma"
+            ],
+            "title": "Type",
+            "description": "インジケータータイプ"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "description": "パラメータ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "IndicatorSpec",
+        "description": "インジケーター指定\n\nExample: {\"type\": \"sma\", \"params\": {\"period\": 20}}"
+      },
+      "JobStatus": {
+        "type": "string",
+        "enum": [
+          "pending",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "JobStatus",
+        "description": "ジョブステータス"
+      },
+      "LabEvolveRequest": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Strategy Name",
+            "description": "ベース戦略名"
+          },
+          "generations": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Generations",
+            "description": "世代数",
+            "default": 20
+          },
+          "population": {
+            "type": "integer",
+            "maximum": 500,
+            "minimum": 10,
+            "title": "Population",
+            "description": "個体数",
+            "default": 50
+          },
+          "save": {
+            "type": "boolean",
+            "title": "Save",
+            "description": "結果をYAMLに保存",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "LabEvolveRequest",
+        "description": "GA進化リクエスト"
+      },
+      "LabEvolveResult": {
+        "properties": {
+          "lab_type": {
+            "type": "string",
+            "const": "evolve",
+            "title": "Lab Type",
+            "default": "evolve"
+          },
+          "best_strategy_id": {
+            "type": "string",
+            "title": "Best Strategy Id",
+            "description": "最良戦略ID"
+          },
+          "best_score": {
+            "type": "number",
+            "title": "Best Score",
+            "description": "最良スコア"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/EvolutionHistoryItem"
+            },
+            "type": "array",
+            "title": "History",
+            "description": "進化履歴"
+          },
+          "saved_strategy_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Strategy Path",
+            "description": "保存先パス"
+          },
+          "saved_history_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved History Path",
+            "description": "履歴保存先パス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "best_strategy_id",
+          "best_score",
+          "history"
+        ],
+        "title": "LabEvolveResult",
+        "description": "GA進化結果"
+      },
+      "LabGenerateRequest": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "maximum": 10000,
+            "minimum": 1,
+            "title": "Count",
+            "description": "生成する戦略数",
+            "default": 100
+          },
+          "top": {
+            "type": "integer",
+            "maximum": 100,
+            "minimum": 1,
+            "title": "Top",
+            "description": "評価する上位戦略数",
+            "default": 10
+          },
+          "seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Seed",
+            "description": "乱数シード（再現性用）"
+          },
+          "save": {
+            "type": "boolean",
+            "title": "Save",
+            "description": "結果をYAMLに保存",
+            "default": true
+          },
+          "direction": {
+            "type": "string",
+            "enum": [
+              "longonly",
+              "shortonly",
+              "both"
+            ],
+            "title": "Direction",
+            "description": "売買方向",
+            "default": "longonly"
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly"
+            ],
+            "title": "Timeframe",
+            "description": "タイムフレーム",
+            "default": "daily"
+          },
+          "dataset": {
+            "type": "string",
+            "title": "Dataset",
+            "description": "データセット名",
+            "default": "primeExTopix500"
+          }
+        },
+        "type": "object",
+        "title": "LabGenerateRequest",
+        "description": "戦略自動生成リクエスト"
+      },
+      "LabGenerateResult": {
+        "properties": {
+          "lab_type": {
+            "type": "string",
+            "const": "generate",
+            "title": "Lab Type",
+            "default": "generate"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/GenerateResultItem"
+            },
+            "type": "array",
+            "title": "Results",
+            "description": "生成結果リスト"
+          },
+          "total_generated": {
+            "type": "integer",
+            "title": "Total Generated",
+            "description": "生成総数"
+          },
+          "saved_strategy_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Strategy Path",
+            "description": "保存先パス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results",
+          "total_generated"
+        ],
+        "title": "LabGenerateResult",
+        "description": "戦略自動生成結果"
+      },
+      "LabImproveRequest": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Strategy Name",
+            "description": "改善対象の戦略名"
+          },
+          "auto_apply": {
+            "type": "boolean",
+            "title": "Auto Apply",
+            "description": "改善を自動適用",
+            "default": true
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "LabImproveRequest",
+        "description": "戦略改善リクエスト"
+      },
+      "LabImproveResult": {
+        "properties": {
+          "lab_type": {
+            "type": "string",
+            "const": "improve",
+            "title": "Lab Type",
+            "default": "improve"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "max_drawdown": {
+            "type": "number",
+            "title": "Max Drawdown",
+            "description": "最大ドローダウン",
+            "default": 0
+          },
+          "max_drawdown_duration_days": {
+            "type": "integer",
+            "title": "Max Drawdown Duration Days",
+            "description": "最大DD期間（日）",
+            "default": 0
+          },
+          "suggested_improvements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Suggested Improvements",
+            "description": "改善提案サマリー"
+          },
+          "improvements": {
+            "items": {
+              "$ref": "#/components/schemas/ImprovementItem"
+            },
+            "type": "array",
+            "title": "Improvements",
+            "description": "具体的改善リスト"
+          },
+          "saved_strategy_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Strategy Path",
+            "description": "保存先パス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "LabImproveResult",
+        "description": "戦略改善結果"
+      },
+      "LabJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "進捗（0.0 - 1.0）"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "ステータスメッセージ"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "開始日時"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "完了日時"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラーメッセージ"
+          },
+          "lab_type": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "generate",
+                  "evolve",
+                  "optimize",
+                  "improve"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lab Type",
+            "description": "Lab処理タイプ"
+          },
+          "strategy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "result_data": {
+            "anyOf": [
+              {
+                "oneOf": [
+                  {
+                    "$ref": "#/components/schemas/LabGenerateResult"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LabEvolveResult"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LabOptimizeResult"
+                  },
+                  {
+                    "$ref": "#/components/schemas/LabImproveResult"
+                  }
+                ],
+                "discriminator": {
+                  "propertyName": "lab_type",
+                  "mapping": {
+                    "evolve": "#/components/schemas/LabEvolveResult",
+                    "generate": "#/components/schemas/LabGenerateResult",
+                    "improve": "#/components/schemas/LabImproveResult",
+                    "optimize": "#/components/schemas/LabOptimizeResult"
+                  }
+                }
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Result Data",
+            "description": "Lab結果データ（完了時のみ）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at"
+        ],
+        "title": "LabJobResponse",
+        "description": "Lab APIジョブレスポンス"
+      },
+      "LabOptimizeRequest": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Strategy Name",
+            "description": "ベース戦略名"
+          },
+          "trials": {
+            "type": "integer",
+            "maximum": 1000,
+            "minimum": 10,
+            "title": "Trials",
+            "description": "試行回数",
+            "default": 100
+          },
+          "sampler": {
+            "type": "string",
+            "enum": [
+              "tpe",
+              "random",
+              "cmaes"
+            ],
+            "title": "Sampler",
+            "description": "サンプラー",
+            "default": "tpe"
+          },
+          "save": {
+            "type": "boolean",
+            "title": "Save",
+            "description": "結果をYAMLに保存",
+            "default": true
+          },
+          "scoring_weights": {
+            "anyOf": [
+              {
+                "additionalProperties": {
+                  "type": "number"
+                },
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Scoring Weights",
+            "description": "スコアリング重み"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "LabOptimizeRequest",
+        "description": "Optuna最適化リクエスト"
+      },
+      "LabOptimizeResult": {
+        "properties": {
+          "lab_type": {
+            "type": "string",
+            "const": "optimize",
+            "title": "Lab Type",
+            "default": "optimize"
+          },
+          "best_score": {
+            "type": "number",
+            "title": "Best Score",
+            "description": "最良スコア"
+          },
+          "best_params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Best Params",
+            "description": "最良パラメータ"
+          },
+          "total_trials": {
+            "type": "integer",
+            "title": "Total Trials",
+            "description": "総トライアル数"
+          },
+          "history": {
+            "items": {
+              "$ref": "#/components/schemas/OptimizeTrialItem"
+            },
+            "type": "array",
+            "title": "History",
+            "description": "トライアル履歴"
+          },
+          "saved_strategy_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved Strategy Path",
+            "description": "保存先パス"
+          },
+          "saved_history_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Saved History Path",
+            "description": "履歴保存先パス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "best_score",
+          "best_params",
+          "total_trials",
+          "history"
+        ],
+        "title": "LabOptimizeResult",
+        "description": "Optuna最適化結果"
+      },
+      "MarginIndicatorRequest": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "データソース（データセット名: topix500, topix100等）",
+            "default": "topix500"
+          },
+          "indicators": {
+            "items": {
+              "type": "string",
+              "enum": [
+                "margin_long_pressure",
+                "margin_flow_pressure",
+                "margin_turnover_days",
+                "margin_volume_ratio"
+              ]
+            },
+            "type": "array",
+            "maxItems": 4,
+            "minItems": 1,
+            "title": "Indicators",
+            "description": "信用指標"
+          },
+          "average_period": {
+            "type": "integer",
+            "maximum": 200,
+            "minimum": 1,
+            "title": "Average Period",
+            "description": "出来高平均期間",
+            "default": 15
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date",
+            "description": "開始日"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "終了日"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code",
+          "indicators"
+        ],
+        "title": "MarginIndicatorRequest",
+        "description": "信用指標リクエスト"
+      },
+      "MarginIndicatorResponse": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "indicators": {
+            "additionalProperties": {
+              "items": {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              "type": "array"
+            },
+            "type": "object",
+            "title": "Indicators",
+            "description": "信用指標結果"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code",
+          "indicators"
+        ],
+        "title": "MarginIndicatorResponse",
+        "description": "信用指標レスポンス"
+      },
+      "OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
+      },
+      "OHLCVResampleRequest": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "market",
+              "dataset"
+            ],
+            "title": "Source",
+            "description": "データソース",
+            "default": "market"
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Timeframe",
+            "description": "出力時間枠",
+            "default": "weekly"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date",
+            "description": "開始日"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "終了日"
+          },
+          "benchmark_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Code",
+            "description": "ベンチマークコード (e.g., 'topix') - 指定時は相対OHLCを計算"
+          },
+          "relative_options": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RelativeOHLCOptions"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "相対OHLCオプション"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code"
+        ],
+        "title": "OHLCVResampleRequest",
+        "description": "OHLCVリサンプルリクエスト\n\nTimeframe変換およびRelative OHLC変換を実行。\n仕様: docs/spec-timeframe-resample.md"
+      },
+      "OHLCVResampleResponse": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe",
+            "description": "時間枠"
+          },
+          "benchmark_code": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmark Code",
+            "description": "使用したベンチマーク（相対モード時）"
+          },
+          "meta": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Meta",
+            "description": "メタ情報 (source_bars: 元データ件数, resampled_bars: 変換後件数)"
+          },
+          "data": {
+            "items": {
+              "$ref": "#/components/schemas/OHLCVRecord"
+            },
+            "type": "array",
+            "title": "Data",
+            "description": "OHLCVデータ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code",
+          "timeframe",
+          "data"
+        ],
+        "title": "OHLCVResampleResponse",
+        "description": "OHLCVリサンプルレスポンス"
+      },
+      "OptimizationGridConfig": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "YAML文字列"
+          },
+          "param_count": {
+            "type": "integer",
+            "title": "Param Count",
+            "description": "パラメータ数"
+          },
+          "combinations": {
+            "type": "integer",
+            "title": "Combinations",
+            "description": "組み合わせ数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "content",
+          "param_count",
+          "combinations"
+        ],
+        "title": "OptimizationGridConfig",
+        "description": "Grid設定"
+      },
+      "OptimizationGridListResponse": {
+        "properties": {
+          "configs": {
+            "items": {
+              "$ref": "#/components/schemas/OptimizationGridConfig"
+            },
+            "type": "array",
+            "title": "Configs",
+            "description": "Grid設定一覧"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "総設定数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "configs",
+          "total"
+        ],
+        "title": "OptimizationGridListResponse",
+        "description": "Grid設定一覧レスポンス"
+      },
+      "OptimizationGridSaveRequest": {
+        "properties": {
+          "content": {
+            "type": "string",
+            "title": "Content",
+            "description": "YAML文字列"
+          }
+        },
+        "type": "object",
+        "required": [
+          "content"
+        ],
+        "title": "OptimizationGridSaveRequest",
+        "description": "Grid設定保存リクエスト"
+      },
+      "OptimizationGridSaveResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "保存成功フラグ"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "param_count": {
+            "type": "integer",
+            "title": "Param Count",
+            "description": "パラメータ数"
+          },
+          "combinations": {
+            "type": "integer",
+            "title": "Combinations",
+            "description": "組み合わせ数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "strategy_name",
+          "param_count",
+          "combinations"
+        ],
+        "title": "OptimizationGridSaveResponse",
+        "description": "Grid設定保存レスポンス"
+      },
+      "OptimizationJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "進捗（0.0 - 1.0）"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "ステータスメッセージ"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "開始日時"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "完了日時"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラーメッセージ"
+          },
+          "best_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Score",
+            "description": "最良スコア"
+          },
+          "total_combinations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Combinations",
+            "description": "パラメータ組み合わせ総数"
+          },
+          "notebook_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notebook Path",
+            "description": "結果Notebookパス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at"
+        ],
+        "title": "OptimizationJobResponse",
+        "description": "最適化ジョブレスポンス"
+      },
+      "OptimizationRequest": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Strategy Name",
+            "description": "戦略名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "OptimizationRequest",
+        "description": "最適化リクエスト"
+      },
+      "OptimizeTrialItem": {
+        "properties": {
+          "trial": {
+            "type": "integer",
+            "title": "Trial",
+            "description": "トライアル番号"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "スコア"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "description": "パラメータ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trial",
+          "score",
+          "params"
+        ],
+        "title": "OptimizeTrialItem",
+        "description": "最適化トライアルアイテム"
+      },
+      "RelativeOHLCOptions": {
+        "properties": {
+          "handle_zero_division": {
+            "type": "string",
+            "enum": [
+              "skip",
+              "zero",
+              "null"
+            ],
+            "title": "Handle Zero Division",
+            "description": "ゼロ除算の処理方法 (skip: 除外, zero: 0を返す, null: nullを返す)",
+            "default": "skip"
+          }
+        },
+        "type": "object",
+        "title": "RelativeOHLCOptions",
+        "description": "相対OHLCオプション"
+      },
+      "SignalCategorySchema": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label"
+        ],
+        "title": "SignalCategorySchema",
+        "description": "シグナルカテゴリ定義"
+      },
+      "SignalComputeRequest": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "maxLength": 10,
+            "minLength": 1,
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "データソース ('market' or dataset名)",
+            "default": "market"
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "daily",
+              "weekly",
+              "monthly"
+            ],
+            "title": "Timeframe",
+            "description": "時間枠",
+            "default": "daily"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/SignalSpec"
+            },
+            "type": "array",
+            "maxItems": 5,
+            "title": "Signals",
+            "description": "計算するシグナル一覧（最大5個）"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date",
+            "description": "開始日"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "終了日"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code"
+        ],
+        "title": "SignalComputeRequest",
+        "description": "シグナル計算リクエスト"
+      },
+      "SignalComputeResponse": {
+        "properties": {
+          "stock_code": {
+            "type": "string",
+            "title": "Stock Code",
+            "description": "銘柄コード"
+          },
+          "timeframe": {
+            "type": "string",
+            "title": "Timeframe",
+            "description": "時間枠"
+          },
+          "signals": {
+            "additionalProperties": {
+              "$ref": "#/components/schemas/SignalResult"
+            },
+            "type": "object",
+            "title": "Signals",
+            "description": "シグナル結果 {signal_type: SignalResult}"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stock_code",
+          "timeframe",
+          "signals"
+        ],
+        "title": "SignalComputeResponse",
+        "description": "シグナル計算レスポンス"
+      },
+      "SignalFieldSchema": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "boolean",
+              "number",
+              "string",
+              "select"
+            ],
+            "title": "Type"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "default": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "number"
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Default"
+          },
+          "options": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Options"
+          },
+          "constraints": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FieldConstraints"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "type",
+          "description"
+        ],
+        "title": "SignalFieldSchema",
+        "description": "シグナルフィールド定義"
+      },
+      "SignalReferenceResponse": {
+        "properties": {
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/SignalReferenceSchema"
+            },
+            "type": "array",
+            "title": "Signals"
+          },
+          "categories": {
+            "items": {
+              "$ref": "#/components/schemas/SignalCategorySchema"
+            },
+            "type": "array",
+            "title": "Categories"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signals",
+          "categories",
+          "total"
+        ],
+        "title": "SignalReferenceResponse",
+        "description": "シグナルリファレンス レスポンス"
+      },
+      "SignalReferenceSchema": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key",
+            "description": "param_keyベースの安定スラッグ"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "usage_hint": {
+            "type": "string",
+            "title": "Usage Hint",
+            "description": "entry_purpose + exit_purposeから自動合成"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/SignalFieldSchema"
+            },
+            "type": "array",
+            "title": "Fields"
+          },
+          "yaml_snippet": {
+            "type": "string",
+            "title": "Yaml Snippet"
+          },
+          "exit_disabled": {
+            "type": "boolean",
+            "title": "Exit Disabled",
+            "default": false
+          },
+          "data_requirements": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Data Requirements"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "name",
+          "category",
+          "description",
+          "usage_hint",
+          "fields",
+          "yaml_snippet"
+        ],
+        "title": "SignalReferenceSchema",
+        "description": "シグナル定義"
+      },
+      "SignalResult": {
+        "properties": {
+          "trigger_dates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Trigger Dates",
+            "description": "シグナル発火日リスト (YYYY-MM-DD)"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "description": "発火回数"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラーメッセージ（計算失敗時）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "trigger_dates",
+          "count"
+        ],
+        "title": "SignalResult",
+        "description": "単一シグナルの計算結果"
+      },
+      "SignalSpec": {
+        "properties": {
+          "type": {
+            "type": "string",
+            "title": "Type",
+            "description": "シグナルタイプ"
+          },
+          "params": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Params",
+            "description": "シグナルパラメータ"
+          },
+          "mode": {
+            "type": "string",
+            "enum": [
+              "entry",
+              "exit"
+            ],
+            "title": "Mode",
+            "description": "シグナルモード (entry/exit)",
+            "default": "entry"
+          }
+        },
+        "type": "object",
+        "required": [
+          "type"
+        ],
+        "title": "SignalSpec",
+        "description": "シグナル指定\n\nExample: {\"type\": \"rsi_threshold\", \"params\": {\"threshold\": 30}, \"mode\": \"entry\"}\n\nNote: type のバリデーションはサービスレイヤーで行う（エラー情報を結果に含めるため）"
+      },
+      "StrategyDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "削除成功フラグ"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "削除した戦略名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "strategy_name"
+        ],
+        "title": "StrategyDeleteResponse",
+        "description": "戦略削除レスポンス"
+      },
+      "StrategyDetailResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "戦略名"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "description": "カテゴリ"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name",
+            "description": "表示名"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "説明"
+          },
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "戦略設定（YAML）"
+          },
+          "execution_info": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Execution Info",
+            "description": "実行情報"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "category",
+          "config",
+          "execution_info"
+        ],
+        "title": "StrategyDetailResponse",
+        "description": "戦略詳細レスポンス"
+      },
+      "StrategyDuplicateRequest": {
+        "properties": {
+          "new_name": {
+            "type": "string",
+            "title": "New Name",
+            "description": "新しい戦略名（カテゴリなし）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_name"
+        ],
+        "title": "StrategyDuplicateRequest",
+        "description": "戦略複製リクエスト"
+      },
+      "StrategyDuplicateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "複製成功フラグ"
+          },
+          "new_strategy_name": {
+            "type": "string",
+            "title": "New Strategy Name",
+            "description": "新しい戦略名"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "保存先パス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "new_strategy_name",
+          "path"
+        ],
+        "title": "StrategyDuplicateResponse",
+        "description": "戦略複製レスポンス"
+      },
+      "StrategyListResponse": {
+        "properties": {
+          "strategies": {
+            "items": {
+              "$ref": "#/components/schemas/StrategyMetadataResponse"
+            },
+            "type": "array",
+            "title": "Strategies",
+            "description": "戦略一覧"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "総数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategies",
+          "total"
+        ],
+        "title": "StrategyListResponse",
+        "description": "戦略一覧レスポンス"
+      },
+      "StrategyMetadataResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "戦略名（カテゴリ/名前）"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category",
+            "description": "カテゴリ（production, experimental, etc.）"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name",
+            "description": "表示名"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description",
+            "description": "説明"
+          },
+          "last_modified": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Last Modified",
+            "description": "最終更新日時"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "category"
+        ],
+        "title": "StrategyMetadataResponse",
+        "description": "戦略メタデータ"
+      },
+      "StrategyRenameRequest": {
+        "properties": {
+          "new_name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "New Name",
+            "description": "新しい戦略名（カテゴリなし）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "new_name"
+        ],
+        "title": "StrategyRenameRequest",
+        "description": "戦略リネームリクエスト"
+      },
+      "StrategyRenameResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "リネーム成功フラグ"
+          },
+          "old_name": {
+            "type": "string",
+            "title": "Old Name",
+            "description": "変更前の戦略名"
+          },
+          "new_name": {
+            "type": "string",
+            "title": "New Name",
+            "description": "変更後の戦略名"
+          },
+          "new_path": {
+            "type": "string",
+            "title": "New Path",
+            "description": "新しいファイルパス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "old_name",
+          "new_name",
+          "new_path"
+        ],
+        "title": "StrategyRenameResponse",
+        "description": "戦略リネームレスポンス"
+      },
+      "StrategyUpdateRequest": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "更新する戦略設定"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "StrategyUpdateRequest",
+        "description": "戦略設定更新リクエスト"
+      },
+      "StrategyUpdateResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "更新成功フラグ"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "保存先パス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "strategy_name",
+          "path"
+        ],
+        "title": "StrategyUpdateResponse",
+        "description": "戦略設定更新レスポンス"
+      },
+      "StrategyValidationRequest": {
+        "properties": {
+          "config": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Config",
+            "description": "検証する戦略設定"
+          }
+        },
+        "type": "object",
+        "required": [
+          "config"
+        ],
+        "title": "StrategyValidationRequest",
+        "description": "戦略設定検証リクエスト"
+      },
+      "StrategyValidationResponse": {
+        "properties": {
+          "valid": {
+            "type": "boolean",
+            "title": "Valid",
+            "description": "検証結果"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors",
+            "description": "エラーメッセージ一覧"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings",
+            "description": "警告メッセージ一覧"
+          }
+        },
+        "type": "object",
+        "required": [
+          "valid"
+        ],
+        "title": "StrategyValidationResponse",
+        "description": "戦略設定検証レスポンス"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "type": "array",
+            "title": "Location"
+          },
+          "msg": {
+            "type": "string",
+            "title": "Message"
+          },
+          "type": {
+            "type": "string",
+            "title": "Error Type"
+          }
+        },
+        "type": "object",
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError"
+      }
+    }
+  }
+}

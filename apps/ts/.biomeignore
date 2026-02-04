@@ -1,0 +1,31 @@
+# Build outputs
+dist/
+**/dist/
+build/
+**/build/
+
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Coverage
+coverage/
+**/coverage/
+
+# Generated files
+*.min.js
+**/*.min.js
+*.d.ts.map
+**/*.d.ts.map
+
+# Large bundled files
+packages/frontend/public/app.js
+**/public/app.js
+
+# Logs
+*.log
+**/*.log
+
+# OS files
+.DS_Store
+**/.DS_Store

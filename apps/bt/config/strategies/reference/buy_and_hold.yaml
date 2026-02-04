@@ -1,0 +1,6 @@
+# Buy and Hold戦略設定（統一Signalsシステム対応）
+
+
+entry_filter_params:
+  buy_and_hold:
+    enabled: true

@@ -1,0 +1,255 @@
+# 戦略テンプレート設定
+
+# Optional: デフォルト設定（default.yaml）を戦略ごとにオーバーライド可能
+# 戦略固有の実行環境設定を行いたい場合は、以下の shared_config セクションを有効化してください
+# shared_config:
+#   initial_cash: 20000000  # 初期資金を2000万円に変更
+#   dataset: "topix100-A"  # データベースを変更
+#   kelly_fraction: 1.0  # Kelly係数を変更（0.5=Half Kelly, 1.0=Full Kelly, 2.0=Double Kelly）
+#   fees: 0.0005  # 取引手数料を変更
+#   min_allocation: 0.02  # 最小配分率を変更
+#   max_allocation: 0.4  # 最大配分率を変更
+#
+# 注意:
+# - shared_config セクションを省略した場合は、default.yaml の設定が使用されます
+# - 一部のパラメータのみを override することも可能です（他は default.yaml の値を維持）
+# - バックテスト実行時と最適化実行時の両方で適用されます
+
+entry_filter_params:
+  # 期間ブレイクアウトシグナル
+  period_breakout:
+    enabled: false
+    direction: "high" # 方向（"high"=最高値比較、"low"=最安値比較）
+    condition: "break" # 条件（"break"=ブレイク検出、"maintained"=維持検出）
+    period: 200 # 比較対象期間（N日最高値/最安値）
+    lookback_days: 1 # イベント検出期間（1=今日の価格、N=直近N日の最高値/最安値）
+
+  # 移動平均線ブレイクアウトシグナル
+  ma_breakout:
+    enabled: false
+    period: 200 # 移動平均期間
+    ma_type: "sma" # 移動平均タイプ（"sma"/"ema"）
+    direction: "above" # 方向（"above"=上抜け、"below"=下抜け）
+    lookback_days: 1 # 検出期間（1=その日のみ、N=直近N日以内）
+
+  # クロスオーバーシグナル（SMA/RSI/MACD/EMA）
+  crossover:
+    enabled: false
+    type: "sma" # 指標タイプ（"sma"/"rsi"/"macd"/"ema"）
+    direction: "golden" # クロス方向（"golden"=ゴールデンクロス、"dead"=デッドクロス）
+    fast_period: 10 # 高速線期間
+    slow_period: 30 # 低速線期間
+    signal_period: 9 # MACDシグナル期間（type=macd時のみ使用）
+    lookback_days: 1 # クロス検出期間（1=その日のみ、N=直近N日以内）
+
+  # 平均回帰シグナル
+  mean_reversion:
+    enabled: false
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"）
+    baseline_period: 25 # 基準線期間
+    deviation_threshold: 0.2 # 乖離率閾値（0.2 = 20%乖離）
+    deviation_direction: "below" # 乖離方向（"below"=基準線より安い、"above"=基準線より高い）
+    recovery_price: "high" # 回復判定価格（"high"/"close"）
+    recovery_direction: "above" # 回復方向（"above"=上抜け、"below"=下抜け）
+
+  # ボリンジャーバンドシグナル
+  bollinger_bands:
+    enabled: false
+    window: 20 # ボリンジャーバンド期間
+    alpha: 2.0 # 標準偏差倍率（2.0 = 2σ）
+    position: "below_lower" # 判定位置（below_lower=下限下抜け、above_lower=下限上抜け、below_upper=上限下抜け、above_upper=上限上抜け、below_middle=中央線下抜け、above_middle=中央線上抜け）
+
+  # ATRサポートブレイクシグナル
+  atr_support_break:
+    enabled: false
+    direction: "break" # "break"（サポート割れ）/"recovery"（サポート回復）
+    lookback_period: 20 # サポートライン・ATR両方の計算期間（統一期間）
+    atr_multiplier: 2.0 # ATR倍率
+    price_column: "close" # 判定価格カラム（"close"/"low"）
+
+  # RSI閾値シグナル
+  rsi_threshold:
+    enabled: false
+    period: 5
+    threshold: 10.0
+    condition: "below"
+
+  # RSIスプレッドシグナル
+  rsi_spread:
+    enabled: false
+    fast_period: 9 # 短期RSI期間
+    slow_period: 14 # 長期RSI期間
+    threshold: 10.0 # スプレッド閾値（0-100）
+    condition: "above" # above=短期RSI>長期RSI+閾値（上昇モメンタム強）
+
+  # 出来高シグナル
+  volume:
+    enabled: true # 出来高フィルター有効化
+    direction: "surge" # "surge"（急増）/"drop"（減少）
+    threshold: 1.5 # 出来高倍率閾値
+    short_period: 20 # 出来高短期平均期間
+    long_period: 100 # 出来高長期平均期間
+
+  # 信用残高シグナル
+  margin:
+    enabled: false
+    lookback_period: 150 # 信用残高参照期間
+    percentile_threshold: 0.5 # 下位パーセンタイル閾値
+
+  # 財務指標シグナル
+  fundamental:
+    per:
+      enabled: false
+      threshold: 10.0 # PER閾値（この値以下で割安判定）
+    roe:
+      enabled: false
+      threshold: 5.0 # ROE閾値（この値以上で高ROE判定）
+    forward_eps_growth:
+      enabled: false
+      threshold: 0.1 # 予想EPS成長率閾値（10%=0.1）
+    eps_growth:
+      enabled: false
+      threshold: 0.1 # EPS成長率閾値（10%=0.1）
+      periods: 1 # 比較期間（1=前期比）
+    peg_ratio:
+      enabled: false
+      threshold: 1.0 # PEG Ratio閾値（この値以下で割安成長株判定）
+
+  # ボラティリティシグナル
+  volatility:
+    enabled: false
+    lookback_period: 100 # ボラティリティ計算期間
+    threshold_multiplier: 1.0 # ベンチマークボラティリティ倍率閾値
+
+  # β値シグナル
+  beta:
+    enabled: false
+    lookback_period: 40 # β値計算期間（日数）
+    min_beta: 1.0 # β値下限閾値
+    max_beta: 3.0 # β値上限閾値
+
+  # 指数前日比シグナル
+  index_daily_change:
+    enabled: true
+    max_daily_change_pct: 1.0 # +1.0%以下の日のみエントリー
+    direction: "below"
+
+# Exit Trigger設定（戦略固有exitをOR条件で拡張）
+exit_trigger_params:
+  # 期間ブレイクアウトシグナル
+  period_breakout:
+    enabled: false
+    direction: "high" # 方向（"high"=最高値比較、"low"=最安値比較）
+    condition: "maintained" # 条件（"break"=ブレイク検出、"maintained"=維持検出）※エグジットは通常maintained
+    period: 200 # 比較対象期間（N日最高値/最安値）
+    lookback_days: 10 # イベント検出期間（10=直近10日間最高値未更新でエグジット）
+
+  # 移動平均線ブレイクアウトシグナル
+  ma_breakout:
+    enabled: false
+    period: 50 # 移動平均期間（エグジットは短期推奨）
+    ma_type: "sma" # 移動平均タイプ（"sma"/"ema"）
+    direction: "below" # 方向（"above"=上抜け利確、"below"=下抜け損切り）
+    lookback_days: 1 # 検出期間（1=その日のみ、N=直近N日以内）
+
+  # クロスオーバーシグナル（SMA/RSI/MACD/EMA）
+  crossover:
+    enabled: false
+    type: "sma" # 指標タイプ（"sma"/"rsi"/"macd"/"ema"）
+    direction: "dead" # クロス方向（"golden"=ゴールデンクロス利確、"dead"=デッドクロス損切り）
+    fast_period: 10 # 高速線期間
+    slow_period: 30 # 低速線期間
+    signal_period: 9 # MACDシグナル期間（type=macd時のみ使用）
+    lookback_days: 1 # クロス検出期間（1=その日のみ、N=直近N日以内）
+
+  # 平均回帰シグナル
+  mean_reversion:
+    enabled: false
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"）
+    baseline_period: 25 # 基準線期間
+    deviation_threshold: 0.1 # 乖離率閾値（0.1 = 10%オーバーシュートで利確）
+    deviation_direction: "above" # 乖離方向（"below"=基準線割れ損切り、"above"=基準線超過利確）
+    recovery_price: "high" # 回復判定価格（"high"/"close"）
+    recovery_direction: "above" # 回復方向（"above"=上抜け利確、"below"=下抜け損切り）
+
+  # ボリンジャーバンドシグナル
+  bollinger_bands:
+    enabled: false
+    window: 20 # ボリンジャーバンド期間
+    alpha: 2.0 # 標準偏差倍率（2.0 = 2σ）
+    position: "above_upper" # 判定位置（above_upper=上限上抜け利確、below_lower=下限下抜け損切り、above_middle=中央線上抜け利確、below_middle=中央線下抜け損切り）
+
+  # ATRサポートブレイクシグナル
+  atr_support_break:
+    enabled: false
+    direction: "recovery" # "break"（サポート割れ）/"recovery"（サポート回復）
+    lookback_period: 20 # サポートライン・ATR両方の計算期間（統一期間）
+    atr_multiplier: 2.0 # ATR倍率
+    price_column: "close" # 判定価格カラム（"close"/"low"）
+
+  # RSI閾値シグナル
+  rsi_threshold:
+    enabled: true
+    period: 14 # RSI期間
+    threshold: 30.0 # 閾値（0-100）
+    condition: "below" # below=閾値より下（売られすぎ）
+
+  # RSIスプレッドシグナル
+  rsi_spread:
+    enabled: false
+    fast_period: 9 # 短期RSI期間
+    slow_period: 14 # 長期RSI期間
+    threshold: 5.0 # スプレッド閾値（エグジットは小さめ推奨）
+    condition: "below" # below=短期RSI<長期RSI-閾値（モメンタム減衰）
+
+  # 出来高シグナル
+  volume:
+    enabled: true # 出来高フィルター有効化
+    direction: "drop" # "surge"（急増）/"drop"（減少）
+    threshold: 1.0 # 出来高倍率閾値
+    short_period: 20 # 出来高短期平均期間
+    long_period: 100 # 出来高長期平均期間
+
+  # 信用残高シグナル
+  margin:
+    enabled: false
+    lookback_period: 150 # 信用残高参照期間
+    percentile_threshold: 0.5 # 下位パーセンタイル閾値
+
+  # 財務指標シグナル
+  fundamental:
+    per:
+      enabled: false
+      threshold: 25.0 # PER閾値（この値以上で割高警告）
+    roe:
+      enabled: false
+      threshold: 5.0 # ROE閾値（この値未満で警告）
+    forward_eps_growth:
+      enabled: false
+      threshold: 0.05 # 予想EPS成長率閾値（5%未満で警告）
+    eps_growth:
+      enabled: false
+      threshold: 0.05 # EPS成長率閾値（5%未満で警告）
+      periods: 1 # 比較期間（1=前期比）
+    peg_ratio:
+      enabled: false
+      threshold: 2.0 # PEG閾値（この値以上で割高警告）
+
+  # ボラティリティシグナル
+  volatility:
+    enabled: false
+    lookback_period: 100 # ボラティリティ計算期間
+    threshold_multiplier: 2.0 # ベンチマーク比倍率閾値
+
+  # β値シグナル
+  beta:
+    enabled: false
+    lookback_period: 40 # β値計算期間
+    min_beta: 0.5 # β値下限閾値
+    max_beta: 2.0 # β値上限閾値
+
+  # 指数前日比シグナル
+  index_daily_change:
+    enabled: true
+    max_daily_change_pct: 1.5 # +1.5%超の日にエグジット
+    direction: "above"

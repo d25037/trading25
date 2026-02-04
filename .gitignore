@@ -1,0 +1,56 @@
+# === Node / Bun ===
+node_modules/
+**/node_modules/
+bun.lockb
+pnpm-lock.yaml
+package-lock.json
+yarn.lock
+**/.bun/
+**/.turbo/
+**/.parcel-cache/
+
+# === TypeScript / Build ===
+**/dist/
+**/build/
+**/out/
+**/.cache/
+**/.tsbuildinfo
+
+# === Python ===
+**/__pycache__/
+**/*.pyc
+**/*.pyo
+**/*.pyd
+.venv/
+**/.venv/
+venv/
+**/.pytest_cache/
+**/.mypy_cache/
+**/.ruff_cache/
+**/.coverage
+htmlcov/
+**/*.egg-info/
+.eggs/
+**/pip-wheel-metadata/
+
+# === Jupyter ===
+.ipynb_checkpoints/
+
+# === OS / Editor ===
+**/.DS_Store
+**/Thumbs.db
+.idea/
+.vscode/
+**/*.swp
+**/*.swo
+**/*~
+
+# === Reports / Logs ===
+**/coverage/
+**/reports/
+**/*.log
+**/*.tmp
+
+# === Environment ===
+.env
+.env.*
