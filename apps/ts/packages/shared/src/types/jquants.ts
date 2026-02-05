@@ -186,7 +186,7 @@ export interface JQuantsStatement {
   DiscTime: string; // Disclosed Time (HH:MM:SS)
   Code: string; // Stock Code
   DiscNo: string; // Disclosure Number
-  DocType: string; // Document Type (Q1, Q2, Q3, FY, etc.)
+  DocType: string; // Document Type (1Q, 2Q, 3Q, FY, etc.)
   CurPerType: string; // Current Period Type
   CurPerSt: string; // Current Period Start Date
   CurPerEn: string; // Current Period End Date

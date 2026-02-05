@@ -447,7 +447,7 @@ export interface LabSSEEvent {
 // Fundamentals Types
 // ============================================
 
-export type FundamentalsPeriodType = 'all' | 'FY' | 'Q1' | 'Q2' | 'Q3';
+export type FundamentalsPeriodType = 'all' | 'FY' | '1Q' | '2Q' | '3Q';
 
 export interface FundamentalsComputeRequest {
   symbol: string;
@@ -468,6 +468,9 @@ export interface FundamentalDataPoint {
   eps: number | null;
   dilutedEps: number | null;
   bps: number | null;
+  adjustedEps: number | null;
+  adjustedForecastEps: number | null;
+  adjustedBps: number | null;
   per: number | null;
   pbr: number | null;
   // Profitability metrics
@@ -508,6 +511,7 @@ export interface DailyValuationDataPoint {
   close: number;
   per: number | null;
   pbr: number | null;
+  marketCap: number | null;
 }
 
 export interface FundamentalsComputeResponse {

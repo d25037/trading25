@@ -21,8 +21,8 @@ class FundamentalsComputeRequest(BaseModel):
     to_date: str | None = Field(
         None, description="End date (YYYY-MM-DD)", example="2025-12-31"
     )
-    period_type: Literal["all", "FY", "Q1", "Q2", "Q3"] = Field(
-        default="all", description="Filter by period type"
+    period_type: Literal["all", "FY", "1Q", "2Q", "3Q"] = Field(
+        default="all", description="Filter by period type (FY, 1Q, 2Q, 3Q)"
     )
     prefer_consolidated: bool = Field(
         default=True, description="Prefer consolidated statements"
@@ -35,7 +35,7 @@ class FundamentalDataPoint(BaseModel):
     # Period information
     date: str = Field(..., description="Period end date (YYYY-MM-DD)")
     disclosedDate: str = Field(..., description="Disclosure date (YYYY-MM-DD)")
-    periodType: str = Field(..., description="Period type (FY, Q1, Q2, Q3)")
+    periodType: str = Field(..., description="Period type (FY, 1Q, 2Q, 3Q)")
     isConsolidated: bool = Field(..., description="Whether data is consolidated")
     accountingStandard: str | None = Field(
         None, description="Accounting standard (IFRS, US GAAP, JGAAP)"
@@ -46,6 +46,15 @@ class FundamentalDataPoint(BaseModel):
     eps: float | None = Field(None, description="Earnings per share (JPY)")
     dilutedEps: float | None = Field(None, description="Diluted EPS (JPY)")
     bps: float | None = Field(None, description="Book value per share (JPY)")
+    adjustedEps: float | None = Field(
+        None, description="Adjusted EPS using share count (JPY)"
+    )
+    adjustedForecastEps: float | None = Field(
+        None, description="Adjusted forecast EPS using share count (JPY)"
+    )
+    adjustedBps: float | None = Field(
+        None, description="Adjusted BPS using share count (JPY)"
+    )
     per: float | None = Field(None, description="Price to earnings ratio")
     pbr: float | None = Field(None, description="Price to book ratio")
 
@@ -94,7 +103,7 @@ class FundamentalDataPoint(BaseModel):
         None, description="Revised forecast EPS from latest Q (JPY)"
     )
     revisedForecastSource: str | None = Field(
-        None, description="Source of revised forecast (Q1, Q2, Q3)"
+        None, description="Source of revised forecast (1Q, 2Q, 3Q)"
     )
 
     # Previous period CF data
@@ -119,6 +128,7 @@ class DailyValuationDataPoint(BaseModel):
     close: float = Field(..., description="Closing price")
     per: float | None = Field(None, description="PER at this date")
     pbr: float | None = Field(None, description="PBR at this date")
+    marketCap: float | None = Field(None, description="Market cap at this date (JPY)")
 
 
 class FundamentalsComputeResponse(BaseModel):

@@ -530,7 +530,7 @@ const getStatementsRoute = createRoute({
   tags: ['Dataset Data'],
   summary: 'Get financial statements',
   description:
-    'Get financial statements data for a specific stock. Includes EPS, profit, equity, sales, operating profit, and other financial metrics. Use period_type to filter by FY/Q1/Q2/Q3 and actual_only to exclude forecast data.',
+    'Get financial statements data for a specific stock. Includes EPS, profit, equity, sales, operating profit, and other financial metrics. Use period_type to filter by FY/1Q/2Q/3Q and actual_only to exclude forecast data.',
   request: {
     params: z.object({
       name: DatasetNameSchema,

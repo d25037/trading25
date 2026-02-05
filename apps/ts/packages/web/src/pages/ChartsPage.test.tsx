@@ -1,11 +1,12 @@
 import { render, screen } from '@testing-library/react';
 import type { ReactNode } from 'react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartsPage } from './ChartsPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
 const mockUseBtMarginIndicators = vi.fn();
 const mockUseStockData = vi.fn();
+const mockUseFundamentals = vi.fn();
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
   useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
@@ -17,6 +18,10 @@ vi.mock('@/hooks/useBtMarginIndicators', () => ({
 
 vi.mock('@/hooks/useStockData', () => ({
   useStockData: () => mockUseStockData(),
+}));
+
+vi.mock('@/hooks/useFundamentals', () => ({
+  useFundamentals: () => mockUseFundamentals(),
 }));
 
 const mockSettings = {
@@ -98,6 +103,10 @@ vi.mock('@/components/ErrorBoundary', () => ({
 }));
 
 describe('ChartsPage', () => {
+  beforeEach(() => {
+    mockUseFundamentals.mockReturnValue({ data: null });
+  });
+
   it('renders loading state', () => {
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,

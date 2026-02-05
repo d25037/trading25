@@ -24,17 +24,36 @@ export function FundamentalsPanel({ symbol }: FundamentalsPanelProps) {
 
     if (!fyData) return undefined;
 
+    const resolveAdjustedChangeRate = (
+      actualEps: number | null | undefined,
+      forecastEps: number | null | undefined
+    ): number | null => {
+      if (actualEps == null || forecastEps == null || actualEps === 0) return null;
+      return Math.round(((forecastEps - actualEps) / Math.abs(actualEps)) * 100 * 100) / 100;
+    };
+
     // Start with FY data and merge enhanced fields from latestMetrics
     let result = {
       ...fyData,
       // Merge forecast and previous period data from latestMetrics (API enhances these)
       forecastEps: data.latestMetrics?.forecastEps ?? null,
+      adjustedForecastEps: data.latestMetrics?.adjustedForecastEps ?? fyData.adjustedForecastEps ?? null,
       forecastEpsChangeRate: data.latestMetrics?.forecastEpsChangeRate ?? null,
       prevCashFlowOperating: data.latestMetrics?.prevCashFlowOperating ?? null,
       prevCashFlowInvesting: data.latestMetrics?.prevCashFlowInvesting ?? null,
       prevCashFlowFinancing: data.latestMetrics?.prevCashFlowFinancing ?? null,
       prevCashAndEquivalents: data.latestMetrics?.prevCashAndEquivalents ?? null,
     };
+
+    const displayActualEps = result.adjustedEps ?? result.eps ?? null;
+    const displayForecastEps = result.adjustedForecastEps ?? result.forecastEps ?? null;
+    const adjustedChangeRate = resolveAdjustedChangeRate(displayActualEps, displayForecastEps);
+    if (adjustedChangeRate != null) {
+      result = {
+        ...result,
+        forecastEpsChangeRate: adjustedChangeRate,
+      };
+    }
 
     // Update with latest daily valuation (current stock price PER/PBR)
     const dailyValuation = data.dailyValuation;

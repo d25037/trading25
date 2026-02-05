@@ -3,7 +3,7 @@ import type { JQuantsStatement } from '../types/jquants';
 import { logger } from '../utils/logger';
 import type { ROECalculationOptions, ROEMetadata, ROEResult } from './types';
 import { ROECalculationError } from './types';
-import { isQuarterlyPeriod } from './utils';
+import { isQuarterlyPeriod, normalizePeriodType } from './utils';
 
 /**
  * Calculates Return on Equity (ROE) from JQuants financial statement data
@@ -17,6 +17,7 @@ import { isQuarterlyPeriod } from './utils';
  */
 export function calculateROE(statement: JQuantsStatement, options: ROECalculationOptions = {}): ROEResult {
   const { annualize = true, preferConsolidated = true, minEquityThreshold = 1000 } = options;
+  const normalizedPeriodType = normalizePeriodType(statement.CurPerType);
 
   // Validate input
   if (!statement) {
@@ -65,7 +66,7 @@ export function calculateROE(statement: JQuantsStatement, options: ROECalculatio
 
   // Annualize quarterly data if requested
   if (annualize && isQuarterlyPeriod(statement.CurPerType)) {
-    adjustedNetProfit = annualizeQuarterlyProfit(netProfit, statement.CurPerType);
+    adjustedNetProfit = annualizeQuarterlyProfit(netProfit, normalizedPeriodType ?? statement.CurPerType);
   }
 
   const roe = (adjustedNetProfit / equity) * 100;
@@ -73,13 +74,13 @@ export function calculateROE(statement: JQuantsStatement, options: ROECalculatio
   // Create metadata
   const metadata: ROEMetadata = {
     code: statement.Code,
-    periodType: statement.CurPerType,
+    periodType: normalizedPeriodType ?? statement.CurPerType,
     periodStart: statement.CurPerSt,
     periodEnd: statement.CurPerEn,
     documentType: statement.DocType,
     isConsolidated: isConsolidatedDocument(statement.DocType),
     accountingStandard: extractAccountingStandard(statement.DocType),
-    isAnnualized: annualize && isQuarterlyPeriod(statement.CurPerType),
+    isAnnualized: annualize && isQuarterlyPeriod(normalizedPeriodType ?? statement.CurPerType),
   };
 
   return {
@@ -163,13 +164,14 @@ function extractFinancialValues(
  * Annualize quarterly profit figures
  */
 function annualizeQuarterlyProfit(quarterlyProfit: number, periodType: string): number {
-  switch (periodType) {
-    case 'Q1':
-      return quarterlyProfit * 4; // Q1 × 4
-    case 'Q2':
+  const normalized = normalizePeriodType(periodType);
+  switch (normalized) {
+    case '1Q':
+      return quarterlyProfit * 4; // 1Q × 4
+    case '2Q':
       return quarterlyProfit * 2; // H1 × 2 (半期 × 2)
-    case 'Q3':
-      return quarterlyProfit * (4 / 3); // Q1-Q3 × 4/3
+    case '3Q':
+      return quarterlyProfit * (4 / 3); // 1Q-3Q × 4/3
     default:
       return quarterlyProfit;
   }

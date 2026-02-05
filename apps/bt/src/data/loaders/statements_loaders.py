@@ -13,6 +13,7 @@ from loguru import logger
 from src.api.dataset_client import DatasetAPIClient
 from src.api.dataset.statements_mixin import APIPeriodType
 from src.data.loaders.utils import extract_dataset_name
+from src.models.types import normalize_period_type
 
 # カラム名マッピング（API -> VectorBT PascalCase）
 _COLUMN_MAPPING = {
@@ -49,18 +50,80 @@ _NUMERIC_COLUMNS = [
     "ForecastEPS",
     "SharesOutstanding",
     "TreasuryShares",
+    # Adjusted fields (computed, but keep in numeric list for safety)
+    "AdjustedEPS",
+    "AdjustedBPS",
+    "AdjustedForecastEPS",
+    "AdjustedNextYearForecastEPS",
 ]
+
+# Raw -> Adjusted カラム名マッピング（株式数調整対象）
+_ADJUSTED_COLUMN_MAP = {
+    "EPS": "AdjustedEPS",
+    "BPS": "AdjustedBPS",
+    "ForecastEPS": "AdjustedForecastEPS",
+    "NextYearForecastEPS": "AdjustedNextYearForecastEPS",
+}
+
+
+def _resolve_baseline_shares(df: pd.DataFrame) -> float | None:
+    """Resolve baseline shares from the latest quarterly disclosure within range."""
+    if df.empty or "SharesOutstanding" not in df.columns:
+        return None
+
+    df_sorted = df.sort_index()
+    shares = df_sorted["SharesOutstanding"]
+
+    if "TypeOfCurrentPeriod" in df_sorted.columns:
+        period_types = df_sorted["TypeOfCurrentPeriod"].map(normalize_period_type)
+        quarterly_mask = period_types.isin(["1Q", "2Q", "3Q"])
+        quarterly_valid = quarterly_mask & shares.notna() & (shares != 0)
+        if quarterly_valid.any():
+            latest_idx = shares[quarterly_valid].index.max()
+            return float(shares.loc[latest_idx])
+
+    # Fallback: latest disclosure with shares (any period type)
+    valid_any = shares.notna() & (shares != 0)
+    if valid_any.any():
+        latest_idx = shares[valid_any].index.max()
+        return float(shares.loc[latest_idx])
+
+    return None
+
+
+def _compute_adjusted_series(
+    raw: pd.Series, shares: pd.Series, baseline_shares: float | None
+) -> pd.Series:
+    """Compute adjusted series using share count ratio, fallback to raw when not possible."""
+    if baseline_shares is None or baseline_shares == 0 or pd.isna(baseline_shares):
+        return raw
+    mask = raw.notna() & shares.notna() & (shares != 0)
+    adjusted = raw.where(~mask, raw * (shares / baseline_shares))
+    return adjusted
 
 
 def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
-    カラム名のリネーム、数値型変換、派生指標(ROE/OperatingMargin)計算を行う。
+    カラム名のリネーム、数値型変換、派生指標(ROE/OperatingMargin)計算、
+    EPS/BPS/Forecast系の株式数調整を行う。
     """
     df = df.rename(columns=_COLUMN_MAPPING)
     for col in _NUMERIC_COLUMNS:
         if col in df.columns:
             df[col] = pd.to_numeric(df[col], errors="coerce")
+
+    # Share-based adjustments (baseline within the available date range)
+    baseline_shares = _resolve_baseline_shares(df)
+    shares = df["SharesOutstanding"] if "SharesOutstanding" in df.columns else None
+    for raw_col, adjusted_col in _ADJUSTED_COLUMN_MAP.items():
+        if raw_col in df.columns:
+            df[adjusted_col] = (
+                _compute_adjusted_series(df[raw_col], shares, baseline_shares)
+                if shares is not None
+                else df[raw_col]
+            )
+
     df["ROE"] = _calc_roe(df)
     df["OperatingMargin"] = _calc_operating_margin(df)
     return df
@@ -101,6 +164,8 @@ def load_statements_data(
             拡張指標: BPS, Sales, OperatingProfit, OrdinaryProfit,
                      OperatingCashFlow, InvestingCashFlow, DividendFY, ForecastEPS,
                      NextYearForecastEPS, OperatingMargin (派生指標)
+            Adjusted指標: AdjustedEPS, AdjustedBPS, AdjustedForecastEPS,
+                         AdjustedNextYearForecastEPS
 
     Raises:
         ValueError: データが見つからない場合

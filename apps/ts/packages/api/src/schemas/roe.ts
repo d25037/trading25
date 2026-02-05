@@ -62,7 +62,7 @@ export const ROEQuerySchema = z
 export const ROEMetadataSchema = z
   .object({
     code: z.string().openapi({ description: 'Stock code', example: '7203' }),
-    periodType: z.string().openapi({ description: 'Period type (FY, Q1, Q2, Q3)', example: 'FY' }),
+    periodType: z.string().openapi({ description: 'Period type (FY, 1Q, 2Q, 3Q)', example: 'FY' }),
     periodEnd: z.string().openapi({ description: 'Period end date', example: '2024-03-31' }),
     isConsolidated: z.boolean().openapi({ description: 'Whether data is consolidated', example: true }),
     accountingStandard: z.string().nullable().openapi({ description: 'Accounting standard', example: 'IFRS' }),

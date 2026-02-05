@@ -231,7 +231,7 @@ const fyStatement2023 = createMockStatement({
 const q1Statement = createMockStatement({
   DiscDate: '2024-08-01',
   Code: '7203',
-  CurPerType: 'Q1',
+  CurPerType: '1Q',
   CurPerSt: '2024-04-01',
   CurPerEn: '2024-06-30',
   CurFYSt: '2024-04-01',
@@ -251,7 +251,7 @@ const q1Statement = createMockStatement({
 const q3Statement = createMockStatement({
   DiscDate: '2025-02-05',
   Code: '7203',
-  CurPerType: 'Q3',
+  CurPerType: '3Q',
   CurPerSt: '2024-04-01',
   CurPerEn: '2024-12-31',
   CurFYSt: '2024-04-01',
@@ -696,7 +696,7 @@ describe('FundamentalsDataService', () => {
 
       assertDefined(fy, 'Expected FY data point');
       expect(fy.revisedForecastEps).toBe(310.0);
-      expect(fy.revisedForecastSource).toBe('Q3');
+      expect(fy.revisedForecastSource).toBe('3Q');
     });
 
     it('does not annotate when Q is disclosed before FY', async () => {

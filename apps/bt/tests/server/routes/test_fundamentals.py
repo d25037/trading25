@@ -214,7 +214,7 @@ class TestFundamentalsSchemaValidation:
 
     def test_request_valid_period_types(self, client: TestClient):
         """有効なperiod_type値"""
-        valid_types = ["all", "FY", "Q1", "Q2", "Q3"]
+        valid_types = ["all", "FY", "1Q", "2Q", "3Q"]
 
         for period_type in valid_types:
             mock_response = FundamentalsComputeResponse(

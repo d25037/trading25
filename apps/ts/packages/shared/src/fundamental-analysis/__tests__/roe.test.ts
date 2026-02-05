@@ -132,22 +132,22 @@ describe('ROE Calculation', () => {
 
     it('should handle quarterly data with annualization', () => {
       const statement = createMockStatement({
-        CurPerType: 'Q1',
-        NP: 375000, // Q1 profit
+        CurPerType: '1Q',
+        NP: 375000, // 1Q profit
       });
 
       const result = calculateROE(statement);
 
-      // Q1 profit annualized: 375,000 * 4 = 1,500,000
+      // 1Q profit annualized: 375,000 * 4 = 1,500,000
       // ROE = (1,500,000 / 15,000,000) * 100 = 10%
       expect(result.roe).toBe(10);
       expect(result.netProfit).toBe(1500000); // Annualized
       expect(result.metadata.isAnnualized).toBe(true);
     });
 
-    it('should handle Q2 (half-year) data correctly', () => {
+    it('should handle 2Q (half-year) data correctly', () => {
       const statement = createMockStatement({
-        CurPerType: 'Q2',
+        CurPerType: '2Q',
         NP: 750000, // H1 profit
       });
 
@@ -158,22 +158,22 @@ describe('ROE Calculation', () => {
       expect(result.netProfit).toBe(1500000); // Annualized
     });
 
-    it('should handle Q3 data correctly', () => {
+    it('should handle 3Q data correctly', () => {
       const statement = createMockStatement({
-        CurPerType: 'Q3',
+        CurPerType: '3Q',
         NP: 1125000, // 9-month profit
       });
 
       const result = calculateROE(statement);
 
-      // Q3 profit annualized: 1,125,000 * (4/3) = 1,500,000
+      // 3Q profit annualized: 1,125,000 * (4/3) = 1,500,000
       expect(result.roe).toBe(10);
       expect(result.netProfit).toBe(1500000); // Annualized
     });
 
     it('should not annualize quarterly data when annualize option is false', () => {
       const statement = createMockStatement({
-        CurPerType: 'Q1',
+        CurPerType: '1Q',
         NP: 375000,
       });
 
@@ -314,7 +314,7 @@ describe('ROE Calculation', () => {
       const statements = [
         createMockStatement({
           Code: '7203',
-          CurPerType: 'Q1',
+          CurPerType: '1Q',
           CurPerEn: '2023-06-30',
           NP: 375000,
         }),
@@ -413,13 +413,13 @@ describe('ROE Calculation', () => {
 
     it('should include annualized note for quarterly data', () => {
       const statement = createMockStatement({
-        CurPerType: 'Q1',
+        CurPerType: '1Q',
         NP: 375000,
       });
       const result = calculateROE(statement);
 
       const formatted = formatROEResult(result);
-      expect(formatted).toBe('7203: ROE 10.00% (annualized) (Q1 2023-03-31)');
+      expect(formatted).toBe('7203: ROE 10.00% (annualized) (1Q 2023-03-31)');
     });
   });
 });

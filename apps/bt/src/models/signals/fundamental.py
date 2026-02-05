@@ -14,6 +14,11 @@ from .base import BaseSignalParams
 class FundamentalSignalParams(BaseSignalParams):
     """財務指標シグナルパラメータ"""
 
+    use_adjusted: bool = Field(
+        default=True,
+        description="株式分割等を考慮したAdjusted指標を使用するか",
+    )
+
     # =========================================================================
     # バリュエーション系パラメータ
     # =========================================================================

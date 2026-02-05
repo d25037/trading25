@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Strategy Config v1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["entry_filter_params"],
+  "properties": {
+    "display_name": {
+      "type": ["string", "null"]
+    },
+    "description": {
+      "type": ["string", "null"]
+    },
+    "execution": {
+      "anyOf": [{"$ref": "#/$defs/execution_config"}, {"type": "null"}]
+    },
+    "shared_config": {
+      "anyOf": [{"$ref": "#/$defs/shared_config"}, {"type": "null"}]
+    },
+    "entry_filter_params": {
+      "$ref": "#/$defs/signal_params"
+    },
+    "exit_trigger_params": {
+      "anyOf": [{"$ref": "#/$defs/signal_params"}, {"type": "null"}]
+    }
+  },
+  "$defs": {
+    "execution_config": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "template_notebook": {
+          "type": "string",
+          "minLength": 1
+        },
+        "output_directory": {
+          "type": ["string", "null"]
+        },
+        "create_output_dir": {
+          "type": "boolean"
+        }
+      }
+    },
+    "shared_config": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "initial_cash": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "fees": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "slippage": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "spread": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "borrow_fee": {
+          "type": "number",
+          "minimum": 0,
+          "exclusiveMaximum": 1
+        },
+        "max_concurrent_positions": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "max_exposure": {
+          "type": ["number", "null"],
+          "exclusiveMinimum": 0,
+          "maximum": 1
+        },
+        "start_date": {
+          "type": "string"
+        },
+        "end_date": {
+          "type": "string"
+        },
+        "dataset": {
+          "type": "string",
+          "minLength": 1
+        },
+        "include_margin_data": {
+          "type": "boolean"
+        },
+        "include_statements_data": {
+          "type": "boolean"
+        },
+        "relative_mode": {
+          "type": "boolean"
+        },
+        "benchmark_table": {
+          "type": "string"
+        },
+        "group_by": {
+          "type": "boolean"
+        },
+        "cash_sharing": {
+          "type": "boolean"
+        },
+        "printlog": {
+          "type": "boolean"
+        },
+        "stock_codes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "direction": {
+          "type": "string",
+          "enum": ["longonly", "shortonly", "both"]
+        },
+        "kelly_fraction": {
+          "type": "number"
+        },
+        "min_allocation": {
+          "type": "number"
+        },
+        "max_allocation": {
+          "type": "number"
+        },
+        "parameter_optimization": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "method": {
+              "type": "string",
+              "enum": ["grid_search", "random_search"]
+            },
+            "n_trials": {"type": "integer"},
+            "n_jobs": {"type": "integer"},
+            "scoring_weights": {
+              "type": "object",
+              "additionalProperties": {"type": "number"}
+            }
+          }
+        },
+        "walk_forward": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "enabled": {"type": "boolean"},
+            "train_window": {"type": "integer"},
+            "test_window": {"type": "integer"},
+            "step": {"type": ["integer", "null"]},
+            "max_splits": {"type": ["integer", "null"]}
+          }
+        },
+        "timeframe": {
+          "type": "string",
+          "enum": ["daily", "weekly"]
+        }
+      }
+    },
+    "signal_params": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "volume": {"$ref": "#/$defs/signal_object"},
+        "trading_value": {"$ref": "#/$defs/signal_object"},
+        "trading_value_range": {"$ref": "#/$defs/signal_object"},
+        "trend": {"$ref": "#/$defs/signal_object"},
+        "fundamental": {"$ref": "#/$defs/signal_object"},
+        "volatility": {"$ref": "#/$defs/signal_object"},
+        "beta": {"$ref": "#/$defs/signal_object"},
+        "margin": {"$ref": "#/$defs/signal_object"},
+        "atr_support_break": {"$ref": "#/$defs/signal_object"},
+        "retracement": {"$ref": "#/$defs/signal_object"},
+        "period_breakout": {"$ref": "#/$defs/signal_object"},
+        "crossover": {"$ref": "#/$defs/signal_object"},
+        "bollinger_bands": {"$ref": "#/$defs/signal_object"},
+        "buy_and_hold": {"$ref": "#/$defs/signal_object"},
+        "mean_reversion": {"$ref": "#/$defs/signal_object"},
+        "rsi_threshold": {"$ref": "#/$defs/signal_object"},
+        "rsi_spread": {"$ref": "#/$defs/signal_object"},
+        "ma_breakout": {"$ref": "#/$defs/signal_object"},
+        "index_daily_change": {"$ref": "#/$defs/signal_object"},
+        "index_macd_histogram": {"$ref": "#/$defs/signal_object"},
+        "risk_adjusted_return": {"$ref": "#/$defs/signal_object"},
+        "sector_strength_ranking": {"$ref": "#/$defs/signal_object"},
+        "sector_rotation_phase": {"$ref": "#/$defs/signal_object"},
+        "sector_volatility_regime": {"$ref": "#/$defs/signal_object"}
+      }
+    },
+    "signal_object": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}
