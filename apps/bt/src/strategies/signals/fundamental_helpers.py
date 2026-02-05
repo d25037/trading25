@@ -16,7 +16,6 @@ __all__ = [
     "_calc_threshold_signal",
     "_calc_ratio_signal",
     "_calc_consecutive_threshold_signal",
-    "_calc_market_cap",
 ]
 
 
@@ -198,18 +197,3 @@ def _calc_consecutive_threshold_signal(
     daily_result.loc[consecutive_met.index] = consecutive_met.astype(float)
 
     return daily_result.ffill().fillna(0.0).astype(bool) & data.notna()
-
-
-def _calc_market_cap(
-    close: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
-    use_floating_shares: bool,
-) -> pd.Series[float]:
-    """時価総額を計算（株式数が0以下の場合はNaN）"""
-    shares = (
-        shares_outstanding - treasury_shares.fillna(0)
-        if use_floating_shares
-        else shares_outstanding
-    )
-    return close * shares.where(shares > 0, np.nan)

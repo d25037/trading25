@@ -114,6 +114,11 @@ entry_filter_params:
     peg_ratio:
       enabled: false
       threshold: 1.0 # PEG Ratio閾値（この値以下で割安成長株判定）
+    market_cap:
+      enabled: false
+      threshold: 100.0 # 時価総額閾値（億円単位）
+      condition: "above" # above=大型株選定
+      use_floating_shares: true
 
   # ボラティリティシグナル
   volatility:
@@ -234,6 +239,11 @@ exit_trigger_params:
     peg_ratio:
       enabled: false
       threshold: 2.0 # PEG閾値（この値以上で割高警告）
+    market_cap:
+      enabled: false
+      threshold: 50.0 # 時価総額閾値（億円単位、exit用は低め推奨）
+      condition: "below" # below=時価総額縮小で退出
+      use_floating_shares: true
 
   # ボラティリティシグナル
   volatility:

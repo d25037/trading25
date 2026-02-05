@@ -17,6 +17,7 @@ from .fundamental import (
     is_high_roe,
     is_undervalued_growth_by_peg,
     is_expected_growth_eps,
+    market_cap_threshold,
 )
 
 # Volatility signals
@@ -81,6 +82,7 @@ __all__ = [
     "is_high_roe",
     "is_undervalued_growth_by_peg",
     "is_expected_growth_eps",
+    "market_cap_threshold",
     # Volatility
     "volatility_relative_signal",
     "rolling_volatility_signal",

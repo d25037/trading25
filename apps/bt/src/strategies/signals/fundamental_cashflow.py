@@ -1,7 +1,7 @@
 """
-財務指標シグナル — キャッシュフロー系
+財務指標シグナル — キャッシュフロー系・時価総額系
 
-営業CF・簡易FCF・CFO利回り・FCF利回りに基づくシグナルを提供
+営業CF・簡易FCF・CFO利回り・FCF利回り・時価総額に基づくシグナルを提供
 """
 
 from __future__ import annotations
@@ -11,9 +11,10 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
+from src.utils.financial import calc_market_cap
+
 from .fundamental_helpers import (
     _calc_consecutive_threshold_signal,
-    _calc_market_cap,
     _calc_threshold_signal,
 )
 
@@ -124,7 +125,7 @@ def cfo_yield_threshold(
         - CFOが負の場合も計算対象（負の利回りとなる）
         - 推奨period_type: "FY"（CFOデータはFYで一貫性あり）
     """
-    market_cap = _calc_market_cap(
+    market_cap = calc_market_cap(
         close, shares_outstanding, treasury_shares, use_floating_shares
     )
     cfo_yield = (operating_cash_flow / market_cap.where(market_cap > 0, np.nan)) * 100
@@ -170,10 +171,48 @@ def simple_fcf_yield_threshold(
         - 簡易FCFが負の場合も計算対象（負の利回りとなる）
         - 推奨period_type: "FY"（CFデータはFYで一貫性あり）
     """
-    market_cap = _calc_market_cap(
+    market_cap = calc_market_cap(
         close, shares_outstanding, treasury_shares, use_floating_shares
     )
     fcf = operating_cash_flow + investing_cash_flow
     fcf_yield = (fcf / market_cap.where(market_cap > 0, np.nan)) * 100
 
     return _calc_threshold_signal(fcf_yield, threshold, condition, require_positive=False)
+
+
+def market_cap_threshold(
+    close: pd.Series[float],
+    shares_outstanding: pd.Series[int],
+    treasury_shares: pd.Series[int],
+    threshold: float = 100.0,
+    condition: Literal["above", "below"] = "above",
+    use_floating_shares: bool = True,
+) -> pd.Series[bool]:
+    """
+    時価総額閾値シグナル
+
+    時価総額が指定した条件で閾値（億円単位）と比較してTrueを返すシグナル
+
+    Args:
+        close: 終値データ（日次）
+        shares_outstanding: 発行済み株式数（日次インデックスに補完済み想定）
+        treasury_shares: 自己株式数（日次インデックスに補完済み想定）
+        threshold: 時価総額閾値（億円単位、100.0 = 100億円）
+        condition: 条件（above=閾値以上、below=閾値未満）
+        use_floating_shares: 株式数の計算方法
+            - True (デフォルト): 流通株式 = 発行済み - 自己株式
+            - False: 発行済み株式全体
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - 株式数が0以下またはNaNの場合はFalseを返す
+        - 閾値は億円単位（内部で1億=1e8円に変換）
+        - 推奨用途: 大型株フィルター（entry: above）、小型株除外（exit: below）
+    """
+    market_cap = calc_market_cap(close, shares_outstanding, treasury_shares, use_floating_shares)
+    # 円→億円に変換
+    market_cap_oku = market_cap / 1e8
+
+    return _calc_threshold_signal(market_cap_oku, threshold, condition, require_positive=True)

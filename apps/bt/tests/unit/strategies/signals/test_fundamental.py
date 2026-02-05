@@ -23,6 +23,7 @@ from src.strategies.signals.fundamental import (
     is_expected_growth_eps,
     cfo_yield_threshold,
     simple_fcf_yield_threshold,
+    market_cap_threshold,
 )
 
 
@@ -1941,6 +1942,177 @@ class TestFundamentalSignalParamsConfig:
         assert params.eps_growth.enabled is True
         assert params.forward_eps_growth.threshold == 0.1
         assert params.eps_growth.threshold == 0.2
+
+
+# =====================================================================
+# 時価総額シグナルテスト（2026-02追加）
+# =====================================================================
+
+
+class TestMarketCapThreshold:
+    """market_cap_threshold()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成
+
+        終値=1000円、発行済み株式=100万株、自己株式=10万株
+        流通株式ベース時価総額 = 1000 × (100万 - 10万) = 9億円 = 9.0億円
+        発行済み全体ベース時価総額 = 1000 × 100万 = 10億円 = 10.0億円
+        """
+        self.dates = pd.date_range("2024-01-01", periods=100)
+        self.close = pd.Series(np.ones(100) * 1000.0, index=self.dates)
+        self.shares_outstanding = pd.Series(np.ones(100, dtype=int) * 1_000_000, index=self.dates)
+        self.treasury_shares = pd.Series(np.ones(100, dtype=int) * 100_000, index=self.dates)
+
+    def test_basic_above(self):
+        """基本テスト: 時価総額9億円、threshold=9.0、above → 全True"""
+        signal = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=9.0,
+            condition="above",
+        )
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == 100
+        # 9億円 >= 9.0億円 → True
+        assert signal.all()
+
+    def test_threshold_effect(self):
+        """閾値の効果: 低閾値はTrue、高閾値はFalse"""
+        signal_low = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=5.0,
+            condition="above",
+        )
+        signal_high = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=20.0,
+            condition="above",
+        )
+        # 9億円 >= 5億円 → True
+        assert signal_low.all()
+        # 9億円 >= 20億円 → False
+        assert not signal_high.any()
+
+    def test_condition_below(self):
+        """below条件: 9億円 < 10億円 → True"""
+        signal = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=10.0,
+            condition="below",
+        )
+        # 9億円 < 10億円 → True
+        assert signal.all()
+
+    def test_boundary(self):
+        """境界値: 9億円 >= 9.0億円 → True"""
+        signal = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=9.0,
+            condition="above",
+        )
+        assert signal.all()
+
+    def test_floating_shares_false(self):
+        """use_floating_shares=False: 発行済み全体ベース"""
+        # floating: 9億円、total: 10億円
+        signal_floating = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=9.5,
+            condition="above",
+            use_floating_shares=True,
+        )
+        signal_total = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=9.5,
+            condition="above",
+            use_floating_shares=False,
+        )
+        # 流通: 9億 < 9.5億 → False
+        assert not signal_floating.any()
+        # 全体: 10億 >= 9.5億 → True
+        assert signal_total.all()
+
+    def test_treasury_shares_nan(self):
+        """自己株式NaN → 0扱い、時価総額=10億円"""
+        treasury_nan = pd.Series([np.nan] * 100, index=self.dates)
+        signal = market_cap_threshold(
+            self.close,
+            self.shares_outstanding,
+            treasury_nan,
+            threshold=10.0,
+            condition="above",
+        )
+        # NaN→0: 1000 × 1_000_000 = 10億円 >= 10億円 → True
+        assert signal.all()
+
+    def test_zero_shares(self):
+        """株式数0 → 全False"""
+        shares_zero = pd.Series(np.zeros(100, dtype=int), index=self.dates)
+        signal = market_cap_threshold(
+            self.close,
+            shares_zero,
+            self.treasury_shares,
+            threshold=1.0,
+            condition="above",
+        )
+        assert not signal.any()
+
+    def test_nan_handling(self):
+        """Close=NaN → False"""
+        close_nan = self.close.copy()
+        close_nan.iloc[0:10] = np.nan
+        signal = market_cap_threshold(
+            close_nan,
+            self.shares_outstanding,
+            self.treasury_shares,
+            threshold=5.0,
+            condition="above",
+        )
+        # NaN部分はFalse
+        assert not signal.iloc[0:10].any()
+        # 正常部分はTrue
+        assert signal.iloc[10:].all()
+
+    def test_large_cap(self):
+        """大数値: close=5000, shares=2億 → 1兆円=10000億"""
+        dates = pd.date_range("2024-01-01", periods=10)
+        close = pd.Series(np.ones(10) * 5000.0, index=dates)
+        shares = pd.Series(np.ones(10, dtype=int) * 200_000_000, index=dates)
+        treasury = pd.Series(np.zeros(10, dtype=int), index=dates)
+        signal = market_cap_threshold(
+            close, shares, treasury, threshold=10000.0, condition="above"
+        )
+        # 5000 × 2億 = 1兆円 = 10000億円 >= 10000億円 → True
+        assert signal.all()
+
+    def test_varying_close(self):
+        """日次変動でthreshold境界を越えるパターン"""
+        dates = pd.date_range("2024-01-01", periods=10)
+        # close: 800, 900, 1000, 1100, 1200...
+        close = pd.Series([800.0, 900.0, 1000.0, 1100.0, 1200.0] * 2, index=dates)
+        shares = pd.Series(np.ones(10, dtype=int) * 1_000_000, index=dates)
+        treasury = pd.Series(np.zeros(10, dtype=int), index=dates)
+        # 時価総額(億): 8, 9, 10, 11, 12, 8, 9, 10, 11, 12
+        signal = market_cap_threshold(
+            close, shares, treasury, threshold=10.0, condition="above"
+        )
+        expected = [False, False, True, True, True, False, False, True, True, True]
+        assert list(signal) == expected
 
 
 if __name__ == "__main__":

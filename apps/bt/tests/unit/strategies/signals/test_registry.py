@@ -183,6 +183,33 @@ class TestSignalRegistry:
         assert "statements:EPS" in sig.data_requirements
         assert "statements:NextYearForecastEPS" not in sig.data_requirements
 
+    def test_market_cap_registered(self) -> None:
+        """market_cap（時価総額）がレジストリに登録されていること"""
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.market_cap"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "時価総額"
+        assert sig.category == "fundamental"
+        assert "statements:SharesOutstanding" in sig.data_requirements
+
+    def test_market_cap_enabled_checker(self) -> None:
+        """market_capのenabled_checkerが正しく動作すること"""
+        sig = next(s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.market_cap")
+
+        # fundamental.enabled=False → disabled
+        params = SignalParams()
+        params.fundamental.enabled = False
+        params.fundamental.market_cap.enabled = True
+        assert not sig.enabled_checker(params)
+
+        # fundamental.enabled=True, market_cap.enabled=True → enabled
+        params.fundamental.enabled = True
+        assert sig.enabled_checker(params)
+
+        # fundamental.enabled=True, market_cap.enabled=False → disabled
+        params.fundamental.market_cap.enabled = False
+        assert not sig.enabled_checker(params)
+
 
 class TestFundamentalAdjustedSelection:
     def _get_signal(self, param_key: str):
