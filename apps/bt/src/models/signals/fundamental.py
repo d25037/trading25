@@ -220,6 +220,29 @@ class FundamentalSignalParams(BaseSignalParams):
         )
 
     # =========================================================================
+    # 時価総額系パラメータ
+    # =========================================================================
+
+    class MarketCapParams(BaseModel):
+        """時価総額閾値シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="時価総額シグナル有効")
+        threshold: float = Field(
+            default=100.0,
+            gt=0,
+            le=100000.0,
+            description="時価総額閾値（億円単位、100.0 = 100億円）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値未満）",
+        )
+        use_floating_shares: bool = Field(
+            default=True,
+            description="流通株式を使用（発行済み-自己株式）、Falseなら発行済み全体",
+        )
+
+    # =========================================================================
     # 利回り系パラメータ
     # =========================================================================
 
@@ -316,4 +339,9 @@ class FundamentalSignalParams(BaseSignalParams):
     )
     simple_fcf_yield: SimpleFCFYieldParams = Field(
         default_factory=SimpleFCFYieldParams, description="簡易FCF利回りシグナル"
+    )
+
+    # 時価総額系
+    market_cap: MarketCapParams = Field(
+        default_factory=MarketCapParams, description="時価総額シグナル"
     )

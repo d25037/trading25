@@ -25,7 +25,7 @@
   - **Signalsクラス**: 型安全なエントリー・エグジットシグナル管理（pd.Series[bool]バリデーション）
   - **SignalParamsクラス**: 統一シグナルパラメータ（旧FilterParams + TriggerParams統合完了）
 
-### シグナル実装（34種類）
+### シグナル実装（35種類）
 
 **実装箇所**: `strategies/signals/`
 
@@ -37,7 +37,7 @@
 6. **rsi_spread.py**: RSIスプレッドシグナル（短期・長期RSI差分判定）
 7. **risk_adjusted.py**: リスク調整リターンシグナル（シャープ/ソルティノレシオ）
 8. **beta.py**: β値シグナル（Numba最適化・負のβ値対応・ベンチマークデータ自動ロード）
-9. **fundamental.py**: 財務指標シグナル（PER/PBR/ROE/Forward EPS成長/EPS成長（実績）/PEG/営業利益率/配当利回り/営業CF/簡易FCF/CFO利回り/簡易FCF利回り）
+9. **fundamental.py**: 財務指標シグナル（PER/PBR/ROE/Forward EPS成長/EPS成長（実績）/PEG/営業利益率/配当利回り/営業CF/簡易FCF/CFO利回り/簡易FCF利回り/時価総額）
 10. **margin.py**: 信用残高シグナル
 11. **volatility.py**: ボラティリティシグナル（ボリンジャーバンド）
 12. **volume.py**: 出来高シグナル（surge/drop両方向・SMA/EMA選択可能）
@@ -48,7 +48,7 @@
 17. **performance.py**: 相対パフォーマンスシグナル
 18. **sector.py**: セクターシグナル
 19. **sector_strength.py**: セクター強度シグナル（ランキング・ローテーション位相・ボラティリティレジーム）
-20. **registry.py**: シグナルレジストリシステム（34シグナル統合管理）
+20. **registry.py**: シグナルレジストリシステム（35シグナル統合管理）
 21. **processor.py**: SignalProcessor（統一シグナル処理・AND/OR結合制御・セクターデータ注入）
 
 ### SignalProcessor
@@ -97,11 +97,12 @@ def volume_signal(
 - **RetracementSignalParams**: リトレースメントシグナル（フィボナッチ下落率ベース）
 
 ### ファンダメンタル系シグナル
-- **FundamentalSignalParams**: 財務指標シグナル（13種類: PER・PBR・ROE・Profit成長・Sales成長・PEG・Forward EPS・営業利益率・配当利回り・営業CF・簡易FCF・CFO利回り・簡易FCF利回り）
+- **FundamentalSignalParams**: 財務指標シグナル（14種類: PER・PBR・ROE・Profit成長・Sales成長・PEG・Forward EPS・営業利益率・配当利回り・営業CF・簡易FCF・CFO利回り・簡易FCF利回り・時価総額）
   - **condition: above | below**: 全サブパラメータに対応（閾値との比較方向を柔軟に設定可能）
-  - デフォルト: PER/PBR/PEG=`below`、ROE/営業利益率/配当利回り/営業CF/成長率系/利回り系=`above`
+  - デフォルト: PER/PBR/PEG=`below`、ROE/営業利益率/配当利回り/営業CF/成長率系/利回り系=`above`、時価総額=`above`
   - **consecutive_periods**: 営業CF・簡易FCFで「直近N回連続で条件を満たす」チェック（デフォルト=1で従来動作）
-  - **use_floating_shares**: CFO利回り・簡易FCF利回りで使用。True=流通株式（発行済み-自己株式）、False=発行済み全体
+  - **use_floating_shares**: CFO利回り・簡易FCF利回り・時価総額で使用。True=流通株式（発行済み-自己株式）、False=発行済み全体
+  - **market_cap**: 時価総額閾値（億円単位）。大型株フィルター（entry: above）や小型株除外（exit: below）に利用
 - **BetaSignalParams**: β値シグナル（負のβ値対応: min_beta範囲-2.0〜5.0）
 
 ### 財務データのperiod_type設定

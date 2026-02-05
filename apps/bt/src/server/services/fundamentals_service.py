@@ -17,6 +17,7 @@ from loguru import logger
 from src.api.jquants_client import JQuantsAPIClient, JQuantsStatement, StockInfo
 from src.api.market_client import MarketAPIClient
 from src.models.types import normalize_period_type
+from src.utils.financial import calc_market_cap_scalar
 from src.server.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
@@ -645,11 +646,9 @@ class FundamentalsService:
         ):
             return None
 
-        actual_shares = shares_outstanding - (treasury_shares or 0)
-        if actual_shares <= 0:
+        market_cap = calc_market_cap_scalar(stock_price, shares_outstanding, treasury_shares)
+        if market_cap is None:
             return None
-
-        market_cap = stock_price * actual_shares
         return (fcf / market_cap) * 100
 
     def _calculate_fcf_margin(
@@ -807,7 +806,10 @@ class FundamentalsService:
                 pbr = round(close / applicable_fy.bps, 2)
 
             if baseline_shares is not None and baseline_shares != 0:
-                market_cap = self._round_or_none(close * baseline_shares)
+                # baseline_shares は直近FYの発行済み株式数（treasury_shares は含まない）
+                market_cap = self._round_or_none(
+                    calc_market_cap_scalar(close, baseline_shares)
+                )
 
             result.append(
                 DailyValuationDataPoint(

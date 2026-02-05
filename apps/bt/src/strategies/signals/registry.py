@@ -29,6 +29,7 @@ from .fundamental import (
     is_high_dividend_yield,
     is_high_operating_margin,
     is_high_roe,
+    market_cap_threshold,
     operating_cash_flow_threshold,
     simple_fcf_threshold,
     simple_fcf_yield_threshold,
@@ -861,6 +862,27 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
             d, "OperatingCashFlow", "InvestingCashFlow", "SharesOutstanding"
         ),
         data_requirements=["statements:OperatingCashFlow", "statements:InvestingCashFlow", "statements:SharesOutstanding"],
+    ),
+    # 31-2. 時価総額シグナル（市場規模フィルター）
+    SignalDefinition(
+        name="時価総額",
+        signal_func=market_cap_threshold,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.market_cap.enabled,
+        param_builder=lambda p, d: {
+            "close": d["execution_close"],
+            "shares_outstanding": d["statements_data"]["SharesOutstanding"],
+            "treasury_shares": d["statements_data"]["TreasuryShares"],
+            "threshold": p.fundamental.market_cap.threshold,
+            "condition": p.fundamental.market_cap.condition,
+            "use_floating_shares": p.fundamental.market_cap.use_floating_shares,
+        },
+        entry_purpose="時価総額が閾値以上の銘柄を選定（流動性・規模フィルター）",
+        exit_purpose="時価総額が閾値を下回った銘柄を除外",
+        category="fundamental",
+        description="時価総額（億円単位）の閾値判定",
+        param_key="fundamental.market_cap",
+        data_checker=lambda d: _has_statements_column(d, "SharesOutstanding"),
+        data_requirements=["statements:SharesOutstanding"],
     ),
     # =====================================================================
     # セクターシグナル（2026-01追加）

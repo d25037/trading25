@@ -23,7 +23,6 @@ FYのみで利用可能なデータ:
 from .fundamental_helpers import (
     _calc_consecutive_threshold_signal,
     _calc_growth_signal,
-    _calc_market_cap,
     _calc_ratio_signal,
     _calc_threshold_signal,
 )
@@ -50,9 +49,10 @@ from .fundamental_quality import (
     is_high_roe,
 )
 
-# キャッシュフロー系シグナル
+# キャッシュフロー系・時価総額系シグナル
 from .fundamental_cashflow import (
     cfo_yield_threshold,
+    market_cap_threshold,
     operating_cash_flow_threshold,
     simple_fcf_threshold,
     simple_fcf_yield_threshold,
@@ -64,7 +64,6 @@ __all__ = [
     "_calc_threshold_signal",
     "_calc_ratio_signal",
     "_calc_consecutive_threshold_signal",
-    "_calc_market_cap",
     # バリュエーション系
     "is_undervalued_by_per",
     "is_undervalued_by_pbr",
@@ -78,9 +77,10 @@ __all__ = [
     "is_high_roe",
     "is_high_operating_margin",
     "is_high_dividend_yield",
-    # キャッシュフロー系
+    # キャッシュフロー系・時価総額系
     "operating_cash_flow_threshold",
     "simple_fcf_threshold",
     "cfo_yield_threshold",
     "simple_fcf_yield_threshold",
+    "market_cap_threshold",
 ]
