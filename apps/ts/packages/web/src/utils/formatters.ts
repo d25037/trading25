@@ -167,3 +167,21 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(2)} GB`;
 }
+
+/**
+ * Format market capitalization in Japanese units (兆/億/万).
+ */
+export function formatMarketCap(value: number | null | undefined): string {
+  if (value === null || value === undefined || !Number.isFinite(value)) return '-';
+  const absVal = Math.abs(value);
+  if (absVal >= 1_000_000_000_000) {
+    return `${(value / 1_000_000_000_000).toFixed(2)}兆円`;
+  }
+  if (absVal >= 100_000_000) {
+    return `${(value / 100_000_000).toFixed(1)}億円`;
+  }
+  if (absVal >= 10_000) {
+    return `${(value / 10_000).toFixed(0)}万円`;
+  }
+  return `${Math.round(value).toLocaleString('ja-JP')}円`;
+}

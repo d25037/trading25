@@ -145,6 +145,8 @@ export interface ApiDailyValuationDataPoint {
   per: number | null;
   /** Price to Book Ratio using FY BPS (倍) */
   pbr: number | null;
+  /** Market capitalization (円) */
+  marketCap: number | null;
 }
 
 /**
@@ -155,7 +157,7 @@ export interface ApiFundamentalDataPoint {
   date: string;
   /** Date when the data was disclosed (YYYY-MM-DD) */
   disclosedDate: string;
-  /** Period type (FY, Q1, Q2, Q3) */
+  /** Period type (FY, 1Q, 2Q, 3Q) */
   periodType: string;
   /** Whether this is consolidated financial data */
   isConsolidated: boolean;
@@ -170,6 +172,12 @@ export interface ApiFundamentalDataPoint {
   dilutedEps: number | null;
   /** Book Value Per Share (円) */
   bps: number | null;
+  /** Adjusted EPS using share count (円) */
+  adjustedEps?: number | null;
+  /** Adjusted forecast EPS using share count (円) */
+  adjustedForecastEps?: number | null;
+  /** Adjusted BPS using share count (円) */
+  adjustedBps?: number | null;
   /** Price to Earnings Ratio (倍) - calculated with disclosure date price */
   per: number | null;
   /** Price to Book Ratio (倍) - calculated with disclosure date price */
@@ -217,7 +225,7 @@ export interface ApiFundamentalDataPoint {
   forecastEpsChangeRate?: number | null;
   /** Revised forecast EPS from latest quarterly statement (円) */
   revisedForecastEps?: number | null;
-  /** Source period type of revised forecast (e.g. Q1, Q2, 3Q) */
+  /** Source period type of revised forecast (e.g. 1Q, 2Q, 3Q) */
   revisedForecastSource?: string | null;
   // Previous period cash flow data
   /** Previous period cash flows from operating activities (百万円) */

@@ -28,12 +28,23 @@ export function isFiscalYear(periodType: string | null | undefined): boolean {
 }
 
 /**
- * Check if period type is quarterly (Q1, Q2, Q3)
+ * Normalize period type to 1Q/2Q/3Q when possible.
+ */
+export function normalizePeriodType(periodType: string | null | undefined): string | null {
+  if (!periodType) return null;
+  if (['1Q', '2Q', '3Q', 'FY', 'all'].includes(periodType)) return periodType;
+  const legacyMap: Record<string, string> = { Q1: '1Q', Q2: '2Q', Q3: '3Q' };
+  return legacyMap[periodType] ?? periodType;
+}
+
+/**
+ * Check if period type is quarterly (1Q, 2Q, 3Q)
  * Note: Q4 is typically reported as FY
  */
 export function isQuarterlyPeriod(periodType: string | null | undefined): boolean {
-  if (!periodType) return false;
-  return ['Q1', 'Q2', 'Q3'].includes(periodType);
+  const normalized = normalizePeriodType(periodType);
+  if (!normalized) return false;
+  return ['1Q', '2Q', '3Q'].includes(normalized);
 }
 
 /**

@@ -77,6 +77,10 @@ export function FundamentalsSummaryCard({ metrics }: FundamentalsSummaryCardProp
     );
   }
 
+  const displayEps = metrics.adjustedEps ?? metrics.eps;
+  const displayForecastEps = metrics.adjustedForecastEps ?? metrics.forecastEps;
+  const displayBps = metrics.adjustedBps ?? metrics.bps;
+
   return (
     <div className="h-full flex flex-col">
       <div className="grid grid-cols-4 gap-2 p-2">
@@ -88,11 +92,11 @@ export function FundamentalsSummaryCard({ metrics }: FundamentalsSummaryCardProp
 
         {/* Row 2: Per Share & Margins - EPS with forecast */}
         <EpsMetricCard
-          actualEps={metrics.eps}
-          forecastEps={metrics.forecastEps}
+          actualEps={displayEps}
+          forecastEps={displayForecastEps}
           changeRate={metrics.forecastEpsChangeRate}
         />
-        <MetricCard label="BPS" value={metrics.bps} format="yen" />
+        <MetricCard label="BPS" value={displayBps} format="yen" />
         <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />
         <MetricCard label="純利益率" value={metrics.netMargin} format="percent" />
 

@@ -12,6 +12,7 @@ interface FundamentalsHistoryPanelProps {
 
 interface ForecastEpsFields {
   forecastEps?: number | null;
+  adjustedForecastEps?: number | null;
   revisedForecastEps?: number | null;
   revisedForecastSource?: string | null;
 }
@@ -27,24 +28,25 @@ function formatFyLabel(date: string): string {
 }
 
 function renderForecastEps(fy: ForecastEpsFields): React.ReactNode {
-  const { forecastEps, revisedForecastEps, revisedForecastSource } = fy;
+  const { forecastEps, adjustedForecastEps, revisedForecastEps, revisedForecastSource } = fy;
+  const displayForecastEps = adjustedForecastEps ?? forecastEps ?? null;
 
   const revisionBadge =
     revisedForecastEps != null ? (
       <span
         className={cn(
           'text-xs ml-1',
-          forecastEps != null && revisedForecastEps > forecastEps ? 'text-green-500' : 'text-red-500'
+          displayForecastEps != null && revisedForecastEps > displayForecastEps ? 'text-green-500' : 'text-red-500'
         )}
       >
         ({revisedForecastSource}: {formatFundamentalValue(revisedForecastEps, 'yen')})
       </span>
     ) : null;
 
-  if (forecastEps != null) {
+  if (displayForecastEps != null) {
     return (
       <span>
-        {formatFundamentalValue(forecastEps, 'yen')}
+        {formatFundamentalValue(displayForecastEps, 'yen')}
         {revisionBadge}
       </span>
     );
@@ -115,9 +117,15 @@ export function FundamentalsHistoryPanel({ symbol }: FundamentalsHistoryPanelPro
             {fyHistory.map((fy) => (
               <tr key={fy.date} className="border-b border-border/20 hover:bg-background/40">
                 <td className="py-2.5 px-3 font-medium text-foreground">{formatFyLabel(fy.date)}</td>
-                <td className="py-2.5 px-3 text-right text-foreground">{formatFundamentalValue(fy.eps, 'yen')}</td>
-                <td className="py-2.5 px-3 text-right text-muted-foreground">{renderForecastEps(fy)}</td>
-                <td className="py-2.5 px-3 text-right text-foreground">{formatFundamentalValue(fy.bps, 'yen')}</td>
+                <td className="py-2.5 px-3 text-right text-foreground">
+                  {formatFundamentalValue(fy.adjustedEps ?? fy.eps, 'yen')}
+                </td>
+                <td className="py-2.5 px-3 text-right text-muted-foreground">
+                  {renderForecastEps(fy)}
+                </td>
+                <td className="py-2.5 px-3 text-right text-foreground">
+                  {formatFundamentalValue(fy.adjustedBps ?? fy.bps, 'yen')}
+                </td>
                 <td className="py-2.5 px-3 text-right text-foreground">{formatFundamentalValue(fy.roe, 'percent')}</td>
                 <td className={cn('py-2.5 px-3 text-right', getFundamentalColor(fy.cashFlowOperating, 'cashFlow'))}>
                   {formatFundamentalValue(fy.cashFlowOperating, 'millions')}

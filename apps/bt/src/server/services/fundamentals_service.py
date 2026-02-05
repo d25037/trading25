@@ -7,6 +7,7 @@ This is a Python port of apps/ts/packages/api/src/services/fundamentals-data.ts.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
 from datetime import datetime
 
@@ -15,6 +16,7 @@ from loguru import logger
 
 from src.api.jquants_client import JQuantsAPIClient, JQuantsStatement, StockInfo
 from src.api.market_client import MarketAPIClient
+from src.models.types import normalize_period_type
 from src.server.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
@@ -159,6 +161,11 @@ class FundamentalsService:
             data, latest_metrics, statements, request.prefer_consolidated
         )
 
+        # Apply share-based adjustments for EPS/BPS/Forecast EPS
+        data, latest_metrics = self._apply_share_adjustments(
+            data, statements, latest_metrics
+        )
+
         logger.debug(
             f"Fundamentals calculation complete: {len(data)} data points, "
             f"{len(daily_valuation) if daily_valuation else 0} daily valuation points"
@@ -171,6 +178,160 @@ class FundamentalsService:
             latestMetrics=latest_metrics,
             dailyValuation=daily_valuation if daily_valuation else None,
             lastUpdated=datetime.now().isoformat(),
+        )
+
+    def _build_shares_map(
+        self, statements: list[JQuantsStatement]
+    ) -> dict[tuple[str, str, str | None], float | None]:
+        """Build lookup map for shares outstanding by period metadata."""
+        shares_map: dict[tuple[str, str, str | None], float | None] = {}
+        for stmt in statements:
+            period_type = normalize_period_type(stmt.CurPerType)
+            key = (stmt.CurPerEn, stmt.DiscDate, period_type)
+            shares_map[key] = stmt.ShOutFY
+        return shares_map
+
+    def _get_shares_for_datapoint(
+        self,
+        data_point: FundamentalDataPoint,
+        shares_map: dict[tuple[str, str, str | None], float | None],
+    ) -> float | None:
+        """Resolve shares outstanding for a data point."""
+        period_type = normalize_period_type(data_point.periodType)
+        key = (data_point.date, data_point.disclosedDate, period_type)
+        return shares_map.get(key)
+
+    def _resolve_baseline_shares_from_latest_quarter(
+        self, statements: list[JQuantsStatement]
+    ) -> float | None:
+        """Find baseline shares from the latest quarterly disclosure (1Q/2Q/3Q).
+
+        Falls back to the latest disclosure of any period type if no quarterly data exists.
+        """
+        quarterly_types = ("1Q", "2Q", "3Q")
+
+        def _find_latest_shares(
+            require_quarterly: bool,
+        ) -> float | None:
+            latest_disclosed: str | None = None
+            latest_shares: float | None = None
+            for stmt in statements:
+                if require_quarterly:
+                    period_type = normalize_period_type(stmt.CurPerType)
+                    if period_type not in quarterly_types:
+                        continue
+                shares = stmt.ShOutFY
+                if shares is None or shares == 0:
+                    continue
+                if latest_disclosed is None or stmt.DiscDate > latest_disclosed:
+                    latest_disclosed = stmt.DiscDate
+                    latest_shares = shares
+            return latest_shares
+
+        return _find_latest_shares(require_quarterly=True) or _find_latest_shares(
+            require_quarterly=False
+        )
+
+    def _compute_adjusted_value(
+        self,
+        value: float | None,
+        current_shares: float | None,
+        base_shares: float | None,
+    ) -> float | None:
+        """Compute adjusted value using share count ratio."""
+        if (
+            value is None
+            or current_shares is None
+            or base_shares is None
+            or current_shares == 0
+            or base_shares == 0
+        ):
+            return None
+        if math.isnan(current_shares) or math.isnan(base_shares):
+            return None
+        # Adjust to baseline share count (latest quarterly disclosure) so splits reduce historical EPS/BPS.
+        adjusted = value * (current_shares / base_shares)
+        return self._round_or_none(adjusted)
+
+    def _build_adjusted_datapoint(
+        self,
+        item: FundamentalDataPoint,
+        eps_shares: float | None,
+        bps_shares: float | None,
+        forecast_shares: float | None,
+        base_shares: float | None,
+    ) -> FundamentalDataPoint:
+        """Build a new FundamentalDataPoint with share-adjusted EPS/BPS/Forecast and recalculated PER/PBR."""
+        adjusted_eps = self._compute_adjusted_value(item.eps, eps_shares, base_shares)
+        adjusted_bps = self._compute_adjusted_value(item.bps, bps_shares, base_shares)
+        adjusted_forecast = self._compute_adjusted_value(
+            item.forecastEps, forecast_shares, base_shares
+        )
+        display_eps = adjusted_eps if adjusted_eps is not None else item.eps
+        display_bps = adjusted_bps if adjusted_bps is not None else item.bps
+
+        return FundamentalDataPoint(
+            **{
+                **item.model_dump(),
+                "adjustedEps": adjusted_eps,
+                "adjustedForecastEps": adjusted_forecast,
+                "adjustedBps": adjusted_bps,
+                "per": self._round_or_none(self._calculate_per(display_eps, item.stockPrice)),
+                "pbr": self._round_or_none(self._calculate_pbr(display_bps, item.stockPrice)),
+            }
+        )
+
+    def _apply_share_adjustments(
+        self,
+        data: list[FundamentalDataPoint],
+        statements: list[JQuantsStatement],
+        latest_metrics: FundamentalDataPoint | None,
+    ) -> tuple[list[FundamentalDataPoint], FundamentalDataPoint | None]:
+        """Apply share-based adjustments to EPS/BPS/Forecast EPS."""
+        shares_map = self._build_shares_map(statements)
+        base_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
+
+        updated_data: list[FundamentalDataPoint] = []
+        for item in data:
+            current_shares = self._get_shares_for_datapoint(item, shares_map)
+            updated_data.append(
+                self._build_adjusted_datapoint(
+                    item, current_shares, current_shares, current_shares, base_shares
+                )
+            )
+
+        updated_latest = self._apply_adjusted_to_latest_metrics(
+            latest_metrics, updated_data, shares_map, base_shares
+        )
+
+        return updated_data, updated_latest
+
+    def _apply_adjusted_to_latest_metrics(
+        self,
+        metrics: FundamentalDataPoint | None,
+        data: list[FundamentalDataPoint],
+        shares_map: dict[tuple[str, str, str | None], float | None],
+        base_shares: float | None,
+    ) -> FundamentalDataPoint | None:
+        """Apply adjusted values to latestMetrics with FY alignment."""
+        if metrics is None:
+            return None
+
+        # Use latest FY shares for EPS/BPS alignment when available
+        latest_fy = next(
+            (d for d in data if d.periodType == "FY" and self._has_actual_financial_data(d)),
+            None,
+        )
+        fy_shares = (
+            self._get_shares_for_datapoint(latest_fy, shares_map)
+            if latest_fy is not None
+            else None
+        )
+        metrics_shares = self._get_shares_for_datapoint(metrics, shares_map)
+        eps_bps_shares = fy_shares or metrics_shares
+
+        return self._build_adjusted_datapoint(
+            metrics, eps_bps_shares, eps_bps_shares, metrics_shares, base_shares
         )
 
     def _get_stock_info(self, symbol: str) -> StockInfo | None:
@@ -260,10 +421,12 @@ class FundamentalsService:
     ) -> list[JQuantsStatement]:
         """Filter statements by date range and period type."""
         filtered = []
+        normalized_period_type = normalize_period_type(period_type)
 
         for stmt in statements:
             # Filter by period type
-            if period_type != "all" and stmt.CurPerType != period_type:
+            stmt_period_type = normalize_period_type(stmt.CurPerType)
+            if normalized_period_type != "all" and stmt_period_type != normalized_period_type:
                 continue
 
             # Filter by date range
@@ -324,10 +487,12 @@ class FundamentalsService:
             stmt, eps, prefer_consolidated
         )
 
+        normalized_period_type = normalize_period_type(stmt.CurPerType)
+
         return FundamentalDataPoint(
             date=stmt.CurPerEn,
             disclosedDate=stmt.DiscDate,
-            periodType=stmt.CurPerType,
+            periodType=normalized_period_type or stmt.CurPerType,
             isConsolidated=self._is_consolidated_statement(stmt),
             accountingStandard=self._get_accounting_standard(stmt),
             roe=self._round_or_none(roe),
@@ -388,9 +553,10 @@ class FundamentalsService:
 
         # Annualize quarterly profit
         adjusted_profit = net_profit
-        if stmt.CurPerType in ("Q1", "Q2", "Q3"):
+        period_type = normalize_period_type(stmt.CurPerType)
+        if period_type in ("1Q", "2Q", "3Q"):
             adjusted_profit = self._annualize_quarterly_profit(
-                net_profit, stmt.CurPerType
+                net_profit, period_type
             )
 
         return (adjusted_profit / equity) * 100
@@ -399,8 +565,9 @@ class FundamentalsService:
         self, quarterly_profit: float, period_type: str
     ) -> float:
         """Annualize quarterly profit figures."""
-        multipliers = {"Q1": 4.0, "Q2": 2.0, "Q3": 4.0 / 3.0}
-        return quarterly_profit * multipliers.get(period_type, 1.0)
+        normalized = normalize_period_type(period_type)
+        multipliers = {"1Q": 4.0, "2Q": 2.0, "3Q": 4.0 / 3.0}
+        return quarterly_profit * multipliers.get(normalized, 1.0)
 
     def _calculate_roa(
         self, stmt: JQuantsStatement, prefer_consolidated: bool
@@ -609,7 +776,10 @@ class FundamentalsService:
         if not daily_prices:
             return []
 
-        fy_data_points = self._get_applicable_fy_data(statements, prefer_consolidated)
+        baseline_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
+        fy_data_points = self._get_applicable_fy_data(
+            statements, prefer_consolidated, baseline_shares
+        )
         if not fy_data_points:
             return []
 
@@ -625,6 +795,7 @@ class FundamentalsService:
 
             per = None
             pbr = None
+            market_cap = None
 
             if (
                 applicable_fy.eps is not None
@@ -635,16 +806,22 @@ class FundamentalsService:
             if applicable_fy.bps is not None and applicable_fy.bps > 0:
                 pbr = round(close / applicable_fy.bps, 2)
 
+            if baseline_shares is not None and baseline_shares != 0:
+                market_cap = self._round_or_none(close * baseline_shares)
+
             result.append(
                 DailyValuationDataPoint(
-                    date=date_str, close=close, per=per, pbr=pbr
+                    date=date_str, close=close, per=per, pbr=pbr, marketCap=market_cap
                 )
             )
 
         return result
 
     def _get_applicable_fy_data(
-        self, statements: list[JQuantsStatement], prefer_consolidated: bool
+        self,
+        statements: list[JQuantsStatement],
+        prefer_consolidated: bool,
+        baseline_shares: float | None,
     ) -> list[FYDataPoint]:
         """Get FY data points sorted by disclosure date for daily valuation."""
         fy_data: list[FYDataPoint] = []
@@ -655,16 +832,20 @@ class FundamentalsService:
 
             eps = self._calculate_eps(stmt, prefer_consolidated)
             bps = self._calculate_bps(stmt, prefer_consolidated)
+            adjusted_eps = self._compute_adjusted_value(eps, stmt.ShOutFY, baseline_shares)
+            adjusted_bps = self._compute_adjusted_value(bps, stmt.ShOutFY, baseline_shares)
+            display_eps = adjusted_eps if adjusted_eps is not None else eps
+            display_bps = adjusted_bps if adjusted_bps is not None else bps
 
             # Exclude forecasts (eps=0/None and bps=0/None)
-            if not self._has_valid_valuation_metrics(eps, bps):
+            if not self._has_valid_valuation_metrics(display_eps, display_bps):
                 continue
 
             fy_data.append(
                 FYDataPoint(
                     disclosed_date=stmt.DiscDate,
-                    eps=eps,
-                    bps=bps,
+                    eps=display_eps,
+                    bps=display_bps,
                 )
             )
 
@@ -831,9 +1012,11 @@ class FundamentalsService:
         except ValueError:
             return _EMPTY_PREV_CASH_FLOW
 
+        normalized_period_type = normalize_period_type(period_type)
         # Find statement with same period type from ~1 year earlier
         for stmt in statements:
-            if stmt.CurPerType != period_type:
+            stmt_period_type = normalize_period_type(stmt.CurPerType)
+            if stmt_period_type != normalized_period_type:
                 continue
 
             try:
@@ -880,7 +1063,9 @@ class FundamentalsService:
 
         # Find latest Q statement newer than latest FY
         q_statements = [
-            s for s in statements if s.CurPerType in ("Q1", "Q2", "Q3")
+            s
+            for s in statements
+            if normalize_period_type(s.CurPerType) in ("1Q", "2Q", "3Q")
         ]
         q_statements.sort(key=lambda s: s.DiscDate, reverse=True)
 
@@ -910,7 +1095,10 @@ class FundamentalsService:
                 **{
                     **latest_fy.model_dump(),
                     "revisedForecastEps": rounded_q_forecast,
-                    "revisedForecastSource": latest_q.CurPerType,
+                    "revisedForecastSource": normalize_period_type(
+                        latest_q.CurPerType
+                    )
+                    or latest_q.CurPerType,
                 }
             )
             data[latest_fy_idx] = updated_fy

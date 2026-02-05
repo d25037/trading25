@@ -33,6 +33,7 @@ import {
   hasValidValuationMetrics,
   isConsolidatedStatement,
   isFiscalYear,
+  normalizePeriodType,
   toNumberOrNull,
 } from '@trading25/shared/fundamental-analysis';
 import { MarketDataReader } from '@trading25/shared/market-sync';
@@ -46,7 +47,7 @@ interface FundamentalsQueryOptions {
   symbol: string;
   from?: string;
   to?: string;
-  periodType: 'all' | 'FY' | 'Q1' | 'Q2' | 'Q3';
+  periodType: 'all' | 'FY' | '1Q' | '2Q' | '3Q';
   preferConsolidated: boolean;
 }
 
@@ -148,7 +149,9 @@ export class FundamentalsDataService extends BaseJQuantsService {
   private filterStatements(statements: JQuantsStatement[], options: FundamentalsQueryOptions): JQuantsStatement[] {
     return statements.filter((stmt) => {
       // Filter by period type
-      if (options.periodType !== 'all' && stmt.CurPerType !== options.periodType) {
+      const normalizedPeriodType = normalizePeriodType(options.periodType);
+      const stmtPeriodType = normalizePeriodType(stmt.CurPerType);
+      if (normalizedPeriodType !== 'all' && stmtPeriodType !== normalizedPeriodType) {
         return false;
       }
 
@@ -241,10 +244,12 @@ export class FundamentalsDataService extends BaseJQuantsService {
     const netSales = getNetSales(statement, preferConsolidated);
     const operatingProfit = getOperatingProfit(statement, preferConsolidated);
 
+    const normalizedPeriodType = normalizePeriodType(statement.CurPerType);
+
     return {
       date: statement.CurPerEn,
       disclosedDate: statement.DiscDate,
-      periodType: statement.CurPerType,
+      periodType: normalizedPeriodType ?? statement.CurPerType,
       isConsolidated: isConsolidatedStatement(statement),
       accountingStandard: getAccountingStandard(statement),
       // Core metrics
@@ -252,6 +257,9 @@ export class FundamentalsDataService extends BaseJQuantsService {
       eps: eps !== null ? Math.round(eps * 100) / 100 : null,
       dilutedEps: dilutedEps !== null ? Math.round(dilutedEps * 100) / 100 : null,
       bps: bps !== null ? Math.round(bps * 100) / 100 : null,
+      adjustedEps: null,
+      adjustedForecastEps: null,
+      adjustedBps: null,
       per: per !== null ? Math.round(per * 100) / 100 : null,
       pbr: pbr !== null ? Math.round(pbr * 100) / 100 : null,
       // Profitability metrics
@@ -461,7 +469,7 @@ export class FundamentalsDataService extends BaseJQuantsService {
       const applicableFY = findApplicableFY(fyDataPoints, dateStr);
       const { per, pbr } = calculateDailyValuation(close, applicableFY);
 
-      result.push({ date: dateStr, close, per, pbr });
+      result.push({ date: dateStr, close, per, pbr, marketCap: null });
     }
 
     logger.debug('Daily valuation calculated', {
@@ -577,7 +585,7 @@ export class FundamentalsDataService extends BaseJQuantsService {
       data[latestFyIdx] = {
         ...latestFY,
         revisedForecastEps: roundedQForecast,
-        revisedForecastSource: latestQ.CurPerType,
+        revisedForecastSource: normalizePeriodType(latestQ.CurPerType) ?? latestQ.CurPerType,
       };
     }
   }
@@ -642,7 +650,9 @@ export class FundamentalsDataService extends BaseJQuantsService {
 
     // Find statement with same period type from approximately one year earlier
     const prevStatement = statements.find((s) => {
-      if (s.CurPerType !== periodType) return false;
+      const normalizedPeriodType = normalizePeriodType(periodType);
+      const stmtPeriodType = normalizePeriodType(s.CurPerType);
+      if (stmtPeriodType !== normalizedPeriodType) return false;
       const stmtDate = new Date(s.CurPerEn);
       // Allow ±45 days tolerance for fiscal year end variations
       const daysDiff = Math.abs(

@@ -50,7 +50,7 @@ export default defineConfig({
 			'/bt': {
 				target: 'http://localhost:3002',
 				changeOrigin: true,
-				rewrite: (path) => path.replace(/^\/apps/bt/, ''),
+				rewrite: (path) => path.replace(/^\/bt/, ''),
 			},
 		},
 	},

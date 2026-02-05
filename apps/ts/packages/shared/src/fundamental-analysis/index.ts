@@ -55,5 +55,6 @@ export {
   isQuarterlyPeriod,
   isValidBps,
   isValidEps,
+  normalizePeriodType,
   toNumberOrNull,
 } from './utils.js';

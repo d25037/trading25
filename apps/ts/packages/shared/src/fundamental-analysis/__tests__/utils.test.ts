@@ -14,6 +14,7 @@ import {
   isQuarterlyPeriod,
   isValidBps,
   isValidEps,
+  normalizePeriodType,
   toNumberOrNull,
 } from '../utils';
 
@@ -62,9 +63,9 @@ describe('isFiscalYear', () => {
   });
 
   it('returns false for quarters', () => {
-    expect(isFiscalYear('Q1')).toBe(false);
-    expect(isFiscalYear('Q2')).toBe(false);
-    expect(isFiscalYear('Q3')).toBe(false);
+    expect(isFiscalYear('1Q')).toBe(false);
+    expect(isFiscalYear('2Q')).toBe(false);
+    expect(isFiscalYear('3Q')).toBe(false);
   });
 
   it('returns false for null/undefined', () => {
@@ -74,10 +75,10 @@ describe('isFiscalYear', () => {
 });
 
 describe('isQuarterlyPeriod', () => {
-  it('returns true for Q1, Q2, Q3', () => {
-    expect(isQuarterlyPeriod('Q1')).toBe(true);
-    expect(isQuarterlyPeriod('Q2')).toBe(true);
-    expect(isQuarterlyPeriod('Q3')).toBe(true);
+  it('returns true for 1Q, 2Q, 3Q', () => {
+    expect(isQuarterlyPeriod('1Q')).toBe(true);
+    expect(isQuarterlyPeriod('2Q')).toBe(true);
+    expect(isQuarterlyPeriod('3Q')).toBe(true);
   });
 
   it('returns false for FY (Q4 is reported as FY)', () => {
@@ -87,6 +88,25 @@ describe('isQuarterlyPeriod', () => {
   it('returns false for null/undefined', () => {
     expect(isQuarterlyPeriod(null)).toBe(false);
     expect(isQuarterlyPeriod(undefined)).toBe(false);
+  });
+});
+
+describe('normalizePeriodType', () => {
+  it('normalizes legacy Q1/Q2/Q3 to 1Q/2Q/3Q', () => {
+    expect(normalizePeriodType('Q1')).toBe('1Q');
+    expect(normalizePeriodType('Q2')).toBe('2Q');
+    expect(normalizePeriodType('Q3')).toBe('3Q');
+  });
+
+  it('returns FY/all/1Q-3Q as-is', () => {
+    expect(normalizePeriodType('FY')).toBe('FY');
+    expect(normalizePeriodType('all')).toBe('all');
+    expect(normalizePeriodType('1Q')).toBe('1Q');
+  });
+
+  it('returns null for null/undefined', () => {
+    expect(normalizePeriodType(null)).toBeNull();
+    expect(normalizePeriodType(undefined)).toBeNull();
   });
 });
 
@@ -248,7 +268,7 @@ describe('findApplicableFY', () => {
 describe('filterValidFYData', () => {
   const statements = [
     { periodType: 'FY', disclosedDate: '2024-05-08', eps: 300, bps: 2500 },
-    { periodType: 'Q1', disclosedDate: '2024-08-01', eps: 100, bps: 0 }, // Q1 excluded
+    { periodType: '1Q', disclosedDate: '2024-08-01', eps: 100, bps: 0 }, // 1Q excluded
     { periodType: 'FY', disclosedDate: '2025-05-08', eps: 359.56, bps: 2753.09 },
     { periodType: 'FY', disclosedDate: '2023-05-10', eps: 0, bps: 0 }, // Forecast excluded
   ];

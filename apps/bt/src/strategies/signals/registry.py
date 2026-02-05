@@ -129,6 +129,13 @@ def _has_statements_columns(d: dict[str, Any], *columns: str) -> bool:
     )
 
 
+def _select_fundamental_column(
+    params: SignalParams, adjusted: str, raw: str
+) -> str:
+    """Select adjusted or raw column based on config."""
+    return adjusted if params.fundamental.use_adjusted else raw
+
+
 def _has_margin_data(d: dict[str, Any]) -> bool:
     """信用残高データが存在し、有効な値があるかチェック"""
     return (
@@ -248,7 +255,9 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.per.enabled,
         param_builder=lambda p, d: {
             "close": d["execution_close"],  # 相対価格モード対応: 実価格を使用
-            "eps": d["statements_data"]["EPS"],
+            "eps": d["statements_data"][
+                _select_fundamental_column(p, "AdjustedEPS", "EPS")
+            ],
             "threshold": p.fundamental.per.threshold,
             "condition": p.fundamental.per.condition,
             "exclude_negative": p.fundamental.per.exclude_negative,
@@ -603,7 +612,9 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.pbr.enabled,
         param_builder=lambda p, d: {
             "close": d["execution_close"],
-            "bps": d["statements_data"]["BPS"],
+            "bps": d["statements_data"][
+                _select_fundamental_column(p, "AdjustedBPS", "BPS")
+            ],
             "threshold": p.fundamental.pbr.threshold,
             "condition": p.fundamental.pbr.condition,
             "exclude_negative": p.fundamental.pbr.exclude_negative,
@@ -623,8 +634,14 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.peg_ratio.enabled,
         param_builder=lambda p, d: {
             "close": d["execution_close"],
-            "eps": d["statements_data"]["EPS"],
-            "next_year_forecast_eps": d["statements_data"]["NextYearForecastEPS"],
+            "eps": d["statements_data"][
+                _select_fundamental_column(p, "AdjustedEPS", "EPS")
+            ],
+            "next_year_forecast_eps": d["statements_data"][
+                _select_fundamental_column(
+                    p, "AdjustedNextYearForecastEPS", "NextYearForecastEPS"
+                )
+            ],
             "threshold": p.fundamental.peg_ratio.threshold,
             "condition": p.fundamental.peg_ratio.condition,
         },
@@ -642,8 +659,14 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         signal_func=is_expected_growth_eps,
         enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.forward_eps_growth.enabled,
         param_builder=lambda p, d: {
-            "eps": d["statements_data"]["EPS"],
-            "next_year_forecast_eps": d["statements_data"]["NextYearForecastEPS"],
+            "eps": d["statements_data"][
+                _select_fundamental_column(p, "AdjustedEPS", "EPS")
+            ],
+            "next_year_forecast_eps": d["statements_data"][
+                _select_fundamental_column(
+                    p, "AdjustedNextYearForecastEPS", "NextYearForecastEPS"
+                )
+            ],
             "growth_threshold": p.fundamental.forward_eps_growth.threshold,
             "condition": p.fundamental.forward_eps_growth.condition,
         },
@@ -661,7 +684,9 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         signal_func=is_growing_eps,
         enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.eps_growth.enabled,
         param_builder=lambda p, d: {
-            "eps": d["statements_data"]["EPS"],
+            "eps": d["statements_data"][
+                _select_fundamental_column(p, "AdjustedEPS", "EPS")
+            ],
             "growth_threshold": p.fundamental.eps_growth.threshold,
             "periods": p.fundamental.eps_growth.periods,
             "condition": p.fundamental.eps_growth.condition,

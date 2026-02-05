@@ -2251,6 +2251,18 @@
             ],
             "title": "Pbr",
             "description": "PBR at this date"
+          },
+          "marketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Marketcap",
+            "description": "Market cap at this date (JPY)"
           }
         },
         "type": "object",
@@ -2405,7 +2417,7 @@
           "periodType": {
             "type": "string",
             "title": "Periodtype",
-            "description": "Period type (FY, Q1, Q2, Q3)"
+            "description": "Period type (FY, 1Q, 2Q, 3Q)"
           },
           "isConsolidated": {
             "type": "boolean",
@@ -2471,6 +2483,42 @@
             ],
             "title": "Bps",
             "description": "Book value per share (JPY)"
+          },
+          "adjustedEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustedeps",
+            "description": "Adjusted EPS using share count (JPY)"
+          },
+          "adjustedForecastEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustedforecasteps",
+            "description": "Adjusted forecast EPS using share count (JPY)"
+          },
+          "adjustedBps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustedbps",
+            "description": "Adjusted BPS using share count (JPY)"
           },
           "per": {
             "anyOf": [
@@ -2734,7 +2782,7 @@
               }
             ],
             "title": "Revisedforecastsource",
-            "description": "Source of revised forecast (Q1, Q2, Q3)"
+            "description": "Source of revised forecast (1Q, 2Q, 3Q)"
           },
           "prevCashFlowOperating": {
             "anyOf": [
@@ -2834,12 +2882,12 @@
             "enum": [
               "all",
               "FY",
-              "Q1",
-              "Q2",
-              "Q3"
+              "1Q",
+              "2Q",
+              "3Q"
             ],
             "title": "Period Type",
-            "description": "Filter by period type",
+            "description": "Filter by period type (FY, 1Q, 2Q, 3Q)",
             "default": "all"
           },
           "prefer_consolidated": {

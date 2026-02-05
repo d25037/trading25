@@ -1,3 +1,4 @@
+import { useMemo } from 'react';
 import { AlertCircle, BookOpen, Loader2, TrendingUp, Wallet } from 'lucide-react';
 import { ChartControls } from '@/components/Chart/ChartControls';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
@@ -13,6 +14,7 @@ import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/button';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
+import { useFundamentals } from '@/hooks/useFundamentals';
 import { useStockData } from '@/hooks/useStockData';
 import { cn } from '@/lib/utils';
 import { useChartStore } from '@/stores/chartStore';
@@ -25,6 +27,7 @@ import type {
   VolumeComparisonData,
 } from '@/types/chart';
 import { logger } from '@/utils/logger';
+import { formatMarketCap } from '@/utils/formatters';
 
 // Helper component for margin pressure indicators section
 function MarginPressureIndicatorsSection({
@@ -84,6 +87,7 @@ export function ChartsPage() {
     error: marginPressureError,
   } = useBtMarginIndicators(selectedSymbol);
   const { data: stockData } = useStockData(selectedSymbol, 'daily'); // Get stock data for company name
+  const { data: fundamentalsData } = useFundamentals(selectedSymbol);
   const { settings } = useChartStore();
 
   logger.debug('ChartsPage render', {
@@ -121,6 +125,12 @@ export function ChartsPage() {
       </div>
     </div>
   );
+
+  const latestMarketCap = useMemo(() => {
+    const daily = fundamentalsData?.dailyValuation;
+    if (!daily || daily.length === 0) return null;
+    return daily[daily.length - 1]?.marketCap ?? null;
+  }, [fundamentalsData]);
 
   const renderErrorState = () => (
     <div className="flex h-full items-center justify-center">
@@ -225,6 +235,11 @@ export function ChartsPage() {
                       {selectedSymbol}
                       {stockData?.companyName && (
                         <span className="text-white/90 font-medium ml-2">{stockData.companyName}</span>
+                      )}
+                      {latestMarketCap != null && (
+                        <span className="text-white/80 text-sm font-medium ml-3">
+                          時価総額 {formatMarketCap(latestMarketCap)}
+                        </span>
                       )}
                       {settings.relativeMode && <span className="text-white/70 font-medium"> / TOPIX</span>}
                     </h2>

@@ -17,6 +17,7 @@ from src.server.schemas.fundamentals import (
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
 )
+from src.models.types import normalize_period_type
 from src.server.services.fundamentals_service import (
     FundamentalsService,
     FYDataPoint,
@@ -149,7 +150,7 @@ class TestMetricCalculations:
             DiscDate="2024-02-15",
             Code="7203",
             DocType="四半期報告書・連結",
-            CurPerType="Q3",
+            CurPerType="3Q",
             CurPerSt="2023-04-01",
             CurPerEn="2023-12-31",
             CurFYSt="2023-04-01",
@@ -188,7 +189,7 @@ class TestMetricCalculations:
             NxFNCEPS=None,
         )
         roe = service._calculate_roe(quarterly_stmt, prefer_consolidated=True)
-        # Q3の年率換算: (3兆 * 4/3) / 30兆 * 100 = 13.33%
+        # 3Qの年率換算: (3兆 * 4/3) / 30兆 * 100 = 13.33%
         assert roe is not None
         assert abs(roe - 13.33) < 0.1
 
@@ -520,9 +521,9 @@ class TestFilterStatements:
         }
         return [
             JQuantsStatement(**{**base, "CurPerType": "FY", "CurPerEn": "2024-03-31"}),
-            JQuantsStatement(**{**base, "CurPerType": "Q3", "CurPerEn": "2023-12-31"}),
-            JQuantsStatement(**{**base, "CurPerType": "Q2", "CurPerEn": "2023-09-30"}),
-            JQuantsStatement(**{**base, "CurPerType": "Q1", "CurPerEn": "2023-06-30"}),
+            JQuantsStatement(**{**base, "CurPerType": "3Q", "CurPerEn": "2023-12-31"}),
+            JQuantsStatement(**{**base, "CurPerType": "2Q", "CurPerEn": "2023-09-30"}),
+            JQuantsStatement(**{**base, "CurPerType": "1Q", "CurPerEn": "2023-06-30"}),
             JQuantsStatement(**{**base, "CurPerType": "FY", "CurPerEn": "2023-03-31"}),
         ]
 
@@ -543,8 +544,8 @@ class TestFilterStatements:
     def test_filter_by_period_type_q1(
         self, service: FundamentalsService, statements: list[JQuantsStatement]
     ):
-        """Q1のみ"""
-        filtered = service._filter_statements(statements, "Q1", None, None)
+        """1Qのみ"""
+        filtered = service._filter_statements(statements, "1Q", None, None)
         assert len(filtered) == 1
 
     def test_filter_by_date_range(
@@ -640,7 +641,7 @@ class TestDailyValuation:
             JQuantsStatement(
                 **{
                     **base,
-                    "CurPerType": "Q3",
+                    "CurPerType": "3Q",
                     "CurPerEn": "2023-12-31",
                     "DiscDate": "2024-02-15",
                     "EPS": 225.0,
@@ -658,7 +659,9 @@ class TestDailyValuation:
                 }
             ),
         ]
-        fy_data = service._get_applicable_fy_data(statements, prefer_consolidated=True)
+        fy_data = service._get_applicable_fy_data(
+            statements, prefer_consolidated=True, baseline_shares=None
+        )
         assert len(fy_data) == 2  # Only FY statements
         assert fy_data[0].disclosed_date == "2023-05-15"  # Sorted ascending
         assert fy_data[1].disclosed_date == "2024-05-15"
@@ -799,6 +802,173 @@ class TestComputeFundamentals:
         assert result.data[0].eps == 300.0
         assert result.data[0].bps == 2250.0
 
+    def test_share_adjusted_metrics(self, service: FundamentalsService):
+        """発行済株式数でEPS/BPS/予想EPSを調整する"""
+        base = {
+            "Code": "7203",
+            "DocType": "連結",
+            "CurPerSt": "2022-04-01",
+            "CurFYSt": "2022-04-01",
+            "CurFYEn": "2023-03-31",
+            "NxtFYSt": None,
+            "NxtFYEn": None,
+            "Sales": 45000000000000,
+            "OP": 5000000000000,
+            "OdP": 5500000000000,
+            "NP": 4000000000000,
+            "TA": 90000000000000,
+            "Eq": 30000000000000,
+            "EqAR": 33.33,
+            "CFO": 6000000000000,
+            "CFI": -2000000000000,
+            "CFF": -1000000000000,
+            "CashEq": 8000000000000,
+            "TrShFY": 0,
+            "AvgSh": 0,
+            "NCSales": None,
+            "NCOP": None,
+            "NCOdP": None,
+            "NCNP": None,
+            "NCEPS": None,
+            "NCTA": None,
+            "NCEq": None,
+            "NCEqAR": None,
+            "NCBPS": None,
+            "FNCEPS": None,
+            "NxFNCEPS": None,
+        }
+
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-06-01",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2024-03-31",
+                    "EPS": 200.0,
+                    "DEPS": 195.0,
+                    "BPS": 2000.0,
+                    "ShOutFY": 200.0,
+                    "FEPS": 210.0,
+                    "NxFEPS": 220.0,
+                }
+            ),
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2023-06-01",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2023-03-31",
+                    "EPS": 100.0,
+                    "DEPS": 98.0,
+                    "BPS": 1000.0,
+                    "ShOutFY": 100.0,
+                    "FEPS": 105.0,
+                    "NxFEPS": 110.0,
+                }
+            ),
+        ]
+
+        mock_prices_df = pd.DataFrame(
+            {
+                "Close": [6000.0, 6100.0, 6050.0],
+            },
+            index=pd.to_datetime(["2024-05-14", "2024-05-15", "2024-05-16"]),
+        )
+
+        mock_jquants = MagicMock()
+        mock_jquants.get_statements.return_value = statements
+        mock_jquants.get_stock_info.return_value = None
+
+        mock_market = MagicMock()
+        mock_market.get_stock_ohlcv.return_value = mock_prices_df
+
+        service._jquants_client = mock_jquants
+        service._market_client = mock_market
+
+        request = FundamentalsComputeRequest(symbol="7203", period_type="FY")
+        result = service.compute_fundamentals(request)
+
+        latest = next(d for d in result.data if d.date == "2024-03-31")
+        older = next(d for d in result.data if d.date == "2023-03-31")
+
+        assert latest.adjustedEps == latest.eps
+        assert latest.adjustedForecastEps == latest.forecastEps
+        assert latest.adjustedBps == latest.bps
+
+        assert older.adjustedEps == 50.0
+        # FY uses NxFEPS (=110.0), adjusted = 110.0 * (100/200) = 55.0
+        assert older.adjustedForecastEps == 55.0
+        assert older.adjustedBps == 500.0
+
+
+class TestComputeAdjustedValue:
+    """_compute_adjusted_value のエッジケーステスト"""
+
+    @pytest.fixture
+    def service(self):
+        return FundamentalsService()
+
+    def test_none_value(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(None, 100.0, 200.0) is None
+
+    def test_none_current_shares(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(100.0, None, 200.0) is None
+
+    def test_none_base_shares(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(100.0, 100.0, None) is None
+
+    def test_zero_current_shares(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(100.0, 0.0, 200.0) is None
+
+    def test_zero_base_shares(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(100.0, 100.0, 0.0) is None
+
+    def test_nan_current_shares(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(100.0, float("nan"), 200.0) is None
+
+    def test_nan_base_shares(self, service: FundamentalsService):
+        assert service._compute_adjusted_value(100.0, 100.0, float("nan")) is None
+
+    def test_same_shares_identity(self, service: FundamentalsService):
+        result = service._compute_adjusted_value(100.0, 200.0, 200.0)
+        assert result == 100.0
+
+    def test_split_halves_eps(self, service: FundamentalsService):
+        # Pre-split shares=100, post-split baseline=200 → EPS halved
+        result = service._compute_adjusted_value(100.0, 100.0, 200.0)
+        assert result == 50.0
+
+
+class TestNormalizePeriodType:
+    """normalize_period_type のテスト (shared utility in models.types)"""
+
+    def test_legacy_q1(self):
+        assert normalize_period_type("Q1") == "1Q"
+
+    def test_legacy_q2(self):
+        assert normalize_period_type("Q2") == "2Q"
+
+    def test_legacy_q3(self):
+        assert normalize_period_type("Q3") == "3Q"
+
+    def test_already_normalized(self):
+        assert normalize_period_type("1Q") == "1Q"
+        assert normalize_period_type("2Q") == "2Q"
+        assert normalize_period_type("3Q") == "3Q"
+
+    def test_fy(self):
+        assert normalize_period_type("FY") == "FY"
+
+    def test_all(self):
+        assert normalize_period_type("all") == "all"
+
+    def test_none(self):
+        assert normalize_period_type(None) is None
+
+    def test_unknown_passthrough(self):
+        assert normalize_period_type("X1") == "X1"
+
 
 class TestAnnualizeQuarterlyProfit:
     """四半期利益の年率換算テスト"""
@@ -808,18 +978,18 @@ class TestAnnualizeQuarterlyProfit:
         return FundamentalsService()
 
     def test_q1_annualization(self, service: FundamentalsService):
-        """Q1: 4倍"""
-        result = service._annualize_quarterly_profit(1000.0, "Q1")
+        """1Q: 4倍"""
+        result = service._annualize_quarterly_profit(1000.0, "1Q")
         assert result == 4000.0
 
     def test_q2_annualization(self, service: FundamentalsService):
-        """Q2: 2倍 (半期累計)"""
-        result = service._annualize_quarterly_profit(2000.0, "Q2")
+        """2Q: 2倍 (半期累計)"""
+        result = service._annualize_quarterly_profit(2000.0, "2Q")
         assert result == 4000.0
 
     def test_q3_annualization(self, service: FundamentalsService):
-        """Q3: 4/3倍 (9ヶ月累計)"""
-        result = service._annualize_quarterly_profit(3000.0, "Q3")
+        """3Q: 4/3倍 (9ヶ月累計)"""
+        result = service._annualize_quarterly_profit(3000.0, "3Q")
         assert result == 4000.0
 
     def test_fy_no_adjustment(self, service: FundamentalsService):
@@ -899,7 +1069,7 @@ class TestForecastEps:
             DiscDate="2024-02-15",
             Code="7203",
             DocType="連結",
-            CurPerType="Q3",
+            CurPerType="3Q",
             CurPerSt="2023-04-01",
             CurPerEn="2023-12-31",
             CurFYSt="2023-04-01",

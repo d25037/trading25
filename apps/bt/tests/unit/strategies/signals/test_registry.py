@@ -2,6 +2,8 @@
 
 import pandas as pd
 
+from src.models.signals import SignalParams
+
 from src.strategies.signals.registry import (
     SIGNAL_REGISTRY,
     _has_benchmark_data,
@@ -180,3 +182,59 @@ class TestSignalRegistry:
         assert sig.name == "EPS成長率"
         assert "statements:EPS" in sig.data_requirements
         assert "statements:NextYearForecastEPS" not in sig.data_requirements
+
+
+class TestFundamentalAdjustedSelection:
+    def _get_signal(self, param_key: str):
+        return next(s for s in SIGNAL_REGISTRY if s.param_key == param_key)
+
+    def test_per_uses_adjusted_by_default(self) -> None:
+        params = SignalParams()
+        params.fundamental.per.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0],
+                "AdjustedEPS": [0.5],
+            }
+        )
+        close = pd.Series([100.0])
+
+        sig = self._get_signal("fundamental.per")
+        built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
+        assert built["eps"].equals(df["AdjustedEPS"])
+
+    def test_forward_eps_growth_uses_adjusted_when_enabled(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_eps_growth.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0],
+                "AdjustedEPS": [0.8],
+                "NextYearForecastEPS": [2.0],
+                "AdjustedNextYearForecastEPS": [1.6],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forward_eps_growth")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["eps"].equals(df["AdjustedEPS"])
+        assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
+
+    def test_adjusted_can_be_disabled(self) -> None:
+        params = SignalParams()
+        params.fundamental.use_adjusted = False
+        params.fundamental.per.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0],
+                "AdjustedEPS": [0.5],
+            }
+        )
+        close = pd.Series([100.0])
+
+        sig = self._get_signal("fundamental.per")
+        built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
+        assert built["eps"].equals(df["EPS"])

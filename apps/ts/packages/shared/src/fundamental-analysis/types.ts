@@ -22,7 +22,7 @@ export interface ROEResult {
 export interface ROEMetadata {
   /** Stock code */
   code: string;
-  /** Period type (FY, Q1, Q2, Q3) */
+  /** Period type (FY, 1Q, 2Q, 3Q) */
   periodType: string;
   /** Period start date */
   periodStart: string;
@@ -42,7 +42,7 @@ export interface ROEMetadata {
  * Options for ROE calculation
  */
 export interface ROECalculationOptions {
-  /** Whether to annualize quarterly results (default: true for Q1, Q2, Q3) */
+  /** Whether to annualize quarterly results (default: true for 1Q, 2Q, 3Q) */
   annualize?: boolean;
   /** Prefer consolidated over non-consolidated data (default: true) */
   preferConsolidated?: boolean;

@@ -8,7 +8,10 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
-from src.data.loaders.statements_loaders import load_statements_data
+from src.data.loaders.statements_loaders import (
+    load_statements_data,
+    transform_statements_df,
+)
 
 
 class TestLoadStatementsDataPeriodType:
@@ -221,6 +224,125 @@ class TestLoadStatementsDataPeriodType:
         mock_client.get_statements.assert_called_once_with(
             "7203", None, None, period_type="FY", actual_only=False
         )
+
+
+class TestTransformStatementsAdjusted:
+    def test_adjusted_uses_latest_quarter_shares(self):
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [
+                    pd.Timestamp("2024-01-15"),  # 3Q
+                    pd.Timestamp("2024-04-28"),  # FY
+                    pd.Timestamp("2024-07-30"),  # 1Q (latest quarter)
+                ],
+                "typeOfCurrentPeriod": ["3Q", "FY", "1Q"],
+                "earningsPerShare": [100.0, 200.0, 50.0],
+                "bps": [1000.0, 2000.0, 900.0],
+                "forecastEps": [110.0, 210.0, 60.0],
+                "nextYearForecastEarningsPerShare": [120.0, 220.0, 70.0],
+                "sharesOutstanding": [1500.0, 1000.0, 2000.0],
+                "profit": [1000000, 2000000, 500000],
+                "equity": [5000000, 5500000, 5600000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        # Baseline should be the latest quarter shares = 2000
+        assert result.loc["2024-04-28", "AdjustedEPS"] == 100.0  # 200 * 1000 / 2000
+        assert result.loc["2024-01-15", "AdjustedEPS"] == 75.0  # 100 * 1500 / 2000
+        assert result.loc["2024-07-30", "AdjustedEPS"] == 50.0  # 50 * 2000 / 2000
+        assert result.loc["2024-04-28", "AdjustedBPS"] == 1000.0  # 2000 * 1000 / 2000
+        assert (
+            result.loc["2024-04-28", "AdjustedNextYearForecastEPS"] == 110.0
+        )  # 220 * 1000 / 2000
+
+    def test_adjusted_fallback_without_shares(self):
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28")],
+                "typeOfCurrentPeriod": ["FY"],
+                "earningsPerShare": [200.0],
+                "bps": [2000.0],
+                "forecastEps": [210.0],
+                "nextYearForecastEarningsPerShare": [220.0],
+                "profit": [2000000],
+                "equity": [5500000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        assert result.loc["2024-04-28", "AdjustedEPS"] == 200.0
+        assert result.loc["2024-04-28", "AdjustedBPS"] == 2000.0
+        assert result.loc["2024-04-28", "AdjustedForecastEPS"] == 210.0
+        assert result.loc["2024-04-28", "AdjustedNextYearForecastEPS"] == 220.0
+
+
+    def test_adjusted_with_nan_shares(self):
+        """SharesOutstandingがNaNの場合、rawにフォールバック"""
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28")],
+                "typeOfCurrentPeriod": ["FY"],
+                "earningsPerShare": [200.0],
+                "bps": [2000.0],
+                "forecastEps": [210.0],
+                "nextYearForecastEarningsPerShare": [220.0],
+                "sharesOutstanding": [float("nan")],
+                "profit": [2000000],
+                "equity": [5500000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        # NaN shares → baseline is None → fallback to raw
+        assert result.loc["2024-04-28", "AdjustedEPS"] == 200.0
+        assert result.loc["2024-04-28", "AdjustedBPS"] == 2000.0
+
+    def test_adjusted_with_zero_shares(self):
+        """SharesOutstandingが0の場合、rawにフォールバック"""
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28")],
+                "typeOfCurrentPeriod": ["FY"],
+                "earningsPerShare": [200.0],
+                "bps": [2000.0],
+                "forecastEps": [210.0],
+                "nextYearForecastEarningsPerShare": [220.0],
+                "sharesOutstanding": [0.0],
+                "profit": [2000000],
+                "equity": [5500000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        assert result.loc["2024-04-28", "AdjustedEPS"] == 200.0
+        assert result.loc["2024-04-28", "AdjustedBPS"] == 2000.0
+
+    def test_adjusted_single_period_identity(self):
+        """株式数が同一の場合、Adjusted == Raw"""
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28")],
+                "typeOfCurrentPeriod": ["1Q"],
+                "earningsPerShare": [50.0],
+                "bps": [900.0],
+                "forecastEps": [60.0],
+                "nextYearForecastEarningsPerShare": [70.0],
+                "sharesOutstanding": [1000.0],
+                "profit": [500000],
+                "equity": [5000000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        assert result.loc["2024-04-28", "AdjustedEPS"] == 50.0
+        assert result.loc["2024-04-28", "AdjustedBPS"] == 900.0
+        assert result.loc["2024-04-28", "AdjustedForecastEPS"] == 60.0
 
 
 if __name__ == "__main__":

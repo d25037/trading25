@@ -89,11 +89,21 @@ export function FundamentalsTimeSeriesChart({ data, dailyValuation }: Fundamenta
       }
     }
 
+    const resolveDisclosureValue = (item: ApiFundamentalDataPoint, key: MetricKey): number | null => {
+      if (key === 'eps') return item.adjustedEps ?? item.eps ?? null;
+      if (key === 'bps') return item.adjustedBps ?? item.bps ?? null;
+      return (item[key] as number | null) ?? null;
+    };
+
     return Array.from(deduped.values())
-      .filter((d) => d[selectedMetric] !== null)
       .map((d) => ({
         time: d.date,
-        value: d[selectedMetric] as number,
+        value: resolveDisclosureValue(d, selectedMetric),
+      }))
+      .filter((d) => d.value !== null)
+      .map((d) => ({
+        time: d.time,
+        value: d.value as number,
       }))
       .sort((a, b) => (a.time < b.time ? -1 : 1));
   }, [data, dailyValuation, selectedMetric]);

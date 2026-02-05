@@ -385,7 +385,7 @@ describe('DatasetDataService', () => {
       },
       {
         disclosedDate: new Date('2024-06-30'),
-        typeOfCurrentPeriod: 'Q1',
+        typeOfCurrentPeriod: '1Q',
         typeOfDocument: 'Quarter',
         earningsPerShare: 10,
         profit: 100,

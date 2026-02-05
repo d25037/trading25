@@ -1,0 +1,66 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Backtest Run Manifest v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "generated_at",
+    "strategy_name",
+    "dataset_name",
+    "html_path",
+    "execution_time",
+    "parameters",
+    "versions",
+    "git_commit"
+  ],
+  "properties": {
+    "generated_at": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "strategy_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset_name": {
+      "type": "string",
+      "minLength": 1
+    },
+    "html_path": {
+      "type": "string",
+      "minLength": 1
+    },
+    "execution_time": {
+      "type": "number",
+      "minimum": 0
+    },
+    "parameters": {
+      "type": "object"
+    },
+    "versions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["python", "vectorbt", "marimo", "pydantic"],
+      "properties": {
+        "python": {
+          "type": ["string", "null"]
+        },
+        "vectorbt": {
+          "type": ["string", "null"]
+        },
+        "marimo": {
+          "type": ["string", "null"]
+        },
+        "pydantic": {
+          "type": ["string", "null"]
+        }
+      }
+    },
+    "git_commit": {
+      "type": ["string", "null"]
+    },
+    "walk_forward": {
+      "type": "object"
+    }
+  }
+}

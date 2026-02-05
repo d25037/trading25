@@ -68,7 +68,7 @@ export const StatementsQuerySchema = z.object({
   start_date: z.string().optional().openapi({ description: 'Start date (YYYY-MM-DD)', example: '2024-01-01' }),
   end_date: z.string().optional().openapi({ description: 'End date (YYYY-MM-DD)', example: '2024-12-31' }),
   period_type: PeriodTypeSchema.openapi({
-    description: 'Filter by period type: all (default), FY (full year), Q1, Q2, Q3',
+    description: 'Filter by period type: all (default), FY (full year), 1Q, 2Q, 3Q',
     example: 'FY',
   }),
   actual_only: z.enum(['true', 'false']).default('false').openapi({
@@ -134,7 +134,7 @@ export const BatchMarginQuerySchema = BatchQueryBaseSchema;
 
 export const BatchStatementsQuerySchema = BatchQueryBaseSchema.extend({
   period_type: PeriodTypeSchema.openapi({
-    description: 'Filter by period type: all (default), FY (full year), Q1, Q2, Q3',
+    description: 'Filter by period type: all (default), FY (full year), 1Q, 2Q, 3Q',
     example: 'FY',
   }),
   actual_only: z.enum(['true', 'false']).default('false').openapi({

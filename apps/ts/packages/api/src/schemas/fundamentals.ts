@@ -33,7 +33,7 @@ export const FundamentalsQuerySchema = z
         description: 'End date filter (YYYY-MM-DD)',
         example: '2024-12-31',
       }),
-    periodType: z.enum(['all', 'FY', 'Q1', 'Q2', 'Q3']).default('all').openapi({
+    periodType: z.enum(['all', 'FY', '1Q', '2Q', '3Q']).default('all').openapi({
       description: 'Filter by period type (default: all)',
       example: 'all',
     }),
@@ -55,7 +55,7 @@ export const FundamentalDataPointSchema = z
   .object({
     date: z.string().openapi({ description: 'Period end date (YYYY-MM-DD)', example: '2024-03-31' }),
     disclosedDate: z.string().openapi({ description: 'Disclosure date (YYYY-MM-DD)', example: '2024-05-10' }),
-    periodType: z.string().openapi({ description: 'Period type (FY, Q1, Q2, Q3)', example: 'FY' }),
+    periodType: z.string().openapi({ description: 'Period type (FY, 1Q, 2Q, 3Q)', example: 'FY' }),
     isConsolidated: z.boolean().openapi({ description: 'Whether data is consolidated', example: true }),
     accountingStandard: z
       .string()
@@ -66,6 +66,18 @@ export const FundamentalDataPointSchema = z
     eps: z.number().nullable().openapi({ description: 'Earnings Per Share (JPY)', example: 250.5 }),
     dilutedEps: z.number().nullable().openapi({ description: 'Diluted EPS (JPY)', example: 248.0 }),
     bps: z.number().nullable().openapi({ description: 'Book Value Per Share (JPY)', example: 3500.0 }),
+    adjustedEps: z
+      .number()
+      .nullable()
+      .openapi({ description: 'Adjusted EPS using share count (JPY)', example: 250.5 }),
+    adjustedForecastEps: z
+      .number()
+      .nullable()
+      .openapi({ description: 'Adjusted forecast EPS using share count (JPY)', example: 280.0 }),
+    adjustedBps: z
+      .number()
+      .nullable()
+      .openapi({ description: 'Adjusted BPS using share count (JPY)', example: 3500.0 }),
     per: z
       .number()
       .nullable()
@@ -131,7 +143,7 @@ export const FundamentalDataPointSchema = z
       .string()
       .nullable()
       .optional()
-      .openapi({ description: 'Source period type of revised forecast (e.g. Q1, Q2, 3Q)', example: '3Q' }),
+      .openapi({ description: 'Source period type of revised forecast (e.g. 1Q, 2Q, 3Q)', example: '3Q' }),
     // Previous period cash flow data
     prevCashFlowOperating: z.number().nullable().openapi({
       description: 'Previous period cash flows from operating activities (millions of JPY)',
@@ -168,6 +180,10 @@ export const DailyValuationDataPointSchema = z
     pbr: z.number().nullable().openapi({
       description: 'Price to Book Ratio (calculated with FY BPS)',
       example: 1.2,
+    }),
+    marketCap: z.number().nullable().openapi({
+      description: 'Market capitalization (JPY)',
+      example: 1200000000000,
     }),
   })
   .openapi('DailyValuationDataPoint', {

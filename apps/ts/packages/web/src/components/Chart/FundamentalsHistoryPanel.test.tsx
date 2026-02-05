@@ -62,7 +62,7 @@ describe('FundamentalsHistoryPanel', () => {
         data: [
           {
             date: '2024-06-30',
-            periodType: 'Q1',
+            periodType: '1Q',
             eps: 100,
             bps: 500,
             roe: 10,

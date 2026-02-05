@@ -1,0 +1,395 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Dataset DB Schema v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tables"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.0.0"]
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stocks",
+        "stock_data",
+        "topix_data",
+        "indices_data",
+        "dataset_info",
+        "margin_data",
+        "statements"
+      ],
+      "properties": {
+        "stocks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "company_name",
+                "company_name_english",
+                "market_code",
+                "market_name",
+                "sector_17_code",
+                "sector_17_name",
+                "sector_33_code",
+                "sector_33_name",
+                "scale_category",
+                "listed_date",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "company_name": {"$ref": "#/$defs/text_not_null"},
+                "company_name_english": {"$ref": "#/$defs/text_nullable"},
+                "market_code": {"$ref": "#/$defs/text_not_null"},
+                "market_name": {"$ref": "#/$defs/text_not_null"},
+                "sector_17_code": {"$ref": "#/$defs/text_not_null"},
+                "sector_17_name": {"$ref": "#/$defs/text_not_null"},
+                "sector_33_code": {"$ref": "#/$defs/text_not_null"},
+                "sector_33_name": {"$ref": "#/$defs/text_not_null"},
+                "scale_category": {"$ref": "#/$defs/text_nullable"},
+                "listed_date": {"$ref": "#/$defs/text_not_null"},
+                "created_at": {"$ref": "#/$defs/text_nullable"},
+                "updated_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["code"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_stocks_market", "columns": ["market_code"]},
+                {"name": "idx_stocks_sector", "columns": ["sector_33_code"]}
+              ]
+            }
+          }
+        },
+        "stock_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume",
+                "adjustment_factor",
+                "created_at"
+              ],
+              "properties": {
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "date": {"$ref": "#/$defs/text_not_null"},
+                "open": {"$ref": "#/$defs/real_not_null"},
+                "high": {"$ref": "#/$defs/real_not_null"},
+                "low": {"$ref": "#/$defs/real_not_null"},
+                "close": {"$ref": "#/$defs/real_not_null"},
+                "volume": {"$ref": "#/$defs/integer_not_null"},
+                "adjustment_factor": {"$ref": "#/$defs/real_nullable"},
+                "created_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["code", "date"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_stock_data_date", "columns": ["date"]},
+                {"name": "idx_stock_data_code", "columns": ["code"]}
+              ]
+            }
+          }
+        },
+        "topix_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["date", "open", "high", "low", "close", "created_at"],
+              "properties": {
+                "date": {"$ref": "#/$defs/text_not_null"},
+                "open": {"$ref": "#/$defs/real_not_null"},
+                "high": {"$ref": "#/$defs/real_not_null"},
+                "low": {"$ref": "#/$defs/real_not_null"},
+                "close": {"$ref": "#/$defs/real_not_null"},
+                "created_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["date"]
+            },
+            "indexes": {
+              "const": [{"name": "idx_topix_date", "columns": ["date"]}]
+            }
+          }
+        },
+        "indices_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "sector_name",
+                "created_at"
+              ],
+              "properties": {
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "date": {"$ref": "#/$defs/text_not_null"},
+                "open": {"$ref": "#/$defs/real_nullable"},
+                "high": {"$ref": "#/$defs/real_nullable"},
+                "low": {"$ref": "#/$defs/real_nullable"},
+                "close": {"$ref": "#/$defs/real_nullable"},
+                "sector_name": {"$ref": "#/$defs/text_nullable"},
+                "created_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["code", "date"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_indices_data_date", "columns": ["date"]},
+                {"name": "idx_indices_data_code", "columns": ["code"]}
+              ]
+            }
+          }
+        },
+        "dataset_info": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["key", "value", "updated_at"],
+              "properties": {
+                "key": {"$ref": "#/$defs/text_not_null"},
+                "value": {"$ref": "#/$defs/text_not_null"},
+                "updated_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["key"]
+            },
+            "indexes": {
+              "const": []
+            }
+          }
+        },
+        "margin_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["code", "date", "long_margin_volume", "short_margin_volume"],
+              "properties": {
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "date": {"$ref": "#/$defs/text_not_null"},
+                "long_margin_volume": {"$ref": "#/$defs/real_nullable"},
+                "short_margin_volume": {"$ref": "#/$defs/real_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["code", "date"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_margin_data_date", "columns": ["date"]},
+                {"name": "idx_margin_data_code", "columns": ["code"]}
+              ]
+            }
+          }
+        },
+        "statements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "disclosed_date",
+                "earnings_per_share",
+                "profit",
+                "equity",
+                "type_of_current_period",
+                "type_of_document",
+                "next_year_forecast_earnings_per_share",
+                "bps",
+                "sales",
+                "operating_profit",
+                "ordinary_profit",
+                "operating_cash_flow",
+                "dividend_fy",
+                "forecast_eps",
+                "investing_cash_flow",
+                "financing_cash_flow",
+                "cash_and_equivalents",
+                "total_assets",
+                "shares_outstanding",
+                "treasury_shares"
+              ],
+              "properties": {
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "disclosed_date": {"$ref": "#/$defs/text_not_null"},
+                "earnings_per_share": {"$ref": "#/$defs/real_nullable"},
+                "profit": {"$ref": "#/$defs/real_nullable"},
+                "equity": {"$ref": "#/$defs/real_nullable"},
+                "type_of_current_period": {"$ref": "#/$defs/text_nullable"},
+                "type_of_document": {"$ref": "#/$defs/text_nullable"},
+                "next_year_forecast_earnings_per_share": {"$ref": "#/$defs/real_nullable"},
+                "bps": {"$ref": "#/$defs/real_nullable"},
+                "sales": {"$ref": "#/$defs/real_nullable"},
+                "operating_profit": {"$ref": "#/$defs/real_nullable"},
+                "ordinary_profit": {"$ref": "#/$defs/real_nullable"},
+                "operating_cash_flow": {"$ref": "#/$defs/real_nullable"},
+                "dividend_fy": {"$ref": "#/$defs/real_nullable"},
+                "forecast_eps": {"$ref": "#/$defs/real_nullable"},
+                "investing_cash_flow": {"$ref": "#/$defs/real_nullable"},
+                "financing_cash_flow": {"$ref": "#/$defs/real_nullable"},
+                "cash_and_equivalents": {"$ref": "#/$defs/real_nullable"},
+                "total_assets": {"$ref": "#/$defs/real_nullable"},
+                "shares_outstanding": {"$ref": "#/$defs/real_nullable"},
+                "treasury_shares": {"$ref": "#/$defs/real_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["code", "disclosed_date"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_statements_date", "columns": ["disclosed_date"]},
+                {"name": "idx_statements_code", "columns": ["code"]}
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nullable"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["text", "real", "integer"]
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "text_not_null": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "text"},
+            "nullable": {"const": false}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "text_nullable": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "text"},
+            "nullable": {"const": true}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "real_not_null": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "real"},
+            "nullable": {"const": false}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "real_nullable": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "real"},
+            "nullable": {"const": true}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "integer_not_null": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "integer"},
+            "nullable": {"const": false}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "index": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "columns"],
+      "properties": {
+        "name": {"type": "string"},
+        "columns": {
+          "type": "array",
+          "items": {"type": "string"},
+          "minItems": 1
+        },
+        "unique": {"type": "boolean"}
+      }
+    }
+  }
+}
