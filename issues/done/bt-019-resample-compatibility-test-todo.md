@@ -1,7 +1,7 @@
 ---
 id: bt-019
 title: 互換性テストのTODOコメント解消
-status: open
+status: closed
 priority: low
 labels: [test, cleanup]
 project: bt
@@ -38,7 +38,7 @@ pass
 （着手後に記載）
 
 ## 結果
-（完了後に記載）
+TODOコメント削除、週足日付検証アサーションを有効化。テスト全4件通過を確認。(2026-02-06)
 
 ## 補足
 - 関連コミット: Timeframe Resample機能の移植（2026-02-03）
