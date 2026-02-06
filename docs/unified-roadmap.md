@@ -52,15 +52,48 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 - **スナップショット**: dataset 安定境界は SQLite ベースで実装（Parquet/Arrow ではなく）
 - **将来の拡張**: 10M 行超の場合のみ Parquet/DuckDB sidecar を検討可能
 
-### ADR-003: DB 管理責務の移行（ts→FastAPI）— 未承認
+### ADR-003: DB 管理責務の移行（ts→FastAPI）— 条件付き承認
 
 - **提案日**: 2026-02-06
+- **決定日**: 2026-02-06（Phase 2C）
+- **ステータス**: 条件付き承認
 - **提案**: Phase 3C で FastAPI が market.db / dataset.db / portfolio.db に直接アクセスする
-- **前提条件**:
-  - Phase 2B（FastAPI 事前調査）完了
-  - AGENTS.md の「直接 DB 禁止」ルールの更新
-- **承認条件**: Phase 2C で正式決定
+- **前提条件（全て充足）**:
+  - [x] Phase 2B（FastAPI 事前調査）完了 — [監査レポート](reports/phase2b-endpoint-audit.md) 参照
+  - [ ] AGENTS.md の「直接 DB 禁止」ルールの更新（Phase 3C 開始時に実施）
 - **元ドキュメント**: `docs/archive/hono-to-fastapi-migration-roadmap.md`
+
+#### リスク評価
+
+| 観点 | 現状（ts 管理） | 提案（FastAPI 管理） | リスク |
+|------|----------------|---------------------|--------|
+| DB アクセス | Bun SQLite + Drizzle ORM | Python sqlite3 + Pydantic | Medium |
+| マイグレーション | Drizzle migrate | 手動 or Alembic | Low |
+| トランザクション | WAL mode | WAL mode（同一） | Low |
+| JQuants 連携 | TS JQuants client | Python JQuants client（要実装） | **High** |
+| テスト | 成熟（tests 多数） | 要新規構築 | Medium |
+
+#### 主要リスク
+
+1. **High**: JQuants Python client の実装コスト（認証・レート制限・ページネーション）
+2. **Medium**: Drizzle → sqlite3 のスキーマ互換性維持（`contracts/dataset-db-schema-v2.json` を正とする）
+3. **Low**: WAL mode 並行読み取り（同一設定で対応可）
+
+#### 承認条件と制約
+
+- Phase 3C で Python SQLite アクセス層を段階的に構築
+- `contracts/dataset-db-schema-v2.json` との整合性検証テスト必須
+- AGENTS.md の「直接 DB 禁止」ルールは Phase 3C 開始時に更新（それまでは現行ルール維持）
+- JQuants Python client は Phase 3B の JQuants Proxy 移行時に実装
+
+#### AGENTS.md 更新案（Phase 3C 開始時に適用）
+
+ルート AGENTS.md:
+- 変更前: `apps/bt` は `apps/ts` API 経由でデータアクセス（直接 DB 禁止）
+- 変更後: `apps/bt` は SQLite に直接アクセス（`contracts/` スキーマ準拠）
+
+`apps/bt/AGENTS.md`:
+- API クライアント経由から直接 DB アクセスへの移行パスを記載
 
 ---
 
