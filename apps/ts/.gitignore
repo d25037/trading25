@@ -79,4 +79,3 @@ test-api.ts
 packages/api/openapi.json
 packages/api/openapi.yaml
 packages/api/src/generated/api-types.ts
-packages/shared/src/clients/backtest/generated/bt-api-types.ts
