@@ -68,7 +68,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 
 | Phase | 名称 | 状態 | リスク | 見積 |
 |---|---|---|---|---|
-| 1 | 基盤安定化 | **未着手** | Low | 1-2 週 |
+| 1 | 基盤安定化 | **進行中**（1B 完了） | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **未着手** | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **未着手** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
@@ -149,9 +149,15 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 *元: monorepo-migration-plan.md Phase 3*
 
-- [ ] ts→bt、bt→ts の全呼び出し箇所の洗い出し
-- [ ] パターン A（bt→ts 許可、ts→bt 撤去）の適用状況確認
-- [ ] 依存方向違反のチェック機構追加（CI or lint rule）
+- [x] ts→bt、bt→ts の全呼び出し箇所の洗い出し
+- [x] パターン A（bt→ts 許可、ts→bt 撤去）の適用状況確認
+- [x] 依存方向違反のチェック機構追加（CI or lint rule）
+
+**成果物**:
+- [`docs/reports/dependency-audit-phase1b.md`](reports/dependency-audit-phase1b.md) — 監査レポート（bt→ts 15件準拠、ts→bt 39件分類済み）
+- `scripts/dep-direction-allowlist.txt` — 許可ファイル一覧（permanent 3件 + phase3-removal 36件）
+- `scripts/check-dep-direction.sh` — CI チェックスクリプト（違反検出 + staleness check）
+- `scripts/lint.sh` に統合済み（既存 lint の前に実行）
 
 ### 1C: オープン Issue 対応
 

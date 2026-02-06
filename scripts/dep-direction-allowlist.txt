@@ -1,0 +1,72 @@
+# Dependency Direction Allowlist — ts→bt references
+#
+# This file lists apps/ts/ files that are allowed to reference bt server
+# (localhost:3002, BT_API_URL, /bt/api/, BacktestClient, etc.)
+#
+# Rules:
+# - New entries require PR comment explaining the reason
+# - When a file's bt reference is removed, delete its entry here
+# - CI staleness check will fail if an entry no longer matches any pattern
+# - Lines starting with # are comments; blank lines are ignored
+
+# ─────────────────────────────────────────────────────────
+# [permanent] bt:sync tooling — required for OpenAPI schema → TS type generation
+# ─────────────────────────────────────────────────────────
+apps/ts/packages/shared/scripts/fetch-bt-openapi.ts
+apps/ts/packages/shared/scripts/check-bt-types.ts
+apps/ts/packages/shared/src/clients/backtest/generated/type-compatibility-check.ts
+
+# ─────────────────────────────────────────────────────────
+# [phase3-removal] ts→bt acknowledged violations
+# Remove entries as Phase 3 resolves each category
+# ─────────────────────────────────────────────────────────
+
+# Web UI hooks (Phase 3F)
+apps/ts/packages/web/src/hooks/useBacktest.ts
+apps/ts/packages/web/src/hooks/useBacktest.test.tsx
+apps/ts/packages/web/src/hooks/useBtOHLCV.ts
+apps/ts/packages/web/src/hooks/useBtOHLCV.test.tsx
+apps/ts/packages/web/src/hooks/useBtIndicators.ts
+apps/ts/packages/web/src/hooks/useBtIndicators.test.ts
+apps/ts/packages/web/src/hooks/useBtMarginIndicators.ts
+apps/ts/packages/web/src/hooks/useBtMarginIndicators.test.ts
+apps/ts/packages/web/src/hooks/useBtSignals.ts
+apps/ts/packages/web/src/hooks/useLab.ts
+apps/ts/packages/web/src/hooks/useLab.test.tsx
+apps/ts/packages/web/src/hooks/useLabSSE.ts
+apps/ts/packages/web/src/hooks/useLabSSE.test.tsx
+apps/ts/packages/web/src/hooks/useOptimization.ts
+apps/ts/packages/web/src/hooks/useOptimization.test.tsx
+
+# Web components (Phase 3F)
+apps/ts/packages/web/src/components/Lab/LabResultSection.tsx
+apps/ts/packages/web/src/types/backtest.ts
+
+# CLI backtest commands (Phase 3F)
+apps/ts/packages/cli/src/commands/backtest/run.ts
+apps/ts/packages/cli/src/commands/backtest/cancel.ts
+apps/ts/packages/cli/src/commands/backtest/list.ts
+apps/ts/packages/cli/src/commands/backtest/results.ts
+apps/ts/packages/cli/src/commands/backtest/status.ts
+apps/ts/packages/cli/src/commands/backtest/validate.ts
+apps/ts/packages/cli/src/commands/backtest/error-handler.ts
+
+# API server proxies (Phase 3B/3D)
+apps/ts/packages/api/src/routes/analytics/fundamentals.ts
+apps/ts/packages/api/src/routes/__tests__/fundamentals.test.ts
+apps/ts/packages/api/src/routes/jquants/statements.ts
+apps/ts/packages/api/src/services/dataset/dataset-data-service.ts
+apps/ts/packages/api/src/services/dataset/dataset-data-service.test.ts
+
+# API server deprecated (ts-123)
+apps/ts/packages/api/src/services/fundamentals-data.ts
+apps/ts/packages/api/src/services/stock-data.ts
+
+# Shared client library (Phase 3F後廃止)
+apps/ts/packages/shared/src/clients/backtest/BacktestClient.ts
+apps/ts/packages/shared/src/clients/backtest/BacktestClient.test.ts
+apps/ts/packages/shared/src/clients/backtest/index.ts
+apps/ts/packages/shared/src/clients/backtest/types.ts
+
+# Vite proxy config (Phase 3F)
+apps/ts/packages/web/vite.config.ts
