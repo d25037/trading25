@@ -14,12 +14,12 @@ from pydantic import BaseModel, Field
 class FundamentalsComputeRequest(BaseModel):
     """Request body for fundamentals computation."""
 
-    symbol: str = Field(..., description="Stock code (4-5 digits)", example="7203")
+    symbol: str = Field(..., description="Stock code (4-5 digits)", json_schema_extra={"example": "7203"})
     from_date: str | None = Field(
-        None, description="Start date (YYYY-MM-DD)", example="2020-01-01"
+        None, description="Start date (YYYY-MM-DD)", json_schema_extra={"example": "2020-01-01"}
     )
     to_date: str | None = Field(
-        None, description="End date (YYYY-MM-DD)", example="2025-12-31"
+        None, description="End date (YYYY-MM-DD)", json_schema_extra={"example": "2025-12-31"}
     )
     period_type: Literal["all", "FY", "1Q", "2Q", "3Q"] = Field(
         default="all", description="Filter by period type (FY, 1Q, 2Q, 3Q)"

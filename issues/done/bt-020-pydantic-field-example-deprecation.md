@@ -1,7 +1,7 @@
 ---
 id: bt-020
 title: "Pydantic V2 deprecation: Field(example=...) を json_schema_extra に移行"
-status: open
+status: closed
 priority: low
 labels: [refactor, pydantic]
 project: bt
