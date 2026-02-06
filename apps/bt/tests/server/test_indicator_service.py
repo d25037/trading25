@@ -6,9 +6,7 @@ relative OHLC計算とmargin_volume_ratio計算のテスト。
 
 from __future__ import annotations
 
-from datetime import date
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd

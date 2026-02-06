@@ -4,7 +4,6 @@ FundamentalsService テスト
 財務指標計算サービスのテスト
 """
 
-from datetime import datetime
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -12,10 +11,8 @@ import pytest
 
 from src.api.jquants_client import JQuantsStatement, StockInfo
 from src.server.schemas.fundamentals import (
-    DailyValuationDataPoint,
     FundamentalDataPoint,
     FundamentalsComputeRequest,
-    FundamentalsComputeResponse,
 )
 from src.models.types import normalize_period_type
 from src.server.services.fundamentals_service import (

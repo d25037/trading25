@@ -4,7 +4,6 @@
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.utils.indicators import (
     compute_atr_support_line,

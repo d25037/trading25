@@ -2,8 +2,7 @@
 OHLCV Resample API Endpoint Tests
 """
 
-from datetime import date
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import numpy as np
 import pandas as pd
@@ -311,14 +310,12 @@ class TestCleanValueFunction:
     def test_nan_to_none(self, client, mock_ohlcv_data):
         """NaN値がNoneに変換されること"""
         from src.server.services.indicator_service import _clean_value
-        import numpy as np
 
         assert _clean_value(np.nan) is None
 
     def test_inf_to_none(self, client, mock_ohlcv_data):
         """Inf値がNoneに変換されること"""
         from src.server.services.indicator_service import _clean_value
-        import numpy as np
 
         assert _clean_value(np.inf) is None
         assert _clean_value(-np.inf) is None

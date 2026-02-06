@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from src.backtest.runner import BacktestRunner
-from src.strategy_config.parameter_extractor import _deep_merge_dict
 
 
 class _FakeExecutor:

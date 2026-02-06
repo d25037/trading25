@@ -10,13 +10,11 @@ apps/ts/とbt/間のTimeframe変換およびRelative OHLC変換の互換性テ�
 from __future__ import annotations
 
 import json
-from datetime import date
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
-import pytest
 
 from src.server.services.indicator_service import (
     IndicatorService,
@@ -236,13 +234,13 @@ class TestResampleWeekly:
         weekly_df = service.resample_timeframe(daily_df, "weekly")
         expected = _get_expected_weekly_output()
 
-        for i, exp in enumerate(expected):
-            actual_date = weekly_df.index[i].strftime("%Y-%m-%d")
-            # TODO: apps/bt/実装を週開始日に修正後、このテストを有効化
-            # assert actual_date == exp["date"], \
-            #     f"Week {i+1} 日付不一致: {actual_date} != {exp['date']}"
-            # 現状はpandas週末アンカーの日付を許容
-            pass
+        # TODO: apps/bt/実装を週開始日に修正後、このテストを有効化
+        # for i, exp in enumerate(expected):
+        #     actual_date = weekly_df.index[i].strftime("%Y-%m-%d")
+        #     assert actual_date == exp["date"], \
+        #         f"Week {i+1} 日付不一致: {actual_date} != {exp['date']}"
+        # 現状はpandas週末アンカーの日付を許容
+        assert len(weekly_df) == len(expected)
 
 
 class TestResampleMonthly:
@@ -277,7 +275,7 @@ class TestResampleMonthly:
         daily_df = _create_golden_daily_data()
         service = IndicatorService()
 
-        monthly_df = service.resample_timeframe(daily_df, "monthly")
+        service.resample_timeframe(daily_df, "monthly")
 
         # 2月は2営業日しかないため、dropna(subset=["Close"])で残るか確認
         # pandas resampleは期間中にデータがあれば含める

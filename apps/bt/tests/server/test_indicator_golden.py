@@ -24,19 +24,11 @@ import json
 from pathlib import Path
 from typing import Any
 
-import numpy as np
 import pandas as pd
 import pytest
-import vectorbt as vbt
 
 from src.server.services.indicator_service import (
     INDICATOR_REGISTRY,
-)
-from src.utils.indicators import (
-    compute_atr_support_line,
-    compute_nbar_support,
-    compute_trading_value_ma,
-    compute_volume_mas,
 )
 
 # Golden dataset directory (relative to repo root)
@@ -329,8 +321,6 @@ class TestRSIGolden:
         """
         golden = load_golden("golden_rsi_14.json")
         _, records = INDICATOR_REGISTRY["rsi"](ohlcv, {"period": 14}, "include")
-        bt_by_date = {r["date"]: r["value"] for r in records}
-
         # RSIが0-100の範囲内であることだけ検証
         for r in records:
             if r["value"] is not None:
