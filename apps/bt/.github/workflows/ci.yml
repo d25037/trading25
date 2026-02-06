@@ -47,4 +47,4 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --dev
-      - run: uv run pytest tests/ --tb=short -q --cov=src --cov-report=term-missing --cov-fail-under=65
+      - run: uv run pytest tests/ --tb=short -q --cov=src --cov-report=term-missing --cov-fail-under=70

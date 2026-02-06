@@ -1,7 +1,7 @@
 ---
 id: bt-016
 title: テストカバレッジ70%達成
-status: in-progress
+status: closed
 priority: high
 labels: [test, coverage, ci]
 project: bt
