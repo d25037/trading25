@@ -955,3 +955,15 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_requirements=["sector"],
     ),
 ]
+
+
+def _validate_registry() -> None:
+    """Validate that all param_key values in SIGNAL_REGISTRY are unique."""
+    seen: set[str] = set()
+    for sig in SIGNAL_REGISTRY:
+        if sig.param_key in seen:
+            raise ValueError(f"Duplicate param_key in SIGNAL_REGISTRY: {sig.param_key}")
+        seen.add(sig.param_key)
+
+
+_validate_registry()
