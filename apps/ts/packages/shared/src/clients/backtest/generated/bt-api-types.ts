@@ -2402,6 +2402,22 @@ export interface components {
             combinations: number;
         };
         /**
+         * OptimizationGridDeleteResponse
+         * @description Grid設定削除レスポンス
+         */
+        OptimizationGridDeleteResponse: {
+            /**
+             * Success
+             * @description 削除成功フラグ
+             */
+            success: boolean;
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+        };
+        /**
          * OptimizationGridListResponse
          * @description Grid設定一覧レスポンス
          */
@@ -2453,6 +2469,75 @@ export interface components {
              * @description 組み合わせ数
              */
             combinations: number;
+        };
+        /**
+         * OptimizationHtmlFileContentResponse
+         * @description 最適化結果HTMLファイルコンテンツレスポンス
+         */
+        OptimizationHtmlFileContentResponse: {
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /**
+             * Filename
+             * @description ファイル名
+             */
+            filename: string;
+            /**
+             * Html Content
+             * @description HTMLコンテンツ（base64エンコード）
+             */
+            html_content: string;
+        };
+        /**
+         * OptimizationHtmlFileInfo
+         * @description 最適化結果HTMLファイル情報
+         */
+        OptimizationHtmlFileInfo: {
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /**
+             * Filename
+             * @description ファイル名
+             */
+            filename: string;
+            /**
+             * Dataset Name
+             * @description データセット名
+             */
+            dataset_name: string;
+            /**
+             * Created At
+             * Format: date-time
+             * @description 作成日時
+             */
+            created_at: string;
+            /**
+             * Size Bytes
+             * @description ファイルサイズ（バイト）
+             */
+            size_bytes: number;
+        };
+        /**
+         * OptimizationHtmlFileListResponse
+         * @description 最適化結果HTMLファイル一覧レスポンス
+         */
+        OptimizationHtmlFileListResponse: {
+            /**
+             * Files
+             * @description HTMLファイル一覧
+             */
+            files: components["schemas"]["OptimizationHtmlFileInfo"][];
+            /**
+             * Total
+             * @description 総ファイル数
+             */
+            total: number;
         };
         /**
          * OptimizationJobResponse
@@ -3819,9 +3904,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OptimizationGridDeleteResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3853,9 +3936,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OptimizationHtmlFileListResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3887,9 +3968,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["OptimizationHtmlFileContentResponse"];
                 };
             };
             /** @description Validation Error */

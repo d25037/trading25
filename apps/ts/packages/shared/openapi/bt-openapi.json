@@ -1172,9 +1172,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Delete Grid Config Api Optimize Grid Configs  Strategy  Delete"
+                  "$ref": "#/components/schemas/OptimizationGridDeleteResponse"
                 }
               }
             }
@@ -1234,9 +1232,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response List Optimization Html Files Api Optimize Html Files Get"
+                  "$ref": "#/components/schemas/OptimizationHtmlFileListResponse"
                 }
               }
             }
@@ -1288,9 +1284,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "additionalProperties": true,
-                  "title": "Response Get Optimization Html File Content Api Optimize Html Files  Strategy   Filename  Get"
+                  "$ref": "#/components/schemas/OptimizationHtmlFileContentResponse"
                 }
               }
             }
@@ -4498,6 +4492,27 @@
         "title": "OptimizationGridConfig",
         "description": "Grid設定"
       },
+      "OptimizationGridDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "削除成功フラグ"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "strategy_name"
+        ],
+        "title": "OptimizationGridDeleteResponse",
+        "description": "Grid設定削除レスポンス"
+      },
       "OptimizationGridListResponse": {
         "properties": {
           "configs": {
@@ -4569,6 +4584,97 @@
         ],
         "title": "OptimizationGridSaveResponse",
         "description": "Grid設定保存レスポンス"
+      },
+      "OptimizationHtmlFileContentResponse": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "ファイル名"
+          },
+          "html_content": {
+            "type": "string",
+            "title": "Html Content",
+            "description": "HTMLコンテンツ（base64エンコード）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "filename",
+          "html_content"
+        ],
+        "title": "OptimizationHtmlFileContentResponse",
+        "description": "最適化結果HTMLファイルコンテンツレスポンス"
+      },
+      "OptimizationHtmlFileInfo": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "ファイル名"
+          },
+          "dataset_name": {
+            "type": "string",
+            "title": "Dataset Name",
+            "description": "データセット名"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "ファイルサイズ（バイト）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "filename",
+          "dataset_name",
+          "created_at",
+          "size_bytes"
+        ],
+        "title": "OptimizationHtmlFileInfo",
+        "description": "最適化結果HTMLファイル情報"
+      },
+      "OptimizationHtmlFileListResponse": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/OptimizationHtmlFileInfo"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "HTMLファイル一覧"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "総ファイル数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files",
+          "total"
+        ],
+        "title": "OptimizationHtmlFileListResponse",
+        "description": "最適化結果HTMLファイル一覧レスポンス"
       },
       "OptimizationJobResponse": {
         "properties": {

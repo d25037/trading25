@@ -1,12 +1,13 @@
 ---
 id: ts-116
 title: "bt契約: OptimizationHtmlFile* 型を bt スキーマに追加して互換チェック対象にする"
-status: open
+status: closed
 priority: low
 labels: [backtest, types]
 project: ts
 created: 2026-02-01
-updated: 2026-02-01
+updated: 2026-02-06
+closed: 2026-02-06
 depends_on: [ts-109]
 blocks: []
 ---
