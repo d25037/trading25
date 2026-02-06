@@ -168,7 +168,7 @@ class TestResampleEndpoint:
             })
 
             assert response.status_code == 404
-            assert "取得できません" in response.json()["detail"]
+            assert "取得できません" in response.json()["message"]
 
     def test_resample_invalid_benchmark(self, client):
         """無効なベンチマークコードで422を返すこと"""

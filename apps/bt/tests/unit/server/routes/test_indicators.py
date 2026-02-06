@@ -107,7 +107,7 @@ class TestComputeEndpoint:
         )
 
         assert response.status_code == 504
-        assert "タイムアウト" in response.json()["detail"]
+        assert "タイムアウト" in response.json()["message"]
 
     @patch("src.server.services.indicator_service.indicator_service.compute_indicators")
     def test_compute_unexpected_error(self, mock_compute: MagicMock):
@@ -123,7 +123,7 @@ class TestComputeEndpoint:
         )
 
         assert response.status_code == 500
-        assert "計算エラー" in response.json()["detail"]
+        assert "計算エラー" in response.json()["message"]
 
     @patch("src.server.services.indicator_service.indicator_service.compute_indicators")
     def test_compute_value_error_422(self, mock_compute: MagicMock):

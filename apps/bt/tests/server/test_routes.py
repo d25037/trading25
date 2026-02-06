@@ -123,7 +123,7 @@ class TestPathTraversalProtection:
         # バックスラッシュを含む戦略名
         response = client.get("/api/backtest/html-files/test%5C..%5Cetc/a.html")
         assert response.status_code == 400
-        assert "不正な" in response.json()["detail"]
+        assert "不正な" in response.json()["message"]
 
 
 class TestDefaultConfigEndpoint:
@@ -155,7 +155,7 @@ class TestDefaultConfigEndpoint:
             json={"content": "invalid: yaml: [broken"},
         )
         assert response.status_code == 400
-        assert "YAML構文エラー" in response.json()["detail"]
+        assert "YAML構文エラー" in response.json()["message"]
 
     def test_update_default_config_not_dict(self, client: TestClient) -> None:
         """YAMLがオブジェクトでない場合は400"""
@@ -164,7 +164,7 @@ class TestDefaultConfigEndpoint:
             json={"content": "- item1\n- item2\n"},
         )
         assert response.status_code == 400
-        assert "オブジェクト" in response.json()["detail"]
+        assert "オブジェクト" in response.json()["message"]
 
     def test_update_default_config_missing_default_key(
         self, client: TestClient
@@ -175,7 +175,7 @@ class TestDefaultConfigEndpoint:
             json={"content": "other_key:\n  value: 1\n"},
         )
         assert response.status_code == 400
-        assert "'default'キー" in response.json()["detail"]
+        assert "'default'キー" in response.json()["message"]
 
     def test_update_default_config_default_not_dict(
         self, client: TestClient
@@ -186,7 +186,7 @@ class TestDefaultConfigEndpoint:
             json={"content": "default: just_a_string\n"},
         )
         assert response.status_code == 400
-        assert "オブジェクト" in response.json()["detail"]
+        assert "オブジェクト" in response.json()["message"]
 
     def test_update_and_get_roundtrip(self, client: TestClient) -> None:
         """更新→取得のラウンドトリップが正常に動作する"""

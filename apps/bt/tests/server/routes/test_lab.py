@@ -332,7 +332,7 @@ class TestLabEndpoints:
         job_id = job_manager.create_job("test_strategy", job_type="backtest")
         response = client.get(f"/api/lab/jobs/{job_id}")
         assert response.status_code == 400
-        assert "Labジョブではありません" in response.json()["detail"]
+        assert "Labジョブではありません" in response.json()["message"]
 
     def test_get_lab_job(self, client: TestClient) -> None:
         """Labジョブが取得できる"""
@@ -602,7 +602,7 @@ class TestLabSubmitEndpoints:
                 json={},
             )
             assert response.status_code == 500
-            assert "テストエラー" in response.json()["detail"]
+            assert "テストエラー" in response.json()["message"]
 
     def test_submit_evolve_error(self, client: TestClient) -> None:
         """evolve サブミットが例外で500を返す"""
