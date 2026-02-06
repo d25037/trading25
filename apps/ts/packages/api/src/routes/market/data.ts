@@ -29,7 +29,9 @@ const getStockInfoRoute = createRoute({
   summary: 'Get single stock info from market.db',
   description: `Get stock information (company name, market, sector) for a specific stock from market.db.
 
-**Used by**: apps/bt/ fundamentals service for company name lookup.`,
+**Consumers**: apps/bt/ \`JQuantsAPIClient.get_stock_info()\` + \`FundamentalsService\` (company name lookup).
+
+> Note: This endpoint is not listed in the OpenAPI schema (\`openapi.json\`); only \`/ohlcv\` is exported.`,
   request: {
     params: z.object({
       code: z.string().min(1).openapi({ description: 'Stock code (4 or 5 digits)', example: '7203' }),
@@ -74,7 +76,9 @@ const getStockOHLCVRoute = createRoute({
   path: '/api/market/stocks/{code}/ohlcv',
   tags: ['Market Data'],
   summary: 'Get stock OHLCV data from market.db',
-  description: 'Get OHLCV (Open, High, Low, Close, Volume) data for a specific stock from market.db.',
+  description: `Get OHLCV (Open, High, Low, Close, Volume) data for a specific stock from market.db.
+
+**Consumers**: apps/bt/ \`MarketAPIClient\` (signal_screening / portfolio analysis).`,
   request: {
     params: z.object({
       code: z.string().min(1).openapi({ description: 'Stock code', example: '7203' }),
@@ -121,7 +125,9 @@ const getAllStocksRoute = createRoute({
   path: '/api/market/stocks',
   tags: ['Market Data'],
   summary: 'Get all stocks data for screening',
-  description: 'Get all stocks with OHLCV history for a specified period. Used for screening.',
+  description: `Get all stocks with OHLCV history for a specified period.
+
+**Consumers**: apps/bt/ \`MarketAPIClient\` (signal_screening — bulk stock data).`,
   request: {
     query: MarketStocksQuerySchema,
   },
@@ -164,7 +170,9 @@ const getTopixRoute = createRoute({
   path: '/api/market/topix',
   tags: ['Market Data'],
   summary: 'Get TOPIX data from market.db',
-  description: 'Get TOPIX index data from market.db.',
+  description: `Get TOPIX index data from market.db.
+
+**Consumers**: apps/bt/ \`MarketAPIClient\` (beta calculation / PCA analysis benchmark).`,
   request: {
     query: MarketDateRangeQuerySchema,
   },

@@ -1,7 +1,7 @@
 ---
 id: ts-121
 title: /api/market/* エンドポイントのスコープ明確化
-status: open
+status: closed
 priority: low
 labels: [design, api, api-integration]
 project: ts
