@@ -358,14 +358,14 @@ def compute_margin_long_pressure(
         av = avg_vol.get(idx)
         if pd.isna(av) or av == 0:
             continue
-        nm = net_margin[idx]
+        nm = float(net_margin[idx])  # type: ignore[arg-type]
         if pd.isna(nm):
             continue
-        lv = margin_df.at[idx, "longMarginVolume"]
-        sv = margin_df.at[idx, "shortMarginVolume"]
+        lv = float(margin_df.at[idx, "longMarginVolume"])  # type: ignore[arg-type]
+        sv = float(margin_df.at[idx, "shortMarginVolume"])  # type: ignore[arg-type]
         records.append({
             "date": _format_date(idx),
-            "pressure": round(float(nm / av), 4),
+            "pressure": round(nm / float(av), 4),
             "longVol": int(lv),
             "shortVol": int(sv),
             "avgVolume": round(float(av), 2),
@@ -392,12 +392,12 @@ def compute_margin_flow_pressure(
         d = delta.get(idx)
         if pd.isna(av) or av == 0 or pd.isna(d):
             continue
-        prev = prev_net_margin[idx]
+        prev_val = float(prev_net_margin[idx])  # type: ignore[arg-type]
         records.append({
             "date": _format_date(idx),
-            "flowPressure": round(float(d / av), 4),
-            "currentNetMargin": int(net_margin[idx]),
-            "previousNetMargin": int(prev) if not pd.isna(prev) else None,
+            "flowPressure": round(float(d) / float(av), 4),
+            "currentNetMargin": int(float(net_margin[idx])),  # type: ignore[arg-type]
+            "previousNetMargin": int(prev_val) if not pd.isna(prev_val) else None,
             "avgVolume": round(float(av), 2),
         })
     return records
@@ -459,18 +459,18 @@ def compute_margin_volume_ratio(
         if avg_vol is None or avg_vol == 0:
             continue
 
-        lv = margin_df.at[idx, "longMarginVolume"]
-        sv = margin_df.at[idx, "shortMarginVolume"]
+        lv = float(margin_df.at[idx, "longMarginVolume"])  # type: ignore[arg-type]
+        sv = float(margin_df.at[idx, "shortMarginVolume"])  # type: ignore[arg-type]
         if pd.isna(lv) or pd.isna(sv):
             continue
-
+        avg_vol_f = float(avg_vol)
         records.append({
             "date": _format_date(idx),
-            "longRatio": round(float(lv / avg_vol), 4),
-            "shortRatio": round(float(sv / avg_vol), 4),
+            "longRatio": round(lv / avg_vol_f, 4),
+            "shortRatio": round(sv / avg_vol_f, 4),
             "longVol": int(lv),
             "shortVol": int(sv),
-            "weeklyAvgVolume": round(float(avg_vol), 2),
+            "weeklyAvgVolume": round(avg_vol_f, 2),
         })
     return records
 
@@ -542,7 +542,7 @@ class IndicatorService:
         if timeframe == "daily":
             return df
 
-        agg_rules = {
+        agg_rules: dict[str, str] = {
             "Open": "first",
             "High": "max",
             "Low": "min",
@@ -551,13 +551,13 @@ class IndicatorService:
         }
 
         if timeframe == "weekly":
-            resampled = df.resample("W").agg(agg_rules).dropna(subset=["Close"])
+            resampled = df.resample("W").agg(agg_rules).dropna(subset=["Close"])  # type: ignore[arg-type]
             # 週開始日（月曜）に調整（pandasの"W"は日曜アンカー）
             resampled.index = resampled.index - pd.Timedelta(days=6)
             return resampled
 
         if timeframe == "monthly":
-            resampled = df.resample("ME").agg(agg_rules).dropna(subset=["Close"])
+            resampled = df.resample("ME").agg(agg_rules).dropna(subset=["Close"])  # type: ignore[arg-type]
             # 月初日に調整（pandasの"ME"は月末アンカー）
             resampled.index = resampled.index.to_period("M").to_timestamp()
             return resampled

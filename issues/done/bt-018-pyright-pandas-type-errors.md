@@ -1,12 +1,12 @@
 ---
 id: bt-018
 title: Pyright pandas型エラーの解消
-status: open
+status: done
 priority: low
 labels: [type-safety, tech-debt]
 project: bt
 created: 2026-02-03
-updated: 2026-02-03
+updated: 2026-02-06
 depends_on: []
 blocks: []
 parent: null
@@ -31,10 +31,11 @@ parent: null
 - [ ] ランタイム動作に変更なし
 
 ## 実施内容
-（着手後に記載）
+- `indicator_service.py`: pandas Scalar/Series[Any] を `float()` 経由で安全に変換、pandas-stubs の既知制限箇所に `# type: ignore[arg-type]` を付与、`.agg()` の dict 引数に `# type: ignore[arg-type]` を付与
+- `fundamentals_service.py`: `normalize_period_type()` の戻り値 `str | None` に対する None ガード追加
 
 ## 結果
-（完了後に記載）
+- `uv run pyright src/` で 0 errors 達成（warning 1件は既知の `__all__` 警告のみ）
 
 ## 補足
 - 優先度: low（ランタイムには影響しないため）
