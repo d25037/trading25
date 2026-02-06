@@ -68,7 +68,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 
 | Phase | 名称 | 状態 | リスク | 見積 |
 |---|---|---|---|---|
-| 1 | 基盤安定化 | **進行中**（1B 完了） | Low | 1-2 週 |
+| 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **未着手** | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **未着手** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
@@ -164,16 +164,16 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 *元: 各ドキュメントの残タスク*
 
 **bt 系**:
-- [ ] bt-016: テストカバレッジ 70% 達成
-- [ ] bt-017: signal registry param key validation
-- [ ] bt-018: pyright pandas type errors
-- [ ] bt-019: resample compatibility test todo
-- [ ] bt-020: pydantic field example deprecation
+- [x] bt-016: テストカバレッジ 70% 達成（CI ゲート 65%→70% 引き上げ、73%到達済み）
+- [x] bt-017: signal registry param key validation（_validate_registry() 追加）
+- [x] bt-018: pyright pandas type errors（既にクローズ済み）
+- [x] bt-019: resample compatibility test todo（TODOコメント削除、アサーション有効化）
+- [x] bt-020: pydantic field example deprecation（json_schema_extra に移行）
 
 **ts 系**:
-- [ ] ts-121: market endpoint scope clarify
-- [ ] ts-122: screening logic single source
-- [ ] ts-123: remove deprecated fundamentals data service
+- [x] ts-121: market endpoint scope clarify（OpenAPI description に消費者スコープ追記）
+- [x] ts-122: screening logic single source（分離維持を意思決定、文書化）
+- [x] ts-123: remove deprecated fundamentals data service（1,552行削除）
 
 ---
 
@@ -597,13 +597,13 @@ Phase 4 ‖ Phase 5 (独立して実行可能)
 
 ### bt 系
 
-| Issue | 概要 | 関連 Phase |
-|---|---|---|
-| bt-016 | テストカバレッジ 70% | 1C |
-| bt-017 | signal registry param key validation | 1C |
-| bt-018 | pyright pandas type errors | 1C |
-| bt-019 | resample compatibility test todo | 1C |
-| bt-020 | pydantic field example deprecation | 1C |
+| Issue | 概要 | 関連 Phase | 状態 |
+|---|---|---|---|
+| bt-016 | テストカバレッジ 70% | 1C | **完了** |
+| bt-017 | signal registry param key validation | 1C | **完了** |
+| bt-018 | pyright pandas type errors | 1C | **完了** |
+| bt-019 | resample compatibility test todo | 1C | **完了** |
+| bt-020 | pydantic field example deprecation | 1C | **完了** |
 
 ### ts 系
 
@@ -628,9 +628,9 @@ Phase 4 ‖ Phase 5 (独立して実行可能)
 | ts-118 | fundamentals integration test | 3B |
 | ts-119 | lab result runtime validation | — |
 | ts-120 | lab results error boundary | — |
-| ts-121 | market endpoint scope clarify | 1C |
-| ts-122 | screening logic single source | 1C |
-| ts-123 | remove deprecated fundamentals data service | 1C |
+| ts-121 | market endpoint scope clarify | 1C | **完了** |
+| ts-122 | screening logic single source | 1C | **完了** |
+| ts-123 | remove deprecated fundamentals data service | 1C | **完了** |
 
 ---
 
