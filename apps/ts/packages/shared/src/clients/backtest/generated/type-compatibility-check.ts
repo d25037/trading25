@@ -13,8 +13,7 @@
  * value unions so that structural shapes can be compared cleanly.
  *
  * Types that exist only in the manual types.ts but not in the bt OpenAPI schema
- * (e.g., OptimizationHtmlFile*, BacktestClientConfig) are NOT checked here.
- * They will be covered when bt exposes those endpoints.
+ * (e.g., BacktestClientConfig) are NOT checked here.
  */
 
 import type {
@@ -37,6 +36,9 @@ import type {
   OptimizationGridListResponse as ManualOptimizationGridListResponse,
   OptimizationGridSaveRequest as ManualOptimizationGridSaveRequest,
   OptimizationGridSaveResponse as ManualOptimizationGridSaveResponse,
+  OptimizationHtmlFileContentResponse as ManualOptimizationHtmlFileContentResponse,
+  OptimizationHtmlFileInfo as ManualOptimizationHtmlFileInfo,
+  OptimizationHtmlFileListResponse as ManualOptimizationHtmlFileListResponse,
   OptimizationJobResponse as ManualOptimizationJobResponse,
   OptimizationRequest as ManualOptimizationRequest,
   SignalCategory as ManualSignalCategory,
@@ -142,8 +144,6 @@ type _HtmlFileRenameResponse = AssertExtends<ManualHtmlFileRenameResponse, Schem
 type _HtmlFileDeleteResponse = AssertExtends<ManualHtmlFileDeleteResponse, Schemas['HtmlFileDeleteResponse']>;
 
 // ===== OPTIMIZATION =====
-// NOTE: OptimizationHtmlFile* types exist in manual types.ts but NOT in bt OpenAPI schema.
-// They are excluded from this check until bt exposes those endpoints.
 type _OptimizationRequest = AssertExtends<ManualOptimizationRequest, Schemas['OptimizationRequest']>;
 type _OptimizationJobResponse = AssertExtends<
   Normalize<ManualOptimizationJobResponse>,
@@ -161,6 +161,20 @@ type _OptimizationGridSaveRequest = AssertExtends<
 type _OptimizationGridSaveResponse = AssertExtends<
   ManualOptimizationGridSaveResponse,
   Schemas['OptimizationGridSaveResponse']
+>;
+
+// ===== OPTIMIZATION HTML FILES =====
+type _OptimizationHtmlFileInfo = AssertExtends<
+  ManualOptimizationHtmlFileInfo,
+  Schemas['OptimizationHtmlFileInfo']
+>;
+type _OptimizationHtmlFileListResponse = AssertExtends<
+  Omit<ManualOptimizationHtmlFileListResponse, 'files'>,
+  Omit<Schemas['OptimizationHtmlFileListResponse'], 'files'>
+>;
+type _OptimizationHtmlFileContentResponse = AssertExtends<
+  ManualOptimizationHtmlFileContentResponse,
+  Schemas['OptimizationHtmlFileContentResponse']
 >;
 
 // ===== SIGNAL REFERENCE =====
@@ -230,6 +244,9 @@ export type TypeChecks = [
   _OptimizationGridListResponse,
   _OptimizationGridSaveRequest,
   _OptimizationGridSaveResponse,
+  _OptimizationHtmlFileInfo,
+  _OptimizationHtmlFileListResponse,
+  _OptimizationHtmlFileContentResponse,
   _SignalCategory,
   _SignalFieldDefinition,
   _SignalDefinition,

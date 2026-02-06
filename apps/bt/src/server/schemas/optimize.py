@@ -2,6 +2,8 @@
 Optimization API Schemas
 """
 
+from datetime import datetime
+
 from pydantic import BaseModel, Field
 
 from src.server.schemas.common import BaseJobResponse
@@ -54,3 +56,35 @@ class OptimizationGridSaveResponse(BaseModel):
     strategy_name: str = Field(description="戦略名")
     param_count: int = Field(description="パラメータ数")
     combinations: int = Field(description="組み合わせ数")
+
+
+class OptimizationGridDeleteResponse(BaseModel):
+    """Grid設定削除レスポンス"""
+
+    success: bool = Field(description="削除成功フラグ")
+    strategy_name: str = Field(description="戦略名")
+
+
+class OptimizationHtmlFileInfo(BaseModel):
+    """最適化結果HTMLファイル情報"""
+
+    strategy_name: str = Field(description="戦略名")
+    filename: str = Field(description="ファイル名")
+    dataset_name: str = Field(description="データセット名")
+    created_at: datetime = Field(description="作成日時")
+    size_bytes: int = Field(description="ファイルサイズ（バイト）")
+
+
+class OptimizationHtmlFileListResponse(BaseModel):
+    """最適化結果HTMLファイル一覧レスポンス"""
+
+    files: list[OptimizationHtmlFileInfo] = Field(description="HTMLファイル一覧")
+    total: int = Field(description="総ファイル数")
+
+
+class OptimizationHtmlFileContentResponse(BaseModel):
+    """最適化結果HTMLファイルコンテンツレスポンス"""
+
+    strategy_name: str = Field(description="戦略名")
+    filename: str = Field(description="ファイル名")
+    html_content: str = Field(description="HTMLコンテンツ（base64エンコード）")

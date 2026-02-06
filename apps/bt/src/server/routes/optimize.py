@@ -27,9 +27,13 @@ from src.server.schemas.backtest import (
 )
 from src.server.schemas.optimize import (
     OptimizationGridConfig,
+    OptimizationGridDeleteResponse,
     OptimizationGridListResponse,
     OptimizationGridSaveRequest,
     OptimizationGridSaveResponse,
+    OptimizationHtmlFileContentResponse,
+    OptimizationHtmlFileInfo,
+    OptimizationHtmlFileListResponse,
     OptimizationJobResponse,
     OptimizationRequest,
 )
@@ -249,8 +253,8 @@ async def save_grid_config(strategy: str, request: OptimizationGridSaveRequest) 
     )
 
 
-@router.delete("/api/optimize/grid-configs/{strategy}")
-async def delete_grid_config(strategy: str) -> dict:
+@router.delete("/api/optimize/grid-configs/{strategy}", response_model=OptimizationGridDeleteResponse)
+async def delete_grid_config(strategy: str) -> OptimizationGridDeleteResponse:
     """Grid設定を削除"""
     validate_path_param(strategy, "戦略名")
     grid_path = _find_grid_file(strategy)
@@ -269,7 +273,7 @@ async def delete_grid_config(strategy: str) -> dict:
             detail=f"ファイル削除エラー: {e}",
         ) from e
 
-    return {"success": True, "strategy_name": strategy}
+    return OptimizationGridDeleteResponse(success=True, strategy_name=strategy)
 
 
 # ============================================
@@ -277,37 +281,43 @@ async def delete_grid_config(strategy: str) -> dict:
 # ============================================
 
 
-@router.get("/api/optimize/html-files")
+@router.get("/api/optimize/html-files", response_model=OptimizationHtmlFileListResponse)
 async def list_optimization_html_files(
     strategy: str | None = None,
     limit: int = 100,
-) -> dict:
+) -> OptimizationHtmlFileListResponse:
     """最適化結果HTMLファイル一覧を取得"""
     results_dir = get_optimization_results_dir()
     file_dicts, total = list_html_files_in_dir(results_dir, strategy, limit)
 
-    # created_atをISO形式に変換
-    files = []
-    for f in file_dicts:
-        files.append({
-            **f,
-            "created_at": f["created_at"].isoformat(),
-        })
+    files = [
+        OptimizationHtmlFileInfo(
+            strategy_name=f["strategy_name"],
+            filename=f["filename"],
+            dataset_name=f["dataset_name"],
+            created_at=f["created_at"],
+            size_bytes=f["size_bytes"],
+        )
+        for f in file_dicts
+    ]
 
-    return {"files": files, "total": total}
+    return OptimizationHtmlFileListResponse(files=files, total=total)
 
 
-@router.get("/api/optimize/html-files/{strategy}/{filename}")
-async def get_optimization_html_file_content(strategy: str, filename: str) -> dict:
+@router.get(
+    "/api/optimize/html-files/{strategy}/{filename}",
+    response_model=OptimizationHtmlFileContentResponse,
+)
+async def get_optimization_html_file_content(strategy: str, filename: str) -> OptimizationHtmlFileContentResponse:
     """最適化結果HTMLファイルのコンテンツを取得"""
     results_dir = get_optimization_results_dir()
     html_content = read_html_file(results_dir, strategy, filename)
 
-    return {
-        "strategy_name": strategy,
-        "filename": filename,
-        "html_content": html_content,
-    }
+    return OptimizationHtmlFileContentResponse(
+        strategy_name=strategy,
+        filename=filename,
+        html_content=html_content,
+    )
 
 
 @router.post(
