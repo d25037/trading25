@@ -103,7 +103,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
-| 3 | FastAPI 統一 | **未着手** | **High** | 6-10 週 |
+| 3 | FastAPI 統一 | **3A 完了** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
@@ -262,17 +262,44 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 各サブフェーズ間に Go/No-Go 判定ゲートを設置。切り戻し範囲はドメイン単位に限定。
 
-### 3A: ミドルウェア・基盤
+### 3A: ミドルウェア・基盤 — **完了** (2026-02-06)
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 1*
 
 - [x] correlation id, エラーハンドリング（Phase 2 で前倒し実施）
-- [ ] request logging, CORS 統合
-- [ ] OpenAPI パス互換（Hono と同一パス提供）
-- [ ] `/openapi.json` を Hono 互換で提供
-- [ ] `/doc` の互換性方針決定（FastAPI 標準 or Scalar 導入）
+- [x] request logging（`RequestLoggerMiddleware`、Hono `httpLogger` 互換フォーマット）
+- [x] CORS 統合（Hono 互換オリジン + 明示的 headers/methods + `expose_headers`）
+- [x] OpenAPI タグ統一（Hono 10 operation tags + bt 固有 8 タグ = 18 タグ）
+- [x] `/openapi.json` を Hono 互換で提供（`info.title`/`contact`/`license`/`servers` 統一）
+- [x] ErrorResponse スキーマを OpenAPI に公開（全エンドポイントに 400/404/500 共通注入）
+- [x] `/doc` に Swagger UI 配置（`/docs` `/redoc` 無効化）
+- [x] テスト基盤（`sync_client`/`async_client` fixture、`respx` dev 依存追加）
+- [x] OpenAPI 互換性検証スクリプト（`scripts/verify-openapi-compat.py`）
 
-**Go/No-Go**: ミドルウェアテスト全通過、OpenAPI パス互換確認
+**Go/No-Go 結果**: 全基準クリア
+- 新規テスト 27 件全通過（ミドルウェア 8 + CORS 6 + OpenAPI 13）
+- 既存テスト 2186 件全通過（エラーフォーマット 12 + Correlation ID 4 含む）
+- ruff check: 0 errors、pyright: 0 errors
+
+**成果物**:
+
+| ファイル | 内容 |
+|---------|------|
+| `apps/bt/src/server/middleware/request_logger.py` | リクエストロギングミドルウェア（新規） |
+| `apps/bt/src/server/openapi_config.py` | OpenAPI 設定集中管理 + ErrorResponse 注入（新規） |
+| `apps/bt/tests/unit/server/middleware/test_request_logger.py` | ロガーテスト + ミドルウェア順序テスト（新規） |
+| `apps/bt/tests/unit/server/test_cors.py` | CORS テスト（新規） |
+| `apps/bt/tests/unit/server/test_openapi.py` | OpenAPI 互換テスト（新規） |
+| `scripts/verify-openapi-compat.py` | baseline vs FastAPI 互換性検証スクリプト（新規） |
+| `apps/bt/src/server/app.py` | ミドルウェア登録順（LIFO）修正、CORS/OpenAPI 設定適用（変更） |
+| `apps/bt/pyproject.toml` | `respx>=0.21.0` dev 依存追加（変更） |
+| `apps/bt/tests/conftest.py` | `sync_client`/`async_client` fixture 追加（変更） |
+
+**httpx 活用方針**（Phase 3 全体）:
+- 3A: 既存 bt→ts 呼び出し維持。`httpx.ASGITransport` テスト基盤 + `respx` 準備
+- 3B: `httpx.AsyncClient` で JQuants API 直接呼び出し（リトライ + トークン管理）
+- 3C-E: bt→ts 各クライアント順次不要化
+- 3F: `src/api/` パッケージ完全削除
 
 ### 3B: 読み取り API 移行
 
