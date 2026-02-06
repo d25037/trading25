@@ -1,56 +1,70 @@
-# === Node / Bun ===
+# === Runtime / Dependencies ===
 node_modules/
-**/node_modules/
-bun.lockb
-pnpm-lock.yaml
-package-lock.json
-yarn.lock
-**/.bun/
-**/.turbo/
-**/.parcel-cache/
+.venv/
 
-# === TypeScript / Build ===
+# === Build outputs ===
 **/dist/
 **/build/
 **/out/
 **/.cache/
-**/.tsbuildinfo
+**/*.tsbuildinfo
 
 # === Python ===
 **/__pycache__/
 **/*.pyc
-**/*.pyo
-**/*.pyd
-.venv/
-**/.venv/
-venv/
+**/*.egg-info/
+**/.coverage
+htmlcov/
+
+# === Tool caches ===
 **/.pytest_cache/
 **/.mypy_cache/
 **/.ruff_cache/
-**/.coverage
-htmlcov/
-**/*.egg-info/
-.eggs/
-**/pip-wheel-metadata/
+**/coverage/
 
 # === Jupyter ===
 .ipynb_checkpoints/
 
 # === OS / Editor ===
 **/.DS_Store
-**/Thumbs.db
 .idea/
 .vscode/
+.cursor/
 **/*.swp
 **/*.swo
 **/*~
 
-# === Reports / Logs ===
-**/coverage/
-**/reports/
+# === Logs / Temp ===
 **/*.log
 **/*.tmp
+**/reports/
 
 # === Environment ===
 .env
 .env.*
+
+# === AI / Editor configs ===
+**/.claude/settings.json
+.mcp.json
+.agent/
+.codex/
+
+# === apps/bt ===
+apps/bt/notebooks/generated/
+apps/bt/.db
+apps/bt/**/*.csv
+apps/bt/**/*.xlsx
+apps/bt/**/*.json
+apps/bt/**/*.pickle
+apps/bt/**/*.pkl
+
+# === apps/ts ===
+apps/ts/packages/api/openapi.json
+apps/ts/packages/api/openapi.yaml
+apps/ts/**/test-portfolio-*.db
+apps/ts/**/test-portfolio-*.db-shm
+apps/ts/**/test-portfolio-*.db-wal
+apps/ts/**/__tests__/*.db
+apps/ts/**/__tests__/*.db-shm
+apps/ts/**/__tests__/*.db-wal
+apps/ts/**/test-api.ts

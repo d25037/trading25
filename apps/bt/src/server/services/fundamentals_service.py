@@ -568,6 +568,8 @@ class FundamentalsService:
         """Annualize quarterly profit figures."""
         normalized = normalize_period_type(period_type)
         multipliers = {"1Q": 4.0, "2Q": 2.0, "3Q": 4.0 / 3.0}
+        if normalized is None:
+            return quarterly_profit
         return quarterly_profit * multipliers.get(normalized, 1.0)
 
     def _calculate_roa(
