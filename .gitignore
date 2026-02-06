@@ -38,6 +38,7 @@ htmlcov/
 **/*.log
 **/*.tmp
 **/reports/
+!docs/reports/
 
 # === Environment ===
 .env
