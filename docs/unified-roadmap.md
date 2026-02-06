@@ -102,7 +102,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | Phase | 名称 | 状態 | リスク | 見積 |
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
-| 2 | 契約・データ境界 | **未着手** | Low | 1-2 週 |
+| 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **未着手** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
@@ -135,7 +135,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 - FastAPI が唯一のバックエンド
 - Hono サーバー廃止
-- 75+ エンドポイントを FastAPI に統合
+- 90 エンドポイントを FastAPI に統合
 
 ---
 
@@ -220,29 +220,39 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 *元: monorepo-migration-plan.md Phase 2 + packages-responsibility-roadmap.md Phase 0-1*
 
-- [ ] `contracts/dataset-schema.json` を実データに基づいて拡張
-- [ ] `packages/contracts` 作成・型生成ルール策定
-- [ ] 契約バージョニングルール策定（additive vs breaking）
-- [ ] 依存方向ルールのドキュメント化
-- [ ] 新規 packages 作成時のテンプレート決定
-- [ ] dataset スナップショット出力機能の方針決定（SQLite ベースの安定スキーマ出力 + manifest.json）
-- [ ] apps/ts にスナップショット出力機能を実装
-- [ ] apps/bt にスナップショットリーダー + スキーマバージョン検証を実装
+- [x] `contracts/dataset-schema.json` を deprecated 化、v2 を正として明記
+- [ ] `packages/contracts` 作成・型生成ルール策定 — **Phase 4 に延期**（`contracts/` 直接管理で十分）
+- [x] 契約バージョニングルール策定（additive vs breaking）
+- [x] 依存方向ルールのドキュメント化
+- [x] 新規スキーマのファイル命名規則決定
+- [x] dataset スナップショット出力機能の方針決定（SQLite ベースの安定スキーマ出力 + manifest.json）
+- [ ] apps/ts にスナップショット出力機能を実装 — **Phase 3 前提作業に延期**
+- [ ] apps/bt にスナップショットリーダー + スキーマバージョン検証を実装 — **Phase 3 前提作業に延期**
 
 ### 2B: FastAPI 事前調査
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 0*
 
-- [ ] OpenAPI 固定（Hono の openapi.json を移行契約として確定）
-- [ ] 既存 FastAPI エンドポイント vs Hono エンドポイント監査
-- [ ] 例外レスポンスフォーマット定義（error, message, correlationId）
-- [ ] FastAPI 側の既存エンドポイント一覧整理、競合パス明確化
+- [x] OpenAPI 固定（Hono の openapi.json を `contracts/hono-openapi-baseline.json` として凍結）
+- [x] 既存 FastAPI エンドポイント vs Hono エンドポイント監査 — [`docs/reports/phase2b-endpoint-audit.md`](reports/phase2b-endpoint-audit.md)
+- [x] 例外レスポンスフォーマット統一（Hono 互換 6 フィールド + correlation ID ミドルウェア）
+- [x] FastAPI 側の既存エンドポイント一覧整理、競合パス明確化（重複: `/api/health` のみ）
 
 ### 2C: ADR-003 策定（DB 管理責務移行の正式決定）
 
-- [ ] DB 管理責務の ts→FastAPI 移行を正式に検討・決定
-- [ ] AGENTS.md 更新案の作成
-- [ ] 移行に伴うリスク評価
+- [x] DB 管理責務の ts→FastAPI 移行を正式に検討・決定（条件付き承認）
+- [x] AGENTS.md 更新案の作成（Phase 3C 開始時に適用）
+- [x] 移行に伴うリスク評価（ADR-003 に記載）
+
+**完了**: 2026-02-06。延期項目（snapshot 実装: Phase 3 前提作業、`packages/contracts` workspace 化: Phase 4）を除き実質完了。
+
+**成果物**:
+- [`contracts/README.md`](../contracts/README.md) — ガバナンスルール・バージョニング方針・snapshot 方針
+- [`contracts/hono-openapi-baseline.json`](../contracts/hono-openapi-baseline.json) — Hono OpenAPI 凍結ベースライン
+- [`docs/reports/phase2b-endpoint-audit.md`](reports/phase2b-endpoint-audit.md) — エンドポイント監査レポート（Hono 90 + FastAPI 41）
+- 統一エラーレスポンス（Hono 互換 6 フィールド + correlation ID ミドルウェア）
+- ts-116 解消（OptimizationHtmlFile 型を bt OpenAPI に追加）
+- ADR-003 条件付き承認
 
 ---
 
@@ -256,7 +266,8 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 1*
 
-- [ ] correlation id, request logging, CORS, エラーハンドリング
+- [x] correlation id, エラーハンドリング（Phase 2 で前倒し実施）
+- [ ] request logging, CORS 統合
 - [ ] OpenAPI パス互換（Hono と同一パス提供）
 - [ ] `/openapi.json` を Hono 互換で提供
 - [ ] `/doc` の互換性方針決定（FastAPI 標準 or Scalar 導入）
@@ -324,9 +335,9 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - [ ] CI / 依存削除
 - [ ] `apps/ts/packages/api` を read-only 化
 
-**Go/No-Go**: 全 75 エンドポイントの結合テスト合格、OpenAPI 契約差分ゼロ
+**Go/No-Go**: 全 90 エンドポイントの結合テスト合格、OpenAPI 契約差分ゼロ
 
-### Hono API エンドポイント完全一覧（75+）
+### Hono API エンドポイント完全一覧（90）
 
 移行対象の全エンドポイント。Phase 3 各サブフェーズの進捗追跡に使用。
 
@@ -457,7 +468,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 ### 成功条件
 
-- Hono を停止しても 75 エンドポイント全てが FastAPI で同一動作
+- Hono を停止しても 90 エンドポイント全てが FastAPI で同一動作
 - DB ファイルを共有したままデータ互換が維持
 - フロントエンドが API URL 変更なしで動作
 - OpenAPI 契約の差分がゼロ
@@ -658,7 +669,7 @@ Phase 4 ‖ Phase 5 (独立して実行可能)
 | ts-111 | coverage shared 80/80 | — |
 | ts-113 | coverage cli 70/70 | — |
 | ts-114 | coverage web 45/70 | — |
-| ts-116 | bt optimization HTML schema | — |
+| ts-116 | bt optimization HTML schema | 2A | **完了** |
 | ts-117 | coverage api 75/65 | — |
 | ts-118 | fundamentals integration test | 3B |
 | ts-119 | lab result runtime validation | — |
