@@ -78,4 +78,3 @@ test-api.ts
 # OpenAPI auto-generated files
 packages/api/openapi.json
 packages/api/openapi.yaml
-packages/api/src/generated/api-types.ts
