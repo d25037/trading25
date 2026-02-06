@@ -30,6 +30,22 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 ```
 スキーマ変更時は必ず `bt:sync` を実行し、`contracts/` 配下も更新すること。
 
+## contracts/ ガバナンス
+
+`contracts/` に bt/ts 間の安定インターフェースを定義。詳細は [`contracts/README.md`](contracts/README.md) 参照。
+- **バージョニング**: additive (minor) / breaking (major) → 新版ファイル作成
+- **命名規則**: `{domain}-{purpose}-v{N}.schema.json`
+- **凍結ファイル**: `hono-openapi-baseline.json`（Phase 3 完了まで変更禁止）
+
+## エラーレスポンス（Hono 互換）
+
+bt/ts 共通の統一エラーレスポンスフォーマット:
+```json
+{"status":"error","error":"Not Found","message":"...","details?":[...],"timestamp":"...","correlationId":"..."}
+```
+- FastAPI: 例外ハンドラが `HTTPException(detail=...)` を自動変換
+- correlation ID: `x-correlation-id` ヘッダで伝播（なければ自動生成）
+
 ## 共有XDGパス
 
 両プロジェクトが `~/.local/share/trading25/` を共有:
@@ -80,4 +96,8 @@ bun lint && bun check:fix        # リント（Biome）
 
 `.github/workflows/ci.yml` により全ブランチ push / PR で自動実行。
 - **ts**: lint → 型生成 → build → typecheck → test + coverage
-- **bt**: lint → typecheck → test + coverage（ゲート65%）
+- **bt**: lint → typecheck → test + coverage（ゲート70%）
+
+## ロードマップ
+
+[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。現在 Phase 2 実質完了、Phase 3 未着手。
