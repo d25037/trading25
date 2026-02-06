@@ -1,7 +1,7 @@
 ---
 id: bt-017
 title: シグナルレジストリのparam_key重複検証
-status: open
+status: closed
 priority: low
 labels: [signal, registry, validation]
 project: bt
