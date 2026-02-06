@@ -71,7 +71,6 @@ class TestResolvePeriodType:
         from unittest.mock import MagicMock
         from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
 
-        mixin = DataManagerMixin()
         mock_self = MagicMock()
         mock_self.entry_filter_params = MagicMock()
         mock_self.entry_filter_params.fundamental = FundamentalSignalParams(period_type="1Q")
@@ -85,7 +84,6 @@ class TestResolvePeriodType:
         from unittest.mock import MagicMock
         from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
 
-        mixin = DataManagerMixin()
         mock_self = MagicMock()
         mock_self.entry_filter_params = None
         mock_self.exit_trigger_params = MagicMock()

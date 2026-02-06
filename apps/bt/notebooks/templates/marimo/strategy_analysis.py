@@ -174,7 +174,7 @@ def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_par
         _validation_errors.append(f"ExitTriggerParams: {e}")
 
     if _validation_errors:
-        mo.md(f"**Validation Errors:**\n" + "\n".join(_validation_errors))
+        mo.md("**Validation Errors:**\n" + "\n".join(_validation_errors))
     else:
         mo.md("Parameters validated successfully")
 

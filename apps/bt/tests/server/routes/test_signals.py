@@ -4,7 +4,6 @@ Signals API Tests
 /api/signals/compute エンドポイントのテスト
 """
 
-from datetime import date
 from unittest.mock import patch
 
 import pandas as pd

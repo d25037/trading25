@@ -5,7 +5,7 @@ OHLCV系シグナルの計算テスト
 """
 
 import threading
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -309,7 +309,7 @@ class TestDateRangeValidation:
         """Noneの日付はバリデーションをスキップ"""
         service = SignalService()
 
-        with patch.object(service, "load_ohlcv") as mock_load:
+        with patch.object(service, "load_ohlcv"):
             result = service.compute_signals(
                 stock_code="7203",
                 source="market",
