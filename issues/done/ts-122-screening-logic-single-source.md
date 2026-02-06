@@ -1,7 +1,7 @@
 ---
 id: ts-122
 title: スクリーニングロジックの一本化検討
-status: open
+status: closed
 priority: medium
 labels: [design, analytics, api-integration]
 project: ts
@@ -40,6 +40,18 @@ apps/bt/ の cli_market/screening.py は削除されたが、`signal_screening.p
 - apps/bt/ のシグナルベーススクリーニング（`src/data/signal_screening.py`）はバックテスト用シグナルの検証ツールとして引き続き使用
 - `market_analysis.py` はre-exportモジュールに簡素化され、signal_screeningの主要シンボルをre-exportするのみ
 - apps/ts/ のレンジブレイクスクリーニング（`/api/analytics/screening`）とは目的・実装が異なるため、現状維持が妥当
+
+### 意思決定 (2026-02-06): 分離維持
+
+**決定**: 統合せず、現状の分離を維持する。
+
+**理由**:
+1. **異なるアルゴリズム**: ts はレンジブレイク検出（support/resistance breakout）、bt はシグナルベース（34種シグナル定義の適用結果）
+2. **異なるユースケース**: ts は Web UI 向け市場パターン検出、bt はバックテスト戦略の検証向け
+3. **異なるユーザー**: ts はフロントエンドユーザー、bt は戦略開発者
+4. **移植コストが高い**: bt のシグナル定義は Python 固有（vectorbt + pandas 依存）で TypeScript への移植が非実用的
+
+**方針**: 将来スクリーニング機能を追加する場合、目的に応じて適切な側に実装する。
 
 ## 補足
 - apps/ts/ のスクリーニング: 市場全体のテクニカルパターン検出（Web UI向け）
