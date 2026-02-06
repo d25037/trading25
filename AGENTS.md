@@ -45,6 +45,17 @@ bt/ts 共通の統一エラーレスポンスフォーマット:
 ```
 - FastAPI: 例外ハンドラが `HTTPException(detail=...)` を自動変換
 - correlation ID: `x-correlation-id` ヘッダで伝播（なければ自動生成）
+- ErrorResponse スキーマは OpenAPI で全エンドポイントに 400/404/500 として公開
+
+## ミドルウェア構成（FastAPI）
+
+登録順（LIFO: 下から上に実行）:
+1. **RequestLoggerMiddleware** — リクエストロギング（最外側、Hono `httpLogger` 互換）
+2. **CorrelationIdMiddleware** — correlation ID 管理
+3. **CORSMiddleware** — CORS（最内側）
+
+- OpenAPI 設定は `openapi_config.py` に集中管理
+- ドキュメント UI: `/doc`（Swagger UI）、`/docs` `/redoc` は無効
 
 ## 共有XDGパス
 
@@ -100,4 +111,4 @@ bun lint && bun check:fix        # リント（Biome）
 
 ## ロードマップ
 
-[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。現在 Phase 2 実質完了、Phase 3 未着手。
+[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。現在 Phase 3A 完了、Phase 3B 未着手。

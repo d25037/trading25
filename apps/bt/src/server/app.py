@@ -16,6 +16,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 
 from src.server.middleware.correlation import CorrelationIdMiddleware, get_correlation_id
+from src.server.middleware.request_logger import RequestLoggerMiddleware
+from src.server.openapi_config import customize_openapi, get_openapi_config
 from src.server.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
 from src.server.schemas.error import ErrorDetail, ErrorResponse
 from src.server.services.backtest_service import backtest_service
@@ -96,30 +98,40 @@ def _build_error_response(status_code: int, message: str, details: list[ErrorDet
 
 def create_app() -> FastAPI:
     """FastAPIアプリケーションを作成"""
+    openapi_config = get_openapi_config()
     app = FastAPI(
-        title="trading25-bt API",
-        description="バックテスト実行のためのREST API",
-        version="0.1.0",
         lifespan=lifespan,
+        **openapi_config,
     )
 
-    # Correlation ID ミドルウェア（CORS より先に追加 = レスポンス側では後に実行）
+    # カスタム OpenAPI スキーマ（ErrorResponse 共通注入）
+    app.openapi = lambda: customize_openapi(app)  # type: ignore[assignment]
+
+    # --- ミドルウェア登録（LIFO: 下から上に実行される） ---
+
+    # 3番目に登録 = 1番目に実行（最外側）: リクエストロギング
+    app.add_middleware(RequestLoggerMiddleware)
+
+    # 2番目に登録 = 2番目に実行: Correlation ID
     app.add_middleware(CorrelationIdMiddleware)
 
-    # CORS設定（開発環境）
+    # 1番目に登録 = 3番目に実行（最内側）: CORS
     origins = [
         "http://localhost:3001",  # ts API
         "http://localhost:5173",  # ts Web (dev)
+        "http://localhost:4173",  # ts Web (preview)
         "http://127.0.0.1:3001",
         "http://127.0.0.1:5173",
+        "http://127.0.0.1:4173",
     ]
 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=origins,
         allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
+        allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+        allow_headers=["Content-Type", "Authorization", "x-correlation-id"],
+        expose_headers=["x-correlation-id"],
     )
 
     # 例外ハンドラ: HTTPException → 統一エラーレスポンス

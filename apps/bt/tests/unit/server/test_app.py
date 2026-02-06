@@ -12,7 +12,7 @@ from src.server.app import _periodic_cleanup, create_app, lifespan
 class TestCreateApp:
     def test_returns_fastapi_instance(self) -> None:
         app = create_app()
-        assert app.title == "trading25-bt API"
+        assert app.title == "Trading25 API"
 
     def test_has_routes(self) -> None:
         app = create_app()

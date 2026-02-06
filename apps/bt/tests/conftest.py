@@ -4,11 +4,36 @@ PyTest設定ファイル
 テストに使用する共通フィクスチャやモックデータを定義します。
 """
 
+import httpx
 import pytest
 import pandas as pd
 import numpy as np
 import vectorbt as vbt
 from unittest.mock import Mock
+from fastapi.testclient import TestClient
+
+from src.server.app import create_app
+
+
+@pytest.fixture
+def test_app():
+    """テスト用 FastAPI アプリ（lifespan 含む）"""
+    return create_app()
+
+
+@pytest.fixture
+def sync_client(test_app):
+    """同期テストクライアント（既存パターン、lifespan 自動処理）"""
+    with TestClient(test_app) as client:
+        yield client
+
+
+@pytest.fixture
+async def async_client(test_app):
+    """非同期テストクライアント（ASGITransport）"""
+    transport = httpx.ASGITransport(app=test_app)
+    async with httpx.AsyncClient(transport=transport, base_url="http://test") as client:
+        yield client
 
 
 @pytest.fixture
