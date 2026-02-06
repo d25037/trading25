@@ -1,7 +1,7 @@
 ---
 id: ts-123
 title: Remove deprecated fundamentals-data.ts service
-status: open
+status: closed
 priority: low
 labels: [cleanup, tech-debt]
 project: ts
@@ -28,7 +28,8 @@ apps/ts/api側の旧実装を削除してコードベースを簡潔に保つ。
 （着手後に記載）
 
 ## 結果
-（完了後に記載）
+fundamentals-data.ts (705行) と fundamentals-data.test.ts (847行) を削除。
+shared/AGENTS.md の deprecated 参照も削除。(2026-02-06)
 
 ## 補足
 - 移行コミット: d9a5181 (Phase 4.3完了)

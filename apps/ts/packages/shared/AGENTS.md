@@ -54,8 +54,6 @@ const client = new BacktestClient();
 const data = await client.computeFundamentals({ symbol: '7203' });
 ```
 
-apps/ts/api/services/fundamentals-data.ts は `@deprecated` として保持（将来削除予定）。
-
 ## Test Utilities
 
 ```typescript
