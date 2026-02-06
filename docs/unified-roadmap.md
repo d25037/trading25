@@ -175,6 +175,8 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - [x] ts-122: screening logic single source（分離維持を意思決定、文書化）
 - [x] ts-123: remove deprecated fundamentals data service（1,552行削除）
 
+**完了**: 2026-02-06。全 8 件（bt-018 は既にクローズ済み）を解消。Phase 1 全体が完了し、Phase 2 に進行可能。
+
 ---
 
 ## Phase 2: 契約・データ境界
