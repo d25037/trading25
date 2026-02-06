@@ -234,12 +234,10 @@ class TestResampleWeekly:
         weekly_df = service.resample_timeframe(daily_df, "weekly")
         expected = _get_expected_weekly_output()
 
-        # TODO: apps/bt/実装を週開始日に修正後、このテストを有効化
-        # for i, exp in enumerate(expected):
-        #     actual_date = weekly_df.index[i].strftime("%Y-%m-%d")
-        #     assert actual_date == exp["date"], \
-        #         f"Week {i+1} 日付不一致: {actual_date} != {exp['date']}"
-        # 現状はpandas週末アンカーの日付を許容
+        for i, exp in enumerate(expected):
+            actual_date = weekly_df.index[i].strftime("%Y-%m-%d")
+            assert actual_date == exp["date"], \
+                f"Week {i+1} 日付不一致: {actual_date} != {exp['date']}"
         assert len(weekly_df) == len(expected)
 
 
