@@ -6,17 +6,37 @@ trading25-bt バックテストAPIサーバー
 
 import asyncio
 from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from typing import AsyncGenerator
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.exceptions import RequestValidationError
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from loguru import logger
 
+from src.server.middleware.correlation import CorrelationIdMiddleware, get_correlation_id
 from src.server.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
+from src.server.schemas.error import ErrorDetail, ErrorResponse
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import job_manager
 from src.server.services.lab_service import lab_service
 from src.server.services.optimization_service import optimization_service
+
+# HTTP ステータスコード → ステータステキスト
+_STATUS_TEXT: dict[int, str] = {
+    400: "Bad Request",
+    404: "Not Found",
+    409: "Conflict",
+    422: "Unprocessable Entity",
+    500: "Internal Server Error",
+    501: "Not Implemented",
+}
+
+
+def _status_text(status_code: int) -> str:
+    """ステータスコードからテキストを取得"""
+    return _STATUS_TEXT.get(status_code, f"Error {status_code}")
 
 
 async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
@@ -61,6 +81,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     logger.info("trading25-bt API サーバーをシャットダウンしています...")
 
 
+def _build_error_response(status_code: int, message: str, details: list[ErrorDetail] | None = None) -> JSONResponse:
+    """統一エラーレスポンスを構築"""
+    body = ErrorResponse(
+        status="error",
+        error=_status_text(status_code),
+        message=message,
+        details=details,
+        timestamp=datetime.now(UTC).isoformat(),
+        correlationId=get_correlation_id(),
+    )
+    return JSONResponse(status_code=status_code, content=body.model_dump(exclude_none=True))
+
+
 def create_app() -> FastAPI:
     """FastAPIアプリケーションを作成"""
     app = FastAPI(
@@ -69,6 +102,9 @@ def create_app() -> FastAPI:
         version="0.1.0",
         lifespan=lifespan,
     )
+
+    # Correlation ID ミドルウェア（CORS より先に追加 = レスポンス側では後に実行）
+    app.add_middleware(CorrelationIdMiddleware)
 
     # CORS設定（開発環境）
     origins = [
@@ -85,6 +121,26 @@ def create_app() -> FastAPI:
         allow_methods=["*"],
         allow_headers=["*"],
     )
+
+    # 例外ハンドラ: HTTPException → 統一エラーレスポンス
+    @app.exception_handler(HTTPException)
+    async def http_exception_handler(  # pyright: ignore[reportUnusedFunction]
+        _request: Request, exc: HTTPException
+    ) -> JSONResponse:
+        message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
+        return _build_error_response(exc.status_code, message)
+
+    # 例外ハンドラ: RequestValidationError → 統一エラーレスポンス + details
+    @app.exception_handler(RequestValidationError)
+    async def validation_exception_handler(  # pyright: ignore[reportUnusedFunction]
+        _request: Request, exc: RequestValidationError
+    ) -> JSONResponse:
+        details = []
+        for err in exc.errors():
+            loc = err.get("loc", ())
+            field = ".".join(str(part) for part in loc if part != "body")
+            details.append(ErrorDetail(field=field or "unknown", message=err.get("msg", "Validation error")))
+        return _build_error_response(422, "Validation failed", details)
 
     # ルーターを登録
     app.include_router(health.router)

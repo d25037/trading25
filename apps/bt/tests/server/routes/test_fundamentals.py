@@ -206,7 +206,7 @@ class TestFundamentalsComputeEndpoint:
 
             assert response.status_code == 500
             data = response.json()
-            assert "Unexpected error" in data["detail"]
+            assert "Unexpected error" in data["message"]
 
 
 class TestFundamentalsSchemaValidation:
