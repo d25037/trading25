@@ -16,6 +16,13 @@ class HealthResponse(BaseModel):
     version: str
 
 
+_health_response = HealthResponse(
+    status="healthy",
+    service="trading25-bt",
+    version="0.1.0",
+)
+
+
 @router.get("/api/health", response_model=HealthResponse)
 async def health_check() -> HealthResponse:
     """
@@ -23,8 +30,14 @@ async def health_check() -> HealthResponse:
 
     サーバーの状態を確認
     """
-    return HealthResponse(
-        status="healthy",
-        service="trading25-bt",
-        version="0.1.0",
-    )
+    return _health_response
+
+
+@router.get("/health", response_model=HealthResponse)
+async def health_check_alias() -> HealthResponse:
+    """
+    ヘルスチェック（Hono 互換エイリアス）
+
+    `/api/health` と同一レスポンスを返す
+    """
+    return _health_response

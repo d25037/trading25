@@ -24,6 +24,14 @@ router = APIRouter(prefix="/api/fundamentals", tags=["Fundamentals"])
 _executor = ThreadPoolExecutor(max_workers=4)
 
 
+def _get_executor() -> ThreadPoolExecutor:
+    """shutdown 済みの場合は再作成して返す"""
+    global _executor
+    if getattr(_executor, "_shutdown", False):
+        _executor = ThreadPoolExecutor(max_workers=4)
+    return _executor
+
+
 @router.post(
     "/compute",
     response_model=FundamentalsComputeResponse,
@@ -61,7 +69,7 @@ async def compute_fundamentals(
 
         loop = asyncio.get_event_loop()
         result = await loop.run_in_executor(
-            _executor,
+            _get_executor(),
             fundamentals_service.compute_fundamentals,
             request,
         )

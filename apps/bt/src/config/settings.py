@@ -21,6 +21,13 @@ class Settings(BaseModel):
     api_timeout: float = Field(default=30.0, alias="API_TIMEOUT")
     log_level: str = Field(default="WARNING", alias="LOG_LEVEL")
 
+    # JQuants API
+    jquants_api_key: str = Field(default="", alias="JQUANTS_API_KEY")
+    jquants_plan: str = Field(default="free", alias="JQUANTS_PLAN")
+
+    # market.db (Phase 3B-2a)
+    market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
+
     model_config = {"populate_by_name": True}
 
 

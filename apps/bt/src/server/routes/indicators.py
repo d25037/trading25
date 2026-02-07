@@ -25,6 +25,14 @@ router = APIRouter(tags=["Indicators"])
 # ThreadPoolExecutor（モジュールレベルで1つ生成）
 _executor = ThreadPoolExecutor(max_workers=5)
 
+
+def _get_executor() -> ThreadPoolExecutor:
+    """shutdown 済みの場合は再作成して返す"""
+    global _executor
+    if getattr(_executor, "_shutdown", False):
+        _executor = ThreadPoolExecutor(max_workers=5)
+    return _executor
+
 TIMEOUT_SECONDS = 10
 
 
@@ -37,7 +45,7 @@ async def _run_in_executor(
     loop = asyncio.get_running_loop()
     try:
         return await asyncio.wait_for(
-            loop.run_in_executor(_executor, fn, *args),
+            loop.run_in_executor(_get_executor(), fn, *args),
             timeout=TIMEOUT_SECONDS,
         )
     except TimeoutError:

@@ -30,6 +30,15 @@ router = APIRouter(tags=["OHLCV"])
 # ThreadPoolExecutor（モジュールレベルで1つ生成）
 _executor = ThreadPoolExecutor(max_workers=3)
 
+
+def _get_executor() -> ThreadPoolExecutor:
+    """shutdown 済みの場合は再作成して返す"""
+    global _executor
+    if getattr(_executor, "_shutdown", False):
+        _executor = ThreadPoolExecutor(max_workers=3)
+    return _executor
+
+
 TIMEOUT_SECONDS = 10
 
 
@@ -125,7 +134,7 @@ async def resample_ohlcv(request: OHLCVResampleRequest) -> OHLCVResampleResponse
     try:
         result = await asyncio.wait_for(
             loop.run_in_executor(
-                _executor,
+                _get_executor(),
                 _resample_ohlcv,
                 request.stock_code,
                 request.source,

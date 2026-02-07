@@ -20,6 +20,7 @@ JQUANTS API ──→ ts/api (:3001) ──→ bt (REST APIクライアント)
 
 - **ts/api** が唯一のJQuants API窓口かつデータベース管理者
 - **bt** は ts/api 経由でデータにアクセス（直接DB禁止）
+  - **例外（ADR-003）**: Phase 3B 以降、bt/server は market.db への**読み取り専用**アクセスを許可（`sqlite3 ?mode=ro`）。書き込みは引き続き ts/api が管理。
 - **ts/web** は `/bt` パスを bt/server にプロキシ
 
 ## OpenAPI契約
@@ -111,4 +112,4 @@ bun lint && bun check:fix        # リント（Biome）
 
 ## ロードマップ
 
-[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。現在 Phase 3A 完了、Phase 3B 未着手。
+[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。現在 Phase 3B-1 完了、Phase 3B-2a 完了。
