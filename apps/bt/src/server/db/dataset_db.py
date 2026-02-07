@@ -7,9 +7,10 @@ Phase 3D（/api/dataset/{name}/* エンドポイント）の基盤。
 
 from __future__ import annotations
 
+import random
 from typing import Any
 
-from sqlalchemy import Row, func, select
+from sqlalchemy import Row, func, literal_column, select
 
 from src.server.db.base import BaseDbAccess
 from src.server.db.query_helpers import normalize_stock_code
@@ -235,3 +236,149 @@ class DatasetDb(BaseDbAccess):
         """銘柄数を取得"""
         with self.engine.connect() as conn:
             return conn.execute(select(func.count()).select_from(ds_stocks)).scalar() or 0
+
+    # --- Extended methods (Phase 3D-1) ---
+
+    def get_stock_list_with_counts(self, min_records: int = 100) -> list[Row[Any]]:
+        """銘柄一覧 + レコード数 + 日付範囲"""
+        stmt = (
+            select(
+                ds_stocks.c.code.label("stockCode"),
+                func.count(ds_stock_data.c.date).label("record_count"),
+                func.min(ds_stock_data.c.date).label("start_date"),
+                func.max(ds_stock_data.c.date).label("end_date"),
+            )
+            .outerjoin(ds_stock_data, ds_stocks.c.code == ds_stock_data.c.code)
+            .group_by(ds_stocks.c.code)
+            .having(func.count(ds_stock_data.c.date) >= min_records)
+            .order_by(ds_stocks.c.code)
+        )
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def get_index_list_with_counts(self, min_records: int = 100) -> list[Row[Any]]:
+        """指数一覧 + レコード数 + 日付範囲"""
+        stmt = (
+            select(
+                ds_indices_data.c.code.label("indexCode"),
+                func.min(ds_indices_data.c.sector_name).label("indexName"),
+                func.count(ds_indices_data.c.date).label("record_count"),
+                func.min(ds_indices_data.c.date).label("start_date"),
+                func.max(ds_indices_data.c.date).label("end_date"),
+            )
+            .group_by(ds_indices_data.c.code)
+            .having(func.count(ds_indices_data.c.date) >= min_records)
+            .order_by(ds_indices_data.c.code)
+        )
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def get_margin_list(self, min_records: int = 10) -> list[Row[Any]]:
+        """信用取引データ一覧 + レコード数 + 日付範囲 + 平均"""
+        stmt = (
+            select(
+                margin_data.c.code.label("stockCode"),
+                func.count(margin_data.c.date).label("record_count"),
+                func.min(margin_data.c.date).label("start_date"),
+                func.max(margin_data.c.date).label("end_date"),
+                func.avg(margin_data.c.long_margin_volume).label("avg_long_margin"),
+                func.avg(margin_data.c.short_margin_volume).label("avg_short_margin"),
+            )
+            .group_by(margin_data.c.code)
+            .having(func.count(margin_data.c.date) >= min_records)
+            .order_by(margin_data.c.code)
+        )
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def search_stocks(self, term: str, exact: bool = False, limit: int = 50) -> list[Row[Any]]:
+        """銘柄検索（code/company_name）"""
+        if exact:
+            stmt = (
+                select(
+                    ds_stocks.c.code,
+                    ds_stocks.c.company_name,
+                    literal_column("'exact'").label("match_type"),
+                )
+                .where(
+                    (ds_stocks.c.code == term)
+                    | (ds_stocks.c.company_name == term)
+                )
+                .limit(limit)
+            )
+        else:
+            pattern = f"%{term}%"
+            stmt = (
+                select(
+                    ds_stocks.c.code,
+                    ds_stocks.c.company_name,
+                    literal_column("'partial'").label("match_type"),
+                )
+                .where(
+                    (ds_stocks.c.code.like(pattern))
+                    | (ds_stocks.c.company_name.like(pattern))
+                )
+                .order_by(ds_stocks.c.code)
+                .limit(limit)
+            )
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def get_sample_codes(self, size: int = 10, seed: int | None = None) -> list[str]:
+        """ランダムサンプリングで銘柄コードを取得"""
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(ds_stocks.c.code).order_by(ds_stocks.c.code)).fetchall()
+        codes = [row[0] for row in rows]
+        if not codes:
+            return []
+        rng = random.Random(seed)  # noqa: S311
+        return rng.sample(codes, min(size, len(codes)))
+
+    def get_table_counts(self) -> dict[str, int]:
+        """各テーブルの行数を取得"""
+        tables = {
+            "stocks": ds_stocks,
+            "stock_data": ds_stock_data,
+            "topix_data": ds_topix_data,
+            "indices_data": ds_indices_data,
+            "margin_data": margin_data,
+            "statements": statements,
+            "dataset_info": dataset_info,
+        }
+        result: dict[str, int] = {}
+        with self.engine.connect() as conn:
+            for name, table in tables.items():
+                result[name] = conn.execute(select(func.count()).select_from(table)).scalar() or 0
+        return result
+
+    def get_date_range(self) -> dict[str, str] | None:
+        """stock_data の日付範囲を取得"""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                select(
+                    func.min(ds_stock_data.c.date).label("min"),
+                    func.max(ds_stock_data.c.date).label("max"),
+                )
+            ).fetchone()
+        if row is None or row.min is None:
+            return None
+        return {"min": row.min, "max": row.max}
+
+    def get_sectors_with_count(self) -> list[Row[Any]]:
+        """セクター名 + 銘柄数"""
+        stmt = (
+            select(
+                ds_stocks.c.sector_33_name.label("sectorName"),
+                func.count(ds_stocks.c.code).label("count"),
+            )
+            .group_by(ds_stocks.c.sector_33_name)
+            .order_by(ds_stocks.c.sector_33_name)
+        )
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def get_stocks_with_quotes_count(self) -> int:
+        """OHLCV データを持つ銘柄数"""
+        stmt = select(func.count(func.distinct(ds_stock_data.c.code)))
+        with self.engine.connect() as conn:
+            return conn.execute(stmt).scalar() or 0

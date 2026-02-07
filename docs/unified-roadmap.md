@@ -103,7 +103,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
-| 3 | FastAPI 統一 | **3C 完了** | **High** | 6-10 週 |
+| 3 | FastAPI 統一 | **3D 完了** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
@@ -379,18 +379,42 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 - SQLite read-only: `creator` コールバック + `sqlite3.connect(uri, uri=True)` パターン
 - `@event.listens_for(engine, "connect")` は pyright に `reportUnusedFunction` で警告される
 
-### 3D: DB・ジョブ API 移行
+### 3D: DB・ジョブ API 移行 — **完了** (2026-02-07)
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 3*
 
 **前提**: 3C 完了（DB 操作は直接アクセスが前提）
 
-- [ ] Database: sync, validate, stats, refresh
-- [ ] Dataset: 作成・再開・キャンセル・進捗
-- [ ] ジョブ管理機構の FastAPI 再構築
-- [ ] タイムアウト・中断・再開の挙動を Hono と一致
+30 エンドポイントを 4 サブフェーズで FastAPI に移行完了:
 
-**Go/No-Go**: ジョブライフサイクル（作成→実行→完了/キャンセル）テスト合格
+- [x] **3D-1**: Dataset Data + 簡易操作 (20 EP) — DatasetResolver, DatasetDb 拡張, 15 data EP + 5 management EP
+- [x] **3D-2**: DB Stats + Validate (2 EP) — MarketDb 拡張 (~15 メソッド追加), db_stats_service, db_validation_service
+- [x] **3D-3**: GenericJobManager + Sync + Refresh (4 EP) — 汎用ジョブマネージャ, 3 sync 戦略, stock refresh
+- [x] **3D-4**: Dataset Create + Resume + Jobs (4 EP) — DatasetWriter, dataset_builder_service, 9 プリセット
+
+**Go/No-Go 結果**: 全基準クリア
+- 新規テスト 120 件全通過（2508→2628 tests）
+- ジョブライフサイクル: create→running→complete/cancel/fail 全パス検証済み
+- GenericJobManager: asyncio.Lock 排他制御 + asyncio.Event 協調キャンセル
+- 既存テスト全通過（ruff 0 errors, pyright 0 errors）
+
+**成果物**:
+
+| カテゴリ | ファイル |
+|---------|---------|
+| Routes | `db.py`(6 EP), `dataset.py`(9 EP), `dataset_data.py`(15 EP) |
+| Schemas | `db.py`, `dataset.py`, `dataset_data.py`, `job.py` |
+| Services | `generic_job_manager.py`, `sync_service.py`, `sync_strategies.py`, `stock_refresh_service.py`, `dataset_builder_service.py`, `dataset_presets.py`, `dataset_resolver.py`, `dataset_service.py`, `dataset_data_service.py` |
+| DB | `dataset_writer.py`（DatasetWriter: .db ファイル書き込み） |
+| DB 拡張 | `market_db.py`(+15 メソッド), `dataset_db.py`(+10 メソッド) |
+| テスト | `test_dataset_resolver.py`(12), `test_dataset_db_extended.py`(14), `test_routes_dataset_data.py`(18), `test_routes_dataset.py`(10), `test_routes_db.py`(4), `test_generic_job_manager.py`(15), `test_routes_db_sync.py`(7), `test_dataset_presets.py`(7), `test_dataset_writer.py`(10), `test_dataset_builder_service.py`(12), `test_routes_dataset_jobs.py`(11) |
+
+**Key Lessons**:
+- SQLAlchemy Row `.count` attribute conflicts with built-in `count` method — use index access `r[0]`, `r[1]`
+- dataset_meta tables have plain names (stocks, stock_data) not prefixed (ds_stocks)
+- `asyncio.to_thread()` for blocking DB writes in async context to avoid blocking event loop
+- Module-level job managers need `shutdown()` in app lifespan
+- GenericJobManager: `asyncio.Lock` for create exclusivity, `asyncio.Event` for cooperative cancellation
 
 ### 3E: CRUD 移行
 
@@ -468,44 +492,44 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 #### Database (6)
 | メソッド | パス | 3D |
 |---|---|---|
-| GET | `/api/db/stats` | [ ] |
-| POST | `/api/db/stocks/refresh` | [ ] |
-| POST | `/api/db/sync` | [ ] |
-| GET | `/api/db/sync/jobs/{jobId}` | [ ] |
-| DELETE | `/api/db/sync/jobs/{jobId}` | [ ] |
-| GET | `/api/db/validate` | [ ] |
+| GET | `/api/db/stats` | [x] |
+| POST | `/api/db/stocks/refresh` | [x] |
+| POST | `/api/db/sync` | [x] |
+| GET | `/api/db/sync/jobs/{jobId}` | [x] |
+| DELETE | `/api/db/sync/jobs/{jobId}` | [x] |
+| GET | `/api/db/validate` | [x] |
 
 #### Dataset (9)
 | メソッド | パス | 3D |
 |---|---|---|
-| GET | `/api/dataset` | [ ] |
-| POST | `/api/dataset` | [ ] |
-| POST | `/api/dataset/resume` | [ ] |
-| GET | `/api/dataset/jobs/{jobId}` | [ ] |
-| DELETE | `/api/dataset/jobs/{jobId}` | [ ] |
-| GET | `/api/dataset/{name}/info` | [ ] |
-| GET | `/api/dataset/{name}/sample` | [ ] |
-| GET | `/api/dataset/{name}/search` | [ ] |
-| DELETE | `/api/dataset/{name}` | [ ] |
+| GET | `/api/dataset` | [x] |
+| POST | `/api/dataset` | [x] |
+| POST | `/api/dataset/resume` | [x] |
+| GET | `/api/dataset/jobs/{jobId}` | [x] |
+| DELETE | `/api/dataset/jobs/{jobId}` | [x] |
+| GET | `/api/dataset/{name}/info` | [x] |
+| GET | `/api/dataset/{name}/sample` | [x] |
+| GET | `/api/dataset/{name}/search` | [x] |
+| DELETE | `/api/dataset/{name}` | [x] |
 
 #### Dataset Data (15)
 | メソッド | パス | 3D |
 |---|---|---|
-| GET | `/api/dataset/{name}/stocks` | [ ] |
-| GET | `/api/dataset/{name}/stocks/{code}/ohlcv` | [ ] |
-| GET | `/api/dataset/{name}/stocks/ohlcv/batch` | [ ] |
-| GET | `/api/dataset/{name}/topix` | [ ] |
-| GET | `/api/dataset/{name}/indices` | [ ] |
-| GET | `/api/dataset/{name}/indices/{code}` | [ ] |
-| GET | `/api/dataset/{name}/margin` | [ ] |
-| GET | `/api/dataset/{name}/margin/{code}` | [ ] |
-| GET | `/api/dataset/{name}/margin/batch` | [ ] |
-| GET | `/api/dataset/{name}/statements/{code}` | [ ] |
-| GET | `/api/dataset/{name}/statements/batch` | [ ] |
-| GET | `/api/dataset/{name}/sectors` | [ ] |
-| GET | `/api/dataset/{name}/sectors/mapping` | [ ] |
-| GET | `/api/dataset/{name}/sectors/stock-mapping` | [ ] |
-| GET | `/api/dataset/{name}/sectors/{sectorName}/stocks` | [ ] |
+| GET | `/api/dataset/{name}/stocks` | [x] |
+| GET | `/api/dataset/{name}/stocks/{code}/ohlcv` | [x] |
+| GET | `/api/dataset/{name}/stocks/ohlcv/batch` | [x] |
+| GET | `/api/dataset/{name}/topix` | [x] |
+| GET | `/api/dataset/{name}/indices` | [x] |
+| GET | `/api/dataset/{name}/indices/{code}` | [x] |
+| GET | `/api/dataset/{name}/margin` | [x] |
+| GET | `/api/dataset/{name}/margin/{code}` | [x] |
+| GET | `/api/dataset/{name}/margin/batch` | [x] |
+| GET | `/api/dataset/{name}/statements/{code}` | [x] |
+| GET | `/api/dataset/{name}/statements/batch` | [x] |
+| GET | `/api/dataset/{name}/sectors` | [x] |
+| GET | `/api/dataset/{name}/sectors/mapping` | [x] |
+| GET | `/api/dataset/{name}/sectors/stock-mapping` | [x] |
+| GET | `/api/dataset/{name}/sectors/{sectorName}/stocks` | [x] |
 
 #### Portfolio (12)
 | メソッド | パス | 3E |
