@@ -9,7 +9,7 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 ## Architecture
 
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
-- **`packages/api/`** - OpenAPI 3.1 Hono server with Scalar docs → [API AGENTS.md](./packages/api/AGENTS.md)
+- **`packages/api/`** - **ARCHIVED** — 旧 Hono サーバー（Phase 3F で FastAPI に完全移行） → [API AGENTS.md](./packages/api/AGENTS.md)
 - **`packages/shared/`** - JQuants API, SQLite, TA indicators, FA module → [Shared AGENTS.md](./packages/shared/AGENTS.md)
 - **`packages/cli/`** - Gunshi CLI for dataset/portfolio/analysis → [CLI AGENTS.md](./packages/cli/AGENTS.md)
 
@@ -49,10 +49,10 @@ Root `tsconfig.json` excludes web and api packages (compiled separately).
 
 ```bash
 # Development
-bun dev                     # Concurrent web + api
+bun dev                     # Web only (FastAPI :3002 にプロキシ)
 bun dev:full                # bt:sync + dev (syncs bt types first)
 bun dev:web                 # Vite (port 5173)
-bun dev:api                 # Hono (port 3001)
+bun dev:api                 # [ARCHIVED] Hono server は廃止済み
 
 # Build & Test
 bun run build               # All packages
@@ -141,7 +141,7 @@ Project-specific skills are defined in `.claude/skills/*/SKILL.md`. Refer to the
 
 ### API エンドポイント参照
 
-APIエンドポイントの確認・デバッグ時は **`api-endpoints` skill** を使用すること。`curl` でAPIを叩く際のパス確認に必須。Scalar docs (`http://localhost:3001/doc`) も利用可能。
+APIエンドポイントの確認・デバッグ時は **`api-endpoints` skill** を使用すること。`curl` でAPIを叩く際のパス確認に必須。Swagger UI (`http://localhost:3002/doc`) も利用可能。
 
 ### User-Level Skills
 

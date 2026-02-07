@@ -49,44 +49,44 @@ export const backtestKeys = {
 
 // Fetch functions
 function fetchHealth(): Promise<HealthResponse> {
-  return apiGet<HealthResponse>('/bt/api/health');
+  return apiGet<HealthResponse>('/api/health');
 }
 
 function fetchStrategies(): Promise<StrategyListResponse> {
-  return apiGet<StrategyListResponse>('/bt/api/strategies');
+  return apiGet<StrategyListResponse>('/api/strategies');
 }
 
 function fetchStrategy(name: string): Promise<StrategyDetailResponse> {
-  return apiGet<StrategyDetailResponse>(`/bt/api/strategies/${encodeURIComponent(name)}`);
+  return apiGet<StrategyDetailResponse>(`/api/strategies/${encodeURIComponent(name)}`);
 }
 
 function fetchJobs(limit = 50): Promise<BacktestJobResponse[]> {
-  return apiGet<BacktestJobResponse[]>(`/bt/api/backtest/jobs?limit=${limit}`);
+  return apiGet<BacktestJobResponse[]>(`/api/backtest/jobs?limit=${limit}`);
 }
 
 function fetchJobStatus(jobId: string): Promise<BacktestJobResponse> {
-  return apiGet<BacktestJobResponse>(`/bt/api/backtest/jobs/${encodeURIComponent(jobId)}`);
+  return apiGet<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}`);
 }
 
 function fetchResult(jobId: string, includeHtml = false): Promise<BacktestResultResponse> {
   const params = includeHtml ? '?include_html=true' : '';
-  return apiGet<BacktestResultResponse>(`/bt/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
+  return apiGet<BacktestResultResponse>(`/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
 }
 
 function runBacktest(request: BacktestRequest): Promise<BacktestJobResponse> {
-  return apiPost<BacktestJobResponse>('/bt/api/backtest/run', request);
+  return apiPost<BacktestJobResponse>('/api/backtest/run', request);
 }
 
 function fetchHtmlFiles(strategy?: string, limit = 100): Promise<HtmlFileListResponse> {
   const params = new URLSearchParams();
   if (strategy) params.append('strategy', strategy);
   params.append('limit', limit.toString());
-  return apiGet<HtmlFileListResponse>(`/bt/api/backtest/html-files?${params.toString()}`);
+  return apiGet<HtmlFileListResponse>(`/api/backtest/html-files?${params.toString()}`);
 }
 
 function fetchHtmlFileContent(strategy: string, filename: string): Promise<HtmlFileContentResponse> {
   return apiGet<HtmlFileContentResponse>(
-    `/bt/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
+    `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
   );
 }
 
@@ -96,14 +96,14 @@ function renameHtmlFile(
   request: HtmlFileRenameRequest
 ): Promise<HtmlFileRenameResponse> {
   return apiPost<HtmlFileRenameResponse>(
-    `/bt/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
+    `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
     request
   );
 }
 
 function deleteHtmlFile(strategy: string, filename: string): Promise<HtmlFileDeleteResponse> {
   return apiDelete<HtmlFileDeleteResponse>(
-    `/bt/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
+    `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
   );
 }
 
@@ -225,7 +225,7 @@ export function useRunBacktest() {
 // ============================================
 
 function cancelJob(jobId: string): Promise<BacktestJobResponse> {
-  return apiPost<BacktestJobResponse>(`/bt/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`);
+  return apiPost<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`);
 }
 
 /**
@@ -262,23 +262,23 @@ export function useCancelBacktest() {
 // ============================================
 
 function updateStrategy(name: string, request: StrategyUpdateRequest): Promise<StrategyUpdateResponse> {
-  return apiPut<StrategyUpdateResponse>(`/bt/api/strategies/${encodeURIComponent(name)}`, request);
+  return apiPut<StrategyUpdateResponse>(`/api/strategies/${encodeURIComponent(name)}`, request);
 }
 
 function deleteStrategy(name: string): Promise<StrategyDeleteResponse> {
-  return apiDelete<StrategyDeleteResponse>(`/bt/api/strategies/${encodeURIComponent(name)}`);
+  return apiDelete<StrategyDeleteResponse>(`/api/strategies/${encodeURIComponent(name)}`);
 }
 
 function duplicateStrategy(name: string, request: StrategyDuplicateRequest): Promise<StrategyDuplicateResponse> {
-  return apiPost<StrategyDuplicateResponse>(`/bt/api/strategies/${encodeURIComponent(name)}/duplicate`, request);
+  return apiPost<StrategyDuplicateResponse>(`/api/strategies/${encodeURIComponent(name)}/duplicate`, request);
 }
 
 function renameStrategy(name: string, request: StrategyRenameRequest): Promise<StrategyRenameResponse> {
-  return apiPost<StrategyRenameResponse>(`/bt/api/strategies/${encodeURIComponent(name)}/rename`, request);
+  return apiPost<StrategyRenameResponse>(`/api/strategies/${encodeURIComponent(name)}/rename`, request);
 }
 
 function validateStrategy(name: string, request: StrategyValidationRequest): Promise<StrategyValidationResponse> {
-  return apiPost<StrategyValidationResponse>(`/bt/api/strategies/${encodeURIComponent(name)}/validate`, request);
+  return apiPost<StrategyValidationResponse>(`/api/strategies/${encodeURIComponent(name)}/validate`, request);
 }
 
 /**
@@ -465,11 +465,11 @@ export function useDeleteHtmlFile() {
 // ============================================
 
 function fetchDefaultConfig(): Promise<DefaultConfigResponse> {
-  return apiGet<DefaultConfigResponse>('/bt/api/config/default');
+  return apiGet<DefaultConfigResponse>('/api/config/default');
 }
 
 function updateDefaultConfig(request: DefaultConfigUpdateRequest): Promise<DefaultConfigUpdateResponse> {
-  return apiPut<DefaultConfigUpdateResponse>('/bt/api/config/default', request);
+  return apiPut<DefaultConfigUpdateResponse>('/api/config/default', request);
 }
 
 /**
@@ -510,7 +510,7 @@ export function useUpdateDefaultConfig() {
 // ============================================
 
 function fetchSignalReference(): Promise<SignalReferenceResponse> {
-  return apiGet<SignalReferenceResponse>('/bt/api/signals/reference');
+  return apiGet<SignalReferenceResponse>('/api/signals/reference');
 }
 
 /**

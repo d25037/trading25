@@ -46,7 +46,7 @@ describe('useBtMarginIndicators', () => {
     renderHook(() => useBtMarginIndicators('7203'), { wrapper });
 
     await waitFor(() => {
-      expect(mockApiPost).toHaveBeenCalledWith('/bt/api/indicators/margin', {
+      expect(mockApiPost).toHaveBeenCalledWith('/api/indicators/margin', {
         stock_code: '7203',
         indicators: ['margin_long_pressure', 'margin_flow_pressure', 'margin_turnover_days'],
         average_period: 15,
@@ -69,7 +69,7 @@ describe('useBtMarginIndicators', () => {
 
     await waitFor(() => {
       expect(mockApiPost).toHaveBeenCalledWith(
-        '/bt/api/indicators/margin',
+        '/api/indicators/margin',
         expect.objectContaining({
           average_period: 30,
         })

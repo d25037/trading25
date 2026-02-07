@@ -1195,6 +1195,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/fundamentals/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get fundamental analysis metrics for a stock
+         * @description ファンダメンタルズ分析指標を取得
+         */
+        get: operations["get_fundamentals_api_analytics_fundamentals__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/stocks": {
         parameters: {
             query?: never;
@@ -2712,10 +2732,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * DefaultConfigResponse
@@ -3671,7 +3691,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -4392,40 +4412,19 @@ export interface components {
             /** Close */
             close: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
+        /** OHLCVRecord */
         OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+            /** Volume */
             volume: number;
         };
         /**
@@ -4504,7 +4503,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -4916,7 +4915,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -5699,7 +5698,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -5710,7 +5709,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6273,7 +6272,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -6404,20 +6403,12 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** OHLCVRecord */
-        src__server__schemas__dataset_data__OHLCVRecord: {
-            /** Date */
-            date: string;
-            /** Open */
-            open: number;
-            /** High */
-            high: number;
-            /** Low */
-            low: number;
-            /** Close */
-            close: number;
-            /** Volume */
-            volume: number;
+        /** DateRange */
+        src__server__schemas__db__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * DateRange
@@ -6445,15 +6436,44 @@ export interface components {
             /** Beta */
             beta: number;
         };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
         };
         /** DateRange */
-        src__server__schemas__portfolio_performance__DateRange: {
+        src__server__schemas__portfolio_factor_regression__DateRange: {
             /** From */
             from: string;
             /** To */
@@ -9852,6 +9872,69 @@ export interface operations {
             };
         };
     };
+    get_fundamentals_api_analytics_fundamentals__symbol__get: {
+        parameters: {
+            query?: {
+                from?: string | null;
+                to?: string | null;
+                periodType?: "all" | "FY" | "1Q" | "2Q" | "3Q";
+                preferConsolidated?: boolean;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FundamentalsComputeResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_all_stocks_api_market_stocks_get: {
         parameters: {
             query?: {
@@ -11114,7 +11197,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
                     };
                 };
             };
@@ -11177,7 +11260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                    "application/json": components["schemas"]["OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

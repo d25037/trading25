@@ -46,7 +46,7 @@ describe('useBtOHLCV', () => {
 
     await waitFor(() => expect(result.current.data).not.toBeNull());
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/ohlcv/resample', {
+    expect(apiPost).toHaveBeenCalledWith('/api/ohlcv/resample', {
       stock_code: '7203',
       source: 'market',
       timeframe: 'daily',
@@ -82,7 +82,7 @@ describe('useBtOHLCV', () => {
 
     await waitFor(() => expect(result.current.data).not.toBeNull());
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/ohlcv/resample', {
+    expect(apiPost).toHaveBeenCalledWith('/api/ohlcv/resample', {
       stock_code: '7203',
       source: 'market',
       timeframe: 'weekly',

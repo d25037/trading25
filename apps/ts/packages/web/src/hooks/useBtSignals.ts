@@ -238,7 +238,7 @@ export function useBtSignals(
         timeframe,
         signals: filteredSpecs,
       };
-      return apiPost<BtSignalComputeResponse>('/bt/api/signals/compute', request);
+      return apiPost<BtSignalComputeResponse>('/api/signals/compute', request);
     },
     enabled: !!stockCode && filteredSpecs.length > 0 && isEnabled,
     staleTime: 60_000,

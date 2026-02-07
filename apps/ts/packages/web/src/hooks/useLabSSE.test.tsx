@@ -71,7 +71,7 @@ describe('useLabSSE', () => {
     const { result } = renderHook(() => useLabSSE('job-123'));
 
     expect(MockEventSource.instances).toHaveLength(1);
-    expect(MockEventSource.instances[0]?.url).toBe('/bt/api/lab/jobs/job-123/stream');
+    expect(MockEventSource.instances[0]?.url).toBe('/api/lab/jobs/job-123/stream');
 
     // Simulate open
     act(() => {
@@ -260,13 +260,13 @@ describe('useLabSSE', () => {
     });
 
     expect(MockEventSource.instances).toHaveLength(1);
-    expect(MockEventSource.instances[0]?.url).toBe('/bt/api/lab/jobs/job-1/stream');
+    expect(MockEventSource.instances[0]?.url).toBe('/api/lab/jobs/job-1/stream');
 
     rerender({ jobId: 'job-2' });
 
     expect(MockEventSource.instances[0]?.closed).toBe(true);
     expect(MockEventSource.instances).toHaveLength(2);
-    expect(MockEventSource.instances[1]?.url).toBe('/bt/api/lab/jobs/job-2/stream');
+    expect(MockEventSource.instances[1]?.url).toBe('/api/lab/jobs/job-2/stream');
   });
 
   it('handles invalid JSON in message gracefully', () => {
@@ -306,7 +306,7 @@ describe('useLabSSE', () => {
   it('encodes jobId with special characters', () => {
     renderHook(() => useLabSSE('job/with spaces'));
 
-    expect(MockEventSource.instances[0]?.url).toBe('/bt/api/lab/jobs/job%2Fwith%20spaces/stream');
+    expect(MockEventSource.instances[0]?.url).toBe('/api/lab/jobs/job%2Fwith%20spaces/stream');
   });
 
   it('handles message with null fields', () => {

@@ -5,25 +5,24 @@ subagentsを用いてそれぞれのプロジェクトを横断的に把握し�
 ## データフロー・ポート割り当て
 
 ```
-JQUANTS API ──→ ts/api (:3001) ──→ bt (REST APIクライアント)
-                  ↑                    ↓
-               ts/shared           bt/server (:3002)
-                  ↑                    ↓
-               ts/web (:5173) ←── /bt proxy ──→ bt/server
+JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db / datasets)
+                     ↓
+                  ts/web (:5173)
+                  ts/cli
 ```
 
 | サービス | ポート | 技術 |
 |---|---|---|
-| ts/api | 3001 | Hono + bun |
 | bt/server | 3002 | FastAPI + uvicorn |
 | ts/web | 5173 | Vite + React 19 |
 
-- **ts/api** が唯一のJQuants API窓口かつデータベース管理者
+- **FastAPI** が唯一のバックエンド（117 EP: Hono 移行 90 + bt 固有 27）
 - **bt** は SQLite に直接アクセス（`contracts/` スキーマ準拠、SQLAlchemy Core 使用）
-  - **market.db**: 読み取り専用（Phase 3B: `sqlite3 ?mode=ro`）+ 書き込み（Phase 3D: SQLAlchemy Core）
-  - **portfolio.db**: CRUD（Phase 3E: SQLAlchemy Core）
-  - **dataset.db**: 読み取り専用（Phase 3D: SQLAlchemy Core）
-- **ts/web** は `/bt` パスを bt/server にプロキシ
+  - **market.db**: 読み書き（SQLAlchemy Core）
+  - **portfolio.db**: CRUD（SQLAlchemy Core）
+  - **dataset.db**: 読み書き（SQLAlchemy Core）
+- **ts/web** は `/api` パスを FastAPI (:3002) にプロキシ
+- **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は archived・read-only）
 
 ## OpenAPI契約
 
@@ -38,11 +37,11 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 `contracts/` に bt/ts 間の安定インターフェースを定義。詳細は [`contracts/README.md`](contracts/README.md) 参照。
 - **バージョニング**: additive (minor) / breaking (major) → 新版ファイル作成
 - **命名規則**: `{domain}-{purpose}-v{N}.schema.json`
-- **凍結ファイル**: `hono-openapi-baseline.json`（Phase 3 完了まで変更禁止）
+- **アーカイブ**: `hono-openapi-baseline.json`（Phase 3 移行 baseline、参照用に保持）
 
-## エラーレスポンス（Hono 互換）
+## エラーレスポンス
 
-bt/ts 共通の統一エラーレスポンスフォーマット:
+統一エラーレスポンスフォーマット:
 ```json
 {"status":"error","error":"Not Found","message":"...","details?":[...],"timestamp":"...","correlationId":"..."}
 ```
@@ -53,7 +52,7 @@ bt/ts 共通の統一エラーレスポンスフォーマット:
 ## ミドルウェア構成（FastAPI）
 
 登録順（LIFO: 下から上に実行）:
-1. **RequestLoggerMiddleware** — リクエストロギング（最外側、Hono `httpLogger` 互換）
+1. **RequestLoggerMiddleware** — リクエストロギング（最外側）
 2. **CorrelationIdMiddleware** — correlation ID 管理
 3. **CORSMiddleware** — CORS（最内側）
 
@@ -63,7 +62,7 @@ bt/ts 共通の統一エラーレスポンスフォーマット:
 ## 共有XDGパス
 
 両プロジェクトが `~/.local/share/trading25/` を共有:
-- `market.db` / `datasets/` / `portfolio.db` — ts が管理
+- `market.db` / `datasets/` / `portfolio.db` — FastAPI が管理
 - `strategies/experimental/` / `backtest/results/` — bt が管理
 
 ## bt (Python / uv)
@@ -86,20 +85,20 @@ uv run pyright src/              # 型チェック
 
 | パッケージ | 役割 |
 |---|---|
-| `packages/api/` | Hono OpenAPI サーバー（JQuants API窓口・DB管理） |
+| `packages/api/` | **Archived** — 旧 Hono サーバー（Phase 3F で廃止） |
 | `packages/web/` | React 19 + Vite フロントエンド |
 | `packages/shared/` | 共有ライブラリ（JQuants, SQLite, TA/FA指標） |
 | `packages/cli/` | Gunshi CLI（dataset/portfolio/analysis） |
 
 ```bash
-bun dev                          # web + api 同時起動
+bun dev                          # web 起動（FastAPI :3002 にプロキシ）
 bun dev:full                     # bt:sync + dev
 bun run test                     # テスト
 bun typecheck:all                # 型チェック
 bun lint && bun check:fix        # リント（Biome）
 ```
 
-主要技術: TypeScript, Bun, Hono, React 19, Vite, Tailwind CSS v4, Biome, Drizzle ORM
+主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, Drizzle ORM
 
 ## Issue管理
 
@@ -114,4 +113,4 @@ bun lint && bun check:fix        # リント（Biome）
 
 ## ロードマップ
 
-[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。現在 Phase 3B-1 完了、Phase 3B-2a 完了。
+[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。Phase 3 完了（3F 切替・廃止完了）。Phase 4 未着手。

@@ -10,7 +10,7 @@ React 19 financial trading application with Vite, Tailwind CSS v4, and lightweig
 - **Charts**: lightweight-charts for OHLC/margin
 - **Editor**: Monaco Editor for YAML strategy editing
 - **State**: Zustand + TanStack Query
-- **API**: HTTP requests to `/api/*` (proxied to port 3001), `/bt/*` (proxied to port 3002 for backtest + indicators)
+- **API**: HTTP requests to `/api/*` (proxied to FastAPI port 3002)
 
 ## Tailwind CSS v4 Rules
 
@@ -42,13 +42,13 @@ src/
 
 ## Chart Data & Indicator Calculation
 
-全てapps/bt/ APIに統合（Phase 4.3完了）:
-- **OHLCVデータ**: apps/bt/ API (`POST /bt/api/ohlcv/resample`) 経由 (`useBtOHLCV`)
+全て FastAPI (:3002) に統合:
+- **OHLCVデータ**: `POST /api/ohlcv/resample` (`useBtOHLCV`)
   - daily/weekly/monthly timeframe変換
   - relativeMode (TOPIX相対) は `benchmark_code: 'topix'` パラメータ
-- **インジケータ**: apps/bt/ API (`POST /bt/api/indicators/compute`) 経由 (`useBtIndicators`)
-- **Margin指標**: apps/bt/ API (`POST /bt/api/indicators/margin`) 経由 (`useBtMarginIndicators`)
-- **Signal Overlay**: apps/bt/ API (`POST /bt/api/signals/compute`) 経由 (`useBtSignals`)
+- **インジケータ**: `POST /api/indicators/compute` (`useBtIndicators`)
+- **Margin指標**: `POST /api/indicators/margin` (`useBtMarginIndicators`)
+- **Signal Overlay**: `POST /api/signals/compute` (`useBtSignals`)
 
 仕様: `apps/bt/docs/spec-timeframe-resample.md`
 

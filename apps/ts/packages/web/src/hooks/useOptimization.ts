@@ -32,28 +32,28 @@ export const optimizationKeys = {
 
 // Fetch functions
 function runOptimization(request: OptimizationRequest): Promise<OptimizationJobResponse> {
-  return apiPost<OptimizationJobResponse>('/bt/api/optimize/run', request);
+  return apiPost<OptimizationJobResponse>('/api/optimize/run', request);
 }
 
 function fetchOptimizationJobStatus(jobId: string): Promise<OptimizationJobResponse> {
-  return apiGet<OptimizationJobResponse>(`/bt/api/optimize/jobs/${encodeURIComponent(jobId)}`);
+  return apiGet<OptimizationJobResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}`);
 }
 
 function fetchGridConfigs(): Promise<OptimizationGridListResponse> {
-  return apiGet<OptimizationGridListResponse>('/bt/api/optimize/grid-configs');
+  return apiGet<OptimizationGridListResponse>('/api/optimize/grid-configs');
 }
 
 function fetchGridConfig(strategy: string): Promise<OptimizationGridConfig> {
-  return apiGet<OptimizationGridConfig>(`/bt/api/optimize/grid-configs/${encodeURIComponent(strategy)}`);
+  return apiGet<OptimizationGridConfig>(`/api/optimize/grid-configs/${encodeURIComponent(strategy)}`);
 }
 
 function saveGridConfig(strategy: string, request: OptimizationGridSaveRequest): Promise<OptimizationGridSaveResponse> {
-  return apiPut<OptimizationGridSaveResponse>(`/bt/api/optimize/grid-configs/${encodeURIComponent(strategy)}`, request);
+  return apiPut<OptimizationGridSaveResponse>(`/api/optimize/grid-configs/${encodeURIComponent(strategy)}`, request);
 }
 
 function deleteGridConfig(strategy: string): Promise<{ success: boolean; strategy_name: string }> {
   return apiDelete<{ success: boolean; strategy_name: string }>(
-    `/bt/api/optimize/grid-configs/${encodeURIComponent(strategy)}`
+    `/api/optimize/grid-configs/${encodeURIComponent(strategy)}`
   );
 }
 
@@ -61,7 +61,7 @@ function fetchOptimizationHtmlFiles(strategy?: string, limit = 100): Promise<Opt
   const params = new URLSearchParams();
   if (strategy) params.append('strategy', strategy);
   params.append('limit', limit.toString());
-  return apiGet<OptimizationHtmlFileListResponse>(`/bt/api/optimize/html-files?${params.toString()}`);
+  return apiGet<OptimizationHtmlFileListResponse>(`/api/optimize/html-files?${params.toString()}`);
 }
 
 function fetchOptimizationHtmlFileContent(
@@ -69,7 +69,7 @@ function fetchOptimizationHtmlFileContent(
   filename: string
 ): Promise<OptimizationHtmlFileContentResponse> {
   return apiGet<OptimizationHtmlFileContentResponse>(
-    `/bt/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
+    `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
   );
 }
 
@@ -79,14 +79,14 @@ function renameOptimizationHtmlFile(
   request: HtmlFileRenameRequest
 ): Promise<HtmlFileRenameResponse> {
   return apiPost<HtmlFileRenameResponse>(
-    `/bt/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
+    `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
     request
   );
 }
 
 function deleteOptimizationHtmlFile(strategy: string, filename: string): Promise<HtmlFileDeleteResponse> {
   return apiDelete<HtmlFileDeleteResponse>(
-    `/bt/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
+    `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
   );
 }
 

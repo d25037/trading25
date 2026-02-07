@@ -31,8 +31,8 @@ This directory defines stable interfaces between `apps/ts` and `apps/bt`.
 
 | Direction | Status | Notes |
 |---|---|---|
-| bt -> ts | **Allowed** | bt accesses data via ts/api REST endpoints |
-| ts -> bt | **Scheduled for removal** | Phase 3 will migrate ts endpoints to FastAPI |
+| bt -> ts | **Removed** | Phase 3F で FastAPI に完全移行、bt は自身の API を使用 |
+| ts -> bt | **Minimal** | BacktestClient + CLI backtest のみ残存（Phase 4 で廃止予定） |
 
 - Enforced by `scripts/check-dep-direction.sh` (integrated into CI)
 - See `scripts/dep-direction-allowlist.txt` for current exceptions
@@ -56,7 +56,7 @@ Examples:
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
 | `strategy-config-v1.schema.json` | **Active** | Strategy YAML schema validated by `apps/bt`. |
 | `portfolio-db-schema-v1.json` | **Active** | Portfolio DB schema contract (portfolios, portfolio_items, watchlists, watchlist_items, portfolio_metadata). |
-| `hono-openapi-baseline.json` | **Frozen** | Hono OpenAPI snapshot frozen as Phase 3 migration baseline. Do not modify until Phase 3 completes. |
+| `hono-openapi-baseline.json` | **Archived** | Hono OpenAPI snapshot used as Phase 3 migration baseline. Phase 3F (2026-02-07) で全 90 EP 移行完了・Hono 廃止済み。参照用に保持。 |
 
 ## OpenAPI Snapshots (Referenced)
 

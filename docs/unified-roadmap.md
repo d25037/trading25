@@ -11,10 +11,9 @@
 
 | ルール | 根拠 |
 |---|---|
-| `apps/ts/packages/api` が唯一の JQuants API 窓口 | AGENTS.md |
-| `apps/ts` が DB 管理者（market.db / portfolio.db / datasets） | AGENTS.md |
-| `apps/bt` は `apps/ts` API 経由でデータアクセス（直接 DB 禁止） | AGENTS.md |
-| API 呼び出し方向: パターン A（bt→ts 許可、ts→bt 撤去） | ADR-001 |
+| FastAPI (:3002) が唯一のバックエンド（Phase 3F 完了） | AGENTS.md |
+| `apps/bt` は SQLite に直接アクセス（contracts/ スキーマ準拠、SQLAlchemy Core 使用） | ADR-003 |
+| Hono サーバー (:3001) は archived（`apps/ts/packages/api` は read-only） | Phase 3F |
 | OpenAPI 契約: `bt:sync` で FastAPI スキーマ → TS 型生成 | AGENTS.md |
 
 ### 変更承認条件
@@ -103,7 +102,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
-| 3 | FastAPI 統一 | **3E 完了** | **High** | 6-10 週 |
+| 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
@@ -111,31 +110,18 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 
 ## アーキテクチャ: 現状 vs 目標
 
-### 現状
-
-```
-JQUANTS API ──→ ts/api (:3001, Hono) ──→ bt (REST APIクライアント)
-                  ↑                          ↓
-               ts/shared                  bt/server (:3002, FastAPI)
-                  ↑                          ↓
-               ts/web (:5173) ←──── /bt proxy ──→ bt/server
-```
-
-- ts/api が JQuants 窓口 + DB 管理者
-- bt は ts/api 経由でデータアクセス（直接 DB 禁止）
-- 2 つのバックエンドサーバーが稼働
-
-### 目標（Phase 3 完了後）
+### 現状（Phase 3F 完了後）
 
 ```
 JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db / datasets)
                      ↓
                   ts/web (:5173)
+                  ts/cli
 ```
 
-- FastAPI が唯一のバックエンド
-- Hono サーバー廃止
-- 90 エンドポイントを FastAPI に統合
+- FastAPI が唯一のバックエンド（117 EP: Hono 移行 90 + bt 固有 27）
+- Hono サーバー廃止（`apps/ts/packages/api` は archived・read-only）
+- Web/CLI は全て FastAPI (:3002) に接続
 
 ---
 
@@ -448,18 +434,28 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 - `list[Row[Any]]` は `list[object]` に代入不可（invariant）→ `Sequence[Row[Any]]` を使用
 - Portfolio factor regression: `_load_indices_returns()` を N+1 回避版で独自実装（全指数データ一括取得）
 
-### 3F: 切替・廃止
+### 3F: 切替・廃止 — **完了** (2026-02-07)
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 5*
 
-**前提**: 3A-3E 全完了
+**前提**: 3A-3E 全完了（117 EP, 2704 テスト）
 
-- [ ] ルーティング切替（フロント/クライアントの baseUrl を FastAPI に）
-- [ ] Hono サーバー停止
-- [ ] CI / 依存削除
-- [ ] `apps/ts/packages/api` を read-only 化
+- [x] **3F-0**: fundamentals GET EP 追加（ブロッカー解消）+ verify-openapi-compat.py 修正
+- [x] **3F-1**: Go/No-Go 検証（2709 テスト全通過）
+- [x] **3F-2**: Vite proxy 切替（:3001→:3002）+ `/bt` prefix 一括削除（15 ファイル, 98 箇所）
+- [x] **3F-3**: CLI + bt API client base URL 変更（:3001→:3002）
+- [x] **3F-4**: Hono サーバー停止 + packages/api read-only 化 + CORS/OpenAPI 整理
+- [x] **3F-5**: dep-direction-allowlist 整理 + contracts/AGENTS.md/roadmap 更新
 
-**Go/No-Go**: 全 90 エンドポイントの結合テスト合格、OpenAPI 契約差分ゼロ
+**成果物**:
+
+| カテゴリ | ファイル |
+|---------|---------|
+| Routes | `analytics_jquants.py`(+1 GET EP: fundamentals) |
+| Scripts | `verify-openapi-compat.py`(パスパラメータ正規化 + pending→fail) |
+| Config | `vite.config.ts`, `settings.py`, `api-client.ts`(URL 切替), `app.py`(CORS), `openapi_config.py`(servers) |
+| Docs | `dep-direction-allowlist.txt`, `contracts/README.md`, `AGENTS.md`(root/ts/bt), `unified-roadmap.md` |
+| テスト | `test_routes_analytics_fundamentals.py`(5), CORS/settings/client テスト更新 |
 
 ### Hono API エンドポイント完全一覧（90）
 

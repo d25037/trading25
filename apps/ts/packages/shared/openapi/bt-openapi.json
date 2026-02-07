@@ -16,10 +16,6 @@
     {
       "url": "http://localhost:3002",
       "description": "FastAPI server"
-    },
-    {
-      "url": "http://localhost:3001",
-      "description": "Hono server (legacy)"
     }
   ],
   "paths": {
@@ -4518,6 +4514,138 @@
         }
       }
     },
+    "/api/analytics/fundamentals/{symbol}": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get fundamental analysis metrics for a stock",
+        "description": "ファンダメンタルズ分析指標を取得",
+        "operationId": "get_fundamentals_api_analytics_fundamentals__symbol__get",
+        "parameters": [
+          {
+            "name": "symbol",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Symbol"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "From"
+            }
+          },
+          {
+            "name": "to",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "To"
+            }
+          },
+          {
+            "name": "periodType",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "enum": [
+                "all",
+                "FY",
+                "1Q",
+                "2Q",
+                "3Q"
+              ],
+              "type": "string",
+              "default": "all",
+              "title": "Periodtype"
+            }
+          },
+          {
+            "name": "preferConsolidated",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean",
+              "default": true,
+              "title": "Preferconsolidated"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FundamentalsComputeResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/market/stocks": {
       "get": {
         "tags": [
@@ -6504,7 +6632,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                      "$ref": "#/components/schemas/OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -6624,7 +6752,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                    "$ref": "#/components/schemas/OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -11313,19 +11441,19 @@
       },
       "DateRange": {
         "properties": {
-          "min": {
+          "from": {
             "type": "string",
-            "title": "Min"
+            "title": "From"
           },
-          "max": {
+          "to": {
             "type": "string",
-            "title": "Max"
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "min",
-          "max"
+          "from",
+          "to"
         ],
         "title": "DateRange"
       },
@@ -13151,7 +13279,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -14600,33 +14728,27 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -14638,8 +14760,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -14760,7 +14881,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -15650,7 +15771,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -17855,7 +17976,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -17883,7 +18004,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -18944,7 +19065,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -19338,43 +19459,23 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__dataset_data__OHLCVRecord": {
+      "src__server__schemas__db__DateRange": {
         "properties": {
-          "date": {
+          "min": {
             "type": "string",
-            "title": "Date"
+            "title": "Min"
           },
-          "open": {
-            "type": "number",
-            "title": "Open"
-          },
-          "high": {
-            "type": "number",
-            "title": "High"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "volume": {
-            "type": "integer",
-            "title": "Volume"
+          "max": {
+            "type": "string",
+            "title": "Max"
           }
         },
         "type": "object",
         "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
+          "min",
+          "max"
         ],
-        "title": "OHLCVRecord"
+        "title": "DateRange"
       },
       "src__server__schemas__factor_regression__DateRange": {
         "properties": {
@@ -19429,25 +19530,52 @@
         "title": "IndexMatch",
         "description": "指数マッチ結果"
       },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
+      "src__server__schemas__indicators__OHLCVRecord": {
         "properties": {
-          "from": {
+          "date": {
             "type": "string",
-            "title": "From"
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
           },
-          "to": {
-            "type": "string",
-            "title": "To"
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
         ],
-        "title": "DateRange"
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
-      "src__server__schemas__portfolio_performance__DateRange": {
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
         "properties": {
           "from": {
             "type": "string",

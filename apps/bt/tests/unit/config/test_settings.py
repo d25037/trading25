@@ -13,7 +13,7 @@ def test_settings_defaults(monkeypatch):
 
     settings = reload_settings()
 
-    assert settings.api_base_url == "http://localhost:3001"
+    assert settings.api_base_url == "http://localhost:3002"
     assert settings.api_timeout == 30.0
     assert settings.log_level == "WARNING"
 

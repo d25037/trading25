@@ -45,7 +45,7 @@ export function useLabSSE(jobId: string | null): LabSSEState {
     const connect = () => {
       cleanup();
 
-      const url = `/bt/api/lab/jobs/${encodeURIComponent(jobId)}/stream`;
+      const url = `/api/lab/jobs/${encodeURIComponent(jobId)}/stream`;
       const es = new EventSource(url);
       eventSourceRef.current = es;
 

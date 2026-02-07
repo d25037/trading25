@@ -24,7 +24,7 @@ class TestBaseAPIClient:
     def test_init_default_values(self) -> None:
         """Test default initialization values."""
         client = BaseAPIClient()
-        assert client.base_url == "http://localhost:3001"
+        assert client.base_url == "http://localhost:3002"
         assert client.timeout == 30.0
         assert client._client is None
 
@@ -36,8 +36,8 @@ class TestBaseAPIClient:
 
     def test_base_url_trailing_slash_removed(self) -> None:
         """Test that trailing slash is removed from base_url."""
-        client = BaseAPIClient(base_url="http://localhost:3001/")
-        assert client.base_url == "http://localhost:3001"
+        client = BaseAPIClient(base_url="http://localhost:3002/")
+        assert client.base_url == "http://localhost:3002"
 
     def test_lazy_client_initialization(self) -> None:
         """Test that httpx.Client is lazily initialized."""

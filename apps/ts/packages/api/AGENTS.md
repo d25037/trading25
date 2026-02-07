@@ -1,5 +1,8 @@
 # API Package - OpenAPI-Compliant Hono Server
 
+> **ARCHIVED**: Phase 3F (2026-02-07) で FastAPI に完全移行済み。
+> 全エンドポイントは `apps/bt/src/server/` で稼働中。新規 EP の追加は禁止。
+
 OpenAPI 3.1 compliant API server with Scalar documentation and Zod validation.
 
 ## Architecture
