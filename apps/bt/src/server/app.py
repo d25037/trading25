@@ -22,6 +22,7 @@ from src.server.middleware.request_logger import RequestLoggerMiddleware
 from src.server.openapi_config import customize_openapi, get_openapi_config
 from src.server.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
 from src.server.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
+from src.server.routes import dataset, dataset_data, db
 from src.server.schemas.error import ErrorDetail, ErrorResponse
 from src.server.db.market_reader import MarketDbReader
 from src.server.db.market_db import MarketDb
@@ -34,6 +35,7 @@ from src.server.services.chart_service import ChartService
 from src.server.services.margin_analytics_service import MarginAnalyticsService
 from src.server.services.market_data_service import MarketDataService
 from src.server.services.optimization_service import optimization_service
+from src.server.services.dataset_resolver import DatasetResolver
 from src.server.services.roe_service import ROEService
 
 # HTTP ステータスコード → ステータステキスト
@@ -120,6 +122,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     app.state.dataset_base_path = settings.dataset_base_path
 
+    # Phase 3D: DatasetResolver
+    dataset_resolver: DatasetResolver | None = None
+    if settings.dataset_base_path:
+        try:
+            dataset_resolver = DatasetResolver(settings.dataset_base_path)
+            logger.info(f"DatasetResolver を初期化: {settings.dataset_base_path}")
+        except Exception as e:
+            logger.warning(f"DatasetResolver の初期化に失敗: {e}")
+    app.state.dataset_resolver = dataset_resolver
+
     cleanup_task = asyncio.create_task(_periodic_cleanup())
 
     yield
@@ -136,6 +148,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         market_db.close()
     if portfolio_db is not None:
         portfolio_db.close()
+
+    # Phase 3D: DatasetResolver shutdown
+    if dataset_resolver is not None:
+        dataset_resolver.close_all()
+
+    # Phase 3D: Job manager shutdown
+    from src.server.services.sync_service import sync_job_manager
+    from src.server.services.dataset_builder_service import dataset_job_manager
+    await sync_job_manager.shutdown()
+    await dataset_job_manager.shutdown()
 
     # クリーンアップタスクを停止
     cleanup_task.cancel()
@@ -255,6 +277,10 @@ def create_app() -> FastAPI:
     app.include_router(chart.router)
     # Phase 3B-3: Complex Analytics (Ranking, Factor Regression, Screening)
     app.include_router(analytics_complex.router)
+    # Phase 3D: Dataset Data + Dataset Management + DB
+    app.include_router(db.router)
+    app.include_router(dataset_data.router)
+    app.include_router(dataset.router)
 
     return app
 
