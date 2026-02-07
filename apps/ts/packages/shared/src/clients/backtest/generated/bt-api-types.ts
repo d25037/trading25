@@ -1425,6 +1425,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/portfolio-factor-regression/{portfolioId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analyze portfolio factor regression
+         * @description ポートフォリオ全体のファクター回帰分析
+         */
+        get: operations["get_portfolio_factor_regression_api_analytics_portfolio_factor_regression__portfolioId__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/db/stats": {
         parameters: {
             query?: never;
@@ -1887,6 +1907,230 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/portfolio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all portfolios
+         * @description ポートフォリオ一覧を stockCount/totalShares 付きで取得
+         */
+        get: operations["list_portfolios_api_portfolio_get"];
+        put?: never;
+        /** Create a portfolio */
+        post: operations["create_portfolio_api_portfolio_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get portfolio with items */
+        get: operations["get_portfolio_api_portfolio__id__get"];
+        /** Update a portfolio */
+        put: operations["update_portfolio_api_portfolio__id__put"];
+        post?: never;
+        /** Delete a portfolio */
+        delete: operations["delete_portfolio_api_portfolio__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add item to portfolio */
+        post: operations["add_item_api_portfolio__id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/{id}/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Update portfolio item */
+        put: operations["update_item_api_portfolio__id__items__itemId__put"];
+        post?: never;
+        /** Delete portfolio item */
+        delete: operations["delete_item_api_portfolio__id__items__itemId__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/{portfolioName}/stocks/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /** Upsert stock by portfolio name */
+        put: operations["upsert_stock_api_portfolio__portfolioName__stocks__code__put"];
+        post?: never;
+        /** Delete stock by portfolio name */
+        delete: operations["delete_stock_api_portfolio__portfolioName__stocks__code__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/{portfolioName}/codes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get stock codes by portfolio name */
+        get: operations["get_portfolio_codes_api_portfolio__portfolioName__codes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/portfolio/{id}/performance": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get portfolio performance
+         * @description P&L、ベンチマーク比較、時系列リターンを計算
+         */
+        get: operations["get_performance_api_portfolio__id__performance_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List all watchlists
+         * @description ウォッチリスト一覧を stockCount 付きで取得
+         */
+        get: operations["list_watchlists_api_watchlist_get"];
+        put?: never;
+        /** Create a watchlist */
+        post: operations["create_watchlist_api_watchlist_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist/{id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get watchlist with items */
+        get: operations["get_watchlist_api_watchlist__id__get"];
+        /** Update a watchlist */
+        put: operations["update_watchlist_api_watchlist__id__put"];
+        post?: never;
+        /** Delete a watchlist */
+        delete: operations["delete_watchlist_api_watchlist__id__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist/{id}/items": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Add item to watchlist */
+        post: operations["add_watchlist_item_api_watchlist__id__items_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist/{id}/items/{itemId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete watchlist item */
+        delete: operations["delete_watchlist_item_api_watchlist__id__items__itemId__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/watchlist/{id}/prices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get watchlist stock prices
+         * @description ウォッチリスト銘柄の最新価格と前日比を取得
+         */
+        get: operations["get_watchlist_prices_api_watchlist__id__prices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
@@ -2168,6 +2412,34 @@ export interface components {
              */
             html_path?: string | null;
         };
+        /** BenchmarkResult */
+        BenchmarkResult: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Beta */
+            beta: number;
+            /** Alpha */
+            alpha: number;
+            /** Correlation */
+            correlation: number;
+            /** Rsquared */
+            rSquared: number;
+            /** Benchmarkreturn */
+            benchmarkReturn: number;
+            /** Relativereturn */
+            relativeReturn: number;
+        };
+        /** BenchmarkTimeSeriesPoint */
+        BenchmarkTimeSeriesPoint: {
+            /** Date */
+            date: string;
+            /** Portfolioreturn */
+            portfolioReturn: number;
+            /** Benchmarkreturn */
+            benchmarkReturn: number;
+        };
         /** CancelJobResponse */
         CancelJobResponse: {
             /** Success */
@@ -2426,7 +2698,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -2479,6 +2751,19 @@ export interface components {
             success: boolean;
         };
         /**
+         * DeleteResponse
+         * @description DELETE 成功レスポンス
+         */
+        DeleteResponse: {
+            /**
+             * Success
+             * @default true
+             */
+            success: boolean;
+            /** Message */
+            message: string;
+        };
+        /**
          * EvolutionHistoryItem
          * @description 進化履歴アイテム
          */
@@ -2504,6 +2789,15 @@ export interface components {
              */
             worst_score: number;
         };
+        /** ExcludedStock */
+        ExcludedStock: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Reason */
+            reason: string;
+        };
         /**
          * FactorRegressionResponse
          * @description ファクター回帰分析レスポンス
@@ -2518,11 +2812,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["IndexMatch"][];
+            sector17Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["IndexMatch"][];
+            sector33Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -2909,6 +3203,33 @@ export interface components {
             /** Version */
             version: string;
         };
+        /** HoldingDetail */
+        HoldingDetail: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Quantity */
+            quantity: number;
+            /** Purchaseprice */
+            purchasePrice: number;
+            /** Currentprice */
+            currentPrice: number;
+            /** Cost */
+            cost: number;
+            /** Marketvalue */
+            marketValue: number;
+            /** Pnl */
+            pnl: number;
+            /** Returnrate */
+            returnRate: number;
+            /** Weight */
+            weight: number;
+            /** Purchasedate */
+            purchaseDate: string;
+            /** Account */
+            account?: string | null;
+        };
         /**
          * HtmlFileContentResponse
          * @description HTMLファイルコンテンツレスポンス
@@ -3174,21 +3495,14 @@ export interface components {
              */
             end_date?: string | null;
         };
-        /**
-         * IndexMatch
-         * @description 指数マッチ結果
-         */
+        /** IndexMatch */
         IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
             /** Rsquared */
             rSquared: number;
-            /** Beta */
-            beta: number;
         };
         /**
          * IndexOHLCRecord
@@ -3357,7 +3671,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -4078,19 +4392,40 @@ export interface components {
             /** Close */
             close: number;
         };
-        /** OHLCVRecord */
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
         OHLCVRecord: {
-            /** Date */
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
             date: string;
-            /** Open */
+            /**
+             * Open
+             * @description 始値
+             */
             open: number;
-            /** High */
+            /**
+             * High
+             * @description 高値
+             */
             high: number;
-            /** Low */
+            /**
+             * Low
+             * @description 安値
+             */
             low: number;
-            /** Close */
+            /**
+             * Close
+             * @description 終値
+             */
             close: number;
-            /** Volume */
+            /**
+             * Volume
+             * @description 出来高
+             */
             volume: number;
         };
         /**
@@ -4169,7 +4504,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
+            data: components["schemas"]["OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -4426,6 +4761,209 @@ export interface components {
             params: {
                 [key: string]: unknown;
             };
+        };
+        /** PerformanceSummary */
+        PerformanceSummary: {
+            /** Totalcost */
+            totalCost: number;
+            /** Currentvalue */
+            currentValue: number;
+            /** Totalpnl */
+            totalPnL: number;
+            /** Returnrate */
+            returnRate: number;
+        };
+        /**
+         * PortfolioCodesResponse
+         * @description GET /api/portfolio/{name}/codes
+         */
+        PortfolioCodesResponse: {
+            /** Name */
+            name: string;
+            /** Codes */
+            codes: string[];
+        };
+        /** PortfolioCreateRequest */
+        PortfolioCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
+        /**
+         * PortfolioDetailResponse
+         * @description GET /api/portfolio/{id} — portfolio + items
+         */
+        PortfolioDetailResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Items */
+            items: components["schemas"]["PortfolioItemResponse"][];
+        };
+        /** PortfolioFactorRegressionResponse */
+        PortfolioFactorRegressionResponse: {
+            /** Portfolioid */
+            portfolioId: number;
+            /** Portfolioname */
+            portfolioName: string;
+            /** Weights */
+            weights: components["schemas"]["StockWeight"][];
+            /** Totalvalue */
+            totalValue: number;
+            /** Stockcount */
+            stockCount: number;
+            /** Includedstockcount */
+            includedStockCount: number;
+            /** Marketbeta */
+            marketBeta: number;
+            /** Marketrsquared */
+            marketRSquared: number;
+            /** Sector17Matches */
+            sector17Matches: components["schemas"]["IndexMatch"][];
+            /** Sector33Matches */
+            sector33Matches: components["schemas"]["IndexMatch"][];
+            /** Topixstylematches */
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            /** Analysisdate */
+            analysisDate: string;
+            /** Datapoints */
+            dataPoints: number;
+            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            /** Excludedstocks */
+            excludedStocks: components["schemas"]["ExcludedStock"][];
+        };
+        /** PortfolioItemCreateRequest */
+        PortfolioItemCreateRequest: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Quantity */
+            quantity: number;
+            /** Purchaseprice */
+            purchasePrice: number;
+            /** Purchasedate */
+            purchaseDate: string;
+            /** Account */
+            account?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /**
+         * PortfolioItemResponse
+         * @description Portfolio item レスポンス
+         */
+        PortfolioItemResponse: {
+            /** Id */
+            id: number;
+            /** Portfolioid */
+            portfolioId: number;
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Quantity */
+            quantity: number;
+            /** Purchaseprice */
+            purchasePrice: number;
+            /** Purchasedate */
+            purchaseDate: string;
+            /** Account */
+            account?: string | null;
+            /** Notes */
+            notes?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** PortfolioItemUpdateRequest */
+        PortfolioItemUpdateRequest: {
+            /** Quantity */
+            quantity?: number | null;
+            /** Purchaseprice */
+            purchasePrice?: number | null;
+            /** Purchasedate */
+            purchaseDate?: string | null;
+            /** Account */
+            account?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** PortfolioPerformanceResponse */
+        PortfolioPerformanceResponse: {
+            /** Portfolioid */
+            portfolioId: number;
+            /** Portfolioname */
+            portfolioName: string;
+            /** Portfoliodescription */
+            portfolioDescription?: string | null;
+            summary: components["schemas"]["PerformanceSummary"];
+            /** Holdings */
+            holdings: components["schemas"]["HoldingDetail"][];
+            /** Timeseries */
+            timeSeries: components["schemas"]["TimeSeriesPoint"][];
+            benchmark?: components["schemas"]["BenchmarkResult"] | null;
+            /** Benchmarktimeseries */
+            benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
+            /** Analysisdate */
+            analysisDate: string;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            /** Datapoints */
+            dataPoints: number;
+            /** Warnings */
+            warnings: string[];
+        };
+        /**
+         * PortfolioResponse
+         * @description Portfolio 単体レスポンス (create/update)
+         */
+        PortfolioResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /**
+         * PortfolioSummaryResponse
+         * @description Portfolio list item (stockCount/totalShares 付き)
+         */
+        PortfolioSummaryResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Stockcount */
+            stockCount: number;
+            /** Totalshares */
+            totalShares: number;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** PortfolioUpdateRequest */
+        PortfolioUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
         };
         /**
          * ROEMetadata
@@ -5161,7 +5699,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -5172,7 +5710,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -5180,6 +5718,20 @@ export interface components {
              * @default 0
              */
             missingDatesCount: number;
+        };
+        /**
+         * StockDeleteResponse
+         * @description DELETE stock with deletedItem
+         */
+        StockDeleteResponse: {
+            /**
+             * Success
+             * @default true
+             */
+            success: boolean;
+            /** Message */
+            message: string;
+            deletedItem: components["schemas"]["PortfolioItemResponse"];
         };
         /**
          * StockInfo
@@ -5312,6 +5864,39 @@ export interface components {
             byMarket?: {
                 [key: string]: number;
             };
+        };
+        /**
+         * StockUpdateRequest
+         * @description PUT /{portfolioName}/stocks/{code}
+         */
+        StockUpdateRequest: {
+            /** Companyname */
+            companyName?: string | null;
+            /** Quantity */
+            quantity?: number | null;
+            /** Purchaseprice */
+            purchasePrice?: number | null;
+            /** Purchasedate */
+            purchaseDate?: string | null;
+            /** Account */
+            account?: string | null;
+            /** Notes */
+            notes?: string | null;
+        };
+        /** StockWeight */
+        StockWeight: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Weight */
+            weight: number;
+            /** Latestprice */
+            latestPrice: number;
+            /** Marketvalue */
+            marketValue: number;
+            /** Quantity */
+            quantity: number;
         };
         /**
          * StrategyDeleteResponse
@@ -5617,6 +6202,15 @@ export interface components {
             /** Errors */
             errors?: string[];
         };
+        /** TimeSeriesPoint */
+        TimeSeriesPoint: {
+            /** Date */
+            date: string;
+            /** Dailyreturn */
+            dailyReturn: number;
+            /** Cumulativereturn */
+            cumulativeReturn: number;
+        };
         /**
          * TopixDataPoint
          * @description TOPIX データポイント
@@ -5679,7 +6273,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -5690,12 +6284,140 @@ export interface components {
             /** Error Type */
             type: string;
         };
+        /** WatchlistCreateRequest */
+        WatchlistCreateRequest: {
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+        };
+        /**
+         * WatchlistDetailResponse
+         * @description GET /api/watchlist/{id} — watchlist + items
+         */
+        WatchlistDetailResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+            /** Items */
+            items: components["schemas"]["WatchlistItemResponse"][];
+        };
+        /** WatchlistItemCreateRequest */
+        WatchlistItemCreateRequest: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Memo */
+            memo?: string | null;
+        };
+        /**
+         * WatchlistItemResponse
+         * @description Watchlist item レスポンス
+         */
+        WatchlistItemResponse: {
+            /** Id */
+            id: number;
+            /** Watchlistid */
+            watchlistId: number;
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Memo */
+            memo?: string | null;
+            /** Createdat */
+            createdAt: string;
+        };
+        /** WatchlistPricesResponse */
+        WatchlistPricesResponse: {
+            /** Prices */
+            prices: components["schemas"]["WatchlistStockPrice"][];
+        };
+        /**
+         * WatchlistResponse
+         * @description Watchlist 単体レスポンス (create/update)
+         */
+        WatchlistResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** WatchlistStockPrice */
+        WatchlistStockPrice: {
+            /** Code */
+            code: string;
+            /** Close */
+            close: number;
+            /** Prevclose */
+            prevClose?: number | null;
+            /** Changepercent */
+            changePercent?: number | null;
+            /** Volume */
+            volume: number;
+            /** Date */
+            date: string;
+        };
+        /**
+         * WatchlistSummaryResponse
+         * @description Watchlist list item (stockCount 付き)
+         */
+        WatchlistSummaryResponse: {
+            /** Id */
+            id: number;
+            /** Name */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Stockcount */
+            stockCount: number;
+            /** Createdat */
+            createdAt: string;
+            /** Updatedat */
+            updatedAt: string;
+        };
+        /** WatchlistUpdateRequest */
+        WatchlistUpdateRequest: {
+            /** Name */
+            name?: string | null;
+            /** Description */
+            description?: string | null;
+        };
         /** DateRange */
-        src__server__schemas__db__DateRange: {
+        src__server__schemas__dataset__DateRange: {
             /** Min */
             min: string;
             /** Max */
             max: string;
+        };
+        /** OHLCVRecord */
+        src__server__schemas__dataset_data__OHLCVRecord: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /** Volume */
+            volume: number;
         };
         /**
          * DateRange
@@ -5708,40 +6430,34 @@ export interface components {
             to: string;
         };
         /**
-         * OHLCVRecord
-         * @description OHLCVレコード
+         * IndexMatch
+         * @description 指数マッチ結果
          */
-        src__server__schemas__indicators__OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
-            date: string;
-            /**
-             * Open
-             * @description 始値
-             */
-            open: number;
-            /**
-             * High
-             * @description 高値
-             */
-            high: number;
-            /**
-             * Low
-             * @description 安値
-             */
-            low: number;
-            /**
-             * Close
-             * @description 終値
-             */
-            close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
-            volume: number;
+        src__server__schemas__factor_regression__IndexMatch: {
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
+            /** Rsquared */
+            rSquared: number;
+            /** Beta */
+            beta: number;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_performance__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * ErrorDetail
@@ -9927,6 +10643,66 @@ export interface operations {
             };
         };
     };
+    get_portfolio_factor_regression_api_analytics_portfolio_factor_regression__portfolioId__get: {
+        parameters: {
+            query?: {
+                lookbackDays?: number;
+            };
+            header?: never;
+            path: {
+                portfolioId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioFactorRegressionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     get_db_stats_api_db_stats_get: {
         parameters: {
             query?: never;
@@ -10338,7 +11114,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["OHLCVRecord"][];
+                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                     };
                 };
             };
@@ -10401,7 +11177,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OHLCVRecord"][];
+                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */
@@ -11653,6 +12429,1184 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_portfolios_api_portfolio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["PortfolioSummaryResponse"][];
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_portfolio_api_portfolio_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_portfolio_api_portfolio__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioDetailResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_portfolio_api_portfolio__id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_portfolio_api_portfolio__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    add_item_api_portfolio__id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioItemCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioItemResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_item_api_portfolio__id__items__itemId__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                itemId: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PortfolioItemUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioItemResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_item_api_portfolio__id__items__itemId__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                itemId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    upsert_stock_api_portfolio__portfolioName__stocks__code__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                portfolioName: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StockUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioItemResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_stock_api_portfolio__portfolioName__stocks__code__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                portfolioName: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_portfolio_codes_api_portfolio__portfolioName__codes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                portfolioName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioCodesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_performance_api_portfolio__id__performance_get: {
+        parameters: {
+            query?: {
+                benchmarkCode?: string;
+                lookbackDays?: number;
+            };
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["PortfolioPerformanceResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_watchlists_api_watchlist_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["WatchlistSummaryResponse"][];
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_watchlist_api_watchlist_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchlistCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_watchlist_api_watchlist__id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistDetailResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    update_watchlist_api_watchlist__id__put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchlistUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_watchlist_api_watchlist__id__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    add_watchlist_item_api_watchlist__id__items_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["WatchlistItemCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistItemResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_watchlist_item_api_watchlist__id__items__itemId__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+                itemId: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DeleteResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_watchlist_prices_api_watchlist__id__prices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["WatchlistPricesResponse"];
                 };
             };
             /** @description Bad Request */
