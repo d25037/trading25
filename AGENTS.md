@@ -19,8 +19,10 @@ JQUANTS API ──→ ts/api (:3001) ──→ bt (REST APIクライアント)
 | ts/web | 5173 | Vite + React 19 |
 
 - **ts/api** が唯一のJQuants API窓口かつデータベース管理者
-- **bt** は ts/api 経由でデータにアクセス（直接DB禁止）
-  - **例外（ADR-003）**: Phase 3B 以降、bt/server は market.db への**読み取り専用**アクセスを許可（`sqlite3 ?mode=ro`）。書き込みは引き続き ts/api が管理。
+- **bt** は SQLite に直接アクセス（`contracts/` スキーマ準拠、SQLAlchemy Core 使用）
+  - **market.db**: 読み取り専用（Phase 3B: `sqlite3 ?mode=ro`）+ 書き込み（Phase 3D: SQLAlchemy Core）
+  - **portfolio.db**: CRUD（Phase 3E: SQLAlchemy Core）
+  - **dataset.db**: 読み取り専用（Phase 3D: SQLAlchemy Core）
 - **ts/web** は `/bt` パスを bt/server にプロキシ
 
 ## OpenAPI契約

@@ -60,14 +60,14 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 - **提案**: Phase 3C で FastAPI が market.db / dataset.db / portfolio.db に直接アクセスする
 - **前提条件（全て充足）**:
   - [x] Phase 2B（FastAPI 事前調査）完了 — [監査レポート](reports/phase2b-endpoint-audit.md) 参照
-  - [ ] AGENTS.md の「直接 DB 禁止」ルールの更新（Phase 3C 開始時に実施）
+  - [x] AGENTS.md の「直接 DB 禁止」ルールの更新（Phase 3C 開始時に実施）
 - **元ドキュメント**: `docs/archive/hono-to-fastapi-migration-roadmap.md`
 
 #### リスク評価
 
 | 観点 | 現状（ts 管理） | 提案（FastAPI 管理） | リスク |
 |------|----------------|---------------------|--------|
-| DB アクセス | Bun SQLite + Drizzle ORM | Python sqlite3 + Pydantic | Medium |
+| DB アクセス | Bun SQLite + Drizzle ORM | SQLAlchemy Core（ORM なし） | Medium |
 | マイグレーション | Drizzle migrate | 手動 or Alembic | Low |
 | トランザクション | WAL mode | WAL mode（同一） | Low |
 | JQuants 連携 | TS JQuants client | Python JQuants client（要実装） | **High** |
@@ -103,7 +103,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
-| 3 | FastAPI 統一 | **3B 完了** | **High** | 6-10 週 |
+| 3 | FastAPI 統一 | **3C 完了** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
@@ -335,20 +335,49 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - Factor regression: population variance OLS (N divisor) matches Hono implementation
 - Screening: 200+ days data requirement, inlined SMA/EMA to avoid external deps
 
-### 3C: Python SQLite アクセス層
+### 3C: Python SQLite アクセス層 — **完了** (2026-02-07)
 
 *元: hono-to-fastapi-migration-roadmap.md 案A + 新規*
 
 **前提**: ADR-003 承認済み、AGENTS.md 更新済み
 
-- [ ] market.db / dataset.db / portfolio.db の Python 直接アクセス層
-- [ ] sqlite3 + Pydantic モデルによるリポジトリパターン
-- [ ] contracts/ スキーマとの整合性検証
-- [ ] WAL モード pragma で読み取り並行性確保
+SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テーブルの Python アクセス層を構築:
 
-**Go/No-Go**: 既存 Drizzle スキーマとの読取互換テスト合格
+- [x] `tables.py`: 17 テーブル定義（market_meta 6 + dataset_meta 7 + portfolio_meta 5）
+- [x] `base.py`: BaseDbAccess（Engine 管理、StaticPool、PRAGMA event listener）
+- [x] `query_helpers.py`: 共通クエリフラグメント（normalize_stock_code 等 6 関数）
+- [x] `market_db.py`: MarketDb（read + write、upsert 系メソッド）
+- [x] `dataset_db.py`: DatasetDb（read-only、15+ メソッド）
+- [x] `portfolio_db.py`: PortfolioDb（CRUD: portfolio/item/watchlist/watchlist_item + summary）
+- [x] `contracts/portfolio-db-schema-v1.json`: Portfolio DB 契約（5 テーブル定義）
+- [x] `settings.py` + `app.py`: lifespan 拡張（MarketDb / PortfolioDb 初期化・シャットダウン）
+- [x] AGENTS.md 更新（「直接 DB 禁止」→「SQLAlchemy Core 直接アクセス」）
 
-> **Note**: 3B と 3C は並行実施可能
+**Go/No-Go 結果**: 全基準クリア
+- 新規テスト 162 件全通過（2346→2508 tests）
+- 契約整合性: 17 テーブル × columns/PK/FK/UNIQUE/INDEX が contracts/ JSON と完全一致
+- CRUD: create → read → update → delete + CASCADE 削除 + FK 制約
+- PRAGMA: WAL + foreign_keys が接続イベントで確実に設定
+- 既存 3B テスト全通過（ruff 0 errors, pyright 0 errors）
+
+**成果物**:
+
+| カテゴリ | ファイル |
+|---------|---------|
+| テーブル定義 | `src/server/db/tables.py`（17 テーブル、3 MetaData） |
+| 基底クラス | `src/server/db/base.py`（Engine 管理、read-only creator パターン） |
+| クエリヘルパー | `src/server/db/query_helpers.py`（6 共通関数） |
+| MarketDb | `src/server/db/market_db.py`（read + write） |
+| DatasetDb | `src/server/db/dataset_db.py`（read-only、15+ メソッド） |
+| PortfolioDb | `src/server/db/portfolio_db.py`（CRUD + watchlist + summary） |
+| 契約 | `contracts/portfolio-db-schema-v1.json`（5 テーブル） |
+| テスト | `test_tables.py`(54), `test_base.py`(7), `test_query_helpers.py`(12), `test_market_db.py`(15), `test_dataset_db.py`(27), `test_portfolio_db.py`(47) |
+
+**Key Lessons**:
+- SQLAlchemy `Real` 型は存在しない — `from sqlalchemy.types import REAL` を使用
+- `Column("name", Text, unique=True)` は無名 UniqueConstraint を生成 — 明示的 `UniqueConstraint("name", name="...")` が必要
+- SQLite read-only: `creator` コールバック + `sqlite3.connect(uri, uri=True)` パターン
+- `@event.listens_for(engine, "connect")` は pyright に `reportUnusedFunction` で警告される
 
 ### 3D: DB・ジョブ API 移行
 
@@ -510,7 +539,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 | リスク | 対策 |
 |---|---|
-| Bun/Drizzle 依存の移植コスト | 3C で sqlite3 + Pydantic で段階的に再実装 |
+| Bun/Drizzle 依存の移植コスト | 3C で SQLAlchemy Core により段階的に再実装（完了） |
 | SQLite スキーマ互換の破壊 | contracts/ スキーマを正とし、Drizzle との読取互換テスト |
 | JQuants API の認証・レート制限差異 | Python JQuants クライアントの事前検証（Phase 2B） |
 | 長時間ジョブの安定運用 | ジョブライフサイクルの結合テスト（Phase 3D Go/No-Go） |
@@ -680,12 +709,13 @@ Phase 4 ‖ Phase 5 (独立して実行可能)
 - 分析用途のみ **Parquet/DuckDB sidecar** を将来的に検討可能
 - 検討条件: 10M 行超（インマーケット/ティックデータ）、全銘柄横断ファクター分析
 
-### FastAPI 移行時の DB 実装計画
+### FastAPI 移行時の DB 実装計画（Phase 3C で実装完了）
 
-- Python 標準の `sqlite3`（または async 対応の `aiosqlite`）
-- Pydantic モデルで行バリデーション（既存資産活用）
-- `contracts/dataset-db-schema-v2.json` を正として整合性検証
-- WAL モード pragma で読み取り並行性確保
+- **SQLAlchemy Core**（ORM なし）— クエリビルダ + スキーマ定義、Session 管理不要
+- `tables.py` で 17 テーブルを Python コードで定義（Drizzle スキーマと自動照合）
+- `contracts/` JSON（market-db-schema-v1, dataset-db-schema-v2, portfolio-db-schema-v1）を正として整合性検証
+- WAL モード + foreign_keys は `event.listens_for(engine, "connect")` で接続ごとに設定
+- StaticPool + `check_same_thread=False` で FastAPI 非同期環境に対応
 
 ---
 

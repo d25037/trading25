@@ -28,6 +28,12 @@ class Settings(BaseModel):
     # market.db (Phase 3B-2a)
     market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
 
+    # portfolio.db (Phase 3C)
+    portfolio_db_path: str = Field(default="", alias="PORTFOLIO_DB_PATH")
+
+    # dataset base path (Phase 3C)
+    dataset_base_path: str = Field(default="", alias="DATASET_BASE_PATH")
+
     model_config = {"populate_by_name": True}
 
 

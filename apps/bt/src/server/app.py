@@ -24,6 +24,8 @@ from src.server.routes import backtest, fundamentals, health, indicators, lab, o
 from src.server.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
 from src.server.schemas.error import ErrorDetail, ErrorResponse
 from src.server.db.market_reader import MarketDbReader
+from src.server.db.market_db import MarketDb
+from src.server.db.portfolio_db import PortfolioDb
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import job_manager
 from src.server.services.jquants_proxy_service import JQuantsProxyService
@@ -97,6 +99,27 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Chart service (Phase 3B-2b) — market.db reader + JQuants fallback
     app.state.chart_service = ChartService(market_reader, jquants_client)
 
+    # Phase 3C: SQLAlchemy Core DB accessors
+    market_db: MarketDb | None = None
+    if settings.market_db_path:
+        try:
+            market_db = MarketDb(settings.market_db_path, read_only=False)
+            logger.info(f"MarketDb (SQLAlchemy) を初期化: {settings.market_db_path}")
+        except Exception as e:
+            logger.warning(f"MarketDb の初期化に失敗: {e}")
+    app.state.market_db = market_db
+
+    portfolio_db: PortfolioDb | None = None
+    if settings.portfolio_db_path:
+        try:
+            portfolio_db = PortfolioDb(settings.portfolio_db_path)
+            logger.info(f"PortfolioDb を初期化: {settings.portfolio_db_path}")
+        except Exception as e:
+            logger.warning(f"PortfolioDb の初期化に失敗: {e}")
+    app.state.portfolio_db = portfolio_db
+
+    app.state.dataset_base_path = settings.dataset_base_path
+
     cleanup_task = asyncio.create_task(_periodic_cleanup())
 
     yield
@@ -107,6 +130,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # market.db reader shutdown
     if market_reader is not None:
         market_reader.close()
+
+    # Phase 3C: SQLAlchemy DB shutdown
+    if market_db is not None:
+        market_db.close()
+    if portfolio_db is not None:
+        portfolio_db.close()
 
     # クリーンアップタスクを停止
     cleanup_task.cancel()
