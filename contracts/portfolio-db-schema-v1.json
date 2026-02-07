@@ -1,0 +1,292 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Portfolio DB Schema v1",
+  "description": "portfolio.db スキーマ契約。Drizzle portfolio-schema.ts + watchlist-schema.ts を正として定義。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tables"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "portfolio_metadata",
+        "portfolios",
+        "portfolio_items",
+        "watchlists",
+        "watchlist_items"
+      ],
+      "properties": {
+        "portfolio_metadata": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["key", "value", "updated_at"],
+              "properties": {
+                "key": {"$ref": "#/$defs/text_not_null"},
+                "value": {"$ref": "#/$defs/text_not_null"},
+                "updated_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["key"]
+            },
+            "indexes": {
+              "const": []
+            }
+          }
+        },
+        "portfolios": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes", "unique_constraints"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "name", "description", "created_at", "updated_at"],
+              "properties": {
+                "id": {"$ref": "#/$defs/integer_not_null"},
+                "name": {"$ref": "#/$defs/text_not_null"},
+                "description": {"$ref": "#/$defs/text_nullable"},
+                "created_at": {"$ref": "#/$defs/text_nullable"},
+                "updated_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["id"]
+            },
+            "indexes": {
+              "const": []
+            },
+            "unique_constraints": {
+              "const": [
+                {"name": "portfolios_name_unique", "columns": ["name"]}
+              ]
+            }
+          }
+        },
+        "portfolio_items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes", "unique_constraints", "foreign_keys"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "portfolio_id",
+                "code",
+                "company_name",
+                "quantity",
+                "purchase_price",
+                "purchase_date",
+                "account",
+                "notes",
+                "created_at",
+                "updated_at"
+              ],
+              "properties": {
+                "id": {"$ref": "#/$defs/integer_not_null"},
+                "portfolio_id": {"$ref": "#/$defs/integer_not_null"},
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "company_name": {"$ref": "#/$defs/text_not_null"},
+                "quantity": {"$ref": "#/$defs/integer_not_null"},
+                "purchase_price": {"$ref": "#/$defs/real_not_null"},
+                "purchase_date": {"$ref": "#/$defs/text_not_null"},
+                "account": {"$ref": "#/$defs/text_nullable"},
+                "notes": {"$ref": "#/$defs/text_nullable"},
+                "created_at": {"$ref": "#/$defs/text_nullable"},
+                "updated_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["id"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_portfolio_items_portfolio_id", "columns": ["portfolio_id"]},
+                {"name": "idx_portfolio_items_code", "columns": ["code"]},
+                {"name": "idx_portfolio_items_purchase_date", "columns": ["purchase_date"]}
+              ]
+            },
+            "unique_constraints": {
+              "const": [
+                {"name": "portfolio_items_portfolio_code_unique", "columns": ["portfolio_id", "code"]}
+              ]
+            },
+            "foreign_keys": {
+              "const": [
+                {"columns": ["portfolio_id"], "references_table": "portfolios", "references_columns": ["id"], "on_delete": "CASCADE"}
+              ]
+            }
+          }
+        },
+        "watchlists": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes", "unique_constraints"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["id", "name", "description", "created_at", "updated_at"],
+              "properties": {
+                "id": {"$ref": "#/$defs/integer_not_null"},
+                "name": {"$ref": "#/$defs/text_not_null"},
+                "description": {"$ref": "#/$defs/text_nullable"},
+                "created_at": {"$ref": "#/$defs/text_nullable"},
+                "updated_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["id"]
+            },
+            "indexes": {
+              "const": []
+            },
+            "unique_constraints": {
+              "const": [
+                {"name": "watchlists_name_unique", "columns": ["name"]}
+              ]
+            }
+          }
+        },
+        "watchlist_items": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes", "unique_constraints", "foreign_keys"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "id",
+                "watchlist_id",
+                "code",
+                "company_name",
+                "memo",
+                "created_at"
+              ],
+              "properties": {
+                "id": {"$ref": "#/$defs/integer_not_null"},
+                "watchlist_id": {"$ref": "#/$defs/integer_not_null"},
+                "code": {"$ref": "#/$defs/text_not_null"},
+                "company_name": {"$ref": "#/$defs/text_not_null"},
+                "memo": {"$ref": "#/$defs/text_nullable"},
+                "created_at": {"$ref": "#/$defs/text_nullable"}
+              }
+            },
+            "primary_key": {
+              "const": ["id"]
+            },
+            "indexes": {
+              "const": [
+                {"name": "idx_watchlist_items_watchlist_id", "columns": ["watchlist_id"]},
+                {"name": "idx_watchlist_items_code", "columns": ["code"]}
+              ]
+            },
+            "unique_constraints": {
+              "const": [
+                {"name": "watchlist_items_watchlist_code_unique", "columns": ["watchlist_id", "code"]}
+              ]
+            },
+            "foreign_keys": {
+              "const": [
+                {"columns": ["watchlist_id"], "references_table": "watchlists", "references_columns": ["id"], "on_delete": "CASCADE"}
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "column": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "nullable"],
+      "properties": {
+        "type": {
+          "type": "string",
+          "enum": ["text", "real", "integer"]
+        },
+        "nullable": {
+          "type": "boolean"
+        },
+        "description": {
+          "type": "string"
+        }
+      }
+    },
+    "text_not_null": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "text"},
+            "nullable": {"const": false}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "text_nullable": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "text"},
+            "nullable": {"const": true}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "real_not_null": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "real"},
+            "nullable": {"const": false}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "real_nullable": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "real"},
+            "nullable": {"const": true}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    },
+    "integer_not_null": {
+      "allOf": [
+        {"$ref": "#/$defs/column"},
+        {
+          "properties": {
+            "type": {"const": "integer"},
+            "nullable": {"const": false}
+          },
+          "required": ["type", "nullable"]
+        }
+      ]
+    }
+  }
+}
