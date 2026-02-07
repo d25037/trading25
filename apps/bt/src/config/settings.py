@@ -16,7 +16,7 @@ class Settings(BaseModel):
     """アプリケーション設定"""
 
     api_base_url: str = Field(
-        default="http://localhost:3001", alias="API_BASE_URL"
+        default="http://localhost:3002", alias="API_BASE_URL"
     )
     api_timeout: float = Field(default=30.0, alias="API_TIMEOUT")
     log_level: str = Field(default="WARNING", alias="LOG_LEVEL")

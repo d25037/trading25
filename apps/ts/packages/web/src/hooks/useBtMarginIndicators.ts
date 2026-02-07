@@ -80,7 +80,7 @@ export function useBtMarginIndicators(symbol: string | null, period = 15) {
         indicators: ['margin_long_pressure', 'margin_flow_pressure', 'margin_turnover_days'],
         average_period: period,
       };
-      return apiPost<BtMarginResponse>('/bt/api/indicators/margin', request);
+      return apiPost<BtMarginResponse>('/api/indicators/margin', request);
     },
     enabled: !!symbol,
     staleTime: 5 * 60_000,

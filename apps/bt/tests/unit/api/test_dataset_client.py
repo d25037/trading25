@@ -16,7 +16,7 @@ class TestDatasetAPIClient:
         """Test initialization with dataset name."""
         client = DatasetAPIClient("sampleA")
         assert client.dataset_name == "sampleA"
-        assert client.base_url == "http://localhost:3001"
+        assert client.base_url == "http://localhost:3002"
 
     def test_dataset_path(self) -> None:
         """Test dataset path construction."""

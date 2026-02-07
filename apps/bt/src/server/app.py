@@ -221,10 +221,8 @@ def create_app() -> FastAPI:
 
     # 1番目に登録 = 3番目に実行（最内側）: CORS
     origins = [
-        "http://localhost:3001",  # ts API
         "http://localhost:5173",  # ts Web (dev)
         "http://localhost:4173",  # ts Web (preview)
-        "http://127.0.0.1:3001",
         "http://127.0.0.1:5173",
         "http://127.0.0.1:4173",
     ]

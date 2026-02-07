@@ -300,7 +300,7 @@ export function useBtIndicators(
           },
         }),
       };
-      return apiPost<BtIndicatorComputeResponse>('/bt/api/indicators/compute', request);
+      return apiPost<BtIndicatorComputeResponse>('/api/indicators/compute', request);
     },
     enabled: !!stockCode && specs.length > 0,
     staleTime: 60_000,

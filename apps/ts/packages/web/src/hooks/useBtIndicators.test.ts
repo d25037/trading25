@@ -311,7 +311,7 @@ describe('useBtIndicators', () => {
     const relativeModeSettings = { ...baseSettings, relativeMode: true };
     renderHook(() => useBtIndicators('7203', 'daily', relativeModeSettings), { wrapper });
     await waitFor(() => {
-      expect(mockApiPost).toHaveBeenCalledWith('/bt/api/indicators/compute', expect.objectContaining({
+      expect(mockApiPost).toHaveBeenCalledWith('/api/indicators/compute', expect.objectContaining({
         benchmark_code: 'topix',
         relative_options: { align_dates: true, handle_zero_division: 'skip' },
       }));
@@ -332,7 +332,7 @@ describe('useBtIndicators', () => {
     renderHook(() => useBtIndicators('7203', 'daily', baseSettings), { wrapper });
 
     await waitFor(() => {
-      expect(mockApiPost).toHaveBeenCalledWith('/bt/api/indicators/compute', {
+      expect(mockApiPost).toHaveBeenCalledWith('/api/indicators/compute', {
         stock_code: '7203',
         source: 'market',
         timeframe: 'daily',

@@ -91,7 +91,7 @@ describe('useBacktestHealth', () => {
     const { result } = renderHook(() => useBacktestHealth(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/health');
+    expect(apiGet).toHaveBeenCalledWith('/api/health');
   });
 });
 
@@ -103,7 +103,7 @@ describe('useStrategies', () => {
     const { result } = renderHook(() => useStrategies(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/strategies');
+    expect(apiGet).toHaveBeenCalledWith('/api/strategies');
   });
 });
 
@@ -115,7 +115,7 @@ describe('useStrategy', () => {
     const { result } = renderHook(() => useStrategy('test.yml'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/strategies/test.yml');
+    expect(apiGet).toHaveBeenCalledWith('/api/strategies/test.yml');
   });
 
   it('does not fetch when name is null', () => {
@@ -134,7 +134,7 @@ describe('useJobs', () => {
     const { result } = renderHook(() => useJobs(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/jobs?limit=50');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/jobs?limit=50');
   });
 
   it('fetches jobs with custom limit', async () => {
@@ -144,7 +144,7 @@ describe('useJobs', () => {
     const { result } = renderHook(() => useJobs(10), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/jobs?limit=10');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/jobs?limit=10');
   });
 });
 
@@ -156,7 +156,7 @@ describe('useJobStatus', () => {
     const { result } = renderHook(() => useJobStatus('j1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/jobs/j1');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/jobs/j1');
   });
 
   it('does not fetch when jobId is null', () => {
@@ -175,7 +175,7 @@ describe('useBacktestResult', () => {
     const { result } = renderHook(() => useBacktestResult('job-1', true), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/result/job-1?include_html=true');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/result/job-1?include_html=true');
   });
 
   it('fetches backtest result without HTML', async () => {
@@ -185,7 +185,7 @@ describe('useBacktestResult', () => {
     const { result } = renderHook(() => useBacktestResult('job-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/result/job-1');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/result/job-1');
   });
 
   it('does not fetch when jobId is null', () => {
@@ -210,7 +210,7 @@ describe('useRunBacktest', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/backtest/run', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/backtest/run', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.jobs() });
   });
 });
@@ -227,7 +227,7 @@ describe('useCancelBacktest', () => {
       await result.current.mutateAsync('j1');
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/backtest/jobs/j1/cancel');
+    expect(apiPost).toHaveBeenCalledWith('/api/backtest/jobs/j1/cancel');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.job('j1') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.jobs() });
   });
@@ -266,7 +266,7 @@ describe('useUpdateStrategy', () => {
       await result.current.mutateAsync({ name: 'test.yml', request });
     });
 
-    expect(apiPut).toHaveBeenCalledWith('/bt/api/strategies/test.yml', request);
+    expect(apiPut).toHaveBeenCalledWith('/api/strategies/test.yml', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('test.yml') });
   });
@@ -285,7 +285,7 @@ describe('useDeleteStrategy', () => {
       await result.current.mutateAsync('test.yml');
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/bt/api/strategies/test.yml');
+    expect(apiDelete).toHaveBeenCalledWith('/api/strategies/test.yml');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('test.yml') });
   });
@@ -305,7 +305,7 @@ describe('useDuplicateStrategy', () => {
       await result.current.mutateAsync({ name: 'test.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/strategies/test.yml/duplicate', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/strategies/test.yml/duplicate', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
   });
 });
@@ -325,7 +325,7 @@ describe('useRenameStrategy', () => {
       await result.current.mutateAsync({ name: 'old.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/strategies/old.yml/rename', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/strategies/old.yml/rename', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('old.yml') });
   });
@@ -344,7 +344,7 @@ describe('useValidateStrategy', () => {
       await result.current.mutateAsync({ name: 'test.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/strategies/test.yml/validate', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/strategies/test.yml/validate', request);
   });
 });
 
@@ -356,7 +356,7 @@ describe('useHtmlFiles', () => {
     const { result } = renderHook(() => useHtmlFiles('myStrategy'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/html-files?strategy=myStrategy&limit=100');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/html-files?strategy=myStrategy&limit=100');
   });
 });
 
@@ -368,7 +368,7 @@ describe('useHtmlFileContent', () => {
     const { result } = renderHook(() => useHtmlFileContent('strat', 'report.html'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/backtest/html-files/strat/report.html');
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/html-files/strat/report.html');
   });
 
   it('does not fetch when strategy or filename is null', () => {
@@ -400,7 +400,7 @@ describe('useRenameHtmlFile', () => {
       });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/backtest/html-files/strat/old.html/rename', {
+    expect(apiPost).toHaveBeenCalledWith('/api/backtest/html-files/strat/old.html/rename', {
       new_filename: 'new.html',
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.htmlFiles() });
@@ -426,7 +426,7 @@ describe('useDeleteHtmlFile', () => {
       await result.current.mutateAsync({ strategy: 'strat', filename: 'report.html' });
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/bt/api/backtest/html-files/strat/report.html');
+    expect(apiDelete).toHaveBeenCalledWith('/api/backtest/html-files/strat/report.html');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.htmlFiles() });
     expect(removeSpy).toHaveBeenCalledWith({
       queryKey: backtestKeys.htmlFileContent('strat', 'report.html'),
@@ -442,7 +442,7 @@ describe('useDefaultConfig', () => {
     const { result } = renderHook(() => useDefaultConfig(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/config/default');
+    expect(apiGet).toHaveBeenCalledWith('/api/config/default');
   });
 
   it('does not fetch when disabled', () => {
@@ -467,7 +467,7 @@ describe('useUpdateDefaultConfig', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPut).toHaveBeenCalledWith('/bt/api/config/default', request);
+    expect(apiPut).toHaveBeenCalledWith('/api/config/default', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.defaultConfig() });
   });
 });
@@ -480,6 +480,6 @@ describe('useSignalReference', () => {
     const { result } = renderHook(() => useSignalReference(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/signals/reference');
+    expect(apiGet).toHaveBeenCalledWith('/api/signals/reference');
   });
 });

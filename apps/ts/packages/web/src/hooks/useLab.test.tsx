@@ -41,7 +41,7 @@ describe('labKeys', () => {
 });
 
 describe('useLabGenerate', () => {
-  it('calls POST /bt/api/lab/generate', async () => {
+  it('calls POST /api/lab/generate', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'gen-1', status: 'pending' });
 
     const { queryClient, wrapper } = createWrapper();
@@ -54,7 +54,7 @@ describe('useLabGenerate', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/lab/generate', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/lab/generate', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('gen-1') });
   });
 
@@ -78,7 +78,7 @@ describe('useLabGenerate', () => {
 });
 
 describe('useLabEvolve', () => {
-  it('calls POST /bt/api/lab/evolve', async () => {
+  it('calls POST /api/lab/evolve', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'evo-1', status: 'pending' });
 
     const { queryClient, wrapper } = createWrapper();
@@ -91,13 +91,13 @@ describe('useLabEvolve', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/lab/evolve', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/lab/evolve', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('evo-1') });
   });
 });
 
 describe('useLabOptimize', () => {
-  it('calls POST /bt/api/lab/optimize', async () => {
+  it('calls POST /api/lab/optimize', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'opt-1', status: 'pending' });
 
     const { queryClient, wrapper } = createWrapper();
@@ -110,13 +110,13 @@ describe('useLabOptimize', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/lab/optimize', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/lab/optimize', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('opt-1') });
   });
 });
 
 describe('useLabImprove', () => {
-  it('calls POST /bt/api/lab/improve', async () => {
+  it('calls POST /api/lab/improve', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'imp-1', status: 'pending' });
 
     const { queryClient, wrapper } = createWrapper();
@@ -129,7 +129,7 @@ describe('useLabImprove', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/lab/improve', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/lab/improve', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('imp-1') });
   });
 });
@@ -142,7 +142,7 @@ describe('useLabJobStatus', () => {
     const { result } = renderHook(() => useLabJobStatus('gen-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/lab/jobs/gen-1');
+    expect(apiGet).toHaveBeenCalledWith('/api/lab/jobs/gen-1');
   });
 
   it('does not fetch when jobId is null', () => {
@@ -173,7 +173,7 @@ describe('useCancelLabJob', () => {
       await result.current.mutateAsync('gen-1');
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/lab/jobs/gen-1/cancel');
+    expect(apiPost).toHaveBeenCalledWith('/api/lab/jobs/gen-1/cancel');
     expect(cancelSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('gen-1') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('gen-1') });
   });

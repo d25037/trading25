@@ -1,11 +1,14 @@
 """
 Analytics Routes (JQuants-dependent)
 
-ROE、margin-pressure、margin-ratio の 4 エンドポイント。
-fundamentals はプロキシ済みなので含まない。
+ROE、margin-pressure、margin-ratio、fundamentals の 4+1 エンドポイント。
 """
 
 from __future__ import annotations
+
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
@@ -14,8 +17,24 @@ from src.server.schemas.analytics_margin import (
     MarginVolumeRatioResponse,
 )
 from src.server.schemas.analytics_roe import ROEResponse
+from src.server.schemas.fundamentals import (
+    FundamentalsComputeRequest,
+    FundamentalsComputeResponse,
+)
+from src.server.services.fundamentals_service import fundamentals_service
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
+
+# ThreadPoolExecutor for blocking operations (fundamentals)
+_executor = ThreadPoolExecutor(max_workers=4)
+
+
+def _get_executor() -> ThreadPoolExecutor:
+    """shutdown 済みの場合は再作成して返す"""
+    global _executor
+    if getattr(_executor, "_shutdown", False):
+        _executor = ThreadPoolExecutor(max_workers=4)
+    return _executor
 
 
 def _get_roe_service(request: Request):
@@ -90,5 +109,39 @@ async def get_margin_ratio(
         raise HTTPException(
             status_code=404,
             detail=f"Margin ratio data for stock symbol '{symbol}' not found",
+        )
+    return result
+
+
+@router.get(
+    "/fundamentals/{symbol}",
+    response_model=FundamentalsComputeResponse,
+    summary="Get fundamental analysis metrics for a stock",
+)
+async def get_fundamentals(
+    symbol: str,
+    from_date: str | None = Query(None, alias="from"),
+    to_date: str | None = Query(None, alias="to"),
+    periodType: Literal["all", "FY", "1Q", "2Q", "3Q"] = Query("all"),
+    preferConsolidated: bool = Query(True),
+) -> FundamentalsComputeResponse:
+    """ファンダメンタルズ分析指標を取得"""
+    req = FundamentalsComputeRequest(
+        symbol=symbol,
+        from_date=from_date,
+        to_date=to_date,
+        period_type=periodType,
+        prefer_consolidated=preferConsolidated,
+    )
+    loop = asyncio.get_event_loop()
+    result = await loop.run_in_executor(
+        _get_executor(),
+        fundamentals_service.compute_fundamentals,
+        req,
+    )
+    if not result.data:
+        raise HTTPException(
+            status_code=404,
+            detail=f"No financial statements found for stock {symbol}",
         )
     return result

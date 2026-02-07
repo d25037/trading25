@@ -88,7 +88,7 @@ export function useBtOHLCV({
         }),
       };
 
-      return apiPost<OHLCVResampleResponse>('/bt/api/ohlcv/resample', request);
+      return apiPost<OHLCVResampleResponse>('/api/ohlcv/resample', request);
     },
     enabled: enabled && !!stockCode,
     staleTime: 60_000,

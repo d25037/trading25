@@ -58,7 +58,6 @@ def get_openapi_config() -> dict:
         "redoc_url": None,
         "servers": [
             {"url": "http://localhost:3002", "description": "FastAPI server"},
-            {"url": "http://localhost:3001", "description": "Hono server (legacy)"},
         ],
         "contact": {"name": "Trading25 Team"},
         "license_info": {"name": "MIT", "url": "https://opensource.org/licenses/MIT"},

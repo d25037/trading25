@@ -15,27 +15,27 @@ export const labKeys = {
 };
 
 function fetchLabJobStatus(jobId: string): Promise<LabJobResponse> {
-  return apiGet<LabJobResponse>(`/bt/api/lab/jobs/${encodeURIComponent(jobId)}`);
+  return apiGet<LabJobResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}`);
 }
 
 function postLabGenerate(request: LabGenerateRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/bt/api/lab/generate', request);
+  return apiPost<LabJobResponse>('/api/lab/generate', request);
 }
 
 function postLabEvolve(request: LabEvolveRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/bt/api/lab/evolve', request);
+  return apiPost<LabJobResponse>('/api/lab/evolve', request);
 }
 
 function postLabOptimize(request: LabOptimizeRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/bt/api/lab/optimize', request);
+  return apiPost<LabJobResponse>('/api/lab/optimize', request);
 }
 
 function postLabImprove(request: LabImproveRequest): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>('/bt/api/lab/improve', request);
+  return apiPost<LabJobResponse>('/api/lab/improve', request);
 }
 
 function cancelLabJob(jobId: string): Promise<LabJobResponse> {
-  return apiPost<LabJobResponse>(`/bt/api/lab/jobs/${encodeURIComponent(jobId)}/cancel`);
+  return apiPost<LabJobResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}/cancel`);
 }
 
 export function useLabGenerate() {

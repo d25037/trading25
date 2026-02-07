@@ -1,7 +1,7 @@
 # Trading Backtesting
 
 ## プロジェクト概要
-**Marimo Notebook実行システム**を中心とした高速バックテスト戦略ツール。VectorBT基盤の高速ベクトル化バックテスト・Marimoによる静的HTML出力・YAML設定による柔軟なパラメータ管理を提供。apps/ts/からのバックテスト実行を可能にするFastAPI サーバー機能も搭載。フロントエンドはapps/ts/web/ に移行済み。
+**Marimo Notebook実行システム**を中心とした高速バックテスト戦略ツール。VectorBT基盤の高速ベクトル化バックテスト・Marimoによる静的HTML出力・YAML設定による柔軟なパラメータ管理を提供。**FastAPI サーバー (:3002) が唯一の API バックエンド**（Phase 3F で Hono から完全移行済み、117 EP）。フロントエンドはapps/ts/web/ に移行済み。
 
 ## 重要原則
 - **表面的なごまかしを絶対に行わない。根本的な解決ができないときは、「今は○○の理由で解決できなかった」と素直に言う**
@@ -19,7 +19,7 @@
 
 ### API接続管理
 **詳細**: `.claude/skills/api-architecture/SKILL.md`
-- **統一APIクライアント**: `src/api/`パッケージによるREST API（localhost:3001）経由データアクセス
+- **統一APIクライアント**: `src/api/`パッケージによるREST API（localhost:3002）経由データアクセス
 - **リソース管理**: HTTPセッション管理・リトライ機構・タイムアウト設定・エラーハンドリング
 - **旧実装削除**: `src/data/database.py`完全削除（SQLite直接アクセス廃止）
 

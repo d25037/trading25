@@ -18,31 +18,25 @@ apps/ts/packages/shared/src/clients/backtest/generated/type-compatibility-check.
 
 # ─────────────────────────────────────────────────────────
 # [phase3-removal] ts→bt acknowledged violations
-# Remove entries as Phase 3 resolves each category
+# Remove entries as Phase 4 resolves each category
 # ─────────────────────────────────────────────────────────
 
-# Web UI hooks (Phase 3F)
-apps/ts/packages/web/src/hooks/useBacktest.ts
-apps/ts/packages/web/src/hooks/useBacktest.test.tsx
-apps/ts/packages/web/src/hooks/useBtOHLCV.ts
-apps/ts/packages/web/src/hooks/useBtOHLCV.test.tsx
-apps/ts/packages/web/src/hooks/useBtIndicators.ts
-apps/ts/packages/web/src/hooks/useBtIndicators.test.ts
-apps/ts/packages/web/src/hooks/useBtMarginIndicators.ts
-apps/ts/packages/web/src/hooks/useBtMarginIndicators.test.ts
-apps/ts/packages/web/src/hooks/useBtSignals.ts
-apps/ts/packages/web/src/hooks/useLab.ts
-apps/ts/packages/web/src/hooks/useLab.test.tsx
-apps/ts/packages/web/src/hooks/useLabSSE.ts
-apps/ts/packages/web/src/hooks/useLabSSE.test.tsx
-apps/ts/packages/web/src/hooks/useOptimization.ts
-apps/ts/packages/web/src/hooks/useOptimization.test.tsx
+# NOTE: Phase 3F removed /bt/api/ prefix from web hooks, so those files
+# now use /api/... paths only. The dep-direction pattern no longer detects
+# bt dependency in these files. Pattern redesign deferred to Phase 4.
 
-# Web components (Phase 3F)
+# Web components/hooks (still import from @trading25/shared/clients/backtest)
 apps/ts/packages/web/src/components/Lab/LabResultSection.tsx
+apps/ts/packages/web/src/hooks/useBtOHLCV.ts
 apps/ts/packages/web/src/types/backtest.ts
 
-# CLI backtest commands (Phase 3F)
+# Vite proxy config (localhost:3002 reference)
+apps/ts/packages/web/vite.config.ts
+
+# CLI api-client (localhost:3002 default)
+apps/ts/packages/cli/src/utils/api-client.ts
+
+# CLI backtest commands (BT_API_URL reference)
 apps/ts/packages/cli/src/commands/backtest/run.ts
 apps/ts/packages/cli/src/commands/backtest/cancel.ts
 apps/ts/packages/cli/src/commands/backtest/list.ts
@@ -51,22 +45,18 @@ apps/ts/packages/cli/src/commands/backtest/status.ts
 apps/ts/packages/cli/src/commands/backtest/validate.ts
 apps/ts/packages/cli/src/commands/backtest/error-handler.ts
 
-# API server proxies (Phase 3B/3D)
+# API server proxies (archived code, still contains BacktestClient references)
 apps/ts/packages/api/src/routes/analytics/fundamentals.ts
 apps/ts/packages/api/src/routes/__tests__/fundamentals.test.ts
 apps/ts/packages/api/src/routes/jquants/statements.ts
 apps/ts/packages/api/src/services/dataset/dataset-data-service.ts
 apps/ts/packages/api/src/services/dataset/dataset-data-service.test.ts
 
-# API server deprecated (ts-123)
-apps/ts/packages/api/src/services/fundamentals-data.ts
+# API server deprecated (ts-123) — fundamentals-data.ts は既に削除済み
 apps/ts/packages/api/src/services/stock-data.ts
 
-# Shared client library (Phase 3F後廃止)
+# Shared client library (Phase 4 廃止予定)
 apps/ts/packages/shared/src/clients/backtest/BacktestClient.ts
 apps/ts/packages/shared/src/clients/backtest/BacktestClient.test.ts
 apps/ts/packages/shared/src/clients/backtest/index.ts
 apps/ts/packages/shared/src/clients/backtest/types.ts
-
-# Vite proxy config (Phase 3F)
-apps/ts/packages/web/vite.config.ts

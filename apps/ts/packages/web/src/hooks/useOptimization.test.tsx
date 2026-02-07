@@ -64,7 +64,7 @@ describe('useRunOptimization', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/optimize/run', request);
+    expect(apiPost).toHaveBeenCalledWith('/api/optimize/run', request);
   });
 
   it('logs error on failure', async () => {
@@ -94,7 +94,7 @@ describe('useOptimizationJobStatus', () => {
     const { result } = renderHook(() => useOptimizationJobStatus('opt-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/optimize/jobs/opt-1');
+    expect(apiGet).toHaveBeenCalledWith('/api/optimize/jobs/opt-1');
   });
 
   it('does not fetch when jobId is null', () => {
@@ -113,7 +113,7 @@ describe('useOptimizationGridConfigs', () => {
     const { result } = renderHook(() => useOptimizationGridConfigs(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/optimize/grid-configs');
+    expect(apiGet).toHaveBeenCalledWith('/api/optimize/grid-configs');
   });
 });
 
@@ -125,7 +125,7 @@ describe('useOptimizationGridConfig', () => {
     const { result } = renderHook(() => useOptimizationGridConfig('Alpha Strategy'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/optimize/grid-configs/Alpha%20Strategy');
+    expect(apiGet).toHaveBeenCalledWith('/api/optimize/grid-configs/Alpha%20Strategy');
   });
 
   it('does not fetch when strategy is null', () => {
@@ -150,7 +150,7 @@ describe('useSaveOptimizationGrid', () => {
       await result.current.mutateAsync({ strategy: 'Alpha', request });
     });
 
-    expect(apiPut).toHaveBeenCalledWith('/bt/api/optimize/grid-configs/Alpha', request);
+    expect(apiPut).toHaveBeenCalledWith('/api/optimize/grid-configs/Alpha', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfigs() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfig('Alpha') });
   });
@@ -169,7 +169,7 @@ describe('useDeleteOptimizationGrid', () => {
       await result.current.mutateAsync('Beta');
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/bt/api/optimize/grid-configs/Beta');
+    expect(apiDelete).toHaveBeenCalledWith('/api/optimize/grid-configs/Beta');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfigs() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.gridConfig('Beta') });
   });
@@ -183,7 +183,7 @@ describe('useOptimizationHtmlFiles', () => {
     const { result } = renderHook(() => useOptimizationHtmlFiles('myStrat'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/optimize/html-files?strategy=myStrat&limit=100');
+    expect(apiGet).toHaveBeenCalledWith('/api/optimize/html-files?strategy=myStrat&limit=100');
   });
 
   it('fetches without strategy filter', async () => {
@@ -193,7 +193,7 @@ describe('useOptimizationHtmlFiles', () => {
     const { result } = renderHook(() => useOptimizationHtmlFiles(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/optimize/html-files?limit=100');
+    expect(apiGet).toHaveBeenCalledWith('/api/optimize/html-files?limit=100');
   });
 });
 
@@ -205,7 +205,7 @@ describe('useOptimizationHtmlFileContent', () => {
     const { result } = renderHook(() => useOptimizationHtmlFileContent('strat', 'opt.html'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/bt/api/optimize/html-files/strat/opt.html');
+    expect(apiGet).toHaveBeenCalledWith('/api/optimize/html-files/strat/opt.html');
   });
 
   it('does not fetch when strategy or filename is null', () => {
@@ -237,7 +237,7 @@ describe('useRenameOptimizationHtmlFile', () => {
       });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/bt/api/optimize/html-files/strat/old.html/rename', {
+    expect(apiPost).toHaveBeenCalledWith('/api/optimize/html-files/strat/old.html/rename', {
       new_filename: 'new.html',
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.htmlFilesPrefix() });
@@ -263,7 +263,7 @@ describe('useDeleteOptimizationHtmlFile', () => {
       await result.current.mutateAsync({ strategy: 'strat', filename: 'opt.html' });
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/bt/api/optimize/html-files/strat/opt.html');
+    expect(apiDelete).toHaveBeenCalledWith('/api/optimize/html-files/strat/opt.html');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: optimizationKeys.htmlFilesPrefix() });
     expect(removeSpy).toHaveBeenCalledWith({
       queryKey: optimizationKeys.htmlFileContent('strat', 'opt.html'),

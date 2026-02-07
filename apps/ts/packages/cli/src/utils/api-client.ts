@@ -172,7 +172,7 @@ export interface PortfolioFactorRegressionResponse {
 export class ApiClient {
   private baseUrl: string;
 
-  constructor(baseUrl: string = process.env.API_BASE_URL || 'http://localhost:3001') {
+  constructor(baseUrl: string = process.env.API_BASE_URL || 'http://localhost:3002') {
     this.baseUrl = baseUrl;
   }
 

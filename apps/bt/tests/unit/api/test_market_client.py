@@ -14,7 +14,7 @@ class TestMarketAPIClient:
     def test_init(self) -> None:
         """Test initialization."""
         client = MarketAPIClient()
-        assert client.base_url == "http://localhost:3001"
+        assert client.base_url == "http://localhost:3002"
         assert client.timeout == 30.0
 
     @patch("httpx.Client")

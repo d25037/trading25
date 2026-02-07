@@ -13,8 +13,11 @@ Phase 3 移行の互換性を検証する。
     python3 scripts/verify-openapi-compat.py --fastapi-file /path/to/openapi.json
 """
 
+from __future__ import annotations
+
 import argparse
 import json
+import re
 import sys
 from pathlib import Path
 
@@ -118,16 +121,32 @@ def verify_error_responses_in_paths(fastapi: dict) -> list[str]:
     return errors
 
 
+def _normalize_path(path: str) -> str:
+    """パスパラメータ名を正規化 ({name} → {param}) して比較可能にする"""
+    return re.sub(r"\{[^}]+\}", "{param}", path)
+
+
 def track_migration_status(baseline: dict, fastapi: dict) -> dict[str, str]:
-    """パス単位の移行ステータスを追跡"""
+    """パス単位の移行ステータスを追跡（パスパラメータ名は正規化して比較）"""
     baseline_paths = set(baseline.get("paths", {}).keys())
     fastapi_paths = set(fastapi.get("paths", {}).keys())
 
+    # 正規化パス → 元パスの逆引きマップ
+    fastapi_normalized = {_normalize_path(p): p for p in fastapi_paths}
+
     status: dict[str, str] = {}
     for p in sorted(baseline_paths):
-        status[p] = "migrated" if p in fastapi_paths else "pending"
+        normalized = _normalize_path(p)
+        if p in fastapi_paths or normalized in fastapi_normalized:
+            status[p] = "migrated"
+        else:
+            status[p] = "pending"
     for p in sorted(fastapi_paths - baseline_paths):
-        status[p] = "bt-only"
+        normalized = _normalize_path(p)
+        # bt-only は正規化後も baseline に存在しないものだけ
+        baseline_normalized = {_normalize_path(bp) for bp in baseline_paths}
+        if normalized not in baseline_normalized:
+            status[p] = "bt-only"
     return status
 
 
@@ -214,6 +233,12 @@ def main() -> None:
     print("\n" + "=" * 60)
     if all_errors:
         print(f"RESULT: FAIL ({len(all_errors)} errors)")
+        sys.exit(1)
+    elif pending > 0:
+        print(f"RESULT: FAIL ({pending} Hono endpoints not yet migrated)")
+        for p, s in status.items():
+            if s == "pending":
+                print(f"  - {p}")
         sys.exit(1)
     else:
         print("RESULT: PASS")
