@@ -148,3 +148,152 @@ def disable_warnings():
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         yield
+
+
+# --- Phase 3B-1: JQuants mock fixtures ---
+
+
+@pytest.fixture
+def mock_jquants_env(monkeypatch):
+    """JQuants 環境変数をセット（テスト用）"""
+    monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
+    monkeypatch.setenv("JQUANTS_PLAN", "free")
+
+
+# --- Phase 3B-2a: market.db fixtures ---
+
+
+@pytest.fixture
+def market_db_path(tmp_path):
+    """テスト用 in-memory 風 market.db を tmp_path に作成"""
+    import sqlite3
+
+    db_path = str(tmp_path / "market.db")
+    conn = sqlite3.connect(db_path)
+    conn.execute("PRAGMA journal_mode=WAL")
+
+    # stocks テーブル
+    conn.execute("""
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            company_name_english TEXT,
+            market_code TEXT NOT NULL,
+            market_name TEXT NOT NULL,
+            sector_17_code TEXT NOT NULL,
+            sector_17_name TEXT NOT NULL,
+            sector_33_code TEXT NOT NULL,
+            sector_33_name TEXT NOT NULL,
+            scale_category TEXT,
+            listed_date TEXT NOT NULL,
+            created_at TEXT,
+            updated_at TEXT
+        )
+    """)
+
+    # stock_data テーブル
+    conn.execute("""
+        CREATE TABLE stock_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            volume INTEGER NOT NULL,
+            adjustment_factor REAL,
+            created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+
+    # topix_data テーブル
+    conn.execute("""
+        CREATE TABLE topix_data (
+            date TEXT PRIMARY KEY,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            created_at TEXT
+        )
+    """)
+
+    # テストデータ挿入
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("72030", "トヨタ自動車", "TOYOTA MOTOR", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("67580", "ソニーグループ", "SONY GROUP", "prime", "プライム", "S17_2", "電気機器", "S33_2", "電気機器", "TOPIX Large70", "1958-12-01", None, None),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("99840", "テスト銘柄", "TEST STOCK", "standard", "スタンダード", "S17_3", "情報通信", "S33_3", "情報通信", None, "2020-01-01", None, None),
+    )
+
+    # OHLCV データ
+    for code in ("72030", "67580"):
+        for i, d in enumerate(("2024-01-15", "2024-01-16", "2024-01-17")):
+            base = 2500.0 + i * 10 if code == "72030" else 13000.0 + i * 50
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (code, d, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
+            )
+
+    # TOPIX データ
+    for d in ("2024-01-15", "2024-01-16", "2024-01-17"):
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
+            (d, 2500.0, 2520.0, 2480.0, 2510.0, None),
+        )
+
+    # --- Phase 3B-2b: index_master + indices_data ---
+
+    conn.execute("""
+        CREATE TABLE index_master (
+            code TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            name_english TEXT,
+            category TEXT NOT NULL,
+            data_start_date TEXT
+        )
+    """)
+
+    conn.execute("""
+        CREATE TABLE indices_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL,
+            high REAL,
+            low REAL,
+            close REAL,
+            sector_name TEXT,
+            created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+
+    conn.execute(
+        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
+        ("0000", "TOPIX", "TOPIX", "topix", "2008-05-07"),
+    )
+    conn.execute(
+        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
+        ("0001", "電気機器", "Electric Appliances", "sector33", "2010-01-04"),
+    )
+
+    for d in ("2024-01-15", "2024-01-16", "2024-01-17"):
+        conn.execute(
+            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("0000", d, 2500.0, 2520.0, 2480.0, 2510.0, None, None),
+        )
+        conn.execute(
+            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("0001", d, 1200.0, 1220.0, 1190.0, 1210.0, "電気機器", None),
+        )
+
+    conn.commit()
+    conn.close()
+    return db_path

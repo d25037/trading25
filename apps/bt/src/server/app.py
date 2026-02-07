@@ -15,15 +15,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from loguru import logger
 
+from src.config.settings import get_settings
+from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.server.middleware.correlation import CorrelationIdMiddleware, get_correlation_id
 from src.server.middleware.request_logger import RequestLoggerMiddleware
 from src.server.openapi_config import customize_openapi, get_openapi_config
 from src.server.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
+from src.server.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
 from src.server.schemas.error import ErrorDetail, ErrorResponse
+from src.server.db.market_reader import MarketDbReader
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import job_manager
+from src.server.services.jquants_proxy_service import JQuantsProxyService
 from src.server.services.lab_service import lab_service
+from src.server.services.chart_service import ChartService
+from src.server.services.margin_analytics_service import MarginAnalyticsService
+from src.server.services.market_data_service import MarketDataService
 from src.server.services.optimization_service import optimization_service
+from src.server.services.roe_service import ROEService
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -58,9 +67,46 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """アプリケーションのライフサイクル管理"""
     logger.info("trading25-bt API サーバーを起動しています...")
 
+    # JQuants async client (Phase 3B-1)
+    settings = get_settings()
+    jquants_client = JQuantsAsyncClient(
+        api_key=settings.jquants_api_key,
+        plan=settings.jquants_plan,
+    )
+    app.state.jquants_client = jquants_client
+    app.state.jquants_proxy_service = JQuantsProxyService(jquants_client)
+    app.state.roe_service = ROEService(jquants_client)
+    app.state.margin_analytics_service = MarginAnalyticsService(jquants_client)
+
+    # market.db reader (Phase 3B-2a)
+    market_reader: MarketDbReader | None = None
+    if settings.market_db_path:
+        try:
+            market_reader = MarketDbReader(settings.market_db_path)
+            app.state.market_data_service = MarketDataService(market_reader)
+            logger.info(f"market.db 読み取りリーダーを初期化: {settings.market_db_path}")
+        except Exception as e:
+            logger.warning(f"market.db の初期化に失敗: {e}")
+            app.state.market_data_service = None
+    else:
+        app.state.market_data_service = None
+
+    # Phase 3B-3: market_reader を直接公開（ranking/factor-regression/screening 用）
+    app.state.market_reader = market_reader
+
+    # Chart service (Phase 3B-2b) — market.db reader + JQuants fallback
+    app.state.chart_service = ChartService(market_reader, jquants_client)
+
     cleanup_task = asyncio.create_task(_periodic_cleanup())
 
     yield
+
+    # JQuants client shutdown
+    await jquants_client.close()
+
+    # market.db reader shutdown
+    if market_reader is not None:
+        market_reader.close()
 
     # クリーンアップタスクを停止
     cleanup_task.cancel()
@@ -68,12 +114,19 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         await cleanup_task
 
     # ThreadPoolExecutorをシャットダウン
-    backtest_service._executor.shutdown(wait=True)
-    optimization_service._executor.shutdown(wait=True)
-    lab_service._executor.shutdown(wait=True)
-    indicators._executor.shutdown(wait=True)
-    ohlcv._executor.shutdown(wait=True)
-    fundamentals._executor.shutdown(wait=True)
+    # NOTE: モジュールレベル executor は shutdown 後に再利用不可。
+    # テスト環境で同一プロセス内の複数 lifespan サイクルに対応するため
+    # _broken フラグを確認してから shutdown する。
+    for executor in [
+        backtest_service._executor,
+        optimization_service._executor,
+        lab_service._executor,
+        indicators._executor,
+        ohlcv._executor,
+        fundamentals._executor,
+    ]:
+        if not bool(getattr(executor, "_broken", False)) and not bool(getattr(executor, "_shutdown", False)):
+            executor.shutdown(wait=True)
 
     # Fundamentals service cleanup (close API clients)
     from src.server.services.fundamentals_service import fundamentals_service
@@ -164,6 +217,15 @@ def create_app() -> FastAPI:
     app.include_router(indicators.router)
     app.include_router(ohlcv.router)
     app.include_router(fundamentals.router)
+    # Phase 3B-1: JQuants Proxy + Analytics
+    app.include_router(jquants_proxy.router)
+    app.include_router(analytics_jquants.router)
+    # Phase 3B-2a: Market Data (market.db)
+    app.include_router(market_data.router)
+    # Phase 3B-2b: Chart + Sector Stocks
+    app.include_router(chart.router)
+    # Phase 3B-3: Complex Analytics (Ranking, Factor Regression, Screening)
+    app.include_router(analytics_complex.router)
 
     return app
 

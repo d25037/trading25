@@ -1,0 +1,145 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Market DB Schema v1",
+  "description": "market.db スキーマ契約。Phase 3B-2a/2b で使用するテーブル定義。dataset-db-schema-v2.json のサブセット + index_master テーブル。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tables"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["1.0.0"]
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stocks",
+        "stock_data",
+        "topix_data",
+        "indices_data"
+      ],
+      "properties": {
+        "stocks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "company_name",
+                "company_name_english",
+                "market_code",
+                "market_name",
+                "sector_17_code",
+                "sector_17_name",
+                "sector_33_code",
+                "sector_33_name",
+                "scale_category",
+                "listed_date"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "company_name": { "const": { "type": "text", "nullable": false } },
+                "company_name_english": { "const": { "type": "text", "nullable": true } },
+                "market_code": { "const": { "type": "text", "nullable": false } },
+                "market_name": { "const": { "type": "text", "nullable": false } },
+                "sector_17_code": { "const": { "type": "text", "nullable": false } },
+                "sector_17_name": { "const": { "type": "text", "nullable": false } },
+                "sector_33_code": { "const": { "type": "text", "nullable": false } },
+                "sector_33_name": { "const": { "type": "text", "nullable": false } },
+                "scale_category": { "const": { "type": "text", "nullable": true } },
+                "listed_date": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code"] }
+          }
+        },
+        "stock_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": false } },
+                "high": { "const": { "type": "real", "nullable": false } },
+                "low": { "const": { "type": "real", "nullable": false } },
+                "close": { "const": { "type": "real", "nullable": false } },
+                "volume": { "const": { "type": "integer", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "topix_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["date", "open", "high", "low", "close"],
+              "properties": {
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": false } },
+                "high": { "const": { "type": "real", "nullable": false } },
+                "low": { "const": { "type": "real", "nullable": false } },
+                "close": { "const": { "type": "real", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["date"] }
+          }
+        },
+        "indices_data": {
+          "type": "object",
+          "description": "セクター指数データ（Phase 3B-2b chart/indices で使用）",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "sector_name"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": true } },
+                "high": { "const": { "type": "real", "nullable": true } },
+                "low": { "const": { "type": "real", "nullable": true } },
+                "close": { "const": { "type": "real", "nullable": true } },
+                "sector_name": { "const": { "type": "text", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        }
+      }
+    }
+  }
+}

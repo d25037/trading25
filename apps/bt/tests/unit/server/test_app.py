@@ -63,7 +63,13 @@ class TestLifespan:
             patch("src.server.app._periodic_cleanup", side_effect=_fake_cleanup),
             patch("src.server.app.backtest_service") as mock_bt,
             patch("src.server.app.optimization_service") as mock_opt,
+            patch("src.server.app.lab_service") as mock_lab,
         ):
+            # Mock executors に _broken / _shutdown を明示セット
+            for mock_svc in (mock_bt, mock_opt, mock_lab):
+                mock_svc._executor._broken = False
+                mock_svc._executor._shutdown = False
+
             async with lifespan(app):
                 pass  # startup phase
 
