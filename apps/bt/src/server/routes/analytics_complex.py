@@ -10,6 +10,7 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 
 from src.server.schemas.factor_regression import FactorRegressionResponse
+from src.server.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
 from src.server.schemas.ranking import MarketRankingResponse
 from src.server.schemas.screening import MarketScreeningResponse
 
@@ -143,3 +144,44 @@ async def get_screening(
     except Exception as e:
         logger.exception(f"Screening error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to run screening: {e}")
+
+
+# --- Portfolio Factor Regression (Phase 3E-2) ---
+
+
+@router.get(
+    "/api/analytics/portfolio-factor-regression/{portfolioId}",
+    response_model=PortfolioFactorRegressionResponse,
+    summary="Analyze portfolio factor regression",
+    description="ポートフォリオ全体のファクター回帰分析",
+)
+async def get_portfolio_factor_regression(
+    request: Request,
+    portfolioId: int,
+    lookbackDays: int = Query(252, ge=60, le=1000),
+) -> PortfolioFactorRegressionResponse:
+    """ポートフォリオファクター回帰分析を実行"""
+    from src.server.db.portfolio_db import PortfolioDb
+    from src.server.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Market database not initialized")
+
+    portfolio_db: PortfolioDb | None = getattr(request.app.state, "portfolio_db", None)
+    if portfolio_db is None:
+        raise HTTPException(status_code=422, detail="Portfolio database not initialized")
+
+    service = PortfolioFactorRegressionService(reader, portfolio_db)
+    try:
+        return service.analyze(portfolioId, lookback_days=lookbackDays)
+    except ValueError as e:
+        msg = str(e)
+        if "not found" in msg.lower():
+            raise HTTPException(status_code=404, detail=msg) from e
+        if "insufficient" in msg.lower() or "no valid" in msg.lower() or "zero" in msg.lower() or "no stocks" in msg.lower():
+            raise HTTPException(status_code=422, detail=msg) from e
+        raise HTTPException(status_code=400, detail=msg) from e
+    except Exception as e:
+        logger.exception(f"Portfolio factor regression error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to analyze: {e}") from e

@@ -321,3 +321,61 @@ class TestEmptyDatabase:
 
     def test_list_empty_watchlist_items(self, pdb: PortfolioDb) -> None:
         assert pdb.list_watchlist_items(1) == []
+
+
+# ===== Portfolio Summaries =====
+
+
+class TestPortfolioSummaries:
+    def test_list_portfolio_summaries(self, pdb: PortfolioDb) -> None:
+        pdb.create_portfolio("p1", "desc1")
+        pdb.add_item(1, "7203", "トヨタ", 100, 2500.0, "2024-01-15")
+        pdb.add_item(1, "6758", "ソニー", 50, 1500.0, "2024-01-15")
+        pdb.create_portfolio("p2")
+        summaries = pdb.list_portfolio_summaries()
+        assert len(summaries) == 2
+        # p2 is newer (created_at DESC)
+        assert summaries[0]["name"] == "p2"
+        assert summaries[0]["stock_count"] == 0
+        assert summaries[0]["total_shares"] == 0
+        assert summaries[1]["name"] == "p1"
+        assert summaries[1]["stock_count"] == 2
+        assert summaries[1]["total_shares"] == 150
+        assert summaries[1]["description"] == "desc1"
+
+    def test_list_portfolio_summaries_empty(self, pdb: PortfolioDb) -> None:
+        assert pdb.list_portfolio_summaries() == []
+
+    def test_list_portfolio_summaries_no_items(self, pdb: PortfolioDb) -> None:
+        pdb.create_portfolio("empty")
+        summaries = pdb.list_portfolio_summaries()
+        assert len(summaries) == 1
+        assert summaries[0]["stock_count"] == 0
+        assert summaries[0]["total_shares"] == 0
+
+
+# ===== Watchlist Summaries =====
+
+
+class TestWatchlistSummaries:
+    def test_list_watchlist_summaries(self, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("wl1", "desc1")
+        pdb.add_watchlist_item(1, "7203", "トヨタ")
+        pdb.add_watchlist_item(1, "6758", "ソニー")
+        pdb.create_watchlist("wl2")
+        summaries = pdb.list_watchlist_summaries()
+        assert len(summaries) == 2
+        assert summaries[0]["name"] == "wl2"
+        assert summaries[0]["stock_count"] == 0
+        assert summaries[1]["name"] == "wl1"
+        assert summaries[1]["stock_count"] == 2
+        assert summaries[1]["description"] == "desc1"
+
+    def test_list_watchlist_summaries_empty(self, pdb: PortfolioDb) -> None:
+        assert pdb.list_watchlist_summaries() == []
+
+    def test_list_watchlist_summaries_no_items(self, pdb: PortfolioDb) -> None:
+        pdb.create_watchlist("empty")
+        summaries = pdb.list_watchlist_summaries()
+        assert len(summaries) == 1
+        assert summaries[0]["stock_count"] == 0
