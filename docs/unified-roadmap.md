@@ -103,7 +103,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
-| 3 | FastAPI 統一 | **3D 完了** | **High** | 6-10 週 |
+| 3 | FastAPI 統一 | **3E 完了** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
@@ -416,15 +416,37 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 - Module-level job managers need `shutdown()` in app lifespan
 - GenericJobManager: `asyncio.Lock` for create exclusivity, `asyncio.Event` for cooperative cancellation
 
-### 3E: CRUD 移行
+### 3E: Portfolio/Watchlist API 移行 — **完了** (2026-02-07)
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 4*
 
-- [ ] Portfolio CRUD (12 エンドポイント)
-- [ ] Watchlist CRUD (8 エンドポイント)
-- [ ] 既存データの読み取り互換テスト
+**前提**: 3D 完了（DB 操作は直接アクセスが前提）、PortfolioDb 26 メソッド完備
 
-**Go/No-Go**: CRUD 全操作のデータ整合性テスト合格
+21 エンドポイントを 2 サブフェーズで FastAPI に移行完了:
+
+- [x] **3E-1**: Portfolio CRUD (11 EP) + Watchlist CRUD (7 EP) — IntegrityError→409, model_fields_set 活用
+- [x] **3E-2**: Performance (1 EP) + Prices (1 EP) + Portfolio Factor Regression (1 EP) — OLS 回帰再利用, N+1 回避
+
+**Go/No-Go 結果**: 全基準クリア
+- 新規テスト 76 件全通過（2628→2704 tests）
+- CRUD 全操作のデータ整合性テスト合格（create→read→update→delete + 409 重複検出）
+- 既存テスト全通過（ruff 0 errors, pyright 0 errors）
+
+**成果物**:
+
+| カテゴリ | ファイル |
+|---------|---------|
+| Routes | `portfolio.py`(12 EP), `watchlist.py`(8 EP), `analytics_complex.py`(+1 EP) |
+| Schemas | `portfolio.py`, `watchlist.py`, `portfolio_performance.py`, `portfolio_factor_regression.py` |
+| Services | `portfolio_performance_service.py`, `watchlist_prices_service.py`, `portfolio_factor_regression_service.py` |
+| DB 拡張 | `portfolio_db.py`(+2 メソッド: `list_portfolio_summaries`, `list_watchlist_summaries`) |
+| テスト | `test_routes_portfolio.py`(30), `test_routes_watchlist.py`(19), `test_routes_portfolio_performance.py`(6), `test_routes_watchlist_prices.py`(4), `test_routes_portfolio_factor_regression.py`(6), `test_watchlist_prices_service.py`(5), `test_portfolio_db.py`(+6) |
+
+**Key Lessons**:
+- IntegrityError 判定: SQLite は制約名でなく `UNIQUE constraint failed: tablename.column` 形式 → `str(e.orig)` で判定
+- `model_fields_set` で Pydantic の "未指定" vs "null送信" を区別（description の null 更新）
+- `list[Row[Any]]` は `list[object]` に代入不可（invariant）→ `Sequence[Row[Any]]` を使用
+- Portfolio factor regression: `_load_indices_returns()` を N+1 回避版で独自実装（全指数データ一括取得）
 
 ### 3F: 切替・廃止
 
@@ -473,7 +495,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 |---|---|---|
 | GET | `/api/analytics/factor-regression/{symbol}` | [x] |
 | GET | `/api/analytics/fundamentals/{symbol}` | N/A (既存) |
-| GET | `/api/analytics/portfolio-factor-regression/{portfolioId}` | → 3E |
+| GET | `/api/analytics/portfolio-factor-regression/{portfolioId}` | [x] |
 | GET | `/api/analytics/ranking` | [x] |
 | GET | `/api/analytics/roe` | [x] |
 | GET | `/api/analytics/screening` | [x] |
@@ -534,30 +556,30 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 #### Portfolio (12)
 | メソッド | パス | 3E |
 |---|---|---|
-| GET | `/api/portfolio` | [ ] |
-| POST | `/api/portfolio` | [ ] |
-| GET | `/api/portfolio/{id}` | [ ] |
-| PUT | `/api/portfolio/{id}` | [ ] |
-| DELETE | `/api/portfolio/{id}` | [ ] |
-| POST | `/api/portfolio/{id}/items` | [ ] |
-| PUT | `/api/portfolio/{id}/items/{itemId}` | [ ] |
-| DELETE | `/api/portfolio/{id}/items/{itemId}` | [ ] |
-| GET | `/api/portfolio/{id}/performance` | [ ] |
-| GET | `/api/portfolio/{name}/codes` | [ ] |
-| PUT | `/api/portfolio/{portfolioName}/stocks/{code}` | [ ] |
-| DELETE | `/api/portfolio/{portfolioName}/stocks/{code}` | [ ] |
+| GET | `/api/portfolio` | [x] |
+| POST | `/api/portfolio` | [x] |
+| GET | `/api/portfolio/{id}` | [x] |
+| PUT | `/api/portfolio/{id}` | [x] |
+| DELETE | `/api/portfolio/{id}` | [x] |
+| POST | `/api/portfolio/{id}/items` | [x] |
+| PUT | `/api/portfolio/{id}/items/{itemId}` | [x] |
+| DELETE | `/api/portfolio/{id}/items/{itemId}` | [x] |
+| GET | `/api/portfolio/{id}/performance` | [x] |
+| GET | `/api/portfolio/{name}/codes` | [x] |
+| PUT | `/api/portfolio/{portfolioName}/stocks/{code}` | [x] |
+| DELETE | `/api/portfolio/{portfolioName}/stocks/{code}` | [x] |
 
 #### Watchlist (8)
 | メソッド | パス | 3E |
 |---|---|---|
-| GET | `/api/watchlist` | [ ] |
-| POST | `/api/watchlist` | [ ] |
-| GET | `/api/watchlist/{id}` | [ ] |
-| PUT | `/api/watchlist/{id}` | [ ] |
-| DELETE | `/api/watchlist/{id}` | [ ] |
-| POST | `/api/watchlist/{id}/items` | [ ] |
-| DELETE | `/api/watchlist/{id}/items/{itemId}` | [ ] |
-| GET | `/api/watchlist/{id}/prices` | [ ] |
+| GET | `/api/watchlist` | [x] |
+| POST | `/api/watchlist` | [x] |
+| GET | `/api/watchlist/{id}` | [x] |
+| PUT | `/api/watchlist/{id}` | [x] |
+| DELETE | `/api/watchlist/{id}` | [x] |
+| POST | `/api/watchlist/{id}/items` | [x] |
+| DELETE | `/api/watchlist/{id}/items/{itemId}` | [x] |
+| GET | `/api/watchlist/{id}/prices` | [x] |
 
 ### 主要リスクと対策
 

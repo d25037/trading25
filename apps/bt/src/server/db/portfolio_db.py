@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, delete, func, insert, select, update
+from sqlalchemy import Row, delete, func, insert, outerjoin, select, update
 
 from src.server.db.base import BaseDbAccess
 from src.server.db.query_helpers import normalize_stock_code
@@ -267,6 +267,60 @@ class PortfolioDb(BaseDbAccess):
             "created_at": portfolio.created_at,
             "updated_at": portfolio.updated_at,
         }
+
+    def list_portfolio_summaries(self) -> list[dict[str, Any]]:
+        """LEFT JOIN で stockCount/totalShares 付きポートフォリオ一覧を返す"""
+        j = outerjoin(portfolios, portfolio_items, portfolios.c.id == portfolio_items.c.portfolio_id)
+        stmt = (
+            select(
+                portfolios,
+                func.count(portfolio_items.c.id).label("stock_count"),
+                func.coalesce(func.sum(portfolio_items.c.quantity), 0).label("total_shares"),
+            )
+            .select_from(j)
+            .group_by(portfolios.c.id)
+            .order_by(portfolios.c.created_at.desc())
+        )
+        with self.engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [
+            {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description,
+                "stock_count": r.stock_count,
+                "total_shares": r.total_shares,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+            }
+            for r in rows
+        ]
+
+    def list_watchlist_summaries(self) -> list[dict[str, Any]]:
+        """LEFT JOIN で stockCount 付きウォッチリスト一覧を返す"""
+        j = outerjoin(watchlists, watchlist_items, watchlists.c.id == watchlist_items.c.watchlist_id)
+        stmt = (
+            select(
+                watchlists,
+                func.count(watchlist_items.c.id).label("stock_count"),
+            )
+            .select_from(j)
+            .group_by(watchlists.c.id)
+            .order_by(watchlists.c.created_at.desc())
+        )
+        with self.engine.connect() as conn:
+            rows = conn.execute(stmt).fetchall()
+        return [
+            {
+                "id": r.id,
+                "name": r.name,
+                "description": r.description,
+                "stock_count": r.stock_count,
+                "created_at": r.created_at,
+                "updated_at": r.updated_at,
+            }
+            for r in rows
+        ]
 
     # ===== Watchlist CRUD =====
 

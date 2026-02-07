@@ -22,7 +22,7 @@ from src.server.middleware.request_logger import RequestLoggerMiddleware
 from src.server.openapi_config import customize_openapi, get_openapi_config
 from src.server.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
 from src.server.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
-from src.server.routes import dataset, dataset_data, db
+from src.server.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.server.schemas.error import ErrorDetail, ErrorResponse
 from src.server.db.market_reader import MarketDbReader
 from src.server.db.market_db import MarketDb
@@ -281,6 +281,9 @@ def create_app() -> FastAPI:
     app.include_router(db.router)
     app.include_router(dataset_data.router)
     app.include_router(dataset.router)
+    # Phase 3E: Portfolio + Watchlist
+    app.include_router(portfolio.router)
+    app.include_router(watchlist.router)
 
     return app
 
