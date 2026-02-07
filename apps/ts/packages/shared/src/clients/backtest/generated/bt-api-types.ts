@@ -26,6 +26,28 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/health": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Health Check Alias
+         * @description ヘルスチェック（Hono 互換エイリアス）
+         *
+         *     `/api/health` と同一レスポンスを返す
+         */
+        get: operations["health_check_alias_health_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/strategies": {
         parameters: {
             query?: never;
@@ -953,10 +975,581 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jquants/auth/status": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Auth Status
+         * @description JQuants API v2 認証ステータスを取得
+         */
+        get: operations["get_auth_status_api_jquants_auth_status_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/daily-quotes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Daily Quotes
+         * @description 日足クォートデータを取得（JQuants 生フォーマット）
+         */
+        get: operations["get_daily_quotes_api_jquants_daily_quotes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/indices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Indices
+         * @description 指数データを取得
+         */
+        get: operations["get_indices_api_jquants_indices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/listed-info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Listed Info
+         * @description 上場銘柄情報を取得
+         */
+        get: operations["get_listed_info_api_jquants_listed_info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/stocks/{symbol}/margin-interest": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Margin Interest
+         * @description 週次信用取引データを取得
+         */
+        get: operations["get_margin_interest_api_jquants_stocks__symbol__margin_interest_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/statements": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Statements
+         * @description 財務諸表データを取得（EPS サブセット）
+         */
+        get: operations["get_statements_api_jquants_statements_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/statements/raw": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Statements Raw
+         * @description 財務諸表データを取得（完全版）
+         */
+        get: operations["get_statements_raw_api_jquants_statements_raw_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/jquants/topix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Topix
+         * @description TOPIX 指数データを取得（生フォーマット）
+         */
+        get: operations["get_topix_api_jquants_topix_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/roe": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Roe
+         * @description ROE (自己資本利益率) を計算
+         */
+        get: operations["get_roe_api_analytics_roe_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/stocks/{symbol}/margin-pressure": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Margin Pressure
+         * @description マージンプレッシャー指標を取得
+         */
+        get: operations["get_margin_pressure_api_analytics_stocks__symbol__margin_pressure_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/stocks/{symbol}/margin-ratio": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Margin Ratio
+         * @description マージン出来高比率を取得
+         */
+        get: operations["get_margin_ratio_api_analytics_stocks__symbol__margin_ratio_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/stocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 全銘柄データ取得（スクリーニング用） */
+        get: operations["get_all_stocks_api_market_stocks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/stocks/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 単一銘柄情報取得 */
+        get: operations["get_stock_info_api_market_stocks__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/stocks/{code}/ohlcv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 銘柄 OHLCV データ取得 */
+        get: operations["get_stock_ohlcv_api_market_stocks__code__ohlcv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/market/topix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TOPIX データ取得 */
+        get: operations["get_topix_api_market_topix_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chart/indices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 指数一覧取得 */
+        get: operations["get_indices_list_api_chart_indices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chart/indices/topix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TOPIX チャートデータ取得 */
+        get: operations["get_topix_data_api_chart_indices_topix_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chart/indices/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 指数チャートデータ取得 */
+        get: operations["get_index_data_api_chart_indices__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chart/stocks/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 銘柄検索 */
+        get: operations["search_stocks_api_chart_stocks_search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/chart/stocks/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 銘柄チャートデータ取得 */
+        get: operations["get_stock_data_api_chart_stocks__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/sector-stocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** セクター別銘柄データ取得 */
+        get: operations["get_sector_stocks_api_analytics_sector_stocks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/ranking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get market rankings
+         * @description Get market rankings including top stocks by trading value, price gainers, and price losers.
+         */
+        get: operations["get_ranking_api_analytics_ranking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/factor-regression/{symbol}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Analyze stock factor regression
+         * @description Two-stage factor regression analysis for risk decomposition.
+         */
+        get: operations["get_factor_regression_api_analytics_factor_regression__symbol__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/screening": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Run stock screening
+         * @description Run stock screening analysis with Range Break Fast and Slow strategies.
+         */
+        get: operations["get_screening_api_analytics_screening_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * ApiIndex
+         * @description 指数データポイント
+         */
+        ApiIndex: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /** Code */
+            code?: string | null;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+        };
+        /**
+         * ApiIndicesResponse
+         * @description 指数データレスポンス
+         */
+        ApiIndicesResponse: {
+            /** Indices */
+            indices: components["schemas"]["ApiIndex"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
+        };
+        /**
+         * ApiListedInfo
+         * @description 上場銘柄情報
+         */
+        ApiListedInfo: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Companynameenglish */
+            companyNameEnglish?: string | null;
+            /** Marketcode */
+            marketCode?: string | null;
+            /** Marketcodename */
+            marketCodeName?: string | null;
+            /** Sector33Code */
+            sector33Code?: string | null;
+            /** Sector33Codename */
+            sector33CodeName?: string | null;
+            /** Scalecategory */
+            scaleCategory?: string | null;
+        };
+        /**
+         * ApiListedInfoResponse
+         * @description 上場銘柄情報レスポンス
+         */
+        ApiListedInfoResponse: {
+            /** Info */
+            info: components["schemas"]["ApiListedInfo"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
+        };
+        /**
+         * ApiMarginInterest
+         * @description 週次信用取引データポイント
+         */
+        ApiMarginInterest: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /** Code */
+            code: string;
+            /** Shortmargintradevolume */
+            shortMarginTradeVolume: number;
+            /** Longmargintradevolume */
+            longMarginTradeVolume: number;
+            /** Shortmarginoutstandingbalance */
+            shortMarginOutstandingBalance?: number | null;
+            /** Longmarginoutstandingbalance */
+            longMarginOutstandingBalance?: number | null;
+        };
+        /**
+         * ApiMarginInterestResponse
+         * @description 週次信用取引データレスポンス
+         */
+        ApiMarginInterestResponse: {
+            /** Margininterest */
+            marginInterest: components["schemas"]["ApiMarginInterest"][];
+            /** Symbol */
+            symbol: string;
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
+        };
+        /**
+         * AuthStatusResponse
+         * @description JQuants API v2 認証ステータス
+         */
+        AuthStatusResponse: {
+            /**
+             * Authenticated
+             * @description API キーが設定されているか
+             */
+            authenticated: boolean;
+            /**
+             * Hasapikey
+             * @description API キーが設定されているか
+             */
+            hasApiKey: boolean;
+        };
         /**
          * BacktestJobResponse
          * @description バックテストジョブレスポンス
@@ -1101,6 +1694,54 @@ export interface components {
             html_path?: string | null;
         };
         /**
+         * DailyQuoteItem
+         * @description 日足クォートデータ（JQuants 生フォーマット）
+         */
+        DailyQuoteItem: {
+            /** Date */
+            Date: string;
+            /** Code */
+            Code: string;
+            /** O */
+            O?: number | null;
+            /** H */
+            H?: number | null;
+            /** L */
+            L?: number | null;
+            /** C */
+            C?: number | null;
+            /** Ul */
+            UL?: number | null;
+            /** Ll */
+            LL?: number | null;
+            /** Vo */
+            Vo?: number | null;
+            /** Va */
+            Va?: number | null;
+            /** Adjfactor */
+            AdjFactor: number;
+            /** Adjo */
+            AdjO?: number | null;
+            /** Adjh */
+            AdjH?: number | null;
+            /** Adjl */
+            AdjL?: number | null;
+            /** Adjc */
+            AdjC?: number | null;
+            /** Adjvo */
+            AdjVo?: number | null;
+        };
+        /**
+         * DailyQuotesResponse
+         * @description 日足クォートレスポンス
+         */
+        DailyQuotesResponse: {
+            /** Data */
+            data: components["schemas"]["DailyQuoteItem"][];
+            /** Pagination Key */
+            pagination_key?: string | null;
+        };
+        /**
          * DailyValuationDataPoint
          * @description Daily valuation data point.
          */
@@ -1130,6 +1771,16 @@ export interface components {
              * @description Market cap at this date (JPY)
              */
             marketCap?: number | null;
+        };
+        /**
+         * DateRange
+         * @description 分析期間
+         */
+        DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * DefaultConfigResponse
@@ -1189,6 +1840,31 @@ export interface components {
              * @description 最悪スコア
              */
             worst_score: number;
+        };
+        /**
+         * FactorRegressionResponse
+         * @description ファクター回帰分析レスポンス
+         */
+        FactorRegressionResponse: {
+            /** Stockcode */
+            stockCode: string;
+            /** Companyname */
+            companyName?: string | null;
+            /** Marketbeta */
+            marketBeta: number;
+            /** Marketrsquared */
+            marketRSquared: number;
+            /** Sector17Matches */
+            sector17Matches: components["schemas"]["IndexMatch"][];
+            /** Sector33Matches */
+            sector33Matches: components["schemas"]["IndexMatch"][];
+            /** Topixstylematches */
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            /** Analysisdate */
+            analysisDate: string;
+            /** Datapoints */
+            dataPoints: number;
+            dateRange: components["schemas"]["DateRange"];
         };
         /**
          * FieldConstraints
@@ -1471,6 +2147,27 @@ export interface components {
             lastUpdated: string;
         };
         /**
+         * FutureReturnPoint
+         * @description 将来リターンの1データポイント
+         */
+        FutureReturnPoint: {
+            /** Date */
+            date: string;
+            /** Price */
+            price: number;
+            /** Changepercent */
+            changePercent: number;
+        };
+        /**
+         * FutureReturns
+         * @description 将来リターン（履歴モード用）
+         */
+        FutureReturns: {
+            day5?: components["schemas"]["FutureReturnPoint"] | null;
+            day20?: components["schemas"]["FutureReturnPoint"] | null;
+            day60?: components["schemas"]["FutureReturnPoint"] | null;
+        };
+        /**
          * GenerateResultItem
          * @description 生成結果アイテム
          */
@@ -1739,6 +2436,86 @@ export interface components {
             expected_impact: string;
         };
         /**
+         * IndexDataResponse
+         * @description 指数チャートデータレスポンス
+         */
+        IndexDataResponse: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Data */
+            data: components["schemas"]["IndexOHLCRecord"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
+        };
+        /**
+         * IndexInfo
+         * @description 指数マスタ情報
+         */
+        IndexInfo: {
+            /**
+             * Code
+             * @description 指数コード
+             */
+            code: string;
+            /**
+             * Name
+             * @description 指数名
+             */
+            name: string;
+            /**
+             * Nameenglish
+             * @description 指数名（英語）
+             */
+            nameEnglish?: string | null;
+            /**
+             * Category
+             * @description カテゴリ
+             */
+            category: string;
+            /**
+             * Datastartdate
+             * @description データ開始日
+             */
+            dataStartDate?: string | null;
+        };
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
+        IndexMatch: {
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
+            /** Rsquared */
+            rSquared: number;
+            /** Beta */
+            beta: number;
+        };
+        /**
+         * IndexOHLCRecord
+         * @description 指数 OHLC レコード
+         */
+        IndexOHLCRecord: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+        };
+        /**
          * IndicatorComputeRequest
          * @description インジケーター計算リクエスト
          */
@@ -1858,6 +2635,19 @@ export interface components {
             params?: {
                 [key: string]: unknown;
             };
+        };
+        /**
+         * IndicesListResponse
+         * @description 指数一覧レスポンス
+         */
+        IndicesListResponse: {
+            /** Indices */
+            indices: components["schemas"]["IndexInfo"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
         };
         /**
          * JobStatus
@@ -2204,6 +2994,25 @@ export interface components {
             saved_history_path?: string | null;
         };
         /**
+         * MarginFlowPressureData
+         * @description マージンフロープレッシャーデータ
+         */
+        MarginFlowPressureData: {
+            /** Date */
+            date: string;
+            /**
+             * Flowpressure
+             * @description Delta(LongVol - ShrtVol) / N-day avg volume
+             */
+            flowPressure: number;
+            /** Currentnetmargin */
+            currentNetMargin: number;
+            /** Previousnetmargin */
+            previousNetMargin?: number | null;
+            /** Avgvolume */
+            avgVolume: number;
+        };
+        /**
          * MarginIndicatorRequest
          * @description 信用指標リクエスト
          */
@@ -2260,6 +3069,186 @@ export interface components {
                     [key: string]: unknown;
                 }[];
             };
+        };
+        /**
+         * MarginLongPressureData
+         * @description マージンロングプレッシャーデータ
+         */
+        MarginLongPressureData: {
+            /** Date */
+            date: string;
+            /**
+             * Pressure
+             * @description (LongVol - ShrtVol) / N-day avg volume
+             */
+            pressure: number;
+            /** Longvol */
+            longVol: number;
+            /** Shortvol */
+            shortVol: number;
+            /** Avgvolume */
+            avgVolume: number;
+        };
+        /**
+         * MarginPressureIndicatorsResponse
+         * @description マージンプレッシャー指標レスポンス
+         */
+        MarginPressureIndicatorsResponse: {
+            /** Symbol */
+            symbol: string;
+            /**
+             * Averageperiod
+             * @description Rolling average period in days
+             */
+            averagePeriod: number;
+            /** Longpressure */
+            longPressure: components["schemas"]["MarginLongPressureData"][];
+            /** Flowpressure */
+            flowPressure: components["schemas"]["MarginFlowPressureData"][];
+            /** Turnoverdays */
+            turnoverDays: components["schemas"]["MarginTurnoverDaysData"][];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
+         * MarginTurnoverDaysData
+         * @description マージン回転日数データ
+         */
+        MarginTurnoverDaysData: {
+            /** Date */
+            date: string;
+            /**
+             * Turnoverdays
+             * @description LongVol / N-day avg volume
+             */
+            turnoverDays: number;
+            /** Longvol */
+            longVol: number;
+            /** Avgvolume */
+            avgVolume: number;
+        };
+        /**
+         * MarginVolumeRatioData
+         * @description マージン出来高比率データ
+         */
+        MarginVolumeRatioData: {
+            /** Date */
+            date: string;
+            /** Ratio */
+            ratio: number;
+            /** Weeklyavgvolume */
+            weeklyAvgVolume: number;
+            /** Marginvolume */
+            marginVolume: number;
+        };
+        /**
+         * MarginVolumeRatioResponse
+         * @description マージン出来高比率レスポンス
+         */
+        MarginVolumeRatioResponse: {
+            /** Symbol */
+            symbol: string;
+            /** Longratio */
+            longRatio: components["schemas"]["MarginVolumeRatioData"][];
+            /** Shortratio */
+            shortRatio: components["schemas"]["MarginVolumeRatioData"][];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
+         * MarketOHLCRecord
+         * @description OHLC レコード（出来高なし、TOPIX 用）
+         */
+        MarketOHLCRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+        };
+        /**
+         * MarketOHLCVRecord
+         * @description OHLCV レコード（出来高あり）
+         */
+        MarketOHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /** Volume */
+            volume: number;
+        };
+        /**
+         * MarketRankingResponse
+         * @description マーケットランキングレスポンス
+         */
+        MarketRankingResponse: {
+            /** Date */
+            date: string;
+            /** Markets */
+            markets: string[];
+            /** Lookbackdays */
+            lookbackDays: number;
+            /** Perioddays */
+            periodDays: number;
+            rankings: components["schemas"]["Rankings"];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
+         * MarketScreeningResponse
+         * @description マーケットスクリーニングレスポンス
+         */
+        MarketScreeningResponse: {
+            /** Results */
+            results: components["schemas"]["ScreeningResultItem"][];
+            summary: components["schemas"]["ScreeningSummary"];
+            /** Markets */
+            markets: string[];
+            /** Recentdays */
+            recentDays: number;
+            /** Referencedate */
+            referenceDate?: string | null;
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
+         * MarketStockData
+         * @description 市場別銘柄データ（スクリーニング用バルクレスポンス）
+         */
+        MarketStockData: {
+            /**
+             * Code
+             * @description 銘柄コード
+             */
+            code: string;
+            /**
+             * Company Name
+             * @description 会社名（日本語）
+             */
+            company_name: string;
+            /**
+             * Data
+             * @description OHLCV データ配列
+             */
+            data: components["schemas"]["MarketOHLCVRecord"][];
         };
         /**
          * OHLCVRecord
@@ -2632,6 +3621,240 @@ export interface components {
             };
         };
         /**
+         * ROEMetadata
+         * @description ROE 計算メタデータ
+         */
+        ROEMetadata: {
+            /** Code */
+            code: string;
+            /**
+             * Periodtype
+             * @description Period type (FY, Q1, Q2, Q3)
+             */
+            periodType: string;
+            /** Periodend */
+            periodEnd: string;
+            /** Isconsolidated */
+            isConsolidated: boolean;
+            /** Accountingstandard */
+            accountingStandard?: string | null;
+            /** Isannualized */
+            isAnnualized?: boolean | null;
+        };
+        /**
+         * ROEResponse
+         * @description ROE 分析レスポンス
+         */
+        ROEResponse: {
+            /** Results */
+            results: components["schemas"]["ROEResultItem"][];
+            summary: components["schemas"]["ROESummary"];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
+         * ROEResultItem
+         * @description ROE 計算結果
+         */
+        ROEResultItem: {
+            /**
+             * Roe
+             * @description Return on Equity percentage
+             */
+            roe: number;
+            /**
+             * Netprofit
+             * @description Net profit in millions of yen
+             */
+            netProfit: number;
+            /**
+             * Equity
+             * @description Shareholders' equity in millions of yen
+             */
+            equity: number;
+            metadata: components["schemas"]["ROEMetadata"];
+        };
+        /**
+         * ROESummary
+         * @description ROE 集計統計
+         */
+        ROESummary: {
+            /** Averageroe */
+            averageROE: number;
+            /** Maxroe */
+            maxROE: number;
+            /** Minroe */
+            minROE: number;
+            /** Totalcompanies */
+            totalCompanies: number;
+        };
+        /**
+         * RangeBreakDetails
+         * @description レンジブレイク詳細
+         */
+        RangeBreakDetails: {
+            /** Breakdate */
+            breakDate: string;
+            /** Currenthigh */
+            currentHigh: number;
+            /** Maxhighinlookback */
+            maxHighInLookback: number;
+            /** Breakpercentage */
+            breakPercentage: number;
+            /** Volumeratio */
+            volumeRatio: number;
+            /** Avgvolume20Days */
+            avgVolume20Days: number;
+            /** Avgvolume100Days */
+            avgVolume100Days: number;
+        };
+        /**
+         * RankingItem
+         * @description ランキング項目
+         */
+        RankingItem: {
+            /** Rank */
+            rank: number;
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Marketcode */
+            marketCode: string;
+            /** Sector33Name */
+            sector33Name: string;
+            /** Currentprice */
+            currentPrice: number;
+            /** Volume */
+            volume: number;
+            /** Tradingvalue */
+            tradingValue?: number | null;
+            /** Tradingvalueaverage */
+            tradingValueAverage?: number | null;
+            /** Previousprice */
+            previousPrice?: number | null;
+            /** Baseprice */
+            basePrice?: number | null;
+            /** Changeamount */
+            changeAmount?: number | null;
+            /** Changepercentage */
+            changePercentage?: number | null;
+            /** Lookbackdays */
+            lookbackDays?: number | null;
+        };
+        /**
+         * Rankings
+         * @description 5種類のランキング
+         */
+        Rankings: {
+            /** Tradingvalue */
+            tradingValue?: components["schemas"]["RankingItem"][];
+            /** Gainers */
+            gainers?: components["schemas"]["RankingItem"][];
+            /** Losers */
+            losers?: components["schemas"]["RankingItem"][];
+            /** Periodhigh */
+            periodHigh?: components["schemas"]["RankingItem"][];
+            /** Periodlow */
+            periodLow?: components["schemas"]["RankingItem"][];
+        };
+        /**
+         * RawStatementItem
+         * @description 財務諸表データ（完全版）
+         */
+        RawStatementItem: {
+            /** Discdate */
+            DiscDate: string;
+            /** Code */
+            Code: string;
+            /** Doctype */
+            DocType?: string | null;
+            /** Curpertype */
+            CurPerType: string;
+            /** Curperst */
+            CurPerSt: string;
+            /** Curperen */
+            CurPerEn: string;
+            /** Curfyst */
+            CurFYSt?: string | null;
+            /** Curfyen */
+            CurFYEn?: string | null;
+            /** Nxtfyst */
+            NxtFYSt?: string | null;
+            /** Nxtfyen */
+            NxtFYEn?: string | null;
+            /** Sales */
+            Sales?: number | null;
+            /** Op */
+            OP?: number | null;
+            /** Odp */
+            OdP?: number | null;
+            /** Np */
+            NP?: number | null;
+            /** Eps */
+            EPS?: number | null;
+            /** Deps */
+            DEPS?: number | null;
+            /** Ta */
+            TA?: number | null;
+            /** Eq */
+            Eq?: number | null;
+            /** Eqar */
+            EqAR?: number | null;
+            /** Bps */
+            BPS?: number | null;
+            /** Cfo */
+            CFO?: number | null;
+            /** Cfi */
+            CFI?: number | null;
+            /** Cff */
+            CFF?: number | null;
+            /** Casheq */
+            CashEq?: number | null;
+            /** Shoutfy */
+            ShOutFY?: number | null;
+            /** Trshfy */
+            TrShFY?: number | null;
+            /** Avgsh */
+            AvgSh?: number | null;
+            /** Feps */
+            FEPS?: number | null;
+            /** Nxfeps */
+            NxFEPS?: number | null;
+            /** Ncsales */
+            NCSales?: number | null;
+            /** Ncop */
+            NCOP?: number | null;
+            /** Ncodp */
+            NCOdP?: number | null;
+            /** Ncnp */
+            NCNP?: number | null;
+            /** Nceps */
+            NCEPS?: number | null;
+            /** Ncta */
+            NCTA?: number | null;
+            /** Nceq */
+            NCEq?: number | null;
+            /** Nceqar */
+            NCEqAR?: number | null;
+            /** Ncbps */
+            NCBPS?: number | null;
+            /** Fnceps */
+            FNCEPS?: number | null;
+            /** Nxfnceps */
+            NxFNCEPS?: number | null;
+        };
+        /**
+         * RawStatementsResponse
+         * @description 財務諸表レスポンス（完全版）
+         */
+        RawStatementsResponse: {
+            /** Data */
+            data: components["schemas"]["RawStatementItem"][];
+            /** Pagination Key */
+            pagination_key?: string | null;
+        };
+        /**
          * RelativeOHLCOptions
          * @description 相対OHLCオプション
          */
@@ -2643,6 +3866,109 @@ export interface components {
              * @enum {string}
              */
             handle_zero_division: "skip" | "zero" | "null";
+        };
+        /**
+         * ScreeningDetails
+         * @description スクリーニング詳細
+         */
+        ScreeningDetails: {
+            rangeBreak?: components["schemas"]["RangeBreakDetails"] | null;
+        };
+        /**
+         * ScreeningResultItem
+         * @description スクリーニング結果項目
+         */
+        ScreeningResultItem: {
+            /** Stockcode */
+            stockCode: string;
+            /** Companyname */
+            companyName: string;
+            /** Scalecategory */
+            scaleCategory?: string | null;
+            /** Sector33Name */
+            sector33Name?: string | null;
+            /** Screeningtype */
+            screeningType: string;
+            /** Matcheddate */
+            matchedDate: string;
+            details: components["schemas"]["ScreeningDetails"];
+            futureReturns?: components["schemas"]["FutureReturns"] | null;
+        };
+        /**
+         * ScreeningSummary
+         * @description スクリーニングサマリー
+         */
+        ScreeningSummary: {
+            /** Totalstocksscreened */
+            totalStocksScreened: number;
+            /** Matchcount */
+            matchCount: number;
+            /**
+             * Skippedcount
+             * @default 0
+             */
+            skippedCount: number;
+            /** Byscreeningtype */
+            byScreeningType?: {
+                [key: string]: number;
+            };
+        };
+        /**
+         * SectorStockItem
+         * @description セクター別銘柄アイテム
+         */
+        SectorStockItem: {
+            /** Rank */
+            rank: number;
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Marketcode */
+            marketCode: string;
+            /** Sector33Name */
+            sector33Name: string;
+            /** Currentprice */
+            currentPrice: number;
+            /** Volume */
+            volume: number;
+            /** Tradingvalue */
+            tradingValue?: number | null;
+            /** Tradingvalueaverage */
+            tradingValueAverage?: number | null;
+            /** Baseprice */
+            basePrice?: number | null;
+            /** Changeamount */
+            changeAmount?: number | null;
+            /** Changepercentage */
+            changePercentage?: number | null;
+            /** Lookbackdays */
+            lookbackDays?: number | null;
+        };
+        /**
+         * SectorStocksResponse
+         * @description セクター別銘柄レスポンス
+         */
+        SectorStocksResponse: {
+            /** Sector33Name */
+            sector33Name?: string | null;
+            /** Sector17Name */
+            sector17Name?: string | null;
+            /** Markets */
+            markets: string[];
+            /** Lookbackdays */
+            lookbackDays: number;
+            /** Sortby */
+            sortBy: string;
+            /** Sortorder */
+            sortOrder: string;
+            /** Stocks */
+            stocks: components["schemas"]["SectorStockItem"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
         };
         /**
          * SignalCategorySchema
@@ -2830,6 +4156,187 @@ export interface components {
              * @enum {string}
              */
             mode: "entry" | "exit";
+        };
+        /**
+         * StatementItem
+         * @description 財務諸表データ（EPS サブセット）
+         */
+        StatementItem: {
+            /** Discdate */
+            DiscDate: string;
+            /** Code */
+            Code: string;
+            /** Curpertype */
+            CurPerType: string;
+            /** Curperst */
+            CurPerSt: string;
+            /** Curperen */
+            CurPerEn: string;
+            /** Eps */
+            EPS?: number | null;
+            /** Feps */
+            FEPS?: number | null;
+            /** Nxfeps */
+            NxFEPS?: number | null;
+            /** Nceps */
+            NCEPS?: number | null;
+            /** Fnceps */
+            FNCEPS?: number | null;
+            /** Nxfnceps */
+            NxFNCEPS?: number | null;
+        };
+        /**
+         * StatementsResponse
+         * @description 財務諸表レスポンス（EPS サブセット）
+         */
+        StatementsResponse: {
+            /** Data */
+            data: components["schemas"]["StatementItem"][];
+            /** Pagination Key */
+            pagination_key?: string | null;
+        };
+        /**
+         * StockDataPoint
+         * @description 銘柄チャートデータポイント
+         */
+        StockDataPoint: {
+            /** Time */
+            time: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /**
+             * Volume
+             * @default 0
+             */
+            volume: number;
+        };
+        /**
+         * StockDataResponse
+         * @description 銘柄チャートデータレスポンス
+         */
+        StockDataResponse: {
+            /** Symbol */
+            symbol: string;
+            /**
+             * Companyname
+             * @default
+             */
+            companyName: string;
+            /** Timeframe */
+            timeframe: string;
+            /** Data */
+            data: components["schemas"]["StockDataPoint"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
+        };
+        /**
+         * StockInfo
+         * @description 銘柄情報（単一銘柄）
+         */
+        StockInfo: {
+            /**
+             * Code
+             * @description 銘柄コード (5桁)
+             */
+            code: string;
+            /**
+             * Companyname
+             * @description 会社名（日本語）
+             */
+            companyName: string;
+            /**
+             * Companynameenglish
+             * @description 会社名（英語）
+             * @default
+             */
+            companyNameEnglish: string;
+            /**
+             * Marketcode
+             * @description 市場コード
+             * @default
+             */
+            marketCode: string;
+            /**
+             * Marketname
+             * @description 市場名
+             * @default
+             */
+            marketName: string;
+            /**
+             * Sector17Code
+             * @description 17業種コード
+             * @default
+             */
+            sector17Code: string;
+            /**
+             * Sector17Name
+             * @description 17業種名
+             * @default
+             */
+            sector17Name: string;
+            /**
+             * Sector33Code
+             * @description 33業種コード
+             * @default
+             */
+            sector33Code: string;
+            /**
+             * Sector33Name
+             * @description 33業種名
+             * @default
+             */
+            sector33Name: string;
+            /**
+             * Scalecategory
+             * @description 規模区分
+             * @default
+             */
+            scaleCategory: string;
+            /**
+             * Listeddate
+             * @description 上場日
+             * @default
+             */
+            listedDate: string;
+        };
+        /**
+         * StockSearchResponse
+         * @description 銘柄検索レスポンス
+         */
+        StockSearchResponse: {
+            /** Query */
+            query: string;
+            /** Results */
+            results: components["schemas"]["StockSearchResultItem"][];
+            /** Count */
+            count: number;
+        };
+        /**
+         * StockSearchResultItem
+         * @description 銘柄検索結果アイテム
+         */
+        StockSearchResultItem: {
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Companynameenglish */
+            companyNameEnglish?: string | null;
+            /** Marketcode */
+            marketCode: string;
+            /** Marketname */
+            marketName: string;
+            /** Sector33Name */
+            sector33Name: string;
         };
         /**
          * StrategyDeleteResponse
@@ -3071,6 +4578,64 @@ export interface components {
              */
             warnings?: string[];
         };
+        /**
+         * TopixDataPoint
+         * @description TOPIX データポイント
+         */
+        TopixDataPoint: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /**
+             * Volume
+             * @default 0
+             */
+            volume: number;
+        };
+        /**
+         * TopixDataResponse
+         * @description TOPIX データレスポンス
+         */
+        TopixDataResponse: {
+            /** Topix */
+            topix: components["schemas"]["TopixDataPoint"][];
+            /**
+             * Lastupdated
+             * @description 最終更新日時 (ISO 8601)
+             */
+            lastUpdated: string;
+        };
+        /**
+         * TopixRawItem
+         * @description TOPIX 生データポイント
+         */
+        TopixRawItem: {
+            /** Date */
+            Date: string;
+            /** Open */
+            Open?: number | null;
+            /** High */
+            High?: number | null;
+            /** Low */
+            Low?: number | null;
+            /** Close */
+            Close?: number | null;
+        };
+        /**
+         * TopixRawResponse
+         * @description TOPIX 生データレスポンス
+         */
+        TopixRawResponse: {
+            /** Topix */
+            topix: components["schemas"]["TopixRawItem"][];
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -3079,6 +4644,61 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /**
+         * ErrorDetail
+         * @description バリデーションエラー詳細
+         */
+        ErrorDetail: {
+            /**
+             * Field
+             * @description エラーフィールド名
+             */
+            field: string;
+            /**
+             * Message
+             * @description エラーメッセージ
+             */
+            message: string;
+        };
+        /**
+         * ErrorResponse
+         * @description 統一エラーレスポンス（Hono ErrorResponseSchema 互換）
+         */
+        ErrorResponse: {
+            /**
+             * Status
+             * @description ステータス
+             * @default error
+             * @constant
+             */
+            status: "error";
+            /**
+             * Error
+             * @description HTTP ステータステキスト（例: 'Not Found'）
+             */
+            error: string;
+            /**
+             * Message
+             * @description 詳細エラーメッセージ
+             */
+            message: string;
+            /**
+             * Details
+             * @description バリデーションエラー詳細
+             * @default null
+             */
+            details: components["schemas"]["ErrorDetail"][] | null;
+            /**
+             * Timestamp
+             * @description ISO 8601 タイムスタンプ
+             */
+            timestamp: string;
+            /**
+             * Correlationid
+             * @description リクエスト追跡用 UUID
+             */
+            correlationId: string;
         };
     };
     responses: never;
@@ -3107,6 +4727,80 @@ export interface operations {
                     "application/json": components["schemas"]["HealthResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    health_check_alias_health_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HealthResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     list_strategies_api_strategies_get: {
@@ -3125,6 +4819,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StrategyListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3149,6 +4870,24 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyDetailResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3156,6 +4895,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3184,6 +4932,24 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyUpdateResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3191,6 +4957,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3215,6 +4990,24 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyDeleteResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3222,6 +5015,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3250,6 +5052,24 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyValidationResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3257,6 +5077,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3285,6 +5114,24 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyDuplicateResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3292,6 +5139,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3320,6 +5176,24 @@ export interface operations {
                     "application/json": components["schemas"]["StrategyRenameResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3327,6 +5201,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3347,6 +5230,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["DefaultConfigResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3373,6 +5283,24 @@ export interface operations {
                     "application/json": components["schemas"]["DefaultConfigUpdateResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3380,6 +5308,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3406,6 +5343,24 @@ export interface operations {
                     "application/json": components["schemas"]["BacktestJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3413,6 +5368,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3437,6 +5401,24 @@ export interface operations {
                     "application/json": components["schemas"]["BacktestJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3444,6 +5426,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3468,6 +5459,24 @@ export interface operations {
                     "application/json": components["schemas"]["BacktestJobResponse"][];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3475,6 +5484,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3499,6 +5517,24 @@ export interface operations {
                     "application/json": components["schemas"]["BacktestJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3506,6 +5542,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3532,6 +5577,24 @@ export interface operations {
                     "application/json": components["schemas"]["BacktestResultResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3539,6 +5602,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3564,6 +5636,24 @@ export interface operations {
                     "application/json": components["schemas"]["HtmlFileListResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3571,6 +5661,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3596,6 +5695,24 @@ export interface operations {
                     "application/json": components["schemas"]["HtmlFileContentResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3603,6 +5720,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3628,6 +5754,24 @@ export interface operations {
                     "application/json": components["schemas"]["HtmlFileDeleteResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3635,6 +5779,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3664,6 +5817,24 @@ export interface operations {
                     "application/json": components["schemas"]["HtmlFileRenameResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3671,6 +5842,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3695,6 +5875,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3702,6 +5900,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3728,6 +5935,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3735,6 +5960,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3759,6 +5993,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3766,6 +6018,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3790,6 +6051,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3797,6 +6076,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3817,6 +6105,33 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["OptimizationGridListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3841,6 +6156,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationGridConfig"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3848,6 +6181,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3876,6 +6218,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationGridSaveResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3883,6 +6243,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3907,6 +6276,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationGridDeleteResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3914,6 +6301,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3939,6 +6335,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationHtmlFileListResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3946,6 +6360,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -3971,6 +6394,24 @@ export interface operations {
                     "application/json": components["schemas"]["OptimizationHtmlFileContentResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -3978,6 +6419,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4003,6 +6453,24 @@ export interface operations {
                     "application/json": components["schemas"]["HtmlFileDeleteResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4010,6 +6478,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4039,6 +6516,24 @@ export interface operations {
                     "application/json": components["schemas"]["HtmlFileRenameResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4046,6 +6541,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4068,6 +6572,33 @@ export interface operations {
                     "application/json": components["schemas"]["SignalReferenceResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
         };
     };
     get_signal_schema_api_signals_schema_get: {
@@ -4088,6 +6619,33 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4114,6 +6672,24 @@ export interface operations {
                     "application/json": components["schemas"]["SignalComputeResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4121,6 +6697,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4147,6 +6732,24 @@ export interface operations {
                     "application/json": components["schemas"]["LabJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4154,6 +6757,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4180,6 +6792,24 @@ export interface operations {
                     "application/json": components["schemas"]["LabJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4187,6 +6817,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4213,6 +6852,24 @@ export interface operations {
                     "application/json": components["schemas"]["LabJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4220,6 +6877,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4246,6 +6912,24 @@ export interface operations {
                     "application/json": components["schemas"]["LabJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4253,6 +6937,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4277,6 +6970,24 @@ export interface operations {
                     "application/json": components["schemas"]["LabJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4284,6 +6995,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4308,6 +7028,24 @@ export interface operations {
                     "application/json": unknown;
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4315,6 +7053,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4339,6 +7086,24 @@ export interface operations {
                     "application/json": components["schemas"]["LabJobResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4346,6 +7111,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4372,6 +7146,24 @@ export interface operations {
                     "application/json": components["schemas"]["IndicatorComputeResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4379,6 +7171,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4405,6 +7206,24 @@ export interface operations {
                     "application/json": components["schemas"]["MarginIndicatorResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4412,6 +7231,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4438,6 +7266,24 @@ export interface operations {
                     "application/json": components["schemas"]["OHLCVResampleResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4445,6 +7291,15 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
@@ -4471,6 +7326,24 @@ export interface operations {
                     "application/json": components["schemas"]["FundamentalsComputeResponse"];
                 };
             };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
             /** @description Validation Error */
             422: {
                 headers: {
@@ -4478,6 +7351,1480 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_auth_status_api_jquants_auth_status_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AuthStatusResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_daily_quotes_api_jquants_daily_quotes_get: {
+        parameters: {
+            query: {
+                /** @description Stock code */
+                code: string;
+                /** @description Start date (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description End date (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description Specific date (YYYY-MM-DD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DailyQuotesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_indices_api_jquants_indices_get: {
+        parameters: {
+            query?: {
+                /** @description Index code (e.g., 0000 for Nikkei 225) */
+                code?: string | null;
+                /** @description Start date (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description End date (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description Specific date (YYYY-MM-DD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiIndicesResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_listed_info_api_jquants_listed_info_get: {
+        parameters: {
+            query?: {
+                /** @description Stock code (4 characters) */
+                code?: string | null;
+                /** @description Date (YYYY-MM-DD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiListedInfoResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_margin_interest_api_jquants_stocks__symbol__margin_interest_get: {
+        parameters: {
+            query?: {
+                /** @description Start date (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description End date (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description Specific date (YYYY-MM-DD) */
+                date?: string | null;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ApiMarginInterestResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_statements_api_jquants_statements_get: {
+        parameters: {
+            query: {
+                /** @description Stock code (4-5 digits) */
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_statements_raw_api_jquants_statements_raw_get: {
+        parameters: {
+            query: {
+                /** @description Stock code (4-5 digits) */
+                code: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RawStatementsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_topix_api_jquants_topix_get: {
+        parameters: {
+            query?: {
+                /** @description Start date (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description End date (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description Specific date (YYYY-MM-DD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopixRawResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_roe_api_analytics_roe_get: {
+        parameters: {
+            query?: {
+                /** @description Stock codes (comma-separated) */
+                code?: string | null;
+                /** @description Specific date (YYYYMMDD or YYYY-MM-DD) */
+                date?: string | null;
+                /** @description Annualize quarterly data */
+                annualize?: string;
+                /** @description Prefer consolidated data */
+                preferConsolidated?: string;
+                /** @description Minimum equity threshold (millions) */
+                minEquity?: string;
+                /** @description Sort by (roe, code, date) */
+                sortBy?: string;
+                /** @description Max results */
+                limit?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ROEResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_margin_pressure_api_analytics_stocks__symbol__margin_pressure_get: {
+        parameters: {
+            query?: {
+                /** @description Rolling average period in days */
+                period?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginPressureIndicatorsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_margin_ratio_api_analytics_stocks__symbol__margin_ratio_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginVolumeRatioResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_all_stocks_api_market_stocks_get: {
+        parameters: {
+            query?: {
+                /** @description 市場コード */
+                market?: "prime" | "standard";
+                /** @description 履歴日数 */
+                history_days?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketStockData"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_stock_info_api_market_stocks__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockInfo"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_stock_ohlcv_api_market_stocks__code__ohlcv_get: {
+        parameters: {
+            query?: {
+                /** @description 開始日 (YYYY-MM-DD) */
+                start_date?: string | null;
+                /** @description 終了日 (YYYY-MM-DD) */
+                end_date?: string | null;
+            };
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketOHLCVRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_topix_api_market_topix_get: {
+        parameters: {
+            query?: {
+                /** @description 開始日 (YYYY-MM-DD) */
+                start_date?: string | null;
+                /** @description 終了日 (YYYY-MM-DD) */
+                end_date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketOHLCRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_indices_list_api_chart_indices_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndicesListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_topix_data_api_chart_indices_topix_get: {
+        parameters: {
+            query?: {
+                /** @description 開始日 (YYYY-MM-DD) */
+                from?: string | null;
+                /** @description 終了日 (YYYY-MM-DD) */
+                to?: string | null;
+                /** @description 特定日 (YYYY-MM-DD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TopixDataResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_index_data_api_chart_indices__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexDataResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    search_stocks_api_chart_stocks_search_get: {
+        parameters: {
+            query: {
+                /** @description 検索クエリ */
+                q: string;
+                /** @description 最大件数 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockSearchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_stock_data_api_chart_stocks__symbol__get: {
+        parameters: {
+            query?: {
+                timeframe?: "daily" | "weekly" | "monthly";
+                adjusted?: "true" | "false";
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockDataResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sector_stocks_api_analytics_sector_stocks_get: {
+        parameters: {
+            query?: {
+                /** @description 33業種名 */
+                sector33Name?: string | null;
+                /** @description 17業種名 */
+                sector17Name?: string | null;
+                /** @description 市場フィルタ */
+                markets?: string;
+                /** @description 振り返り日数 */
+                lookbackDays?: number;
+                sortBy?: "tradingValue" | "changePercentage" | "code";
+                sortOrder?: "asc" | "desc";
+                /** @description 最大件数 */
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SectorStocksResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_ranking_api_analytics_ranking_get: {
+        parameters: {
+            query?: {
+                date?: string | null;
+                limit?: number;
+                markets?: string;
+                lookbackDays?: number;
+                periodDays?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketRankingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_factor_regression_api_analytics_factor_regression__symbol__get: {
+        parameters: {
+            query?: {
+                lookbackDays?: number;
+            };
+            header?: never;
+            path: {
+                symbol: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FactorRegressionResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_screening_api_analytics_screening_get: {
+        parameters: {
+            query?: {
+                markets?: string;
+                rangeBreakFast?: boolean;
+                rangeBreakSlow?: boolean;
+                recentDays?: number;
+                date?: string | null;
+                minBreakPercentage?: number | null;
+                minVolumeRatio?: number | null;
+                sortBy?: string;
+                order?: string;
+                limit?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketScreeningResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
                 };
             };
         };
