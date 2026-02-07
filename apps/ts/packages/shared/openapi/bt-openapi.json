@@ -5906,10 +5906,2507 @@
           }
         }
       }
+    },
+    "/api/db/stats": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Market database statistics",
+        "operationId": "get_db_stats_api_db_stats_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketStatsResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/validate": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Market database validation",
+        "operationId": "get_db_validate_api_db_validate_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketValidationResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/sync": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Start database sync job",
+        "operationId": "start_sync_job_api_db_sync_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SyncRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CreateSyncJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/sync/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Get sync job status",
+        "operationId": "get_sync_job_api_db_sync_jobs__jobId__get",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jobid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Cancel sync job",
+        "operationId": "cancel_sync_job_api_db_sync_jobs__jobId__delete",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jobid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/db/stocks/refresh": {
+      "post": {
+        "tags": [
+          "Database"
+        ],
+        "summary": "Refresh stock data for specific codes",
+        "operationId": "refresh_stocks_api_db_stocks_refresh_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RefreshRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RefreshResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/stocks": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Dataset stock list with record counts",
+        "operationId": "get_dataset_stocks_api_dataset__name__stocks_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "min_records",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 100,
+              "title": "Min Records"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StockListItem"
+                  },
+                  "title": "Response Get Dataset Stocks Api Dataset  Name  Stocks Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/stocks/ohlcv/batch": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Batch OHLCV data for multiple stocks",
+        "operationId": "get_dataset_ohlcv_batch_api_dataset__name__stocks_ohlcv_batch_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "codes",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated stock codes (max 100)",
+              "title": "Codes"
+            },
+            "description": "Comma-separated stock codes (max 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/OHLCVRecord"
+                    }
+                  },
+                  "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/stocks/{code}/ohlcv": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "OHLCV data for a single stock",
+        "operationId": "get_dataset_stock_ohlcv_api_dataset__name__stocks__code__ohlcv_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OHLCVRecord"
+                  },
+                  "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/topix": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "TOPIX data",
+        "operationId": "get_dataset_topix_api_dataset__name__topix_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OHLCRecord"
+                  },
+                  "title": "Response Get Dataset Topix Api Dataset  Name  Topix Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/indices": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Available index list with record counts",
+        "operationId": "get_dataset_indices_api_dataset__name__indices_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "min_records",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 100,
+              "title": "Min Records"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/IndexListItem"
+                  },
+                  "title": "Response Get Dataset Indices Api Dataset  Name  Indices Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/indices/{code}": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Index OHLC data",
+        "operationId": "get_dataset_index_data_api_dataset__name__indices__code__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/OHLCRecord"
+                  },
+                  "title": "Response Get Dataset Index Data Api Dataset  Name  Indices  Code  Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/margin/batch": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Batch margin data",
+        "operationId": "get_dataset_margin_batch_api_dataset__name__margin_batch_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "codes",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated stock codes (max 100)",
+              "title": "Codes"
+            },
+            "description": "Comma-separated stock codes (max 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/MarginRecord"
+                    }
+                  },
+                  "title": "Response Get Dataset Margin Batch Api Dataset  Name  Margin Batch Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/margin/{code}": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Margin data for a single stock",
+        "operationId": "get_dataset_margin_api_dataset__name__margin__code__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          },
+          {
+            "name": "start_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Date"
+            }
+          },
+          {
+            "name": "end_date",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarginRecord"
+                  },
+                  "title": "Response Get Dataset Margin Api Dataset  Name  Margin  Code  Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/margin": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Margin data summary list",
+        "operationId": "get_dataset_margin_list_api_dataset__name__margin_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "min_records",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 0,
+              "default": 10,
+              "title": "Min Records"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/MarginListItem"
+                  },
+                  "title": "Response Get Dataset Margin List Api Dataset  Name  Margin Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/statements/batch": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Batch financial statements",
+        "operationId": "get_dataset_statements_batch_api_dataset__name__statements_batch_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "codes",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "description": "Comma-separated stock codes (max 100)",
+              "title": "Codes"
+            },
+            "description": "Comma-separated stock codes (max 100)"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "$ref": "#/components/schemas/StatementRecord"
+                    }
+                  },
+                  "title": "Response Get Dataset Statements Batch Api Dataset  Name  Statements Batch Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/statements/{code}": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Financial statements for a single stock",
+        "operationId": "get_dataset_statements_api_dataset__name__statements__code__get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StatementRecord"
+                  },
+                  "title": "Response Get Dataset Statements Api Dataset  Name  Statements  Code  Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/sectors": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Sector list with stock counts",
+        "operationId": "get_dataset_sectors_api_dataset__name__sectors_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/SectorWithCount"
+                  },
+                  "title": "Response Get Dataset Sectors Api Dataset  Name  Sectors Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/sectors/mapping": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Sector code to name mapping",
+        "operationId": "get_dataset_sector_mapping_api_dataset__name__sectors_mapping_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Dataset Sector Mapping Api Dataset  Name  Sectors Mapping Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/sectors/stock-mapping": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Sector name to stock codes mapping",
+        "operationId": "get_dataset_sector_stock_mapping_api_dataset__name__sectors_stock_mapping_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  },
+                  "title": "Response Get Dataset Sector Stock Mapping Api Dataset  Name  Sectors Stock Mapping Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/sectors/{sectorName}/stocks": {
+      "get": {
+        "tags": [
+          "Dataset Data"
+        ],
+        "summary": "Stock codes in a sector",
+        "operationId": "get_dataset_sector_stocks_api_dataset__name__sectors__sectorName__stocks_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "sectorName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Sectorname"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Get Dataset Sector Stocks Api Dataset  Name  Sectors  Sectorname  Stocks Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset": {
+      "get": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "List available datasets",
+        "operationId": "list_datasets_api_dataset_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/DatasetListItem"
+                  },
+                  "type": "array",
+                  "title": "Response List Datasets Api Dataset Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Create a new dataset (background job)",
+        "operationId": "create_dataset_api_dataset_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/info": {
+      "get": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Dataset detailed information",
+        "operationId": "get_dataset_info_api_dataset__name__info_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetInfoResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/sample": {
+      "get": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Random sample of stock codes",
+        "operationId": "get_dataset_sample_api_dataset__name__sample_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "count",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 10,
+              "title": "Count"
+            }
+          },
+          {
+            "name": "seed",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Seed"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetSampleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}/search": {
+      "get": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Search stocks in dataset",
+        "operationId": "search_dataset_api_dataset__name__search_get",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "minLength": 1,
+              "description": "Search term",
+              "title": "Q"
+            },
+            "description": "Search term"
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 200,
+              "minimum": 1,
+              "default": 50,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetSearchResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/jobs/{jobId}": {
+      "get": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Get dataset build job status",
+        "operationId": "get_dataset_job_api_dataset_jobs__jobId__get",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jobid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Cancel dataset build job",
+        "operationId": "cancel_dataset_job_api_dataset_jobs__jobId__delete",
+        "parameters": [
+          {
+            "name": "jobId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Jobid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CancelJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/resume": {
+      "post": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Resume an incomplete dataset build",
+        "operationId": "resume_dataset_api_dataset_resume_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DatasetCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DatasetCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/dataset/{name}": {
+      "delete": {
+        "tags": [
+          "Dataset"
+        ],
+        "summary": "Delete a dataset",
+        "operationId": "delete_dataset_api_dataset__name__delete",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "additionalProperties": true,
+                  "title": "Response Delete Dataset Api Dataset  Name  Delete"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
     "schemas": {
+      "AdjustmentEvent": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "adjustmentFactor": {
+            "type": "number",
+            "title": "Adjustmentfactor"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "eventType": {
+            "type": "string",
+            "title": "Eventtype"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "date",
+          "adjustmentFactor",
+          "close",
+          "eventType"
+        ],
+        "title": "AdjustmentEvent"
+      },
       "ApiIndex": {
         "properties": {
           "date": {
@@ -6444,6 +8941,62 @@
         "title": "BacktestResultSummary",
         "description": "バックテスト結果サマリー"
       },
+      "CancelJobResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "jobId": {
+            "type": "string",
+            "title": "Jobid"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "jobId",
+          "message"
+        ],
+        "title": "CancelJobResponse"
+      },
+      "CreateSyncJobResponse": {
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "title": "Jobid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status",
+            "default": "pending"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "estimatedApiCalls": {
+            "type": "integer",
+            "title": "Estimatedapicalls"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message",
+            "default": "Sync job started"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobId",
+          "mode",
+          "estimatedApiCalls"
+        ],
+        "title": "CreateSyncJobResponse"
+      },
       "DailyQuoteItem": {
         "properties": {
           "Date": {
@@ -6696,24 +9249,406 @@
         "title": "DailyValuationDataPoint",
         "description": "Daily valuation data point."
       },
-      "DateRange": {
+      "DatasetCreateRequest": {
         "properties": {
-          "from": {
+          "name": {
             "type": "string",
-            "title": "From"
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Name",
+            "description": "Dataset filename (e.g. 'prime.db')"
           },
-          "to": {
+          "preset": {
             "type": "string",
-            "title": "To"
+            "title": "Preset",
+            "description": "Preset config name"
+          },
+          "overwrite": {
+            "type": "boolean",
+            "title": "Overwrite",
+            "description": "Overwrite existing dataset",
+            "default": false
+          },
+          "timeoutMinutes": {
+            "type": "integer",
+            "maximum": 120,
+            "minimum": 1,
+            "title": "Timeoutminutes",
+            "description": "Build timeout in minutes",
+            "default": 35
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "name",
+          "preset"
         ],
-        "title": "DateRange",
-        "description": "分析期間"
+        "title": "DatasetCreateRequest"
+      },
+      "DatasetCreateResponse": {
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "title": "Jobid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "preset": {
+            "type": "string",
+            "title": "Preset"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "estimatedTime": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimatedtime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobId",
+          "status",
+          "name",
+          "preset",
+          "message"
+        ],
+        "title": "DatasetCreateResponse"
+      },
+      "DatasetInfoResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path"
+          },
+          "fileSize": {
+            "type": "integer",
+            "title": "Filesize"
+          },
+          "lastModified": {
+            "type": "string",
+            "title": "Lastmodified"
+          },
+          "snapshot": {
+            "$ref": "#/components/schemas/DatasetSnapshot"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "fileSize",
+          "lastModified",
+          "snapshot"
+        ],
+        "title": "DatasetInfoResponse"
+      },
+      "DatasetJobResponse": {
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "title": "Jobid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "preset": {
+            "type": "string",
+            "title": "Preset"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress"
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetJobResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "title": "Startedat"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobId",
+          "status",
+          "preset",
+          "name",
+          "startedAt"
+        ],
+        "title": "DatasetJobResponse"
+      },
+      "DatasetJobResult": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "totalStocks": {
+            "type": "integer",
+            "title": "Totalstocks",
+            "default": 0
+          },
+          "processedStocks": {
+            "type": "integer",
+            "title": "Processedstocks",
+            "default": 0
+          },
+          "warnings": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Warnings"
+          },
+          "errors": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Errors"
+          },
+          "outputPath": {
+            "type": "string",
+            "title": "Outputpath",
+            "default": ""
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "DatasetJobResult"
+      },
+      "DatasetListItem": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name",
+            "description": "Dataset name (without .db)"
+          },
+          "path": {
+            "type": "string",
+            "title": "Path",
+            "description": "Full file path"
+          },
+          "fileSize": {
+            "type": "integer",
+            "title": "Filesize",
+            "description": "File size in bytes"
+          },
+          "lastModified": {
+            "type": "string",
+            "title": "Lastmodified",
+            "description": "Last modified ISO datetime"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "path",
+          "fileSize",
+          "lastModified"
+        ],
+        "title": "DatasetListItem"
+      },
+      "DatasetSampleResponse": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes",
+            "description": "Random sample of stock codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codes"
+        ],
+        "title": "DatasetSampleResponse"
+      },
+      "DatasetSearchResponse": {
+        "properties": {
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/SearchResultItem"
+            },
+            "type": "array",
+            "title": "Results"
+          }
+        },
+        "type": "object",
+        "required": [
+          "results"
+        ],
+        "title": "DatasetSearchResponse"
+      },
+      "DatasetSnapshot": {
+        "properties": {
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset",
+            "description": "Preset name used"
+          },
+          "totalStocks": {
+            "type": "integer",
+            "title": "Totalstocks",
+            "description": "Number of stocks"
+          },
+          "stocksWithQuotes": {
+            "type": "integer",
+            "title": "Stockswithquotes",
+            "description": "Stocks with OHLCV data"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "validation": {
+            "$ref": "#/components/schemas/DatasetValidation"
+          }
+        },
+        "type": "object",
+        "required": [
+          "totalStocks",
+          "stocksWithQuotes",
+          "validation"
+        ],
+        "title": "DatasetSnapshot"
+      },
+      "DatasetValidation": {
+        "properties": {
+          "isValid": {
+            "type": "boolean",
+            "title": "Isvalid"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "isValid"
+        ],
+        "title": "DatasetValidation"
+      },
+      "DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
       },
       "DefaultConfigResponse": {
         "properties": {
@@ -6848,7 +9783,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__factor_regression__DateRange"
           }
         },
         "type": "object",
@@ -8061,6 +10996,62 @@
         "title": "IndexInfo",
         "description": "指数マスタ情報"
       },
+      "IndexListItem": {
+        "properties": {
+          "indexCode": {
+            "type": "string",
+            "title": "Indexcode",
+            "description": "Index code"
+          },
+          "indexName": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Indexname",
+            "description": "Index/sector name"
+          },
+          "record_count": {
+            "type": "integer",
+            "title": "Record Count",
+            "description": "Number of records"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date",
+            "description": "First date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "Last date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "indexCode",
+          "record_count"
+        ],
+        "title": "IndexListItem"
+      },
       "IndexMatch": {
         "properties": {
           "indexCode": {
@@ -8355,6 +11346,62 @@
         ],
         "title": "IndicesListResponse",
         "description": "指数一覧レスポンス"
+      },
+      "IndicesStats": {
+        "properties": {
+          "masterCount": {
+            "type": "integer",
+            "title": "Mastercount",
+            "default": 0
+          },
+          "dataCount": {
+            "type": "integer",
+            "title": "Datacount",
+            "default": 0
+          },
+          "dateCount": {
+            "type": "integer",
+            "title": "Datecount",
+            "default": 0
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "byCategory": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Bycategory"
+          }
+        },
+        "type": "object",
+        "title": "IndicesStats"
+      },
+      "IntegrityIssue": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "count"
+        ],
+        "title": "IntegrityIssue"
       },
       "JobStatus": {
         "type": "string",
@@ -9078,6 +12125,70 @@
         "title": "MarginIndicatorResponse",
         "description": "信用指標レスポンス"
       },
+      "MarginListItem": {
+        "properties": {
+          "stockCode": {
+            "type": "string",
+            "title": "Stockcode",
+            "description": "Stock code (4-digit)"
+          },
+          "record_count": {
+            "type": "integer",
+            "title": "Record Count",
+            "description": "Number of margin records"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date"
+          },
+          "avg_long_margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Long Margin"
+          },
+          "avg_short_margin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Avg Short Margin"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stockCode",
+          "record_count"
+        ],
+        "title": "MarginListItem"
+      },
       "MarginLongPressureData": {
         "properties": {
           "date": {
@@ -9167,6 +12278,41 @@
         ],
         "title": "MarginPressureIndicatorsResponse",
         "description": "マージンプレッシャー指標レスポンス"
+      },
+      "MarginRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "longMarginVolume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Longmarginvolume"
+          },
+          "shortMarginVolume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Shortmarginvolume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date"
+        ],
+        "title": "MarginRecord"
       },
       "MarginTurnoverDaysData": {
         "properties": {
@@ -9436,6 +12582,56 @@
         "title": "MarketScreeningResponse",
         "description": "マーケットスクリーニングレスポンス"
       },
+      "MarketStatsResponse": {
+        "properties": {
+          "initialized": {
+            "type": "boolean",
+            "title": "Initialized"
+          },
+          "lastSync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastsync"
+          },
+          "databaseSize": {
+            "type": "integer",
+            "title": "Databasesize"
+          },
+          "topix": {
+            "$ref": "#/components/schemas/TopixStats"
+          },
+          "stocks": {
+            "$ref": "#/components/schemas/StockStats"
+          },
+          "stockData": {
+            "$ref": "#/components/schemas/StockDataStats"
+          },
+          "indices": {
+            "$ref": "#/components/schemas/IndicesStats"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "title": "Lastupdated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "initialized",
+          "databaseSize",
+          "topix",
+          "stocks",
+          "stockData",
+          "indices",
+          "lastUpdated"
+        ],
+        "title": "MarketStatsResponse"
+      },
       "MarketStockData": {
         "properties": {
           "code": {
@@ -9466,37 +12662,181 @@
         "title": "MarketStockData",
         "description": "市場別銘柄データ（スクリーニング用バルクレスポンス）"
       },
+      "MarketValidationResponse": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "healthy",
+              "warning",
+              "error"
+            ],
+            "title": "Status"
+          },
+          "initialized": {
+            "type": "boolean",
+            "title": "Initialized"
+          },
+          "lastSync": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastsync"
+          },
+          "lastStocksRefresh": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Laststocksrefresh"
+          },
+          "topix": {
+            "$ref": "#/components/schemas/TopixStats"
+          },
+          "stocks": {
+            "$ref": "#/components/schemas/StockStats"
+          },
+          "stockData": {
+            "$ref": "#/components/schemas/StockDataValidation"
+          },
+          "failedDates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Faileddates"
+          },
+          "failedDatesCount": {
+            "type": "integer",
+            "title": "Faileddatescount",
+            "default": 0
+          },
+          "adjustmentEvents": {
+            "items": {
+              "$ref": "#/components/schemas/AdjustmentEvent"
+            },
+            "type": "array",
+            "title": "Adjustmentevents"
+          },
+          "adjustmentEventsCount": {
+            "type": "integer",
+            "title": "Adjustmenteventscount",
+            "default": 0
+          },
+          "stocksNeedingRefresh": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Stocksneedingrefresh"
+          },
+          "stocksNeedingRefreshCount": {
+            "type": "integer",
+            "title": "Stocksneedingrefreshcount",
+            "default": 0
+          },
+          "integrityIssues": {
+            "items": {
+              "$ref": "#/components/schemas/IntegrityIssue"
+            },
+            "type": "array",
+            "title": "Integrityissues"
+          },
+          "integrityIssuesCount": {
+            "type": "integer",
+            "title": "Integrityissuescount",
+            "default": 0
+          },
+          "recommendations": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Recommendations"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "title": "Lastupdated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "initialized",
+          "topix",
+          "stocks",
+          "stockData",
+          "lastUpdated"
+        ],
+        "title": "MarketValidationResponse"
+      },
+      "OHLCRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close"
+        ],
+        "title": "OHLCRecord"
+      },
       "OHLCVRecord": {
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -9508,8 +12848,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -9630,7 +12969,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -10823,6 +14162,116 @@
         "title": "RawStatementsResponse",
         "description": "財務諸表レスポンス（完全版）"
       },
+      "RefreshRequest": {
+        "properties": {
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "maxItems": 50,
+            "minItems": 1,
+            "title": "Codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "codes"
+        ],
+        "title": "RefreshRequest"
+      },
+      "RefreshResponse": {
+        "properties": {
+          "totalStocks": {
+            "type": "integer",
+            "title": "Totalstocks"
+          },
+          "successCount": {
+            "type": "integer",
+            "title": "Successcount"
+          },
+          "failedCount": {
+            "type": "integer",
+            "title": "Failedcount"
+          },
+          "totalApiCalls": {
+            "type": "integer",
+            "title": "Totalapicalls"
+          },
+          "totalRecordsStored": {
+            "type": "integer",
+            "title": "Totalrecordsstored"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/RefreshStockResult"
+            },
+            "type": "array",
+            "title": "Results"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "title": "Lastupdated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "totalStocks",
+          "successCount",
+          "failedCount",
+          "totalApiCalls",
+          "totalRecordsStored",
+          "results",
+          "lastUpdated"
+        ],
+        "title": "RefreshResponse"
+      },
+      "RefreshStockResult": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "recordsFetched": {
+            "type": "integer",
+            "title": "Recordsfetched",
+            "default": 0
+          },
+          "recordsStored": {
+            "type": "integer",
+            "title": "Recordsstored",
+            "default": 0
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "success"
+        ],
+        "title": "RefreshStockResult"
+      },
       "RelativeOHLCOptions": {
         "properties": {
           "handle_zero_division": {
@@ -10953,6 +14402,30 @@
         ],
         "title": "ScreeningSummary",
         "description": "スクリーニングサマリー"
+      },
+      "SearchResultItem": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "match_type": {
+            "type": "string",
+            "title": "Match Type",
+            "description": "Match type: exact/partial"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "match_type"
+        ],
+        "title": "SearchResultItem"
       },
       "SectorStockItem": {
         "properties": {
@@ -11131,6 +14604,24 @@
         ],
         "title": "SectorStocksResponse",
         "description": "セクター別銘柄レスポンス"
+      },
+      "SectorWithCount": {
+        "properties": {
+          "sectorName": {
+            "type": "string",
+            "title": "Sectorname"
+          },
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          }
+        },
+        "type": "object",
+        "required": [
+          "sectorName",
+          "count"
+        ],
+        "title": "SectorWithCount"
       },
       "SignalCategorySchema": {
         "properties": {
@@ -11582,6 +15073,233 @@
         "title": "StatementItem",
         "description": "財務諸表データ（EPS サブセット）"
       },
+      "StatementRecord": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "disclosedDate": {
+            "type": "string",
+            "title": "Discloseddate"
+          },
+          "earningsPerShare": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Earningspershare"
+          },
+          "profit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Profit"
+          },
+          "equity": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Equity"
+          },
+          "typeOfCurrentPeriod": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typeofcurrentperiod"
+          },
+          "typeOfDocument": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Typeofdocument"
+          },
+          "nextYearForecastEarningsPerShare": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextyearforecastearningspershare"
+          },
+          "bps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bps"
+          },
+          "sales": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sales"
+          },
+          "operatingProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operatingprofit"
+          },
+          "ordinaryProfit": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ordinaryprofit"
+          },
+          "operatingCashFlow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Operatingcashflow"
+          },
+          "dividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividendfy"
+          },
+          "forecastEps": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecasteps"
+          },
+          "investingCashFlow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Investingcashflow"
+          },
+          "financingCashFlow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Financingcashflow"
+          },
+          "cashAndEquivalents": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cashandequivalents"
+          },
+          "totalAssets": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Totalassets"
+          },
+          "sharesOutstanding": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharesoutstanding"
+          },
+          "treasuryShares": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Treasuryshares"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "disclosedDate"
+        ],
+        "title": "StatementRecord"
+      },
       "StatementsResponse": {
         "properties": {
           "data": {
@@ -11692,6 +15410,74 @@
         "title": "StockDataResponse",
         "description": "銘柄チャートデータレスポンス"
       },
+      "StockDataStats": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "dateCount": {
+            "type": "integer",
+            "title": "Datecount",
+            "default": 0
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "averageStocksPerDay": {
+            "type": "number",
+            "title": "Averagestocksperday",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "StockDataStats"
+      },
+      "StockDataValidation": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingDates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missingdates"
+          },
+          "missingDatesCount": {
+            "type": "integer",
+            "title": "Missingdatescount",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "StockDataValidation"
+      },
       "StockInfo": {
         "properties": {
           "code": {
@@ -11767,6 +15553,50 @@
         "title": "StockInfo",
         "description": "銘柄情報（単一銘柄）"
       },
+      "StockListItem": {
+        "properties": {
+          "stockCode": {
+            "type": "string",
+            "title": "Stockcode",
+            "description": "Stock code (4-digit)"
+          },
+          "record_count": {
+            "type": "integer",
+            "title": "Record Count",
+            "description": "Number of OHLCV records"
+          },
+          "start_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Start Date",
+            "description": "First date"
+          },
+          "end_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "End Date",
+            "description": "Last date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stockCode",
+          "record_count"
+        ],
+        "title": "StockListItem"
+      },
       "StockSearchResponse": {
         "properties": {
           "query": {
@@ -11841,6 +15671,26 @@
         ],
         "title": "StockSearchResultItem",
         "description": "銘柄検索結果アイテム"
+      },
+      "StockStats": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "byMarket": {
+            "additionalProperties": {
+              "type": "integer"
+            },
+            "type": "object",
+            "title": "Bymarket"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total"
+        ],
+        "title": "StockStats"
       },
       "StrategyDeleteResponse": {
         "properties": {
@@ -12186,6 +16036,171 @@
         "title": "StrategyValidationResponse",
         "description": "戦略設定検証レスポンス"
       },
+      "SyncJobResponse": {
+        "properties": {
+          "jobId": {
+            "type": "string",
+            "title": "Jobid"
+          },
+          "status": {
+            "type": "string",
+            "title": "Status"
+          },
+          "mode": {
+            "type": "string",
+            "title": "Mode"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncProgress"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "startedAt": {
+            "type": "string",
+            "title": "Startedat"
+          },
+          "completedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completedat"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error"
+          }
+        },
+        "type": "object",
+        "required": [
+          "jobId",
+          "status",
+          "mode",
+          "startedAt"
+        ],
+        "title": "SyncJobResponse"
+      },
+      "SyncMode": {
+        "type": "string",
+        "enum": [
+          "auto",
+          "initial",
+          "incremental",
+          "indices-only"
+        ],
+        "title": "SyncMode"
+      },
+      "SyncProgress": {
+        "properties": {
+          "stage": {
+            "type": "string",
+            "title": "Stage"
+          },
+          "current": {
+            "type": "integer",
+            "title": "Current"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total"
+          },
+          "percentage": {
+            "type": "number",
+            "title": "Percentage"
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "stage",
+          "current",
+          "total",
+          "percentage",
+          "message"
+        ],
+        "title": "SyncProgress"
+      },
+      "SyncRequest": {
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/SyncMode",
+            "default": "auto"
+          }
+        },
+        "type": "object",
+        "title": "SyncRequest"
+      },
+      "SyncResult": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success"
+          },
+          "totalApiCalls": {
+            "type": "integer",
+            "title": "Totalapicalls",
+            "default": 0
+          },
+          "stocksUpdated": {
+            "type": "integer",
+            "title": "Stocksupdated",
+            "default": 0
+          },
+          "datesProcessed": {
+            "type": "integer",
+            "title": "Datesprocessed",
+            "default": 0
+          },
+          "failedDates": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Faileddates"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success"
+        ],
+        "title": "SyncResult"
+      },
       "TopixDataPoint": {
         "properties": {
           "date": {
@@ -12328,6 +16343,29 @@
         "title": "TopixRawResponse",
         "description": "TOPIX 生データレスポンス"
       },
+      "TopixStats": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "count"
+        ],
+        "title": "TopixStats"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -12360,6 +16398,88 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "src__server__schemas__db__DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
+      },
+      "src__server__schemas__factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange",
+        "description": "分析期間"
+      },
+      "src__server__schemas__indicators__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
       "ErrorDetail": {
         "description": "バリデーションエラー詳細",
