@@ -5907,6 +5907,91 @@
         }
       }
     },
+    "/api/analytics/portfolio-factor-regression/{portfolioId}": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Analyze portfolio factor regression",
+        "description": "ポートフォリオ全体のファクター回帰分析",
+        "operationId": "get_portfolio_factor_regression_api_analytics_portfolio_factor_regression__portfolioId__get",
+        "parameters": [
+          {
+            "name": "portfolioId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Portfolioid"
+            }
+          },
+          {
+            "name": "lookbackDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 1000,
+              "minimum": 60,
+              "default": 252,
+              "title": "Lookbackdays"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioFactorRegressionResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/db/stats": {
       "get": {
         "tags": [
@@ -6419,7 +6504,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/OHLCVRecord"
+                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -6539,7 +6624,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/OHLCVRecord"
+                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -8370,6 +8455,1529 @@
           }
         }
       }
+    },
+    "/api/portfolio": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "List all portfolios",
+        "description": "ポートフォリオ一覧を stockCount/totalShares 付きで取得",
+        "operationId": "list_portfolios_api_portfolio_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "$ref": "#/components/schemas/PortfolioSummaryResponse"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object",
+                  "title": "Response List Portfolios Api Portfolio Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Create a portfolio",
+        "operationId": "create_portfolio_api_portfolio_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/{id}": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Get portfolio with items",
+        "operationId": "get_portfolio_api_portfolio__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Update a portfolio",
+        "operationId": "update_portfolio_api_portfolio__id__put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Delete a portfolio",
+        "operationId": "delete_portfolio_api_portfolio__id__delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/{id}/items": {
+      "post": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Add item to portfolio",
+        "operationId": "add_item_api_portfolio__id__items_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioItemCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioItemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/{id}/items/{itemId}": {
+      "put": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Update portfolio item",
+        "operationId": "update_item_api_portfolio__id__items__itemId__put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Itemid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PortfolioItemUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioItemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Delete portfolio item",
+        "operationId": "delete_item_api_portfolio__id__items__itemId__delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Itemid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/{portfolioName}/stocks/{code}": {
+      "put": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Upsert stock by portfolio name",
+        "operationId": "upsert_stock_api_portfolio__portfolioName__stocks__code__put",
+        "parameters": [
+          {
+            "name": "portfolioName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portfolioname"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StockUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioItemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Delete stock by portfolio name",
+        "operationId": "delete_stock_api_portfolio__portfolioName__stocks__code__delete",
+        "parameters": [
+          {
+            "name": "portfolioName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portfolioname"
+            }
+          },
+          {
+            "name": "code",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Code"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StockDeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/{portfolioName}/codes": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Get stock codes by portfolio name",
+        "operationId": "get_portfolio_codes_api_portfolio__portfolioName__codes_get",
+        "parameters": [
+          {
+            "name": "portfolioName",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Portfolioname"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioCodesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/portfolio/{id}/performance": {
+      "get": {
+        "tags": [
+          "Portfolio"
+        ],
+        "summary": "Get portfolio performance",
+        "description": "P&L、ベンチマーク比較、時系列リターンを計算",
+        "operationId": "get_performance_api_portfolio__id__performance_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "benchmarkCode",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "0000",
+              "title": "Benchmarkcode"
+            }
+          },
+          {
+            "name": "lookbackDays",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 252,
+              "title": "Lookbackdays"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PortfolioPerformanceResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist": {
+      "get": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "List all watchlists",
+        "description": "ウォッチリスト一覧を stockCount 付きで取得",
+        "operationId": "list_watchlists_api_watchlist_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "items": {
+                      "$ref": "#/components/schemas/WatchlistSummaryResponse"
+                    },
+                    "type": "array"
+                  },
+                  "type": "object",
+                  "title": "Response List Watchlists Api Watchlist Get"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Create a watchlist",
+        "operationId": "create_watchlist_api_watchlist_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistCreateRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist/{id}": {
+      "get": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Get watchlist with items",
+        "operationId": "get_watchlist_api_watchlist__id__get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistDetailResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Update a watchlist",
+        "operationId": "update_watchlist_api_watchlist__id__put",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistUpdateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Delete a watchlist",
+        "operationId": "delete_watchlist_api_watchlist__id__delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist/{id}/items": {
+      "post": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Add item to watchlist",
+        "operationId": "add_watchlist_item_api_watchlist__id__items_post",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/WatchlistItemCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistItemResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist/{id}/items/{itemId}": {
+      "delete": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Delete watchlist item",
+        "operationId": "delete_watchlist_item_api_watchlist__id__items__itemId__delete",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          },
+          {
+            "name": "itemId",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Itemid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeleteResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/watchlist/{id}/prices": {
+      "get": {
+        "tags": [
+          "Watchlist"
+        ],
+        "summary": "Get watchlist stock prices",
+        "description": "ウォッチリスト銘柄の最新価格と前日比を取得",
+        "operationId": "get_watchlist_prices_api_watchlist__id__prices_get",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/WatchlistPricesResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "components": {
@@ -8940,6 +10548,77 @@
         ],
         "title": "BacktestResultSummary",
         "description": "バックテスト結果サマリー"
+      },
+      "BenchmarkResult": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "beta": {
+            "type": "number",
+            "title": "Beta"
+          },
+          "alpha": {
+            "type": "number",
+            "title": "Alpha"
+          },
+          "correlation": {
+            "type": "number",
+            "title": "Correlation"
+          },
+          "rSquared": {
+            "type": "number",
+            "title": "Rsquared"
+          },
+          "benchmarkReturn": {
+            "type": "number",
+            "title": "Benchmarkreturn"
+          },
+          "relativeReturn": {
+            "type": "number",
+            "title": "Relativereturn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "beta",
+          "alpha",
+          "correlation",
+          "rSquared",
+          "benchmarkReturn",
+          "relativeReturn"
+        ],
+        "title": "BenchmarkResult"
+      },
+      "BenchmarkTimeSeriesPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "portfolioReturn": {
+            "type": "number",
+            "title": "Portfolioreturn"
+          },
+          "benchmarkReturn": {
+            "type": "number",
+            "title": "Benchmarkreturn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "portfolioReturn",
+          "benchmarkReturn"
+        ],
+        "title": "BenchmarkTimeSeriesPoint"
       },
       "CancelJobResponse": {
         "properties": {
@@ -9586,7 +11265,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
               },
               {
                 "type": "null"
@@ -9695,6 +11374,25 @@
         "title": "DefaultConfigUpdateResponse",
         "description": "デフォルト設定更新レスポンス"
       },
+      "DeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message"
+        ],
+        "title": "DeleteResponse",
+        "description": "DELETE 成功レスポンス"
+      },
       "EvolutionHistoryItem": {
         "properties": {
           "generation": {
@@ -9728,6 +11426,29 @@
         "title": "EvolutionHistoryItem",
         "description": "進化履歴アイテム"
       },
+      "ExcludedStock": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "reason": {
+            "type": "string",
+            "title": "Reason"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "companyName",
+          "reason"
+        ],
+        "title": "ExcludedStock"
+      },
       "FactorRegressionResponse": {
         "properties": {
           "stockCode": {
@@ -9755,21 +11476,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -10593,6 +12314,80 @@
         "title": "HealthResponse",
         "description": "ヘルスチェックレスポンス"
       },
+      "HoldingDetail": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "purchasePrice": {
+            "type": "number",
+            "title": "Purchaseprice"
+          },
+          "currentPrice": {
+            "type": "number",
+            "title": "Currentprice"
+          },
+          "cost": {
+            "type": "number",
+            "title": "Cost"
+          },
+          "marketValue": {
+            "type": "number",
+            "title": "Marketvalue"
+          },
+          "pnl": {
+            "type": "number",
+            "title": "Pnl"
+          },
+          "returnRate": {
+            "type": "number",
+            "title": "Returnrate"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight"
+          },
+          "purchaseDate": {
+            "type": "string",
+            "title": "Purchasedate"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "companyName",
+          "quantity",
+          "purchasePrice",
+          "currentPrice",
+          "cost",
+          "marketValue",
+          "pnl",
+          "returnRate",
+          "weight",
+          "purchaseDate"
+        ],
+        "title": "HoldingDetail"
+      },
       "HtmlFileContentResponse": {
         "properties": {
           "strategy_name": {
@@ -11054,37 +12849,26 @@
       },
       "IndexMatch": {
         "properties": {
-          "indexCode": {
+          "code": {
             "type": "string",
-            "title": "Indexcode"
+            "title": "Code"
           },
-          "indexName": {
+          "name": {
             "type": "string",
-            "title": "Indexname"
-          },
-          "category": {
-            "type": "string",
-            "title": "Category"
+            "title": "Name"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
-          },
-          "beta": {
-            "type": "number",
-            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "indexCode",
-          "indexName",
-          "category",
-          "rSquared",
-          "beta"
+          "code",
+          "name",
+          "rSquared"
         ],
-        "title": "IndexMatch",
-        "description": "指数マッチ結果"
+        "title": "IndexMatch"
       },
       "IndexOHLCRecord": {
         "properties": {
@@ -11367,7 +13151,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -12816,27 +14600,33 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date"
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
           },
           "open": {
             "type": "number",
-            "title": "Open"
+            "title": "Open",
+            "description": "始値"
           },
           "high": {
             "type": "number",
-            "title": "High"
+            "title": "High",
+            "description": "高値"
           },
           "low": {
             "type": "number",
-            "title": "Low"
+            "title": "Low",
+            "description": "安値"
           },
           "close": {
             "type": "number",
-            "title": "Close"
+            "title": "Close",
+            "description": "終値"
           },
           "volume": {
-            "type": "integer",
-            "title": "Volume"
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
           }
         },
         "type": "object",
@@ -12848,7 +14638,8 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord"
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -12969,7 +14760,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
+              "$ref": "#/components/schemas/OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -13369,6 +15160,646 @@
         ],
         "title": "OptimizeTrialItem",
         "description": "最適化トライアルアイテム"
+      },
+      "PerformanceSummary": {
+        "properties": {
+          "totalCost": {
+            "type": "number",
+            "title": "Totalcost"
+          },
+          "currentValue": {
+            "type": "number",
+            "title": "Currentvalue"
+          },
+          "totalPnL": {
+            "type": "number",
+            "title": "Totalpnl"
+          },
+          "returnRate": {
+            "type": "number",
+            "title": "Returnrate"
+          }
+        },
+        "type": "object",
+        "required": [
+          "totalCost",
+          "currentValue",
+          "totalPnL",
+          "returnRate"
+        ],
+        "title": "PerformanceSummary"
+      },
+      "PortfolioCodesResponse": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "codes": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Codes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "codes"
+        ],
+        "title": "PortfolioCodesResponse",
+        "description": "GET /api/portfolio/{name}/codes"
+      },
+      "PortfolioCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "PortfolioCreateRequest"
+      },
+      "PortfolioDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/PortfolioItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt",
+          "items"
+        ],
+        "title": "PortfolioDetailResponse",
+        "description": "GET /api/portfolio/{id} — portfolio + items"
+      },
+      "PortfolioFactorRegressionResponse": {
+        "properties": {
+          "portfolioId": {
+            "type": "integer",
+            "title": "Portfolioid"
+          },
+          "portfolioName": {
+            "type": "string",
+            "title": "Portfolioname"
+          },
+          "weights": {
+            "items": {
+              "$ref": "#/components/schemas/StockWeight"
+            },
+            "type": "array",
+            "title": "Weights"
+          },
+          "totalValue": {
+            "type": "number",
+            "title": "Totalvalue"
+          },
+          "stockCount": {
+            "type": "integer",
+            "title": "Stockcount"
+          },
+          "includedStockCount": {
+            "type": "integer",
+            "title": "Includedstockcount"
+          },
+          "marketBeta": {
+            "type": "number",
+            "title": "Marketbeta"
+          },
+          "marketRSquared": {
+            "type": "number",
+            "title": "Marketrsquared"
+          },
+          "sector17Matches": {
+            "items": {
+              "$ref": "#/components/schemas/IndexMatch"
+            },
+            "type": "array",
+            "title": "Sector17Matches"
+          },
+          "sector33Matches": {
+            "items": {
+              "$ref": "#/components/schemas/IndexMatch"
+            },
+            "type": "array",
+            "title": "Sector33Matches"
+          },
+          "topixStyleMatches": {
+            "items": {
+              "$ref": "#/components/schemas/IndexMatch"
+            },
+            "type": "array",
+            "title": "Topixstylematches"
+          },
+          "analysisDate": {
+            "type": "string",
+            "title": "Analysisdate"
+          },
+          "dataPoints": {
+            "type": "integer",
+            "title": "Datapoints"
+          },
+          "dateRange": {
+            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
+          },
+          "excludedStocks": {
+            "items": {
+              "$ref": "#/components/schemas/ExcludedStock"
+            },
+            "type": "array",
+            "title": "Excludedstocks"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portfolioId",
+          "portfolioName",
+          "weights",
+          "totalValue",
+          "stockCount",
+          "includedStockCount",
+          "marketBeta",
+          "marketRSquared",
+          "sector17Matches",
+          "sector33Matches",
+          "topixStyleMatches",
+          "analysisDate",
+          "dataPoints",
+          "dateRange",
+          "excludedStocks"
+        ],
+        "title": "PortfolioFactorRegressionResponse"
+      },
+      "PortfolioItemCreateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^\\d[0-9A-Z]\\d[0-9A-Z]$",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Companyname"
+          },
+          "quantity": {
+            "type": "integer",
+            "exclusiveMinimum": 0,
+            "title": "Quantity"
+          },
+          "purchasePrice": {
+            "type": "number",
+            "exclusiveMinimum": 0,
+            "title": "Purchaseprice"
+          },
+          "purchaseDate": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+            "title": "Purchasedate"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "companyName",
+          "quantity",
+          "purchasePrice",
+          "purchaseDate"
+        ],
+        "title": "PortfolioItemCreateRequest"
+      },
+      "PortfolioItemResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "portfolioId": {
+            "type": "integer",
+            "title": "Portfolioid"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          },
+          "purchasePrice": {
+            "type": "number",
+            "title": "Purchaseprice"
+          },
+          "purchaseDate": {
+            "type": "string",
+            "title": "Purchasedate"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "portfolioId",
+          "code",
+          "companyName",
+          "quantity",
+          "purchasePrice",
+          "purchaseDate",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PortfolioItemResponse",
+        "description": "Portfolio item レスポンス"
+      },
+      "PortfolioItemUpdateRequest": {
+        "properties": {
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "purchasePrice": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchaseprice"
+          },
+          "purchaseDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchasedate"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "title": "PortfolioItemUpdateRequest"
+      },
+      "PortfolioPerformanceResponse": {
+        "properties": {
+          "portfolioId": {
+            "type": "integer",
+            "title": "Portfolioid"
+          },
+          "portfolioName": {
+            "type": "string",
+            "title": "Portfolioname"
+          },
+          "portfolioDescription": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Portfoliodescription"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/PerformanceSummary"
+          },
+          "holdings": {
+            "items": {
+              "$ref": "#/components/schemas/HoldingDetail"
+            },
+            "type": "array",
+            "title": "Holdings"
+          },
+          "timeSeries": {
+            "items": {
+              "$ref": "#/components/schemas/TimeSeriesPoint"
+            },
+            "type": "array",
+            "title": "Timeseries"
+          },
+          "benchmark": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/BenchmarkResult"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "benchmarkTimeSeries": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/BenchmarkTimeSeriesPoint"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Benchmarktimeseries"
+          },
+          "analysisDate": {
+            "type": "string",
+            "title": "Analysisdate"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataPoints": {
+            "type": "integer",
+            "title": "Datapoints"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          }
+        },
+        "type": "object",
+        "required": [
+          "portfolioId",
+          "portfolioName",
+          "summary",
+          "holdings",
+          "timeSeries",
+          "analysisDate",
+          "dataPoints",
+          "warnings"
+        ],
+        "title": "PortfolioPerformanceResponse"
+      },
+      "PortfolioResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PortfolioResponse",
+        "description": "Portfolio 単体レスポンス (create/update)"
+      },
+      "PortfolioSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "stockCount": {
+            "type": "integer",
+            "title": "Stockcount"
+          },
+          "totalShares": {
+            "type": "integer",
+            "title": "Totalshares"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "stockCount",
+          "totalShares",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "PortfolioSummaryResponse",
+        "description": "Portfolio list item (stockCount/totalShares 付き)"
+      },
+      "PortfolioUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "PortfolioUpdateRequest"
       },
       "ROEMetadata": {
         "properties": {
@@ -15424,7 +17855,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -15452,7 +17883,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -15477,6 +17908,29 @@
           "count"
         ],
         "title": "StockDataValidation"
+      },
+      "StockDeleteResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "default": true
+          },
+          "message": {
+            "type": "string",
+            "title": "Message"
+          },
+          "deletedItem": {
+            "$ref": "#/components/schemas/PortfolioItemResponse"
+          }
+        },
+        "type": "object",
+        "required": [
+          "message",
+          "deletedItem"
+        ],
+        "title": "StockDeleteResponse",
+        "description": "DELETE stock with deletedItem"
       },
       "StockInfo": {
         "properties": {
@@ -15691,6 +18145,121 @@
           "total"
         ],
         "title": "StockStats"
+      },
+      "StockUpdateRequest": {
+        "properties": {
+          "companyName": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Companyname"
+          },
+          "quantity": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quantity"
+          },
+          "purchasePrice": {
+            "anyOf": [
+              {
+                "type": "number",
+                "exclusiveMinimum": 0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchaseprice"
+          },
+          "purchaseDate": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Purchasedate"
+          },
+          "account": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Account"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "type": "object",
+        "title": "StockUpdateRequest",
+        "description": "PUT /{portfolioName}/stocks/{code}"
+      },
+      "StockWeight": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "weight": {
+            "type": "number",
+            "title": "Weight"
+          },
+          "latestPrice": {
+            "type": "number",
+            "title": "Latestprice"
+          },
+          "marketValue": {
+            "type": "number",
+            "title": "Marketvalue"
+          },
+          "quantity": {
+            "type": "integer",
+            "title": "Quantity"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "companyName",
+          "weight",
+          "latestPrice",
+          "marketValue",
+          "quantity"
+        ],
+        "title": "StockWeight"
       },
       "StrategyDeleteResponse": {
         "properties": {
@@ -16201,6 +18770,29 @@
         ],
         "title": "SyncResult"
       },
+      "TimeSeriesPoint": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "dailyReturn": {
+            "type": "number",
+            "title": "Dailyreturn"
+          },
+          "cumulativeReturn": {
+            "type": "number",
+            "title": "Cumulativereturn"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "dailyReturn",
+          "cumulativeReturn"
+        ],
+        "title": "TimeSeriesPoint"
+      },
       "TopixDataPoint": {
         "properties": {
           "date": {
@@ -16352,7 +18944,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -16399,7 +18991,336 @@
         ],
         "title": "ValidationError"
       },
-      "src__server__schemas__db__DateRange": {
+      "WatchlistCreateRequest": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "WatchlistCreateRequest"
+      },
+      "WatchlistDetailResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/WatchlistItemResponse"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt",
+          "items"
+        ],
+        "title": "WatchlistDetailResponse",
+        "description": "GET /api/watchlist/{id} — watchlist + items"
+      },
+      "WatchlistItemCreateRequest": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "pattern": "^\\d[0-9A-Z]\\d[0-9A-Z]$",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Companyname"
+          },
+          "memo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memo"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "companyName"
+        ],
+        "title": "WatchlistItemCreateRequest"
+      },
+      "WatchlistItemResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "watchlistId": {
+            "type": "integer",
+            "title": "Watchlistid"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "memo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Memo"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "watchlistId",
+          "code",
+          "companyName",
+          "createdAt"
+        ],
+        "title": "WatchlistItemResponse",
+        "description": "Watchlist item レスポンス"
+      },
+      "WatchlistPricesResponse": {
+        "properties": {
+          "prices": {
+            "items": {
+              "$ref": "#/components/schemas/WatchlistStockPrice"
+            },
+            "type": "array",
+            "title": "Prices"
+          }
+        },
+        "type": "object",
+        "required": [
+          "prices"
+        ],
+        "title": "WatchlistPricesResponse"
+      },
+      "WatchlistResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "WatchlistResponse",
+        "description": "Watchlist 単体レスポンス (create/update)"
+      },
+      "WatchlistStockPrice": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "prevClose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Prevclose"
+          },
+          "changePercent": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Changepercent"
+          },
+          "volume": {
+            "type": "integer",
+            "title": "Volume"
+          },
+          "date": {
+            "type": "string",
+            "title": "Date"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "close",
+          "volume",
+          "date"
+        ],
+        "title": "WatchlistStockPrice"
+      },
+      "WatchlistSummaryResponse": {
+        "properties": {
+          "id": {
+            "type": "integer",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "stockCount": {
+            "type": "integer",
+            "title": "Stockcount"
+          },
+          "createdAt": {
+            "type": "string",
+            "title": "Createdat"
+          },
+          "updatedAt": {
+            "type": "string",
+            "title": "Updatedat"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "stockCount",
+          "createdAt",
+          "updatedAt"
+        ],
+        "title": "WatchlistSummaryResponse",
+        "description": "Watchlist list item (stockCount 付き)"
+      },
+      "WatchlistUpdateRequest": {
+        "properties": {
+          "name": {
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          }
+        },
+        "type": "object",
+        "title": "WatchlistUpdateRequest"
+      },
+      "src__server__schemas__dataset__DateRange": {
         "properties": {
           "min": {
             "type": "string",
@@ -16416,6 +19337,44 @@
           "max"
         ],
         "title": "DateRange"
+      },
+      "src__server__schemas__dataset_data__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "volume": {
+            "type": "integer",
+            "title": "Volume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord"
       },
       "src__server__schemas__factor_regression__DateRange": {
         "properties": {
@@ -16436,50 +19395,75 @@
         "title": "DateRange",
         "description": "分析期間"
       },
-      "src__server__schemas__indicators__OHLCVRecord": {
+      "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
-          "date": {
+          "indexCode": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Indexcode"
           },
-          "open": {
-            "type": "number",
-            "title": "Open",
-            "description": "始値"
+          "indexName": {
+            "type": "string",
+            "title": "Indexname"
           },
-          "high": {
-            "type": "number",
-            "title": "High",
-            "description": "高値"
+          "category": {
+            "type": "string",
+            "title": "Category"
           },
-          "low": {
+          "rSquared": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Rsquared"
           },
-          "close": {
+          "beta": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
-          },
-          "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
+          "indexCode",
+          "indexName",
+          "category",
+          "rSquared",
+          "beta"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "IndexMatch",
+        "description": "指数マッチ結果"
+      },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
+      },
+      "src__server__schemas__portfolio_performance__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
       },
       "ErrorDetail": {
         "description": "バリデーションエラー詳細",
