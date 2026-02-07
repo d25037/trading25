@@ -1425,10 +1425,485 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/db/stats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market database statistics */
+        get: operations["get_db_stats_api_db_stats_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/validate": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Market database validation */
+        get: operations["get_db_validate_api_db_validate_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/sync": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Start database sync job */
+        post: operations["start_sync_job_api_db_sync_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/sync/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get sync job status */
+        get: operations["get_sync_job_api_db_sync_jobs__jobId__get"];
+        put?: never;
+        post?: never;
+        /** Cancel sync job */
+        delete: operations["cancel_sync_job_api_db_sync_jobs__jobId__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/db/stocks/refresh": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Refresh stock data for specific codes */
+        post: operations["refresh_stocks_api_db_stocks_refresh_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/stocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dataset stock list with record counts */
+        get: operations["get_dataset_stocks_api_dataset__name__stocks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/stocks/ohlcv/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batch OHLCV data for multiple stocks */
+        get: operations["get_dataset_ohlcv_batch_api_dataset__name__stocks_ohlcv_batch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/stocks/{code}/ohlcv": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** OHLCV data for a single stock */
+        get: operations["get_dataset_stock_ohlcv_api_dataset__name__stocks__code__ohlcv_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/topix": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** TOPIX data */
+        get: operations["get_dataset_topix_api_dataset__name__topix_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/indices": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Available index list with record counts */
+        get: operations["get_dataset_indices_api_dataset__name__indices_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/indices/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Index OHLC data */
+        get: operations["get_dataset_index_data_api_dataset__name__indices__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/margin/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batch margin data */
+        get: operations["get_dataset_margin_batch_api_dataset__name__margin_batch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/margin/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Margin data for a single stock */
+        get: operations["get_dataset_margin_api_dataset__name__margin__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/margin": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Margin data summary list */
+        get: operations["get_dataset_margin_list_api_dataset__name__margin_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/statements/batch": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Batch financial statements */
+        get: operations["get_dataset_statements_batch_api_dataset__name__statements_batch_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/statements/{code}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Financial statements for a single stock */
+        get: operations["get_dataset_statements_api_dataset__name__statements__code__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/sectors": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sector list with stock counts */
+        get: operations["get_dataset_sectors_api_dataset__name__sectors_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/sectors/mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sector code to name mapping */
+        get: operations["get_dataset_sector_mapping_api_dataset__name__sectors_mapping_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/sectors/stock-mapping": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Sector name to stock codes mapping */
+        get: operations["get_dataset_sector_stock_mapping_api_dataset__name__sectors_stock_mapping_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/sectors/{sectorName}/stocks": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Stock codes in a sector */
+        get: operations["get_dataset_sector_stocks_api_dataset__name__sectors__sectorName__stocks_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List available datasets */
+        get: operations["list_datasets_api_dataset_get"];
+        put?: never;
+        /** Create a new dataset (background job) */
+        post: operations["create_dataset_api_dataset_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/info": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Dataset detailed information */
+        get: operations["get_dataset_info_api_dataset__name__info_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/sample": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Random sample of stock codes */
+        get: operations["get_dataset_sample_api_dataset__name__sample_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}/search": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Search stocks in dataset */
+        get: operations["search_dataset_api_dataset__name__search_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/jobs/{jobId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get dataset build job status */
+        get: operations["get_dataset_job_api_dataset_jobs__jobId__get"];
+        put?: never;
+        post?: never;
+        /** Cancel dataset build job */
+        delete: operations["cancel_dataset_job_api_dataset_jobs__jobId__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/resume": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Resume an incomplete dataset build */
+        post: operations["resume_dataset_api_dataset_resume_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/dataset/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete a dataset */
+        delete: operations["delete_dataset_api_dataset__name__delete"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
 }
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AdjustmentEvent */
+        AdjustmentEvent: {
+            /** Code */
+            code: string;
+            /** Date */
+            date: string;
+            /** Adjustmentfactor */
+            adjustmentFactor: number;
+            /** Close */
+            close: number;
+            /** Eventtype */
+            eventType: string;
+        };
         /**
          * ApiIndex
          * @description 指数データポイント
@@ -1693,6 +2168,34 @@ export interface components {
              */
             html_path?: string | null;
         };
+        /** CancelJobResponse */
+        CancelJobResponse: {
+            /** Success */
+            success: boolean;
+            /** Jobid */
+            jobId: string;
+            /** Message */
+            message: string;
+        };
+        /** CreateSyncJobResponse */
+        CreateSyncJobResponse: {
+            /** Jobid */
+            jobId: string;
+            /**
+             * Status
+             * @default pending
+             */
+            status: string;
+            /** Mode */
+            mode: string;
+            /** Estimatedapicalls */
+            estimatedApiCalls: number;
+            /**
+             * Message
+             * @default Sync job started
+             */
+            message: string;
+        };
         /**
          * DailyQuoteItem
          * @description 日足クォートデータ（JQuants 生フォーマット）
@@ -1772,15 +2275,175 @@ export interface components {
              */
             marketCap?: number | null;
         };
-        /**
-         * DateRange
-         * @description 分析期間
-         */
+        /** DatasetCreateRequest */
+        DatasetCreateRequest: {
+            /**
+             * Name
+             * @description Dataset filename (e.g. 'prime.db')
+             */
+            name: string;
+            /**
+             * Preset
+             * @description Preset config name
+             */
+            preset: string;
+            /**
+             * Overwrite
+             * @description Overwrite existing dataset
+             * @default false
+             */
+            overwrite: boolean;
+            /**
+             * Timeoutminutes
+             * @description Build timeout in minutes
+             * @default 35
+             */
+            timeoutMinutes: number;
+        };
+        /** DatasetCreateResponse */
+        DatasetCreateResponse: {
+            /** Jobid */
+            jobId: string;
+            /** Status */
+            status: string;
+            /** Name */
+            name: string;
+            /** Preset */
+            preset: string;
+            /** Message */
+            message: string;
+            /** Estimatedtime */
+            estimatedTime?: string | null;
+        };
+        /** DatasetInfoResponse */
+        DatasetInfoResponse: {
+            /** Name */
+            name: string;
+            /** Path */
+            path: string;
+            /** Filesize */
+            fileSize: number;
+            /** Lastmodified */
+            lastModified: string;
+            snapshot: components["schemas"]["DatasetSnapshot"];
+        };
+        /** DatasetJobResponse */
+        DatasetJobResponse: {
+            /** Jobid */
+            jobId: string;
+            /** Status */
+            status: string;
+            /** Preset */
+            preset: string;
+            /** Name */
+            name: string;
+            /** Progress */
+            progress?: {
+                [key: string]: unknown;
+            } | null;
+            result?: components["schemas"]["DatasetJobResult"] | null;
+            /** Startedat */
+            startedAt: string;
+            /** Completedat */
+            completedAt?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /** DatasetJobResult */
+        DatasetJobResult: {
+            /** Success */
+            success: boolean;
+            /**
+             * Totalstocks
+             * @default 0
+             */
+            totalStocks: number;
+            /**
+             * Processedstocks
+             * @default 0
+             */
+            processedStocks: number;
+            /** Warnings */
+            warnings?: string[] | null;
+            /** Errors */
+            errors?: string[] | null;
+            /**
+             * Outputpath
+             * @default
+             */
+            outputPath: string;
+        };
+        /** DatasetListItem */
+        DatasetListItem: {
+            /**
+             * Name
+             * @description Dataset name (without .db)
+             */
+            name: string;
+            /**
+             * Path
+             * @description Full file path
+             */
+            path: string;
+            /**
+             * Filesize
+             * @description File size in bytes
+             */
+            fileSize: number;
+            /**
+             * Lastmodified
+             * @description Last modified ISO datetime
+             */
+            lastModified: string;
+        };
+        /** DatasetSampleResponse */
+        DatasetSampleResponse: {
+            /**
+             * Codes
+             * @description Random sample of stock codes
+             */
+            codes: string[];
+        };
+        /** DatasetSearchResponse */
+        DatasetSearchResponse: {
+            /** Results */
+            results: components["schemas"]["SearchResultItem"][];
+        };
+        /** DatasetSnapshot */
+        DatasetSnapshot: {
+            /**
+             * Preset
+             * @description Preset name used
+             */
+            preset?: string | null;
+            /**
+             * Totalstocks
+             * @description Number of stocks
+             */
+            totalStocks: number;
+            /**
+             * Stockswithquotes
+             * @description Stocks with OHLCV data
+             */
+            stocksWithQuotes: number;
+            dateRange?: components["schemas"]["DateRange"] | null;
+            validation: components["schemas"]["DatasetValidation"];
+        };
+        /** DatasetValidation */
+        DatasetValidation: {
+            /** Isvalid */
+            isValid: boolean;
+            /** Errors */
+            errors?: string[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** DateRange */
         DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * DefaultConfigResponse
@@ -1864,7 +2527,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__factor_regression__DateRange"];
         };
         /**
          * FieldConstraints
@@ -2483,6 +3146,34 @@ export interface components {
              */
             dataStartDate?: string | null;
         };
+        /** IndexListItem */
+        IndexListItem: {
+            /**
+             * Indexcode
+             * @description Index code
+             */
+            indexCode: string;
+            /**
+             * Indexname
+             * @description Index/sector name
+             */
+            indexName?: string | null;
+            /**
+             * Record Count
+             * @description Number of records
+             */
+            record_count: number;
+            /**
+             * Start Date
+             * @description First date
+             */
+            start_date?: string | null;
+            /**
+             * End Date
+             * @description Last date
+             */
+            end_date?: string | null;
+        };
         /**
          * IndexMatch
          * @description 指数マッチ結果
@@ -2648,6 +3339,36 @@ export interface components {
              * @description 最終更新日時 (ISO 8601)
              */
             lastUpdated: string;
+        };
+        /** IndicesStats */
+        IndicesStats: {
+            /**
+             * Mastercount
+             * @default 0
+             */
+            masterCount: number;
+            /**
+             * Datacount
+             * @default 0
+             */
+            dataCount: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Bycategory */
+            byCategory?: {
+                [key: string]: number;
+            };
+        };
+        /** IntegrityIssue */
+        IntegrityIssue: {
+            /** Code */
+            code: string;
+            /** Count */
+            count: number;
         };
         /**
          * JobStatus
@@ -3070,6 +3791,27 @@ export interface components {
                 }[];
             };
         };
+        /** MarginListItem */
+        MarginListItem: {
+            /**
+             * Stockcode
+             * @description Stock code (4-digit)
+             */
+            stockCode: string;
+            /**
+             * Record Count
+             * @description Number of margin records
+             */
+            record_count: number;
+            /** Start Date */
+            start_date?: string | null;
+            /** End Date */
+            end_date?: string | null;
+            /** Avg Long Margin */
+            avg_long_margin?: number | null;
+            /** Avg Short Margin */
+            avg_short_margin?: number | null;
+        };
         /**
          * MarginLongPressureData
          * @description マージンロングプレッシャーデータ
@@ -3109,6 +3851,15 @@ export interface components {
             turnoverDays: components["schemas"]["MarginTurnoverDaysData"][];
             /** Lastupdated */
             lastUpdated: string;
+        };
+        /** MarginRecord */
+        MarginRecord: {
+            /** Date */
+            date: string;
+            /** Longmarginvolume */
+            longMarginVolume?: number | null;
+            /** Shortmarginvolume */
+            shortMarginVolume?: number | null;
         };
         /**
          * MarginTurnoverDaysData
@@ -3229,6 +3980,21 @@ export interface components {
             /** Lastupdated */
             lastUpdated: string;
         };
+        /** MarketStatsResponse */
+        MarketStatsResponse: {
+            /** Initialized */
+            initialized: boolean;
+            /** Lastsync */
+            lastSync?: string | null;
+            /** Databasesize */
+            databaseSize: number;
+            topix: components["schemas"]["TopixStats"];
+            stocks: components["schemas"]["StockStats"];
+            stockData: components["schemas"]["StockDataStats"];
+            indices: components["schemas"]["IndicesStats"];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
         /**
          * MarketStockData
          * @description 市場別銘柄データ（スクリーニング用バルクレスポンス）
@@ -3250,40 +4016,81 @@ export interface components {
              */
             data: components["schemas"]["MarketOHLCVRecord"][];
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
-        OHLCVRecord: {
+        /** MarketValidationResponse */
+        MarketValidationResponse: {
             /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
+             * Status
+             * @enum {string}
              */
+            status: "healthy" | "warning" | "error";
+            /** Initialized */
+            initialized: boolean;
+            /** Lastsync */
+            lastSync?: string | null;
+            /** Laststocksrefresh */
+            lastStocksRefresh?: string | null;
+            topix: components["schemas"]["TopixStats"];
+            stocks: components["schemas"]["StockStats"];
+            stockData: components["schemas"]["StockDataValidation"];
+            /** Faileddates */
+            failedDates?: string[];
+            /**
+             * Faileddatescount
+             * @default 0
+             */
+            failedDatesCount: number;
+            /** Adjustmentevents */
+            adjustmentEvents?: components["schemas"]["AdjustmentEvent"][];
+            /**
+             * Adjustmenteventscount
+             * @default 0
+             */
+            adjustmentEventsCount: number;
+            /** Stocksneedingrefresh */
+            stocksNeedingRefresh?: string[];
+            /**
+             * Stocksneedingrefreshcount
+             * @default 0
+             */
+            stocksNeedingRefreshCount: number;
+            /** Integrityissues */
+            integrityIssues?: components["schemas"]["IntegrityIssue"][];
+            /**
+             * Integrityissuescount
+             * @default 0
+             */
+            integrityIssuesCount: number;
+            /** Recommendations */
+            recommendations?: string[];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /** OHLCRecord */
+        OHLCRecord: {
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+        };
+        /** OHLCVRecord */
+        OHLCVRecord: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /** Volume */
             volume: number;
         };
         /**
@@ -3362,7 +4169,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -3854,6 +4661,49 @@ export interface components {
             /** Pagination Key */
             pagination_key?: string | null;
         };
+        /** RefreshRequest */
+        RefreshRequest: {
+            /** Codes */
+            codes: string[];
+        };
+        /** RefreshResponse */
+        RefreshResponse: {
+            /** Totalstocks */
+            totalStocks: number;
+            /** Successcount */
+            successCount: number;
+            /** Failedcount */
+            failedCount: number;
+            /** Totalapicalls */
+            totalApiCalls: number;
+            /** Totalrecordsstored */
+            totalRecordsStored: number;
+            /** Results */
+            results: components["schemas"]["RefreshStockResult"][];
+            /** Errors */
+            errors?: string[];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /** RefreshStockResult */
+        RefreshStockResult: {
+            /** Code */
+            code: string;
+            /** Success */
+            success: boolean;
+            /**
+             * Recordsfetched
+             * @default 0
+             */
+            recordsFetched: number;
+            /**
+             * Recordsstored
+             * @default 0
+             */
+            recordsStored: number;
+            /** Error */
+            error?: string | null;
+        };
         /**
          * RelativeOHLCOptions
          * @description 相対OHLCオプション
@@ -3913,6 +4763,18 @@ export interface components {
                 [key: string]: number;
             };
         };
+        /** SearchResultItem */
+        SearchResultItem: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /**
+             * Match Type
+             * @description Match type: exact/partial
+             */
+            match_type: string;
+        };
         /**
          * SectorStockItem
          * @description セクター別銘柄アイテム
@@ -3969,6 +4831,13 @@ export interface components {
              * @description 最終更新日時 (ISO 8601)
              */
             lastUpdated: string;
+        };
+        /** SectorWithCount */
+        SectorWithCount: {
+            /** Sectorname */
+            sectorName: string;
+            /** Count */
+            count: number;
         };
         /**
          * SignalCategorySchema
@@ -4185,6 +5054,51 @@ export interface components {
             /** Nxfnceps */
             NxFNCEPS?: number | null;
         };
+        /** StatementRecord */
+        StatementRecord: {
+            /** Code */
+            code: string;
+            /** Discloseddate */
+            disclosedDate: string;
+            /** Earningspershare */
+            earningsPerShare?: number | null;
+            /** Profit */
+            profit?: number | null;
+            /** Equity */
+            equity?: number | null;
+            /** Typeofcurrentperiod */
+            typeOfCurrentPeriod?: string | null;
+            /** Typeofdocument */
+            typeOfDocument?: string | null;
+            /** Nextyearforecastearningspershare */
+            nextYearForecastEarningsPerShare?: number | null;
+            /** Bps */
+            bps?: number | null;
+            /** Sales */
+            sales?: number | null;
+            /** Operatingprofit */
+            operatingProfit?: number | null;
+            /** Ordinaryprofit */
+            ordinaryProfit?: number | null;
+            /** Operatingcashflow */
+            operatingCashFlow?: number | null;
+            /** Dividendfy */
+            dividendFy?: number | null;
+            /** Forecasteps */
+            forecastEps?: number | null;
+            /** Investingcashflow */
+            investingCashFlow?: number | null;
+            /** Financingcashflow */
+            financingCashFlow?: number | null;
+            /** Cashandequivalents */
+            cashAndEquivalents?: number | null;
+            /** Totalassets */
+            totalAssets?: number | null;
+            /** Sharesoutstanding */
+            sharesOutstanding?: number | null;
+            /** Treasuryshares */
+            treasuryShares?: number | null;
+        };
         /**
          * StatementsResponse
          * @description 財務諸表レスポンス（EPS サブセット）
@@ -4237,6 +5151,35 @@ export interface components {
              * @description 最終更新日時 (ISO 8601)
              */
             lastUpdated: string;
+        };
+        /** StockDataStats */
+        StockDataStats: {
+            /** Count */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /**
+             * Averagestocksperday
+             * @default 0
+             */
+            averageStocksPerDay: number;
+        };
+        /** StockDataValidation */
+        StockDataValidation: {
+            /** Count */
+            count: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Missingdates */
+            missingDates?: string[];
+            /**
+             * Missingdatescount
+             * @default 0
+             */
+            missingDatesCount: number;
         };
         /**
          * StockInfo
@@ -4308,6 +5251,29 @@ export interface components {
              */
             listedDate: string;
         };
+        /** StockListItem */
+        StockListItem: {
+            /**
+             * Stockcode
+             * @description Stock code (4-digit)
+             */
+            stockCode: string;
+            /**
+             * Record Count
+             * @description Number of OHLCV records
+             */
+            record_count: number;
+            /**
+             * Start Date
+             * @description First date
+             */
+            start_date?: string | null;
+            /**
+             * End Date
+             * @description Last date
+             */
+            end_date?: string | null;
+        };
         /**
          * StockSearchResponse
          * @description 銘柄検索レスポンス
@@ -4337,6 +5303,15 @@ export interface components {
             marketName: string;
             /** Sector33Name */
             sector33Name: string;
+        };
+        /** StockStats */
+        StockStats: {
+            /** Total */
+            total: number;
+            /** Bymarket */
+            byMarket?: {
+                [key: string]: number;
+            };
         };
         /**
          * StrategyDeleteResponse
@@ -4578,6 +5553,70 @@ export interface components {
              */
             warnings?: string[];
         };
+        /** SyncJobResponse */
+        SyncJobResponse: {
+            /** Jobid */
+            jobId: string;
+            /** Status */
+            status: string;
+            /** Mode */
+            mode: string;
+            progress?: components["schemas"]["SyncProgress"] | null;
+            result?: components["schemas"]["SyncResult"] | null;
+            /** Startedat */
+            startedAt: string;
+            /** Completedat */
+            completedAt?: string | null;
+            /** Error */
+            error?: string | null;
+        };
+        /**
+         * SyncMode
+         * @enum {string}
+         */
+        SyncMode: "auto" | "initial" | "incremental" | "indices-only";
+        /** SyncProgress */
+        SyncProgress: {
+            /** Stage */
+            stage: string;
+            /** Current */
+            current: number;
+            /** Total */
+            total: number;
+            /** Percentage */
+            percentage: number;
+            /** Message */
+            message: string;
+        };
+        /** SyncRequest */
+        SyncRequest: {
+            /** @default auto */
+            mode: components["schemas"]["SyncMode"];
+        };
+        /** SyncResult */
+        SyncResult: {
+            /** Success */
+            success: boolean;
+            /**
+             * Totalapicalls
+             * @default 0
+             */
+            totalApiCalls: number;
+            /**
+             * Stocksupdated
+             * @default 0
+             */
+            stocksUpdated: number;
+            /**
+             * Datesprocessed
+             * @default 0
+             */
+            datesProcessed: number;
+            /** Faileddates */
+            failedDates?: string[];
+            /** Errors */
+            errors?: string[];
+        };
         /**
          * TopixDataPoint
          * @description TOPIX データポイント
@@ -4636,6 +5675,12 @@ export interface components {
             /** Topix */
             topix: components["schemas"]["TopixRawItem"][];
         };
+        /** TopixStats */
+        TopixStats: {
+            /** Count */
+            count: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+        };
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -4644,6 +5689,59 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** DateRange */
+        src__server__schemas__db__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
+        /**
+         * DateRange
+         * @description 分析期間
+         */
+        src__server__schemas__factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
         };
         /**
          * ErrorDetail
@@ -8789,6 +9887,1772 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketScreeningResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_db_stats_api_db_stats_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketStatsResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_db_validate_api_db_validate_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketValidationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    start_sync_job_api_db_sync_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SyncRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CreateSyncJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sync_job_api_db_sync_jobs__jobId__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_sync_job_api_db_sync_jobs__jobId__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    refresh_stocks_api_db_stocks_refresh_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RefreshRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["RefreshResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_stocks_api_dataset__name__stocks_get: {
+        parameters: {
+            query?: {
+                min_records?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StockListItem"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_ohlcv_batch_api_dataset__name__stocks_ohlcv_batch_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated stock codes (max 100) */
+                codes: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_stock_ohlcv_api_dataset__name__stocks__code__ohlcv_get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OHLCVRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_topix_api_dataset__name__topix_get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OHLCRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_indices_api_dataset__name__indices_get: {
+        parameters: {
+            query?: {
+                min_records?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["IndexListItem"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_index_data_api_dataset__name__indices__code__get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OHLCRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_margin_batch_api_dataset__name__margin_batch_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated stock codes (max 100) */
+                codes: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["MarginRecord"][];
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_margin_api_dataset__name__margin__code__get: {
+        parameters: {
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_margin_list_api_dataset__name__margin_get: {
+        parameters: {
+            query?: {
+                min_records?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarginListItem"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_statements_batch_api_dataset__name__statements_batch_get: {
+        parameters: {
+            query: {
+                /** @description Comma-separated stock codes (max 100) */
+                codes: string;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: components["schemas"]["StatementRecord"][];
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_statements_api_dataset__name__statements__code__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                code: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StatementRecord"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_sectors_api_dataset__name__sectors_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SectorWithCount"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_sector_mapping_api_dataset__name__sectors_mapping_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string;
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_sector_stock_mapping_api_dataset__name__sectors_stock_mapping_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: string[];
+                    };
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_sector_stocks_api_dataset__name__sectors__sectorName__stocks_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                sectorName: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_datasets_api_dataset_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetListItem"][];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_dataset_api_dataset_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetCreateResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_info_api_dataset__name__info_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetInfoResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_sample_api_dataset__name__sample_get: {
+        parameters: {
+            query?: {
+                count?: number;
+                seed?: number | null;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSampleResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    search_dataset_api_dataset__name__search_get: {
+        parameters: {
+            query: {
+                /** @description Search term */
+                q: string;
+                limit?: number;
+            };
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetSearchResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_dataset_job_api_dataset_jobs__jobId__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_dataset_job_api_dataset_jobs__jobId__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CancelJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resume_dataset_api_dataset_resume_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DatasetCreateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["DatasetCreateResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    delete_dataset_api_dataset__name__delete: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
             /** @description Bad Request */
