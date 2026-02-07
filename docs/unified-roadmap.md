@@ -103,7 +103,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 |---|---|---|---|---|
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
-| 3 | FastAPI 統一 | **3A 完了** | **High** | 6-10 週 |
+| 3 | FastAPI 統一 | **3B 完了** | **High** | 6-10 週 |
 | 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
@@ -301,17 +301,39 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - 3C-E: bt→ts 各クライアント順次不要化
 - 3F: `src/api/` パッケージ完全削除
 
-### 3B: 読み取り API 移行
+### 3B: 読み取り API 移行 — **完了** (2026-02-07)
 
 *元: hono-to-fastapi-migration-roadmap.md Phase 2*
 
-- [ ] Health (`GET /health`)
-- [ ] Chart (5 エンドポイント)
-- [ ] Market Data (3 エンドポイント)
-- [ ] Analytics (9 エンドポイント)
-- [ ] JQuants Proxy (7 エンドポイント)
+25 読み取りエンドポイントを 4 サブフェーズで FastAPI に移行完了:
 
-**Go/No-Go**: 読取 API 全エンドポイントのレスポンス互換テスト合格
+- [x] **3B-1**: JQuants Proxy + Health (12 EP) — JQuantsAsyncClient, RateLimiter, ROE/margin 計算
+- [x] **3B-2a**: market.db 直接読み取り (4 EP) — MarketDbReader (sqlite3 read-only URI)
+- [x] **3B-2b**: Chart + sector-stocks (6 EP) — JQuants fallback 併用, ChartService
+- [x] **3B-3**: Complex Analytics (3 EP) — RankingService, FactorRegressionService, ScreeningService
+
+> `portfolio-factor-regression` は portfolio.db 依存のため Phase 3E に延期。
+
+**Go/No-Go 結果**: 全基準クリア
+- 新規テスト 160+ 件全通過（2307→2346 tests）
+- 既存テスト全通過（ruff 0 errors, pyright 0 errors）
+- ThreadPoolExecutor lifecycle issue 解決（`_get_executor()` パターン）
+
+**成果物**:
+
+| カテゴリ | ファイル |
+|---------|---------|
+| JQuants Client | `src/server/clients/jquants_client.py`, `rate_limiter.py` |
+| DB Reader | `src/server/db/market_reader.py` |
+| Routes | `analytics_complex.py`, `analytics_jquants.py`, `chart.py`, `jquants_proxy.py`, `market_data.py` |
+| Schemas | `ranking.py`, `factor_regression.py`, `screening.py`, `chart.py`, `jquants.py`, `market_data.py`, `analytics_roe.py`, `analytics_margin.py` |
+| Services | `ranking_service.py`, `factor_regression_service.py`, `screening_service.py`, `chart_service.py`, `jquants_proxy_service.py`, `market_data_service.py`, `roe_service.py`, `margin_analytics_service.py` |
+| Contract | `contracts/market-db-schema-v1.json` |
+
+**Key Lessons**:
+- ThreadPoolExecutor: module-level executors killed by lifespan shutdown → `_get_executor()` recreate pattern
+- Factor regression: population variance OLS (N divisor) matches Hono implementation
+- Screening: 200+ days data requirement, inlined SMA/EMA to avoid external deps
 
 ### 3C: Python SQLite アクセス層
 
@@ -371,47 +393,48 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 #### Health (1)
 | メソッド | パス | 3B |
 |---|---|---|
-| GET | `/health` | [ ] |
+| GET | `/health` | [x] |
 
 #### JQuants Proxy (7)
 | メソッド | パス | 3B |
 |---|---|---|
-| GET | `/api/jquants/auth/status` | [ ] |
-| GET | `/api/jquants/daily-quotes` | [ ] |
-| GET | `/api/jquants/indices` | [ ] |
-| GET | `/api/jquants/listed-info` | [ ] |
-| GET | `/api/jquants/statements` | [ ] |
-| GET | `/api/jquants/stocks/{symbol}/margin-interest` | [ ] |
-| GET | `/api/jquants/topix` | [ ] |
+| GET | `/api/jquants/auth/status` | [x] |
+| GET | `/api/jquants/daily-quotes` | [x] |
+| GET | `/api/jquants/indices` | [x] |
+| GET | `/api/jquants/listed-info` | [x] |
+| GET | `/api/jquants/statements` | [x] |
+| GET | `/api/jquants/stocks/{symbol}/margin-interest` | [x] |
+| GET | `/api/jquants/topix` | [x] |
 
 #### Chart (5)
 | メソッド | パス | 3B |
 |---|---|---|
-| GET | `/api/chart/indices` | [ ] |
-| GET | `/api/chart/indices/topix` | [ ] |
-| GET | `/api/chart/indices/{code}` | [ ] |
-| GET | `/api/chart/stocks/search` | [ ] |
-| GET | `/api/chart/stocks/{symbol}` | [ ] |
+| GET | `/api/chart/indices` | [x] |
+| GET | `/api/chart/indices/topix` | [x] |
+| GET | `/api/chart/indices/{code}` | [x] |
+| GET | `/api/chart/stocks/search` | [x] |
+| GET | `/api/chart/stocks/{symbol}` | [x] |
 
 #### Analytics (9)
 | メソッド | パス | 3B |
 |---|---|---|
-| GET | `/api/analytics/factor-regression/{symbol}` | [ ] |
-| GET | `/api/analytics/fundamentals/{symbol}` | [ ] |
-| GET | `/api/analytics/portfolio-factor-regression/{portfolioId}` | [ ] |
-| GET | `/api/analytics/ranking` | [ ] |
-| GET | `/api/analytics/roe` | [ ] |
-| GET | `/api/analytics/screening` | [ ] |
-| GET | `/api/analytics/sector-stocks` | [ ] |
-| GET | `/api/analytics/stocks/{symbol}/margin-pressure` | [ ] |
-| GET | `/api/analytics/stocks/{symbol}/margin-ratio` | [ ] |
+| GET | `/api/analytics/factor-regression/{symbol}` | [x] |
+| GET | `/api/analytics/fundamentals/{symbol}` | N/A (既存) |
+| GET | `/api/analytics/portfolio-factor-regression/{portfolioId}` | → 3E |
+| GET | `/api/analytics/ranking` | [x] |
+| GET | `/api/analytics/roe` | [x] |
+| GET | `/api/analytics/screening` | [x] |
+| GET | `/api/analytics/sector-stocks` | [x] |
+| GET | `/api/analytics/stocks/{symbol}/margin-pressure` | [x] |
+| GET | `/api/analytics/stocks/{symbol}/margin-ratio` | [x] |
 
-#### Market Data (3)
+#### Market Data (4)
 | メソッド | パス | 3B |
 |---|---|---|
-| GET | `/api/market/stocks` | [ ] |
-| GET | `/api/market/stocks/{code}/ohlcv` | [ ] |
-| GET | `/api/market/topix` | [ ] |
+| GET | `/api/market/stocks` | [x] |
+| GET | `/api/market/stocks/{code}` | [x] |
+| GET | `/api/market/stocks/{code}/ohlcv` | [x] |
+| GET | `/api/market/topix` | [x] |
 
 #### Database (6)
 | メソッド | パス | 3D |
