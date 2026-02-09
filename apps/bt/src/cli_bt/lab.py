@@ -279,7 +279,7 @@ def improve_command(
 
     from src.agent.strategy_improver import StrategyImprover
     from src.agent.yaml_updater import YamlUpdater
-    from src.strategy_config.loader import ConfigLoader
+    from src.lib.strategy_runtime.loader import ConfigLoader
 
     console.print(f"[bold blue]戦略分析[/bold blue]: {strategy}")
 

@@ -98,7 +98,7 @@ def _generate_with_marimo(
     Returns:
         html_path - 生成されたHTMLファイルのパス
     """
-    from src.backtest.marimo_executor import MarimoExecutor
+    from src.lib.backtest_core.marimo_executor import MarimoExecutor
 
     template_path = "notebooks/templates/marimo/optimization_analysis.py"
 

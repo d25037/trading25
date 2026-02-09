@@ -477,7 +477,7 @@ class LabService:
         """同期的に戦略改善を実行"""
         from src.agent.strategy_improver import StrategyImprover
         from src.agent.yaml_updater import YamlUpdater
-        from src.strategy_config.loader import ConfigLoader
+        from src.lib.strategy_runtime.loader import ConfigLoader
 
         improver = StrategyImprover()
         report = improver.analyze(strategy_name)

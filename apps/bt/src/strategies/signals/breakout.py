@@ -208,7 +208,7 @@ def atr_support_break_signal(
     )
 
     # サポートライン計算（共通関数使用）
-    from src.utils.indicators import compute_atr_support_line
+    from src.lib.indicators import compute_atr_support_line
 
     support_line = compute_atr_support_line(
         high, low, close, lookback_period, atr_multiplier

@@ -15,7 +15,7 @@ import pandas as pd
 import vectorbt as vbt
 from loguru import logger
 
-from src.utils.indicators import (
+from src.lib.indicators import (
     compute_atr_support_line,
     compute_nbar_support,
     compute_trading_value_ma,
