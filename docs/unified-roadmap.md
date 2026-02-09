@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-09（Phase 4C Step1 着手・DB/dataset_io 分離）
+最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step1 着手）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -104,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **進行中（4A 完了、4C Step1 完了、4B 未着手）** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A 完了、4C Step1 完了、4B 方針転換済み）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -599,7 +599,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4C Step1 完了、4B 未着手）  
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4C Step1 完了、4B 方針転換済み）  
 **再ベースライン日**: 2026-02-09
 
 *元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
@@ -620,8 +620,8 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 | `market-db-ts` | market.db 読み取り API | `apps/ts/packages/shared/src/db` |
 | `dataset-db-ts` | dataset.db 読み取り API + snapshot/manifest | `apps/ts/packages/shared/src/dataset` |
 | `portfolio-db-ts` | portfolio/watchlist DB 操作 | `apps/ts/packages/shared/src/portfolio`, `watchlist` |
-| `analytics-ts` | factor-regression / screening / ranking | `apps/ts/packages/shared/src/factor-regression`, `screening`, `services` |
-| `market-sync-ts` | market 同期・検証・ジョブ制御 | `apps/ts/packages/shared/src/market-sync` |
+| `analytics-ts` | **作成しない**（FastAPI 一本化後のため TS ドメイン実装は削除対象） | `apps/ts/packages/shared/src/factor-regression`, `screening` |
+| `market-sync-ts` | **作成しない**（FastAPI 一本化後のため TS ドメイン実装は削除対象） | `apps/ts/packages/shared/src/market-sync` |
 | `shared`（縮小） | 互換 re-export と `bt:sync` 関連スクリプト | `apps/ts/packages/shared` |
 
 #### Python 側
@@ -650,17 +650,17 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 - `apps/ts/packages/web` と `apps/ts/packages/cli` が `shared/src/*` の深いパスを直接参照しない
 - `apps/ts/packages/shared` に DB/HTTP の実装本体を残さない
 
-### 4B: TS ドメインロジック分離
+### 4B: TS ドメインロジック削減（削除中心）
 
 *元: packages-responsibility-roadmap.md Phase 3（再編）*
 
-- [ ] `apps/ts/packages/analytics-ts`, `market-sync-ts` を作成
-- [ ] factor-regression / screening / ranking / market-sync を `shared` から移管
-- [ ] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助」に縮小
+- [ ] `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体を段階削除
+- [ ] `apps/ts/packages/web` と `apps/ts/packages/cli` のローカル計算依存を撤去し、FastAPI endpoint + OpenAPI generated types に統一
+- [ ] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助 + 型ファサード」に縮小（`analytics-ts` / `market-sync-ts` は新設しない）
 
 **完了条件**:
-- `apps/ts/packages/shared` が再エクスポート中心の薄いファサードになる
-- `apps/ts/packages/web` と `apps/ts/packages/cli` が `analytics-ts` / `market-sync-ts` を直接利用する
+- `apps/ts/packages/shared` が再エクスポート/型公開中心の薄いファサードになる
+- `apps/ts/packages/web` と `apps/ts/packages/cli` が TS 内の重複ドメイン実装を参照せず、FastAPI を唯一の実行ロジックとして利用する
 
 ### 4C: Python ドメインパッケージ分離
 
@@ -849,7 +849,7 @@ Phase 4 ‖ Phase 5 (独立して実行可能)
 | 3F: 切替・廃止 | hono-to-fastapi-migration-roadmap.md | Phase 5 |
 | **Phase 4** | | |
 | 4A: TS データアクセス | packages-responsibility-roadmap.md | Phase 2 |
-| 4B: TS ドメインロジック | packages-responsibility-roadmap.md | Phase 3 |
+| 4B: TS ドメインロジック削減 | packages-responsibility-roadmap.md | Phase 3 |
 | 4C: Python パッケージ | packages-responsibility-roadmap.md | Phase 4 |
 | 4D: クリーンアップ | packages-responsibility-roadmap.md | Phase 5 |
 | **Phase 5** | | |

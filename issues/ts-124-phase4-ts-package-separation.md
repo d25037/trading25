@@ -12,20 +12,22 @@ blocks: []
 parent: null
 ---
 
-# ts-124 Phase 4: TS パッケージ責務分離
+# ts-124 Phase 4: TS パッケージ責務分離（4B は削除中心）
 
 ## 目的
-`apps/ts/packages/shared` に集約された責務を分離し、`web`/`cli` が用途別パッケージを直接参照する構成へ移行する。
+`apps/ts/packages/shared` に集約された責務を整理し、`web`/`cli` が用途別境界を直接参照する構成へ移行する。FastAPI 一本化後の重複ドメイン実装は新設移管ではなく削除を優先する。
 
 ## 受け入れ条件
-- `clients-ts`, `market-db-ts`, `dataset-db-ts`, `portfolio-db-ts`, `analytics-ts`, `market-sync-ts` の境界が作成される
+- `clients-ts`, `market-db-ts`, `dataset-db-ts`, `portfolio-db-ts` の境界が作成される
 - `apps/ts/packages/web` と `apps/ts/packages/cli` が `shared/src/*` の深いパスを直接参照しない
-- `apps/ts/packages/shared` が互換 re-export と `bt:sync` 補助中心の薄いファサードになる
+- `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体が段階削除される（`analytics-ts` / `market-sync-ts` は作成しない）
+- `apps/ts/packages/shared` が互換 re-export と `bt:sync` 補助・型公開中心の薄いファサードになる
+- `apps/ts/packages/web` と `apps/ts/packages/cli` の実行ロジックが FastAPI endpoint + OpenAPI generated types を優先利用する
 - lint/typecheck/test が通る
 
 ## 実施内容
 - Phase 4A: データアクセス + クライアント境界の作成と移管
-- Phase 4B: ドメインロジック（analytics / market-sync）の移管
+- Phase 4B: ドメインロジック（analytics / market-sync）の削減・撤去（削除中心）
 - 互換 re-export の導入と段階撤去計画の策定
 - import 依存と dep-direction チェックの更新
 
@@ -41,6 +43,7 @@ parent: null
 - 2026-02-09: lint / typecheck / test を通過し、Phase 4A の受け入れ条件（deep import 解消 + shared の薄い互換レイヤ化）を満たした。
 - 2026-02-09: `apps/ts` の `test`/`typecheck:all`/`test:backend`/`test:coverage` から archived `@trading25/api` を除外。
 - 2026-02-09: dep-direction ルールに `@trading25/clients-ts/backtest` を追加し allowlist を更新。
+- 2026-02-09: Phase 4B は「`analytics-ts` / `market-sync-ts` を新設して移管」から「FastAPI 一本化に合わせて TS 重複ドメイン実装を削除」に方針転換。
 
 ## 補足
 - 元タスク `ts-117` は archived API package 前提のため 2026-02-09 にクローズ済み
