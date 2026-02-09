@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step2 実体移管完了）
+最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step2 成果物反映）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -104,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管完了）** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管+検証完了）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -599,7 +599,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管完了）
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管+検証完了）
 **再ベースライン日**: 2026-02-09
 
 *元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
@@ -670,10 +670,37 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 - [x] `apps/bt/src/lib/indicators`, `backtest_core`, `strategy_runtime` を作成し責務を明確化（2026-02-09, Step2）
 - [x] `apps/bt/src/server` と `apps/bt/src/cli_*` の import 先を新境界へ切替（2026-02-09, Step2: server/cli 完了）
 - [x] 既存 API/CLI 挙動との互換回帰テストを維持（2026-02-09, Step1 範囲検証）
+- [x] `ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体を `src/lib/*` へ移管し、legacy 側を互換 facade 化（2026-02-09, Step2 追補）
+- [x] 旧 patch 経路依存テストを `src.lib.*` 実体に追従させ、境界テストを再通過（2026-02-09）
 
 **進捗**:
 - 2026-02-09: Step1（DB + dataset I/O 分離）完了。`src/server/db` は互換 re-export を維持しつつ、実装本体を `src/lib/*` へ移管。
 - 2026-02-09: Step2（`indicators` / `backtest_core` / `strategy_runtime` 境界追加）完了。`src/server` / `src/cli_*` の参照を `src.lib.*` へ切替し、`ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体も `src/lib/*` へ移管（legacy は互換 facade 化）。
+
+**成果物（4C Step2）**:
+- 実体移管:
+  - `apps/bt/src/lib/strategy_runtime/loader.py`
+  - `apps/bt/src/lib/backtest_core/runner.py`
+  - `apps/bt/src/lib/backtest_core/marimo_executor.py`
+- 互換 facade:
+  - `apps/bt/src/strategy_config/loader.py`
+  - `apps/bt/src/backtest/runner.py`
+  - `apps/bt/src/backtest/marimo_executor.py`
+- 追随テスト更新:
+  - `apps/bt/tests/security/test_security_validation.py`
+  - `apps/bt/tests/unit/backtest/test_backtest_runner.py`
+  - `apps/bt/tests/unit/backtest/test_marimo_executor.py`
+  - `apps/bt/tests/unit/optimization/test_notebook_generator.py`
+  - `apps/bt/tests/unit/server/routes/test_strategies.py`
+  - `apps/bt/tests/server/routes/test_lab.py`
+  - `apps/bt/tests/unit/agent/test_yaml_updater.py`
+
+**検証結果（4C Step2 追補）**:
+- `uv run ruff check src tests`: passed
+- `uv run pyright src`: 0 errors（既知 warning 1）
+- `uv run pytest tests/unit/strategy_config/test_loader.py`: 23 passed
+- `uv run pytest tests/security/test_security_validation.py tests/unit/backtest/test_backtest_runner.py tests/unit/backtest/test_marimo_executor.py tests/unit/backtest/test_walkforward.py tests/unit/backtest/test_manifest.py tests/unit/optimization/test_notebook_generator.py tests/unit/agent/test_yaml_updater.py tests/unit/server/routes/test_strategies.py tests/unit/lib/test_phase4c_import_boundaries.py`: 81 passed
+- `uv run pytest tests/server/routes/test_lab.py -k "execute_improve_sync"`: 2 passed
 
 **完了条件**:
 - `apps/bt/src/server/routes` / `services` / `cli_*` が legacy 実装に直接依存しない
@@ -691,6 +718,12 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 **完了条件**:
 - apps 配下に残るのは entrypoint + thin adapter
 - CI が分離後の責務境界を検証できる状態になる
+
+### Phase 4 次アクション（提案）
+
+1. 4B-1（削除準備）: `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の参照マップを作成し、未参照ファイルから先行削除する。
+2. 4B-2（実削除）: web/cli から TS ローカル計算依存を外し、FastAPI endpoint + OpenAPI generated types のみに統一する。
+3. 4D-1（整理開始）: Python 側の legacy facade（`src/strategy_config/*`, `src/backtest/*`）の呼び出し箇所を棚卸しし、削除可能順に issue 分割する。
 
 ### Phase 4 関連 Issue（2026-02-09 再整理）
 
