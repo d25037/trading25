@@ -29,6 +29,14 @@
 
     "baseUrl": "./",
     "paths": {
+      "@trading25/clients-ts": ["packages/clients-ts/src"],
+      "@trading25/clients-ts/*": ["packages/clients-ts/src/*"],
+      "@trading25/market-db-ts": ["packages/market-db-ts/src"],
+      "@trading25/market-db-ts/*": ["packages/market-db-ts/src/*"],
+      "@trading25/dataset-db-ts": ["packages/dataset-db-ts/src"],
+      "@trading25/dataset-db-ts/*": ["packages/dataset-db-ts/src/*"],
+      "@trading25/portfolio-db-ts": ["packages/portfolio-db-ts/src"],
+      "@trading25/portfolio-db-ts/*": ["packages/portfolio-db-ts/src/*"],
       "@trading25/shared": ["packages/shared/src"],
       "@trading25/shared/*": ["packages/shared/src/*"],
       "@trading25/web": ["packages/web/src"],

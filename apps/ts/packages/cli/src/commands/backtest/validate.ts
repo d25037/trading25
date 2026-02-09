@@ -4,7 +4,7 @@
  * 戦略設定検証コマンド
  */
 
-import { BacktestClient } from '@trading25/shared/clients/backtest';
+import { BacktestClient } from '@trading25/clients-ts/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';

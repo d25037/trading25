@@ -1,12 +1,13 @@
 ---
 id: ts-117
 title: "Coverage Gate: api 75/65"
-status: open
+status: done
 priority: medium
 labels: [test]
 project: ts
 created: 2026-02-02
-updated: 2026-02-02
+updated: 2026-02-09
+closed: 2026-02-09
 depends_on: [ts-112]
 blocks: []
 ---
@@ -32,3 +33,8 @@ blocks: []
 ## 受け入れ条件
 - `bun run test` 全パス
 - `bun run check:coverage` が新閾値で通る
+
+## 結果
+- 2026-02-09 時点で `apps/ts/packages/api` は Phase 3F により archived・read-only（FastAPI へ完全移行済み）。
+- 本 Issue の対象（API package coverage gate 引き上げ）は現行アーキテクチャの実行対象外となったためクローズ。
+- Phase 4 の追跡は `ts-124`（TS 側責務分離）へ引き継ぐ。

@@ -6632,7 +6632,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                      "$ref": "#/components/schemas/OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -6752,7 +6752,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                    "$ref": "#/components/schemas/OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -11393,7 +11393,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
               },
               {
                 "type": "null"
@@ -13279,7 +13279,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -14728,33 +14728,27 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -14766,8 +14760,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -14888,7 +14881,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -17983,7 +17976,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -18011,7 +18004,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -19072,7 +19065,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -19448,45 +19441,7 @@
         "type": "object",
         "title": "WatchlistUpdateRequest"
       },
-      "src__server__schemas__dataset_data__OHLCVRecord": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date"
-          },
-          "open": {
-            "type": "number",
-            "title": "Open"
-          },
-          "high": {
-            "type": "number",
-            "title": "High"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "volume": {
-            "type": "integer",
-            "title": "Volume"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord"
-      },
-      "src__server__schemas__db__DateRange": {
+      "src__server__schemas__dataset__DateRange": {
         "properties": {
           "min": {
             "type": "string",
@@ -19556,6 +19511,51 @@
         ],
         "title": "IndexMatch",
         "description": "指数マッチ結果"
+      },
+      "src__server__schemas__indicators__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
       "src__server__schemas__portfolio_factor_regression__DateRange": {
         "properties": {

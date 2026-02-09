@@ -2,8 +2,8 @@
  * Compile-time contract test: Verify that hand-written backtest types
  * are compatible with OpenAPI-generated types from trading25-bt.
  *
- * If this file fails to compile (tsc --noEmit), it means the manual types
- * in types.ts and the bt OpenAPI spec have drifted apart.
+ * If this file fails to compile (tsc --noEmit), it means the canonical manual types
+ * in @trading25/clients-ts/backtest and the bt OpenAPI spec have drifted apart.
  *
  * This file is never executed at runtime — it only participates in type checking.
  *
@@ -12,7 +12,7 @@
  * We use Normalize<T> to make all properties required and strip `undefined` from
  * value unions so that structural shapes can be compared cleanly.
  *
- * Types that exist only in the manual types.ts but not in the bt OpenAPI schema
+ * Types that exist only in the manual client package but not in the bt OpenAPI schema
  * (e.g., BacktestClientConfig) are NOT checked here.
  */
 
@@ -57,7 +57,7 @@ import type {
   StrategyUpdateResponse as ManualStrategyUpdateResponse,
   StrategyValidationRequest as ManualStrategyValidationRequest,
   StrategyValidationResponse as ManualStrategyValidationResponse,
-} from '../types.js';
+} from '@trading25/clients-ts/backtest';
 import type { components } from './bt-api-types.js';
 
 type Schemas = components['schemas'];

@@ -1,8 +1,2 @@
-/**
- * Market Schema Index
- *
- * Market-specific table definitions
- */
-
-export * from './index-master';
-export * from './sync-metadata';
+// Compatibility re-export during Phase 4 migration.
+export * from '@trading25/market-db-ts/db/schema/market/index';

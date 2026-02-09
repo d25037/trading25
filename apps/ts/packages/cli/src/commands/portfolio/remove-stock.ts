@@ -3,7 +3,7 @@
  * Remove a stock from a portfolio via API
  */
 
-import type { PortfolioItemResponse } from '@trading25/shared/portfolio';
+import type { PortfolioItemResponse } from '@trading25/portfolio-db-ts/portfolio';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import { ApiClient } from '../../utils/api-client.js';

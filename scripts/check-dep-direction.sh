@@ -12,7 +12,7 @@ allowlist_file="${repo_root}/scripts/dep-direction-allowlist.txt"
 search_dir="${repo_root}/apps/ts"
 
 # Patterns that indicate ts→bt dependency
-combined_pattern='localhost:3002|127\.0\.0\.1:3002|BT_API_URL|/bt/api/|BacktestClient|@trading25/shared/clients/backtest|bt-api-types|backtest/generated'
+combined_pattern='localhost:3002|127\.0\.0\.1:3002|BT_API_URL|/bt/api/|BacktestClient|@trading25/shared/clients/backtest|@trading25/clients-ts/backtest|bt-api-types|backtest/generated'
 
 # ── Load allowlist (strip comments and blank lines) ─────
 allowlist_clean=$(sed -e 's/#.*$//' -e '/^[[:space:]]*$/d' "$allowlist_file" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//')

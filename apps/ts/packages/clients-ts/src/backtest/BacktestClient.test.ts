@@ -1,6 +1,6 @@
 import type { Mock } from 'bun:test';
 import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
-import { createMockResponse } from '../../test-utils/fetch-mock.js';
+import { createMockResponse } from '../test-utils/fetch-mock.js';
 import { BacktestApiError, BacktestClient } from './BacktestClient.js';
 import type { BacktestJobResponse } from './types.js';
 

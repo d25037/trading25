@@ -2,8 +2,10 @@
  * Backtest Client Module
  */
 
-export { BacktestApiError, BacktestClient } from './BacktestClient.js';
-export { LabResultDataSchema, validateLabResultData } from './lab-result-schemas.js';
+// Compatibility re-export during Phase 4 migration.
+// Canonical implementation moved to @trading25/clients-ts.
+export { BacktestApiError, BacktestClient } from '@trading25/clients-ts/backtest';
+export { LabResultDataSchema, validateLabResultData } from '@trading25/clients-ts/backtest';
 export type {
   BacktestClientConfig,
   BacktestJobResponse,
@@ -73,5 +75,5 @@ export type {
   StrategyUpdateResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
-  Timeframe as BtTimeframe,
-} from './types.js';
+  BtTimeframe,
+} from '@trading25/clients-ts/backtest';

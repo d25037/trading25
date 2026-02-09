@@ -4,7 +4,7 @@
  * 実行中のバックテストジョブをキャンセル
  */
 
-import { BacktestApiError } from '@trading25/shared/clients/backtest';
+import { BacktestApiError } from '@trading25/clients-ts/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
@@ -42,7 +42,7 @@ ${CLI_NAME} backtest cancel <job-id>`,
       throw new CLIValidationError('job ID is required');
     }
 
-    const { BacktestClient } = await import('@trading25/shared/clients/backtest');
+    const { BacktestClient } = await import('@trading25/clients-ts/backtest');
     const client = new BacktestClient({ baseUrl: btUrl });
     const spinner = ora('Cancelling backtest job...').start();
 

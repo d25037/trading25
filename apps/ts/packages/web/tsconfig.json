@@ -11,6 +11,14 @@
     "paths": {
       "@/*": ["./src/*"],
       "@": ["./src"],
+      "@trading25/clients-ts": ["../clients-ts/src"],
+      "@trading25/clients-ts/*": ["../clients-ts/src/*"],
+      "@trading25/market-db-ts": ["../market-db-ts/src"],
+      "@trading25/market-db-ts/*": ["../market-db-ts/src/*"],
+      "@trading25/dataset-db-ts": ["../dataset-db-ts/src"],
+      "@trading25/dataset-db-ts/*": ["../dataset-db-ts/src/*"],
+      "@trading25/portfolio-db-ts": ["../portfolio-db-ts/src"],
+      "@trading25/portfolio-db-ts/*": ["../portfolio-db-ts/src/*"],
       "@trading25/shared/*": ["../shared/src/*"],
       "@trading25/shared": ["../shared/src"]
     }

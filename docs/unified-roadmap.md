@@ -1,6 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
+最終更新: 2026-02-09（Phase 4 再ベースライン）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -103,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **未着手** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A 完了、4B/4C 未着手）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -596,86 +597,102 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ---
 
-## Phase 4: パッケージ分離
+## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4B/4C 未着手）  
+**再ベースライン日**: 2026-02-09
 
-*元: packages-responsibility-roadmap.md Phase 2-5*
+*元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
 
-### 目標像: パッケージ責務テーブル
+### 前提条件（2026-02-09 現在）
 
-#### コア契約と型
-| パッケージ | 責務 | 移行元 |
+- FastAPI (:3002) が唯一のバックエンド
+- `apps/ts/packages/api` は archived・read-only のため Phase 4 の移行対象外
+- `contracts/` が bt/ts 間インターフェースの SoT（`packages/contracts` は任意拡張）
+- Phase 4 の目的は「機能追加」ではなく責務再配置（挙動互換維持）
+
+### 目標像: Phase 4 完了時の責務
+
+#### TypeScript 側
+| 境界（新規/縮小） | 責務 | 現在の主な移行元 |
 |---|---|---|
-| `packages/contracts` | JSON Schema / OpenAPI からの型生成、バージョニング | `contracts/`, `apps/ts/packages/shared`, `apps/bt/src/models` |
-| `packages/strategy-config` | strategy-config の読み書き・検証 | `contracts/strategy-config-v1.schema.json`, `apps/bt/src/strategy_config` |
+| `clients-ts` | FastAPI クライアントと generated types の公開境界 | `apps/ts/packages/shared/src/clients` |
+| `market-db-ts` | market.db 読み取り API | `apps/ts/packages/shared/src/db` |
+| `dataset-db-ts` | dataset.db 読み取り API + snapshot/manifest | `apps/ts/packages/shared/src/dataset` |
+| `portfolio-db-ts` | portfolio/watchlist DB 操作 | `apps/ts/packages/shared/src/portfolio`, `watchlist` |
+| `analytics-ts` | factor-regression / screening / ranking | `apps/ts/packages/shared/src/factor-regression`, `screening`, `services` |
+| `market-sync-ts` | market 同期・検証・ジョブ制御 | `apps/ts/packages/shared/src/market-sync` |
+| `shared`（縮小） | 互換 re-export と `bt:sync` 関連スクリプト | `apps/ts/packages/shared` |
 
-#### データアクセス (TS)
-| パッケージ | 責務 | 移行元 |
+#### Python 側
+| 境界（論理パッケージ） | 責務 | 現在の主な移行元 |
 |---|---|---|
-| `packages/market-db-ts` | market.db 読み取り API | `apps/ts/packages/shared/src/db` |
-| `packages/dataset-db-ts` | dataset.db 読み取り API + snapshot/manifest | `apps/ts/packages/shared/src/dataset` |
-| `packages/portfolio-db-ts` | portfolio/watchlist DB 操作 | `apps/ts/packages/shared/src/portfolio`, `watchlist` |
+| `market-db-py` | market.db / dataset.db / portfolio.db のアクセス境界 | `apps/bt/src/server/db` |
+| `dataset-io-py` | snapshot/manifest・dataset 書き込み補助 | `apps/bt/src/server/db/dataset_writer.py`, `apps/bt/src/server/services/dataset_builder_service.py` |
+| `indicators-py` | indicator 計算のコアロジック | `apps/bt/src/utils/indicators.py`, `apps/bt/src/server/services` |
+| `backtest-core` | backtest 実行エンジン | `apps/bt/src/backtest`, `apps/bt/src/strategies` |
+| `strategy-runtime` | strategy config 読み取りと実行 | `apps/bt/src/strategy_config`, `apps/bt/src/strategies` |
 
-#### ドメインロジック (TS)
-| パッケージ | 責務 | 移行元 |
-|---|---|---|
-| `packages/analytics-ts` | factor-regression / screening / ranking | `apps/ts/packages/shared/src/factor-regression`, `screening`, `services` |
-| `packages/market-sync-ts` | market 同期・検証・ジョブ制御 | `apps/ts/packages/shared/src/market-sync` |
-| `packages/clients-ts` | bt/ts API クライアント | `apps/ts/packages/shared/src/clients` |
+> 実装初期は Python 側を `apps/bt/src/lib/*` で分離し、外部配布形式（別 repo/package 化）は Phase 4 完了後に判断する。
 
-#### データアクセス (Python)
-| パッケージ | 責務 | 移行元 |
-|---|---|---|
-| `packages/market-db-py` | market.db / dataset.db の読み取り | `apps/bt/src/data`, `apps/bt/src/api` |
-| `packages/dataset-io-py` | snapshot/manifest の読み書き | `apps/bt/src/data` |
+### 4A: TS データアクセス + クライアント分離
 
-#### ドメインロジック (Python)
-| パッケージ | 責務 | 移行元 |
-|---|---|---|
-| `packages/indicators-py` | indicator 計算のコアロジック | `apps/bt/src/utils/indicators.py`, `apps/bt/src/server/services` |
-| `packages/backtest-core` | backtest 実行エンジン | `apps/bt/src/backtest`, `apps/bt/src/strategies` |
-| `packages/strategy-runtime` | strategy config 読み取りと実行 | `apps/bt/src/strategy_config`, `apps/bt/src/strategies` |
+*元: packages-responsibility-roadmap.md Phase 2（再編）*
 
-### 4A: TS データアクセス層
+- [x] `apps/ts/packages/clients-ts`, `market-db-ts`, `dataset-db-ts`, `portfolio-db-ts` を作成
+- [x] `apps/ts/packages/shared/src/db`, `dataset`, `portfolio`, `watchlist`, `clients` から段階移管（実装本体を新パッケージへ移動）
+- [x] `apps/ts/packages/web` と `apps/ts/packages/cli` の import を新パッケージへ切替（backtest + dataset/portfolio/watchlist）
+- [x] `apps/ts/packages/shared` に互換 re-export を一時配置して breaking change を抑制（`db/dataset/portfolio/watchlist/clients`）
 
-*元: packages-responsibility-roadmap.md Phase 2*
+**完了**: 2026-02-09（4A）
 
-- [ ] `market-db-ts`, `dataset-db-ts`, `portfolio-db-ts` を作成
-- [ ] `apps/ts/packages/shared/src/db`, `dataset`, `portfolio`, `watchlist` のロジック移動
-- [ ] `apps/ts/packages/api` が packages 経由で DB にアクセスするよう変更
+**完了条件**:
+- `apps/ts/packages/web` と `apps/ts/packages/cli` が `shared/src/*` の深いパスを直接参照しない
+- `apps/ts/packages/shared` に DB/HTTP の実装本体を残さない
 
-**完了条件**: `apps/ts/packages/api` が DB 直接実装を持たない
+### 4B: TS ドメインロジック分離
 
-### 4B: TS ドメインロジック
+*元: packages-responsibility-roadmap.md Phase 3（再編）*
 
-*元: packages-responsibility-roadmap.md Phase 3*
+- [ ] `apps/ts/packages/analytics-ts`, `market-sync-ts` を作成
+- [ ] factor-regression / screening / ranking / market-sync を `shared` から移管
+- [ ] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助」に縮小
 
-- [ ] `analytics-ts`, `market-sync-ts`, `clients-ts` を作成
-- [ ] `apps/ts/packages/shared` を薄いファサードに縮小
-- [ ] `apps/ts/packages/cli` と `apps/ts/packages/api` の依存先を packages に切替
+**完了条件**:
+- `apps/ts/packages/shared` が再エクスポート中心の薄いファサードになる
+- `apps/ts/packages/web` と `apps/ts/packages/cli` が `analytics-ts` / `market-sync-ts` を直接利用する
 
-**完了条件**: `apps/ts/packages/shared` が再エクスポート中心
+### 4C: Python ドメインパッケージ分離
 
-### 4C: Python パッケージ
+*元: packages-responsibility-roadmap.md Phase 4（再編）*
 
-*元: packages-responsibility-roadmap.md Phase 4*
+- [ ] `apps/bt/src/lib/market_db`, `dataset_io` を作成し `src/server/db` と dataset I/O を再配置
+- [ ] `apps/bt/src/lib/indicators`, `backtest_core`, `strategy_runtime` を作成し責務を明確化
+- [ ] `apps/bt/src/server` と `apps/bt/src/cli_*` の import 先を新境界へ切替
+- [ ] 既存 API/CLI 挙動との互換回帰テストを維持
 
-- [ ] `market-db-py`, `dataset-io-py` を作成し `apps/bt/src/data` を分割
-- [ ] `indicators-py` を作成し indicator 計算を集約
-- [ ] `backtest-core` を作成し backtest 実行系を切り出し
+**完了条件**:
+- `apps/bt/src/server/routes` / `services` / `cli_*` が legacy 実装に直接依存しない
+- DB アクセス層が `market_db` 境界に集約される
 
-**完了条件**: `apps/bt/src/server` と `apps/bt/src/cli_*` が packages 経由で計算
+### 4D: 互換レイヤ整理 + CI 段階実行
 
-### 4D: クリーンアップ
+*元: packages-responsibility-roadmap.md Phase 5（再編）*
 
-*元: packages-responsibility-roadmap.md Phase 5*
+- [ ] 一時的な互換 re-export を段階削除
+- [ ] `apps/ts/packages/shared` と `apps/bt/src` の重複実装を削除
+- [ ] CI を「パッケージ単体テスト」と「apps 結合テスト」に段階化
+- [ ] `scripts/check-dep-direction.sh` の allowlist と docs を新境界へ更新
 
-- [ ] `apps/ts/packages/shared` の不要モジュール削除
-- [ ] `apps/bt/src` の重複ロジック削減
-- [ ] CI で packages 単体テストと apps 結合テストの段階実行
+**完了条件**:
+- apps 配下に残るのは entrypoint + thin adapter
+- CI が分離後の責務境界を検証できる状態になる
 
-**完了条件**: apps/ 配下に残るのは entrypoint と thin adapter のみ
+### Phase 4 関連 Issue（2026-02-09 再整理）
+
+- [x] `ts-117`: archived API package 前提のためクローズ（`../issues/done/ts-117-coverage-api-75-65.md`）
+- [ ] `ts-124`: TS 側責務分離トラッキング（`../issues/ts-124-phase4-ts-package-separation.md`）
+- [ ] `bt-026`: Python 側責務分離トラッキング（`../issues/bt-026-phase4-python-domain-package-split.md`）
 
 ---
 
@@ -844,6 +861,8 @@ Phase 4 ‖ Phase 5 (独立して実行可能)
 ## Appendix D: アーカイブ元ドキュメント
 
 統合元の 5 ドキュメントは `docs/archive/` に移動済み:
+
+> Note (2026-02-09): 下表の「状態（統合時点）」はアーカイブ取り込み時のスナップショット。現況は本文のステータスダッシュボードと各 Phase 節を参照。
 
 | ファイル | 内容 | 状態（統合時点） |
 |---|---|---|

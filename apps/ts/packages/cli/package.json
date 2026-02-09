@@ -18,6 +18,9 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@trading25/clients-ts": "workspace:*",
+    "@trading25/dataset-db-ts": "workspace:*",
+    "@trading25/portfolio-db-ts": "workspace:*",
     "@trading25/shared": "workspace:*",
     "chalk": "^5.3.0",
     "gunshi": "^0.27.0",

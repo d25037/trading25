@@ -1,6 +1,6 @@
-# Shared Package - Core Business Logic
+# Shared Package - Compatibility Facade
 
-JQuants API client, SQLite dataset management, technical analysis, and fundamental metrics.
+Phase 4A 以降、`@trading25/shared` は主に互換 re-export と補助ユーティリティを提供する薄いファサード。
 
 ## Architecture
 
@@ -13,16 +13,16 @@ JQuants API client, SQLite dataset management, technical analysis, and fundament
 
 | Module | Purpose |
 |--------|---------|
-| `@trading25/shared/dataset` | Dataset builder, reader, fetchers |
+| `@trading25/shared/dataset` | **互換 re-export** → `@trading25/dataset-db-ts` |
 | `@trading25/shared/ta` | Utilities only (Timeframe変換、Relative OHLC、インジケータ計算は全てapps/bt/ API移行完了) |
 | `@trading25/shared/fundamental-analysis` | ROE, ROA, PER, PBR, EPS, BPS calculations |
 | `@trading25/shared/factor-regression` | Two-stage factor regression for risk decomposition |
 | `@trading25/shared/screening` | Range Break detection algorithms |
-| `@trading25/shared/portfolio` | Portfolio CRUD operations |
-| `@trading25/shared/watchlist` | Watchlist management (lightweight stock monitoring) |
+| `@trading25/shared/portfolio` | **互換 re-export** → `@trading25/portfolio-db-ts/portfolio` |
+| `@trading25/shared/watchlist` | **互換 re-export** → `@trading25/portfolio-db-ts/watchlist` |
 | `@trading25/shared/market-sync` | Market data sync and rankings |
-| `@trading25/shared/db` | Drizzle ORM schemas and operations |
-| `@trading25/shared/clients/backtest` | Backtest API client + Lab types for trading25-bt backend |
+| `@trading25/shared/db` | **互換 re-export** → `@trading25/market-db-ts/db` |
+| `@trading25/shared/clients/backtest` | **互換 re-export** → `@trading25/clients-ts/backtest` |
 
 ## API Authentication
 

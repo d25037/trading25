@@ -11,7 +11,7 @@ import type {
   OHLCVRecord,
   OHLCVResampleRequest,
   OHLCVResampleResponse,
-} from '@trading25/shared/clients/backtest';
+} from '@trading25/clients-ts/backtest';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { apiPost } from '@/lib/api-client';
