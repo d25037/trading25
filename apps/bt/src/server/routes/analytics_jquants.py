@@ -22,6 +22,8 @@ from src.server.schemas.fundamentals import (
     FundamentalsComputeResponse,
 )
 from src.server.services.fundamentals_service import fundamentals_service
+from src.server.services.margin_analytics_service import MarginAnalyticsService
+from src.server.services.roe_service import ROEService
 
 router = APIRouter(prefix="/api/analytics", tags=["Analytics"])
 
@@ -37,12 +39,18 @@ def _get_executor() -> ThreadPoolExecutor:
     return _executor
 
 
-def _get_roe_service(request: Request):
-    return request.app.state.roe_service
+def _get_roe_service(request: Request) -> ROEService:
+    service = getattr(request.app.state, "roe_service", None)
+    if service is None:
+        raise HTTPException(status_code=422, detail="ROE service not initialized")
+    return service
 
 
-def _get_margin_service(request: Request):
-    return request.app.state.margin_analytics_service
+def _get_margin_service(request: Request) -> MarginAnalyticsService:
+    service = getattr(request.app.state, "margin_analytics_service", None)
+    if service is None:
+        raise HTTPException(status_code=422, detail="Margin analytics service not initialized")
+    return service
 
 
 @router.get("/roe", response_model=ROEResponse)

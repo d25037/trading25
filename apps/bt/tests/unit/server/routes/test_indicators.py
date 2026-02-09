@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
+from src.api.exceptions import APIError, APINotFoundError
 from src.server.app import app
 
 client = TestClient(app)
@@ -168,6 +169,51 @@ class TestComputeEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert len(data["indicators"]) == 3
+
+    @patch("src.server.services.indicator_service.indicator_service.compute_indicators")
+    def test_compute_api_not_found_returns_404(self, mock_compute: MagicMock):
+        """APINotFoundError が 404 で返ること"""
+        mock_compute.side_effect = APINotFoundError("Resource not found: Stock not found")
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "9999",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 404
+
+    @patch("src.server.services.indicator_service.indicator_service.compute_indicators")
+    def test_compute_api_error_returns_status_code(self, mock_compute: MagicMock):
+        """APIError が適切なステータスコードで返ること"""
+        mock_compute.side_effect = APIError("Bad request", status_code=400)
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 400
+
+    @patch("src.server.services.indicator_service.indicator_service.compute_indicators")
+    def test_compute_api_error_no_status_returns_500(self, mock_compute: MagicMock):
+        """status_code=None の APIError が 500 で返ること"""
+        mock_compute.side_effect = APIError("Connection failed")
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 500
 
 
 class TestMarginEndpoint:

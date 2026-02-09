@@ -56,18 +56,13 @@ class PortfolioPerformanceService:
         if not items:
             return self._empty_response(portfolio, warnings)
 
-        # 各銘柄の最新価格を取得
-        codes_5 = [f"{item.code}0" for item in items]
-        latest_prices = self._get_latest_prices(codes_5)
-
         # Holdings 計算
         holdings: list[HoldingDetail] = []
         total_cost = 0.0
         current_value = 0.0
 
         for item in items:
-            code5 = f"{item.code}0"
-            current_price = latest_prices.get(code5)
+            current_price = self._reader.get_latest_price(item.code)
             if current_price is None:
                 warnings.append(f"No price data for {item.code}")
                 current_price = item.purchase_price  # fallback
@@ -164,24 +159,6 @@ class PortfolioPerformanceService:
             warnings=warnings,
         )
 
-    def _get_latest_prices(self, codes_5: list[str]) -> dict[str, float]:
-        """各銘柄の最新終値を取得"""
-        if not codes_5:
-            return {}
-        placeholders = ",".join("?" for _ in codes_5)
-        rows = self._reader.query(
-            f"""
-            SELECT code, close FROM stock_data
-            WHERE (code, date) IN (
-                SELECT code, MAX(date) FROM stock_data
-                WHERE code IN ({placeholders})
-                GROUP BY code
-            )
-            """,
-            tuple(codes_5),
-        )
-        return {r["code"]: r["close"] for r in rows}
-
     def _calculate_portfolio_timeseries(
         self,
         items: Sequence[Row[Any]],
@@ -195,14 +172,7 @@ class PortfolioPerformanceService:
 
         for item in items:
             code4 = item.code  # type: ignore[union-attr]
-            code5 = f"{code4}0"
-            prices = [
-                (r["date"], r["close"])
-                for r in self._reader.query(
-                    "SELECT date, close FROM stock_data WHERE code = ? ORDER BY date",
-                    (code5,),
-                )
-            ]
+            prices = self._reader.get_stock_prices_by_date(code4)
             if len(prices) >= 2:
                 returns = _calculate_daily_returns(prices)
                 daily_returns_by_code[code4] = [(dr.date, dr.ret) for dr in returns]

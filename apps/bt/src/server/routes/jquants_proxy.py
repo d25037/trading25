@@ -21,12 +21,17 @@ from src.server.schemas.jquants import (
     TopixRawResponse,
 )
 
+from src.server.services.jquants_proxy_service import JQuantsProxyService
+
 router = APIRouter(prefix="/api/jquants", tags=["JQuants Proxy"])
 
 
-def _get_proxy_service(request: Request):
+def _get_proxy_service(request: Request) -> JQuantsProxyService:
     """Request state から JQuantsProxyService を取得"""
-    return request.app.state.jquants_proxy_service
+    service = getattr(request.app.state, "jquants_proxy_service", None)
+    if service is None:
+        raise HTTPException(status_code=422, detail="JQuants proxy service not initialized")
+    return service
 
 
 @router.get("/auth/status", response_model=AuthStatusResponse)

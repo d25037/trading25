@@ -17,8 +17,16 @@ from src.server.schemas.market_data import (
     MarketStockData,
     StockInfo,
 )
+from src.server.services.market_data_service import MarketDataService
 
 router = APIRouter(tags=["Market Data"])
+
+
+def _get_market_data_service(request: Request) -> MarketDataService:
+    service = getattr(request.app.state, "market_data_service", None)
+    if service is None:
+        raise HTTPException(status_code=422, detail="Market database not initialized")
+    return service
 
 
 @router.get(
@@ -31,9 +39,7 @@ def get_all_stocks(
     market: Literal["prime", "standard"] = Query(default="prime", description="市場コード"),
     history_days: int = Query(default=300, ge=1, le=1000, description="履歴日数"),
 ) -> list[MarketStockData]:
-    from src.server.services.market_data_service import MarketDataService
-
-    service: MarketDataService = request.app.state.market_data_service
+    service = _get_market_data_service(request)
     result = service.get_all_stocks(market=market, history_days=history_days)
     if result is None:
         raise HTTPException(status_code=404, detail="Market database not found")
@@ -49,9 +55,7 @@ def get_stock_info(
     request: Request,
     code: str,
 ) -> StockInfo:
-    from src.server.services.market_data_service import MarketDataService
-
-    service: MarketDataService = request.app.state.market_data_service
+    service = _get_market_data_service(request)
     result = service.get_stock_info(code)
     if result is None:
         raise HTTPException(status_code=404, detail="Stock not found")
@@ -69,9 +73,7 @@ def get_stock_ohlcv(
     start_date: str | None = Query(default=None, description="開始日 (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="終了日 (YYYY-MM-DD)"),
 ) -> list[MarketOHLCVRecord]:
-    from src.server.services.market_data_service import MarketDataService
-
-    service: MarketDataService = request.app.state.market_data_service
+    service = _get_market_data_service(request)
     result = service.get_stock_ohlcv(code, start_date=start_date, end_date=end_date)
     if result is None:
         raise HTTPException(status_code=404, detail="Stock not found")
@@ -88,9 +90,7 @@ def get_topix(
     start_date: str | None = Query(default=None, description="開始日 (YYYY-MM-DD)"),
     end_date: str | None = Query(default=None, description="終了日 (YYYY-MM-DD)"),
 ) -> list[MarketOHLCRecord]:
-    from src.server.services.market_data_service import MarketDataService
-
-    service: MarketDataService = request.app.state.market_data_service
+    service = _get_market_data_service(request)
     result = service.get_topix(start_date=start_date, end_date=end_date)
     if result is None:
         raise HTTPException(

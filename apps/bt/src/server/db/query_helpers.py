@@ -30,6 +30,15 @@ def expand_stock_code(code: str) -> str:
     return code
 
 
+def stock_code_candidates(code: str) -> tuple[str, ...]:
+    """DB検索向けの銘柄コード候補（4桁優先、必要なら5桁も含む）"""
+    code4 = normalize_stock_code(code)
+    code5 = expand_stock_code(code4)
+    if code4 == code5:
+        return (code4,)
+    return (code4, code5)
+
+
 def is_valid_stock_code(code: str) -> bool:
     """4桁銘柄コードバリデーション（Drizzle isValidStockCode と同一）"""
     return bool(re.match(r"^\d[0-9A-Z]\d[0-9A-Z]$", code))

@@ -9,6 +9,7 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from src.api.exceptions import APIError, APINotFoundError
 from src.server.app import create_app
 
 
@@ -364,3 +365,49 @@ class TestResampleMonthly:
             assert response.status_code == 200
             data = response.json()
             assert data["timeframe"] == "monthly"
+
+
+class TestResampleAPIErrors:
+    """APINotFoundError / APIError のテスト"""
+
+    def test_api_not_found_returns_404(self, client):
+        """APINotFoundError が 404 で返ること"""
+        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.side_effect = APINotFoundError("Resource not found: Stock not found")
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "9999",
+                "source": "market",
+                "timeframe": "weekly",
+            })
+
+            assert response.status_code == 404
+
+    def test_api_error_returns_status_code(self, client):
+        """APIError が適切なステータスコードで返ること"""
+        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.side_effect = APIError("Bad request", status_code=400)
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "7203",
+                "source": "market",
+                "timeframe": "weekly",
+            })
+
+            assert response.status_code == 400
+
+    def test_api_error_no_status_returns_500(self, client):
+        """status_code=None の APIError が 500 で返ること"""
+        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.side_effect = APIError("Connection failed")
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "7203",
+                "source": "market",
+                "timeframe": "weekly",
+            })
+
+            assert response.status_code == 500

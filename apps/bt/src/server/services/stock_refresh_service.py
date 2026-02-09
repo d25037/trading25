@@ -55,12 +55,12 @@ async def refresh_stocks(
                 rows.append({
                     "code": normalized,
                     "date": date,
-                    "open": d.get("Open", 0),
-                    "high": d.get("High", 0),
-                    "low": d.get("Low", 0),
-                    "close": d.get("Close", 0),
-                    "volume": d.get("Volume", 0),
-                    "adjustment_factor": d.get("AdjustmentFactor"),
+                    "open": d.get("O", 0),
+                    "high": d.get("H", 0),
+                    "low": d.get("L", 0),
+                    "close": d.get("C", 0),
+                    "volume": d.get("Vo", 0),
+                    "adjustment_factor": d.get("AdjFactor"),
                     "created_at": datetime.now(UTC).isoformat(),
                 })
 

@@ -20,8 +20,8 @@ from src.server.services.dataset_presets import PresetConfig
 
 def test_filter_stocks_by_market() -> None:
     stocks = [
-        {"Code": "72030", "MarketCodeName": "プライム", "ScaleCategory": "TOPIX Core30"},
-        {"Code": "99990", "MarketCodeName": "グロース", "ScaleCategory": ""},
+        {"Code": "72030", "MktNm": "プライム", "ScaleCat": "TOPIX Core30"},
+        {"Code": "99990", "MktNm": "グロース", "ScaleCat": ""},
     ]
     preset = PresetConfig(markets=["prime"])
     result = _filter_stocks(stocks, preset)
@@ -31,8 +31,8 @@ def test_filter_stocks_by_market() -> None:
 
 def test_filter_stocks_by_scale_categories() -> None:
     stocks = [
-        {"Code": "72030", "MarketCodeName": "プライム", "ScaleCategory": "TOPIX Core30"},
-        {"Code": "66580", "MarketCodeName": "プライム", "ScaleCategory": "TOPIX Mid400"},
+        {"Code": "72030", "MktNm": "プライム", "ScaleCat": "TOPIX Core30"},
+        {"Code": "66580", "MktNm": "プライム", "ScaleCat": "TOPIX Mid400"},
     ]
     preset = PresetConfig(markets=["prime"], scale_categories=["TOPIX Core30"])
     result = _filter_stocks(stocks, preset)
@@ -42,8 +42,8 @@ def test_filter_stocks_by_scale_categories() -> None:
 
 def test_filter_stocks_exclude_scale() -> None:
     stocks = [
-        {"Code": "72030", "MarketCodeName": "プライム", "ScaleCategory": "TOPIX Core30"},
-        {"Code": "66580", "MarketCodeName": "プライム", "ScaleCategory": "TOPIX Mid400"},
+        {"Code": "72030", "MktNm": "プライム", "ScaleCat": "TOPIX Core30"},
+        {"Code": "66580", "MktNm": "プライム", "ScaleCat": "TOPIX Mid400"},
     ]
     preset = PresetConfig(markets=["prime"], exclude_scale_categories=["TOPIX Core30"])
     result = _filter_stocks(stocks, preset)
@@ -53,7 +53,7 @@ def test_filter_stocks_exclude_scale() -> None:
 
 def test_filter_stocks_max_stocks() -> None:
     stocks = [
-        {"Code": f"{i:05d}", "MarketCodeName": "プライム", "ScaleCategory": ""}
+        {"Code": f"{i:05d}", "MktNm": "プライム", "ScaleCat": ""}
         for i in range(10)
     ]
     preset = PresetConfig(markets=["prime"], max_stocks=3)
@@ -63,15 +63,15 @@ def test_filter_stocks_max_stocks() -> None:
 
 def test_filter_stocks_empty() -> None:
     preset = PresetConfig(markets=["growth"])
-    result = _filter_stocks([{"Code": "72030", "MarketCodeName": "プライム"}], preset)
+    result = _filter_stocks([{"Code": "72030", "MktNm": "プライム"}], preset)
     assert len(result) == 0
 
 
 def test_filter_stocks_multi_market() -> None:
     stocks = [
-        {"Code": "72030", "MarketCodeName": "プライム"},
-        {"Code": "99990", "MarketCodeName": "グロース"},
-        {"Code": "55550", "MarketCodeName": "スタンダード"},
+        {"Code": "72030", "MktNm": "プライム"},
+        {"Code": "99990", "MktNm": "グロース"},
+        {"Code": "55550", "MktNm": "スタンダード"},
     ]
     preset = PresetConfig(markets=["prime", "growth"])
     result = _filter_stocks(stocks, preset)

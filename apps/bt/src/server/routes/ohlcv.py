@@ -14,6 +14,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
+from src.api.exceptions import APIError, APINotFoundError
+
 from src.server.schemas.indicators import (
     OHLCVResampleRequest,
     OHLCVResampleResponse,
@@ -150,6 +152,13 @@ async def resample_ohlcv(request: OHLCVResampleRequest) -> OHLCVResampleResponse
         raise HTTPException(
             status_code=504,
             detail=f"OHLCVリサンプルがタイムアウトしました ({TIMEOUT_SECONDS}秒)",
+        )
+    except APINotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except APIError as e:
+        logger.error(f"OHLCVリサンプル APIエラー: {e}")
+        raise HTTPException(
+            status_code=e.status_code or 500, detail=str(e)
         )
     except ValueError as e:
         status = 404 if "取得できません" in str(e) else 422

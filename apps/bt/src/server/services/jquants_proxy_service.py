@@ -64,7 +64,7 @@ class JQuantsProxyService:
             params["date"] = date
 
         body = await self._client.get("/equities/bars/daily", params)
-        raw_data = body.get("daily_quotes", [])
+        raw_data = body.get("data", [])
         data = [DailyQuoteItem.model_validate(item) for item in raw_data]
         pagination_key = body.get("pagination_key")
         return DailyQuotesResponse(data=data, pagination_key=pagination_key)
@@ -89,7 +89,7 @@ class JQuantsProxyService:
             params["date"] = date
 
         body = await self._client.get("/indices/bars/daily", params)
-        raw_data = body.get("indices", [])
+        raw_data = body.get("data", [])
 
         indices = []
         for item in raw_data:
@@ -97,10 +97,10 @@ class JQuantsProxyService:
                 ApiIndex(
                     date=item.get("Date", ""),
                     code=item.get("Code"),
-                    open=item.get("Open", 0),
-                    high=item.get("High", 0),
-                    low=item.get("Low", 0),
-                    close=item.get("Close", 0),
+                    open=item.get("O", 0),
+                    high=item.get("H", 0),
+                    low=item.get("L", 0),
+                    close=item.get("C", 0),
                 )
             )
         return ApiIndicesResponse(indices=indices, lastUpdated=_now_iso())
@@ -119,20 +119,20 @@ class JQuantsProxyService:
             params["date"] = date
 
         body = await self._client.get("/equities/master", params)
-        raw_data = body.get("info", [])
+        raw_data = body.get("data", [])
 
         info = []
         for item in raw_data:
             info.append(
                 ApiListedInfo(
                     code=str(item.get("Code", ""))[:4],
-                    companyName=item.get("CompanyName", ""),
-                    companyNameEnglish=item.get("CompanyNameEnglish"),
-                    marketCode=item.get("MarketCode"),
-                    marketCodeName=item.get("MarketCodeName"),
-                    sector33Code=item.get("Sector33Code"),
-                    sector33CodeName=item.get("Sector33CodeName"),
-                    scaleCategory=item.get("ScaleCategory"),
+                    companyName=item.get("CoName", ""),
+                    companyNameEnglish=item.get("CoNameEn"),
+                    marketCode=item.get("Mkt"),
+                    marketCodeName=item.get("MktNm"),
+                    sector33Code=item.get("S33"),
+                    sector33CodeName=item.get("S33Nm"),
+                    scaleCategory=item.get("ScaleCat"),
                 )
             )
         return ApiListedInfoResponse(info=info, lastUpdated=_now_iso())
@@ -155,7 +155,7 @@ class JQuantsProxyService:
             params["date"] = date
 
         body = await self._client.get("/markets/margin-interest", params)
-        raw_data = body.get("weekly_margin_interest", [])
+        raw_data = body.get("data", [])
 
         margin_interest = []
         for item in raw_data:
@@ -163,10 +163,10 @@ class JQuantsProxyService:
                 ApiMarginInterest(
                     date=item.get("Date", ""),
                     code=str(item.get("Code", ""))[:4],
-                    shortMarginTradeVolume=item.get("ShortSellingWithRestrictions", 0),
-                    longMarginTradeVolume=item.get("MarginBuyingNew", 0),
-                    shortMarginOutstandingBalance=item.get("ShortSellingOutstandingBalance"),
-                    longMarginOutstandingBalance=item.get("MarginBuyingOutstandingBalance"),
+                    shortMarginTradeVolume=item.get("ShrtStdVol", 0),
+                    longMarginTradeVolume=item.get("LongStdVol", 0),
+                    shortMarginOutstandingBalance=item.get("ShrtVol"),
+                    longMarginOutstandingBalance=item.get("LongVol"),
                 )
             )
         return ApiMarginInterestResponse(
@@ -178,24 +178,24 @@ class JQuantsProxyService:
     # --- Statements (EPS subset) ---
 
     async def get_statements(self, code: str) -> StatementsResponse:
-        body = await self._client.get("/fins/statements", {"code": code})
-        raw_data = body.get("statements", [])
+        body = await self._client.get("/fins/summary", {"code": code})
+        raw_data = body.get("data", [])
 
         data = []
         for stmt in raw_data:
             data.append(
                 StatementItem(
-                    DiscDate=stmt.get("DisclosedDate", ""),
-                    Code=str(stmt.get("LocalCode", ""))[:4],
-                    CurPerType=stmt.get("CurrentPeriodEndDate", "")[-4:] if stmt.get("TypeOfCurrentPeriod") else stmt.get("TypeOfCurrentPeriod", ""),
-                    CurPerSt=stmt.get("CurrentPeriodStartDate", ""),
-                    CurPerEn=stmt.get("CurrentPeriodEndDate", ""),
-                    EPS=stmt.get("EarningsPerShare"),
-                    FEPS=stmt.get("ForecastEarningsPerShare"),
-                    NxFEPS=stmt.get("NextYearForecastEarningsPerShare"),
-                    NCEPS=stmt.get("NonConsolidatedEarningsPerShare"),
-                    FNCEPS=stmt.get("ForecastNonConsolidatedEarningsPerShare"),
-                    NxFNCEPS=stmt.get("NextYearForecastNonConsolidatedEarningsPerShare"),
+                    DiscDate=stmt.get("DiscDate", ""),
+                    Code=str(stmt.get("Code", ""))[:4],
+                    CurPerType=stmt.get("CurPerType", ""),
+                    CurPerSt=stmt.get("CurPerSt", ""),
+                    CurPerEn=stmt.get("CurPerEn", ""),
+                    EPS=stmt.get("EPS"),
+                    FEPS=stmt.get("FEPS"),
+                    NxFEPS=stmt.get("NxFEPS"),
+                    NCEPS=stmt.get("NCEPS"),
+                    FNCEPS=stmt.get("FNCEPS"),
+                    NxFNCEPS=stmt.get("NxFNCEPS"),
                 )
             )
         return StatementsResponse(data=data)
@@ -203,53 +203,53 @@ class JQuantsProxyService:
     # --- Statements Raw (complete) ---
 
     async def get_statements_raw(self, code: str) -> RawStatementsResponse:
-        body = await self._client.get("/fins/statements", {"code": code})
-        raw_data = body.get("statements", [])
+        body = await self._client.get("/fins/summary", {"code": code})
+        raw_data = body.get("data", [])
 
         data = []
         for stmt in raw_data:
             data.append(
                 RawStatementItem(
-                    DiscDate=stmt.get("DisclosedDate", ""),
-                    Code=str(stmt.get("LocalCode", ""))[:4],
-                    DocType=stmt.get("TypeOfDocument"),
-                    CurPerType=stmt.get("TypeOfCurrentPeriod", ""),
-                    CurPerSt=stmt.get("CurrentPeriodStartDate", ""),
-                    CurPerEn=stmt.get("CurrentPeriodEndDate", ""),
-                    CurFYSt=stmt.get("CurrentFiscalYearStartDate"),
-                    CurFYEn=stmt.get("CurrentFiscalYearEndDate"),
-                    NxtFYSt=stmt.get("NextFiscalYearStartDate"),
-                    NxtFYEn=stmt.get("NextFiscalYearEndDate"),
-                    Sales=stmt.get("NetSales"),
-                    OP=stmt.get("OperatingProfit"),
-                    OdP=stmt.get("OrdinaryProfit"),
-                    NP=stmt.get("Profit"),
-                    EPS=stmt.get("EarningsPerShare"),
-                    DEPS=stmt.get("DilutedEarningsPerShare"),
-                    TA=stmt.get("TotalAssets"),
-                    Eq=stmt.get("Equity"),
-                    EqAR=stmt.get("EquityToAssetRatio"),
-                    BPS=stmt.get("BookValuePerShare"),
-                    CFO=stmt.get("CashFlowsFromOperatingActivities"),
-                    CFI=stmt.get("CashFlowsFromInvestingActivities"),
-                    CFF=stmt.get("CashFlowsFromFinancingActivities"),
-                    CashEq=stmt.get("CashAndEquivalents"),
-                    ShOutFY=stmt.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"),
-                    TrShFY=stmt.get("NumberOfTreasuryStockAtTheEndOfFiscalYear"),
-                    AvgSh=stmt.get("AverageNumberOfShares"),
-                    FEPS=stmt.get("ForecastEarningsPerShare"),
-                    NxFEPS=stmt.get("NextYearForecastEarningsPerShare"),
-                    NCSales=stmt.get("NonConsolidatedNetSales"),
-                    NCOP=stmt.get("NonConsolidatedOperatingProfit"),
-                    NCOdP=stmt.get("NonConsolidatedOrdinaryProfit"),
-                    NCNP=stmt.get("NonConsolidatedProfit"),
-                    NCEPS=stmt.get("NonConsolidatedEarningsPerShare"),
-                    NCTA=stmt.get("NonConsolidatedTotalAssets"),
-                    NCEq=stmt.get("NonConsolidatedEquity"),
-                    NCEqAR=stmt.get("NonConsolidatedEquityToAssetRatio"),
-                    NCBPS=stmt.get("NonConsolidatedBookValuePerShare"),
-                    FNCEPS=stmt.get("ForecastNonConsolidatedEarningsPerShare"),
-                    NxFNCEPS=stmt.get("NextYearForecastNonConsolidatedEarningsPerShare"),
+                    DiscDate=stmt.get("DiscDate", ""),
+                    Code=str(stmt.get("Code", ""))[:4],
+                    DocType=stmt.get("DocType"),
+                    CurPerType=stmt.get("CurPerType", ""),
+                    CurPerSt=stmt.get("CurPerSt", ""),
+                    CurPerEn=stmt.get("CurPerEn", ""),
+                    CurFYSt=stmt.get("CurFYSt"),
+                    CurFYEn=stmt.get("CurFYEn"),
+                    NxtFYSt=stmt.get("NxtFYSt"),
+                    NxtFYEn=stmt.get("NxtFYEn"),
+                    Sales=stmt.get("Sales"),
+                    OP=stmt.get("OP"),
+                    OdP=stmt.get("OdP"),
+                    NP=stmt.get("NP"),
+                    EPS=stmt.get("EPS"),
+                    DEPS=stmt.get("DEPS"),
+                    TA=stmt.get("TA"),
+                    Eq=stmt.get("Eq"),
+                    EqAR=stmt.get("EqAR"),
+                    BPS=stmt.get("BPS"),
+                    CFO=stmt.get("CFO"),
+                    CFI=stmt.get("CFI"),
+                    CFF=stmt.get("CFF"),
+                    CashEq=stmt.get("CashEq"),
+                    ShOutFY=stmt.get("ShOutFY"),
+                    TrShFY=stmt.get("TrShFY"),
+                    AvgSh=stmt.get("AvgSh"),
+                    FEPS=stmt.get("FEPS"),
+                    NxFEPS=stmt.get("NxFEPS"),
+                    NCSales=stmt.get("NCSales"),
+                    NCOP=stmt.get("NCOP"),
+                    NCOdP=stmt.get("NCOdP"),
+                    NCNP=stmt.get("NCNP"),
+                    NCEPS=stmt.get("NCEPS"),
+                    NCTA=stmt.get("NCTA"),
+                    NCEq=stmt.get("NCEq"),
+                    NCEqAR=stmt.get("NCEqAR"),
+                    NCBPS=stmt.get("NCBPS"),
+                    FNCEPS=stmt.get("FNCEPS"),
+                    NxFNCEPS=stmt.get("NxFNCEPS"),
                 )
             )
         return RawStatementsResponse(data=data)
@@ -271,17 +271,17 @@ class JQuantsProxyService:
             params["date"] = date
 
         body = await self._client.get("/indices/bars/daily", params)
-        raw_data = body.get("indices", [])
+        raw_data = body.get("data", [])
 
         topix = []
         for item in raw_data:
             topix.append(
                 TopixRawItem(
                     Date=item.get("Date", ""),
-                    Open=item.get("Open"),
-                    High=item.get("High"),
-                    Low=item.get("Low"),
-                    Close=item.get("Close"),
+                    Open=item.get("O"),
+                    High=item.get("H"),
+                    Low=item.get("L"),
+                    Close=item.get("C"),
                 )
             )
         return TopixRawResponse(topix=topix)

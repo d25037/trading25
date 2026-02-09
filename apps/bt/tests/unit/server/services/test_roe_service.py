@@ -50,12 +50,12 @@ class TestCalculateSingleROE:
     def test_basic_roe(self):
         """基本的な ROE 計算"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "FY",
-            "CurrentPeriodEndDate": "2024-03-31",
-            "TypeOfDocument": "ConsolidatedAnnual",
-            "Profit": 250000,
-            "Equity": 1500000,
+            "Code": "72030",
+            "CurPerType": "FY",
+            "CurPerEn": "2024-03-31",
+            "DocType": "ConsolidatedAnnual",
+            "NP": 250000,
+            "Eq": 1500000,
         }
         result = _calculate_single_roe(stmt)
         assert result is not None
@@ -67,12 +67,12 @@ class TestCalculateSingleROE:
     def test_annualize_1q(self):
         """1Q の年換算"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "1Q",
-            "CurrentPeriodEndDate": "2024-06-30",
-            "TypeOfDocument": "Consolidated1Q",
-            "Profit": 50000,
-            "Equity": 1500000,
+            "Code": "72030",
+            "CurPerType": "1Q",
+            "CurPerEn": "2024-06-30",
+            "DocType": "Consolidated1Q",
+            "NP": 50000,
+            "Eq": 1500000,
         }
         result = _calculate_single_roe(stmt, annualize=True)
         assert result is not None
@@ -83,12 +83,12 @@ class TestCalculateSingleROE:
     def test_annualize_2q(self):
         """2Q の年換算"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "2Q",
-            "CurrentPeriodEndDate": "2024-09-30",
-            "TypeOfDocument": "Consolidated2Q",
-            "Profit": 100000,
-            "Equity": 1500000,
+            "Code": "72030",
+            "CurPerType": "2Q",
+            "CurPerEn": "2024-09-30",
+            "DocType": "Consolidated2Q",
+            "NP": 100000,
+            "Eq": 1500000,
         }
         result = _calculate_single_roe(stmt, annualize=True)
         assert result is not None
@@ -98,12 +98,12 @@ class TestCalculateSingleROE:
     def test_no_annualize(self):
         """年換算なし"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "1Q",
-            "CurrentPeriodEndDate": "2024-06-30",
-            "TypeOfDocument": "Consolidated",
-            "Profit": 50000,
-            "Equity": 1500000,
+            "Code": "72030",
+            "CurPerType": "1Q",
+            "CurPerEn": "2024-06-30",
+            "DocType": "Consolidated",
+            "NP": 50000,
+            "Eq": 1500000,
         }
         result = _calculate_single_roe(stmt, annualize=False)
         assert result is not None
@@ -113,14 +113,14 @@ class TestCalculateSingleROE:
     def test_non_consolidated_fallback(self):
         """連結がない場合の非連結フォールバック"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "FY",
-            "CurrentPeriodEndDate": "2024-03-31",
-            "TypeOfDocument": "NonConsolidated",
-            "Profit": None,
-            "Equity": None,
-            "NonConsolidatedProfit": 50000,
-            "NonConsolidatedEquity": 500000,
+            "Code": "72030",
+            "CurPerType": "FY",
+            "CurPerEn": "2024-03-31",
+            "DocType": "NonConsolidated",
+            "NP": None,
+            "Eq": None,
+            "NCNP": 50000,
+            "NCEq": 500000,
         }
         result = _calculate_single_roe(stmt, prefer_consolidated=True)
         assert result is not None
@@ -129,12 +129,12 @@ class TestCalculateSingleROE:
     def test_below_min_equity(self):
         """最低自己資本未満"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "FY",
-            "CurrentPeriodEndDate": "2024-03-31",
-            "TypeOfDocument": "Consolidated",
-            "Profit": 500,
-            "Equity": 100,
+            "Code": "72030",
+            "CurPerType": "FY",
+            "CurPerEn": "2024-03-31",
+            "DocType": "Consolidated",
+            "NP": 500,
+            "Eq": 100,
         }
         result = _calculate_single_roe(stmt, min_equity=1000)
         assert result is None
@@ -142,12 +142,12 @@ class TestCalculateSingleROE:
     def test_zero_equity(self):
         """自己資本ゼロ"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "FY",
-            "CurrentPeriodEndDate": "2024-03-31",
-            "TypeOfDocument": "Consolidated",
-            "Profit": 50000,
-            "Equity": 0,
+            "Code": "72030",
+            "CurPerType": "FY",
+            "CurPerEn": "2024-03-31",
+            "DocType": "Consolidated",
+            "NP": 50000,
+            "Eq": 0,
         }
         result = _calculate_single_roe(stmt)
         assert result is None
@@ -155,11 +155,11 @@ class TestCalculateSingleROE:
     def test_missing_profit(self):
         """利益なし"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "FY",
-            "CurrentPeriodEndDate": "2024-03-31",
-            "TypeOfDocument": "Consolidated",
-            "Equity": 1500000,
+            "Code": "72030",
+            "CurPerType": "FY",
+            "CurPerEn": "2024-03-31",
+            "DocType": "Consolidated",
+            "Eq": 1500000,
         }
         result = _calculate_single_roe(stmt)
         assert result is None
@@ -167,12 +167,12 @@ class TestCalculateSingleROE:
     def test_accounting_standard_ifrs(self):
         """IFRS 会計基準の検出"""
         stmt = {
-            "LocalCode": "72030",
-            "TypeOfCurrentPeriod": "FY",
-            "CurrentPeriodEndDate": "2024-03-31",
-            "TypeOfDocument": "ConsolidatedIFRS",
-            "Profit": 250000,
-            "Equity": 1500000,
+            "Code": "72030",
+            "CurPerType": "FY",
+            "CurPerEn": "2024-03-31",
+            "DocType": "ConsolidatedIFRS",
+            "NP": 250000,
+            "Eq": 1500000,
         }
         result = _calculate_single_roe(stmt)
         assert result is not None
@@ -182,14 +182,14 @@ class TestCalculateSingleROE:
 class TestShouldPrefer:
     def test_prefer_fy_over_quarterly(self):
         """FY を Q より優先"""
-        fy = {"TypeOfCurrentPeriod": "FY", "CurrentPeriodEndDate": "2024-03-31"}
-        q1 = {"TypeOfCurrentPeriod": "1Q", "CurrentPeriodEndDate": "2024-06-30"}
+        fy = {"CurPerType": "FY", "CurPerEn": "2024-03-31"}
+        q1 = {"CurPerType": "1Q", "CurPerEn": "2024-06-30"}
         assert _should_prefer(fy, q1) is True
         assert _should_prefer(q1, fy) is False
 
     def test_prefer_newer(self):
         """同期間タイプなら新しい方を優先"""
-        old = {"TypeOfCurrentPeriod": "FY", "CurrentPeriodEndDate": "2023-03-31"}
-        new = {"TypeOfCurrentPeriod": "FY", "CurrentPeriodEndDate": "2024-03-31"}
+        old = {"CurPerType": "FY", "CurPerEn": "2023-03-31"}
+        new = {"CurPerType": "FY", "CurPerEn": "2024-03-31"}
         assert _should_prefer(new, old) is True
         assert _should_prefer(old, new) is False

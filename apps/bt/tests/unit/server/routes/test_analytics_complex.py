@@ -195,18 +195,14 @@ class TestRanking:
         for cat in ["tradingValue", "gainers", "losers"]:
             assert len(data["rankings"][cat]) <= 1
 
-    def test_422_no_db(self, monkeypatch):
+    def test_422_no_db(self):
         """DB なしの場合 422"""
-        monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
-        monkeypatch.setenv("JQUANTS_PLAN", "free")
-        monkeypatch.delenv("MARKET_DB_PATH", raising=False)
-        from src.config.settings import reload_settings
-        reload_settings()
         app = create_app()
         with TestClient(app) as client:
+            # lifespan 後に market_reader を None に上書き
+            app.state.market_reader = None
             resp = client.get("/api/analytics/ranking")
             assert resp.status_code == 422
-        reload_settings()
 
 
 # --- Factor Regression Tests ---
@@ -253,17 +249,12 @@ class TestFactorRegression:
         resp = analytics_client.get("/api/analytics/factor-regression/0000")
         assert resp.status_code == 404
 
-    def test_422_no_db(self, monkeypatch):
-        monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
-        monkeypatch.setenv("JQUANTS_PLAN", "free")
-        monkeypatch.delenv("MARKET_DB_PATH", raising=False)
-        from src.config.settings import reload_settings
-        reload_settings()
+    def test_422_no_db(self):
         app = create_app()
         with TestClient(app) as client:
+            app.state.market_reader = None
             resp = client.get("/api/analytics/factor-regression/7203")
             assert resp.status_code == 422
-        reload_settings()
 
 
 # --- Screening Tests ---
@@ -301,17 +292,12 @@ class TestScreening:
         resp = analytics_client.get("/api/analytics/screening?sortBy=breakPercentage&order=desc")
         assert resp.status_code == 200
 
-    def test_422_no_db(self, monkeypatch):
-        monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
-        monkeypatch.setenv("JQUANTS_PLAN", "free")
-        monkeypatch.delenv("MARKET_DB_PATH", raising=False)
-        from src.config.settings import reload_settings
-        reload_settings()
+    def test_422_no_db(self):
         app = create_app()
         with TestClient(app) as client:
+            app.state.market_reader = None
             resp = client.get("/api/analytics/screening")
             assert resp.status_code == 422
-        reload_settings()
 
     def test_result_item_shape(self, analytics_client):
         """結果がある場合のレスポンス形状"""

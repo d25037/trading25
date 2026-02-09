@@ -10,6 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 
 from src.server.clients.jquants_client import JQuantsAsyncClient
+from src.server.db.query_helpers import expand_stock_code, stock_code_candidates
 from src.server.db.market_reader import MarketDbReader
 from src.server.schemas.chart import (
     IndexDataResponse,
@@ -31,11 +32,14 @@ def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-def _normalize_stock_code(code: str) -> str:
-    """4桁コードを5桁に正規化"""
-    if len(code) == 4:
-        return f"{code}0"
-    return code
+def _db_stock_code_candidates(code: str) -> tuple[str, ...]:
+    """DB検索用の銘柄コード候補（4桁/5桁両対応）"""
+    return stock_code_candidates(code)
+
+
+def _api_stock_code(code: str) -> str:
+    """JQuants API向けに銘柄コードを正規化"""
+    return expand_stock_code(code)
 
 
 def _normalize_middle_dot(text: str) -> str:
@@ -188,8 +192,8 @@ class ChartService:
             params["to"] = to_date.replace("-", "")
 
         try:
-            body = await self._jquants.get("/indices/topix", params)
-            raw = body.get("topix", [])
+            body = await self._jquants.get("/indices/bars/daily/topix", params)
+            raw = body.get("data", [])
         except Exception:
             return None
 
@@ -199,14 +203,14 @@ class ChartService:
         topix = [
             TopixDataPoint(
                 date=item.get("Date", ""),
-                open=float(item.get("Open", 0) or 0),
-                high=float(item.get("High", 0) or 0),
-                low=float(item.get("Low", 0) or 0),
-                close=float(item.get("Close", 0) or 0),
+                open=float(item.get("O", 0) or 0),
+                high=float(item.get("H", 0) or 0),
+                low=float(item.get("L", 0) or 0),
+                close=float(item.get("C", 0) or 0),
                 volume=0,
             )
             for item in raw
-            if item.get("Close") is not None
+            if item.get("C") is not None
         ]
 
         return TopixDataResponse(topix=topix, lastUpdated=_now_iso())
@@ -234,15 +238,18 @@ class ChartService:
         if self._reader is None:
             return None
 
-        db_code = _normalize_stock_code(symbol)
+        codes = _db_stock_code_candidates(symbol)
+        placeholders = ",".join("?" for _ in codes)
 
         # 銘柄情報
         stock = self._reader.query_one(
-            "SELECT code, company_name FROM stocks WHERE code = ?",
-            (db_code,),
+            f"SELECT code, company_name FROM stocks WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
         )
         if stock is None:
             return None
+        db_code = stock["code"]
 
         # OHLCV データ
         rows = self._reader.query(
@@ -279,11 +286,11 @@ class ChartService:
         adjusted: bool,
     ) -> StockDataResponse | None:
         """JQuants API から銘柄データを取得"""
-        code5 = _normalize_stock_code(symbol)
+        code5 = _api_stock_code(symbol)
 
         try:
             body = await self._jquants.get("/equities/bars/daily", {"code": code5})
-            raw = body.get("daily_quotes", [])
+            raw = body.get("data", [])
         except Exception:
             return None
 
@@ -294,9 +301,9 @@ class ChartService:
         company_name = ""
         try:
             info_body = await self._jquants.get("/equities/master", {"code": code5})
-            info_list = info_body.get("info", [])
+            info_list = info_body.get("data", [])
             if info_list:
-                company_name = info_list[0].get("CompanyName", "")
+                company_name = info_list[0].get("CoName", "")
         except Exception:
             pass
 
@@ -309,11 +316,11 @@ class ChartService:
                 c = float(item.get("AdjC") or 0)
                 v = float(item.get("AdjVo") or 0)
             else:
-                o = float(item.get("Open", 0) or 0)
-                h = float(item.get("High", 0) or 0)
-                lo = float(item.get("Low", 0) or 0)
-                c = float(item.get("Close", 0) or 0)
-                v = float(item.get("Volume", 0) or 0)
+                o = float(item.get("O", 0) or 0)
+                h = float(item.get("H", 0) or 0)
+                lo = float(item.get("L", 0) or 0)
+                c = float(item.get("C", 0) or 0)
+                v = float(item.get("Vo", 0) or 0)
 
             if c <= 0:
                 continue

@@ -24,6 +24,8 @@ from src.server.routes import backtest, fundamentals, health, indicators, lab, o
 from src.server.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
 from src.server.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.server.schemas.error import ErrorDetail, ErrorResponse
+from sqlalchemy.exc import SQLAlchemyError
+
 from src.server.db.market_reader import MarketDbReader
 from src.server.db.market_db import MarketDb
 from src.server.db.portfolio_db import PortfolioDb
@@ -255,6 +257,22 @@ def create_app() -> FastAPI:
             field = ".".join(str(part) for part in loc if part != "body")
             details.append(ErrorDetail(field=field or "unknown", message=err.get("msg", "Validation error")))
         return _build_error_response(422, "Validation failed", details)
+
+    # 例外ハンドラ: SQLAlchemyError → 統一エラーレスポンス (DB 系)
+    @app.exception_handler(SQLAlchemyError)
+    async def sqlalchemy_exception_handler(  # pyright: ignore[reportUnusedFunction]
+        _request: Request, exc: SQLAlchemyError
+    ) -> JSONResponse:
+        logger.exception(f"Database error: {exc}")
+        return _build_error_response(500, "Database error")
+
+    # 例外ハンドラ: 汎用 Exception → 統一エラーレスポンス (安全ネット)
+    @app.exception_handler(Exception)
+    async def generic_exception_handler(  # pyright: ignore[reportUnusedFunction]
+        _request: Request, exc: Exception
+    ) -> JSONResponse:
+        logger.exception(f"Unhandled exception: {exc}")
+        return _build_error_response(500, "Internal server error")
 
     # ルーターを登録
     app.include_router(health.router)
