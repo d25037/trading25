@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'bun:test';
-import type { PriceData } from '../../factor-regression/returns';
 import {
   calculateBenchmarkMetrics,
   formatBenchmarkMetrics,
   generateBenchmarkTimeSeries,
   logReturnToPercent,
+  type PriceData,
 } from '../benchmark';
 import type { BenchmarkMetrics, PerformanceDataPoint } from '../types';
 

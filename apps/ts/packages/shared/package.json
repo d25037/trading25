@@ -27,14 +27,6 @@
       "import": "./dist/dataset/*.js",
       "types": "./dist/dataset/*.d.ts"
     },
-    "./market-sync": {
-      "import": "./dist/market-sync/index.js",
-      "types": "./dist/market-sync/index.d.ts"
-    },
-    "./market-sync/*": {
-      "import": "./dist/market-sync/*.js",
-      "types": "./dist/market-sync/*.d.ts"
-    },
     "./clients/backtest": {
       "import": "./dist/clients/backtest/index.js",
       "types": "./dist/clients/backtest/index.d.ts"
@@ -78,14 +70,6 @@
     "./fundamental-analysis/*": {
       "import": "./dist/fundamental-analysis/*.js",
       "types": "./dist/fundamental-analysis/*.d.ts"
-    },
-    "./factor-regression": {
-      "import": "./dist/factor-regression/index.js",
-      "types": "./dist/factor-regression/index.d.ts"
-    },
-    "./factor-regression/*": {
-      "import": "./dist/factor-regression/*.js",
-      "types": "./dist/factor-regression/*.d.ts"
     },
     "./watchlist": {
       "import": "./dist/watchlist/index.js",

@@ -3,9 +3,11 @@
  * Format screening results for different output formats
  */
 
-import type { FutureReturns, RangeBreakDetails, ScreeningResult } from '@trading25/shared';
+import type { FutureReturns, RangeBreakDetails, ScreeningResultItem } from '@trading25/shared/types/api-response-types';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
+
+type ScreeningResult = ScreeningResultItem;
 
 interface FormatterOptions {
   format: 'table' | 'json' | 'csv';
@@ -70,8 +72,11 @@ function padEndVisual(str: string, targetWidth: number): string {
 /**
  * Format date for display
  */
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0] || '';
+function formatDate(date: string | Date): string {
+  if (date instanceof Date) {
+    return date.toISOString().split('T')[0] || '';
+  }
+  return date.split('T')[0] || '';
 }
 
 /**
@@ -311,7 +316,7 @@ function formatAsJSON(results: ScreeningResult[], options: FormatterOptions): vo
       scaleCategory: result.scaleCategory,
       sector33Name: result.sector33Name,
       screeningType: result.screeningType,
-      matchedDate: result.matchedDate.toISOString(),
+      matchedDate: result.matchedDate,
       details: options.verbose ? result.details : { rangeBreak: result.details.rangeBreak },
       futureReturns: result.futureReturns,
     })),

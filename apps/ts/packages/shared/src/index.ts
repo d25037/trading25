@@ -7,10 +7,7 @@
  * - @trading25/shared/ta
  * - @trading25/shared/dataset
  * - @trading25/shared/portfolio
- * - @trading25/shared/market-sync
  * - @trading25/shared/fundamental-analysis
- * - @trading25/shared/factor-regression
- * - @trading25/shared/screening
  */
 
 // ===== CLIENT EXPORTS =====
@@ -213,31 +210,6 @@ export {
   Trading25Error,
 } from './errors';
 export type {
-  AlignedReturns,
-  DailyReturn,
-  ExcludedStock,
-  FactorRegressionOptions,
-  FactorRegressionResult,
-  IndexMatch,
-  OLSResult,
-  PortfolioFactorRegressionResult,
-  PortfolioWeight,
-  PriceData,
-} from './factor-regression';
-// ===== FACTOR REGRESSION EXPORTS =====
-export {
-  alignReturns,
-  calculateDailyReturns,
-  calculatePortfolioWeights,
-  calculateResiduals,
-  calculateSimpleReturns,
-  calculateWeightedPortfolioReturns,
-  FactorRegressionError,
-  olsRegression,
-  performFactorRegression,
-  performPortfolioFactorRegression,
-} from './factor-regression';
-export type {
   FinancialRatios,
   FundamentalAnalysisResult,
   ROECalculationOptions,
@@ -268,16 +240,6 @@ export {
   isConsolidatedStatement,
   ROECalculationError,
 } from './fundamental-analysis';
-// ===== MARKET SYNC EXPORTS =====
-export type { IndexData, RefetchResult, StockRefetchResult, SyncProgressCallback, SyncResult } from './market-sync';
-export {
-  IncrementalSyncStrategy,
-  IndicesOnlySyncStrategy,
-  InitialSyncStrategy,
-  MarketDataFetcher,
-  StockHistoryRefetcher,
-} from './market-sync';
-
 // ===== PORTFOLIO EXPORTS =====
 export type {
   CreatePortfolioInput,
@@ -306,40 +268,6 @@ export {
   StockNotFoundInPortfolioError,
   ValidationError,
 } from './portfolio';
-// ===== SCREENING EXPORTS =====
-export type {
-  DatabaseStockRow,
-  FilterCriteria,
-  FuturePricePoint,
-  FutureReturns,
-  RangeBreakDetails,
-  RangeBreakParams,
-  RangeBreakResult,
-  ScreeningConfig,
-  ScreeningDateRange,
-  ScreeningDetails,
-  ScreeningInput,
-  ScreeningResult,
-  ScreeningType,
-  StockDataPoint,
-  VolumeAnalysis,
-} from './screening';
-export {
-  analyzePriceStrength,
-  calculateSupportResistance,
-  calculateVolumeMA,
-  calculateVolumeStats,
-  checkVolumeCondition,
-  checkVolumeConditionInRange,
-  DEFAULT_SCREENING_CONFIG,
-  detectRangeBreak,
-  findMaxHighInRange,
-  getRecentHighsLows,
-  getVolumeAnalysis,
-  getVolumeDataInRange,
-  isRangeBreakAt,
-  ScreeningEngine,
-} from './screening';
 // ===== SERVICE EXPORTS =====
 export { type AuthCredentials, AuthService, type AuthStatus } from './services/auth-service';
 // ===== TECHNICAL ANALYSIS EXPORTS =====

@@ -44,6 +44,7 @@ parent: null
 - 2026-02-09: `apps/ts` の `test`/`typecheck:all`/`test:backend`/`test:coverage` から archived `@trading25/api` を除外。
 - 2026-02-09: dep-direction ルールに `@trading25/clients-ts/backtest` を追加し allowlist を更新。
 - 2026-02-09: Phase 4B は「`analytics-ts` / `market-sync-ts` を新設して移管」から「FastAPI 一本化に合わせて TS 重複ドメイン実装を削除」に方針転換。
+- 2026-02-09: Phase 4B 着手。`shared/src/screening` / `shared/src/market-sync` / `shared/src/factor-regression` の実装本体を削除し、CLI screening の型依存を `@trading25/shared/types/api-response-types` に切替。`portfolio-performance` は factor-regression 依存を外して独立化。
 
 ## 補足
 - 元タスク `ts-117` は archived API package 前提のため 2026-02-09 にクローズ済み
