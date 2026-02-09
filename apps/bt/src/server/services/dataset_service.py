@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 from datetime import datetime
 
-from src.server.db.dataset_db import DatasetDb
+from src.lib.market_db.dataset_db import DatasetDb
 from src.server.schemas.dataset import (
     DatasetInfoResponse,
     DatasetListItem,

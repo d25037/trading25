@@ -17,7 +17,7 @@ from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 
 from src.server.clients.jquants_client import JQuantsAsyncClient
-from src.server.db.market_db import MarketDb
+from src.lib.market_db.market_db import MarketDb
 from src.server.schemas.db import (
     CreateSyncJobResponse,
     MarketStatsResponse,

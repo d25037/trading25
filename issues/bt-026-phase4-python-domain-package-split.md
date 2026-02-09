@@ -29,7 +29,25 @@ parent: null
 - import 依存とモジュール境界の整理
 - 段階移行中の互換 import 方針を定義
 
+## 進捗
+- [x] Step1: `apps/bt/src/lib/market_db`, `apps/bt/src/lib/dataset_io` を作成
+- [x] Step1: `src/server/db/*` と `dataset_writer` を新境界へ実体移管
+- [x] Step1: `src/server` 側 import を `src.lib.*` へ切替
+- [x] Step1: `src/server/db/*` に互換 re-export を配置（段階移行）
+- [ ] Step2: `apps/bt/src/lib/indicators` 分離
+- [ ] Step2: `apps/bt/src/lib/backtest_core` 分離
+- [ ] Step2: `apps/bt/src/lib/strategy_runtime` 分離
+
 ## 結果
+- 2026-02-09: Phase 4C Step1（DB + dataset I/O 分離）を完了
+- `src/server/db` の実装本体を `src/lib/market_db` へ移管し、`DatasetWriter` を `src/lib/dataset_io` へ移管
+- `src/server/routes` / `src/server/services` / `src/server/app.py` の参照先を新境界へ切替
+- 互換レイヤとして `src/server/db/*.py` は re-export facade として維持
+- 検証結果
+  - `uv run ruff check src tests`: passed
+  - `uv run pyright src`: 0 errors（既存 warning 1）
+  - `uv run pytest tests/unit/server/db tests/unit/server/services tests/unit/server/routes`: 465 passed
+  - `uv run pytest tests/server tests/integration`: 387 passed
 
 ## 補足
 - 参照: `docs/unified-roadmap.md` Phase 4（再ベースライン）

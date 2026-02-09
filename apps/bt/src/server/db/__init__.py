@@ -1,12 +1,16 @@
-"""
-Database access layer
+"""Compatibility facade for moved DB modules."""
 
-market.db / dataset.db / portfolio.db へのアクセスを提供する。
-- MarketDbReader: Phase 3B 用読み取り専用リーダー（生 SQL）
-- BaseDbAccess: SQLAlchemy Core ベースの DB アクセス基底クラス
-- MarketDb / DatasetDb / PortfolioDb: Phase 3C 以降の DB アクセスクラス
-"""
+from src.lib.market_db.base import BaseDbAccess
+from src.lib.market_db.dataset_db import DatasetDb
+from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.portfolio_db import PortfolioDb
 
-from src.server.db.market_reader import MarketDbReader
-
-__all__ = ["MarketDbReader"]
+__all__ = [
+    "BaseDbAccess",
+    "DatasetDb",
+    "MarketDb",
+    "MarketDbReader",
+    "PortfolioDb",
+    "METADATA_KEYS",
+]

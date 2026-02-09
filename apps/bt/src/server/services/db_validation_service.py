@@ -10,7 +10,7 @@ import json
 from datetime import UTC, datetime
 from typing import Literal
 
-from src.server.db.market_db import METADATA_KEYS, MarketDb
+from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.server.schemas.db import (
     AdjustmentEvent,
     DateRange,
