@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import type { PriceData } from '../../factor-regression/returns';
 import {
   calculateBenchmarkMetrics,
   formatBenchmarkMetrics,
   generateBenchmarkTimeSeries,
   logReturnToPercent,
 } from '../benchmark';
+import type { PriceData } from '../regression-utils';
 import type { BenchmarkMetrics, PerformanceDataPoint } from '../types';
 
 function makePriceData(startPrice: number, changes: number[]): PriceData[] {

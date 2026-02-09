@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step2 成果物反映）
+最終更新: 2026-02-09（Phase 4B 完了・Phase 4C Step2 成果物反映）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -104,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管+検証完了）** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A/4B 完了、4C Step2 実体移管+検証完了）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -599,7 +599,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管+検証完了）
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A/4B 完了、4C Step2 実体移管+検証完了）
 **再ベースライン日**: 2026-02-09
 
 *元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
@@ -654,9 +654,31 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 *元: packages-responsibility-roadmap.md Phase 3（再編）*
 
-- [ ] `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体を段階削除
-- [ ] `apps/ts/packages/web` と `apps/ts/packages/cli` のローカル計算依存を撤去し、FastAPI endpoint + OpenAPI generated types に統一
-- [ ] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助 + 型ファサード」に縮小（`analytics-ts` / `market-sync-ts` は新設しない）
+- [x] `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体を段階削除
+- [x] `apps/ts/packages/web` と `apps/ts/packages/cli` のローカル計算依存を撤去し、FastAPI endpoint + OpenAPI generated types に統一
+- [x] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助 + 型ファサード」に縮小（`analytics-ts` / `market-sync-ts` は新設しない）
+
+**完了**: 2026-02-09（4B）
+
+**進捗**:
+- 2026-02-09: `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` を削除し、`shared/src/index.ts` から export を整理。
+- 2026-02-09: `apps/ts/packages/shared/package.json` の `exports` から `market-sync` / `factor-regression` のサブパスを削除。
+- 2026-02-09: `apps/ts/packages/cli` の screening 実行経路を API レスポンス型（`ScreeningResultItem`）ベースへ切替し、旧 local conversion を削除。
+
+**成果物（4B）**:
+- 削除: `apps/ts/packages/shared/src/factor-regression/**`
+- 削除: `apps/ts/packages/shared/src/screening/**`
+- 削除: `apps/ts/packages/shared/src/market-sync/**`
+- 更新: `apps/ts/packages/shared/src/index.ts`
+- 更新: `apps/ts/packages/shared/package.json`
+- 更新: `apps/ts/packages/cli/src/commands/analysis/screening.ts`
+- 更新: `apps/ts/packages/cli/src/commands/screening/output-formatter.ts`
+- 更新: `apps/ts/packages/web/vite.config.ts`, `apps/ts/packages/web/vitest.config.ts`（`@trading25/shared/*` の source alias を明示し、`dist` 非依存化）
+
+**検証結果（4B）**:
+- `bun run typecheck:all`: passed
+- `bun run lint`: passed
+- `bun run test`: passed
 
 **完了条件**:
 - `apps/ts/packages/shared` が再エクスポート/型公開中心の薄いファサードになる
@@ -721,9 +743,9 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ### Phase 4 次アクション（提案）
 
-1. 4B-1（削除準備）: `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の参照マップを作成し、未参照ファイルから先行削除する。
-2. 4B-2（実削除）: web/cli から TS ローカル計算依存を外し、FastAPI endpoint + OpenAPI generated types のみに統一する。
-3. 4D-1（整理開始）: Python 側の legacy facade（`src/strategy_config/*`, `src/backtest/*`）の呼び出し箇所を棚卸しし、削除可能順に issue 分割する。
+1. 4D-1（TS 互換レイヤ整理）: `apps/ts/packages/shared` の一時互換 re-export を棚卸しし、削除順（clients/db/dataset/portfolio/watchlist）を issue 化する。
+2. 4D-2（Python 互換 facade 整理）: `apps/bt/src/strategy_config/*` / `apps/bt/src/backtest/*` の呼び出し箇所を `src/lib/*` 優先へ置換し、legacy facade の削除可能範囲を確定する。
+3. 4D-3（CI 境界強化）: dep-direction allowlist と CI ジョブを境界単位（package test + app integration）へ段階移行する。
 
 ### Phase 4 関連 Issue（2026-02-09 再整理）
 
