@@ -26,9 +26,9 @@ from src.server.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.server.schemas.error import ErrorDetail, ErrorResponse
 from sqlalchemy.exc import SQLAlchemyError
 
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.market_db import MarketDb
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.market_db import MarketDb
+from src.lib.market_db.portfolio_db import PortfolioDb
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import job_manager
 from src.server.services.jquants_proxy_service import JQuantsProxyService

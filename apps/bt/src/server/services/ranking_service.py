@@ -11,7 +11,7 @@ import sqlite3
 from datetime import UTC, datetime
 from typing import Any
 
-from src.server.db.market_reader import MarketDbReader
+from src.lib.market_db.market_reader import MarketDbReader
 from src.server.schemas.ranking import (
     MarketRankingResponse,
     RankingItem,

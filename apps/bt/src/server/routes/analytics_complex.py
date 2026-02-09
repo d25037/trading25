@@ -161,7 +161,7 @@ async def get_portfolio_factor_regression(
     lookbackDays: int = Query(252, ge=60, le=1000),
 ) -> PortfolioFactorRegressionResponse:
     """ポートフォリオファクター回帰分析を実行"""
-    from src.server.db.portfolio_db import PortfolioDb
+    from src.lib.market_db.portfolio_db import PortfolioDb
     from src.server.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
 
     reader = getattr(request.app.state, "market_reader", None)

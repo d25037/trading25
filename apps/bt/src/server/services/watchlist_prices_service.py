@@ -7,9 +7,9 @@ Hono watchlist/prices EP 互換。
 
 from __future__ import annotations
 
-from src.server.db.query_helpers import stock_code_candidates
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.query_helpers import stock_code_candidates
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.portfolio_db import PortfolioDb
 from src.server.schemas.portfolio_performance import WatchlistPricesResponse, WatchlistStockPrice
 
 

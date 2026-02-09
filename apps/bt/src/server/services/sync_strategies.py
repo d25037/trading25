@@ -15,8 +15,8 @@ from typing import Any, Callable, Protocol
 from loguru import logger
 
 from src.server.clients.jquants_client import JQuantsAsyncClient
-from src.server.db.market_db import METADATA_KEYS, MarketDb
-from src.server.db.query_helpers import normalize_stock_code
+from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
+from src.lib.market_db.query_helpers import normalize_stock_code
 from src.server.schemas.db import SyncResult
 
 

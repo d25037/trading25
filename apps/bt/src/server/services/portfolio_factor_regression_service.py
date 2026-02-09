@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.portfolio_db import PortfolioDb
 from src.server.schemas.portfolio_factor_regression import (
     DateRange,
     ExcludedStock,

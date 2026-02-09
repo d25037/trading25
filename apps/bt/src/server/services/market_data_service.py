@@ -7,8 +7,8 @@ Hono market-data-service.ts と同等のロジック。
 
 from __future__ import annotations
 
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.query_helpers import stock_code_candidates
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.query_helpers import stock_code_candidates
 from src.server.schemas.market_data import (
     MarketOHLCRecord,
     MarketOHLCVRecord,

@@ -14,7 +14,7 @@ from enum import Enum
 from loguru import logger
 
 from src.server.clients.jquants_client import JQuantsAsyncClient
-from src.server.db.market_db import METADATA_KEYS, MarketDb
+from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.server.schemas.db import SyncProgress, SyncResult
 from src.server.services.generic_job_manager import GenericJobManager, JobInfo
 from src.server.services.sync_strategies import (

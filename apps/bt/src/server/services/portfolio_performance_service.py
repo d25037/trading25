@@ -14,8 +14,8 @@ from typing import Any
 
 from sqlalchemy import Row
 
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.portfolio_db import PortfolioDb
 from src.server.schemas.portfolio_performance import (
     BenchmarkResult,
     BenchmarkTimeSeriesPoint,

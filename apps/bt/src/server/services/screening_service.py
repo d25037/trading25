@@ -10,7 +10,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from datetime import UTC, datetime
 
-from src.server.db.market_reader import MarketDbReader
+from src.lib.market_db.market_reader import MarketDbReader
 from src.server.schemas.screening import (
     MarketScreeningResponse,
     RangeBreakDetails,

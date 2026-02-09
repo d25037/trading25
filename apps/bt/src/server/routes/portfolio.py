@@ -14,8 +14,8 @@ from fastapi.responses import JSONResponse
 from loguru import logger
 from sqlalchemy.exc import IntegrityError
 
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.portfolio_db import PortfolioDb
 from src.server.schemas.portfolio import (
     DeleteResponse,
     PortfolioCodesResponse,

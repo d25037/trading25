@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.server.db.market_db import METADATA_KEYS, MarketDb
+from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.server.schemas.db import (
     DateRange,
     IndicesStats,
