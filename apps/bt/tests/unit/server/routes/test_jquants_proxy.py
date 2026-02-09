@@ -14,7 +14,6 @@ from src.server.schemas.jquants import (
     ApiIndicesResponse,
     ApiListedInfoResponse,
     ApiMarginInterestResponse,
-    AuthStatusResponse,
     DailyQuotesResponse,
     RawStatementsResponse,
     StatementsResponse,

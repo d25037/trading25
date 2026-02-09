@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 import pytest
-from sqlalchemy import ForeignKeyConstraint, Integer, PrimaryKeyConstraint, Text, UniqueConstraint
+from sqlalchemy import ForeignKeyConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import REAL
 
 from src.server.db.tables import (
