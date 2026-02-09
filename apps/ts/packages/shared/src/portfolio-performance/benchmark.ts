@@ -4,9 +4,13 @@
  * Calculate benchmark comparison metrics (alpha, beta, correlation)
  */
 
-import { olsRegression } from '../factor-regression/regression';
-import { alignReturns, calculateDailyReturns, type PriceData } from '../factor-regression/returns';
 import type { BenchmarkDataPoint, BenchmarkMetrics, PerformanceDataPoint } from './types';
+import {
+  alignReturns,
+  calculateDailyReturns,
+  olsRegression,
+  type PriceData,
+} from './regression-utils';
 
 /** Number of trading days per year (used for annualization) */
 const TRADING_DAYS_PER_YEAR = 252;
