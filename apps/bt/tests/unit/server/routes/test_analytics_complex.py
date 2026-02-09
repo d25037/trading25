@@ -4,7 +4,6 @@ Complex Analytics Routes Unit Tests
 Ranking, Factor Regression, Screening のルートテスト。
 """
 
-import math
 import sqlite3
 
 import pytest

@@ -6,7 +6,6 @@ from __future__ import annotations
 
 from pathlib import Path
 
-import pytest
 from sqlalchemy import text
 
 from src.server.db.base import BaseDbAccess

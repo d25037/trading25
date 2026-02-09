@@ -2,10 +2,8 @@
 ROE Service Unit Tests
 """
 
-import pytest
 
 from src.server.services.roe_service import (
-    ROEService,
     _calculate_single_roe,
     _normalize_period_type,
     _is_quarterly,

@@ -114,4 +114,4 @@ bun lint && bun check:fix        # リント（Biome）
 
 ## ロードマップ
 
-[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。Phase 3 完了（3F 切替・廃止完了）。Phase 4 未着手。
+[`docs/unified-roadmap.md`](docs/unified-roadmap.md) で Phase 1-5 を管理。Phase 3 完了（3F 切替・廃止完了）。Phase 4 は再ベースライン済み（実装未着手）。
