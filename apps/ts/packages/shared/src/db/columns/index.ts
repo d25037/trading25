@@ -1,10 +1,2 @@
-/**
- * Custom Drizzle column types
- */
-
-export {
-  expandStockCode,
-  isValidStockCode,
-  normalizeStockCode,
-  stockCode,
-} from './stock-code';
+// Compatibility re-export during Phase 4 migration.
+export * from '@trading25/market-db-ts/db/columns/index';

@@ -1,4 +1,4 @@
-import { validateLabResultData } from '@trading25/shared/clients/backtest';
+import { validateLabResultData } from '@trading25/clients-ts/backtest';
 import { AlertTriangle, RefreshCw } from 'lucide-react';
 import { useRef, useState } from 'react';
 import { ErrorBoundary } from '@/components/ErrorBoundary';

@@ -1,0 +1,49 @@
+{
+  "name": "@trading25/dataset-db-ts",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./dataset": {
+      "import": "./dist/dataset/index.js",
+      "types": "./dist/dataset/index.d.ts"
+    },
+    "./dataset/*": {
+      "import": "./dist/dataset/*.js",
+      "types": "./dist/dataset/*.d.ts"
+    },
+    "./db/*": {
+      "import": "./dist/db/*.js",
+      "types": "./dist/db/*.d.ts"
+    },
+    "./clients/*": {
+      "import": "./dist/clients/*.js",
+      "types": "./dist/clients/*.d.ts"
+    },
+    "./types/*": {
+      "import": "./dist/types/*.js",
+      "types": "./dist/types/*.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun run --filter @trading25/clients-ts build && bun run --filter @trading25/market-db-ts build && tsc -p tsconfig.build.json",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc --noEmit --rootDir ../.."
+  },
+  "dependencies": {
+    "@trading25/clients-ts": "workspace:*",
+    "@trading25/market-db-ts": "workspace:*",
+    "zod": "^4.1.5"
+  }
+}

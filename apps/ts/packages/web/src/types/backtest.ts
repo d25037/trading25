@@ -62,7 +62,7 @@ export type {
   StrategyUpdateResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
-} from '@trading25/shared/clients/backtest';
+} from '@trading25/clients-ts/backtest';
 
 // Frontend-specific types
 export type BacktestSubTab = 'runner' | 'results' | 'strategies' | 'status' | 'dataset' | 'lab';

@@ -15,7 +15,7 @@ export type {
   PortfolioSummaryResponse as PortfolioSummary,
   PortfolioWithItemsResponse,
   PortfolioWithItemsResponse as PortfolioWithItems,
-} from '@trading25/shared/portfolio';
+} from '@trading25/portfolio-db-ts/portfolio';
 
 // Frontend-specific request types
 export interface CreatePortfolioRequest {

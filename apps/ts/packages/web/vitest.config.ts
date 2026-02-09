@@ -35,6 +35,10 @@ export default defineConfig({
 	resolve: {
 		alias: {
 			'@': `${import.meta.dirname}/src`,
+			'@trading25/clients-ts': `${import.meta.dirname}/../clients-ts/src`,
+			'@trading25/market-db-ts': `${import.meta.dirname}/../market-db-ts/src`,
+			'@trading25/dataset-db-ts': `${import.meta.dirname}/../dataset-db-ts/src`,
+			'@trading25/portfolio-db-ts': `${import.meta.dirname}/../portfolio-db-ts/src`,
 		},
 	},
 });

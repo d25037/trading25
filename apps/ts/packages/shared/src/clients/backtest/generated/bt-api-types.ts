@@ -2718,7 +2718,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -3691,7 +3691,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -4412,40 +4412,19 @@ export interface components {
             /** Close */
             close: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
+        /** OHLCVRecord */
         OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+            /** Volume */
             volume: number;
         };
         /**
@@ -4524,7 +4503,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -5719,7 +5698,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -5730,7 +5709,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6293,7 +6272,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -6417,23 +6396,8 @@ export interface components {
             /** Description */
             description?: string | null;
         };
-        /** OHLCVRecord */
-        src__server__schemas__dataset_data__OHLCVRecord: {
-            /** Date */
-            date: string;
-            /** Open */
-            open: number;
-            /** High */
-            high: number;
-            /** Low */
-            low: number;
-            /** Close */
-            close: number;
-            /** Volume */
-            volume: number;
-        };
         /** DateRange */
-        src__server__schemas__db__DateRange: {
+        src__server__schemas__dataset__DateRange: {
             /** Min */
             min: string;
             /** Max */
@@ -6464,6 +6428,42 @@ export interface components {
             rSquared: number;
             /** Beta */
             beta: number;
+        };
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
         };
         /** DateRange */
         src__server__schemas__portfolio_factor_regression__DateRange: {
@@ -11197,7 +11197,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
                     };
                 };
             };
@@ -11260,7 +11260,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                    "application/json": components["schemas"]["OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

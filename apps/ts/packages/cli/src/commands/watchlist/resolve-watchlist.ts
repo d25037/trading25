@@ -1,4 +1,4 @@
-import type { WatchlistWithItemsResponse } from '@trading25/shared/watchlist';
+import type { WatchlistWithItemsResponse } from '@trading25/portfolio-db-ts/watchlist';
 import type { ApiClient } from '../../utils/api-client.js';
 import { CLINotFoundError } from '../../utils/error-handling.js';
 

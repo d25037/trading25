@@ -3,14 +3,14 @@
  * Provides methods to call the backend API server
  */
 
-import type { DatasetPreset } from '@trading25/shared/dataset';
+import type { DatasetPreset } from '@trading25/dataset-db-ts';
 import type {
   DeleteResponse,
   ListPortfoliosResponse,
   PortfolioItemResponse,
   PortfolioResponse,
   PortfolioWithItemsResponse,
-} from '@trading25/shared/portfolio';
+} from '@trading25/portfolio-db-ts/portfolio';
 import type {
   AdjustmentEvent,
   CancelDatasetJobResponse,
@@ -35,7 +35,7 @@ import type {
   WatchlistItemResponse,
   WatchlistResponse,
   WatchlistWithItemsResponse,
-} from '@trading25/shared/watchlist';
+} from '@trading25/portfolio-db-ts/watchlist';
 
 // Re-export shared types used by CLI commands
 export type {
@@ -48,7 +48,7 @@ export type {
   RankingItem as MarketRankingItem,
   Rankings as MarketRankings,
 };
-export type { DatasetPreset } from '@trading25/shared/dataset';
+export type { DatasetPreset } from '@trading25/dataset-db-ts';
 export type {
   CancelDatasetJobResponse,
   CancelJobResponse,
