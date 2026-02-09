@@ -34,20 +34,23 @@ parent: null
 - [x] Step1: `src/server/db/*` と `dataset_writer` を新境界へ実体移管
 - [x] Step1: `src/server` 側 import を `src.lib.*` へ切替
 - [x] Step1: `src/server/db/*` に互換 re-export を配置（段階移行）
-- [ ] Step2: `apps/bt/src/lib/indicators` 分離
-- [ ] Step2: `apps/bt/src/lib/backtest_core` 分離
-- [ ] Step2: `apps/bt/src/lib/strategy_runtime` 分離
+- [x] Step2: `apps/bt/src/lib/indicators` 分離（`src/utils/indicators.py` は互換 facade 化）
+- [x] Step2: `apps/bt/src/lib/backtest_core` 分離（`runner`/`marimo_executor`/`walkforward` 境界を追加）
+- [x] Step2: `apps/bt/src/lib/strategy_runtime` 分離（`loader`/`parameter_extractor`/`validator` 等の境界を追加）
+- [x] Step2: `src/server` と `src/cli_*` の `backtest` / `strategy_config` / `utils.indicators` 参照を `src.lib.*` へ切替
 
 ## 結果
 - 2026-02-09: Phase 4C Step1（DB + dataset I/O 分離）を完了
 - `src/server/db` の実装本体を `src/lib/market_db` へ移管し、`DatasetWriter` を `src/lib/dataset_io` へ移管
 - `src/server/routes` / `src/server/services` / `src/server/app.py` の参照先を新境界へ切替
 - 互換レイヤとして `src/server/db/*.py` は re-export facade として維持
+- 2026-02-09: Phase 4C Step2（indicators / backtest_core / strategy_runtime 境界追加）を完了
+- `src/server` / `src/cli_*` は `src.lib.backtest_core.*` / `src.lib.strategy_runtime.*` / `src.lib.indicators` を経由する構成へ移行
+- `src/lib/backtest_core` / `src/lib/strategy_runtime` は既存テストの patch 経路互換を維持する遅延委譲ラッパーで実装
 - 検証結果
   - `uv run ruff check src tests`: passed
   - `uv run pyright src`: 0 errors（既存 warning 1）
-  - `uv run pytest tests/unit/server/db tests/unit/server/services tests/unit/server/routes`: 465 passed
-  - `uv run pytest tests/server tests/integration`: 387 passed
+  - `uv run pytest tests/`: 2733 passed
 
 ## 補足
 - 参照: `docs/unified-roadmap.md` Phase 4（再ベースライン）

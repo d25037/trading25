@@ -102,7 +102,7 @@ class YamlUpdater:
         Returns:
             保存したファイルパス
         """
-        from src.strategy_config.loader import ConfigLoader
+        from src.lib.strategy_runtime.loader import ConfigLoader
 
         # 元の戦略をロード
         config_loader = ConfigLoader()

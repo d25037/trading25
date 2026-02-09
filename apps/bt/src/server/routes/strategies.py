@@ -22,7 +22,7 @@ from src.server.schemas.strategy import (
     StrategyValidationRequest,
     StrategyValidationResponse,
 )
-from src.strategy_config.loader import ConfigLoader
+from src.lib.strategy_runtime.loader import ConfigLoader
 
 router = APIRouter(tags=["Strategies"])
 
@@ -82,7 +82,7 @@ async def get_strategy_detail(strategy_name: str) -> StrategyDetailResponse:
             name_only = strategy_name
 
         # 実行情報を取得
-        from src.backtest.runner import BacktestRunner
+        from src.lib.backtest_core.runner import BacktestRunner
 
         runner = BacktestRunner()
         execution_info = runner.get_execution_info(strategy_name)
@@ -151,7 +151,7 @@ async def validate_strategy(
 
         # 実行情報の取得を試みる
         try:
-            from src.backtest.runner import BacktestRunner
+            from src.lib.backtest_core.runner import BacktestRunner
 
             runner = BacktestRunner()
             execution_info = runner.get_execution_info(strategy_name)

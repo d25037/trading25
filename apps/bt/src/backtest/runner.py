@@ -15,8 +15,8 @@ from typing import Any, Callable
 from loguru import logger
 from pydantic import BaseModel, Field
 
-from src.backtest.marimo_executor import MarimoExecutor
-from src.strategy_config.loader import ConfigLoader
+from src.lib.backtest_core.marimo_executor import MarimoExecutor
+from src.lib.strategy_runtime.loader import ConfigLoader
 
 
 class BacktestResult(BaseModel):
@@ -211,7 +211,7 @@ class BacktestRunner:
         step = walk_forward.get("step")
         max_splits = walk_forward.get("max_splits")
 
-        from src.backtest.walkforward import generate_walkforward_splits
+        from src.lib.backtest_core.walkforward import generate_walkforward_splits
         from src.data.loaders.stock_loaders import load_stock_data
         from src.data import get_stock_list
         from src.strategies.core.factory import StrategyFactory
@@ -341,7 +341,7 @@ class BacktestRunner:
         Returns:
             実行パラメータ辞書
         """
-        from src.strategy_config.parameter_extractor import _deep_merge_dict
+        from src.lib.strategy_runtime.parameter_extractor import _deep_merge_dict
 
         # デフォルト設定ベース
         parameters = self.config_loader.default_config.get("parameters", {}).copy()
