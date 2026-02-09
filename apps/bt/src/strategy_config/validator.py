@@ -1,64 +1,39 @@
-"""
-戦略設定バリデーション
+"""Compatibility facade for Phase 4C."""
 
-戦略名・設定の検証ロジック
-"""
-
-import re
 from typing import Any
 
 from loguru import logger
 
-from .models import try_validate_strategy_config_dict
+from src.lib.strategy_runtime.models import try_validate_strategy_config_dict
+from src.lib.strategy_runtime.validator import (
+    DANGEROUS_PATH_PATTERNS,
+    MAX_STRATEGY_NAME_LENGTH,
+    is_editable_category,
+    validate_strategy_name,
+)
 
-
-# 戦略名の最大長
-MAX_STRATEGY_NAME_LENGTH = 100
-
-# 危険なパストラバーサルパターン
-DANGEROUS_PATH_PATTERNS = ("..", "\\", "~", "//")
-
-
-def validate_strategy_name(strategy_name: str) -> None:
-    """
-    戦略名の安全性を検証（パストラバーサル攻撃対策）
-
-    Args:
-        strategy_name: 戦略名（カテゴリ/戦略名 形式も許可）
-
-    Raises:
-        ValueError: 不正な戦略名の場合
-    """
-    if not re.match(r"^[a-zA-Z0-9_/-]+$", strategy_name):
-        raise ValueError(
-            f"無効な戦略名: {strategy_name} (英数字、アンダースコア、ハイフン、スラッシュのみ許可)"
-        )
-
-    if any(p in strategy_name for p in DANGEROUS_PATH_PATTERNS):
-        raise ValueError(f"不正な文字が含まれています: {strategy_name}")
-
-    if len(strategy_name) > MAX_STRATEGY_NAME_LENGTH:
-        raise ValueError(
-            f"戦略名が長すぎます: {strategy_name} (最大{MAX_STRATEGY_NAME_LENGTH}文字)"
-        )
+__all__ = [
+    "MAX_STRATEGY_NAME_LENGTH",
+    "DANGEROUS_PATH_PATTERNS",
+    "validate_strategy_name",
+    "validate_strategy_config",
+    "is_editable_category",
+    "try_validate_strategy_config_dict",
+]
 
 
 def validate_strategy_config(config: dict[str, Any]) -> bool:
     """
-    戦略設定の妥当性をチェック
+    Compatibility wrapper.
 
-    Args:
-        config: 戦略設定
-
-    Returns:
-        妥当性チェック結果
+    Keep this function in the legacy module so monkeypatch targets like
+    `src.strategy_config.validator.try_validate_strategy_config_dict` remain valid.
     """
     is_valid, error = try_validate_strategy_config_dict(config)
     if not is_valid:
         logger.error(f"戦略設定バリデーションエラー: {error}")
         return False
 
-    # entry_filter_params の構造チェック（基本的な構造の存在確認）
     entry_filter_params = config.get("entry_filter_params", {})
     expected_filter_types = [
         "volume",
@@ -77,16 +52,3 @@ def validate_strategy_config(config: dict[str, Any]) -> bool:
 
     logger.info("戦略設定の妥当性チェック成功")
     return True
-
-
-def is_editable_category(category: str) -> bool:
-    """
-    カテゴリが編集可能かチェック
-
-    Args:
-        category: カテゴリ名
-
-    Returns:
-        bool: experimental カテゴリの場合のみ True
-    """
-    return category == "experimental"
