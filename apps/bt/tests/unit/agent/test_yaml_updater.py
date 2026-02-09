@@ -216,7 +216,7 @@ class TestApplyImprovements:
         output_path = str(tmp_path / "improved.yaml")
 
         with (
-            patch("src.strategy_config.loader.ConfigLoader") as mock_loader_cls,
+            patch("src.lib.strategy_runtime.loader.ConfigLoader") as mock_loader_cls,
             patch("src.agent.strategy_improver.StrategyImprover") as mock_improver_cls,
         ):
             mock_loader = MagicMock()

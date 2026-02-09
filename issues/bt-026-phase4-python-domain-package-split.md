@@ -46,11 +46,12 @@ parent: null
 - 互換レイヤとして `src/server/db/*.py` は re-export facade として維持
 - 2026-02-09: Phase 4C Step2（indicators / backtest_core / strategy_runtime 境界追加）を完了
 - `src/server` / `src/cli_*` は `src.lib.backtest_core.*` / `src.lib.strategy_runtime.*` / `src.lib.indicators` を経由する構成へ移行
-- `src/lib/backtest_core` / `src/lib/strategy_runtime` は既存テストの patch 経路互換を維持する遅延委譲ラッパーで実装
+- 2026-02-09: Step2 追補として `ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体を `src/lib/*` へ移管し、`src/strategy_config` / `src/backtest` は互換 facade へ移行
 - 検証結果
   - `uv run ruff check src tests`: passed
   - `uv run pyright src`: 0 errors（既存 warning 1）
-  - `uv run pytest tests/`: 2733 passed
+  - `uv run pytest tests/security/test_security_validation.py tests/unit/backtest/test_backtest_runner.py tests/unit/backtest/test_marimo_executor.py tests/unit/backtest/test_walkforward.py tests/unit/backtest/test_manifest.py tests/unit/optimization/test_notebook_generator.py tests/unit/agent/test_yaml_updater.py tests/unit/server/routes/test_strategies.py tests/unit/lib/test_phase4c_import_boundaries.py`: 81 passed
+  - `uv run pytest tests/server/routes/test_lab.py -k "execute_improve_sync"`: 2 passed
 
 ## 補足
 - 参照: `docs/unified-roadmap.md` Phase 4（再ベースライン）

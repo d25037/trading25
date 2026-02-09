@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step2 着手）
+最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step2 実体移管完了）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -104,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **進行中（4A 完了、4B 方針転換済み、4C Step2 着手）** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管完了）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -599,7 +599,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4B 方針転換済み、4C Step2 着手）  
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4B 方針転換済み、4C Step2 実体移管完了）
 **再ベースライン日**: 2026-02-09
 
 *元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
@@ -673,7 +673,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 **進捗**:
 - 2026-02-09: Step1（DB + dataset I/O 分離）完了。`src/server/db` は互換 re-export を維持しつつ、実装本体を `src/lib/*` へ移管。
-- 2026-02-09: Step2（`indicators` / `backtest_core` / `strategy_runtime` 境界追加）着手。`src/server` / `src/cli_*` の参照を `src.lib.*` へ切替し、互換ラッパーで段階移行を継続。
+- 2026-02-09: Step2（`indicators` / `backtest_core` / `strategy_runtime` 境界追加）完了。`src/server` / `src/cli_*` の参照を `src.lib.*` へ切替し、`ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体も `src/lib/*` へ移管（legacy は互換 facade 化）。
 
 **完了条件**:
 - `apps/bt/src/server/routes` / `services` / `cli_*` が legacy 実装に直接依存しない

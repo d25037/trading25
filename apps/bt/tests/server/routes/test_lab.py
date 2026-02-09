@@ -1287,7 +1287,7 @@ class TestLabServiceSyncMethods:
 
         with (
             patch("src.agent.strategy_improver.StrategyImprover") as MockImprover,
-            patch("src.strategy_config.loader.ConfigLoader") as MockLoader,
+            patch("src.lib.strategy_runtime.loader.ConfigLoader") as MockLoader,
             patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
         ):
             MockImprover.return_value.analyze.return_value = mock_report
@@ -1318,7 +1318,7 @@ class TestLabServiceSyncMethods:
 
         with (
             patch("src.agent.strategy_improver.StrategyImprover") as MockImprover,
-            patch("src.strategy_config.loader.ConfigLoader") as MockLoader,
+            patch("src.lib.strategy_runtime.loader.ConfigLoader") as MockLoader,
         ):
             MockImprover.return_value.analyze.return_value = mock_report
             MockLoader.return_value.load_strategy_config.return_value = {}
