@@ -11,6 +11,8 @@ from __future__ import annotations
 import sqlite3
 from typing import Any
 
+from src.server.db.query_helpers import stock_code_candidates
+
 
 class MarketDbReader:
     """market.db 読み取り専用リーダー"""
@@ -41,3 +43,38 @@ class MarketDbReader:
         """SQL クエリを実行して最初の 1 行を返す"""
         cursor = self.conn.execute(sql, params)
         return cursor.fetchone()
+
+    def get_latest_price(self, code: str) -> float | None:
+        """単一銘柄の最新終値を取得（4桁/5桁両対応）"""
+        candidates = stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in candidates)
+        row = self.query_one(
+            f"""
+            SELECT close FROM stock_data
+            WHERE code IN ({placeholders})
+            ORDER BY date DESC,
+                CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+            LIMIT 1
+            """,
+            tuple(candidates),
+        )
+        if row is None:
+            return None
+        return row["close"]
+
+    def get_stock_prices_by_date(self, code: str) -> list[tuple[str, float]]:
+        """銘柄の日次終値を日付昇順で取得（4桁/5桁重複は4桁優先でマージ）"""
+        candidates = stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in candidates)
+        raw_rows = self.query(
+            f"""
+            SELECT date, close FROM stock_data
+            WHERE code IN ({placeholders})
+            ORDER BY date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+            """,
+            tuple(candidates),
+        )
+        price_map: dict[str, float] = {}
+        for row in raw_rows:
+            price_map.setdefault(row["date"], row["close"])
+        return sorted(price_map.items(), key=lambda x: x[0])

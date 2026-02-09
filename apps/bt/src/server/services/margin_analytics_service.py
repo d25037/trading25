@@ -44,8 +44,8 @@ def _build_margin_df(raw_data: list[dict[str, Any]]) -> pd.DataFrame:
         records.append(
             {
                 "date": pd.Timestamp(date_str),
-                "long_volume": float(item.get("MarginBuyingOutstandingBalance", 0) or 0),
-                "short_volume": float(item.get("ShortSellingOutstandingBalance", 0) or 0),
+                "long_volume": float(item.get("LongVol", 0) or 0),
+                "short_volume": float(item.get("ShrtVol", 0) or 0),
             }
         )
 
@@ -65,7 +65,7 @@ def _build_volume_series(raw_quotes: list[dict[str, Any]]) -> pd.Series[float]:
     records = []
     for item in raw_quotes:
         date_str = item.get("Date", "")
-        vol = item.get("Volume", item.get("AdjVo", 0))
+        vol = item.get("Vo", item.get("AdjVo", 0))
         records.append({"date": pd.Timestamp(date_str), "volume": float(vol or 0)})
 
     df = pd.DataFrame(records)
@@ -92,14 +92,14 @@ class MarginAnalyticsService:
         margin_body = await self._client.get(
             "/markets/margin-interest", {"code": code5}
         )
-        margin_raw = margin_body.get("weekly_margin_interest", [])
+        margin_raw = margin_body.get("data", [])
         margin_df = _build_margin_df(margin_raw)
 
         # 出来高データ（日足）
         quotes_body = await self._client.get(
             "/equities/bars/daily", {"code": code5}
         )
-        quotes_raw = quotes_body.get("daily_quotes", [])
+        quotes_raw = quotes_body.get("data", [])
         volume = _build_volume_series(quotes_raw)
 
         return margin_df, volume

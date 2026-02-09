@@ -21,8 +21,16 @@ from src.server.schemas.chart import (
     StockSearchResponse,
     TopixDataResponse,
 )
+from src.server.services.chart_service import ChartService
 
 router = APIRouter(tags=["Chart"])
+
+
+def _get_chart_service(request: Request) -> ChartService:
+    service = getattr(request.app.state, "chart_service", None)
+    if service is None:
+        raise HTTPException(status_code=422, detail="Chart service not initialized")
+    return service
 
 
 # --- Indices ---
@@ -34,9 +42,7 @@ router = APIRouter(tags=["Chart"])
     summary="指数一覧取得",
 )
 def get_indices_list(request: Request) -> IndicesListResponse:
-    from src.server.services.chart_service import ChartService
-
-    service: ChartService = request.app.state.chart_service
+    service = _get_chart_service(request)
     result = service.get_indices_list()
     if result is None:
         raise HTTPException(status_code=500, detail="Market database not available")
@@ -54,8 +60,6 @@ async def get_topix_data(
     to_date: str | None = Query(default=None, alias="to", description="終了日 (YYYY-MM-DD)"),
     date: str | None = Query(default=None, description="特定日 (YYYY-MM-DD)"),
 ) -> TopixDataResponse:
-    from src.server.services.chart_service import ChartService
-
     # date パラメータで from/to を上書き
     effective_from = date or from_date
     effective_to = date or to_date
@@ -67,7 +71,7 @@ async def get_topix_data(
             detail='Invalid date range: "from" date must be before or equal to "to" date',
         )
 
-    service: ChartService = request.app.state.chart_service
+    service = _get_chart_service(request)
     result = await service.get_topix_data(from_date=effective_from, to_date=effective_to)
     if result is None:
         raise HTTPException(status_code=500, detail="TOPIX data not available")
@@ -80,9 +84,7 @@ async def get_topix_data(
     summary="指数チャートデータ取得",
 )
 def get_index_data(request: Request, code: str) -> IndexDataResponse:
-    from src.server.services.chart_service import ChartService
-
-    service: ChartService = request.app.state.chart_service
+    service = _get_chart_service(request)
     result = service.get_index_data(code)
     if result is None:
         raise HTTPException(status_code=404, detail="Index not found")
@@ -102,9 +104,7 @@ def search_stocks(
     q: str = Query(min_length=1, max_length=100, description="検索クエリ"),
     limit: int = Query(default=20, ge=1, le=100, description="最大件数"),
 ) -> StockSearchResponse:
-    from src.server.services.chart_service import ChartService
-
-    service: ChartService = request.app.state.chart_service
+    service = _get_chart_service(request)
     return service.search_stocks(q, limit)
 
 
@@ -122,9 +122,7 @@ async def get_stock_data(
     timeframe: Literal["daily", "weekly", "monthly"] = Query(default="daily"),
     adjusted: Literal["true", "false"] = Query(default="true"),
 ) -> StockDataResponse:
-    from src.server.services.chart_service import ChartService
-
-    service: ChartService = request.app.state.chart_service
+    service = _get_chart_service(request)
     result = await service.get_stock_data(
         symbol=symbol,
         timeframe=timeframe,
@@ -153,9 +151,7 @@ def get_sector_stocks(
     sortOrder: Literal["asc", "desc"] = Query(default="desc"),
     limit: int = Query(default=100, ge=1, le=500, description="最大件数"),
 ) -> SectorStocksResponse:
-    from src.server.services.chart_service import ChartService
-
-    service: ChartService = request.app.state.chart_service
+    service = _get_chart_service(request)
     result = service.get_sector_stocks(
         sector33_name=sector33Name,
         sector17_name=sector17Name,

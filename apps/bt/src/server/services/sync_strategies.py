@@ -51,7 +51,7 @@ class IndicesOnlySyncStrategy:
 
             body = await ctx.client.get("/indices")
             total_calls += 1
-            indices_list = body.get("indices", [])
+            indices_list = body.get("data", [])
 
             # index_master に保存
             master_rows = []
@@ -81,10 +81,10 @@ class IndicesOnlySyncStrategy:
                         rows.append({
                             "code": code,
                             "date": d.get("Date", ""),
-                            "open": d.get("Open"),
-                            "high": d.get("High"),
-                            "low": d.get("Low"),
-                            "close": d.get("Close"),
+                            "open": d.get("O"),
+                            "high": d.get("H"),
+                            "low": d.get("L"),
+                            "close": d.get("C"),
                             "sector_name": d.get("SectorName"),
                             "created_at": datetime.now(UTC).isoformat(),
                         })
@@ -122,15 +122,15 @@ class InitialSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            topix_data = await ctx.client.get_paginated("/indices/topix")
+            topix_data = await ctx.client.get_paginated("/indices/bars/daily/topix")
             total_calls += 1
             topix_rows = [
                 {
                     "date": d.get("Date", ""),
-                    "open": d.get("Open", 0),
-                    "high": d.get("High", 0),
-                    "low": d.get("Low", 0),
-                    "close": d.get("Close", 0),
+                    "open": d.get("O", 0),
+                    "high": d.get("H", 0),
+                    "low": d.get("L", 0),
+                    "close": d.get("C", 0),
                     "created_at": datetime.now(UTC).isoformat(),
                 }
                 for d in topix_data
@@ -229,15 +229,15 @@ class IncrementalSyncStrategy:
             if last_date:
                 params["from"] = last_date
 
-            topix_data = await ctx.client.get_paginated("/indices/topix", params=params)
+            topix_data = await ctx.client.get_paginated("/indices/bars/daily/topix", params=params)
             total_calls += 1
             topix_rows = [
                 {
                     "date": d.get("Date", ""),
-                    "open": d.get("Open", 0),
-                    "high": d.get("High", 0),
-                    "low": d.get("Low", 0),
-                    "close": d.get("Close", 0),
+                    "open": d.get("O", 0),
+                    "high": d.get("H", 0),
+                    "low": d.get("L", 0),
+                    "close": d.get("C", 0),
                     "created_at": datetime.now(UTC).isoformat(),
                 }
                 for d in topix_data
@@ -308,15 +308,15 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
             continue
         rows.append({
             "code": code,
-            "company_name": d.get("CompanyName", ""),
-            "company_name_english": d.get("CompanyNameEnglish"),
-            "market_code": d.get("MarketCode", ""),
-            "market_name": d.get("MarketCodeName", ""),
-            "sector_17_code": d.get("Sector17Code", ""),
-            "sector_17_name": d.get("Sector17CodeName", ""),
-            "sector_33_code": d.get("Sector33Code", ""),
-            "sector_33_name": d.get("Sector33CodeName", ""),
-            "scale_category": d.get("ScaleCategory"),
+            "company_name": d.get("CoName", ""),
+            "company_name_english": d.get("CoNameEn"),
+            "market_code": d.get("Mkt", ""),
+            "market_name": d.get("MktNm", ""),
+            "sector_17_code": d.get("S17", ""),
+            "sector_17_name": d.get("S17Nm", ""),
+            "sector_33_code": d.get("S33", ""),
+            "sector_33_name": d.get("S33Nm", ""),
+            "scale_category": d.get("ScaleCat"),
             "listed_date": d.get("Date", ""),
             "created_at": datetime.now(UTC).isoformat(),
         })
@@ -333,12 +333,12 @@ def _convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]
         rows.append({
             "code": code,
             "date": d.get("Date", ""),
-            "open": d.get("Open", 0),
-            "high": d.get("High", 0),
-            "low": d.get("Low", 0),
-            "close": d.get("Close", 0),
-            "volume": d.get("Volume", 0),
-            "adjustment_factor": d.get("AdjustmentFactor"),
+            "open": d.get("O", 0),
+            "high": d.get("H", 0),
+            "low": d.get("L", 0),
+            "close": d.get("C", 0),
+            "volume": d.get("Vo", 0),
+            "adjustment_factor": d.get("AdjFactor"),
             "created_at": datetime.now(UTC).isoformat(),
         })
     return rows

@@ -145,6 +145,33 @@ class TestStatements:
             resp = app_client.get("/api/jquants/statements/raw?code=7203")
             assert resp.status_code == 200
 
+    def test_statements_raw_empty_numeric_strings(self, app_client):
+        """JQuants の空文字数値を None として扱えること"""
+        raw_body = {
+            "data": [
+                {
+                    "DiscDate": "2024-05-10",
+                    "Code": "72030",
+                    "CurPerType": "FY",
+                    "CurPerSt": "2023-04-01",
+                    "CurPerEn": "2024-03-31",
+                    "FEPS": "",
+                    "FNCEPS": "",
+                }
+            ]
+        }
+        with patch.object(
+            app_client.app.state.jquants_proxy_service._client,  # type: ignore[union-attr]
+            "get",
+            new_callable=AsyncMock,
+            return_value=raw_body,
+        ):
+            resp = app_client.get("/api/jquants/statements/raw?code=7203")
+            assert resp.status_code == 200
+            data = resp.json()["data"][0]
+            assert data["FEPS"] is None
+            assert data["FNCEPS"] is None
+
 
 class TestTopix:
     def test_topix_success(self, app_client):

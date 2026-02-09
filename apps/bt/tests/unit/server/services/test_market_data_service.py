@@ -5,18 +5,18 @@ MarketDataService Unit Tests
 import pytest
 
 from src.server.db.market_reader import MarketDbReader
-from src.server.services.market_data_service import MarketDataService, _normalize_stock_code
+from src.server.services.market_data_service import MarketDataService, _stock_code_candidates
 
 
-class TestNormalizeStockCode:
-    def test_4digit_to_5digit(self):
-        assert _normalize_stock_code("7203") == "72030"
+class TestStockCodeCandidates:
+    def test_4digit_candidates(self):
+        assert _stock_code_candidates("7203") == ("7203", "72030")
 
-    def test_5digit_unchanged(self):
-        assert _normalize_stock_code("72030") == "72030"
+    def test_5digit_candidates(self):
+        assert _stock_code_candidates("72030") == ("7203", "72030")
 
-    def test_3digit_unchanged(self):
-        assert _normalize_stock_code("123") == "123"
+    def test_3digit_candidates(self):
+        assert _stock_code_candidates("123") == ("123",)
 
 
 @pytest.fixture

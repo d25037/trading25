@@ -137,12 +137,12 @@ async def _build_dataset(
                     {
                         "code": code4,
                         "date": d.get("Date", ""),
-                        "open": d.get("Open", 0),
-                        "high": d.get("High", 0),
-                        "low": d.get("Low", 0),
-                        "close": d.get("Close", 0),
-                        "volume": d.get("Volume", 0),
-                        "adjustment_factor": d.get("AdjustmentFactor"),
+                        "open": d.get("O", 0),
+                        "high": d.get("H", 0),
+                        "low": d.get("L", 0),
+                        "close": d.get("C", 0),
+                        "volume": d.get("Vo", 0),
+                        "adjustment_factor": d.get("AdjFactor"),
                         "created_at": datetime.now(UTC).isoformat(),
                     }
                     for d in data
@@ -160,14 +160,14 @@ async def _build_dataset(
             progress("topix", 3, 6, "Fetching TOPIX data...")
             if not job.cancelled.is_set():
                 try:
-                    topix = await jquants_client.get_paginated("/indices/topix")
+                    topix = await jquants_client.get_paginated("/indices/bars/daily/topix")
                     topix_rows = [
                         {
                             "date": d.get("Date", ""),
-                            "open": d.get("Open", 0),
-                            "high": d.get("High", 0),
-                            "low": d.get("Low", 0),
-                            "close": d.get("Close", 0),
+                            "open": d.get("O", 0),
+                            "high": d.get("H", 0),
+                            "low": d.get("L", 0),
+                            "close": d.get("C", 0),
                             "created_at": datetime.now(UTC).isoformat(),
                         }
                         for d in topix
@@ -186,7 +186,7 @@ async def _build_dataset(
                 code5 = stock.get("Code", "")
                 code4 = normalize_stock_code(code5)
                 try:
-                    data = await jquants_client.get_paginated("/fins/statements", params={"code": code5})
+                    data = await jquants_client.get_paginated("/fins/summary", params={"code": code5})
                     rows = _convert_statements(data, code4)
                     if rows:
                         await asyncio.to_thread(writer.upsert_statements, rows)
@@ -207,8 +207,8 @@ async def _build_dataset(
                         {
                             "code": code4,
                             "date": d.get("Date", ""),
-                            "long_margin_volume": d.get("LongMarginVolume"),
-                            "short_margin_volume": d.get("ShortMarginVolume"),
+                            "long_margin_volume": d.get("LongVol"),
+                            "short_margin_volume": d.get("ShrtVol"),
                         }
                         for d in data
                     ]
@@ -240,13 +240,13 @@ def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[d
     }
     market_names = [market_name_map.get(m, m) for m in preset.markets]
 
-    filtered = [s for s in stocks if s.get("MarketCodeName", "") in market_names]
+    filtered = [s for s in stocks if s.get("MktNm", "") in market_names]
 
     if preset.scale_categories:
-        filtered = [s for s in filtered if s.get("ScaleCategory", "") in preset.scale_categories]
+        filtered = [s for s in filtered if s.get("ScaleCat", "") in preset.scale_categories]
 
     if preset.exclude_scale_categories:
-        filtered = [s for s in filtered if s.get("ScaleCategory", "") not in preset.exclude_scale_categories]
+        filtered = [s for s in filtered if s.get("ScaleCat", "") not in preset.exclude_scale_categories]
 
     if preset.max_stocks:
         filtered = filtered[:preset.max_stocks]
@@ -259,15 +259,15 @@ def _convert_stocks(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return [
         {
             "code": normalize_stock_code(d.get("Code", "")),
-            "company_name": d.get("CompanyName", ""),
-            "company_name_english": d.get("CompanyNameEnglish"),
-            "market_code": d.get("MarketCode", ""),
-            "market_name": d.get("MarketCodeName", ""),
-            "sector_17_code": d.get("Sector17Code", ""),
-            "sector_17_name": d.get("Sector17CodeName", ""),
-            "sector_33_code": d.get("Sector33Code", ""),
-            "sector_33_name": d.get("Sector33CodeName", ""),
-            "scale_category": d.get("ScaleCategory"),
+            "company_name": d.get("CoName", ""),
+            "company_name_english": d.get("CoNameEn"),
+            "market_code": d.get("Mkt", ""),
+            "market_name": d.get("MktNm", ""),
+            "sector_17_code": d.get("S17", ""),
+            "sector_17_name": d.get("S17Nm", ""),
+            "sector_33_code": d.get("S33", ""),
+            "sector_33_name": d.get("S33Nm", ""),
+            "scale_category": d.get("ScaleCat"),
             "listed_date": d.get("Date", ""),
             "created_at": datetime.now(UTC).isoformat(),
         }
@@ -280,26 +280,26 @@ def _convert_statements(data: list[dict[str, Any]], code: str) -> list[dict[str,
     return [
         {
             "code": code,
-            "disclosed_date": d.get("DisclosedDate", ""),
-            "earnings_per_share": d.get("EarningsPerShare"),
-            "profit": d.get("Profit"),
-            "equity": d.get("Equity"),
-            "type_of_current_period": d.get("TypeOfCurrentPeriod"),
-            "type_of_document": d.get("TypeOfDocument"),
-            "next_year_forecast_earnings_per_share": d.get("NextYearForecastEarningsPerShare"),
-            "bps": d.get("BookValuePerShare"),
-            "sales": d.get("NetSales"),
-            "operating_profit": d.get("OperatingProfit"),
-            "ordinary_profit": d.get("OrdinaryProfit"),
-            "operating_cash_flow": d.get("CashFlowsFromOperatingActivities"),
-            "dividend_fy": d.get("AnnualDividendPerShare"),
-            "forecast_eps": d.get("ForecastEarningsPerShare"),
-            "investing_cash_flow": d.get("CashFlowsFromInvestingActivities"),
-            "financing_cash_flow": d.get("CashFlowsFromFinancingActivities"),
-            "cash_and_equivalents": d.get("CashAndEquivalents"),
-            "total_assets": d.get("TotalAssets"),
-            "shares_outstanding": d.get("NumberOfIssuedAndOutstandingSharesAtTheEndOfFiscalYearIncludingTreasuryStock"),
-            "treasury_shares": d.get("NumberOfTreasuryStockAtTheEndOfFiscalYear"),
+            "disclosed_date": d.get("DiscDate", ""),
+            "earnings_per_share": d.get("EPS"),
+            "profit": d.get("NP"),
+            "equity": d.get("Eq"),
+            "type_of_current_period": d.get("CurPerType"),
+            "type_of_document": d.get("DocType"),
+            "next_year_forecast_earnings_per_share": d.get("NxFEPS"),
+            "bps": d.get("BPS"),
+            "sales": d.get("Sales"),
+            "operating_profit": d.get("OP"),
+            "ordinary_profit": d.get("OdP"),
+            "operating_cash_flow": d.get("CFO"),
+            "dividend_fy": d.get("DivAnn"),
+            "forecast_eps": d.get("FEPS"),
+            "investing_cash_flow": d.get("CFI"),
+            "financing_cash_flow": d.get("CFF"),
+            "cash_and_equivalents": d.get("CashEq"),
+            "total_assets": d.get("TA"),
+            "shares_outstanding": d.get("ShOutFY"),
+            "treasury_shares": d.get("TrShFY"),
         }
         for d in data
     ]

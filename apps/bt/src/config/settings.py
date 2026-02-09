@@ -8,8 +8,23 @@ from __future__ import annotations
 
 import os
 from functools import lru_cache
+from pathlib import Path
+from typing import Any
 
+from dotenv import load_dotenv
 from pydantic import BaseModel, Field
+
+# Bun は apps/ts/.env を自動読み込みするが、FastAPI は明示的に必要
+_dotenv_path = Path(__file__).resolve().parents[3] / "ts" / ".env"
+load_dotenv(_dotenv_path, override=False)
+
+
+def _default_data_dir() -> str:
+    """XDG準拠のデフォルトデータディレクトリ (TRADING25_DATA_DIR と同じロジック)"""
+    env = os.environ.get("TRADING25_DATA_DIR")
+    if env:
+        return env
+    return str(Path.home() / ".local" / "share" / "trading25")
 
 
 class Settings(BaseModel):
@@ -35,6 +50,16 @@ class Settings(BaseModel):
     dataset_base_path: str = Field(default="", alias="DATASET_BASE_PATH")
 
     model_config = {"populate_by_name": True}
+
+    def model_post_init(self, __context: Any) -> None:
+        """環境変数未設定時にXDGデフォルトパスを自動設定"""
+        data_dir = _default_data_dir()
+        if not self.market_db_path:
+            self.market_db_path = str(Path(data_dir) / "market.db")
+        if not self.portfolio_db_path:
+            self.portfolio_db_path = str(Path(data_dir) / "portfolio.db")
+        if not self.dataset_base_path:
+            self.dataset_base_path = str(Path(data_dir) / "datasets")
 
 
 @lru_cache

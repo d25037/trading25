@@ -7,6 +7,7 @@ Hono watchlist/prices EP 互換。
 
 from __future__ import annotations
 
+from src.server.db.query_helpers import stock_code_candidates
 from src.server.db.market_reader import MarketDbReader
 from src.server.db.portfolio_db import PortfolioDb
 from src.server.schemas.portfolio_performance import WatchlistPricesResponse, WatchlistStockPrice
@@ -29,39 +30,33 @@ class WatchlistPricesService:
         if not items:
             return WatchlistPricesResponse(prices=[])
 
-        # 4桁コードを5桁に変換してDB検索
-        codes_4 = [item.code for item in items]
-        codes_5 = [f"{c}0" for c in codes_4]
-
-        # 各銘柄の直近2日分の終値を一括取得
-        placeholders = ",".join("?" for _ in codes_5)
-        rows = self._reader.query(
-            f"""
-            SELECT code, date, close, volume
-            FROM stock_data
-            WHERE code IN ({placeholders})
-            AND date IN (
-                SELECT DISTINCT date FROM stock_data
-                WHERE code IN ({placeholders})
-                ORDER BY date DESC LIMIT 2
-            )
-            ORDER BY code, date DESC
-            """,
-            tuple(codes_5) + tuple(codes_5),
-        )
-
-        # code -> [(date, close, volume), ...] 最新2件
-        price_map: dict[str, list[tuple[str, float, int]]] = {}
-        for r in rows:
-            code = r["code"]
-            if code not in price_map:
-                price_map[code] = []
-            if len(price_map[code]) < 2:
-                price_map[code].append((r["date"], r["close"], r["volume"]))
-
         prices: list[WatchlistStockPrice] = []
-        for code4, code5 in zip(codes_4, codes_5):
-            entries = price_map.get(code5, [])
+        for item in items:
+            code4 = item.code
+            candidates = stock_code_candidates(code4)
+            placeholders = ",".join("?" for _ in candidates)
+            rows = self._reader.query(
+                f"""
+                SELECT date, close, volume
+                FROM stock_data
+                WHERE code IN ({placeholders})
+                ORDER BY date DESC, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                """,
+                tuple(candidates),
+            )
+
+            # 同日の4桁/5桁重複がある場合は先頭（4桁優先）を採用
+            entries: list[tuple[str, float, int]] = []
+            seen_dates: set[str] = set()
+            for row in rows:
+                d = row["date"]
+                if d in seen_dates:
+                    continue
+                seen_dates.add(d)
+                entries.append((d, row["close"], row["volume"]))
+                if len(entries) >= 2:
+                    break
+
             if not entries:
                 continue
             latest = entries[0]

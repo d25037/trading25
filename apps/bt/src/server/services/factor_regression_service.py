@@ -14,6 +14,7 @@ import math
 from datetime import UTC, datetime
 from typing import NamedTuple
 
+from src.server.db.query_helpers import stock_code_candidates
 from src.server.db.market_reader import MarketDbReader
 from src.server.schemas.factor_regression import (
     DateRange,
@@ -180,14 +181,18 @@ class FactorRegressionService:
     ) -> FactorRegressionResponse:
         """銘柄のファクター回帰分析を実行"""
         min_data_points = 60
-        code5 = f"{symbol}0" if len(symbol) == 4 else symbol
+        codes = stock_code_candidates(symbol)
+        placeholders = ",".join("?" for _ in codes)
 
         # 銘柄情報
         stock = self._reader.query_one(
-            "SELECT code, company_name FROM stocks WHERE code = ?", (code5,)
+            f"SELECT code, company_name FROM stocks WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
         )
         if stock is None:
             raise ValueError(f"Stock not found: {symbol}")
+        db_code = stock["code"]
 
         company_name = stock["company_name"]
 
@@ -195,7 +200,7 @@ class FactorRegressionService:
         stock_prices = [
             (row["date"], row["close"])
             for row in self._reader.query(
-                "SELECT date, close FROM stock_data WHERE code = ? ORDER BY date", (code5,)
+                "SELECT date, close FROM stock_data WHERE code = ? ORDER BY date", (db_code,)
             )
         ]
         if len(stock_prices) < min_data_points + 1:

@@ -8,7 +8,7 @@ import pytest
 import httpx
 import respx
 
-from src.server.clients.jquants_client import JQuantsAsyncClient
+from src.server.clients.jquants_client import JQuantsApiError, JQuantsAsyncClient
 
 
 @pytest.fixture
@@ -43,10 +43,10 @@ class TestGet:
     async def test_get_success(self, client):
         """正常な GET リクエスト"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
-            return_value=httpx.Response(200, json={"info": [{"Code": "72030"}]})
+            return_value=httpx.Response(200, json={"data": [{"Code": "72030"}]})
         )
         result = await client.get("/equities/master", {"code": "7203"})
-        assert result["info"][0]["Code"] == "72030"
+        assert result["data"][0]["Code"] == "72030"
         await client.close()
 
     @respx.mock
@@ -56,10 +56,10 @@ class TestGet:
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
             httpx.Response(500, json={"error": "Internal Server Error"}),
-            httpx.Response(200, json={"info": []}),
+            httpx.Response(200, json={"data": []}),
         ]
         result = await client.get("/equities/master")
-        assert result == {"info": []}
+        assert result == {"data": []}
         assert route.call_count == 2
         await client.close()
 
@@ -70,33 +70,37 @@ class TestGet:
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
             httpx.Response(429, json={"error": "Rate limit"}),
-            httpx.Response(200, json={"info": []}),
+            httpx.Response(200, json={"data": []}),
         ]
         result = await client.get("/equities/master")
-        assert result == {"info": []}
+        assert result == {"data": []}
         assert route.call_count == 2
         await client.close()
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_get_max_retries_exceeded(self, client):
-        """最大リトライ回数超過"""
+        """最大リトライ回数超過で JQuantsApiError(502) が発生"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
             return_value=httpx.Response(500, json={"error": "Internal Server Error"})
         )
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(JQuantsApiError) as exc_info:
             await client.get("/equities/master")
+        assert exc_info.value.status_code == 502
+        assert "500" in exc_info.value.message
         await client.close()
 
     @respx.mock
     @pytest.mark.asyncio
     async def test_get_non_retryable_error(self, client):
-        """リトライ対象外のエラー（404）"""
+        """リトライ対象外のエラー（404）で JQuantsApiError(502) が発生"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
             return_value=httpx.Response(404, json={"error": "Not Found"})
         )
-        with pytest.raises(httpx.HTTPStatusError):
+        with pytest.raises(JQuantsApiError) as exc_info:
             await client.get("/equities/master")
+        assert exc_info.value.status_code == 502
+        assert "404" in exc_info.value.message
         await client.close()
 
 
@@ -106,7 +110,7 @@ class TestGetPaginated:
     async def test_single_page(self, client):
         """単一ページのページネーション"""
         respx.get("https://api.jquants.com/v2/equities/master").mock(
-            return_value=httpx.Response(200, json={"info": [{"Code": "7203"}]})
+            return_value=httpx.Response(200, json={"data": [{"Code": "7203"}]})
         )
         result = await client.get_paginated("/equities/master")
         assert len(result) == 1
@@ -120,11 +124,11 @@ class TestGetPaginated:
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
             httpx.Response(200, json={
-                "info": [{"Code": "7203"}],
+                "data": [{"Code": "7203"}],
                 "pagination_key": "page2",
             }),
             httpx.Response(200, json={
-                "info": [{"Code": "6758"}],
+                "data": [{"Code": "6758"}],
             }),
         ]
         result = await client.get_paginated("/equities/master")
@@ -140,7 +144,7 @@ class TestGetPaginated:
         route = respx.get("https://api.jquants.com/v2/equities/master")
         route.side_effect = [
             httpx.Response(200, json={
-                "info": [{"Code": f"{i}"}],
+                "data": [{"Code": f"{i}"}],
                 "pagination_key": f"page{i+1}",
             })
             for i in range(5)
@@ -150,12 +154,65 @@ class TestGetPaginated:
         await client.close()
 
 
+class TestJQuantsApiError:
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_403_raises_api_error_502(self, client):
+        """403 が JQuantsApiError(502) を発生させること"""
+        respx.get("https://api.jquants.com/v2/markets/margin-interest").mock(
+            return_value=httpx.Response(403, json={"error": "Forbidden"})
+        )
+        with pytest.raises(JQuantsApiError) as exc_info:
+            await client.get("/markets/margin-interest", {"code": "31030"})
+        assert exc_info.value.status_code == 502
+        assert "403" in exc_info.value.message
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_timeout_raises_api_error_504(self, client):
+        """タイムアウトが JQuantsApiError(504) を発生させること"""
+        respx.get("https://api.jquants.com/v2/equities/master").mock(
+            side_effect=httpx.ReadTimeout("read timed out")
+        )
+        with pytest.raises(JQuantsApiError) as exc_info:
+            await client.get("/equities/master")
+        assert exc_info.value.status_code == 504
+        assert "timeout" in exc_info.value.message.lower()
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_connection_error_raises_api_error_502(self, client):
+        """接続エラーが JQuantsApiError(502) を発生させること"""
+        respx.get("https://api.jquants.com/v2/equities/master").mock(
+            side_effect=httpx.ConnectError("connection refused")
+        )
+        with pytest.raises(JQuantsApiError) as exc_info:
+            await client.get("/equities/master")
+        assert exc_info.value.status_code == 502
+        assert "connection error" in exc_info.value.message.lower()
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_paginated_403_raises_api_error(self, client):
+        """get_paginated でも 403 が JQuantsApiError(502) を発生させること"""
+        respx.get("https://api.jquants.com/v2/equities/master").mock(
+            return_value=httpx.Response(403, json={"error": "Forbidden"})
+        )
+        with pytest.raises(JQuantsApiError) as exc_info:
+            await client.get_paginated("/equities/master")
+        assert exc_info.value.status_code == 502
+        await client.close()
+
+
 class TestDataKeyExtraction:
     def test_known_endpoint(self, client):
         """既知のエンドポイントのデータキー"""
-        body = {"daily_quotes": [{"Date": "2024-01-01"}]}
+        body = {"data": [{"Date": "2024-01-01"}]}
         key = client._extract_data_key("/equities/bars/daily", body)
-        assert key == "daily_quotes"
+        assert key == "data"
 
     def test_unknown_endpoint_fallback(self, client):
         """未知のエンドポイントのフォールバック"""

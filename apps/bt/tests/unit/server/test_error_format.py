@@ -6,8 +6,10 @@ import pytest
 from fastapi import APIRouter, HTTPException
 from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
+from sqlalchemy.exc import OperationalError
 
 from src.server.app import create_app
+from src.server.clients.jquants_client import JQuantsApiError
 
 
 def _make_test_app() -> TestClient:
@@ -39,6 +41,26 @@ def _make_test_app() -> TestClient:
     @test_router.post("/test/validation")
     async def trigger_validation(body: TestBody) -> dict:
         return {"name": body.name, "age": body.age}
+
+    @test_router.get("/test/runtime-error")
+    async def trigger_runtime_error() -> dict:
+        raise RuntimeError("unexpected failure")
+
+    @test_router.get("/test/attribute-error")
+    async def trigger_attribute_error() -> dict:
+        raise AttributeError("'NoneType' object has no attribute 'get_all_stocks'")
+
+    @test_router.get("/test/sqlalchemy-error")
+    async def trigger_sqlalchemy_error() -> dict:
+        raise OperationalError("SELECT 1", {}, Exception("database is locked"))
+
+    @test_router.get("/test/jquants-502")
+    async def trigger_jquants_502() -> dict:
+        raise JQuantsApiError(502, "JQuants API error (403): /markets/margin-interest")
+
+    @test_router.get("/test/jquants-504")
+    async def trigger_jquants_504() -> dict:
+        raise JQuantsApiError(504, "JQuants API timeout: /equities/master")
 
     app.include_router(test_router)
     return TestClient(app)
@@ -182,3 +204,140 @@ class TestExistingEndpointErrors:
         assert body["error"] == "Not Found"
         assert "correlationId" in body
         assert "timestamp" in body
+
+
+class TestGenericExceptionHandler:
+    """汎用例外ハンドラが未処理例外を統一フォーマットでキャッチすることをテスト"""
+
+    def setup_method(self) -> None:
+        self.client = _make_test_app()
+
+    def test_runtime_error_returns_500_unified_format(self) -> None:
+        """RuntimeError が統一フォーマット 500 で返ること"""
+        resp = self.client.get("/test/runtime-error")
+        assert resp.status_code == 500
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["error"] == "Internal Server Error"
+        assert body["message"] == "Internal server error"
+        assert "correlationId" in body
+        assert "timestamp" in body
+
+    def test_attribute_error_returns_500_unified_format(self) -> None:
+        """AttributeError が統一フォーマット 500 で返ること"""
+        resp = self.client.get("/test/attribute-error")
+        assert resp.status_code == 500
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["error"] == "Internal Server Error"
+        assert body["message"] == "Internal server error"
+
+    def test_generic_error_does_not_leak_details(self) -> None:
+        """汎用例外のエラー詳細がレスポンスに漏れないこと"""
+        resp = self.client.get("/test/runtime-error")
+        body = resp.json()
+        assert "unexpected failure" not in body.get("message", "")
+        assert "details" not in body
+
+    def test_generic_error_has_correlation_id(self) -> None:
+        """汎用例外レスポンスに correlationId が含まれること"""
+        test_cid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
+        resp = self.client.get("/test/runtime-error", headers={"x-correlation-id": test_cid})
+        body = resp.json()
+        assert body["correlationId"] == test_cid
+
+
+class TestSQLAlchemyExceptionHandler:
+    """SQLAlchemy 例外ハンドラが DB エラーを統一フォーマットでキャッチすることをテスト"""
+
+    def setup_method(self) -> None:
+        self.client = _make_test_app()
+
+    def test_sqlalchemy_error_returns_500_with_db_message(self) -> None:
+        """SQLAlchemy OperationalError が統一フォーマット 500 + "Database error" で返ること"""
+        resp = self.client.get("/test/sqlalchemy-error")
+        assert resp.status_code == 500
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["error"] == "Internal Server Error"
+        assert body["message"] == "Database error"
+        assert "correlationId" in body
+        assert "timestamp" in body
+
+    def test_sqlalchemy_error_does_not_leak_sql(self) -> None:
+        """SQLAlchemy エラーの SQL 詳細がレスポンスに漏れないこと"""
+        resp = self.client.get("/test/sqlalchemy-error")
+        body = resp.json()
+        assert "SELECT" not in body.get("message", "")
+        assert "database is locked" not in body.get("message", "")
+
+
+class TestNoDatabaseGracefulError:
+    """DB 未初期化時に 500 ではなく 422 が返ることを確認する回帰テスト"""
+
+    def setup_method(self) -> None:
+        app = create_app()
+        # market_data_service を None に強制設定
+        app.state.market_data_service = None
+        # chart_service を None に強制設定
+        app.state.chart_service = None
+        self.client = TestClient(app)
+
+    def test_market_stocks_returns_422_not_500(self) -> None:
+        resp = self.client.get("/api/market/stocks")
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["status"] == "error"
+        assert "not initialized" in body["message"].lower() or "not initialized" in body["message"]
+
+    def test_market_topix_returns_422_not_500(self) -> None:
+        resp = self.client.get("/api/market/topix")
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["status"] == "error"
+
+    def test_chart_indices_returns_422_not_500(self) -> None:
+        resp = self.client.get("/api/chart/indices")
+        assert resp.status_code == 422
+        body = resp.json()
+        assert body["status"] == "error"
+
+
+class TestJQuantsApiErrorFormat:
+    """JQuants API エラーが統一フォーマット + 502/504 で返ること"""
+
+    def setup_method(self) -> None:
+        self.client = _make_test_app()
+
+    def test_502_jquants_error(self) -> None:
+        """JQuants HTTP エラーが 502 Bad Gateway で返ること"""
+        resp = self.client.get("/test/jquants-502")
+        assert resp.status_code == 502
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["error"] == "Bad Gateway"
+        assert "JQuants" in body["message"]
+        assert "403" in body["message"]
+        assert "correlationId" in body
+        assert "timestamp" in body
+
+    def test_504_jquants_timeout(self) -> None:
+        """JQuants タイムアウトが 504 Gateway Timeout で返ること"""
+        resp = self.client.get("/test/jquants-504")
+        assert resp.status_code == 504
+        body = resp.json()
+        assert body["status"] == "error"
+        assert body["error"] == "Gateway Timeout"
+        assert "JQuants" in body["message"]
+        assert "correlationId" in body
+        assert "timestamp" in body
+
+    def test_jquants_error_has_correlation_id_header(self) -> None:
+        """JQuants エラーレスポンスに correlation ID ヘッダが含まれること"""
+        test_cid = "jquants-test-cid-1234-567890abcdef"
+        resp = self.client.get(
+            "/test/jquants-502", headers={"x-correlation-id": test_cid}
+        )
+        assert resp.headers.get("x-correlation-id") == test_cid
+        body = resp.json()
+        assert body["correlationId"] == test_cid

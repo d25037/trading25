@@ -59,17 +59,12 @@ class PortfolioFactorRegressionService:
             raise ValueError("No stocks in portfolio")
 
         # 各銘柄の最新価格を取得して時価ウェイト計算
-        codes_4 = [item.code for item in items]
-        codes_5 = [f"{c}0" for c in codes_4]
-        latest_prices = self._get_latest_prices(codes_5)
-
         weights: list[StockWeight] = []
         excluded: list[ExcludedStock] = []
         total_value = 0.0
 
         for item in items:
-            code5 = f"{item.code}0"
-            price = latest_prices.get(code5)
+            price = self._reader.get_latest_price(item.code)
             if price is None:
                 excluded.append(
                     ExcludedStock(
@@ -102,14 +97,7 @@ class PortfolioFactorRegressionService:
         # 各銘柄の日次リターンを取得
         stock_returns_map: dict[str, list[DailyReturn]] = {}
         for sw in weights:
-            code5 = f"{sw.code}0"
-            prices = [
-                (r["date"], r["close"])
-                for r in self._reader.query(
-                    "SELECT date, close FROM stock_data WHERE code = ? ORDER BY date",
-                    (code5,),
-                )
-            ]
+            prices = self._reader.get_stock_prices_by_date(sw.code)
             if len(prices) >= 2:
                 stock_returns_map[sw.code] = _calculate_daily_returns(prices)
             else:
@@ -182,7 +170,7 @@ class PortfolioFactorRegressionService:
             portfolioName=portfolio.name,
             weights=weights,
             totalValue=round(total_value, 1),
-            stockCount=len(codes_4),
+            stockCount=len(items),
             includedStockCount=len(included_codes),
             marketBeta=round(market_reg.beta, 3),
             marketRSquared=round(market_reg.r_squared, 3),
@@ -194,24 +182,6 @@ class PortfolioFactorRegressionService:
             dateRange=DateRange(**{"from": sorted_dates[0], "to": sorted_dates[-1]}),
             excludedStocks=excluded,
         )
-
-    def _get_latest_prices(self, codes_5: list[str]) -> dict[str, float]:
-        """各銘柄の最新終値を一括取得"""
-        if not codes_5:
-            return {}
-        placeholders = ",".join("?" for _ in codes_5)
-        rows = self._reader.query(
-            f"""
-            SELECT code, close FROM stock_data
-            WHERE (code, date) IN (
-                SELECT code, MAX(date) FROM stock_data
-                WHERE code IN ({placeholders})
-                GROUP BY code
-            )
-            """,
-            tuple(codes_5),
-        )
-        return {r["code"]: r["close"] for r in rows}
 
     def _calculate_portfolio_returns(
         self,

@@ -12,6 +12,8 @@ from typing import Any
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
+from src.api.exceptions import APIError, APINotFoundError
+
 from src.server.schemas.indicators import (
     IndicatorComputeRequest,
     IndicatorComputeResponse,
@@ -52,6 +54,13 @@ async def _run_in_executor(
         raise HTTPException(
             status_code=504,
             detail=f"{label}がタイムアウトしました ({TIMEOUT_SECONDS}秒)",
+        )
+    except APINotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except APIError as e:
+        logger.error(f"{label} APIエラー: {e}")
+        raise HTTPException(
+            status_code=e.status_code or 500, detail=str(e)
         )
     except ValueError as e:
         status = 404 if "取得できません" in str(e) else 422

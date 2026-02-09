@@ -46,6 +46,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 {"status":"error","error":"Not Found","message":"...","details?":[...],"timestamp":"...","correlationId":"..."}
 ```
 - FastAPI: 例外ハンドラが `HTTPException(detail=...)` を自動変換
+- `RequestLoggerMiddleware` が `JQuantsApiError`(502/504) / `SQLAlchemyError`(500) / 汎用例外(500) をキャッチし統一フォーマットで返却
 - correlation ID: `x-correlation-id` ヘッダで伝播（なければ自動生成）
 - ErrorResponse スキーマは OpenAPI で全エンドポイントに 400/404/500 として公開
 

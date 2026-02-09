@@ -74,18 +74,18 @@ def _calculate_single_roe(
     """単一の財務諸表から ROE を計算する"""
     # Profit / Equity 抽出
     if prefer_consolidated:
-        net_profit = stmt.get("Profit") or stmt.get("NonConsolidatedProfit")
-        equity = stmt.get("Equity") or stmt.get("NonConsolidatedEquity")
+        net_profit = stmt.get("NP") or stmt.get("NCNP")
+        equity = stmt.get("Eq") or stmt.get("NCEq")
     else:
-        net_profit = stmt.get("NonConsolidatedProfit") or stmt.get("Profit")
-        equity = stmt.get("NonConsolidatedEquity") or stmt.get("Equity")
+        net_profit = stmt.get("NCNP") or stmt.get("NP")
+        equity = stmt.get("NCEq") or stmt.get("Eq")
 
     if net_profit is None or equity is None:
         return None
     if abs(equity) < min_equity or equity <= 0:
         return None
 
-    period_type = _normalize_period_type(stmt.get("TypeOfCurrentPeriod", ""))
+    period_type = _normalize_period_type(stmt.get("CurPerType", ""))
 
     adjusted_profit = net_profit
     is_annualized = False
@@ -96,7 +96,7 @@ def _calculate_single_roe(
 
     roe = (adjusted_profit / equity) * 100
 
-    code = str(stmt.get("LocalCode", ""))[:4]
+    code = str(stmt.get("Code", ""))[:4]
 
     return ROEResultItem(
         roe=round(roe, 4),
@@ -105,9 +105,9 @@ def _calculate_single_roe(
         metadata=ROEMetadata(
             code=code,
             periodType=period_type,
-            periodEnd=stmt.get("CurrentPeriodEndDate", ""),
-            isConsolidated=_is_consolidated_doc(stmt.get("TypeOfDocument")),
-            accountingStandard=_extract_accounting_standard(stmt.get("TypeOfDocument")),
+            periodEnd=stmt.get("CurPerEn", ""),
+            isConsolidated=_is_consolidated_doc(stmt.get("DocType")),
+            accountingStandard=_extract_accounting_standard(stmt.get("DocType")),
             isAnnualized=is_annualized,
         ),
     )
@@ -115,16 +115,16 @@ def _calculate_single_roe(
 
 def _should_prefer(new_stmt: dict[str, Any], current_stmt: dict[str, Any]) -> bool:
     """新しい statement を優先すべきかどうか"""
-    new_type = _normalize_period_type(new_stmt.get("TypeOfCurrentPeriod", ""))
-    cur_type = _normalize_period_type(current_stmt.get("TypeOfCurrentPeriod", ""))
+    new_type = _normalize_period_type(new_stmt.get("CurPerType", ""))
+    cur_type = _normalize_period_type(current_stmt.get("CurPerType", ""))
 
     if new_type == "FY" and cur_type != "FY":
         return True
     if new_type != "FY" and cur_type == "FY":
         return False
 
-    new_end = new_stmt.get("CurrentPeriodEndDate", "")
-    cur_end = current_stmt.get("CurrentPeriodEndDate", "")
+    new_end = new_stmt.get("CurPerEn", "")
+    cur_end = current_stmt.get("CurPerEn", "")
     return new_end > cur_end
 
 
@@ -153,21 +153,21 @@ class ROEService:
             codes = [c.strip() for c in code.split(",")]
             all_stmts: list[dict[str, Any]] = []
             for c in codes:
-                body = await self._client.get("/fins/statements", {"code": c})
-                stmts = body.get("statements", [])
+                body = await self._client.get("/fins/summary", {"code": c})
+                stmts = body.get("data", [])
                 all_stmts.extend(stmts)
         elif date:
             # 日付指定: 全銘柄の特定日の statements
             normalized_date = date.replace("-", "")
-            body = await self._client.get("/fins/statements", {"date": normalized_date})
-            all_stmts = body.get("statements", [])
+            body = await self._client.get("/fins/summary", {"date": normalized_date})
+            all_stmts = body.get("data", [])
         else:
             all_stmts = []
 
         # 銘柄ごとに最適な statement を選択
         best: dict[str, dict[str, Any]] = {}
         for stmt in all_stmts:
-            stmt_code = str(stmt.get("LocalCode", ""))[:4]
+            stmt_code = str(stmt.get("Code", ""))[:4]
             if stmt_code in best:
                 if _should_prefer(stmt, best[stmt_code]):
                     best[stmt_code] = stmt

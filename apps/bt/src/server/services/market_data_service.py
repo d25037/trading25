@@ -8,6 +8,7 @@ Hono market-data-service.ts と同等のロジック。
 from __future__ import annotations
 
 from src.server.db.market_reader import MarketDbReader
+from src.server.db.query_helpers import stock_code_candidates
 from src.server.schemas.market_data import (
     MarketOHLCRecord,
     MarketOHLCVRecord,
@@ -16,11 +17,9 @@ from src.server.schemas.market_data import (
 )
 
 
-def _normalize_stock_code(code: str) -> str:
-    """4桁コードを5桁に正規化（例: "7203" → "72030"）"""
-    if len(code) == 4:
-        return f"{code}0"
-    return code
+def _stock_code_candidates(code: str) -> tuple[str, ...]:
+    """DB検索用の銘柄コード候補（4桁/5桁両対応）"""
+    return stock_code_candidates(code)
 
 
 class MarketDataService:
@@ -31,12 +30,14 @@ class MarketDataService:
 
     def get_stock_info(self, code: str) -> StockInfo | None:
         """単一銘柄の情報を取得"""
-        db_code = _normalize_stock_code(code)
+        codes = _stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in codes)
         row = self._reader.query_one(
             "SELECT code, company_name, company_name_english, market_code, market_name, "
             "sector_17_code, sector_17_name, sector_33_code, sector_33_name, "
-            "scale_category, listed_date FROM stocks WHERE code = ?",
-            (db_code,),
+            f"scale_category, listed_date FROM stocks WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
         )
         if row is None:
             return None
@@ -62,12 +63,18 @@ class MarketDataService:
         end_date: str | None = None,
     ) -> list[MarketOHLCVRecord] | None:
         """銘柄の OHLCV データを取得"""
-        db_code = _normalize_stock_code(code)
+        codes = _stock_code_candidates(code)
+        placeholders = ",".join("?" for _ in codes)
 
         # 銘柄存在確認
-        exists = self._reader.query_one("SELECT 1 FROM stocks WHERE code = ?", (db_code,))
-        if exists is None:
+        row = self._reader.query_one(
+            f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
+        )
+        if row is None:
             return None
+        db_code = row["code"]
 
         sql = "SELECT date, open, high, low, close, volume FROM stock_data WHERE code = ?"
         params: list[str] = [db_code]

@@ -16,6 +16,15 @@ from loguru import logger
 from src.server.clients.rate_limiter import RateLimiter
 
 
+class JQuantsApiError(Exception):
+    """JQuants API 呼び出しエラー（HTTP エラー / タイムアウト / 接続エラー）"""
+
+    def __init__(self, status_code: int, message: str) -> None:
+        self.status_code = status_code
+        self.message = message
+        super().__init__(message)
+
+
 class JQuantsAsyncClient:
     """JQuants API v2 非同期クライアント
 
@@ -30,12 +39,14 @@ class JQuantsAsyncClient:
     BASE_URL = "https://api.jquants.com/v2"
 
     # JQuants v2 エンドポイント → レスポンスデータキー マッピング
+    # v2 破壊的変更: 全エンドポイントが "data" キーに統一
     _DATA_KEYS: dict[str, str] = {
-        "/equities/bars/daily": "daily_quotes",
-        "/indices/bars/daily": "indices",
-        "/equities/master": "info",
-        "/fins/statements": "statements",
-        "/markets/margin-interest": "weekly_margin_interest",
+        "/equities/bars/daily": "data",
+        "/indices/bars/daily": "data",
+        "/indices/bars/daily/topix": "data",
+        "/equities/master": "data",
+        "/fins/summary": "data",
+        "/markets/margin-interest": "data",
     }
 
     def __init__(
@@ -114,7 +125,23 @@ class JQuantsAsyncClient:
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         """単一ページ GET リクエスト"""
-        resp = await self._get_with_retry(path, params)
+        try:
+            resp = await self._get_with_retry(path, params)
+        except httpx.HTTPStatusError as exc:
+            raise JQuantsApiError(
+                502,
+                f"JQuants API error ({exc.response.status_code}): {path}",
+            ) from exc
+        except httpx.TimeoutException as exc:
+            raise JQuantsApiError(
+                504,
+                f"JQuants API timeout: {path}",
+            ) from exc
+        except httpx.RequestError as exc:
+            raise JQuantsApiError(
+                502,
+                f"JQuants API connection error: {path}",
+            ) from exc
         result: dict[str, Any] = resp.json()
         return result
 
@@ -131,7 +158,23 @@ class JQuantsAsyncClient:
 
         while page_count < max_pages:
             page_count += 1
-            resp = await self._get_with_retry(path, current_params)
+            try:
+                resp = await self._get_with_retry(path, current_params)
+            except httpx.HTTPStatusError as exc:
+                raise JQuantsApiError(
+                    502,
+                    f"JQuants API error ({exc.response.status_code}): {path}",
+                ) from exc
+            except httpx.TimeoutException as exc:
+                raise JQuantsApiError(
+                    504,
+                    f"JQuants API timeout: {path}",
+                ) from exc
+            except httpx.RequestError as exc:
+                raise JQuantsApiError(
+                    502,
+                    f"JQuants API connection error: {path}",
+                ) from exc
             body: dict[str, Any] = resp.json()
 
             # データキーを特定して配列を収集

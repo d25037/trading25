@@ -6,7 +6,19 @@ Hono hono-openapi-baseline.json と完全互換のレスポンススキーマ。
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from typing import Annotated, Any
+
+from pydantic import BaseModel, BeforeValidator, Field
+
+
+def _empty_str_to_none(v: Any) -> Any:
+    """JQuantsの空文字数値をNoneに変換"""
+    if v == "":
+        return None
+    return v
+
+
+NullableFloat = Annotated[float | None, BeforeValidator(_empty_str_to_none)]
 
 
 # --- Auth Status ---
@@ -127,12 +139,12 @@ class StatementItem(BaseModel):
     CurPerType: str
     CurPerSt: str
     CurPerEn: str
-    EPS: float | None = None
-    FEPS: float | None = None
-    NxFEPS: float | None = None
-    NCEPS: float | None = None
-    FNCEPS: float | None = None
-    NxFNCEPS: float | None = None
+    EPS: NullableFloat = None
+    FEPS: NullableFloat = None
+    NxFEPS: NullableFloat = None
+    NCEPS: NullableFloat = None
+    FNCEPS: NullableFloat = None
+    NxFNCEPS: NullableFloat = None
 
 
 class StatementsResponse(BaseModel):
@@ -161,43 +173,43 @@ class RawStatementItem(BaseModel):
     NxtFYSt: str | None = None
     NxtFYEn: str | None = None
     # Financial Performance (Consolidated)
-    Sales: float | None = None
-    OP: float | None = None
-    OdP: float | None = None
-    NP: float | None = None
-    EPS: float | None = None
-    DEPS: float | None = None
+    Sales: NullableFloat = None
+    OP: NullableFloat = None
+    OdP: NullableFloat = None
+    NP: NullableFloat = None
+    EPS: NullableFloat = None
+    DEPS: NullableFloat = None
     # Financial Position (Consolidated)
-    TA: float | None = None
-    Eq: float | None = None
-    EqAR: float | None = None
-    BPS: float | None = None
+    TA: NullableFloat = None
+    Eq: NullableFloat = None
+    EqAR: NullableFloat = None
+    BPS: NullableFloat = None
     # Cash Flow
-    CFO: float | None = None
-    CFI: float | None = None
-    CFF: float | None = None
-    CashEq: float | None = None
+    CFO: NullableFloat = None
+    CFI: NullableFloat = None
+    CFF: NullableFloat = None
+    CashEq: NullableFloat = None
     # Share Information
-    ShOutFY: float | None = None
-    TrShFY: float | None = None
-    AvgSh: float | None = None
+    ShOutFY: NullableFloat = None
+    TrShFY: NullableFloat = None
+    AvgSh: NullableFloat = None
     # Forecast EPS
-    FEPS: float | None = None
-    NxFEPS: float | None = None
+    FEPS: NullableFloat = None
+    NxFEPS: NullableFloat = None
     # Non-Consolidated Financial Performance
-    NCSales: float | None = None
-    NCOP: float | None = None
-    NCOdP: float | None = None
-    NCNP: float | None = None
-    NCEPS: float | None = None
+    NCSales: NullableFloat = None
+    NCOP: NullableFloat = None
+    NCOdP: NullableFloat = None
+    NCNP: NullableFloat = None
+    NCEPS: NullableFloat = None
     # Non-Consolidated Financial Position
-    NCTA: float | None = None
-    NCEq: float | None = None
-    NCEqAR: float | None = None
-    NCBPS: float | None = None
+    NCTA: NullableFloat = None
+    NCEq: NullableFloat = None
+    NCEqAR: NullableFloat = None
+    NCBPS: NullableFloat = None
     # Non-Consolidated Forecast EPS
-    FNCEPS: float | None = None
-    NxFNCEPS: float | None = None
+    FNCEPS: NullableFloat = None
+    NxFNCEPS: NullableFloat = None
 
 
 class RawStatementsResponse(BaseModel):
