@@ -20,8 +20,9 @@ Dataset module provides **dramatically simplified** financial data management, r
 Dataset operations are now primarily accessed through the API server:
 
 ```bash
-# Start API server
-bun dev:api
+# Start API server (apps/bt FastAPI)
+cd apps/bt
+uv run bt server --port 3002
 
 # Create dataset
 bun cli dataset create prime.db --preset primeMarket

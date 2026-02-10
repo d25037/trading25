@@ -1,12 +1,13 @@
 ---
 id: bt-026
 title: "Phase 4: Python ドメインパッケージ分離"
-status: open
+status: done
 priority: medium
 labels: [architecture, refactor]
 project: bt
 created: 2026-02-09
 updated: 2026-02-10
+closed: 2026-02-10
 depends_on: []
 blocks: []
 parent: null
@@ -53,6 +54,7 @@ parent: null
   - `uv run pyright src`: 0 errors（既存 warning 1）
   - `uv run pytest tests/security/test_security_validation.py tests/unit/backtest/test_backtest_runner.py tests/unit/backtest/test_marimo_executor.py tests/unit/backtest/test_walkforward.py tests/unit/backtest/test_manifest.py tests/unit/optimization/test_notebook_generator.py tests/unit/agent/test_yaml_updater.py tests/unit/server/routes/test_strategies.py tests/unit/lib/test_phase4c_import_boundaries.py`: 81 passed
   - `uv run pytest tests/server/routes/test_lab.py -k "execute_improve_sync"`: 2 passed
+- 2026-02-10: Phase 4 完了に伴い本 Issue をクローズ。実装状態は `docs/unified-roadmap.md` に反映済み。
 
 ## 補足
-- 参照: `docs/unified-roadmap.md` Phase 4（再ベースライン）
+- 参照: `docs/archive/unified-roadmap-2026-02-10.md` Phase 4（再ベースライン）
