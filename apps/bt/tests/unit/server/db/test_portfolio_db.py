@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 from sqlalchemy.exc import IntegrityError
 
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.portfolio_db import PortfolioDb
 
 
 @pytest.fixture()

@@ -7,7 +7,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import * as fs from 'node:fs';
 import * as os from 'node:os';
 import * as path from 'node:path';
-import { BatchExecutor } from '../../clients/base/BatchExecutor';
+import { BatchExecutor } from '@trading25/clients-ts/base/BatchExecutor';
 import { DrizzleDatasetDatabase } from '../../db';
 import { createConfig, presets } from '../config';
 import { ConsoleProgressFormatter, ProgressTracker } from '../progress';

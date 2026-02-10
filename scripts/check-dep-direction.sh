@@ -2,6 +2,7 @@
 # check-dep-direction.sh — Detect ts→bt dependency direction violations
 #
 # Enforces ADR-001 Pattern A: bt→ts allowed, ts→bt must be in allowlist.
+# Archived package `apps/ts/packages/api` is excluded from scanning.
 # Exit 0 if all references are allowed, exit 1 on violations or stale entries.
 #
 # Compatible with bash 3.2+ (macOS default).
@@ -9,7 +10,7 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 allowlist_file="${repo_root}/scripts/dep-direction-allowlist.txt"
-search_dir="${repo_root}/apps/ts"
+search_dir="${repo_root}/apps/ts/packages"
 
 # Patterns that indicate ts→bt dependency
 combined_pattern='localhost:3002|127\.0\.0\.1:3002|BT_API_URL|/bt/api/|BacktestClient|@trading25/shared/clients/backtest|@trading25/clients-ts/backtest|bt-api-types|backtest/generated'
@@ -21,7 +22,7 @@ allowlist_clean=$(sed -e 's/#.*$//' -e '/^[[:space:]]*$/d' "$allowlist_file" | s
 matched_files=$(
   grep -rlE "$combined_pattern" "$search_dir" \
     --include='*.ts' --include='*.tsx' \
-    --exclude-dir=node_modules --exclude-dir=dist \
+    --exclude-dir=node_modules --exclude-dir=dist --exclude-dir=api \
     2>/dev/null || true
 )
 

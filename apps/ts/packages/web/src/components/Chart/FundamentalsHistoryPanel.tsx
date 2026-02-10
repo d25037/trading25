@@ -1,4 +1,4 @@
-import { hasActualFinancialData, isFiscalYear } from '@trading25/shared/fundamental-analysis/utils';
+import { hasActualFinancialData, isFiscalYear } from '@/utils/fundamental-analysis';
 import { useMemo } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFundamentals } from '@/hooks/useFundamentals';

@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.server.app import create_app
-from src.server.db.market_db import MarketDb
+from src.lib.market_db.market_db import MarketDb
 
 
 @pytest.fixture
