@@ -114,6 +114,24 @@ function useLazySectionVisibility(rootMargin = '160px 0px') {
   };
 }
 
+function shouldRenderEmptyState(
+  isLoading: boolean,
+  error: unknown,
+  selectedSymbol: string | null
+): boolean {
+  return !isLoading && !error && !selectedSymbol;
+}
+
+function shouldRenderChartPanels(
+  isLoading: boolean,
+  error: unknown,
+  selectedSymbol: string | null,
+  chartData: unknown
+): boolean {
+  return !isLoading && !error && !!selectedSymbol && !!chartData;
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Page intentionally coordinates multiple chart panels and state gates.
 export function ChartsPage() {
   const marginSection = useLazySectionVisibility();
   const fundamentalsSection = useLazySectionVisibility();
@@ -127,12 +145,13 @@ export function ChartsPage() {
     error: marginPressureError,
   } = useBtMarginIndicators(selectedSymbol, { enabled: marginSection.isVisible });
   const { data: stockData } = useStockData(selectedSymbol, 'daily'); // Get stock data for company name
-  const { settings } = useChartStore();
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
   const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
     enabled: fundamentalsSection.isVisible,
     tradingValuePeriod,
   });
+  const showEmptyState = shouldRenderEmptyState(isLoading, error, selectedSymbol);
+  const showChartPanels = shouldRenderChartPanels(isLoading, error, selectedSymbol, chartData);
 
   logger.debug('ChartsPage render', {
     selectedSymbol,
@@ -263,9 +282,9 @@ export function ChartsPage() {
       <div className="flex-1 p-6">
         {error && renderErrorState()}
         {isLoading && renderLoadingState()}
-        {!isLoading && !error && !selectedSymbol && renderEmptyState()}
+        {showEmptyState && renderEmptyState()}
 
-        {!isLoading && !error && selectedSymbol && chartData && (
+        {showChartPanels && (
           <div className="h-full flex flex-col gap-4">
             {/* 共通タイトルヘッダー */}
             <div className="px-6 py-4 gradient-primary rounded-xl">
