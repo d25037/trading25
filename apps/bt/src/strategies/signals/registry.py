@@ -28,6 +28,7 @@ from .fundamental import (
     is_growing_sales,
     is_high_dividend_yield,
     is_high_operating_margin,
+    is_high_roa,
     is_high_roe,
     market_cap_threshold,
     operating_cash_flow_threshold,
@@ -288,6 +289,24 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         param_key="fundamental.roe",
         data_checker=lambda d: _has_statements_column(d, "ROE"),
         data_requirements=["statements:ROE"],
+    ),
+    # 5.5. ROAシグナル
+    SignalDefinition(
+        name="ROA",
+        signal_func=is_high_roa,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.roa.enabled,
+        param_builder=lambda p, d: {
+            "roa": d["statements_data"]["ROA"],
+            "threshold": p.fundamental.roa.threshold,
+            "condition": p.fundamental.roa.condition,
+        },
+        entry_purpose="ROA（総資産利益率）が閾値以上の高効率企業を選定",
+        exit_purpose="ROAが閾値を下回った資産効率低下企業を除外",
+        category="fundamental",
+        description="ROA（総資産利益率）の閾値判定",
+        param_key="fundamental.roa",
+        data_checker=lambda d: _has_statements_column(d, "ROA"),
+        data_requirements=["statements:ROA"],
     ),
     # 6. β値シグナル
     SignalDefinition(
