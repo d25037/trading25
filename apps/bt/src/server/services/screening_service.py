@@ -11,6 +11,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 
 from src.lib.market_db.market_reader import MarketDbReader
+from src.server.services.market_code_alias import resolve_market_codes
 from src.server.schemas.screening import (
     MarketScreeningResponse,
     RangeBreakDetails,
@@ -201,10 +202,10 @@ class ScreeningService:
         limit: int | None = None,
     ) -> MarketScreeningResponse:
         """スクリーニングを実行"""
-        market_codes = [m.strip() for m in markets.split(",")]
+        requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
         # 銘柄データをロード
-        stocks = self._load_stocks(market_codes)
+        stocks = self._load_stocks(query_market_codes)
 
         results: list[ScreeningResultItem] = []
         skipped = 0
@@ -257,7 +258,7 @@ class ScreeningService:
                 skippedCount=skipped,
                 byScreeningType=type_counts,
             ),
-            markets=market_codes,
+            markets=requested_market_codes,
             recentDays=recent_days,
             referenceDate=reference_date,
             lastUpdated=_now_iso(),
@@ -267,6 +268,9 @@ class ScreeningService:
         self, market_codes: list[str]
     ) -> list[tuple[dict, list[StockDataPoint]]]:
         """銘柄とOHLCVデータをロード"""
+        if not market_codes:
+            return []
+
         # マーケットフィルタ
         placeholders = ",".join("?" for _ in market_codes)
         stocks_rows = self._reader.query(

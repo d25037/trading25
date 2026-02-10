@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from src.lib.market_db.market_reader import MarketDbReader
+from src.server.services.market_code_alias import resolve_market_codes
 from src.server.schemas.ranking import (
     MarketRankingResponse,
     RankingItem,
@@ -63,7 +64,7 @@ class RankingService:
         period_days: int = 250,
     ) -> MarketRankingResponse:
         """ランキングデータを取得"""
-        market_codes = [m.strip() for m in markets.split(",")]
+        requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
         # 対象日を決定
         if date:
@@ -77,28 +78,28 @@ class RankingService:
         # 5種類のランキングを取得
         if lookback_days > 1:
             trading_value = self._ranking_by_trading_value_average(
-                target_date, lookback_days, limit, market_codes
+                target_date, lookback_days, limit, query_market_codes
             )
         else:
-            trading_value = self._ranking_by_trading_value(target_date, limit, market_codes)
+            trading_value = self._ranking_by_trading_value(target_date, limit, query_market_codes)
 
         if lookback_days > 1:
             gainers = self._ranking_by_price_change_from_days(
-                target_date, lookback_days, limit, market_codes, "DESC"
+                target_date, lookback_days, limit, query_market_codes, "DESC"
             )
             losers = self._ranking_by_price_change_from_days(
-                target_date, lookback_days, limit, market_codes, "ASC"
+                target_date, lookback_days, limit, query_market_codes, "ASC"
             )
         else:
-            gainers = self._ranking_by_price_change(target_date, limit, market_codes, "DESC")
-            losers = self._ranking_by_price_change(target_date, limit, market_codes, "ASC")
+            gainers = self._ranking_by_price_change(target_date, limit, query_market_codes, "DESC")
+            losers = self._ranking_by_price_change(target_date, limit, query_market_codes, "ASC")
 
-        period_high = self._ranking_by_period_high(target_date, period_days, limit, market_codes)
-        period_low = self._ranking_by_period_low(target_date, period_days, limit, market_codes)
+        period_high = self._ranking_by_period_high(target_date, period_days, limit, query_market_codes)
+        period_low = self._ranking_by_period_low(target_date, period_days, limit, query_market_codes)
 
         return MarketRankingResponse(
             date=target_date,
-            markets=market_codes,
+            markets=requested_market_codes,
             lookbackDays=lookback_days,
             periodDays=period_days,
             rankings=Rankings(
