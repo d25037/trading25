@@ -12,6 +12,7 @@ from datetime import UTC, datetime
 from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.lib.market_db.query_helpers import expand_stock_code, stock_code_candidates
 from src.lib.market_db.market_reader import MarketDbReader
+from src.server.services.market_code_alias import resolve_market_codes
 from src.server.schemas.chart import (
     IndexDataResponse,
     IndexInfo,
@@ -428,7 +429,10 @@ class ChartService:
         )
         tv_base_date = tv_base_row["date"] if tv_base_row else latest_date
 
-        market_codes = [m.strip() for m in markets.split(",")]
+        requested_market_codes, query_market_codes = resolve_market_codes(
+            markets,
+            fallback=["prime", "standard"],
+        )
 
         # セクター名の中黒正規化
         norm_s33 = _normalize_middle_dot(sector33_name) if sector33_name else None
@@ -454,10 +458,10 @@ class ChartService:
         if norm_s17:
             conditions.append("s.sector_17_name = ?")
             where_params.append(norm_s17)
-        if market_codes:
-            placeholders = ",".join("?" for _ in market_codes)
+        if query_market_codes:
+            placeholders = ",".join("?" for _ in query_market_codes)
             conditions.append(f"s.market_code IN ({placeholders})")
-            where_params.extend(market_codes)
+            where_params.extend(query_market_codes)
 
         # ソート
         order_map = {
@@ -524,7 +528,7 @@ class ChartService:
         return SectorStocksResponse(
             sector33Name=sector33_name,
             sector17Name=sector17_name,
-            markets=market_codes,
+            markets=requested_market_codes,
             lookbackDays=lookback_days,
             sortBy=sort_by,
             sortOrder=sort_order,

@@ -41,11 +41,13 @@ def ranking_db(tmp_path):
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("67580", "ソニー", "SONY", "prime", "P", "S17", "電気", "S33", "電気機器", None, "2000-01-01", None, None))
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("83060", "Numeric Prime", "NPRIME", "0111", "P", "S17", "銀行", "S33", "銀行業", None, "2000-01-01", None, None))
+    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("99840", "テスト", "TEST", "standard", "S", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
 
     # 5日分のOHLCVデータ
     dates = ["2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19"]
-    for code, base_v in [("72030", 2000000), ("67580", 1500000), ("99840", 100000)]:
+    for code, base_v in [("72030", 2000000), ("67580", 1500000), ("83060", 1100000), ("99840", 100000)]:
         for i, d in enumerate(dates):
             price = 2500.0 + i * 10 if code == "72030" else (13000.0 + i * 50 if code == "67580" else 500.0 + i * 5)
             vol = base_v + i * 10000
@@ -99,6 +101,18 @@ class TestGetRankings:
         items = result.rankings.tradingValue
         for item in items:
             assert item.marketCode == "standard"
+
+    def test_market_filter_alias_prime_includes_numeric_codes(self, service):
+        result = service.get_rankings(markets="prime", limit=20)
+        market_codes = {item.marketCode for item in result.rankings.tradingValue}
+        assert "prime" in market_codes
+        assert "0111" in market_codes
+
+    def test_market_filter_alias_0111_includes_legacy_codes(self, service):
+        result = service.get_rankings(markets="0111", limit=20)
+        market_codes = {item.marketCode for item in result.rankings.tradingValue}
+        assert "prime" in market_codes
+        assert "0111" in market_codes
 
     def test_lookback_days(self, service):
         result = service.get_rankings(lookback_days=3)
