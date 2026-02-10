@@ -11,9 +11,14 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useStrategy, useUpdateStrategy, useValidateStrategy } from '@/hooks/useBacktest';
+import { useSignalReference, useStrategy, useUpdateStrategy, useValidateStrategy } from '@/hooks/useBacktest';
 import { cn } from '@/lib/utils';
 import { SignalReferencePanel } from './SignalReferencePanel';
+import {
+  mergeValidationResults,
+  type StrategyValidationResult,
+  validateStrategyConfigLocally,
+} from './strategyValidation';
 
 interface StrategyEditorProps {
   open: boolean;
@@ -26,7 +31,9 @@ interface StrategyEditorProps {
 export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
+  const [validationResult, setValidationResult] = useState<StrategyValidationResult | null>(null);
   const { data: strategyDetail, isLoading: isLoadingStrategy } = useStrategy(open ? strategyName : null);
+  const { data: signalReference } = useSignalReference();
   const updateStrategy = useUpdateStrategy();
   const validateStrategy = useValidateStrategy();
 
@@ -56,19 +63,49 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     }
   }, [yamlContent]);
 
-  const handleValidate = useCallback(() => {
+  const handleValidate = useCallback(async () => {
     const config = parseYaml();
     if (!config) return;
 
-    validateStrategy.mutate({
-      name: strategyName,
-      request: { config },
-    });
-  }, [parseYaml, strategyName, validateStrategy]);
+    const localValidation = validateStrategyConfigLocally(config, signalReference?.signals ?? []);
+    if (!localValidation.valid) {
+      setValidationResult(localValidation);
+      return;
+    }
 
-  const handleSave = useCallback(() => {
+    const serverValidation = await validateStrategy
+      .mutateAsync({
+        name: strategyName,
+        request: { config },
+      })
+      .catch(() => null);
+
+    setValidationResult(mergeValidationResults(localValidation, serverValidation));
+  }, [parseYaml, signalReference?.signals, strategyName, validateStrategy]);
+
+  const handleSave = useCallback(async () => {
     const config = parseYaml();
     if (!config) return;
+
+    const localValidation = validateStrategyConfigLocally(config, signalReference?.signals ?? []);
+    if (!localValidation.valid) {
+      setValidationResult(localValidation);
+      return;
+    }
+
+    const serverValidation = await validateStrategy
+      .mutateAsync({
+        name: strategyName,
+        request: { config },
+      })
+      .catch(() => null);
+
+    const mergedValidation = mergeValidationResults(localValidation, serverValidation);
+    setValidationResult(mergedValidation);
+
+    if (!mergedValidation?.valid) {
+      return;
+    }
 
     updateStrategy.mutate(
       { name: strategyName, request: { config } },
@@ -79,7 +116,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
         },
       }
     );
-  }, [parseYaml, strategyName, updateStrategy, onOpenChange, onSuccess]);
+  }, [parseYaml, signalReference?.signals, strategyName, validateStrategy, updateStrategy, onOpenChange, onSuccess]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {
@@ -87,6 +124,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
         validateStrategy.reset();
         updateStrategy.reset();
         setParseError(null);
+        setValidationResult(null);
       }
       onOpenChange(open);
     },
@@ -96,6 +134,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   const handleYamlChange = useCallback((value: string) => {
     setYamlContent(value);
     setParseError(null);
+    setValidationResult(null);
   }, []);
 
   const handleCopySnippet = useCallback(
@@ -107,7 +146,6 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     [yamlContent]
   );
 
-  const validationResult = validateStrategy.data;
   const hasValidationErrors = validationResult && !validationResult.valid;
   const hasValidationWarnings = validationResult?.warnings && validationResult.warnings.length > 0;
 
@@ -222,7 +260,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
           </Button>
           <Button
             variant="secondary"
-            onClick={handleValidate}
+            onClick={() => void handleValidate()}
             disabled={validateStrategy.isPending || isLoadingStrategy}
           >
             {validateStrategy.isPending ? (
@@ -234,7 +272,10 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
               'Validate'
             )}
           </Button>
-          <Button onClick={handleSave} disabled={updateStrategy.isPending || isLoadingStrategy || !!parseError}>
+          <Button
+            onClick={() => void handleSave()}
+            disabled={updateStrategy.isPending || validateStrategy.isPending || isLoadingStrategy || !!parseError}
+          >
             {updateStrategy.isPending ? (
               <>
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
