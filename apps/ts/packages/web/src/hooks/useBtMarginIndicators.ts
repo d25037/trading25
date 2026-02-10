@@ -70,7 +70,20 @@ function transformBtMarginResponse(response: BtMarginResponse, period: number): 
 
 // ===== Main Hook =====
 
-export function useBtMarginIndicators(symbol: string | null, period = 15) {
+interface UseBtMarginIndicatorsOptions {
+  period?: number;
+  enabled?: boolean;
+}
+
+export function useBtMarginIndicators(
+  symbol: string | null,
+  options: number | UseBtMarginIndicatorsOptions = 15
+) {
+  const { period, enabled } =
+    typeof options === 'number'
+      ? { period: options, enabled: true }
+      : { period: options.period ?? 15, enabled: options.enabled ?? true };
+
   const query = useQuery({
     queryKey: btMarginKeys.compute(symbol ?? '', period),
     queryFn: () => {
@@ -82,7 +95,7 @@ export function useBtMarginIndicators(symbol: string | null, period = 15) {
       };
       return apiPost<BtMarginResponse>('/api/indicators/margin', request);
     },
-    enabled: !!symbol,
+    enabled: !!symbol && enabled,
     staleTime: 5 * 60_000,
     gcTime: 10 * 60_000,
     retry: 2,

@@ -14,6 +14,7 @@ import httpx
 from loguru import logger
 
 from src.server.clients.rate_limiter import RateLimiter
+from src.server.middleware.correlation import get_correlation_id
 
 
 class JQuantsApiError(Exception):
@@ -84,6 +85,13 @@ class JQuantsAsyncClient:
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 await self._rate_limiter.acquire()
+                logger.info(
+                    f"JQuants fetch: {path}",
+                    event="jquants_fetch",
+                    endpoint=path,
+                    attempt=attempt + 1,
+                    correlationId=get_correlation_id(),
+                )
                 resp = await self._client.get(path, params=params)
                 if resp.status_code in self.RETRY_STATUSES and attempt < self.MAX_RETRIES:
                     wait = 2**attempt

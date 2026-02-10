@@ -8,6 +8,7 @@ import { formatFundamentalValue } from '@/utils/formatters';
 
 interface FundamentalsHistoryPanelProps {
   symbol: string | null;
+  enabled?: boolean;
 }
 
 interface ForecastEpsFields {
@@ -63,8 +64,8 @@ function renderForecastEps(fy: ForecastEpsFields): React.ReactNode {
   return formatFundamentalValue(null, 'yen');
 }
 
-export function FundamentalsHistoryPanel({ symbol }: FundamentalsHistoryPanelProps) {
-  const { data, isLoading, error } = useFundamentals(symbol);
+export function FundamentalsHistoryPanel({ symbol, enabled = true }: FundamentalsHistoryPanelProps) {
+  const { data, isLoading, error } = useFundamentals(symbol, { enabled });
 
   const fyHistory = useMemo(() => {
     if (!data?.data) return [];
