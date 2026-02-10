@@ -41,30 +41,6 @@ export default defineConfig({
 			},
 			{ find: '@trading25/clients-ts', replacement: `${import.meta.dirname}/../clients-ts/src` },
 			{
-				find: /^@trading25\/market-db-ts\/(.*)$/,
-				replacement: `${import.meta.dirname}/../market-db-ts/src/$1`,
-			},
-			{
-				find: '@trading25/market-db-ts',
-				replacement: `${import.meta.dirname}/../market-db-ts/src`,
-			},
-			{
-				find: /^@trading25\/dataset-db-ts\/(.*)$/,
-				replacement: `${import.meta.dirname}/../dataset-db-ts/src/$1`,
-			},
-			{
-				find: '@trading25/dataset-db-ts',
-				replacement: `${import.meta.dirname}/../dataset-db-ts/src`,
-			},
-			{
-				find: /^@trading25\/portfolio-db-ts\/(.*)$/,
-				replacement: `${import.meta.dirname}/../portfolio-db-ts/src/$1`,
-			},
-			{
-				find: '@trading25/portfolio-db-ts',
-				replacement: `${import.meta.dirname}/../portfolio-db-ts/src`,
-			},
-			{
 				find: /^@trading25\/shared\/(.*)$/,
 				replacement: `${import.meta.dirname}/../shared/src/$1`,
 			},

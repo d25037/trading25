@@ -16,7 +16,7 @@ export type {
   WatchlistSummaryResponse as WatchlistSummary,
   WatchlistWithItemsResponse,
   WatchlistWithItemsResponse as WatchlistWithItems,
-} from '@trading25/portfolio-db-ts/watchlist';
+} from '@trading25/shared/watchlist';
 
 // Frontend-specific request types
 export interface CreateWatchlistRequest {
