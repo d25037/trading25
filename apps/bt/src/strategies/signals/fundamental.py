@@ -46,6 +46,7 @@ from .fundamental_growth import (
 from .fundamental_quality import (
     is_high_dividend_yield,
     is_high_operating_margin,
+    is_high_roa,
     is_high_roe,
 )
 
@@ -75,6 +76,7 @@ __all__ = [
     "is_growing_sales",
     # 収益性・品質系
     "is_high_roe",
+    "is_high_roa",
     "is_high_operating_margin",
     "is_high_dividend_yield",
     # キャッシュフロー系・時価総額系
