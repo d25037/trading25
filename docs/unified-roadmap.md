@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-10（Phase 4B 完了・4C Step2 実体移管完了・4D Step1 完了）
+最終更新: 2026-02-10（Phase 4D Step1 完了・互換レイヤ削減と CI 段階実行を反映）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -697,6 +697,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 **進捗**:
 - 2026-02-09: Step1（DB + dataset I/O 分離）完了。`src/server/db` は互換 re-export を維持しつつ、実装本体を `src/lib/*` へ移管。
 - 2026-02-09: Step2（`indicators` / `backtest_core` / `strategy_runtime` 境界追加）完了。`src/server` / `src/cli_*` の参照を `src.lib.*` へ切替し、`ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体も `src/lib/*` へ移管（legacy は互換 facade 化）。
+- 2026-02-10: Step1 で残した `src/server/db/*` 互換 re-export を削除し、テスト参照も `src/lib/*` に統一。
 
 **成果物（4C Step2）**:
 - 実体移管:
@@ -732,12 +733,15 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 *元: packages-responsibility-roadmap.md Phase 5（再編）*
 
 - [x] TS 側の一時的な互換 re-export（`db`/`dataset`/`portfolio`/`watchlist`）を実装再統合で削除（2026-02-10, Step1）
-- [ ] `apps/ts/packages/shared` と `apps/bt/src` の重複実装を削除
-- [ ] CI を「パッケージ単体テスト」と「apps 結合テスト」に段階化
-- [ ] `scripts/check-dep-direction.sh` の allowlist と docs を新境界へ更新
+- [x] 一時的な互換 re-export を段階削除（`apps/bt/src/server/db/*`, `apps/ts/packages/shared/src/clients/*`）
+- [x] CI を「パッケージ単体テスト」と「apps 結合テスト」に段階化
+- [x] `scripts/check-dep-direction.sh` の allowlist と docs を新境界へ更新
 
 **進捗**:
 - 2026-02-10: Step1（TS 再統合）完了。`apps/ts/packages/market-db-ts` / `dataset-db-ts` / `portfolio-db-ts` を削除し、`shared` に実装を戻したうえで `web`/`cli` import を `@trading25/shared/*` へ統一。
+- 2026-02-10: `apps/bt/src/server/db/*` と `apps/ts/packages/shared/src/clients/*` の互換 facade を削除し、参照先を `src/lib/*` / `@trading25/clients-ts/*` へ統一。
+- 2026-02-10: `scripts/test-packages.sh` / `scripts/test-apps.sh` を追加し、CI を package 単体 → apps 結合の2段階へ分割。
+- 2026-02-10: dep-direction の検査対象を `apps/ts/packages`（archived `api` 除外）へ更新し allowlist を再整理。
 
 **完了条件**:
 - apps 配下に残るのは entrypoint + thin adapter

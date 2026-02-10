@@ -8,7 +8,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.server.app import create_app
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.portfolio_db import PortfolioDb
 
 
 @pytest.fixture()

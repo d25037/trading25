@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from src.server.db.dataset_db import DatasetDb
+from src.lib.market_db.dataset_db import DatasetDb
 
 
 @pytest.fixture

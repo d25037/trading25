@@ -6,7 +6,7 @@ import tempfile
 import pytest
 from sqlalchemy import text
 
-from src.server.db.dataset_writer import DatasetWriter
+from src.lib.dataset_io.dataset_writer import DatasetWriter
 
 
 @pytest.fixture

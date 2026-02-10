@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from src.server.db.market_reader import MarketDbReader
+from src.lib.market_db.market_reader import MarketDbReader
 from src.server.services.factor_regression_service import (
     DailyReturn,
     FactorRegressionService,

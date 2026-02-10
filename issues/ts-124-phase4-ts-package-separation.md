@@ -53,6 +53,9 @@ parent: null
 - 2026-02-10: `@trading25/market-db-ts` / `@trading25/dataset-db-ts` / `@trading25/portfolio-db-ts` を `shared` へ再統合し、3パッケージを削除。
 - 2026-02-10: `web`/`cli` の import を `@trading25/shared/portfolio|watchlist|dataset` に統一し、`vite`/`vitest`/`tsconfig` の不要 alias を削除。
 - 2026-02-10: `apps/ts` の scripts / workspace 依存を整理（build/typecheck 対象の再定義）し、lint / typecheck / test のグリーンを確認。
+- 2026-02-10: `shared/src/clients/*` 互換 re-export（`backtest` を除く generated 型のみ）を削除し、`shared` ルート export を `@trading25/clients-ts/*` へ直接接続。
+- 2026-02-10: `@trading25/shared/clients/*` subpath export を削除し、dep-direction allowlist から shared 互換エントリを除去。
+- 2026-02-10: CI テストを `packages` 単体（`test:packages`）→ `apps` 結合（`test:apps`）の段階実行へ更新。
 
 ## 補足
 - 元タスク `ts-117` は archived API package 前提のため 2026-02-09 にクローズ済み

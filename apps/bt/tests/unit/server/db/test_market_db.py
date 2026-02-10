@@ -8,8 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from src.server.db.market_db import MarketDb
-from src.server.db.tables import market_meta
+from src.lib.market_db.market_db import MarketDb
+from src.lib.market_db.tables import market_meta
 
 
 @pytest.fixture()

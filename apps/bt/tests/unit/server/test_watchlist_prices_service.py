@@ -7,8 +7,8 @@ from pathlib import Path
 
 import pytest
 
-from src.server.db.market_reader import MarketDbReader
-from src.server.db.portfolio_db import PortfolioDb
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.portfolio_db import PortfolioDb
 from src.server.services.watchlist_prices_service import WatchlistPricesService
 
 
