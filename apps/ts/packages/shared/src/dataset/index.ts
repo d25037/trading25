@@ -36,13 +36,13 @@ export {
   JQUANTS_PLAN_LIMITS,
   type JQuantsPlan,
   validateJQuantsPlan,
-} from '../clients/base/BaseJQuantsClient';
+} from '@trading25/clients-ts/base/BaseJQuantsClient';
 // Batch execution (rate limiting is in BaseJQuantsClient)
 export {
   BatchExecutor,
   categorizeErrorType,
   createBatchExecutor,
-} from '../clients/base/BatchExecutor';
+} from '@trading25/clients-ts/base/BatchExecutor';
 // Database operations (for advanced users)
 export { DrizzleDatasetDatabase as Database } from '../db';
 export { ApiClient } from './api-client';
