@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartsPage } from './ChartsPage';
@@ -7,21 +7,22 @@ const mockUseMultiTimeframeChart = vi.fn();
 const mockUseBtMarginIndicators = vi.fn();
 const mockUseStockData = vi.fn();
 const mockUseFundamentals = vi.fn();
+const mockWindowOpen = vi.fn();
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
   useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
 }));
 
 vi.mock('@/hooks/useBtMarginIndicators', () => ({
-  useBtMarginIndicators: () => mockUseBtMarginIndicators(),
+  useBtMarginIndicators: (...args: unknown[]) => mockUseBtMarginIndicators(...args),
 }));
 
 vi.mock('@/hooks/useStockData', () => ({
-  useStockData: () => mockUseStockData(),
+  useStockData: (...args: unknown[]) => mockUseStockData(...args),
 }));
 
 vi.mock('@/hooks/useFundamentals', () => ({
-  useFundamentals: () => mockUseFundamentals(),
+  useFundamentals: (...args: unknown[]) => mockUseFundamentals(...args),
 }));
 
 const mockSettings = {
@@ -90,8 +91,12 @@ vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
   FundamentalsHistoryPanel: () => <div>FY History Panel</div>,
 }));
 
+const mockFactorRegressionPanelProps = vi.fn<[unknown], void>();
 vi.mock('@/components/Chart/FactorRegressionPanel', () => ({
-  FactorRegressionPanel: () => <div>Factor Regression Panel</div>,
+  FactorRegressionPanel: (props: unknown) => {
+    mockFactorRegressionPanelProps(props);
+    return <div>Factor Regression Panel</div>;
+  },
 }));
 
 vi.mock('@/components/Chart/TimeframeSelector', () => ({
@@ -103,7 +108,64 @@ vi.mock('@/components/ErrorBoundary', () => ({
 }));
 
 describe('ChartsPage', () => {
+  class MockIntersectionObserver {
+    static instances: MockIntersectionObserver[] = [];
+
+    private readonly callback: IntersectionObserverCallback;
+    private readonly targets: Element[] = [];
+
+    constructor(callback: IntersectionObserverCallback) {
+      this.callback = callback;
+      MockIntersectionObserver.instances.push(this);
+    }
+
+    observe = (target: Element) => {
+      this.targets.push(target);
+    };
+
+    disconnect = vi.fn();
+    unobserve = vi.fn();
+    takeRecords = () => [];
+
+    trigger(isIntersecting = true) {
+      const entries = this.targets.map(
+        (target) =>
+          ({
+            target,
+            isIntersecting,
+            intersectionRatio: isIntersecting ? 1 : 0,
+            time: 0,
+            boundingClientRect: {} as DOMRectReadOnly,
+            intersectionRect: {} as DOMRectReadOnly,
+            rootBounds: null,
+          }) as IntersectionObserverEntry
+      );
+      this.callback(entries, this as unknown as IntersectionObserver);
+    }
+
+    static reset() {
+      MockIntersectionObserver.instances = [];
+    }
+
+    static triggerAll(isIntersecting = true) {
+      for (const instance of MockIntersectionObserver.instances) {
+        instance.trigger(isIntersecting);
+      }
+    }
+  }
+
   beforeEach(() => {
+    vi.restoreAllMocks();
+    MockIntersectionObserver.reset();
+    vi.stubGlobal('IntersectionObserver', MockIntersectionObserver as unknown as typeof IntersectionObserver);
+    mockWindowOpen.mockReset();
+    vi.spyOn(window, 'open').mockImplementation(mockWindowOpen as typeof window.open);
+
+    mockUseBtMarginIndicators.mockReset();
+    mockUseStockData.mockReset();
+    mockUseFundamentals.mockReset();
+    mockFactorRegressionPanelProps.mockReset();
+
     mockUseFundamentals.mockReturnValue({ data: null });
   });
 
@@ -162,6 +224,24 @@ describe('ChartsPage', () => {
     expect(screen.getByText(/Start Trading Analysis/i)).toBeInTheDocument();
   });
 
+  it('renders generic error message when error is not an Error instance', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      isLoading: false,
+      error: 'string error',
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockData.mockReturnValue({ data: null });
+
+    render(<ChartsPage />);
+    expect(screen.getByText('An unexpected error occurred while fetching market data')).toBeInTheDocument();
+  });
+
   it('renders chart panels when data is available', () => {
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: {
@@ -196,5 +276,162 @@ describe('ChartsPage', () => {
     expect(screen.getAllByText('Margin Pressure Chart')).toHaveLength(3);
     expect(screen.getByText('Test Co')).toBeInTheDocument();
     expect(screen.getByText(/7203/)).toBeInTheDocument();
+  });
+
+  it('renders margin loading and error states in indicator section', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: null,
+      isLoading: true,
+      error: null,
+    });
+    const { rerender } = render(<ChartsPage />);
+    expect(screen.getByText('Loading...')).toBeInTheDocument();
+
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: new Error('boom'),
+    });
+    rerender(<ChartsPage />);
+    expect(screen.getByText('Failed to load margin pressure data')).toBeInTheDocument();
+  });
+
+  it('renders market cap and opens external links when available', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: { longPressure: [], flowPressure: [], turnoverDays: [], averagePeriod: 20 },
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseFundamentals.mockImplementation((_symbol: string, options?: { enabled?: boolean }) => ({
+      data: options?.enabled
+        ? { dailyValuation: [{ marketCap: 1000000000 }] }
+        : null,
+    }));
+
+    render(<ChartsPage />);
+
+    act(() => {
+      MockIntersectionObserver.triggerAll(true);
+    });
+
+    expect(screen.getByText(/時価総額/)).toBeInTheDocument();
+
+    fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
+    fireEvent.click(screen.getByRole('button', { name: /B\.C\./i }));
+
+    expect(mockWindowOpen).toHaveBeenCalledWith(
+      'https://shikiho.toyokeizai.net/stocks/7203',
+      '_blank',
+      'noopener,noreferrer'
+    );
+    expect(mockWindowOpen).toHaveBeenCalledWith(
+      'https://www.buffett-code.com/company/7203/',
+      '_blank',
+      'noopener,noreferrer'
+    );
+  });
+
+  it('falls back to immediate visibility when IntersectionObserver is unavailable', async () => {
+    vi.stubGlobal('IntersectionObserver', undefined);
+
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          indicators: {},
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({ data: null, isLoading: false, error: null });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseFundamentals.mockReturnValue({ data: null });
+
+    render(<ChartsPage />);
+
+    await waitFor(() => {
+      expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
+    });
+    await waitFor(() => {
+      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true });
+    });
+  });
+
+  it('defers panel queries until sections become visible', async () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({ data: null, isLoading: false, error: null });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseFundamentals.mockReturnValue({ data: null });
+
+    render(<ChartsPage />);
+
+    expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false });
+    expect(mockFactorRegressionPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      enabled: false,
+    });
+
+    act(() => {
+      MockIntersectionObserver.triggerAll(true);
+    });
+
+    await waitFor(() => {
+      expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
+    });
+    await waitFor(() => {
+      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true });
+    });
+    await waitFor(() => {
+      expect(mockFactorRegressionPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+        symbol: '7203',
+        enabled: true,
+      });
+    });
   });
 });

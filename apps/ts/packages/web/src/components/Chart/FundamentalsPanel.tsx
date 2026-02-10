@@ -7,10 +7,11 @@ import { FundamentalsTimeSeriesChart } from './FundamentalsTimeSeriesChart';
 
 interface FundamentalsPanelProps {
   symbol: string | null;
+  enabled?: boolean;
 }
 
-export function FundamentalsPanel({ symbol }: FundamentalsPanelProps) {
-  const { data, isLoading, error } = useFundamentals(symbol);
+export function FundamentalsPanel({ symbol, enabled = true }: FundamentalsPanelProps) {
+  const { data, isLoading, error } = useFundamentals(symbol, { enabled });
 
   // Get the latest FY (full year) data with actual financial data for summary card
   // Then update PER/PBR/stockPrice with latest daily valuation for current prices

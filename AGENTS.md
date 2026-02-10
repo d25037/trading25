@@ -48,7 +48,15 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 - FastAPI: 例外ハンドラが `HTTPException(detail=...)` を自動変換
 - `RequestLoggerMiddleware` が `JQuantsApiError`(502/504) / `SQLAlchemyError`(500) / 汎用例外(500) をキャッチし統一フォーマットで返却
 - correlation ID: `x-correlation-id` ヘッダで伝播（なければ自動生成）
+- 内部HTTP呼び出し（`src/api/client.py`）も `x-correlation-id` を伝播
 - ErrorResponse スキーマは OpenAPI で全エンドポイントに 400/404/500 として公開
+
+## J-Quants Proxy キャッシュ/観測
+
+- `JQuantsProxyService` は in-memory TTL + singleflight を使用
+  - `/markets/margin-interest`: 5分
+  - `/fins/summary`（`/statements` / `/statements/raw` で共有）: 15分
+- 実外部呼び出しは `event="jquants_fetch"`、キャッシュ状態は `event="jquants_proxy_cache"` で構造化ログ出力
 
 ## ミドルウェア構成（FastAPI）
 

@@ -1,4 +1,4 @@
-import { useMemo } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { AlertCircle, BookOpen, Loader2, TrendingUp, Wallet } from 'lucide-react';
 import { ChartControls } from '@/components/Chart/ChartControls';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
@@ -79,15 +79,54 @@ function MarginPressureIndicatorsSection({
   );
 }
 
+function useLazySectionVisibility(rootMargin = '160px 0px') {
+  const sectionRef = useRef<HTMLDivElement>(null);
+  const [isVisible, setIsVisible] = useState(false);
+
+  useEffect(() => {
+    if (isVisible) return;
+
+    const element = sectionRef.current;
+    if (!element) return;
+
+    if (typeof IntersectionObserver === 'undefined') {
+      setIsVisible(true);
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setIsVisible(true);
+          observer.disconnect();
+        }
+      },
+      { rootMargin }
+    );
+
+    observer.observe(element);
+    return () => observer.disconnect();
+  }, [isVisible, rootMargin]);
+
+  return {
+    sectionRef,
+    isVisible,
+  };
+}
+
 export function ChartsPage() {
+  const marginSection = useLazySectionVisibility();
+  const fundamentalsSection = useLazySectionVisibility();
+  const factorSection = useLazySectionVisibility();
+
   const { chartData, signalMarkers, isLoading, error, selectedSymbol } = useMultiTimeframeChart();
   const {
     data: marginPressureData,
     isLoading: marginPressureLoading,
     error: marginPressureError,
-  } = useBtMarginIndicators(selectedSymbol);
+  } = useBtMarginIndicators(selectedSymbol, { enabled: marginSection.isVisible });
   const { data: stockData } = useStockData(selectedSymbol, 'daily'); // Get stock data for company name
-  const { data: fundamentalsData } = useFundamentals(selectedSymbol);
+  const { data: fundamentalsData } = useFundamentals(selectedSymbol, { enabled: fundamentalsSection.isVisible });
   const { settings } = useChartStore();
 
   logger.debug('ChartsPage render', {
@@ -395,7 +434,7 @@ export function ChartsPage() {
             )}
 
             {/* Margin Pressure Indicators Row - 3 charts */}
-            <div className="h-72">
+            <div ref={marginSection.sectionRef} className="h-72">
               <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
                 <div className="absolute inset-0 gradient-glass opacity-50" />
                 <div className="relative z-10 h-full">
@@ -421,7 +460,7 @@ export function ChartsPage() {
             </div>
 
             {/* Fundamentals Panel Section */}
-            <div className="h-[540px]">
+            <div ref={fundamentalsSection.sectionRef} className="h-[540px]">
               <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
                 <div className="absolute inset-0 gradient-glass opacity-50" />
                 <div className="relative z-10 h-full">
@@ -430,7 +469,7 @@ export function ChartsPage() {
                   </div>
                   <div className="h-[calc(100%-4rem)] p-4">
                     <ErrorBoundary>
-                      <FundamentalsPanel symbol={selectedSymbol} />
+                      <FundamentalsPanel symbol={selectedSymbol} enabled={fundamentalsSection.isVisible} />
                     </ErrorBoundary>
                   </div>
                 </div>
@@ -447,7 +486,7 @@ export function ChartsPage() {
                   </div>
                   <div className="h-[calc(100%-4rem)] p-4">
                     <ErrorBoundary>
-                      <FundamentalsHistoryPanel symbol={selectedSymbol} />
+                      <FundamentalsHistoryPanel symbol={selectedSymbol} enabled={fundamentalsSection.isVisible} />
                     </ErrorBoundary>
                   </div>
                 </div>
@@ -455,7 +494,7 @@ export function ChartsPage() {
             </div>
 
             {/* Factor Regression Panel Section */}
-            <div className="h-64">
+            <div ref={factorSection.sectionRef} className="h-64">
               <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
                 <div className="absolute inset-0 gradient-glass opacity-50" />
                 <div className="relative z-10 h-full">
@@ -464,7 +503,7 @@ export function ChartsPage() {
                   </div>
                   <div className="h-[calc(100%-4rem)] p-4">
                     <ErrorBoundary>
-                      <FactorRegressionPanel symbol={selectedSymbol} />
+                      <FactorRegressionPanel symbol={selectedSymbol} enabled={factorSection.isVisible} />
                     </ErrorBoundary>
                   </div>
                 </div>

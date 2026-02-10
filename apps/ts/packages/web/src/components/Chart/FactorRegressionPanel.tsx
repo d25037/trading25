@@ -4,6 +4,7 @@ import { useFactorRegression } from '@/hooks/useFactorRegression';
 
 interface FactorRegressionPanelProps {
   symbol: string | null;
+  enabled?: boolean;
 }
 
 /**
@@ -67,8 +68,8 @@ function IndexMatchList({ title, matches }: { title: string; matches: ApiIndexMa
   );
 }
 
-export function FactorRegressionPanel({ symbol }: FactorRegressionPanelProps) {
-  const { data, isLoading, error } = useFactorRegression(symbol);
+export function FactorRegressionPanel({ symbol, enabled = true }: FactorRegressionPanelProps) {
+  const { data, isLoading, error } = useFactorRegression(symbol, { enabled });
 
   if (!symbol) {
     return (

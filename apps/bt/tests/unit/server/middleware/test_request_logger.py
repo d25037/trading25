@@ -1,9 +1,16 @@
 """リクエストロギングミドルウェアのテスト"""
 
+import json
+import time
 from unittest.mock import patch
 
+from fastapi import FastAPI
 from fastapi.testclient import TestClient
+import pytest
+from sqlalchemy.exc import SQLAlchemyError
+from starlette.requests import Request
 
+from src.server.middleware.request_logger import RequestLoggerMiddleware
 from src.server.app import create_app
 
 
@@ -99,6 +106,42 @@ class TestRequestLoggerMiddleware:
             assert kwargs["method"] == "GET"
             assert kwargs["path"] == "/test/500"
 
+    @pytest.mark.asyncio
+    async def test_sqlalchemy_error_is_logged_as_request_error(self) -> None:
+        """SQLAlchemyError は request_error イベントでログされること"""
+        middleware = RequestLoggerMiddleware(FastAPI())
+        request = Request(
+            {
+                "type": "http",
+                "method": "GET",
+                "path": "/test/sqlalchemy-error",
+                "headers": [],
+                "query_string": b"",
+                "server": ("testserver", 80),
+                "client": ("testclient", 50000),
+                "scheme": "http",
+                "http_version": "1.1",
+            }
+        )
+
+        async def call_next(_request: Request):  # noqa: ANN202
+            raise SQLAlchemyError("db failed")
+
+        with (
+            patch("src.server.middleware.request_logger.logger") as mock_logger,
+            patch("src.server.middleware.request_logger.get_correlation_id", return_value="cid-123"),
+        ):
+            response = await middleware.dispatch(request, call_next)
+
+        body = json.loads(response.body.decode("utf-8"))
+        assert response.status_code == 500
+        assert body["message"] == "Database error"
+        assert body["correlationId"] == "cid-123"
+
+        log_kwargs = mock_logger.exception.call_args[1]
+        assert log_kwargs["event"] == "request_error"
+        assert log_kwargs["status"] == 500
+
 
 class TestMiddlewareOrder:
     """ミドルウェアの実行順序テスト: RequestLogger が CorrelationId の外側で動作すること"""
@@ -131,3 +174,22 @@ class TestMiddlewareOrder:
 
             kwargs = mock_logger.info.call_args[1]
             assert kwargs["correlationId"] == header_cid
+
+
+class TestRequestLoggerErrorResponse:
+    """_build_error_response の分岐テスト"""
+
+    def test_build_error_response_without_correlation_id_header(self) -> None:
+        middleware = RequestLoggerMiddleware(FastAPI())
+
+        with patch("src.server.middleware.request_logger.get_correlation_id", return_value=""):
+            response = middleware._build_error_response(
+                method="GET",
+                path="/test",
+                start=time.monotonic(),
+                status_code=500,
+                error="Internal Server Error",
+                message="failed",
+            )
+
+        assert response.headers.get("x-correlation-id") is None
