@@ -132,6 +132,12 @@ async def get_fundamentals(
     to_date: str | None = Query(None, alias="to"),
     periodType: Literal["all", "FY", "1Q", "2Q", "3Q"] = Query("all"),
     preferConsolidated: bool = Query(True),
+    tradingValuePeriod: int = Query(
+        15,
+        ge=1,
+        le=250,
+        description="Rolling average period in days for trading value to market cap ratio",
+    ),
 ) -> FundamentalsComputeResponse:
     """ファンダメンタルズ分析指標を取得"""
     req = FundamentalsComputeRequest(
@@ -140,6 +146,7 @@ async def get_fundamentals(
         to_date=to_date,
         period_type=periodType,
         prefer_consolidated=preferConsolidated,
+        trading_value_period=tradingValuePeriod,
     )
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(

@@ -71,6 +71,7 @@ class TestFundamentalsComputeEndpoint:
             ],
             latestMetrics=None,
             dailyValuation=None,
+            tradingValuePeriod=15,
             lastUpdated="2024-05-15T10:00:00",
         )
 
@@ -98,6 +99,7 @@ class TestFundamentalsComputeEndpoint:
             data=[],
             latestMetrics=None,
             dailyValuation=None,
+            tradingValuePeriod=15,
             lastUpdated="2024-05-15T10:00:00",
         )
 
@@ -126,6 +128,7 @@ class TestFundamentalsComputeEndpoint:
             data=[],
             latestMetrics=None,
             dailyValuation=None,
+            tradingValuePeriod=15,
             lastUpdated="2024-05-15T10:00:00",
         )
 
@@ -223,6 +226,7 @@ class TestFundamentalsSchemaValidation:
                 data=[],
                 latestMetrics=None,
                 dailyValuation=None,
+                tradingValuePeriod=15,
                 lastUpdated="2024-05-15T10:00:00",
             )
 
