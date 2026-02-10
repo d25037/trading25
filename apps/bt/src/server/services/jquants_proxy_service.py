@@ -7,10 +7,14 @@ Hono の Layer 1 JQuants Proxy と同等の機能を提供する。
 
 from __future__ import annotations
 
+import json
 from datetime import UTC, datetime
 from typing import Any
 
+from loguru import logger
+
 from src.server.clients.jquants_client import JQuantsAsyncClient
+from src.server.middleware.correlation import get_correlation_id
 from src.server.schemas.jquants import (
     ApiIndex,
     ApiIndicesResponse,
@@ -28,10 +32,20 @@ from src.server.schemas.jquants import (
     TopixRawItem,
     TopixRawResponse,
 )
+from src.server.services.expiring_singleflight_cache import CacheState, ExpiringSingleFlightCache
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
+
+
+MARGIN_INTEREST_TTL_SECONDS = 5 * 60
+FINS_SUMMARY_TTL_SECONDS = 15 * 60
+
+
+def _build_cache_key(path: str, params: dict[str, Any]) -> str:
+    serialized = json.dumps(params, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return f"{path}:{serialized}"
 
 
 class JQuantsProxyService:
@@ -39,6 +53,33 @@ class JQuantsProxyService:
 
     def __init__(self, client: JQuantsAsyncClient) -> None:
         self._client = client
+        self._cache = ExpiringSingleFlightCache[dict[str, Any]]()
+
+    async def _get_cached(
+        self,
+        path: str,
+        params: dict[str, Any],
+        ttl_seconds: int,
+    ) -> dict[str, Any]:
+        key = _build_cache_key(path, params)
+        body, state = await self._cache.get_or_set(
+            key=key,
+            ttl_seconds=ttl_seconds,
+            fetcher=lambda: self._client.get(path, params),
+        )
+        self._log_cache_state(path, state, key)
+        return body
+
+    @staticmethod
+    def _log_cache_state(path: str, state: CacheState, key: str) -> None:
+        logger.info(
+            f"JQuants cache {state}: {path}",
+            event="jquants_proxy_cache",
+            cacheState=state,
+            endpoint=path,
+            cacheKey=key,
+            correlationId=get_correlation_id(),
+        )
 
     # --- Auth Status ---
 
@@ -154,7 +195,11 @@ class JQuantsProxyService:
         if date:
             params["date"] = date
 
-        body = await self._client.get("/markets/margin-interest", params)
+        body = await self._get_cached(
+            "/markets/margin-interest",
+            params,
+            ttl_seconds=MARGIN_INTEREST_TTL_SECONDS,
+        )
         raw_data = body.get("data", [])
 
         margin_interest = []
@@ -178,7 +223,11 @@ class JQuantsProxyService:
     # --- Statements (EPS subset) ---
 
     async def get_statements(self, code: str) -> StatementsResponse:
-        body = await self._client.get("/fins/summary", {"code": code})
+        body = await self._get_cached(
+            "/fins/summary",
+            {"code": code},
+            ttl_seconds=FINS_SUMMARY_TTL_SECONDS,
+        )
         raw_data = body.get("data", [])
 
         data = []
@@ -203,7 +252,11 @@ class JQuantsProxyService:
     # --- Statements Raw (complete) ---
 
     async def get_statements_raw(self, code: str) -> RawStatementsResponse:
-        body = await self._client.get("/fins/summary", {"code": code})
+        body = await self._get_cached(
+            "/fins/summary",
+            {"code": code},
+            ttl_seconds=FINS_SUMMARY_TTL_SECONDS,
+        )
         raw_data = body.get("data", [])
 
         data = []

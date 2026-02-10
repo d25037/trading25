@@ -16,6 +16,7 @@ from src.api.exceptions import (
     APIValidationError,
 )
 from src.config.settings import get_settings
+from src.server.middleware.correlation import CORRELATION_ID_HEADER, get_correlation_id
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -151,12 +152,17 @@ class BaseAPIClient:
             APIError: For other API errors
         """
         try:
-            response = self.client.request(
-                method=method,
-                url=path,
-                params=params,
-                json=json,
-            )
+            request_kwargs: dict[str, Any] = {
+                "method": method,
+                "url": path,
+                "params": params,
+                "json": json,
+            }
+            correlation_id = get_correlation_id()
+            if correlation_id:
+                request_kwargs["headers"] = {CORRELATION_ID_HEADER: correlation_id}
+
+            response = self.client.request(**request_kwargs)
             self._handle_response_error(response)
             return response.json()  # type: ignore[no-any-return]
         except httpx.TimeoutException as e:

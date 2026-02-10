@@ -4,6 +4,7 @@ import { apiGet } from '@/lib/api-client';
 
 interface FactorRegressionOptions {
   lookbackDays?: number;
+  enabled?: boolean;
 }
 
 function fetchFactorRegression(
@@ -16,7 +17,7 @@ function fetchFactorRegression(
 }
 
 export function useFactorRegression(symbol: string | null, options: FactorRegressionOptions = {}) {
-  const { lookbackDays = 252 } = options;
+  const { lookbackDays = 252, enabled = true } = options;
 
   return useQuery({
     queryKey: ['factor-regression', symbol, lookbackDays],
@@ -24,7 +25,7 @@ export function useFactorRegression(symbol: string | null, options: FactorRegres
       if (!symbol) throw new Error('Symbol is required');
       return fetchFactorRegression(symbol, { lookbackDays });
     },
-    enabled: !!symbol,
+    enabled: !!symbol && enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes (analysis data changes infrequently)
     gcTime: 30 * 60 * 1000, // 30 minutes cache
     retry: 2,

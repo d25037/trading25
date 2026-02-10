@@ -1,5 +1,5 @@
 import { renderHook, waitFor } from '@testing-library/react';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { apiPost } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
 import { btMarginKeys, useBtMarginIndicators } from './useBtMarginIndicators';
@@ -13,6 +13,10 @@ vi.mock('@/utils/logger', () => ({
 }));
 
 const mockApiPost = apiPost as ReturnType<typeof vi.fn>;
+
+beforeEach(() => {
+  mockApiPost.mockReset();
+});
 
 // ===== btMarginKeys Tests =====
 
@@ -75,6 +79,12 @@ describe('useBtMarginIndicators', () => {
         })
       );
     });
+  });
+
+  it('should not call API when explicitly disabled', () => {
+    const { wrapper } = createTestWrapper();
+    renderHook(() => useBtMarginIndicators('7203', { enabled: false }), { wrapper });
+    expect(mockApiPost).not.toHaveBeenCalled();
   });
 
   it('should transform response correctly', async () => {

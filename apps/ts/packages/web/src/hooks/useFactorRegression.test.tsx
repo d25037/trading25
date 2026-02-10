@@ -33,4 +33,11 @@ describe('useFactorRegression', () => {
     const { result } = renderHook(() => useFactorRegression(null), { wrapper });
     expect(result.current.fetchStatus).toBe('idle');
   });
+
+  it('is disabled when enabled option is false', () => {
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useFactorRegression('7203', { enabled: false }), { wrapper });
+    expect(result.current.fetchStatus).toBe('idle');
+    expect(apiGet).not.toHaveBeenCalled();
+  });
 });
