@@ -152,6 +152,21 @@ class FundamentalSignalParams(BaseSignalParams):
             description="条件（above=閾値以上、below=閾値以下）",
         )
 
+    class ROAParams(BaseModel):
+        """ROA（総資産利益率）シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="ROAシグナル有効")
+        threshold: float = Field(
+            default=5.0,
+            gt=0,
+            le=100.0,
+            description="ROA閾値（この値を上回る高ROA判定、%単位）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
     class OperatingMarginParams(BaseModel):
         """営業利益率シグナルパラメータ"""
 
@@ -320,6 +335,7 @@ class FundamentalSignalParams(BaseSignalParams):
 
     # 収益性・キャッシュフロー系
     roe: ROEParams = Field(default_factory=ROEParams, description="ROEシグナル")
+    roa: ROAParams = Field(default_factory=ROAParams, description="ROAシグナル")
     operating_margin: OperatingMarginParams = Field(
         default_factory=OperatingMarginParams, description="営業利益率シグナル"
     )

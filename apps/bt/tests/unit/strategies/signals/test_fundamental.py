@@ -15,6 +15,7 @@ from src.strategies.signals.fundamental import (
     is_growing_profit,
     is_growing_sales,
     is_high_roe,
+    is_high_roa,
     is_high_dividend_yield,
     is_high_operating_margin,
     operating_cash_flow_threshold,
@@ -210,6 +211,48 @@ class TestIsHighRoe:
         # 負のROEはFalse
         assert signal.sum() == 0
 
+
+
+
+class TestIsHighRoa:
+    """is_high_roa()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        # ROA=8%
+        self.roa = pd.Series(np.ones(100) * 8, index=self.dates)
+
+    def test_roa_basic(self):
+        """ROAシグナル基本テスト"""
+        signal = is_high_roa(self.roa, threshold=5.0)
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == len(self.roa)
+        # ROA=8% > 5%なので全てTrue
+        assert signal.sum() == len(self.roa)
+
+    def test_roa_threshold_effect(self):
+        """ROA閾値の効果テスト"""
+        signal_low = is_high_roa(self.roa, threshold=3.0)
+        signal_high = is_high_roa(self.roa, threshold=10.0)
+
+        assert isinstance(signal_low, pd.Series)
+        assert isinstance(signal_high, pd.Series)
+        # 低い閾値の方がTrue数が多い
+        assert signal_low.sum() >= signal_high.sum()
+
+    def test_roa_negative(self):
+        """負のROAの場合"""
+        roa_negative = pd.Series(np.ones(100) * -1, index=self.dates)
+
+        signal = is_high_roa(roa_negative, threshold=5.0)
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        # 負のROAはFalse
+        assert signal.sum() == 0
 
 class TestIsUndervaluedGrowthByPeg:
     """is_undervalued_growth_by_peg()のテスト"""
