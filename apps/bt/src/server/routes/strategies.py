@@ -146,8 +146,8 @@ async def validate_strategy(
 
             if "kelly_fraction" in shared_config:
                 kf = shared_config["kelly_fraction"]
-                if not isinstance(kf, (int, float)) or kf < 0 or kf > 1:
-                    errors.append("kelly_fractionは0から1の間である必要があります")
+                if not isinstance(kf, (int, float)) or kf < 0 or kf > 2:
+                    errors.append("kelly_fractionは0から2の間である必要があります")
 
         # 実行情報の取得を試みる
         try:
