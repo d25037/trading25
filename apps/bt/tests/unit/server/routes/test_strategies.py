@@ -34,7 +34,7 @@ class TestGetStrategyDetail:
             "entry_filter_params": {"volume": {"enabled": True}},
             "shared_config": {"dataset": "test"},
         }
-        with patch("src.backtest.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {"status": "ok"}
             mock_runner_cls.return_value = mock_runner
@@ -54,7 +54,7 @@ class TestValidateStrategy:
         mock_config_loader.load_strategy_config.return_value = {
             "entry_filter_params": {"volume": {"enabled": True}},
         }
-        with patch("src.backtest.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner
@@ -65,7 +65,7 @@ class TestValidateStrategy:
 
     def test_missing_params_warning(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {}
-        with patch("src.backtest.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner
@@ -77,7 +77,7 @@ class TestValidateStrategy:
         mock_config_loader.load_strategy_config.return_value = {
             "shared_config": {"kelly_fraction": 5.0},
         }
-        with patch("src.backtest.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner

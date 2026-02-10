@@ -44,6 +44,11 @@ parent: null
 - 2026-02-09: `apps/ts` の `test`/`typecheck:all`/`test:backend`/`test:coverage` から archived `@trading25/api` を除外。
 - 2026-02-09: dep-direction ルールに `@trading25/clients-ts/backtest` を追加し allowlist を更新。
 - 2026-02-09: Phase 4B は「`analytics-ts` / `market-sync-ts` を新設して移管」から「FastAPI 一本化に合わせて TS 重複ドメイン実装を削除」に方針転換。
+- 2026-02-09: Phase 4B の削除タスクを完了。`shared/src/factor-regression` / `screening` / `market-sync` の実装本体を削除。
+- 2026-02-09: `shared/src/index.ts` / `shared/package.json` の export 面を整理し、削除済みドメインへの公開経路を除去。
+- 2026-02-09: `cli` の screening 実行経路を API レスポンス型（`ScreeningResultItem`）に統一し、旧 local conversion を削除。
+- 2026-02-09: `web` の Vite/Vitest alias に `@trading25/shared/*` を明示追加し、`shared/dist` 非依存でテストを安定化。
+- 2026-02-09: 4B 変更後の検証完了（`bun run typecheck:all` / `bun run lint` / `bun run test` pass）。
 
 ## 補足
 - 元タスク `ts-117` は archived API package 前提のため 2026-02-09 にクローズ済み

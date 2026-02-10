@@ -31,7 +31,7 @@ except ImportError:
 from src.models.config import SharedConfig
 from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
-from src.strategy_config.loader import ConfigLoader
+from src.lib.strategy_runtime.loader import ConfigLoader
 
 from .models import OptunaConfig, StrategyCandidate
 

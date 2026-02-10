@@ -127,7 +127,7 @@ class ParameterOptimizationEngine:
         self.optimization_config = default_config["parameter_optimization"]
 
         # ベース戦略YAML（グリッドで指定 or ConfigLoaderで推測）
-        from src.strategy_config.loader import ConfigLoader
+        from src.lib.strategy_runtime.loader import ConfigLoader
 
         config_loader = ConfigLoader()
 

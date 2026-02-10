@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-09（Phase 4B 方針転換・Phase 4C Step1 着手）
+最終更新: 2026-02-09（Phase 4B 完了確定・Phase 4D 着手方針を明記）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -104,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **進行中（4A 完了、4C Step1 完了、4B 方針転換済み）** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A/4B 完了、4C Step2 実体移管+検証完了、次は 4D）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -599,7 +599,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A 完了、4C Step1 完了、4B 方針転換済み）  
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A/4B 完了、4C Step2 実体移管+検証完了、次工程は 4D）
 **再ベースライン日**: 2026-02-09
 
 *元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
@@ -654,9 +654,31 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 *元: packages-responsibility-roadmap.md Phase 3（再編）*
 
-- [ ] `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体を段階削除
-- [ ] `apps/ts/packages/web` と `apps/ts/packages/cli` のローカル計算依存を撤去し、FastAPI endpoint + OpenAPI generated types に統一
-- [ ] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助 + 型ファサード」に縮小（`analytics-ts` / `market-sync-ts` は新設しない）
+- [x] `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体を段階削除
+- [x] `apps/ts/packages/web` と `apps/ts/packages/cli` のローカル計算依存を撤去し、FastAPI endpoint + OpenAPI generated types に統一
+- [x] `apps/ts/packages/shared` を「互換 re-export + bt:sync 補助 + 型ファサード」に縮小（`analytics-ts` / `market-sync-ts` は新設しない）
+
+**完了**: 2026-02-09（4B）
+
+**進捗**:
+- 2026-02-09: `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` を削除し、`shared/src/index.ts` から export を整理。
+- 2026-02-09: `apps/ts/packages/shared/package.json` の `exports` から `market-sync` / `factor-regression` のサブパスを削除。
+- 2026-02-09: `apps/ts/packages/cli` の screening 実行経路を API レスポンス型（`ScreeningResultItem`）ベースへ切替し、旧 local conversion を削除。
+
+**成果物（4B）**:
+- 削除: `apps/ts/packages/shared/src/factor-regression/**`
+- 削除: `apps/ts/packages/shared/src/screening/**`
+- 削除: `apps/ts/packages/shared/src/market-sync/**`
+- 更新: `apps/ts/packages/shared/src/index.ts`
+- 更新: `apps/ts/packages/shared/package.json`
+- 更新: `apps/ts/packages/cli/src/commands/analysis/screening.ts`
+- 更新: `apps/ts/packages/cli/src/commands/screening/output-formatter.ts`
+- 更新: `apps/ts/packages/web/vite.config.ts`, `apps/ts/packages/web/vitest.config.ts`（`@trading25/shared/*` の source alias を明示し、`dist` 非依存化）
+
+**検証結果（4B）**:
+- `bun run typecheck:all`: passed
+- `bun run lint`: passed
+- `bun run test`: passed
 
 **完了条件**:
 - `apps/ts/packages/shared` が再エクスポート/型公開中心の薄いファサードになる
@@ -667,12 +689,40 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 *元: packages-responsibility-roadmap.md Phase 4（再編）*
 
 - [x] `apps/bt/src/lib/market_db`, `dataset_io` を作成し `src/server/db` と dataset I/O を再配置（2026-02-09, Step1）
-- [ ] `apps/bt/src/lib/indicators`, `backtest_core`, `strategy_runtime` を作成し責務を明確化
-- [x] `apps/bt/src/server` と `apps/bt/src/cli_*` の import 先を新境界へ切替（2026-02-09, Step1: server 側完了）
+- [x] `apps/bt/src/lib/indicators`, `backtest_core`, `strategy_runtime` を作成し責務を明確化（2026-02-09, Step2）
+- [x] `apps/bt/src/server` と `apps/bt/src/cli_*` の import 先を新境界へ切替（2026-02-09, Step2: server/cli 完了）
 - [x] 既存 API/CLI 挙動との互換回帰テストを維持（2026-02-09, Step1 範囲検証）
+- [x] `ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体を `src/lib/*` へ移管し、legacy 側を互換 facade 化（2026-02-09, Step2 追補）
+- [x] 旧 patch 経路依存テストを `src.lib.*` 実体に追従させ、境界テストを再通過（2026-02-09）
 
 **進捗**:
 - 2026-02-09: Step1（DB + dataset I/O 分離）完了。`src/server/db` は互換 re-export を維持しつつ、実装本体を `src/lib/*` へ移管。
+- 2026-02-09: Step2（`indicators` / `backtest_core` / `strategy_runtime` 境界追加）完了。`src/server` / `src/cli_*` の参照を `src.lib.*` へ切替し、`ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体も `src/lib/*` へ移管（legacy は互換 facade 化）。
+
+**成果物（4C Step2）**:
+- 実体移管:
+  - `apps/bt/src/lib/strategy_runtime/loader.py`
+  - `apps/bt/src/lib/backtest_core/runner.py`
+  - `apps/bt/src/lib/backtest_core/marimo_executor.py`
+- 互換 facade:
+  - `apps/bt/src/strategy_config/loader.py`
+  - `apps/bt/src/backtest/runner.py`
+  - `apps/bt/src/backtest/marimo_executor.py`
+- 追随テスト更新:
+  - `apps/bt/tests/security/test_security_validation.py`
+  - `apps/bt/tests/unit/backtest/test_backtest_runner.py`
+  - `apps/bt/tests/unit/backtest/test_marimo_executor.py`
+  - `apps/bt/tests/unit/optimization/test_notebook_generator.py`
+  - `apps/bt/tests/unit/server/routes/test_strategies.py`
+  - `apps/bt/tests/server/routes/test_lab.py`
+  - `apps/bt/tests/unit/agent/test_yaml_updater.py`
+
+**検証結果（4C Step2 追補）**:
+- `uv run ruff check src tests`: passed
+- `uv run pyright src`: 0 errors（既知 warning 1）
+- `uv run pytest tests/unit/strategy_config/test_loader.py`: 23 passed
+- `uv run pytest tests/security/test_security_validation.py tests/unit/backtest/test_backtest_runner.py tests/unit/backtest/test_marimo_executor.py tests/unit/backtest/test_walkforward.py tests/unit/backtest/test_manifest.py tests/unit/optimization/test_notebook_generator.py tests/unit/agent/test_yaml_updater.py tests/unit/server/routes/test_strategies.py tests/unit/lib/test_phase4c_import_boundaries.py`: 81 passed
+- `uv run pytest tests/server/routes/test_lab.py -k "execute_improve_sync"`: 2 passed
 
 **完了条件**:
 - `apps/bt/src/server/routes` / `services` / `cli_*` が legacy 実装に直接依存しない
@@ -690,6 +740,12 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 **完了条件**:
 - apps 配下に残るのは entrypoint + thin adapter
 - CI が分離後の責務境界を検証できる状態になる
+
+### Phase 4 次アクション（提案）
+
+1. 4D-1（TS 互換レイヤ整理）: `apps/ts/packages/shared` の一時互換 re-export を棚卸しし、削除順（clients/db/dataset/portfolio/watchlist）を issue 化する。
+2. 4D-2（Python 互換 facade 整理）: `apps/bt/src/strategy_config/*` / `apps/bt/src/backtest/*` の呼び出し箇所を `src/lib/*` 優先へ置換し、legacy facade の削除可能範囲を確定する。
+3. 4D-3（CI 境界強化）: dep-direction allowlist と CI ジョブを境界単位（package test + app integration）へ段階移行する。
 
 ### Phase 4 関連 Issue（2026-02-09 再整理）
 

@@ -3,47 +3,13 @@
  * Run stock screening on market.db data via API
  */
 
-import type { ScreeningResult } from '@trading25/shared';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
-import { ApiClient, type ScreeningResultItem } from '../../utils/api-client.js';
+import { ApiClient } from '../../utils/api-client.js';
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError } from '../../utils/error-handling.js';
 import { formatResults } from '../screening/output-formatter.js';
-
-/**
- * Convert API response item to ScreeningResult format
- */
-function convertToScreeningResult(item: ScreeningResultItem): ScreeningResult {
-  const result: ScreeningResult = {
-    stockCode: item.stockCode,
-    companyName: item.companyName,
-    scaleCategory: item.scaleCategory,
-    sector33Name: item.sector33Name,
-    screeningType: item.screeningType,
-    matchedDate: new Date(item.matchedDate),
-    details: {},
-  };
-
-  if (item.details.rangeBreak) {
-    result.details.rangeBreak = {
-      breakDate: new Date(item.details.rangeBreak.breakDate),
-      currentHigh: item.details.rangeBreak.currentHigh,
-      maxHighInLookback: item.details.rangeBreak.maxHighInLookback,
-      breakPercentage: item.details.rangeBreak.breakPercentage,
-      volumeRatio: item.details.rangeBreak.volumeRatio,
-      avgVolume20Days: item.details.rangeBreak.avgVolume20Days,
-      avgVolume100Days: item.details.rangeBreak.avgVolume100Days,
-    };
-  }
-
-  if (item.futureReturns) {
-    result.futureReturns = item.futureReturns;
-  }
-
-  return result;
-}
 
 interface ScreeningOptions {
   rangeBreakFast?: boolean;
@@ -152,9 +118,7 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
     console.log(chalk.cyan(`\n📈 Market Screening Results: ${response.results.length} stocks matched`));
     console.log(chalk.white('━'.repeat(80)));
 
-    const results = response.results.map(convertToScreeningResult);
-
-    await formatResults(results, {
+    await formatResults(response.results, {
       format: (options.format || 'table') as 'table' | 'json' | 'csv',
       verbose: options.verbose || false,
       debug: options.debug || false,

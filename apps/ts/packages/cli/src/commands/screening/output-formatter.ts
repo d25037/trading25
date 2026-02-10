@@ -3,7 +3,11 @@
  * Format screening results for different output formats
  */
 
-import type { FutureReturns, RangeBreakDetails, ScreeningResult } from '@trading25/shared';
+import type {
+  FutureReturns,
+  RangeBreakDetails,
+  ScreeningResultItem,
+} from '@trading25/shared/types/api-response-types';
 import chalk from 'chalk';
 import stringWidth from 'string-width';
 
@@ -70,8 +74,8 @@ function padEndVisual(str: string, targetWidth: number): string {
 /**
  * Format date for display
  */
-function formatDate(date: Date): string {
-  return date.toISOString().split('T')[0] || '';
+function formatDate(date: string): string {
+  return date.split('T')[0] || '';
 }
 
 /**
@@ -171,14 +175,14 @@ function formatRangeBreakDetails(rb: RangeBreakDetails, options: FormatterOption
 /**
  * Check if any results have future returns
  */
-function hasFutureReturns(results: ScreeningResult[]): boolean {
+function hasFutureReturns(results: ScreeningResultItem[]): boolean {
   return results.some((r) => r.futureReturns !== undefined);
 }
 
 /**
  * Format table row for a single result
  */
-function formatTableRow(result: ScreeningResult, options: FormatterOptions, showFutureReturns: boolean): string {
+function formatTableRow(result: ScreeningResultItem, options: FormatterOptions, showFutureReturns: boolean): string {
   const code = chalk.cyan(padEndVisual(result.stockCode, 8));
   const company = chalk.white(padEndVisual(truncateString(result.companyName, 20), 20));
   const sector33 = chalk.magenta(padEndVisual(truncateString(result.sector33Name || 'N/A', 15), 15));
@@ -211,7 +215,7 @@ function formatTableRow(result: ScreeningResult, options: FormatterOptions, show
 /**
  * Format verbose details line for a result
  */
-function formatVerboseDetails(result: ScreeningResult): string | null {
+function formatVerboseDetails(result: ScreeningResultItem): string | null {
   if (result.screeningType === 'rangeBreakFast' && result.details.rangeBreak) {
     const rb = result.details.rangeBreak;
     return chalk.gray(
@@ -257,7 +261,7 @@ function printTableHeader(showFutureReturns: boolean): void {
 /**
  * Print table summary
  */
-function printTableSummary(results: ScreeningResult[], showFutureReturns: boolean): void {
+function printTableSummary(results: ScreeningResultItem[], showFutureReturns: boolean): void {
   const rangeBreakFastCount = results.filter((r) => r.screeningType === 'rangeBreakFast').length;
   const rangeBreakSlowCount = results.filter((r) => r.screeningType === 'rangeBreakSlow').length;
 
@@ -272,7 +276,7 @@ function printTableSummary(results: ScreeningResult[], showFutureReturns: boolea
 /**
  * Format results as table
  */
-function formatAsTable(results: ScreeningResult[], options: FormatterOptions): void {
+function formatAsTable(results: ScreeningResultItem[], options: FormatterOptions): void {
   if (results.length === 0) {
     console.log(chalk.yellow('No results to display'));
     return;
@@ -298,7 +302,7 @@ function formatAsTable(results: ScreeningResult[], options: FormatterOptions): v
 /**
  * Format results as JSON
  */
-function formatAsJSON(results: ScreeningResult[], options: FormatterOptions): void {
+function formatAsJSON(results: ScreeningResultItem[], options: FormatterOptions): void {
   const output = {
     summary: {
       total: results.length,
@@ -311,7 +315,7 @@ function formatAsJSON(results: ScreeningResult[], options: FormatterOptions): vo
       scaleCategory: result.scaleCategory,
       sector33Name: result.sector33Name,
       screeningType: result.screeningType,
-      matchedDate: result.matchedDate.toISOString(),
+      matchedDate: result.matchedDate,
       details: options.verbose ? result.details : { rangeBreak: result.details.rangeBreak },
       futureReturns: result.futureReturns,
     })),
@@ -374,7 +378,7 @@ function formatRangeBreakCSVRow(rb: RangeBreakDetails, verbose: boolean): string
 /**
  * Format CSV row for a single result
  */
-function formatCSVRow(result: ScreeningResult, verbose: boolean, includeFutureReturns: boolean): string {
+function formatCSVRow(result: ScreeningResultItem, verbose: boolean, includeFutureReturns: boolean): string {
   const baseRow = [
     `"${result.stockCode}"`,
     `"${result.companyName.replace(/"/g, '""')}"`,
@@ -409,7 +413,7 @@ function formatCSVRow(result: ScreeningResult, verbose: boolean, includeFutureRe
 /**
  * Format results as CSV
  */
-function formatAsCSV(results: ScreeningResult[], options: FormatterOptions): void {
+function formatAsCSV(results: ScreeningResultItem[], options: FormatterOptions): void {
   const includeFutureReturns = hasFutureReturns(results);
   const headers = getCSVHeaders(options.verbose, includeFutureReturns);
   console.log(headers.join(','));
@@ -422,7 +426,7 @@ function formatAsCSV(results: ScreeningResult[], options: FormatterOptions): voi
 /**
  * Format results for display
  */
-export async function formatResults(results: ScreeningResult[], options: FormatterOptions): Promise<void> {
+export async function formatResults(results: ScreeningResultItem[], options: FormatterOptions): Promise<void> {
   if (results.length === 0) {
     console.log(chalk.yellow('No results to display'));
     return;

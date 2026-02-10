@@ -17,7 +17,7 @@ from rich.text import Text
 from loguru import logger
 
 from src.constants import THREAD_TIMEOUT_SECONDS
-from src.strategy_config.loader import ConfigLoader
+from src.lib.strategy_runtime.loader import ConfigLoader
 
 console = Console()
 
@@ -64,7 +64,7 @@ def run_backtest(strategy: str) -> None:
         executor_output_dir = config_loader.get_output_directory(strategy_config)
 
         # Marimo execution (HTML output)
-        from src.backtest.marimo_executor import MarimoExecutor
+        from src.lib.backtest_core.marimo_executor import MarimoExecutor
 
         executor = MarimoExecutor(str(executor_output_dir))
         template_path = "notebooks/templates/marimo/strategy_analysis.py"
