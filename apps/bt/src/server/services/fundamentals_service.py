@@ -99,6 +99,7 @@ class FundamentalsService:
             return FundamentalsComputeResponse(
                 symbol=request.symbol,
                 data=[],
+                tradingValuePeriod=request.trading_value_period,
                 lastUpdated=datetime.now().isoformat(),
             )
 
@@ -107,8 +108,9 @@ class FundamentalsService:
         # Get stock info for company name
         stock_info = self._get_stock_info(request.symbol)
 
-        # Get daily stock prices for valuation calculation
-        daily_prices = self._get_daily_stock_prices(request.symbol)
+        # Get daily OHLCV and stock prices for valuation calculation
+        daily_ohlcv = self._get_daily_stock_ohlcv(request.symbol)
+        daily_prices = self._to_daily_close_map(daily_ohlcv)
 
         # Calculate daily valuation time-series
         daily_valuation = self._calculate_daily_valuation(
@@ -127,12 +129,13 @@ class FundamentalsService:
                 companyName=stock_info.companyName if stock_info else None,
                 data=[],
                 dailyValuation=daily_valuation if daily_valuation else None,
+                tradingValuePeriod=request.trading_value_period,
                 lastUpdated=datetime.now().isoformat(),
             )
 
         # Get stock prices for disclosure dates
         price_map = self._get_stock_prices_for_statements(
-            request.symbol, filtered_statements
+            request.symbol, filtered_statements, daily_prices
         )
 
         # Calculate metrics for each statement
@@ -140,6 +143,17 @@ class FundamentalsService:
             self._calculate_all_metrics(stmt, price_map, request.prefer_consolidated)
             for stmt in filtered_statements
         ]
+
+        daily_trading_value_ratio_map = (
+            self._calculate_daily_trading_value_to_market_cap_ratio(
+                daily_ohlcv,
+                daily_valuation,
+                request.trading_value_period,
+            )
+        )
+        data = self._apply_trading_value_ratio_to_statements(
+            data, daily_trading_value_ratio_map
+        )
 
         # Sort by date descending
         data.sort(key=lambda x: x.date, reverse=True)
@@ -150,6 +164,9 @@ class FundamentalsService:
         # Update latest metrics with daily valuation
         latest_metrics = self._update_latest_with_daily_valuation(
             latest_metrics, daily_valuation, data
+        )
+        latest_metrics = self._apply_latest_trading_value_ratio(
+            latest_metrics, daily_trading_value_ratio_map
         )
 
         # Enhance latest metrics with forecast EPS and previous period CF
@@ -178,6 +195,7 @@ class FundamentalsService:
             data=data,
             latestMetrics=latest_metrics,
             dailyValuation=daily_valuation if daily_valuation else None,
+            tradingValuePeriod=request.trading_value_period,
             lastUpdated=datetime.now().isoformat(),
         )
 
@@ -345,19 +363,32 @@ class FundamentalsService:
 
     def _get_daily_stock_prices(self, symbol: str) -> dict[str, float]:
         """Get daily stock prices from market.db."""
+        daily_ohlcv = self._get_daily_stock_ohlcv(symbol)
+        return self._to_daily_close_map(daily_ohlcv)
+
+    def _get_daily_stock_ohlcv(self, symbol: str) -> pd.DataFrame:
+        """Get daily OHLCV data from market.db."""
         try:
             df = self.market_client.get_stock_ohlcv(symbol)
-            if df.empty:
-                return {}
-            # Vectorized operation - much faster than iterrows()
-            close_series: pd.Series[float] = df["Close"]
-            return {k.strftime("%Y-%m-%d"): v for k, v in close_series.items()}
+            if df.empty or "Close" not in df.columns:
+                return pd.DataFrame()
+            return df
         except Exception as e:
-            logger.warning(f"Failed to get daily stock prices for {symbol}: {e}")
+            logger.warning(f"Failed to get daily OHLCV data for {symbol}: {e}")
+            return pd.DataFrame()
+
+    def _to_daily_close_map(self, daily_ohlcv: pd.DataFrame) -> dict[str, float]:
+        """Convert OHLCV DataFrame into daily close map."""
+        if daily_ohlcv.empty or "Close" not in daily_ohlcv.columns:
             return {}
+        close_series: pd.Series[float] = daily_ohlcv["Close"]
+        return {k.strftime("%Y-%m-%d"): v for k, v in close_series.items()}
 
     def _get_stock_prices_for_statements(
-        self, symbol: str, statements: list[JQuantsStatement]
+        self,
+        symbol: str,
+        statements: list[JQuantsStatement],
+        daily_prices: dict[str, float] | None = None,
     ) -> dict[str, float]:
         """Get stock prices at statement disclosure dates."""
         if not statements:
@@ -365,7 +396,8 @@ class FundamentalsService:
 
         try:
             # Get all daily prices
-            daily_prices = self._get_daily_stock_prices(symbol)
+            if daily_prices is None:
+                daily_prices = self._get_daily_stock_prices(symbol)
             if not daily_prices:
                 return {}
 
@@ -475,6 +507,9 @@ class FundamentalsService:
         total_assets = self._get_total_assets(stmt, prefer_consolidated)
         net_sales = self._get_net_sales(stmt, prefer_consolidated)
         operating_profit = self._get_operating_profit(stmt, prefer_consolidated)
+        cfo_to_net_profit_ratio = self._calculate_cfo_to_net_profit_ratio(
+            stmt.CFO, net_profit
+        )
 
         # Calculate FCF metrics
         fcf = self._calculate_simple_fcf(stmt.CFO, stmt.CFI)
@@ -518,6 +553,8 @@ class FundamentalsService:
             fcf=self._to_millions(self._round_or_none(fcf)),
             fcfYield=self._round_or_none(fcf_yield),
             fcfMargin=self._round_or_none(fcf_margin),
+            cfoToNetProfitRatio=self._round_or_none(cfo_to_net_profit_ratio),
+            tradingValueToMarketCapRatio=None,
             forecastEps=self._round_or_none(forecast_eps),
             forecastEpsChangeRate=self._round_or_none(forecast_eps_change_rate),
             revisedForecastEps=None,
@@ -660,6 +697,96 @@ class FundamentalsService:
         if fcf is None or net_sales is None or net_sales <= 0:
             return None
         return (fcf / net_sales) * 100
+
+    def _calculate_cfo_to_net_profit_ratio(
+        self, cfo: float | None, net_profit: float | None
+    ) -> float | None:
+        """Calculate operating cash flow to net profit ratio."""
+        if cfo is None or net_profit is None or net_profit == 0:
+            return None
+        return cfo / net_profit
+
+    def _calculate_daily_trading_value_to_market_cap_ratio(
+        self,
+        daily_ohlcv: pd.DataFrame,
+        daily_valuation: list[DailyValuationDataPoint],
+        period: int,
+    ) -> dict[str, float]:
+        """Calculate daily N-day avg trading value to market cap ratio."""
+        if (
+            daily_ohlcv.empty
+            or "Close" not in daily_ohlcv.columns
+            or "Volume" not in daily_ohlcv.columns
+        ):
+            return {}
+
+        market_cap_map = {
+            item.date: item.marketCap
+            for item in daily_valuation
+            if item.marketCap is not None and item.marketCap > 0
+        }
+        if not market_cap_map:
+            return {}
+
+        close = pd.to_numeric(daily_ohlcv["Close"], errors="coerce")
+        volume = pd.to_numeric(daily_ohlcv["Volume"], errors="coerce")
+        trading_value = close * volume
+        rolling_mean = trading_value.rolling(window=period, min_periods=period).mean()
+
+        ratio_map: dict[str, float] = {}
+        for timestamp, avg_trading_value in rolling_mean.items():
+            if pd.isna(avg_trading_value):
+                continue
+            date_str = timestamp.strftime("%Y-%m-%d")
+            market_cap = market_cap_map.get(date_str)
+            if market_cap is None or market_cap <= 0:
+                continue
+            rounded = self._round_or_none(float(avg_trading_value / market_cap))
+            if rounded is not None:
+                ratio_map[date_str] = rounded
+
+        return ratio_map
+
+    def _apply_trading_value_ratio_to_statements(
+        self,
+        data: list[FundamentalDataPoint],
+        daily_ratio_map: dict[str, float],
+    ) -> list[FundamentalDataPoint]:
+        """Apply trading value ratio to each statement using disclosed date alignment."""
+        if not data or not daily_ratio_map:
+            return data
+
+        sorted_dates = sorted(daily_ratio_map.keys())
+        updated_data: list[FundamentalDataPoint] = []
+        for item in data:
+            ratio = self._find_price_at_date(item.disclosedDate, sorted_dates, daily_ratio_map)
+            updated_data.append(
+                FundamentalDataPoint(
+                    **{
+                        **item.model_dump(),
+                        "tradingValueToMarketCapRatio": self._round_or_none(ratio),
+                    }
+                )
+            )
+
+        return updated_data
+
+    def _apply_latest_trading_value_ratio(
+        self,
+        metrics: FundamentalDataPoint | None,
+        daily_ratio_map: dict[str, float],
+    ) -> FundamentalDataPoint | None:
+        """Apply latest available trading value ratio to latest metrics."""
+        if metrics is None or not daily_ratio_map:
+            return metrics
+
+        latest_ratio = daily_ratio_map[max(daily_ratio_map.keys())]
+        return FundamentalDataPoint(
+            **{
+                **metrics.model_dump(),
+                "tradingValueToMarketCapRatio": latest_ratio,
+            }
+        )
 
     # ===== Financial Data Extraction Methods =====
 

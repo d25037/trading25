@@ -27,6 +27,12 @@ class FundamentalsComputeRequest(BaseModel):
     prefer_consolidated: bool = Field(
         default=True, description="Prefer consolidated statements"
     )
+    trading_value_period: int = Field(
+        default=15,
+        ge=1,
+        le=250,
+        description="Rolling period (days) for trading value to market cap ratio",
+    )
 
 
 class FundamentalDataPoint(BaseModel):
@@ -91,6 +97,12 @@ class FundamentalDataPoint(BaseModel):
     fcf: float | None = Field(None, description="Free cash flow (millions JPY)")
     fcfYield: float | None = Field(None, description="FCF yield (%)")
     fcfMargin: float | None = Field(None, description="FCF margin (%)")
+    cfoToNetProfitRatio: float | None = Field(
+        None, description="Operating cash flow / net profit ratio (x)"
+    )
+    tradingValueToMarketCapRatio: float | None = Field(
+        None, description="N-day average trading value / market cap ratio (x)"
+    )
 
     # Forecast EPS
     forecastEps: float | None = Field(None, description="Forecast EPS (JPY)")
@@ -144,5 +156,8 @@ class FundamentalsComputeResponse(BaseModel):
     )
     dailyValuation: list[DailyValuationDataPoint] | None = Field(
         None, description="Daily PER/PBR time-series"
+    )
+    tradingValuePeriod: int = Field(
+        ..., description="Rolling period used for trading value to market cap ratio"
     )
     lastUpdated: str = Field(..., description="Last updated timestamp (ISO 8601)")

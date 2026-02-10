@@ -25,7 +25,39 @@ describe('useFundamentals', () => {
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useFundamentals('7203'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203');
+    expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
+      tradingValuePeriod: 15,
+    });
+  });
+
+  it('uses custom trading value period', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ roe: 10, per: 15 });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useFundamentals('7203', { tradingValuePeriod: 30 }), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
+      tradingValuePeriod: 30,
+    });
+  });
+
+  it('normalizes invalid trading value period to default', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ roe: 10, per: 15 });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useFundamentals('7203', { tradingValuePeriod: Number.NaN }), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
+      tradingValuePeriod: 15,
+    });
+  });
+
+  it('normalizes fractional trading value period to a minimum integer', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ roe: 10, per: 15 });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useFundamentals('7203', { tradingValuePeriod: 0.6 }), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
+      tradingValuePeriod: 1,
+    });
   });
 
   it('is disabled when symbol is null', () => {

@@ -52,13 +52,13 @@ bun run --filter @trading25/shared bt:sync
 
 | File | Status | Description |
 |---|---|---|
-| `dataset-schema.json` | Deprecated | 旧 dataset schema（参照用） |
-| `dataset-db-schema-v2.json` | Active | dataset.db 契約 |
-| `market-db-schema-v1.json` | Active | market.db 契約 |
-| `portfolio-db-schema-v1.json` | Active | portfolio.db 契約 |
-| `strategy-config-v1.schema.json` | Active | strategy YAML 契約 |
-| `backtest-run-manifest-v1.schema.json` | Active | backtest manifest 契約 |
-| `hono-openapi-baseline.json` | Archived | Hono -> FastAPI 移行ベースライン |
+| `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
+| `dataset-db-schema-v2.json` | **Active** | Dataset DB schema contract aligned with `apps/ts` Drizzle tables (395 lines). Use this for all new development. |
+| `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
+| `strategy-config-v1.schema.json` | **Active** | Strategy YAML schema validated by `apps/bt`. |
+| `fundamentals-metrics-v1.schema.json` | **Active** | Fundamentals API response contract (`/api/analytics/fundamentals/{symbol}`), including `cfoToNetProfitRatio`, `tradingValueToMarketCapRatio`, and `tradingValuePeriod`. |
+| `portfolio-db-schema-v1.json` | **Active** | Portfolio DB schema contract (portfolios, portfolio_items, watchlists, watchlist_items, portfolio_metadata). |
+| `hono-openapi-baseline.json` | **Archived** | Hono OpenAPI snapshot used as Phase 3 migration baseline. Phase 3F (2026-02-07) で全 90 EP 移行完了・Hono 廃止済み。参照用に保持。 |
 
 ## OpenAPI Snapshot
 

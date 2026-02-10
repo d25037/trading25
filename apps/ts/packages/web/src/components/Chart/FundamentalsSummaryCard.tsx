@@ -66,9 +66,10 @@ function EpsMetricCard({ actualEps, forecastEps, changeRate }: EpsMetricCardProp
 
 interface FundamentalsSummaryCardProps {
   metrics: ApiFundamentalDataPoint | undefined;
+  tradingValuePeriod?: number;
 }
 
-export function FundamentalsSummaryCard({ metrics }: FundamentalsSummaryCardProps) {
+export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: FundamentalsSummaryCardProps) {
   if (!metrics) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -131,6 +132,16 @@ export function FundamentalsSummaryCard({ metrics }: FundamentalsSummaryCardProp
         <MetricCard label="FCF" value={metrics.fcf} format="millions" colorScheme="cashFlow" />
         <MetricCard label="FCF利回り" value={metrics.fcfYield} format="percent" colorScheme="fcfYield" />
         <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />
+        <MetricCard label="" value={null} format="yen" />
+
+        {/* Row 5: Additional Fundamental Analysis */}
+        <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />
+        <MetricCard
+          label={`${tradingValuePeriod}日売買代金/時価総額`}
+          value={metrics.tradingValueToMarketCapRatio ?? null}
+          format="times"
+        />
+        <MetricCard label="" value={null} format="yen" />
         <MetricCard label="" value={null} format="yen" />
       </div>
 

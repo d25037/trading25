@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Fundamentals Metrics Contract v1",
+  "description": "FastAPI fundamentals response contract used by apps/ts frontend and shared types.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["symbol", "data", "tradingValuePeriod", "lastUpdated"],
+  "properties": {
+    "symbol": {
+      "type": "string",
+      "minLength": 1
+    },
+    "companyName": {
+      "type": ["string", "null"]
+    },
+    "data": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/data_point"
+      }
+    },
+    "latestMetrics": {
+      "anyOf": [
+        { "$ref": "#/$defs/data_point" },
+        { "type": "null" }
+      ]
+    },
+    "dailyValuation": {
+      "type": ["array", "null"],
+      "items": {
+        "$ref": "#/$defs/daily_valuation_point"
+      }
+    },
+    "tradingValuePeriod": {
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 250
+    },
+    "lastUpdated": {
+      "type": "string",
+      "format": "date-time"
+    }
+  },
+  "$defs": {
+    "data_point": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "date",
+        "disclosedDate",
+        "periodType",
+        "isConsolidated",
+        "cfoToNetProfitRatio",
+        "tradingValueToMarketCapRatio"
+      ],
+      "properties": {
+        "date": { "type": "string" },
+        "disclosedDate": { "type": "string" },
+        "periodType": { "type": "string" },
+        "isConsolidated": { "type": "boolean" },
+        "cfoToNetProfitRatio": { "type": ["number", "null"] },
+        "tradingValueToMarketCapRatio": { "type": ["number", "null"] }
+      }
+    },
+    "daily_valuation_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["date", "close", "per", "pbr", "marketCap"],
+      "properties": {
+        "date": { "type": "string" },
+        "close": { "type": "number" },
+        "per": { "type": ["number", "null"] },
+        "pbr": { "type": ["number", "null"] },
+        "marketCap": { "type": ["number", "null"] }
+      }
+    }
+  }
+}
