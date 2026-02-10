@@ -3,8 +3,8 @@
  * Single class replacing 12 specialized fetchers
  */
 
-import { calculatePlanConcurrency, validateJQuantsPlan } from '../clients/base/BaseJQuantsClient';
-import { type BatchExecutor, categorizeErrorType, createBatchExecutor } from '../clients/base/BatchExecutor';
+import { calculatePlanConcurrency, validateJQuantsPlan } from '@trading25/clients-ts/base/BaseJQuantsClient';
+import { type BatchExecutor, categorizeErrorType, createBatchExecutor } from '@trading25/clients-ts/base/BatchExecutor';
 import { getAllIndexCodesExcludingTOPIX } from '../db/constants/index-master-data';
 import type { ApiClient } from './api-client';
 import { type StreamConfig, StreamingFetchers, StreamingUtils } from './streaming/memory-efficient-fetchers';
