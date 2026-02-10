@@ -68,6 +68,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         correlation_id = get_correlation_id()
 
         log_kwargs = {
+            "event": "request",
             "correlationId": correlation_id,
             "method": method,
             "path": path,
@@ -101,6 +102,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         suffix = f" - {log_suffix}" if log_suffix else f" - {message}"
         log_msg = f"{method} {path} {status_code} {elapsed_ms}ms{suffix}"
         log_kwargs = {
+            "event": "request_error",
             "correlationId": correlation_id,
             "method": method,
             "path": path,
