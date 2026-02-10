@@ -43,7 +43,7 @@ def trading_value_signal(
     )
 
     # 売買代金移動平均計算（共通関数使用）
-    from src.utils.indicators import compute_trading_value_ma
+    from src.lib.indicators import compute_trading_value_ma
 
     trading_value_ma = compute_trading_value_ma(close, volume, period)
 

@@ -12,7 +12,7 @@ from rich.console import Console
 from rich.table import Table
 from loguru import logger
 
-from src.strategy_config.loader import ConfigLoader
+from src.lib.strategy_runtime.loader import ConfigLoader
 
 console = Console()
 

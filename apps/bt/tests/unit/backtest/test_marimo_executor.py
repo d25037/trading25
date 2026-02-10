@@ -176,7 +176,7 @@ class TestOutputFilenameGeneration:
 class TestExecuteNotebook:
     """Notebook実行テスト（モック使用）"""
 
-    @patch("src.backtest.marimo_executor.subprocess.run")
+    @patch("src.lib.backtest_core.marimo_executor.subprocess.run")
     def test_execute_generates_html(self, mock_run):
         """HTML生成の確認"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -210,7 +210,7 @@ class TestExecuteNotebook:
             assert str(html_path).endswith(".html")
             assert mock_run.called
 
-    @patch("src.backtest.marimo_executor.subprocess.run")
+    @patch("src.lib.backtest_core.marimo_executor.subprocess.run")
     def test_execute_with_timeout(self, mock_run):
         """タイムアウト設定の確認"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -245,7 +245,7 @@ class TestExecuteNotebook:
             first_call_kwargs = mock_run.call_args_list[0][1]
             assert first_call_kwargs["timeout"] == 300
 
-    @patch("src.backtest.marimo_executor.subprocess.run")
+    @patch("src.lib.backtest_core.marimo_executor.subprocess.run")
     def test_execute_error_handling(self, mock_run):
         """エラーハンドリングの確認"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -308,7 +308,7 @@ class TestExecutionSummary:
 class TestCleanup:
     """クリーンアップテスト"""
 
-    @patch("src.backtest.marimo_executor.subprocess.run")
+    @patch("src.lib.backtest_core.marimo_executor.subprocess.run")
     def test_json_cleanup_on_success(self, mock_run):
         """成功時のJSON削除確認"""
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -341,7 +341,7 @@ class TestCleanup:
             json_files = list(Path(tmpdir).glob("params_*.json"))
             assert len(json_files) == 0
 
-    @patch("src.backtest.marimo_executor.subprocess.run")
+    @patch("src.lib.backtest_core.marimo_executor.subprocess.run")
     def test_json_cleanup_on_error(self, mock_run):
         """エラー時のJSON削除確認"""
         with tempfile.TemporaryDirectory() as tmpdir:

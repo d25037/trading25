@@ -44,7 +44,7 @@ def volume_signal(
     )
 
     # 出来高移動平均計算（共通関数使用）
-    from src.utils.indicators import compute_volume_mas
+    from src.lib.indicators import compute_volume_mas
 
     volume_short_ma, volume_long_ma = compute_volume_mas(
         volume, short_period, long_period, ma_type

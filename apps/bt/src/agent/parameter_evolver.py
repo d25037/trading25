@@ -10,7 +10,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.strategy_config.loader import ConfigLoader
+from src.lib.strategy_runtime.loader import ConfigLoader
 
 from .models import EvolutionConfig, EvaluationResult, StrategyCandidate
 from .strategy_evaluator import StrategyEvaluator

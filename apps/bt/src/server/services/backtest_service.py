@@ -10,7 +10,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.backtest.runner import BacktestResult, BacktestRunner
+from src.lib.backtest_core.runner import BacktestResult, BacktestRunner
 from src.server.schemas.backtest import BacktestResultSummary, JobStatus
 from src.server.services.job_manager import JobManager, job_manager
 

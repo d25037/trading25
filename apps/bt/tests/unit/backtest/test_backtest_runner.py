@@ -57,7 +57,7 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.backtest.runner.MarimoExecutor",
+        "src.lib.backtest_core.runner.MarimoExecutor",
         _fake_executor_factory,
     )
 
