@@ -3,7 +3,7 @@
  * Show portfolio details with all holdings via API
  */
 
-import type { PortfolioItemResponse, PortfolioWithItemsResponse } from '@trading25/portfolio-db-ts/portfolio';
+import type { PortfolioItemResponse, PortfolioWithItemsResponse } from '@trading25/shared/portfolio';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import { ApiClient } from '../../utils/api-client.js';
