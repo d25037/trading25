@@ -6,7 +6,7 @@ priority: medium
 labels: [architecture, refactor]
 project: ts
 created: 2026-02-09
-updated: 2026-02-09
+updated: 2026-02-10
 depends_on: []
 blocks: []
 parent: null
@@ -19,9 +19,10 @@ parent: null
 
 ## 受け入れ条件
 - `clients-ts`, `market-db-ts`, `dataset-db-ts`, `portfolio-db-ts` の境界が作成される
+- 4D Step1 で `market-db-ts` / `dataset-db-ts` / `portfolio-db-ts` を `shared` に再統合し、`web`/`cli` は `@trading25/shared/*` 参照へ統一される
 - `apps/ts/packages/web` と `apps/ts/packages/cli` が `shared/src/*` の深いパスを直接参照しない
 - `apps/ts/packages/shared/src/factor-regression`, `screening`, `market-sync` の実装本体が段階削除される（`analytics-ts` / `market-sync-ts` は作成しない）
-- `apps/ts/packages/shared` が互換 re-export と `bt:sync` 補助・型公開中心の薄いファサードになる
+- `apps/ts/packages/shared` が TS ドメイン重複実装を持たない共通境界（DB/dataset/portfolio + `bt:sync` 補助・型公開）になる
 - `apps/ts/packages/web` と `apps/ts/packages/cli` の実行ロジックが FastAPI endpoint + OpenAPI generated types を優先利用する
 - lint/typecheck/test が通る
 
@@ -49,6 +50,9 @@ parent: null
 - 2026-02-09: `cli` の screening 実行経路を API レスポンス型（`ScreeningResultItem`）に統一し、旧 local conversion を削除。
 - 2026-02-09: `web` の Vite/Vitest alias に `@trading25/shared/*` を明示追加し、`shared/dist` 非依存でテストを安定化。
 - 2026-02-09: 4B 変更後の検証完了（`bun run typecheck:all` / `bun run lint` / `bun run test` pass）。
+- 2026-02-10: `@trading25/market-db-ts` / `@trading25/dataset-db-ts` / `@trading25/portfolio-db-ts` を `shared` へ再統合し、3パッケージを削除。
+- 2026-02-10: `web`/`cli` の import を `@trading25/shared/portfolio|watchlist|dataset` に統一し、`vite`/`vitest`/`tsconfig` の不要 alias を削除。
+- 2026-02-10: `apps/ts` の scripts / workspace 依存を整理（build/typecheck 対象の再定義）し、lint / typecheck / test のグリーンを確認。
 
 ## 補足
 - 元タスク `ts-117` は archived API package 前提のため 2026-02-09 にクローズ済み

@@ -1,6 +1,6 @@
-# Shared Package - Compatibility Facade
+# Shared Package
 
-Phase 4A 以降、`@trading25/shared` は主に互換 re-export と補助ユーティリティを提供する薄いファサード。
+Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（DB/dataset/portfolio/watchlist + 補助ユーティリティ）を提供する。
 
 ## Architecture
 
@@ -13,15 +13,15 @@ Phase 4A 以降、`@trading25/shared` は主に互換 re-export と補助ユー�
 
 | Module | Purpose |
 |--------|---------|
-| `@trading25/shared/dataset` | **互換 re-export** → `@trading25/dataset-db-ts` |
+| `@trading25/shared/dataset` | dataset API client / builder / reader / validators |
 | `@trading25/shared/ta` | Utilities only (Timeframe変換、Relative OHLC、インジケータ計算は全てapps/bt/ API移行完了) |
 | `@trading25/shared/fundamental-analysis` | ROE, ROA, PER, PBR, EPS, BPS calculations |
 | `@trading25/shared/factor-regression` | Two-stage factor regression for risk decomposition |
 | `@trading25/shared/screening` | Range Break detection algorithms |
-| `@trading25/shared/portfolio` | **互換 re-export** → `@trading25/portfolio-db-ts/portfolio` |
-| `@trading25/shared/watchlist` | **互換 re-export** → `@trading25/portfolio-db-ts/watchlist` |
+| `@trading25/shared/portfolio` | portfolio DB 操作と型定義 |
+| `@trading25/shared/watchlist` | watchlist DB 操作と型定義 |
 | `@trading25/shared/market-sync` | Market data sync and rankings |
-| `@trading25/shared/db` | **互換 re-export** → `@trading25/market-db-ts/db` |
+| `@trading25/shared/db` | market/dataset/portfolio/watchlist 向け Drizzle DB 境界 |
 | `@trading25/shared/clients/backtest` | **互換 re-export** → `@trading25/clients-ts/backtest` |
 
 ## API Authentication

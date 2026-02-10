@@ -1,2 +1,10 @@
-// Compatibility re-export during Phase 4 migration.
-export * from '@trading25/market-db-ts/db/schema/common/index';
+/**
+ * Common Schema Index
+ *
+ * Shared table definitions for both market.db and dataset.db
+ */
+
+export * from './indices-data';
+export * from './stock-data';
+export * from './stocks';
+export * from './topix-data';

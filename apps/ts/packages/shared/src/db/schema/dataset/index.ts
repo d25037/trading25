@@ -1,2 +1,9 @@
-// Compatibility re-export during Phase 4 migration.
-export * from '@trading25/market-db-ts/db/schema/dataset/index';
+/**
+ * Dataset Schema Index
+ *
+ * Dataset-specific table definitions
+ */
+
+export * from './dataset-info';
+export * from './margin-data';
+export * from './statements';

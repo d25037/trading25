@@ -1,7 +1,7 @@
 # trading25 統一ロードマップ
 
 作成日: 2026-02-06
-最終更新: 2026-02-09（Phase 4B 完了確定・Phase 4D 着手方針を明記）
+最終更新: 2026-02-10（Phase 4B 完了・4C Step2 実体移管完了・4D Step1 完了）
 統合元: 5つの個別ロードマップ（[Appendix D](#appendix-d-アーカイブ元ドキュメント) 参照）
 
 ---
@@ -104,7 +104,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 | 1 | 基盤安定化 | **完了** | Low | 1-2 週 |
 | 2 | 契約・データ境界 | **実質完了**（延期項目あり） | Low | 1-2 週 |
 | 3 | FastAPI 統一 | **完了**（3F 切替・廃止完了） | **High** | 6-10 週 |
-| 4 | パッケージ分離 | **進行中（4A/4B 完了、4C Step2 実体移管+検証完了、次は 4D）** | Medium | 4-6 週 |
+| 4 | パッケージ分離 | **進行中（4A/4B 完了、4C Step2 実体移管+検証完了、4D Step1 完了）** | Medium | 4-6 週 |
 | 5 | シグナル・分析拡張 | **未着手** | Low | 2-3 週 |
 
 ---
@@ -599,7 +599,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 ## Phase 4: パッケージ分離（再ベースライン）
 
-**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A/4B 完了、4C Step2 実体移管+検証完了、次工程は 4D）
+**期間**: 4-6 週 | **リスク**: Medium | **状態**: 進行中（4A/4B 完了、4C Step2 実体移管+検証完了、4D Step1 完了）
 **再ベースライン日**: 2026-02-09
 
 *元: packages-responsibility-roadmap.md Phase 2-5（Phase 3F 後の実装状態に合わせて再編）*
@@ -617,12 +617,11 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 | 境界（新規/縮小） | 責務 | 現在の主な移行元 |
 |---|---|---|
 | `clients-ts` | FastAPI クライアントと generated types の公開境界 | `apps/ts/packages/shared/src/clients` |
-| `market-db-ts` | market.db 読み取り API | `apps/ts/packages/shared/src/db` |
-| `dataset-db-ts` | dataset.db 読み取り API + snapshot/manifest | `apps/ts/packages/shared/src/dataset` |
-| `portfolio-db-ts` | portfolio/watchlist DB 操作 | `apps/ts/packages/shared/src/portfolio`, `watchlist` |
 | `analytics-ts` | **作成しない**（FastAPI 一本化後のため TS ドメイン実装は削除対象） | `apps/ts/packages/shared/src/factor-regression`, `screening` |
 | `market-sync-ts` | **作成しない**（FastAPI 一本化後のため TS ドメイン実装は削除対象） | `apps/ts/packages/shared/src/market-sync` |
-| `shared`（縮小） | 互換 re-export と `bt:sync` 関連スクリプト | `apps/ts/packages/shared` |
+| `shared`（再統合） | DB/dataset/portfolio/watchlist 実装 + `bt:sync` 関連スクリプト + 型ファサード | `apps/ts/packages/shared` |
+
+> 2026-02-10: `market-db-ts` / `dataset-db-ts` / `portfolio-db-ts` は 4D Step1 で `shared` に再統合し、パッケージを削除。
 
 #### Python 側
 | 境界（論理パッケージ） | 責務 | 現在の主な移行元 |
@@ -681,7 +680,7 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 - `bun run test`: passed
 
 **完了条件**:
-- `apps/ts/packages/shared` が再エクスポート/型公開中心の薄いファサードになる
+- `apps/ts/packages/shared` が TS ドメイン重複実装を持たない共通境界（DB/dataset/portfolio + 型公開 + `bt:sync` 補助）になる
 - `apps/ts/packages/web` と `apps/ts/packages/cli` が TS 内の重複ドメイン実装を参照せず、FastAPI を唯一の実行ロジックとして利用する
 
 ### 4C: Python ドメインパッケージ分離
@@ -732,10 +731,13 @@ SQLAlchemy Core（ORM なし）を採用し、3 データベース・17 テー�
 
 *元: packages-responsibility-roadmap.md Phase 5（再編）*
 
-- [ ] 一時的な互換 re-export を段階削除
+- [x] TS 側の一時的な互換 re-export（`db`/`dataset`/`portfolio`/`watchlist`）を実装再統合で削除（2026-02-10, Step1）
 - [ ] `apps/ts/packages/shared` と `apps/bt/src` の重複実装を削除
 - [ ] CI を「パッケージ単体テスト」と「apps 結合テスト」に段階化
 - [ ] `scripts/check-dep-direction.sh` の allowlist と docs を新境界へ更新
+
+**進捗**:
+- 2026-02-10: Step1（TS 再統合）完了。`apps/ts/packages/market-db-ts` / `dataset-db-ts` / `portfolio-db-ts` を削除し、`shared` に実装を戻したうえで `web`/`cli` import を `@trading25/shared/*` へ統一。
 
 **完了条件**:
 - apps 配下に残るのは entrypoint + thin adapter
