@@ -1,49 +1,69 @@
 # trading25 Monorepo
 
-## Structure
-- `apps/ts` - TypeScript/Bun application and packages
-- `apps/bt` - Python backtest application
-- `contracts` - Shared, versioned contracts between apps
-- `docs` - Project documentation
+FastAPI バックエンド（`apps/bt`）と TypeScript クライアント（`apps/ts`）を統合したモノレポです。
 
-## Quick Start
-### apps/ts (Bun)
-```bash
-cd apps/ts
-bun install
-bun run dev
+## Current Architecture
+
+```
+JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db / datasets)
+                     ↓
+                  ts/web (:5173, /api proxy)
+                  ts/cli
 ```
 
-### apps/bt (Python)
+- バックエンドは `apps/bt` の FastAPI に一本化済み
+- `apps/ts/packages/api` は archived / read-only（実行対象外）
+
+## Repository Layout
+
+- `apps/bt` - Python 3.12 + FastAPI + vectorbt + typer CLI
+- `apps/ts` - Bun workspace（web / cli / shared / clients-ts）
+- `contracts` - bt/ts 間の安定インターフェース（JSON Schema, OpenAPI baseline）
+- `docs` - ロードマップ、設計判断、監査レポート
+- `issues` - ローカル Issue 管理（`issues/` と `issues/done/`）
+- `scripts` - ルート統合スクリプト
+
+## Quick Start
+
+### 1) FastAPI 起動（apps/bt）
 ```bash
 cd apps/bt
 uv sync
 uv run bt server --port 3002
 ```
 
-Note: if you move the `apps/bt` directory (or rename the repo),
-recreate the virtualenv so `uv run pytest` works:
-```bash
-uv sync --reinstall --locked
-```
-
-## Monorepo Scripts
-```bash
-./scripts/test.sh       # apps/ts + apps/bt tests
-./scripts/lint.sh       # apps/ts biome + apps/bt ruff
-./scripts/typecheck.sh  # apps/ts tsc + apps/bt pyright
-```
-
-## Tests (Smoke)
+### 2) Web 起動（apps/ts）
 ```bash
 cd apps/ts
-bun run test
+bun install
+bun run dev
 ```
 
+`bun run dev:full` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。
+
+## Monorepo Commands (root)
+
 ```bash
-cd apps/bt
-uv run pytest
+./scripts/lint.sh         # dep-direction + apps/ts lint + apps/bt ruff
+./scripts/typecheck.sh    # apps/ts typecheck + apps/bt pyright
+./scripts/test-packages.sh # package unit tests (ts packages + bt unit)
+./scripts/test-apps.sh    # app integration tests (ts apps + bt api/integration)
+./scripts/test.sh         # test-packages + test-apps
+```
+
+## OpenAPI Contract Sync
+
+FastAPI スキーマ更新後は `apps/ts` で次を実行:
+
+```bash
+bun run --filter @trading25/shared bt:sync
 ```
 
 ## CI
-GitHub Actions runs `./scripts/test.sh` on each push and pull request.
+
+`.github/workflows/ci.yml` で以下を実行:
+
+1. Lint
+2. Typecheck
+3. Package unit tests
+4. App integration tests
