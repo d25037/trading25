@@ -171,6 +171,12 @@ describe('ChartsPage', () => {
     mockFundamentalsPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
 
+    mockSettings.showPPOChart = true;
+    mockSettings.showVolumeComparison = true;
+    mockSettings.showTradingValueMA = true;
+    mockSettings.tradingValueMA.period = 15;
+    mockSettings.relativeMode = true;
+
     mockUseFundamentals.mockReturnValue({ data: null });
   });
 
