@@ -38,6 +38,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 `contracts/` に bt/ts 間の安定インターフェースを定義。詳細は [`contracts/README.md`](contracts/README.md) 参照。
 - **バージョニング**: additive (minor) / breaking (major) → 新版ファイル作成
 - **命名規則**: `{domain}-{purpose}-v{N}.schema.json`
+- **現行追加契約**: `fundamentals-metrics-v1.schema.json`（fundamentals API 指標拡張）
 - **アーカイブ**: `hono-openapi-baseline.json`（Phase 3 移行 baseline、参照用に保持）
 
 ## エラーレスポンス

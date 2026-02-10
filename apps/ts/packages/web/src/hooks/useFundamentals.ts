@@ -2,22 +2,31 @@ import { useQuery } from '@tanstack/react-query';
 import type { ApiFundamentalsResponse } from '@trading25/shared/types/api-types';
 import { apiGet } from '@/lib/api-client';
 
-function fetchFundamentals(symbol: string): Promise<ApiFundamentalsResponse> {
-  return apiGet<ApiFundamentalsResponse>(`/api/analytics/fundamentals/${symbol}`);
+function normalizeTradingValuePeriod(period: number): number {
+  if (!Number.isFinite(period)) return 15;
+  return Math.max(1, Math.trunc(period));
+}
+
+function fetchFundamentals(symbol: string, tradingValuePeriod: number): Promise<ApiFundamentalsResponse> {
+  return apiGet<ApiFundamentalsResponse>(`/api/analytics/fundamentals/${symbol}`, {
+    tradingValuePeriod,
+  });
 }
 
 interface UseFundamentalsOptions {
   enabled?: boolean;
+  tradingValuePeriod?: number;
 }
 
 export function useFundamentals(symbol: string | null, options: UseFundamentalsOptions = {}) {
-  const { enabled = true } = options;
+  const { enabled = true, tradingValuePeriod = 15 } = options;
+  const normalizedTradingValuePeriod = normalizeTradingValuePeriod(tradingValuePeriod);
 
   return useQuery({
-    queryKey: ['fundamentals', symbol],
+    queryKey: ['fundamentals', symbol, normalizedTradingValuePeriod],
     queryFn: () => {
       if (!symbol) throw new Error('Symbol is required');
-      return fetchFundamentals(symbol);
+      return fetchFundamentals(symbol, normalizedTradingValuePeriod);
     },
     enabled: !!symbol && enabled,
     staleTime: 10 * 60 * 1000, // 10 minutes (financial data changes infrequently)

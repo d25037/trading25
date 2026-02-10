@@ -265,6 +265,21 @@ class TestMetricCalculations:
         assert fcf_margin is not None
         assert abs(fcf_margin - 8.89) < 0.1
 
+    def test_calculate_cfo_to_net_profit_ratio(self, service: FundamentalsService):
+        """営業CF / 純利益 比率計算"""
+        ratio = service._calculate_cfo_to_net_profit_ratio(
+            cfo=6000000000000, net_profit=4000000000000
+        )
+        assert ratio == 1.5
+
+    def test_calculate_cfo_to_net_profit_ratio_invalid(
+        self, service: FundamentalsService
+    ):
+        """営業CF / 純利益 比率の無効値"""
+        assert service._calculate_cfo_to_net_profit_ratio(None, 1) is None
+        assert service._calculate_cfo_to_net_profit_ratio(1, None) is None
+        assert service._calculate_cfo_to_net_profit_ratio(1, 0) is None
+
 
 class TestHelperMethods:
     """ヘルパーメソッドのテスト"""
@@ -705,6 +720,7 @@ class TestComputeFundamentals:
         assert result.symbol == "9999"
         assert result.data == []
         assert result.latestMetrics is None
+        assert result.tradingValuePeriod == 15
 
     def test_with_statements(self, service: FundamentalsService):
         """財務諸表がある場合の計算"""
@@ -776,6 +792,7 @@ class TestComputeFundamentals:
         mock_prices_df = pd.DataFrame(
             {
                 "Close": [6000.0, 6100.0, 6050.0],
+                "Volume": [200000000, 210000000, 205000000],
             },
             index=pd.to_datetime(["2024-05-14", "2024-05-15", "2024-05-16"]),
         )
@@ -790,14 +807,19 @@ class TestComputeFundamentals:
         service._jquants_client = mock_jquants
         service._market_client = mock_market
 
-        request = FundamentalsComputeRequest(symbol="7203")
+        request = FundamentalsComputeRequest(symbol="7203", trading_value_period=2)
         result = service.compute_fundamentals(request)
 
         assert result.symbol == "7203"
         assert result.companyName == "トヨタ自動車"
+        assert result.tradingValuePeriod == 2
         assert len(result.data) == 1
         assert result.data[0].eps == 300.0
         assert result.data[0].bps == 2250.0
+        assert result.data[0].cfoToNetProfitRatio == 1.5
+        assert result.data[0].tradingValueToMarketCapRatio is not None
+        assert result.latestMetrics is not None
+        assert result.latestMetrics.tradingValueToMarketCapRatio is not None
 
     def test_share_adjusted_metrics(self, service: FundamentalsService):
         """発行済株式数でEPS/BPS/予想EPSを調整する"""
