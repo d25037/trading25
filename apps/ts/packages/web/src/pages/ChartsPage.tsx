@@ -120,14 +120,19 @@ export function ChartsPage() {
   const factorSection = useLazySectionVisibility();
 
   const { chartData, signalMarkers, isLoading, error, selectedSymbol } = useMultiTimeframeChart();
+  const { settings } = useChartStore();
   const {
     data: marginPressureData,
     isLoading: marginPressureLoading,
     error: marginPressureError,
   } = useBtMarginIndicators(selectedSymbol, { enabled: marginSection.isVisible });
   const { data: stockData } = useStockData(selectedSymbol, 'daily'); // Get stock data for company name
-  const { data: fundamentalsData } = useFundamentals(selectedSymbol, { enabled: fundamentalsSection.isVisible });
   const { settings } = useChartStore();
+  const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
+  const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
+    enabled: fundamentalsSection.isVisible,
+    tradingValuePeriod,
+  });
 
   logger.debug('ChartsPage render', {
     selectedSymbol,
@@ -469,7 +474,11 @@ export function ChartsPage() {
                   </div>
                   <div className="h-[calc(100%-4rem)] p-4">
                     <ErrorBoundary>
-                      <FundamentalsPanel symbol={selectedSymbol} enabled={fundamentalsSection.isVisible} />
+                      <FundamentalsPanel
+                        symbol={selectedSymbol}
+                        enabled={fundamentalsSection.isVisible}
+                        tradingValuePeriod={tradingValuePeriod}
+                      />
                     </ErrorBoundary>
                   </div>
                 </div>

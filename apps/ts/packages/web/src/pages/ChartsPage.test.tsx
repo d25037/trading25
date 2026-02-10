@@ -8,6 +8,7 @@ const mockUseBtMarginIndicators = vi.fn();
 const mockUseStockData = vi.fn();
 const mockUseFundamentals = vi.fn();
 const mockWindowOpen = vi.fn();
+const mockFundamentalsPanelProps = vi.fn<[unknown], void>();
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
   useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
@@ -84,7 +85,10 @@ vi.mock('@/components/Chart/MarginPressureChart', () => ({
 }));
 
 vi.mock('@/components/Chart/FundamentalsPanel', () => ({
-  FundamentalsPanel: () => <div>Fundamentals Panel</div>,
+  FundamentalsPanel: (props: unknown) => {
+    mockFundamentalsPanelProps(props);
+    return <div>Fundamentals Panel</div>;
+  },
 }));
 
 vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
@@ -164,6 +168,7 @@ describe('ChartsPage', () => {
     mockUseBtMarginIndicators.mockReset();
     mockUseStockData.mockReset();
     mockUseFundamentals.mockReset();
+    mockFundamentalsPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
 
     mockUseFundamentals.mockReturnValue({ data: null });
@@ -276,6 +281,44 @@ describe('ChartsPage', () => {
     expect(screen.getAllByText('Margin Pressure Chart')).toHaveLength(3);
     expect(screen.getByText('Test Co')).toBeInTheDocument();
     expect(screen.getByText(/7203/)).toBeInTheDocument();
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      enabled: false,
+      tradingValuePeriod: 15,
+    });
+  });
+
+  it('normalizes trading value period before passing to fundamentals hooks/components', () => {
+    mockSettings.tradingValueMA.period = 0;
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: { longPressure: [], flowPressure: [], turnoverDays: [], averagePeriod: 20 },
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    render(<ChartsPage />);
+
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 1 });
+    expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      tradingValuePeriod: 1,
+    });
   });
 
   it('renders margin loading and error states in indicator section', () => {
@@ -333,11 +376,13 @@ describe('ChartsPage', () => {
       error: null,
     });
     mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
-    mockUseFundamentals.mockImplementation((_symbol: string, options?: { enabled?: boolean }) => ({
+    mockUseFundamentals.mockImplementation(
+      (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
       data: options?.enabled
         ? { dailyValuation: [{ marketCap: 1000000000 }] }
         : null,
-    }));
+    })
+    );
 
     render(<ChartsPage />);
 
@@ -385,7 +430,7 @@ describe('ChartsPage', () => {
       expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
     });
     await waitFor(() => {
-      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true });
+      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
     });
   });
 
@@ -411,7 +456,12 @@ describe('ChartsPage', () => {
     render(<ChartsPage />);
 
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      enabled: false,
+      tradingValuePeriod: 15,
+    });
     expect(mockFactorRegressionPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       symbol: '7203',
       enabled: false,
@@ -425,7 +475,14 @@ describe('ChartsPage', () => {
       expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
     });
     await waitFor(() => {
-      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true });
+      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
+    });
+    await waitFor(() => {
+      expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+        symbol: '7203',
+        enabled: true,
+        tradingValuePeriod: 15,
+      });
     });
     await waitFor(() => {
       expect(mockFactorRegressionPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({

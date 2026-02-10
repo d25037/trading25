@@ -8,10 +8,15 @@ import { FundamentalsTimeSeriesChart } from './FundamentalsTimeSeriesChart';
 interface FundamentalsPanelProps {
   symbol: string | null;
   enabled?: boolean;
+  tradingValuePeriod?: number;
 }
 
-export function FundamentalsPanel({ symbol, enabled = true }: FundamentalsPanelProps) {
-  const { data, isLoading, error } = useFundamentals(symbol, { enabled });
+export function FundamentalsPanel({
+  symbol,
+  enabled = true,
+  tradingValuePeriod = 15,
+}: FundamentalsPanelProps) {
+  const { data, isLoading, error } = useFundamentals(symbol, { enabled, tradingValuePeriod });
 
   // Get the latest FY (full year) data with actual financial data for summary card
   // Then update PER/PBR/stockPrice with latest daily valuation for current prices
@@ -44,6 +49,9 @@ export function FundamentalsPanel({ symbol, enabled = true }: FundamentalsPanelP
       prevCashFlowInvesting: data.latestMetrics?.prevCashFlowInvesting ?? null,
       prevCashFlowFinancing: data.latestMetrics?.prevCashFlowFinancing ?? null,
       prevCashAndEquivalents: data.latestMetrics?.prevCashAndEquivalents ?? null,
+      cfoToNetProfitRatio: data.latestMetrics?.cfoToNetProfitRatio ?? fyData.cfoToNetProfitRatio ?? null,
+      tradingValueToMarketCapRatio:
+        data.latestMetrics?.tradingValueToMarketCapRatio ?? fyData.tradingValueToMarketCapRatio ?? null,
     };
 
     const displayActualEps = result.adjustedEps ?? result.eps ?? null;
@@ -95,7 +103,10 @@ export function FundamentalsPanel({ symbol, enabled = true }: FundamentalsPanelP
       {data && (
         <div className="h-full grid grid-cols-2 gap-4">
           <div className="h-full overflow-hidden rounded-lg bg-background/30">
-            <FundamentalsSummaryCard metrics={latestFyMetrics} />
+            <FundamentalsSummaryCard
+              metrics={latestFyMetrics}
+              tradingValuePeriod={data.tradingValuePeriod ?? tradingValuePeriod}
+            />
           </div>
           <div className="h-full overflow-hidden rounded-lg bg-background/30">
             <FundamentalsTimeSeriesChart data={data.data} dailyValuation={data.dailyValuation} />

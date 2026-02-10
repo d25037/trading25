@@ -218,6 +218,10 @@ export interface ApiFundamentalDataPoint {
   fcfYield: number | null;
   /** FCF Margin = FCF / Net Sales × 100 (%) */
   fcfMargin: number | null;
+  /** Operating Cash Flow / Net Profit (x) */
+  cfoToNetProfitRatio: number | null;
+  /** N-day average trading value / market cap (x) */
+  tradingValueToMarketCapRatio: number | null;
   // Forecast EPS
   /** Forecast EPS for current/next fiscal year (円) */
   forecastEps?: number | null;
@@ -252,6 +256,8 @@ export interface ApiFundamentalsResponse {
   latestMetrics?: ApiFundamentalDataPoint;
   /** Daily PER/PBR time series (calculated with daily close prices and FY EPS/BPS) */
   dailyValuation?: ApiDailyValuationDataPoint[];
+  /** Rolling average period used for trading value to market cap ratio (days) */
+  tradingValuePeriod: number;
   /** Last updated timestamp */
   lastUpdated: string;
 }

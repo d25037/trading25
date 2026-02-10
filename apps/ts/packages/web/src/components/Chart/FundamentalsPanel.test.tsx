@@ -46,7 +46,40 @@ describe('FundamentalsPanel', () => {
 
     render(<FundamentalsPanel symbol="7203" enabled={false} />);
 
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+  });
+
+  it('forwards custom tradingValuePeriod to useFundamentals and summary card', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            periodType: 'FY',
+            adjustedEps: 100,
+            eps: 95,
+            adjustedForecastEps: 120,
+            forecastEps: 110,
+            cashFlowOperating: 100,
+            cashFlowInvesting: -50,
+            cashFlowFinancing: -20,
+            cashAndEquivalents: 500,
+            netProfit: 200,
+            equity: 1000,
+          },
+        ],
+        latestMetrics: {},
+        dailyValuation: [],
+        tradingValuePeriod: 30,
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<FundamentalsPanel symbol="7203" tradingValuePeriod={30} />);
+
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 30 });
+    expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 30 });
   });
 
   it('renders loading and normalized error states', () => {
@@ -110,8 +143,11 @@ describe('FundamentalsPanel', () => {
           prevCashFlowInvesting: -40,
           prevCashFlowFinancing: -10,
           prevCashAndEquivalents: 450,
+          cfoToNetProfitRatio: 0.45,
+          tradingValueToMarketCapRatio: 0.03,
         },
         dailyValuation: [{ per: 18, pbr: 1.4, close: 2500, marketCap: 1000000000 }],
+        tradingValuePeriod: 20,
       },
       isLoading: false,
       error: null,
@@ -131,6 +167,9 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.per).toBe(18);
     expect(metrics?.pbr).toBe(1.4);
     expect(metrics?.stockPrice).toBe(2500);
+    expect(metrics?.cfoToNetProfitRatio).toBe(0.45);
+    expect(metrics?.tradingValueToMarketCapRatio).toBe(0.03);
+    expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 20 });
   });
 
   it('falls back when latestMetrics is missing and adjusted EPS cannot compute change rate', () => {
