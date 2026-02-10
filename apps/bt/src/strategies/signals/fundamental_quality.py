@@ -1,7 +1,7 @@
 """
 財務指標シグナル — 収益性・品質系
 
-ROE・営業利益率・配当利回りに基づく品質判定シグナルを提供
+ROE・ROA・営業利益率・配当利回りに基づく品質判定シグナルを提供
 """
 
 from __future__ import annotations
@@ -39,6 +39,33 @@ def is_high_roe(
         - 推奨period_type: "FY"（通期利益ベース）
     """
     return _calc_threshold_signal(roe, threshold, condition)
+
+
+def is_high_roa(
+    roa: pd.Series[float],
+    threshold: float = 5.0,
+    condition: Literal["above", "below"] = "above",
+) -> pd.Series[bool]:
+    """
+    ROA（Return on Assets）シグナル
+
+    既に計算済みのROAデータを使用して、
+    指定した条件で閾値と比較してTrueを返すシグナル
+
+    Args:
+        roa: ROAデータ（%単位、ローダーで日次補完済み）
+        threshold: ROA閾値（デフォルト5.0 = 5%）
+        condition: 条件（above=閾値以上、below=閾値以下）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - ROAがNaNの場合はFalseを返す
+        - ROAが負の値の場合はFalseを返す（損失企業除外）
+        - 推奨period_type: "FY"（通期利益ベース）
+    """
+    return _calc_threshold_signal(roa, threshold, condition)
 
 
 def is_high_operating_margin(
