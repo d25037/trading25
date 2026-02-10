@@ -5,7 +5,7 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { JQuantsClient } from '../../clients/JQuantsClient';
+import { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import type { JQuantsDailyQuote } from '../../types/jquants';
 
 export async function fetchToyotaTestData(days = 365): Promise<void> {

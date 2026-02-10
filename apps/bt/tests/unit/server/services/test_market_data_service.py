@@ -4,7 +4,7 @@ MarketDataService Unit Tests
 
 import pytest
 
-from src.server.db.market_reader import MarketDbReader
+from src.lib.market_db.market_reader import MarketDbReader
 from src.server.services.market_data_service import MarketDataService, _stock_code_candidates
 
 

@@ -6,7 +6,7 @@ priority: medium
 labels: [architecture, refactor]
 project: bt
 created: 2026-02-09
-updated: 2026-02-09
+updated: 2026-02-10
 depends_on: []
 blocks: []
 parent: null
@@ -38,15 +38,16 @@ parent: null
 - [x] Step2: `apps/bt/src/lib/backtest_core` 分離（`runner`/`marimo_executor`/`walkforward` 境界を追加）
 - [x] Step2: `apps/bt/src/lib/strategy_runtime` 分離（`loader`/`parameter_extractor`/`validator` 等の境界を追加）
 - [x] Step2: `src/server` と `src/cli_*` の `backtest` / `strategy_config` / `utils.indicators` 参照を `src.lib.*` へ切替
+- [x] Step3: `src/server/db/*` 互換 re-export を削除し、テスト import を `src/lib/*` へ統一
 
 ## 結果
 - 2026-02-09: Phase 4C Step1（DB + dataset I/O 分離）を完了
 - `src/server/db` の実装本体を `src/lib/market_db` へ移管し、`DatasetWriter` を `src/lib/dataset_io` へ移管
 - `src/server/routes` / `src/server/services` / `src/server/app.py` の参照先を新境界へ切替
-- 互換レイヤとして `src/server/db/*.py` は re-export facade として維持
 - 2026-02-09: Phase 4C Step2（indicators / backtest_core / strategy_runtime 境界追加）を完了
 - `src/server` / `src/cli_*` は `src.lib.backtest_core.*` / `src.lib.strategy_runtime.*` / `src.lib.indicators` を経由する構成へ移行
 - 2026-02-09: Step2 追補として `ConfigLoader` / `BacktestRunner` / `MarimoExecutor` の実装本体を `src/lib/*` へ移管し、`src/strategy_config` / `src/backtest` は互換 facade へ移行
+- 2026-02-10: `src/server/db/*.py` 互換 facade を削除し、`tests/unit/server/**` の参照先を `src/lib/*` に切替
 - 検証結果
   - `uv run ruff check src tests`: passed
   - `uv run pyright src`: 0 errors（既存 warning 1）

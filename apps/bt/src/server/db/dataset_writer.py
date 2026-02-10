@@ -1,6 +1,0 @@
-"""Compatibility wrapper for Phase 4C migration."""
-
-from src.lib.dataset_io.dataset_writer import DatasetWriter
-
-__all__ = ["DatasetWriter"]
-

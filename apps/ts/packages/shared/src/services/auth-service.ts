@@ -1,4 +1,4 @@
-import { JQuantsClient } from '../clients/JQuantsClient';
+import { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import type { TokenData, TokenStorage } from '../utils/token-storage';
 
 export interface AuthCredentials {
