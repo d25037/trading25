@@ -1,4 +1,4 @@
-import type { WatchlistWithItemsResponse } from '@trading25/portfolio-db-ts/watchlist';
+import type { WatchlistWithItemsResponse } from '@trading25/shared/watchlist';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import { ApiClient } from '../../utils/api-client.js';

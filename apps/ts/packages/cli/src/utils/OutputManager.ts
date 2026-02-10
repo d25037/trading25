@@ -3,7 +3,7 @@
  * Focuses on CLI-specific output while delegating to standard libraries
  */
 
-import type { ProgressInfo as DatasetProgress, ProgressCallback } from '@trading25/dataset-db-ts';
+import type { ProgressInfo as DatasetProgress, ProgressCallback } from '@trading25/shared/dataset';
 import chalk from 'chalk';
 
 /**

@@ -1,2 +1,167 @@
-// Compatibility re-export during Phase 4 migration.
-export * from '@trading25/dataset-db-ts/dataset/index';
+/**
+ * Dataset - Simplified Public API
+ * Main exports for the simplified dataset architecture
+ */
+
+// ===== CORE TYPES =====
+export type {
+  ApiError,
+  BuildResult,
+  DatabaseError,
+  // Configuration types
+  DatasetConfig,
+  // Error types
+  DatasetError,
+  DatasetStats,
+  DateRange,
+  DebugConfig,
+  MarginData,
+  MarketType,
+  ProgressCallback,
+  // Progress and results
+  ProgressInfo,
+  SectorData,
+  StatementsData,
+  // Data types
+  StockData,
+  StockInfo,
+  TopixData,
+} from './types';
+
+// ===== CORE CLASSES =====
+
+export {
+  calculatePlanConcurrency,
+  getRequestsPerSecond,
+  JQUANTS_PLAN_LIMITS,
+  type JQuantsPlan,
+  validateJQuantsPlan,
+} from '../clients/base/BaseJQuantsClient';
+// Batch execution (rate limiting is in BaseJQuantsClient)
+export {
+  BatchExecutor,
+  categorizeErrorType,
+  createBatchExecutor,
+} from '../clients/base/BatchExecutor';
+// Database operations (for advanced users)
+export { DrizzleDatasetDatabase as Database } from '../db';
+export { ApiClient } from './api-client';
+// Main user-facing classes
+export { DatasetBuilder } from './builder';
+// ===== CONFIGURATION =====
+export {
+  createConfig,
+  // Custom configuration functions
+  createCustomConfig,
+  createForDateRangeConfig,
+  DATASET_PRESET_NAMES,
+  // Preset metadata
+  type DatasetPreset,
+  getDateRange as getDatasetDateRange,
+  getMarketCodes,
+  getPresetConfig,
+  getPresetEstimatedTime,
+  getPresetStockRange,
+  isValidPreset,
+  PRESET_METADATA,
+  type PresetMetadata,
+  presets,
+  validateConfig,
+} from './config';
+// Data fetching (for custom implementations)
+export { DataFetcher } from './fetchers';
+// ===== PROGRESS REPORTING =====
+export {
+  ConsoleProgressFormatter,
+  createConsoleProgressCallback,
+  createSilentProgressCallback,
+  MultiStageProgressTracker,
+  ProgressTracker,
+} from './progress';
+export { DatasetReader } from './reader';
+// ===== STREAMING UTILITIES =====
+export {
+  type StreamConfig,
+  StreamingFetchers,
+  StreamingUtils,
+  type StreamResult,
+} from './streaming/memory-efficient-fetchers';
+export {
+  createDebugConfig,
+  DEFAULT_DEBUG_CONFIG,
+} from './types';
+// ===== UTILITIES =====
+export {
+  // Array utilities
+  chunkArray,
+  createCustomDateRange,
+  // Date utilities
+  createDateRange,
+  createErrorSummary,
+  debounce,
+  filterStocksByMarkets,
+  filterStocksByScaleCategories,
+  filterStocksBySectors,
+  formatDateForApi,
+  formatFileSize,
+  generateUniqueFilename,
+  getDateRangeStrings,
+  getDaysInRange,
+  // Market utilities
+  getMarketCode,
+  getMarketType,
+  getUniqueValues,
+  groupStocksByMarket,
+  groupStocksBySector,
+  isDateInRange,
+  // Type guards
+  isDefined,
+  isNonEmptyArray,
+  isNonEmptyString,
+  isValidDateRange,
+  isValidSectorCode,
+  // Validation utilities
+  isValidStockCode,
+  measureTime,
+  removeDuplicatesBy,
+  // Error utilities
+  safeJsonStringify,
+  // String utilities
+  sanitizeFilePath,
+  // Performance utilities
+  sleep,
+} from './utils';
+// ===== LEGACY VALIDATORS =====
+export {
+  validateDataArray,
+  validateDatasetConfig,
+  validateDatasetConsistency,
+  validateDateRange,
+  validateFilePath,
+  validateSectorCode,
+  validateStockCode,
+} from './validators';
+// ===== RUNTIME VALIDATORS =====
+export {
+  MarginDataSchema,
+  MarketTypeSchema,
+  SectorDataSchema,
+  StatementsDataSchema,
+  // Zod schemas (for advanced usage)
+  StockDataSchema,
+  StockInfoSchema,
+  safeValidateStockDataArray,
+  // Safe validation functions
+  safeValidateStockInfo,
+  TopixDataSchema,
+  validateMarginData,
+  validateMarketType,
+  validateSectorData,
+  validateStatementsData,
+  // Validation functions
+  validateStockData,
+  validateStockDataArray,
+  validateStockInfo,
+  validateStockInfoArray,
+  validateTopixData,
+} from './validators/runtime-validators';
