@@ -27,14 +27,6 @@
       "import": "./dist/dataset/*.js",
       "types": "./dist/dataset/*.d.ts"
     },
-    "./clients/backtest": {
-      "import": "./dist/clients/backtest/index.js",
-      "types": "./dist/clients/backtest/index.d.ts"
-    },
-    "./clients/*": {
-      "import": "./dist/clients/*.js",
-      "types": "./dist/clients/*.d.ts"
-    },
     "./utils/*": {
       "import": "./dist/utils/*.js",
       "types": "./dist/utils/*.d.ts"

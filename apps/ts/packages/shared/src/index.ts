@@ -11,11 +11,11 @@
  */
 
 // ===== CLIENT EXPORTS =====
-export { BaseJQuantsClient } from './clients/base/BaseJQuantsClient';
-export { JQuantsClient } from './clients/JQuantsClient';
-export { CalendarClient } from './clients/markets/CalendarClient';
-export { IndexClient } from './clients/markets/IndexClient';
-export { StockDataClient } from './clients/markets/StockDataClient';
+export { BaseJQuantsClient } from '@trading25/clients-ts/base/BaseJQuantsClient';
+export { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
+export { CalendarClient } from '@trading25/clients-ts/markets/CalendarClient';
+export { IndexClient } from '@trading25/clients-ts/markets/IndexClient';
+export { StockDataClient } from '@trading25/clients-ts/markets/StockDataClient';
 // ===== CONFIGURATION EXPORTS =====
 export type {
   AppConfig,

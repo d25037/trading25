@@ -22,7 +22,6 @@ Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（DB/dat
 | `@trading25/shared/watchlist` | watchlist DB 操作と型定義 |
 | `@trading25/shared/market-sync` | Market data sync and rankings |
 | `@trading25/shared/db` | market/dataset/portfolio/watchlist 向け Drizzle DB 境界 |
-| `@trading25/shared/clients/backtest` | **互換 re-export** → `@trading25/clients-ts/backtest` |
 
 ## API Authentication
 
@@ -49,7 +48,7 @@ Fundamentals計算もapps/bt/ APIに移行完了（Single Source of Truth原則�
 - **Fundamentals計算**: apps/bt/ API (`POST /api/fundamentals/compute`)
 
 ```typescript
-import { BacktestClient } from '@trading25/shared/clients/backtest';
+import { BacktestClient } from '@trading25/clients-ts/backtest';
 const client = new BacktestClient();
 const data = await client.computeFundamentals({ symbol: '7203' });
 ```

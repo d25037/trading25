@@ -30,7 +30,11 @@ jobs:
         run: ./scripts/lint.sh
       - name: Typecheck
         run: ./scripts/typecheck.sh
-      - name: Run tests
-        run: ./scripts/test.sh
+      - name: Run package unit tests
+        run: ./scripts/test-packages.sh
+        env:
+          CI_DEPS_READY: "1"
+      - name: Run app integration tests
+        run: ./scripts/test-apps.sh
         env:
           CI_DEPS_READY: "1"

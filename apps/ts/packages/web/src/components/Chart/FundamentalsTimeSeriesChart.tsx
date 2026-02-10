@@ -1,4 +1,4 @@
-import { isFiscalYear } from '@trading25/shared/fundamental-analysis/utils';
+import { isFiscalYear } from '@/utils/fundamental-analysis';
 import type { ApiDailyValuationDataPoint, ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
 import { createChart, type IChartApi, type ISeriesApi, type LineData, LineSeries } from 'lightweight-charts';
 import { useEffect, useMemo, useRef, useState } from 'react';
