@@ -4,7 +4,7 @@
  */
 
 import * as fs from 'node:fs';
-import type { JQuantsClient } from '../clients/JQuantsClient';
+import type { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import { DATASET_METADATA_KEYS, DrizzleDatasetDatabase } from '../db';
 import { ApiClient } from './api-client';
 import { getDateRange, validateConfig } from './config';

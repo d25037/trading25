@@ -3,7 +3,7 @@
  * Simplified wrapper around JQuantsClient with integrated rate limiting
  */
 
-import type { JQuantsClient } from '../clients/JQuantsClient';
+import type { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import type {
   JQuantsDailyQuote,
   JQuantsDailyQuotesResponse,
