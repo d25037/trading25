@@ -1,12 +1,13 @@
 ---
 id: ts-124
 title: "Phase 4: TS パッケージ責務分離"
-status: in-progress
+status: done
 priority: medium
 labels: [architecture, refactor]
 project: ts
 created: 2026-02-09
 updated: 2026-02-10
+closed: 2026-02-10
 depends_on: []
 blocks: []
 parent: null
@@ -56,7 +57,8 @@ parent: null
 - 2026-02-10: `shared/src/clients/*` 互換 re-export（`backtest` を除く generated 型のみ）を削除し、`shared` ルート export を `@trading25/clients-ts/*` へ直接接続。
 - 2026-02-10: `@trading25/shared/clients/*` subpath export を削除し、dep-direction allowlist から shared 互換エントリを除去。
 - 2026-02-10: CI テストを `packages` 単体（`test:packages`）→ `apps` 結合（`test:apps`）の段階実行へ更新。
+- 2026-02-10: Phase 4 完了に伴い本 Issue をクローズ。実装状態は `docs/unified-roadmap.md` に反映済み。
 
 ## 補足
 - 元タスク `ts-117` は archived API package 前提のため 2026-02-09 にクローズ済み
-- 参照: `docs/unified-roadmap.md` Phase 4（再ベースライン）
+- 参照: `docs/archive/unified-roadmap-2026-02-10.md` Phase 4（再ベースライン）
