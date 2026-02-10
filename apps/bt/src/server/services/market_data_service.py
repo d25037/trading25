@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from src.lib.market_db.market_reader import MarketDbReader
 from src.lib.market_db.query_helpers import stock_code_candidates
+from src.server.services.market_code_alias import resolve_market_codes
 from src.server.schemas.market_data import (
     MarketOHLCRecord,
     MarketOHLCVRecord,
@@ -107,6 +108,8 @@ class MarketDataService:
         history_days: int = 300,
     ) -> list[MarketStockData] | None:
         """市場別全銘柄データを取得（スクリーニング用）"""
+        _, query_market_codes = resolve_market_codes(market, fallback=["prime"])
+
         # 最新取引日を取得
         latest_row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
         if latest_row is None or latest_row["max_date"] is None:
@@ -122,9 +125,10 @@ class MarketDataService:
         start_date = start_row["date"] if start_row else "1900-01-01"
 
         # 銘柄一覧
+        placeholders = ",".join("?" for _ in query_market_codes)
         stock_rows = self._reader.query(
-            "SELECT code, company_name FROM stocks WHERE market_code = ? ORDER BY code",
-            (market,),
+            f"SELECT code, company_name FROM stocks WHERE market_code IN ({placeholders}) ORDER BY code",
+            tuple(query_market_codes),
         )
         if not stock_rows:
             return None
