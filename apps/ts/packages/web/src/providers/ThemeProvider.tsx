@@ -19,28 +19,42 @@ const initialState: ThemeProviderState = {
 
 const ThemeProviderContext = createContext<ThemeProviderState>(initialState);
 
-export function ThemeProvider({ children, defaultTheme = 'system', ...props }: ThemeProviderProps) {
-  const [theme, setTheme] = useState<Theme>(() => {
-    if (typeof window !== 'undefined') {
-      return (localStorage.getItem('theme') as Theme) || defaultTheme;
-    }
+function isTheme(value: unknown): value is Theme {
+  return value === 'light' || value === 'dark' || value === 'system';
+}
+
+function getStoredTheme(defaultTheme: Theme): Theme {
+  if (typeof window === 'undefined') return defaultTheme;
+  try {
+    const storedTheme = localStorage.getItem('theme');
+    return isTheme(storedTheme) ? storedTheme : defaultTheme;
+  } catch {
     return defaultTheme;
-  });
+  }
+}
+
+function resolveThemeClass(theme: Theme): 'light' | 'dark' {
+  if (theme === 'system') {
+    return window.matchMedia?.('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
+  }
+  return theme;
+}
+
+export function ThemeProvider({ children, defaultTheme = 'system', ...props }: ThemeProviderProps) {
+  const [theme, setTheme] = useState<Theme>(() => getStoredTheme(defaultTheme));
 
   useEffect(() => {
     const root = window.document.documentElement;
     root.classList.remove('light', 'dark');
-
-    if (theme === 'system') {
-      const systemTheme = window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light';
-      root.classList.add(systemTheme);
-    } else {
-      root.classList.add(theme);
-    }
+    root.classList.add(resolveThemeClass(theme));
   }, [theme]);
 
   useEffect(() => {
-    localStorage.setItem('theme', theme);
+    try {
+      localStorage.setItem('theme', theme);
+    } catch {
+      // localStorage can fail in private browsing or restricted environments.
+    }
   }, [theme]);
 
   const value = {

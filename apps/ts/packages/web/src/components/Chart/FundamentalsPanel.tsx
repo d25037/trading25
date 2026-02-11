@@ -3,7 +3,6 @@ import { useMemo } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { FundamentalsSummaryCard } from './FundamentalsSummaryCard';
-import { FundamentalsTimeSeriesChart } from './FundamentalsTimeSeriesChart';
 
 interface FundamentalsPanelProps {
   symbol: string | null;
@@ -101,16 +100,11 @@ export function FundamentalsPanel({
       height="h-full"
     >
       {data && (
-        <div className="h-full grid grid-cols-2 gap-4">
-          <div className="h-full overflow-hidden rounded-lg bg-background/30">
-            <FundamentalsSummaryCard
-              metrics={latestFyMetrics}
-              tradingValuePeriod={data.tradingValuePeriod ?? tradingValuePeriod}
-            />
-          </div>
-          <div className="h-full overflow-hidden rounded-lg bg-background/30">
-            <FundamentalsTimeSeriesChart data={data.data} dailyValuation={data.dailyValuation} />
-          </div>
+        <div className="h-full rounded-lg bg-background/30">
+          <FundamentalsSummaryCard
+            metrics={latestFyMetrics}
+            tradingValuePeriod={data.tradingValuePeriod ?? tradingValuePeriod}
+          />
         </div>
       )}
     </DataStateWrapper>

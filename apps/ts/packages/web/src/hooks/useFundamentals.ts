@@ -18,12 +18,14 @@ interface UseFundamentalsOptions {
   tradingValuePeriod?: number;
 }
 
+const FUNDAMENTALS_QUERY_KEY_VERSION = 'v2';
+
 export function useFundamentals(symbol: string | null, options: UseFundamentalsOptions = {}) {
   const { enabled = true, tradingValuePeriod = 15 } = options;
   const normalizedTradingValuePeriod = normalizeTradingValuePeriod(tradingValuePeriod);
 
   return useQuery({
-    queryKey: ['fundamentals', symbol, normalizedTradingValuePeriod],
+    queryKey: ['fundamentals', FUNDAMENTALS_QUERY_KEY_VERSION, symbol, normalizedTradingValuePeriod],
     queryFn: () => {
       if (!symbol) throw new Error('Symbol is required');
       return fetchFundamentals(symbol, normalizedTradingValuePeriod);

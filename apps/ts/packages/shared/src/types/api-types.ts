@@ -220,7 +220,7 @@ export interface ApiFundamentalDataPoint {
   fcfMargin: number | null;
   /** Operating Cash Flow / Net Profit (x) */
   cfoToNetProfitRatio: number | null;
-  /** N-day average trading value / market cap (x) */
+  /** Market cap / N-day average trading value (x) */
   tradingValueToMarketCapRatio: number | null;
   // Forecast EPS
   /** Forecast EPS for current/next fiscal year (円) */

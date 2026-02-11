@@ -34,7 +34,7 @@ const baseMetrics: ApiFundamentalDataPoint = {
   fcfYield: 0.5,
   fcfMargin: 8.9,
   cfoToNetProfitRatio: 1.5,
-  tradingValueToMarketCapRatio: 0.12,
+  tradingValueToMarketCapRatio: 8.33,
   forecastEps: 350,
   forecastEpsChangeRate: 16.7,
   revisedForecastEps: null,
@@ -55,14 +55,14 @@ describe('FundamentalsSummaryCard', () => {
     render(<FundamentalsSummaryCard metrics={baseMetrics} tradingValuePeriod={20} />);
 
     expect(screen.getByText('営業CF/純利益')).toBeInTheDocument();
-    expect(screen.getByText('20日売買代金/時価総額')).toBeInTheDocument();
+    expect(screen.getByText('時価総額/20日売買代金')).toBeInTheDocument();
     expect(screen.getByText('1.50x')).toBeInTheDocument();
-    expect(screen.getByText('0.12x')).toBeInTheDocument();
+    expect(screen.getByText('8.33x')).toBeInTheDocument();
   });
 
   it('uses 15-day label by default', () => {
     render(<FundamentalsSummaryCard metrics={baseMetrics} />);
-    expect(screen.getByText('15日売買代金/時価総額')).toBeInTheDocument();
+    expect(screen.getByText('時価総額/15日売買代金')).toBeInTheDocument();
   });
 
   it('renders adjusted EPS context and previous cash flow value', () => {

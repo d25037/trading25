@@ -7,6 +7,43 @@ interface PortfolioFactorRegressionPanelProps {
   portfolioId: number | null;
 }
 
+type CompatibleIndexMatch = ApiIndexMatch & {
+  code?: string;
+  name?: string;
+  indexCode?: string;
+  indexName?: string;
+  beta?: number | null;
+  rSquared?: number | null;
+};
+
+interface NormalizedIndexMatch {
+  indexCode: string;
+  indexName: string;
+  beta: number | null;
+  rSquared: number | null;
+}
+
+function isFiniteNumber(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
+function formatFixed(value: number | null, digits: number): string {
+  return value === null ? 'N/A' : value.toFixed(digits);
+}
+
+function formatPercentFromRatio(value: number | null, digits = 1): string {
+  return value === null ? 'N/A' : `${(value * 100).toFixed(digits)}%`;
+}
+
+function normalizeIndexMatch(match: ApiIndexMatch, index: number): NormalizedIndexMatch {
+  const raw = match as CompatibleIndexMatch;
+  const indexCode = raw.indexCode ?? raw.code ?? `index-${index}`;
+  const indexName = raw.indexName ?? raw.name ?? indexCode;
+  const rSquared = isFiniteNumber(raw.rSquared) ? raw.rSquared : null;
+  const beta = isFiniteNumber(raw.beta) ? raw.beta : null;
+  return { indexCode, indexName, rSquared, beta };
+}
+
 /**
  * Get color class for R-squared value
  */
@@ -45,22 +82,29 @@ function IndexMatchList({ matches }: { matches: ApiIndexMatch[] }) {
 
   return (
     <div className="space-y-1">
-      {matches.map((match, index) => (
-        <div key={match.indexCode} className="flex items-center justify-between text-xs">
-          <span className="relative group flex-1 min-w-0">
-            <span className="block truncate">
-              {index + 1}. {match.indexName}
+      {matches.map((match, index) => {
+        const normalized = normalizeIndexMatch(match, index);
+        return (
+          <div key={normalized.indexCode} className="flex items-center justify-between text-xs">
+            <span className="relative group flex-1 min-w-0">
+              <span className="block truncate">
+                {index + 1}. {normalized.indexName}
+              </span>
+              <span className="absolute left-0 top-0 hidden group-hover:block bg-background border border-border px-2 py-1 rounded shadow-lg z-20 whitespace-nowrap">
+                {index + 1}. {normalized.indexName}
+              </span>
             </span>
-            <span className="absolute left-0 top-0 hidden group-hover:block bg-background border border-border px-2 py-1 rounded shadow-lg z-20 whitespace-nowrap">
-              {index + 1}. {match.indexName}
-            </span>
-          </span>
-          <div className="flex items-center gap-2 ml-2 shrink-0">
-            <span className={getRSquaredColor(match.rSquared)}>R²={(match.rSquared * 100).toFixed(1)}%</span>
-            <span className="text-muted-foreground">β={match.beta.toFixed(2)}</span>
+            <div className="flex items-center gap-2 ml-2 shrink-0">
+              <span
+                className={normalized.rSquared === null ? 'text-muted-foreground' : getRSquaredColor(normalized.rSquared)}
+              >
+                R²={formatPercentFromRatio(normalized.rSquared, 1)}
+              </span>
+              <span className="text-muted-foreground">β={formatFixed(normalized.beta, 2)}</span>
+            </div>
           </div>
-        </div>
-      ))}
+        );
+      })}
     </div>
   );
 }
@@ -70,7 +114,13 @@ function IndexMatchList({ matches }: { matches: ApiIndexMatch[] }) {
  */
 function WeightSummary({ weights, totalValue }: { weights: ApiPortfolioWeight[]; totalValue: number }) {
   // Sort by weight descending and take top 5
-  const topWeights = [...weights].sort((a, b) => b.weight - a.weight).slice(0, 5);
+  const topWeights = [...weights]
+    .sort((a, b) => {
+      const aWeight = isFiniteNumber(a.weight) ? a.weight : -Infinity;
+      const bWeight = isFiniteNumber(b.weight) ? b.weight : -Infinity;
+      return bWeight - aWeight;
+    })
+    .slice(0, 5);
   const hasMore = weights.length > 5;
 
   return (
@@ -81,17 +131,19 @@ function WeightSummary({ weights, totalValue }: { weights: ApiPortfolioWeight[];
       </div>
       {topWeights.map((w) => (
         <div key={w.code} className="flex items-center justify-between text-xs">
-          <span className="truncate flex-1" title={`${w.code} ${w.companyName}`}>
-            {w.code} {w.companyName.slice(0, 8)}
+          <span className="truncate flex-1" title={`${w.code} ${w.companyName ?? ''}`}>
+            {w.code} {(w.companyName ?? '').slice(0, 8)}
           </span>
-          <span className="text-primary font-medium ml-2 shrink-0">{(w.weight * 100).toFixed(1)}%</span>
+          <span className="text-primary font-medium ml-2 shrink-0">
+            {formatPercentFromRatio(isFiniteNumber(w.weight) ? w.weight : null, 1)}
+          </span>
         </div>
       ))}
       {hasMore && <div className="text-xs text-muted-foreground pt-1">+{weights.length - 5} more...</div>}
       <div className="border-t border-border/50 pt-1 mt-1">
         <div className="flex justify-between text-xs">
           <span className="text-muted-foreground">Total Value</span>
-          <span className="font-medium">{totalValue.toLocaleString()} 円</span>
+          <span className="font-medium">{isFiniteNumber(totalValue) ? `${totalValue.toLocaleString()} 円` : 'N/A'}</span>
         </div>
       </div>
     </div>
@@ -155,6 +207,9 @@ interface PortfolioFactorRegressionContentProps {
 }
 
 function PortfolioFactorRegressionContent({ data }: PortfolioFactorRegressionContentProps) {
+  const marketBeta = isFiniteNumber(data.marketBeta) ? data.marketBeta : null;
+  const marketRSquared = isFiniteNumber(data.marketRSquared) ? data.marketRSquared : null;
+
   return (
     <div className="h-full flex flex-col space-y-3">
       {/* Excluded stocks warning */}
@@ -176,18 +231,18 @@ function PortfolioFactorRegressionContent({ data }: PortfolioFactorRegressionCon
           <div className="space-y-2">
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">Market Beta (βm)</span>
-              <span className="text-sm font-mono">{data.marketBeta.toFixed(3)}</span>
+              <span className="text-sm font-mono">{formatFixed(marketBeta, 3)}</span>
             </div>
             <div className="flex justify-between items-center">
               <span className="text-xs text-muted-foreground">Market R²</span>
-              <span className={`text-sm font-mono ${getRSquaredColor(data.marketRSquared)}`}>
-                {(data.marketRSquared * 100).toFixed(1)}%
+              <span className={`text-sm font-mono ${marketRSquared === null ? 'text-muted-foreground' : getRSquaredColor(marketRSquared)}`}>
+                {formatPercentFromRatio(marketRSquared, 1)}
               </span>
             </div>
             <div className="flex justify-between items-center pt-1 border-t border-border/50">
               <span className="text-xs text-muted-foreground">Interpretation</span>
-              <span className={`text-xs ${getBetaColor(data.marketBeta)}`}>
-                {getBetaInterpretation(data.marketBeta)}
+              <span className={`text-xs ${marketBeta === null ? 'text-muted-foreground' : getBetaColor(marketBeta)}`}>
+                {marketBeta === null ? 'N/A' : getBetaInterpretation(marketBeta)}
               </span>
             </div>
           </div>

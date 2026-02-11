@@ -244,6 +244,11 @@ class TestFactorRegression:
         resp = analytics_client.get("/api/analytics/factor-regression/ABC")
         assert resp.status_code == 400
 
+    def test_alphanumeric_symbol_is_accepted_by_validation(self, analytics_client):
+        """英数字4桁コードはバリデーションで弾かない（存在しなければ404）。"""
+        resp = analytics_client.get("/api/analytics/factor-regression/285A")
+        assert resp.status_code == 404
+
     def test_404_not_found(self, analytics_client):
         resp = analytics_client.get("/api/analytics/factor-regression/0000")
         assert resp.status_code == 404

@@ -182,4 +182,88 @@ describe('chartStore', () => {
     expect(useChartStore.getState().activePresetId).toBe(secondId);
     expect(useChartStore.getState().presets).toHaveLength(1);
   });
+
+  it('rehydrates legacy persisted settings with missing nested fields safely', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          selectedSymbol: '7203',
+          settings: {
+            displayTimeframe: 'weekly',
+            indicators: {
+              sma: { enabled: true, period: 50 },
+            },
+          },
+          presets: [
+            {
+              id: 'legacy-preset',
+              name: 'Legacy',
+              settings: { showVolume: false },
+              createdAt: 1,
+              updatedAt: 2,
+            },
+          ],
+          activePresetId: 'legacy-preset',
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const state = useChartStore.getState();
+    expect(state.selectedSymbol).toBe('7203');
+    expect(state.settings.displayTimeframe).toBe('weekly');
+    expect(state.settings.indicators.sma.enabled).toBe(true);
+    expect(state.settings.indicators.sma.period).toBe(50);
+    expect(state.settings.indicators.ema.period).toBe(defaultSettings.indicators.ema.period);
+    expect(state.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
+    expect(state.settings.signalOverlay.enabled).toBe(false);
+    expect(state.settings.signalOverlay.signals).toEqual([]);
+    expect(state.presets[0]?.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
+    expect(state.activePresetId).toBe('legacy-preset');
+  });
+
+  it('sanitizes invalid persisted scalar types during rehydrate', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          selectedSymbol: { code: '7203' },
+          settings: {
+            displayTimeframe: 123,
+            chartType: 'invalid-type',
+            showPPOChart: 'true',
+            visibleBars: '250',
+            indicators: {
+              ppo: {
+                enabled: 'yes',
+                fast: '12',
+              },
+            },
+            signalOverlay: {
+              enabled: 'true',
+              signals: [{ type: 'foo', mode: 'entry', params: { period: 5 }, enabled: 'yes' }],
+            },
+          },
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const state = useChartStore.getState();
+    expect(state.selectedSymbol).toBeNull();
+    expect(state.settings.displayTimeframe).toBe(defaultSettings.displayTimeframe);
+    expect(state.settings.chartType).toBe(defaultSettings.chartType);
+    expect(state.settings.showPPOChart).toBe(defaultSettings.showPPOChart);
+    expect(state.settings.visibleBars).toBe(defaultSettings.visibleBars);
+    expect(state.settings.indicators.ppo.enabled).toBe(defaultSettings.indicators.ppo.enabled);
+    expect(state.settings.indicators.ppo.fast).toBe(defaultSettings.indicators.ppo.fast);
+    expect(state.settings.signalOverlay.enabled).toBe(defaultSettings.signalOverlay.enabled);
+    expect(state.settings.signalOverlay.signals).toHaveLength(1);
+    expect(state.settings.signalOverlay.signals[0]?.enabled).toBe(true);
+  });
 });

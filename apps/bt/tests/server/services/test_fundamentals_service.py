@@ -11,6 +11,7 @@ import pytest
 
 from src.api.jquants_client import JQuantsStatement, StockInfo
 from src.server.schemas.fundamentals import (
+    DailyValuationDataPoint,
     FundamentalDataPoint,
     FundamentalsComputeRequest,
 )
@@ -293,6 +294,12 @@ class TestHelperMethods:
         assert service._round_or_none(None) is None
         assert service._round_or_none(13.333333) == 13.33
         assert service._round_or_none(100.0) == 100.0
+
+    def test_round_ratio_or_none(self, service: FundamentalsService):
+        """比率の丸め処理（6桁）"""
+        assert service._round_ratio_or_none(None) is None
+        assert service._round_ratio_or_none(13.3333339) == 13.333334
+        assert service._round_ratio_or_none(100.0) == 100.0
 
     def test_to_millions(self, service: FundamentalsService):
         """百万円単位への変換"""
@@ -578,6 +585,18 @@ class TestDailyValuation:
     def service(self):
         return FundamentalsService()
 
+    @staticmethod
+    def _data_point(
+        disclosed_date: str = "2024-05-15",
+    ) -> FundamentalDataPoint:
+        return FundamentalDataPoint(
+            date="2024-03-31",
+            disclosedDate=disclosed_date,
+            periodType="FY",
+            isConsolidated=True,
+            accountingStandard=None,
+        )
+
     def test_find_price_at_date_exact(self, service: FundamentalsService):
         """完全一致日付の価格検索"""
         sorted_dates = ["2024-01-01", "2024-01-02", "2024-01-03"]
@@ -697,6 +716,234 @@ class TestDailyValuation:
         result = service._find_applicable_fy(fy_data, "2024-06-01")
         assert result is not None
         assert result.eps == 300.0
+
+    def test_calculate_daily_market_cap_to_trading_value_ratio(
+        self, service: FundamentalsService
+    ):
+        """時価総額 / N日平均売買代金 比率を日次で算出する"""
+        daily_ohlcv = pd.DataFrame(
+            {
+                "Close": [100.0, 110.0, 120.0],
+                "Volume": [10, 10, 10],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02", "2024-01-03"]),
+        )
+        daily_valuation = [
+            DailyValuationDataPoint(
+                date="2024-01-01",
+                close=100.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+            DailyValuationDataPoint(
+                date="2024-01-02",
+                close=110.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+            DailyValuationDataPoint(
+                date="2024-01-03",
+                close=120.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+        ]
+
+        result = service._calculate_daily_market_cap_to_trading_value_ratio(
+            daily_ohlcv=daily_ohlcv,
+            daily_valuation=daily_valuation,
+            period=2,
+        )
+
+        assert result == {
+            "2024-01-02": 9.52381,
+            "2024-01-03": 8.695652,
+        }
+
+    def test_calculate_daily_market_cap_to_trading_value_ratio_invalid_inputs(
+        self, service: FundamentalsService
+    ):
+        """OHLCV不足/空データでは空結果"""
+        daily_valuation = [
+            DailyValuationDataPoint(
+                date="2024-01-01",
+                close=100.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+        ]
+        assert (
+            service._calculate_daily_market_cap_to_trading_value_ratio(
+                daily_ohlcv=pd.DataFrame(),
+                daily_valuation=daily_valuation,
+                period=1,
+            )
+            == {}
+        )
+        assert (
+            service._calculate_daily_market_cap_to_trading_value_ratio(
+                daily_ohlcv=pd.DataFrame(
+                    {"Close": [100.0]},
+                    index=pd.to_datetime(["2024-01-01"]),
+                ),
+                daily_valuation=daily_valuation,
+                period=1,
+            )
+            == {}
+        )
+        assert (
+            service._calculate_daily_market_cap_to_trading_value_ratio(
+                daily_ohlcv=pd.DataFrame(
+                    {"Volume": [10]},
+                    index=pd.to_datetime(["2024-01-01"]),
+                ),
+                daily_valuation=daily_valuation,
+                period=1,
+            )
+            == {}
+        )
+
+    def test_calculate_daily_market_cap_to_trading_value_ratio_skips_missing_market_cap(
+        self, service: FundamentalsService
+    ):
+        """当日の時価総額が無い日は比率を作らない"""
+        daily_ohlcv = pd.DataFrame(
+            {
+                "Close": [100.0, 110.0],
+                "Volume": [10, 10],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        )
+        daily_valuation = [
+            DailyValuationDataPoint(
+                date="2024-01-01",
+                close=100.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+        ]
+
+        result = service._calculate_daily_market_cap_to_trading_value_ratio(
+            daily_ohlcv=daily_ohlcv,
+            daily_valuation=daily_valuation,
+            period=1,
+        )
+
+        assert result == {"2024-01-01": 10.0}
+
+    def test_calculate_daily_market_cap_to_trading_value_ratio_skips_non_positive_average(
+        self, service: FundamentalsService
+    ):
+        """N日平均売買代金が0以下の場合は比率を作らない"""
+        daily_ohlcv = pd.DataFrame(
+            {
+                "Close": [0.0, 0.0],
+                "Volume": [10, 10],
+            },
+            index=pd.to_datetime(["2024-01-01", "2024-01-02"]),
+        )
+        daily_valuation = [
+            DailyValuationDataPoint(
+                date="2024-01-02",
+                close=0.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+        ]
+
+        result = service._calculate_daily_market_cap_to_trading_value_ratio(
+            daily_ohlcv=daily_ohlcv,
+            daily_valuation=daily_valuation,
+            period=2,
+        )
+
+        assert result == {}
+
+    def test_calculate_daily_market_cap_to_trading_value_ratio_handles_none_round_result(
+        self, service: FundamentalsService
+    ):
+        """丸め処理がNoneを返した場合は値を追加しない"""
+        daily_ohlcv = pd.DataFrame(
+            {
+                "Close": [100.0],
+                "Volume": [10],
+            },
+            index=pd.to_datetime(["2024-01-01"]),
+        )
+        daily_valuation = [
+            DailyValuationDataPoint(
+                date="2024-01-01",
+                close=100.0,
+                per=None,
+                pbr=None,
+                marketCap=10000.0,
+            ),
+        ]
+        with patch.object(service, "_round_ratio_or_none", return_value=None):
+            result = service._calculate_daily_market_cap_to_trading_value_ratio(
+                daily_ohlcv=daily_ohlcv,
+                daily_valuation=daily_valuation,
+                period=1,
+            )
+        assert result == {}
+
+    def test_apply_trading_value_ratio_to_statements_guard_cases(
+        self, service: FundamentalsService
+    ):
+        """入力データまたは比率マップが空ならそのまま返す"""
+        assert service._apply_trading_value_ratio_to_statements([], {"2024-01-01": 1.0}) == []
+        data = [self._data_point()]
+        assert service._apply_trading_value_ratio_to_statements(data, {}) == data
+
+    def test_apply_trading_value_ratio_to_statements_assigns_none_without_prior_ratio(
+        self, service: FundamentalsService
+    ):
+        """開示日以前に比率が無い場合はNoneをセット"""
+        data = [self._data_point(disclosed_date="2024-01-01")]
+        result = service._apply_trading_value_ratio_to_statements(
+            data,
+            {"2024-01-02": 5.0},
+        )
+        assert result[0].tradingValueToMarketCapRatio is None
+
+    def test_apply_latest_trading_value_ratio_guard_and_latest_selection(
+        self, service: FundamentalsService
+    ):
+        """latest適用のガード分岐と最新日選択"""
+        assert service._apply_latest_trading_value_ratio(None, {"2024-01-01": 1.0}) is None
+
+        metrics = self._data_point()
+        assert service._apply_latest_trading_value_ratio(metrics, {}) == metrics
+
+        updated = service._apply_latest_trading_value_ratio(
+            metrics,
+            {"2024-01-01": 1.0, "2024-01-03": 3.0, "2024-01-02": 2.0},
+        )
+        assert updated is not None
+        assert updated.tradingValueToMarketCapRatio == 3.0
+
+    def test_find_latest_with_actual_data_skips_until_found(
+        self, service: FundamentalsService
+    ):
+        """先頭が実データなしでも後続の実データを返す"""
+        empty = self._data_point()
+        actual = FundamentalDataPoint(
+            date="2024-06-30",
+            disclosedDate="2024-08-01",
+            periodType="FY",
+            isConsolidated=True,
+            accountingStandard=None,
+            roe=12.3,
+        )
+        result = service._find_latest_with_actual_data([empty, actual])
+        assert result is not None
+        assert result.disclosedDate == "2024-08-01"
 
 
 class TestComputeFundamentals:
@@ -1639,6 +1886,48 @@ class TestCalculateDailyValuation:
     def service(self):
         return FundamentalsService()
 
+    @staticmethod
+    def _statement_base() -> dict[str, object]:
+        return {
+            "Code": "7203",
+            "DocType": "連結",
+            "CurPerSt": "2023-04-01",
+            "CurFYSt": "2023-04-01",
+            "CurFYEn": "2024-03-31",
+            "NxtFYSt": None,
+            "NxtFYEn": None,
+            "Sales": 45000000000000,
+            "OP": 5000000000000,
+            "OdP": 5500000000000,
+            "NP": 4000000000000,
+            "EPS": 300.0,
+            "DEPS": 290.0,
+            "TA": 90000000000000,
+            "Eq": 30000000000000,
+            "EqAR": 33.33,
+            "BPS": 2250.0,
+            "CFO": 6000000000000,
+            "CFI": -2000000000000,
+            "CFF": -1000000000000,
+            "CashEq": 8000000000000,
+            "ShOutFY": 13333333333,
+            "TrShFY": 0,
+            "AvgSh": 13333333333,
+            "FEPS": 320.0,
+            "NxFEPS": 350.0,
+            "NCSales": None,
+            "NCOP": None,
+            "NCOdP": None,
+            "NCNP": None,
+            "NCEPS": None,
+            "NCTA": None,
+            "NCEq": None,
+            "NCEqAR": None,
+            "NCBPS": None,
+            "FNCEPS": None,
+            "NxFNCEPS": None,
+        }
+
     def test_empty_prices(self, service: FundamentalsService):
         """価格データがない場合"""
         result = service._calculate_daily_valuation([], {}, True)
@@ -1649,6 +1938,98 @@ class TestCalculateDailyValuation:
         prices = {"2024-01-01": 6000.0}
         result = service._calculate_daily_valuation([], prices, True)
         assert result == []
+
+    def test_resolve_baseline_shares_prefers_quarterly(
+        self, service: FundamentalsService
+    ):
+        """四半期データがあれば四半期の最新ShOutFYを採用"""
+        base = self._statement_base()
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-06-15",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2024-03-31",
+                    "ShOutFY": 999,
+                }
+            ),
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-05-15",
+                    "CurPerType": "1Q",
+                    "CurPerEn": "2024-06-30",
+                    "ShOutFY": 777,
+                }
+            ),
+        ]
+        assert service._resolve_baseline_shares_from_latest_quarter(statements) == 777
+
+    def test_daily_valuation_without_per_uses_pbr_and_market_cap(
+        self, service: FundamentalsService
+    ):
+        """EPS=0時はPERなし、BPSと時価総額は計算する"""
+        base = self._statement_base()
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-06-15",
+                    "CurPerType": "1Q",
+                    "CurPerEn": "2024-06-30",
+                    "ShOutFY": 1000,
+                }
+            ),
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-05-15",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2024-03-31",
+                    "EPS": 0.0,
+                    "BPS": 1000.0,
+                    "ShOutFY": 1000,
+                }
+            ),
+        ]
+        result = service._calculate_daily_valuation(
+            statements,
+            {"2024-06-20": 500.0},
+            True,
+        )
+        assert len(result) == 1
+        assert result[0].per is None
+        assert result[0].pbr == 0.5
+        assert result[0].marketCap == 500000.0
+
+    def test_daily_valuation_without_pbr_or_market_cap(
+        self, service: FundamentalsService
+    ):
+        """BPS<=0かつbaseline未解決時はPBR/時価総額を計算しない"""
+        base = self._statement_base()
+        statements = [
+            JQuantsStatement(
+                **{
+                    **base,
+                    "DiscDate": "2024-05-15",
+                    "CurPerType": "FY",
+                    "CurPerEn": "2024-03-31",
+                    "EPS": 100.0,
+                    "BPS": 0.0,
+                    "ShOutFY": 0,
+                }
+            ),
+        ]
+        result = service._calculate_daily_valuation(
+            statements,
+            {"2024-06-20": 500.0},
+            True,
+        )
+        assert len(result) == 1
+        assert result[0].per == 5.0
+        assert result[0].pbr is None
+        assert result[0].marketCap is None
 
 
 class TestGetStockInfo:

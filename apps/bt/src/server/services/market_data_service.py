@@ -29,6 +29,19 @@ class MarketDataService:
     def __init__(self, reader: MarketDbReader) -> None:
         self._reader = reader
 
+    @staticmethod
+    def _coerce_volume(value: object) -> int:
+        """Convert DB volume value to int with safe fallback for null/invalid values."""
+        if value is None:
+            return 0
+        try:
+            return int(value)
+        except (TypeError, ValueError):
+            try:
+                return int(float(str(value)))
+            except (TypeError, ValueError):
+                return 0
+
     def get_stock_info(self, code: str) -> StockInfo | None:
         """単一銘柄の情報を取得"""
         codes = _stock_code_candidates(code)
@@ -97,7 +110,7 @@ class MarketDataService:
                 high=row["high"],
                 low=row["low"],
                 close=row["close"],
-                volume=int(row["volume"]),
+                volume=self._coerce_volume(row["volume"]),
             )
             for row in rows
         ]
@@ -152,7 +165,7 @@ class MarketDataService:
                                 high=r["high"],
                                 low=r["low"],
                                 close=r["close"],
-                                volume=int(r["volume"]),
+                                volume=self._coerce_volume(r["volume"]),
                             )
                             for r in data_rows
                         ],
