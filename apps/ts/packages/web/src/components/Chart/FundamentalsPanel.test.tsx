@@ -6,7 +6,6 @@ import { FundamentalsPanel } from './FundamentalsPanel';
 
 const mockUseFundamentals = vi.fn();
 const mockSummaryCard = vi.fn();
-const mockTimeSeriesChart = vi.fn();
 
 vi.mock('@/hooks/useFundamentals', () => ({
   useFundamentals: (...args: unknown[]) => mockUseFundamentals(...args),
@@ -19,18 +18,10 @@ vi.mock('./FundamentalsSummaryCard', () => ({
   },
 }));
 
-vi.mock('./FundamentalsTimeSeriesChart', () => ({
-  FundamentalsTimeSeriesChart: (props: unknown) => {
-    mockTimeSeriesChart(props);
-    return <div>Time Series Chart</div>;
-  },
-}));
-
 describe('FundamentalsPanel', () => {
   beforeEach(() => {
     mockUseFundamentals.mockReset();
     mockSummaryCard.mockReset();
-    mockTimeSeriesChart.mockReset();
   });
 
   it('renders placeholder when symbol is null', () => {
@@ -144,7 +135,7 @@ describe('FundamentalsPanel', () => {
           prevCashFlowFinancing: -10,
           prevCashAndEquivalents: 450,
           cfoToNetProfitRatio: 0.45,
-          tradingValueToMarketCapRatio: 0.03,
+          tradingValueToMarketCapRatio: 33.333333,
         },
         dailyValuation: [{ per: 18, pbr: 1.4, close: 2500, marketCap: 1000000000 }],
         tradingValuePeriod: 20,
@@ -156,7 +147,6 @@ describe('FundamentalsPanel', () => {
     render(<FundamentalsPanel symbol="7203" />);
 
     expect(screen.getByText('Summary Card')).toBeInTheDocument();
-    expect(screen.getByText('Time Series Chart')).toBeInTheDocument();
     expect(mockSummaryCard).toHaveBeenCalled();
 
     const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
@@ -168,7 +158,7 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.pbr).toBe(1.4);
     expect(metrics?.stockPrice).toBe(2500);
     expect(metrics?.cfoToNetProfitRatio).toBe(0.45);
-    expect(metrics?.tradingValueToMarketCapRatio).toBe(0.03);
+    expect(metrics?.tradingValueToMarketCapRatio).toBeCloseTo(33.333333, 5);
     expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 20 });
   });
 

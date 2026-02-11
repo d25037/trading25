@@ -9,12 +9,23 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 
+from src.lib.market_db.query_helpers import is_valid_stock_code
 from src.server.schemas.factor_regression import FactorRegressionResponse
 from src.server.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
 from src.server.schemas.ranking import MarketRankingResponse
 from src.server.schemas.screening import MarketScreeningResponse
 
 router = APIRouter(tags=["Analytics"])
+
+
+def _normalize_factor_regression_symbol(symbol: str) -> str:
+    normalized = symbol.upper()
+    if not is_valid_stock_code(normalized):
+        raise HTTPException(
+            status_code=400,
+            detail="Symbol must be a valid 4-character stock code (e.g., 7203 or 285A)",
+        )
+    return normalized
 
 
 # --- Ranking ---
@@ -74,8 +85,7 @@ async def get_factor_regression(
     """ファクター回帰分析を実行"""
     from src.server.services.factor_regression_service import FactorRegressionService
 
-    if len(symbol) != 4 or not symbol.isdigit():
-        raise HTTPException(status_code=400, detail="Symbol must be a 4-character stock code")
+    normalized_symbol = _normalize_factor_regression_symbol(symbol)
 
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
@@ -83,7 +93,7 @@ async def get_factor_regression(
 
     service = FactorRegressionService(reader)
     try:
-        return service.analyze_stock(symbol, lookback_days=lookbackDays)
+        return service.analyze_stock(normalized_symbol, lookback_days=lookbackDays)
     except ValueError as e:
         msg = str(e)
         if "not found" in msg.lower():

@@ -4590,6 +4590,20 @@
               "default": true,
               "title": "Preferconsolidated"
             }
+          },
+          {
+            "name": "tradingValuePeriod",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 250,
+              "minimum": 1,
+              "description": "Rolling average period in days for trading value to market cap ratio",
+              "default": 15,
+              "title": "Tradingvalueperiod"
+            },
+            "description": "Rolling average period in days for trading value to market cap ratio"
           }
         ],
         "responses": {
@@ -11441,19 +11455,19 @@
       },
       "DateRange": {
         "properties": {
-          "min": {
+          "from": {
             "type": "string",
-            "title": "Min"
+            "title": "From"
           },
-          "max": {
+          "to": {
             "type": "string",
-            "title": "Max"
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "min",
-          "max"
+          "from",
+          "to"
         ],
         "title": "DateRange"
       },
@@ -12035,6 +12049,30 @@
             "title": "Fcfmargin",
             "description": "FCF margin (%)"
           },
+          "cfoToNetProfitRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfotonetprofitratio",
+            "description": "Operating cash flow / net profit ratio (x)"
+          },
+          "tradingValueToMarketCapRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tradingvaluetomarketcapratio",
+            "description": "Market cap / N-day average trading value ratio (x)"
+          },
           "forecastEps": {
             "anyOf": [
               {
@@ -12194,6 +12232,14 @@
             "title": "Prefer Consolidated",
             "description": "Prefer consolidated statements",
             "default": true
+          },
+          "trading_value_period": {
+            "type": "integer",
+            "maximum": 250,
+            "minimum": 1,
+            "title": "Trading Value Period",
+            "description": "Rolling period (days) for market cap to trading value ratio",
+            "default": 15
           }
         },
         "type": "object",
@@ -12256,6 +12302,11 @@
             "title": "Dailyvaluation",
             "description": "Daily PER/PBR time-series"
           },
+          "tradingValuePeriod": {
+            "type": "integer",
+            "title": "Tradingvalueperiod",
+            "description": "Rolling period used for market cap to trading value ratio"
+          },
           "lastUpdated": {
             "type": "string",
             "title": "Lastupdated",
@@ -12266,6 +12317,7 @@
         "required": [
           "symbol",
           "data",
+          "tradingValuePeriod",
           "lastUpdated"
         ],
         "title": "FundamentalsComputeResponse",
@@ -13279,7 +13331,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -15472,7 +15524,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -17976,7 +18028,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -18004,7 +18056,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -19065,7 +19117,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
               },
               {
                 "type": "null"
@@ -19459,6 +19511,24 @@
         ],
         "title": "DateRange"
       },
+      "src__server__schemas__db__DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
+      },
       "src__server__schemas__factor_regression__DateRange": {
         "properties": {
           "from": {
@@ -19556,24 +19626,6 @@
         ],
         "title": "OHLCVRecord",
         "description": "OHLCVレコード"
-      },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange"
       },
       "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {

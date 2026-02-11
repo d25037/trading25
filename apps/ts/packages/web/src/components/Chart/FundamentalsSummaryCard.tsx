@@ -10,17 +10,33 @@ interface MetricCardProps {
   colorScheme?: FundamentalColorScheme;
   /** Previous period value to show in parentheses */
   prevValue?: number | null;
+  decimals?: number;
 }
 
-function MetricCard({ label, value, format, colorScheme = 'neutral', prevValue }: MetricCardProps) {
+function formatMetricValue(value: number | null, format: MetricCardProps['format'], decimals?: number): string {
+  if (value === null || !Number.isFinite(value)) return '-';
+  if (format === 'times' && decimals !== undefined) {
+    return `${value.toLocaleString('en-US', {
+      maximumFractionDigits: decimals,
+      minimumFractionDigits: 0,
+    })}x`;
+  }
+  return formatFundamentalValue(value, format);
+}
+
+function MetricCard({ label, value, format, colorScheme = 'neutral', prevValue, decimals }: MetricCardProps) {
   return (
-    <div className="flex flex-col items-center p-3 rounded-lg bg-background/50">
-      <span className="text-xs text-muted-foreground uppercase tracking-wider mb-1">{label}</span>
-      <span className={cn('text-xl font-bold', getFundamentalColor(value, colorScheme))}>
-        {formatFundamentalValue(value, format)}
+    <div className="flex min-h-16 flex-col justify-center rounded-md bg-background/50 px-2 py-1.5">
+      <span className="mb-0.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">
+        {label}
+      </span>
+      <span className={cn('text-center text-sm font-semibold leading-tight', getFundamentalColor(value, colorScheme))}>
+        {formatMetricValue(value, format, decimals)}
       </span>
       {prevValue != null && (
-        <span className="text-xs text-muted-foreground mt-0.5">({formatFundamentalValue(prevValue, format)})</span>
+        <span className="mt-0.5 text-center text-[10px] text-muted-foreground leading-tight">
+          ({formatMetricValue(prevValue, format, decimals)})
+        </span>
       )}
     </div>
   );
@@ -47,14 +63,18 @@ function EpsMetricCard({ actualEps, forecastEps, changeRate }: EpsMetricCardProp
   };
 
   return (
-    <div className="flex flex-col items-center p-3 rounded-lg bg-background/50">
-      <span className="text-xs text-muted-foreground uppercase tracking-wider mb-1">EPS</span>
-      <span className="text-xl font-bold text-foreground">{formatFundamentalValue(actualEps, 'yen')}</span>
+    <div className="col-span-2 flex min-h-16 flex-col justify-center rounded-md bg-background/50 px-2 py-1.5">
+      <span className="mb-0.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">
+        EPS
+      </span>
+      <span className="text-center text-sm font-semibold leading-tight text-foreground">
+        {formatFundamentalValue(actualEps, 'yen')}
+      </span>
       {forecastEps != null && (
-        <div className="flex items-center gap-1 mt-0.5">
-          <span className="text-xs text-muted-foreground">予: {formatFundamentalValue(forecastEps, 'yen')}</span>
+        <div className="mt-0.5 flex items-center justify-center gap-1">
+          <span className="text-[10px] text-muted-foreground">予: {formatFundamentalValue(forecastEps, 'yen')}</span>
           {changeRate != null && (
-            <span className={cn('text-xs font-medium', getChangeRateColor(changeRate))}>
+            <span className={cn('text-[10px] font-medium', getChangeRateColor(changeRate))}>
               ({formatChangeRate(changeRate)})
             </span>
           )}
@@ -83,70 +103,65 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
   const displayBps = metrics.adjustedBps ?? metrics.bps;
 
   return (
-    <div className="h-full flex flex-col">
-      <div className="grid grid-cols-4 gap-2 p-2">
-        {/* Row 1: Core Metrics */}
-        <MetricCard label="PER" value={metrics.per} format="times" colorScheme="per" />
-        <MetricCard label="PBR" value={metrics.pbr} format="times" colorScheme="pbr" />
-        <MetricCard label="ROE" value={metrics.roe} format="percent" colorScheme="roe" />
-        <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="grid grid-cols-8 gap-1.5 p-2">
+          <MetricCard label="PER" value={metrics.per} format="times" colorScheme="per" />
+          <MetricCard label="PBR" value={metrics.pbr} format="times" colorScheme="pbr" />
+          <MetricCard label="ROE" value={metrics.roe} format="percent" colorScheme="roe" />
+          <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />
 
-        {/* Row 2: Per Share & Margins - EPS with forecast */}
-        <EpsMetricCard
-          actualEps={displayEps}
-          forecastEps={displayForecastEps}
-          changeRate={metrics.forecastEpsChangeRate}
-        />
-        <MetricCard label="BPS" value={displayBps} format="yen" />
-        <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />
-        <MetricCard label="純利益率" value={metrics.netMargin} format="percent" />
+          <EpsMetricCard
+            actualEps={displayEps}
+            forecastEps={displayForecastEps}
+            changeRate={metrics.forecastEpsChangeRate}
+          />
+          <MetricCard label="BPS" value={displayBps} format="yen" />
+          <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />
+          <MetricCard label="純利益率" value={metrics.netMargin} format="percent" />
 
-        {/* Row 3: Cash Flow with previous period values */}
-        <MetricCard
-          label="営業CF"
-          value={metrics.cashFlowOperating}
-          format="millions"
-          colorScheme="cashFlow"
-          prevValue={metrics.prevCashFlowOperating}
-        />
-        <MetricCard
-          label="投資CF"
-          value={metrics.cashFlowInvesting}
-          format="millions"
-          prevValue={metrics.prevCashFlowInvesting}
-        />
-        <MetricCard
-          label="財務CF"
-          value={metrics.cashFlowFinancing}
-          format="millions"
-          prevValue={metrics.prevCashFlowFinancing}
-        />
-        <MetricCard
-          label="現金"
-          value={metrics.cashAndEquivalents}
-          format="millions"
-          prevValue={metrics.prevCashAndEquivalents}
-        />
+          <MetricCard
+            label="営業CF"
+            value={metrics.cashFlowOperating}
+            format="millions"
+            colorScheme="cashFlow"
+            prevValue={metrics.prevCashFlowOperating}
+          />
+          <MetricCard
+            label="投資CF"
+            value={metrics.cashFlowInvesting}
+            format="millions"
+            prevValue={metrics.prevCashFlowInvesting}
+          />
+          <MetricCard
+            label="財務CF"
+            value={metrics.cashFlowFinancing}
+            format="millions"
+            prevValue={metrics.prevCashFlowFinancing}
+          />
+          <MetricCard
+            label="現金"
+            value={metrics.cashAndEquivalents}
+            format="millions"
+            prevValue={metrics.prevCashAndEquivalents}
+          />
 
-        {/* Row 4: FCF Metrics */}
-        <MetricCard label="FCF" value={metrics.fcf} format="millions" colorScheme="cashFlow" />
-        <MetricCard label="FCF利回り" value={metrics.fcfYield} format="percent" colorScheme="fcfYield" />
-        <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />
-        <MetricCard label="" value={null} format="yen" />
+          <MetricCard label="FCF" value={metrics.fcf} format="millions" colorScheme="cashFlow" />
+          <MetricCard label="FCF利回り" value={metrics.fcfYield} format="percent" colorScheme="fcfYield" />
+          <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />
 
-        {/* Row 5: Additional Fundamental Analysis */}
-        <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />
-        <MetricCard
-          label={`${tradingValuePeriod}日売買代金/時価総額`}
-          value={metrics.tradingValueToMarketCapRatio ?? null}
-          format="times"
-        />
-        <MetricCard label="" value={null} format="yen" />
-        <MetricCard label="" value={null} format="yen" />
+          <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />
+          <MetricCard
+            label={`時価総額/${tradingValuePeriod}日売買代金`}
+            value={metrics.tradingValueToMarketCapRatio ?? null}
+            format="times"
+            decimals={3}
+          />
+        </div>
       </div>
 
       {/* Period info */}
-      <div className="px-3 py-2 text-xs text-muted-foreground border-t border-border/30">
+      <div className="shrink-0 px-3 py-2 text-xs text-muted-foreground border-t border-border/30">
         <div className="flex justify-between">
           <span>
             {metrics.periodType} ({metrics.date})

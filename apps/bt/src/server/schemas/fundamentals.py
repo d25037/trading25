@@ -31,7 +31,7 @@ class FundamentalsComputeRequest(BaseModel):
         default=15,
         ge=1,
         le=250,
-        description="Rolling period (days) for trading value to market cap ratio",
+        description="Rolling period (days) for market cap to trading value ratio",
     )
 
 
@@ -101,7 +101,7 @@ class FundamentalDataPoint(BaseModel):
         None, description="Operating cash flow / net profit ratio (x)"
     )
     tradingValueToMarketCapRatio: float | None = Field(
-        None, description="N-day average trading value / market cap ratio (x)"
+        None, description="Market cap / N-day average trading value ratio (x)"
     )
 
     # Forecast EPS
@@ -158,6 +158,6 @@ class FundamentalsComputeResponse(BaseModel):
         None, description="Daily PER/PBR time-series"
     )
     tradingValuePeriod: int = Field(
-        ..., description="Rolling period used for trading value to market cap ratio"
+        ..., description="Rolling period used for market cap to trading value ratio"
     )
     lastUpdated: str = Field(..., description="Last updated timestamp (ISO 8601)")

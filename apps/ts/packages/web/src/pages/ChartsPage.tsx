@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, BookOpen, Loader2, TrendingUp, Wallet } from 'lucide-react';
 import { ChartControls } from '@/components/Chart/ChartControls';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
@@ -80,14 +80,16 @@ function MarginPressureIndicatorsSection({
 }
 
 function useLazySectionVisibility(rootMargin = '160px 0px') {
-  const sectionRef = useRef<HTMLDivElement>(null);
+  const [sectionElement, setSectionElement] = useState<HTMLDivElement | null>(null);
   const [isVisible, setIsVisible] = useState(false);
+  const sectionRef = useCallback((node: HTMLDivElement | null) => {
+    setSectionElement(node);
+  }, []);
 
   useEffect(() => {
     if (isVisible) return;
 
-    const element = sectionRef.current;
-    if (!element) return;
+    if (!sectionElement) return;
 
     if (typeof IntersectionObserver === 'undefined') {
       setIsVisible(true);
@@ -104,9 +106,9 @@ function useLazySectionVisibility(rootMargin = '160px 0px') {
       { rootMargin }
     );
 
-    observer.observe(element);
+    observer.observe(sectionElement);
     return () => observer.disconnect();
-  }, [isVisible, rootMargin]);
+  }, [isVisible, rootMargin, sectionElement]);
 
   return {
     sectionRef,
@@ -484,7 +486,7 @@ export function ChartsPage() {
             </div>
 
             {/* Fundamentals Panel Section */}
-            <div ref={fundamentalsSection.sectionRef} className="h-[540px]">
+            <div ref={fundamentalsSection.sectionRef} className="h-[440px]">
               <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
                 <div className="absolute inset-0 gradient-glass opacity-50" />
                 <div className="relative z-10 h-full">

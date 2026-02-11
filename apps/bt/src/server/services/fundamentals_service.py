@@ -144,15 +144,15 @@ class FundamentalsService:
             for stmt in filtered_statements
         ]
 
-        daily_trading_value_ratio_map = (
-            self._calculate_daily_trading_value_to_market_cap_ratio(
+        daily_market_cap_to_trading_value_ratio_map = (
+            self._calculate_daily_market_cap_to_trading_value_ratio(
                 daily_ohlcv,
                 daily_valuation,
                 request.trading_value_period,
             )
         )
         data = self._apply_trading_value_ratio_to_statements(
-            data, daily_trading_value_ratio_map
+            data, daily_market_cap_to_trading_value_ratio_map
         )
 
         # Sort by date descending
@@ -166,7 +166,7 @@ class FundamentalsService:
             latest_metrics, daily_valuation, data
         )
         latest_metrics = self._apply_latest_trading_value_ratio(
-            latest_metrics, daily_trading_value_ratio_map
+            latest_metrics, daily_market_cap_to_trading_value_ratio_map
         )
 
         # Enhance latest metrics with forecast EPS and previous period CF
@@ -706,13 +706,13 @@ class FundamentalsService:
             return None
         return cfo / net_profit
 
-    def _calculate_daily_trading_value_to_market_cap_ratio(
+    def _calculate_daily_market_cap_to_trading_value_ratio(
         self,
         daily_ohlcv: pd.DataFrame,
         daily_valuation: list[DailyValuationDataPoint],
         period: int,
     ) -> dict[str, float]:
-        """Calculate daily N-day avg trading value to market cap ratio."""
+        """Calculate daily market cap / N-day average trading value ratio."""
         if (
             daily_ohlcv.empty
             or "Close" not in daily_ohlcv.columns
@@ -741,7 +741,9 @@ class FundamentalsService:
             market_cap = market_cap_map.get(date_str)
             if market_cap is None or market_cap <= 0:
                 continue
-            rounded = self._round_or_none(float(avg_trading_value / market_cap))
+            if avg_trading_value <= 0:
+                continue
+            rounded = self._round_ratio_or_none(float(market_cap / avg_trading_value))
             if rounded is not None:
                 ratio_map[date_str] = rounded
 
@@ -764,7 +766,7 @@ class FundamentalsService:
                 FundamentalDataPoint(
                     **{
                         **item.model_dump(),
-                        "tradingValueToMarketCapRatio": self._round_or_none(ratio),
+                        "tradingValueToMarketCapRatio": self._round_ratio_or_none(ratio),
                     }
                 )
             )
@@ -1241,6 +1243,12 @@ class FundamentalsService:
         if value is None:
             return None
         return round(value, 2)
+
+    def _round_ratio_or_none(self, value: float | None) -> float | None:
+        """Round ratio values with higher precision to avoid over-rounding."""
+        if value is None:
+            return None
+        return round(value, 6)
 
     def _to_millions(self, value: float | None) -> float | None:
         """Convert JPY to millions of JPY."""

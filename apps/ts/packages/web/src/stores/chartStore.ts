@@ -134,7 +134,208 @@ export const defaultSettings: ChartSettings = {
   },
 };
 
-const generateId = () => crypto.randomUUID();
+function generateId(): string {
+  return crypto.randomUUID();
+}
+
+type PersistedChartStoreState = Partial<{
+  selectedSymbol: string | null;
+  settings: Partial<ChartSettings>;
+  presets: ChartPreset[];
+  activePresetId: string | null;
+}>;
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null;
+}
+
+function toPartialRecord<T extends object>(value: unknown): Partial<T> {
+  return isRecord(value) ? (value as Partial<T>) : {};
+}
+
+function normalizeSignal(signal: unknown): SignalConfig | null {
+  if (!isRecord(signal)) return null;
+  if (typeof signal.type !== 'string' || signal.type.length === 0) return null;
+  if (signal.mode !== 'entry' && signal.mode !== 'exit') return null;
+
+  const params = isRecord(signal.params)
+    ? (Object.fromEntries(
+        Object.entries(signal.params).filter(([, value]) =>
+          typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean'
+        )
+      ) as Record<string, number | string | boolean>)
+    : {};
+
+  return {
+    type: signal.type,
+    params,
+    mode: signal.mode,
+    enabled: signal.enabled !== false,
+  };
+}
+
+function normalizeBoolean(value: unknown, fallback: boolean): boolean {
+  return typeof value === 'boolean' ? value : fallback;
+}
+
+function normalizeFiniteNumber(value: unknown, fallback: number): number {
+  return typeof value === 'number' && Number.isFinite(value) ? value : fallback;
+}
+
+function normalizePositiveInt(value: unknown, fallback: number): number {
+  const normalized = normalizeFiniteNumber(value, fallback);
+  return Math.max(1, Math.trunc(normalized));
+}
+
+function isValidDisplayTimeframe(value: unknown): value is DisplayTimeframe {
+  return value === 'daily' || value === 'weekly' || value === 'monthly';
+}
+
+function isValidChartTimeframe(value: unknown): value is ChartSettings['timeframe'] {
+  return value === '1D' || value === '1W' || value === '1M' || value === '3M' || value === '1Y';
+}
+
+function isValidChartType(value: unknown): value is ChartSettings['chartType'] {
+  return value === 'candlestick' || value === 'line' || value === 'area';
+}
+
+function normalizeSettings(settings: unknown): ChartSettings {
+  if (!isRecord(settings)) {
+    return structuredClone(defaultSettings);
+  }
+
+  const partial = settings as Partial<ChartSettings>;
+  const partialIndicators = toPartialRecord<ChartSettings['indicators']>(partial.indicators);
+  const partialVolumeComparison = toPartialRecord<ChartSettings['volumeComparison']>(partial.volumeComparison);
+  const partialTradingValueMA = toPartialRecord<ChartSettings['tradingValueMA']>(partial.tradingValueMA);
+  const partialSignalOverlay = toPartialRecord<ChartSettings['signalOverlay']>(partial.signalOverlay);
+  const partialSma = toPartialRecord<ChartSettings['indicators']['sma']>(partialIndicators.sma);
+  const partialEma = toPartialRecord<ChartSettings['indicators']['ema']>(partialIndicators.ema);
+  const partialMacd = toPartialRecord<ChartSettings['indicators']['macd']>(partialIndicators.macd);
+  const partialPpo = toPartialRecord<ChartSettings['indicators']['ppo']>(partialIndicators.ppo);
+  const partialAtrSupport = toPartialRecord<ChartSettings['indicators']['atrSupport']>(partialIndicators.atrSupport);
+  const partialNBarSupport = toPartialRecord<ChartSettings['indicators']['nBarSupport']>(partialIndicators.nBarSupport);
+  const partialBollinger = toPartialRecord<ChartSettings['indicators']['bollinger']>(partialIndicators.bollinger);
+  const defaultSignalOverlay = defaultSettings.signalOverlay;
+
+  return {
+    timeframe: isValidChartTimeframe(partial.timeframe) ? partial.timeframe : defaultSettings.timeframe,
+    displayTimeframe: isValidDisplayTimeframe(partial.displayTimeframe)
+      ? partial.displayTimeframe
+      : defaultSettings.displayTimeframe,
+    indicators: {
+      sma: {
+        enabled: normalizeBoolean(partialSma.enabled, defaultSettings.indicators.sma.enabled),
+        period: normalizePositiveInt(partialSma.period, defaultSettings.indicators.sma.period),
+      },
+      ema: {
+        enabled: normalizeBoolean(partialEma.enabled, defaultSettings.indicators.ema.enabled),
+        period: normalizePositiveInt(partialEma.period, defaultSettings.indicators.ema.period),
+      },
+      macd: {
+        enabled: normalizeBoolean(partialMacd.enabled, defaultSettings.indicators.macd.enabled),
+        fast: normalizePositiveInt(partialMacd.fast, defaultSettings.indicators.macd.fast),
+        slow: normalizePositiveInt(partialMacd.slow, defaultSettings.indicators.macd.slow),
+        signal: normalizePositiveInt(partialMacd.signal, defaultSettings.indicators.macd.signal),
+      },
+      ppo: {
+        enabled: normalizeBoolean(partialPpo.enabled, defaultSettings.indicators.ppo.enabled),
+        fast: normalizePositiveInt(partialPpo.fast, defaultSettings.indicators.ppo.fast),
+        slow: normalizePositiveInt(partialPpo.slow, defaultSettings.indicators.ppo.slow),
+        signal: normalizePositiveInt(partialPpo.signal, defaultSettings.indicators.ppo.signal),
+      },
+      atrSupport: {
+        enabled: normalizeBoolean(partialAtrSupport.enabled, defaultSettings.indicators.atrSupport.enabled),
+        period: normalizePositiveInt(partialAtrSupport.period, defaultSettings.indicators.atrSupport.period),
+        multiplier: normalizeFiniteNumber(
+          partialAtrSupport.multiplier,
+          defaultSettings.indicators.atrSupport.multiplier
+        ),
+      },
+      nBarSupport: {
+        enabled: normalizeBoolean(partialNBarSupport.enabled, defaultSettings.indicators.nBarSupport.enabled),
+        period: normalizePositiveInt(partialNBarSupport.period, defaultSettings.indicators.nBarSupport.period),
+      },
+      bollinger: {
+        enabled: normalizeBoolean(partialBollinger.enabled, defaultSettings.indicators.bollinger.enabled),
+        period: normalizePositiveInt(partialBollinger.period, defaultSettings.indicators.bollinger.period),
+        deviation: normalizeFiniteNumber(partialBollinger.deviation, defaultSettings.indicators.bollinger.deviation),
+      },
+    },
+    volumeComparison: {
+      shortPeriod: normalizePositiveInt(
+        partialVolumeComparison.shortPeriod,
+        defaultSettings.volumeComparison.shortPeriod
+      ),
+      longPeriod: normalizePositiveInt(partialVolumeComparison.longPeriod, defaultSettings.volumeComparison.longPeriod),
+      lowerMultiplier: normalizeFiniteNumber(
+        partialVolumeComparison.lowerMultiplier,
+        defaultSettings.volumeComparison.lowerMultiplier
+      ),
+      higherMultiplier: normalizeFiniteNumber(
+        partialVolumeComparison.higherMultiplier,
+        defaultSettings.volumeComparison.higherMultiplier
+      ),
+    },
+    tradingValueMA: {
+      period: normalizePositiveInt(partialTradingValueMA.period, defaultSettings.tradingValueMA.period),
+    },
+    chartType: isValidChartType(partial.chartType) ? partial.chartType : defaultSettings.chartType,
+    showVolume: normalizeBoolean(partial.showVolume, defaultSettings.showVolume),
+    showPPOChart: normalizeBoolean(partial.showPPOChart, defaultSettings.showPPOChart),
+    showVolumeComparison: normalizeBoolean(partial.showVolumeComparison, defaultSettings.showVolumeComparison),
+    showTradingValueMA: normalizeBoolean(partial.showTradingValueMA, defaultSettings.showTradingValueMA),
+    visibleBars: normalizePositiveInt(partial.visibleBars, defaultSettings.visibleBars),
+    relativeMode: normalizeBoolean(partial.relativeMode, defaultSettings.relativeMode),
+    signalOverlay: {
+      enabled: normalizeBoolean(partialSignalOverlay.enabled, defaultSignalOverlay.enabled),
+      signals: Array.isArray(partialSignalOverlay.signals)
+        ? partialSignalOverlay.signals
+            .map(normalizeSignal)
+            .filter((signal): signal is SignalConfig => signal !== null)
+        : defaultSignalOverlay.signals,
+    },
+  };
+}
+
+function normalizePresets(presets: unknown): ChartPreset[] {
+  if (!Array.isArray(presets)) return [];
+
+  return presets
+    .map((preset): ChartPreset | null => {
+      if (!isRecord(preset)) return null;
+      if (typeof preset.id !== 'string' || typeof preset.name !== 'string') return null;
+
+      return {
+        id: preset.id,
+        name: preset.name,
+        settings: normalizeSettings(preset.settings),
+        createdAt: typeof preset.createdAt === 'number' ? preset.createdAt : Date.now(),
+        updatedAt: typeof preset.updatedAt === 'number' ? preset.updatedAt : Date.now(),
+      };
+    })
+    .filter((preset): preset is ChartPreset => preset !== null);
+}
+
+function mergePersistedChartStoreState(
+  persistedState: unknown,
+  currentState: ChartState
+): ChartState {
+  const persisted = (isRecord(persistedState) ? persistedState : {}) as PersistedChartStoreState;
+  const presets = normalizePresets(persisted.presets);
+  const activePresetId =
+    typeof persisted.activePresetId === 'string' && presets.some((preset) => preset.id === persisted.activePresetId)
+      ? persisted.activePresetId
+      : null;
+
+  return {
+    ...currentState,
+    selectedSymbol: typeof persisted.selectedSymbol === 'string' ? persisted.selectedSymbol : null,
+    settings: normalizeSettings(persisted.settings),
+    presets,
+    activePresetId,
+  };
+}
 
 export const useChartStore = create<ChartState>()(
   persist(
@@ -363,6 +564,7 @@ export const useChartStore = create<ChartState>()(
     }),
     {
       name: 'trading25-chart-store',
+      merge: mergePersistedChartStoreState,
       partialize: (state) => ({
         selectedSymbol: state.selectedSymbol,
         settings: state.settings,

@@ -93,6 +93,30 @@ class TestGetStockOhlcv:
         dates = [r.date for r in result]
         assert dates == sorted(dates)
 
+    def test_handles_null_volume_as_zero(self):
+        """volume が NULL でも 0 にフォールバックして返す"""
+        class MockReader:
+            def query_one(self, _sql, _params=()):
+                return {"code": "285A0"}
+
+            def query(self, _sql, _params=()):
+                return [
+                    {
+                        "date": "2024-01-15",
+                        "open": 100.0,
+                        "high": 110.0,
+                        "low": 95.0,
+                        "close": 105.0,
+                        "volume": None,
+                    }
+                ]
+
+        svc = MarketDataService(MockReader())  # type: ignore[arg-type]
+        result = svc.get_stock_ohlcv("285A")
+        assert result is not None
+        assert result[0].date == "2024-01-15"
+        assert result[0].volume == 0
+
 
 class TestGetAllStocks:
     def test_prime_market(self, service):

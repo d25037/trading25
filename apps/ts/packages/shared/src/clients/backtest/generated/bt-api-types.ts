@@ -2732,10 +2732,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * DefaultConfigResponse
@@ -3013,6 +3013,16 @@ export interface components {
              */
             fcfMargin?: number | null;
             /**
+             * Cfotonetprofitratio
+             * @description Operating cash flow / net profit ratio (x)
+             */
+            cfoToNetProfitRatio?: number | null;
+            /**
+             * Tradingvaluetomarketcapratio
+             * @description Market cap / N-day average trading value ratio (x)
+             */
+            tradingValueToMarketCapRatio?: number | null;
+            /**
              * Forecasteps
              * @description Forecast EPS (JPY)
              */
@@ -3089,6 +3099,12 @@ export interface components {
              * @default true
              */
             prefer_consolidated: boolean;
+            /**
+             * Trading Value Period
+             * @description Rolling period (days) for market cap to trading value ratio
+             * @default 15
+             */
+            trading_value_period: number;
         };
         /**
          * FundamentalsComputeResponse
@@ -3117,6 +3133,11 @@ export interface components {
              * @description Daily PER/PBR time-series
              */
             dailyValuation?: components["schemas"]["DailyValuationDataPoint"][] | null;
+            /**
+             * Tradingvalueperiod
+             * @description Rolling period used for market cap to trading value ratio
+             */
+            tradingValuePeriod: number;
             /**
              * Lastupdated
              * @description Last updated timestamp (ISO 8601)
@@ -3691,7 +3712,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -4835,7 +4856,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5698,7 +5719,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -5709,7 +5730,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6272,7 +6293,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -6403,6 +6424,13 @@ export interface components {
             /** Max */
             max: string;
         };
+        /** DateRange */
+        src__server__schemas__db__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
         /**
          * DateRange
          * @description 分析期間
@@ -6464,13 +6492,6 @@ export interface components {
              * @description 出来高
              */
             volume: number;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
         };
         /** DateRange */
         src__server__schemas__portfolio_performance__DateRange: {
@@ -9879,6 +9900,8 @@ export interface operations {
                 to?: string | null;
                 periodType?: "all" | "FY" | "1Q" | "2Q" | "3Q";
                 preferConsolidated?: boolean;
+                /** @description Rolling average period in days for trading value to market cap ratio */
+                tradingValuePeriod?: number;
             };
             header?: never;
             path: {

@@ -497,4 +497,56 @@ describe('ChartsPage', () => {
       });
     });
   });
+
+  it('starts deferred queries when chart panels mount after initial loading', async () => {
+    let chartState: {
+      chartData: unknown;
+      isLoading: boolean;
+      error: unknown;
+      selectedSymbol: string | null;
+    } = {
+      chartData: null,
+      isLoading: true,
+      error: null,
+      selectedSymbol: '7203',
+    };
+    mockUseMultiTimeframeChart.mockImplementation(() => chartState);
+    mockUseBtMarginIndicators.mockReturnValue({ data: null, isLoading: false, error: null });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseFundamentals.mockReturnValue({ data: null });
+
+    const { rerender } = render(<ChartsPage />);
+
+    expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: false });
+    expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+
+    chartState = {
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    };
+
+    rerender(<ChartsPage />);
+    expect(MockIntersectionObserver.instances.length).toBeGreaterThan(0);
+
+    act(() => {
+      MockIntersectionObserver.triggerAll(true);
+    });
+
+    await waitFor(() => {
+      expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
+    });
+    await waitFor(() => {
+      expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
+    });
+  });
 });
