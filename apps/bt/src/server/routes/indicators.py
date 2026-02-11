@@ -9,7 +9,7 @@ from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from src.api.exceptions import APIError, APINotFoundError
@@ -20,7 +20,7 @@ from src.server.schemas.indicators import (
     MarginIndicatorRequest,
     MarginIndicatorResponse,
 )
-from src.server.services.indicator_service import indicator_service
+from src.server.services.indicator_service import IndicatorService
 
 router = APIRouter(tags=["Indicators"])
 
@@ -36,6 +36,11 @@ def _get_executor() -> ThreadPoolExecutor:
     return _executor
 
 TIMEOUT_SECONDS = 10
+
+
+def _get_indicator_service(request: Request) -> IndicatorService:
+    market_reader = getattr(request.app.state, "market_reader", None)
+    return IndicatorService(market_reader=market_reader)
 
 
 async def _run_in_executor(
@@ -74,34 +79,41 @@ async def _run_in_executor(
     "/api/indicators/compute",
     response_model=IndicatorComputeResponse,
 )
-async def compute_indicators(request: IndicatorComputeRequest) -> IndicatorComputeResponse:
+async def compute_indicators(
+    request: Request,
+    payload: IndicatorComputeRequest,
+) -> IndicatorComputeResponse:
     """複数インジケーターを一括計算
 
     output='ohlcv'の場合、インジケーター計算をスキップし、
     変換後のOHLCVのみを返却する。
     """
     logger.info(
-        f"インジケーター計算: {request.stock_code} "
-        f"({len(request.indicators)} indicators, {request.timeframe}, output={request.output})"
+        f"インジケーター計算: {payload.stock_code} "
+        f"({len(payload.indicators)} indicators, {payload.timeframe}, output={payload.output})"
     )
-    relative_opts = (
-        request.relative_options.model_dump() if request.relative_options else None
-    )
-    result = await _run_in_executor(
-        indicator_service.compute_indicators,
-        request.stock_code,
-        request.source,
-        request.timeframe,
-        [spec.model_dump() for spec in request.indicators],
-        request.start_date,
-        request.end_date,
-        request.nan_handling,
-        request.benchmark_code,
-        relative_opts,
-        request.output,
-        label="インジケーター計算",
-    )
-    return IndicatorComputeResponse(**result)
+    service = _get_indicator_service(request)
+    try:
+        relative_opts = (
+            payload.relative_options.model_dump() if payload.relative_options else None
+        )
+        result = await _run_in_executor(
+            service.compute_indicators,
+            payload.stock_code,
+            payload.source,
+            payload.timeframe,
+            [spec.model_dump() for spec in payload.indicators],
+            payload.start_date,
+            payload.end_date,
+            payload.nan_handling,
+            payload.benchmark_code,
+            relative_opts,
+            payload.output,
+            label="インジケーター計算",
+        )
+        return IndicatorComputeResponse(**result)
+    finally:
+        service.close()
 
 
 @router.post(
@@ -109,21 +121,26 @@ async def compute_indicators(request: IndicatorComputeRequest) -> IndicatorCompu
     response_model=MarginIndicatorResponse,
 )
 async def compute_margin_indicators(
-    request: MarginIndicatorRequest,
+    request: Request,
+    payload: MarginIndicatorRequest,
 ) -> MarginIndicatorResponse:
     """信用指標を計算"""
     logger.info(
-        f"信用指標計算: {request.stock_code} source={request.source} "
-        f"({len(request.indicators)} indicators)"
+        f"信用指標計算: {payload.stock_code} source={payload.source} "
+        f"({len(payload.indicators)} indicators)"
     )
-    result = await _run_in_executor(
-        indicator_service.compute_margin_indicators,
-        request.stock_code,
-        request.source,
-        list(request.indicators),
-        request.average_period,
-        request.start_date,
-        request.end_date,
-        label="信用指標計算",
-    )
-    return MarginIndicatorResponse(**result)
+    service = _get_indicator_service(request)
+    try:
+        result = await _run_in_executor(
+            service.compute_margin_indicators,
+            payload.stock_code,
+            payload.source,
+            list(payload.indicators),
+            payload.average_period,
+            payload.start_date,
+            payload.end_date,
+            label="信用指標計算",
+        )
+        return MarginIndicatorResponse(**result)
+    finally:
+        service.close()
