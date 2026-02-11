@@ -171,9 +171,12 @@ class JQuantsProxyService:
                     companyNameEnglish=item.get("CoNameEn"),
                     marketCode=item.get("Mkt"),
                     marketCodeName=item.get("MktNm"),
+                    sector17Code=item.get("S17"),
+                    sector17CodeName=item.get("S17Nm"),
                     sector33Code=item.get("S33"),
                     sector33CodeName=item.get("S33Nm"),
                     scaleCategory=item.get("ScaleCat"),
+                    date=item.get("Date"),
                 )
             )
         return ApiListedInfoResponse(info=info, lastUpdated=_now_iso())

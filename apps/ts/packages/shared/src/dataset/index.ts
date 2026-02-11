@@ -30,14 +30,8 @@ export type {
 
 // ===== CORE CLASSES =====
 
-export {
-  calculatePlanConcurrency,
-  getRequestsPerSecond,
-  JQUANTS_PLAN_LIMITS,
-  type JQuantsPlan,
-  validateJQuantsPlan,
-} from '@trading25/clients-ts/base/BaseJQuantsClient';
-// Batch execution (rate limiting is in BaseJQuantsClient)
+export { resolveDatasetConcurrency } from './backend-concurrency';
+// Batch execution (request pacing is handled by bt backend and BatchExecutor)
 export {
   BatchExecutor,
   categorizeErrorType,

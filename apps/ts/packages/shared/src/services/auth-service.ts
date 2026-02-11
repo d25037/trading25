@@ -1,4 +1,3 @@
-import { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import type { TokenData, TokenStorage } from '../utils/token-storage';
 
 export interface AuthCredentials {
@@ -16,7 +15,6 @@ export interface AuthStatus {
  */
 export class AuthService {
   private tokenStorage: TokenStorage;
-  private client: JQuantsClient | null = null;
 
   constructor(tokenStorage: TokenStorage) {
     this.tokenStorage = tokenStorage;
@@ -35,11 +33,6 @@ export class AuthService {
     if (!finalApiKey) {
       throw new Error('API key is required for authentication');
     }
-
-    // Create client with API key
-    this.client = new JQuantsClient({
-      apiKey: finalApiKey,
-    });
 
     // Save API key to storage
     await this.tokenStorage.saveTokens({
@@ -60,19 +53,11 @@ export class AuthService {
   }
 
   /**
-   * Get authenticated JQuants client
-   * Automatically creates and authenticates client if needed
+   * Direct JQuants client access has been removed.
+   * Use bt FastAPI endpoints (`/api/jquants/*`) via API client classes.
    */
-  async getClient(): Promise<JQuantsClient> {
-    if (!this.client) {
-      await this.authenticate();
-    }
-
-    if (!this.client) {
-      throw new Error('Failed to create authenticated client');
-    }
-
-    return this.client;
+  async getClient(): Promise<never> {
+    throw new Error('Direct J-Quants client is removed. Use bt FastAPI endpoints (/api/jquants/*).');
   }
 
   /**
@@ -80,7 +65,6 @@ export class AuthService {
    */
   async clearTokens(): Promise<void> {
     await this.tokenStorage.clearTokens();
-    this.client = null;
   }
 
   /**

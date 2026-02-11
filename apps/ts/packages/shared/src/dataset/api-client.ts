@@ -1,9 +1,8 @@
 /**
  * Dataset V2 - API Client Wrapper
- * Simplified wrapper around JQuantsClient with integrated rate limiting
+ * Simplified wrapper around bt JQuants proxy endpoints
  */
 
-import type { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import type {
   JQuantsDailyQuote,
   JQuantsDailyQuotesResponse,
@@ -62,6 +61,62 @@ interface ApiResponse {
   data?: unknown[];
   pagination_key?: unknown;
   [key: string]: unknown;
+}
+
+interface BtListedInfoItem {
+  code: string;
+  companyName: string;
+  companyNameEnglish?: string;
+  marketCode?: string;
+  marketCodeName?: string;
+  sector17Code?: string;
+  sector17CodeName?: string;
+  sector33Code?: string;
+  sector33CodeName?: string;
+  scaleCategory?: string;
+  date?: string;
+}
+
+interface BtListedInfoResponse {
+  info: BtListedInfoItem[];
+}
+
+interface BtMarginInterestItem {
+  date: string;
+  code: string;
+  shortMarginTradeVolume: number;
+  longMarginTradeVolume: number;
+  shortMarginOutstandingBalance: number | null;
+  longMarginOutstandingBalance: number | null;
+}
+
+interface BtMarginInterestResponse {
+  marginInterest: BtMarginInterestItem[];
+}
+
+interface BtIndexItem {
+  date: string;
+  code?: string;
+  open: number;
+  high: number;
+  low: number;
+  close: number;
+}
+
+interface BtIndicesResponse {
+  indices: BtIndexItem[];
+}
+
+interface BtTopixRawItem {
+  Date: string;
+  Open: number | null;
+  High: number | null;
+  Low: number | null;
+  Close: number | null;
+}
+
+interface BtTopixRawResponse {
+  topix: BtTopixRawItem[];
 }
 
 import {
@@ -660,27 +715,90 @@ function transformStatementsData(
 
 /**
  * Simplified API client wrapper
- * Note: Retry logic is handled by RateLimiter, not here
+ * Note: Retry and external rate limits are handled in bt backend
  */
 export class ApiClient {
+  private readonly baseUrl: string;
+
   constructor(
-    public client: JQuantsClient,
+    clientOrBaseUrl?: unknown,
     private debugConfig: DebugConfig = DEFAULT_DEBUG_CONFIG
-  ) {}
+  ) {
+    if (typeof clientOrBaseUrl === 'string' && clientOrBaseUrl.trim().length > 0) {
+      this.baseUrl = clientOrBaseUrl;
+      return;
+    }
+
+    if (
+      clientOrBaseUrl &&
+      typeof clientOrBaseUrl === 'object' &&
+      'baseUrl' in clientOrBaseUrl &&
+      typeof clientOrBaseUrl.baseUrl === 'string' &&
+      clientOrBaseUrl.baseUrl.trim().length > 0
+    ) {
+      this.baseUrl = clientOrBaseUrl.baseUrl;
+      return;
+    }
+
+    this.baseUrl = process.env.API_BASE_URL || 'http://localhost:3002';
+  }
+
+  private async request<T>(path: string, query?: Record<string, string | undefined>): Promise<T> {
+    const url = new URL(path, this.baseUrl);
+    if (query) {
+      for (const [key, value] of Object.entries(query)) {
+        if (value && value.trim().length > 0) {
+          url.searchParams.set(key, value);
+        }
+      }
+    }
+
+    const response = await fetch(url.toString(), {
+      headers: { 'Content-Type': 'application/json' },
+    });
+
+    if (!response.ok) {
+      let detail = response.statusText;
+      try {
+        const errorBody = (await response.json()) as { message?: string; error?: string };
+        detail = errorBody.message || errorBody.error || detail;
+      } catch {
+        // fallback to status text only
+      }
+      throw new Error(`API ${response.status}: ${detail}`);
+    }
+
+    return (await response.json()) as T;
+  }
 
   /**
    * Fetch stock list
    */
   async getStockList(): Promise<StockInfo[]> {
-    const response = await this.client.getListedInfo();
-    return transformStockInfo(response);
+    const response = await this.request<BtListedInfoResponse>('/api/jquants/listed-info');
+    const normalized: JQuantsListedInfoResponse = {
+      data: response.info.map((item) => ({
+        Date: item.date || '',
+        Code: item.code,
+        CoName: item.companyName,
+        CoNameEn: item.companyNameEnglish || '',
+        S17: item.sector17Code || item.sector33Code || '00',
+        S17Nm: item.sector17CodeName || item.sector33CodeName || 'Unknown',
+        S33: item.sector33Code || '00',
+        S33Nm: item.sector33CodeName || 'Unknown',
+        ScaleCat: item.scaleCategory || '',
+        Mkt: item.marketCode || '',
+        MktNm: item.marketCodeName || '',
+      })),
+    };
+    return transformStockInfo(normalized);
   }
 
   /**
    * Fetch daily quotes for a stock
    */
   async getStockQuotes(stockCode: string, dateRange?: DateRange) {
-    const response = await this.client.getDailyQuotes({
+    const response = await this.request<JQuantsDailyQuotesResponse>('/api/jquants/daily-quotes', {
       code: stockCode,
       from: dateRange?.from?.toISOString().split('T')[0],
       to: dateRange?.to?.toISOString().split('T')[0],
@@ -692,12 +810,24 @@ export class ApiClient {
    * Fetch margin data for a stock
    */
   async getMarginData(stockCode: string, dateRange?: DateRange): Promise<MarginData[]> {
-    const response = await this.client.getWeeklyMarginInterest({
-      code: stockCode,
+    const response = await this.request<BtMarginInterestResponse>(`/api/jquants/stocks/${stockCode}/margin-interest`, {
       from: dateRange?.from?.toISOString().split('T')[0],
       to: dateRange?.to?.toISOString().split('T')[0],
     });
-    return transformMarginData(response);
+    const normalized: JQuantsWeeklyMarginInterestResponse = {
+      data: response.marginInterest.map((item) => ({
+        Date: item.date,
+        Code: item.code,
+        ShrtVol: item.shortMarginOutstandingBalance ?? item.shortMarginTradeVolume,
+        LongVol: item.longMarginOutstandingBalance ?? item.longMarginTradeVolume,
+        ShrtNegVol: 0,
+        LongNegVol: 0,
+        ShrtStdVol: item.shortMarginTradeVolume,
+        LongStdVol: item.longMarginTradeVolume,
+        IssType: '',
+      })),
+    };
+    return transformMarginData(normalized);
   }
 
   /**
@@ -710,26 +840,45 @@ export class ApiClient {
     };
     console.log(`[API CLIENT] getTOPIX params:`, params);
 
-    const response = await this.client.getTOPIX(params);
-    console.log(`[API CLIENT] getTOPIX response: ${response.data?.length ?? 0} records`);
+    const response = await this.request<BtTopixRawResponse>('/api/jquants/topix', params);
+    const normalized: JQuantsTOPIXResponse = {
+      data: response.topix.map((item) => ({
+        Date: item.Date,
+        O: item.Open ?? 0,
+        H: item.High ?? 0,
+        L: item.Low ?? 0,
+        C: item.Close ?? 0,
+      })),
+    };
+    console.log(`[API CLIENT] getTOPIX response: ${normalized.data?.length ?? 0} records`);
 
-    return transformTopixData(response);
+    return transformTopixData(normalized);
   }
 
   /**
    * Fetch sector indices data.
-   * Pagination is handled automatically by JQuantsClient.
+   * Pagination is handled automatically by bt JQuants proxy.
    */
   async getSectorIndices(sectorCode?: string, dateRange?: DateRange): Promise<SectorData[]> {
     const fromStr = dateRange?.from?.toISOString().split('T')[0];
     const toStr = dateRange?.to?.toISOString().split('T')[0];
 
-    const response = await this.client.getIndices({
+    const response = await this.request<BtIndicesResponse>('/api/jquants/indices', {
       code: sectorCode,
       from: fromStr,
       to: toStr,
     });
-    return transformSectorData(response);
+    const normalized: JQuantsIndicesResponse = {
+      data: response.indices.map((item) => ({
+        Date: item.date,
+        Code: item.code || '',
+        O: item.open,
+        H: item.high,
+        L: item.low,
+        C: item.close,
+      })),
+    };
+    return transformSectorData(normalized);
   }
 
   /**
@@ -761,7 +910,7 @@ export class ApiClient {
     const apiCallStart = Date.now();
 
     try {
-      const response = await this.client.getStatements({
+      const response = await this.request<JQuantsStatementsResponse>('/api/jquants/statements/raw', {
         code: stockCode,
       });
 

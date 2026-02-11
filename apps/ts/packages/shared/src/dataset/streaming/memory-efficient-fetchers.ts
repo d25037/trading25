@@ -3,8 +3,8 @@
  * Generator-based streaming to optimize memory usage for large datasets
  */
 
-import { calculatePlanConcurrency, validateJQuantsPlan } from '@trading25/clients-ts/base/BaseJQuantsClient';
 import { type BatchExecutor, createBatchExecutor } from '@trading25/clients-ts/base/BatchExecutor';
+import { resolveDatasetConcurrency } from '../backend-concurrency';
 import type { ApiClient } from '../api-client';
 import type { DateRange, MarginData, ProgressCallback, StockData } from '../types';
 
@@ -269,7 +269,7 @@ export class StreamingFetchers {
   /**
    * Concurrent streaming with controlled memory usage
    * Processes multiple stocks concurrently but yields results one at a time
-   * Uses plan-based concurrency for optimal performance within rate limits
+   * Uses backend-aware concurrency for optimal performance within rate limits
    * Each stock request has a 2-minute timeout to prevent indefinite hangs
    */
   async *streamConcurrentQuotes(
@@ -284,9 +284,8 @@ export class StreamingFetchers {
     // Per-stock timeout: 2 minutes (accounts for pagination of up to 10 years of data)
     const STOCK_TIMEOUT_MS = 120_000;
 
-    const plan = validateJQuantsPlan(process.env.JQUANTS_PLAN);
-    const planConcurrency = calculatePlanConcurrency(plan);
-    const concurrency = Math.min(planConcurrency, this.config.maxConcurrency, stockCodes.length);
+    const backendConcurrency = resolveDatasetConcurrency(stockCodes.length);
+    const concurrency = Math.min(backendConcurrency, this.config.maxConcurrency, stockCodes.length);
 
     for (let i = 0; i < stockCodes.length; i += concurrency) {
       this.checkCancellation(signal);
