@@ -25,7 +25,7 @@ description: bt FastAPI 分析APIを ts/web と ts/cli から利用する統合�
 ## Guardrails
 
 - ts 側で financial-analysis の計算ロジックを再実装しない。
-- `apps/ts/packages/api` の analytics サービスは bt プロキシを維持する。
+- Archived Hono analytics サービス層は bt プロキシ方針を維持する。
 - ts 側は「API呼び出し・型整合・表示整形」に責務を限定する。
 
 ## Notes
