@@ -212,8 +212,15 @@ export function groupStocksBySector(stocks: StockInfo[]): Record<string, StockIn
 
 // ===== VALIDATION UTILITIES =====
 
-// Re-export isValidStockCode from db/columns for consistency
-export { isValidStockCode } from '../db/columns/stock-code';
+const STOCK_CODE_4_DIGIT_REGEX = /^\d[0-9A-Z]\d[0-9A-Z]$/;
+
+/**
+ * Validate if a string is a valid 4-character stock code.
+ * Supports formats like 7203 and 285A.
+ */
+export function isValidStockCode(code: string): boolean {
+  return STOCK_CODE_4_DIGIT_REGEX.test(code);
+}
 
 /**
  * Validate sector code format
