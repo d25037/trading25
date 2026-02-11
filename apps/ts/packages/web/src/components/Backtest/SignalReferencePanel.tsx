@@ -12,16 +12,7 @@ import { Input } from '@/components/ui/input';
 import { useSignalReference } from '@/hooks/useBacktest';
 import type { SignalCategory, SignalDefinition } from '@/types/backtest';
 import { logger } from '@/utils/logger';
-
-function formatConstraints(constraints: SignalDefinition['fields'][number]['constraints']): string[] {
-  if (!constraints) return [];
-  const parts: string[] = [];
-  if (constraints.gt !== undefined) parts.push(`>${constraints.gt}`);
-  if (constraints.ge !== undefined) parts.push(`>=${constraints.ge}`);
-  if (constraints.lt !== undefined) parts.push(`<${constraints.lt}`);
-  if (constraints.le !== undefined) parts.push(`<=${constraints.le}`);
-  return parts;
-}
+import { formatConstraints } from './signalConstraints';
 
 interface SignalItemProps {
   signal: SignalDefinition;
