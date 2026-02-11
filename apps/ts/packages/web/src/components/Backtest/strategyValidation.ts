@@ -94,6 +94,7 @@ function validateFieldValue(
   }
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation logic needs explicit branch handling
 function validateSignalSection(
   sectionName: 'entry_filter_params' | 'exit_trigger_params',
   sectionValue: unknown,
