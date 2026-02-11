@@ -8,16 +8,21 @@ POST /api/signals/compute — シグナル計算（Phase 1: OHLCV系のみ）
 
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from src.models.signals import SignalParams
 from src.server.schemas.signal_reference import SignalReferenceResponse
 from src.server.schemas.signals import SignalComputeRequest, SignalComputeResponse
 from src.server.services.signal_reference_service import build_signal_reference
-from src.server.services.signal_service import signal_service
+from src.server.services.signal_service import SignalService
 
 router = APIRouter(tags=["Signals"])
+
+
+def _get_signal_service(request: Request) -> SignalService:
+    market_reader = getattr(request.app.state, "market_reader", None)
+    return SignalService(market_reader=market_reader)
 
 
 @router.get("/api/signals/reference", response_model=SignalReferenceResponse)
@@ -49,7 +54,10 @@ async def get_signal_schema() -> dict[str, Any]:
 
 
 @router.post("/api/signals/compute", response_model=SignalComputeResponse)
-async def compute_signals(request: SignalComputeRequest) -> SignalComputeResponse:
+async def compute_signals(
+    request: Request,
+    payload: SignalComputeRequest,
+) -> SignalComputeResponse:
     """シグナル計算を実行し、発火日を返却
 
     Phase 1: OHLCV系シグナルのみ対応
@@ -88,18 +96,21 @@ async def compute_signals(request: SignalComputeRequest) -> SignalComputeRespons
         # SignalSpecをdict形式に変換
         signals_dicts = [
             {"type": s.type, "params": s.params, "mode": s.mode}
-            for s in request.signals
+            for s in payload.signals
         ]
-
-        result = signal_service.compute_signals(
-            stock_code=request.stock_code,
-            source=request.source,
-            timeframe=request.timeframe,
-            signals=signals_dicts,
-            start_date=request.start_date,
-            end_date=request.end_date,
-        )
-        return SignalComputeResponse(**result)
+        service = _get_signal_service(request)
+        try:
+            result = service.compute_signals(
+                stock_code=payload.stock_code,
+                source=payload.source,
+                timeframe=payload.timeframe,
+                signals=signals_dicts,
+                start_date=payload.start_date,
+                end_date=payload.end_date,
+            )
+            return SignalComputeResponse(**result)
+        finally:
+            service.close()
     except ValueError as e:
         logger.warning(f"シグナル計算バリデーションエラー: {e}")
         raise HTTPException(status_code=400, detail=str(e)) from e
