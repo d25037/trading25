@@ -1,23 +1,24 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
-const mockRunScreening = mock();
+const mockBtGet = mock();
 
-mock.module('../../services/market/market-screening-service', () => ({
-  MarketScreeningService: class {
-    runScreening = mockRunScreening;
-    close = () => {};
-  },
+mock.module('../../services/bt-api-proxy', () => ({
+  btGet: mockBtGet,
 }));
 
 import screeningApp from '../analytics/screening';
 
 describe('Market Screening Routes', () => {
   beforeEach(() => {
-    mockRunScreening.mockReset();
+    mockBtGet.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it('returns 500 when service throws', async () => {
-    mockRunScreening.mockRejectedValue(new Error('Database not available'));
+    mockBtGet.mockRejectedValue(new Error('Database not available'));
 
     const res = await screeningApp.request('/api/analytics/screening?markets=prime');
 
@@ -25,7 +26,7 @@ describe('Market Screening Routes', () => {
   });
 
   it('returns screening results and passes parsed query to service', async () => {
-    mockRunScreening.mockResolvedValue({
+    mockBtGet.mockResolvedValue({
       summary: { total: 0 },
       results: [],
       lastUpdated: new Date().toISOString(),
@@ -36,12 +37,12 @@ describe('Market Screening Routes', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockRunScreening).toHaveBeenCalledWith({
+    expect(mockBtGet).toHaveBeenCalledWith('/api/analytics/screening', {
       markets: 'prime',
       rangeBreakFast: true,
       rangeBreakSlow: false,
       recentDays: 20,
-      referenceDate: '2025-01-15',
+      date: '2025-01-15',
       minBreakPercentage: 3,
       minVolumeRatio: 1.2,
       sortBy: 'breakPercentage',

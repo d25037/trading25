@@ -208,6 +208,40 @@ describe('handleRouteError', () => {
     // Not a database error, so it falls through to 500
     expect(res.status).toBe(500);
   });
+
+  test('uses statusCode carried on error objects', async () => {
+    const app = new Hono();
+
+    app.get('/test', (c) => {
+      const error = Object.assign(new Error('Symbol must be a valid 4-character stock code'), { statusCode: 400 });
+      return handleRouteError(c, error, 'corr-14', {
+        operationName: 'factor regression',
+      });
+    });
+
+    const res = await app.request('/test');
+    expect(res.status).toBe(400);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('Bad Request');
+    expect(body.message).toBe('Symbol must be a valid 4-character stock code');
+  });
+
+  test('falls back when statusCode carried on error is not allowed', async () => {
+    const app = new Hono();
+
+    app.get('/test', (c) => {
+      const error = Object.assign(new Error('Upstream bad request'), { statusCode: 400 });
+      return handleRouteError(c, error, 'corr-15', {
+        operationName: 'proxy request',
+        allowedStatusCodes: [422, 500] as const,
+      });
+    });
+
+    const res = await app.request('/test');
+    expect(res.status).toBe(500);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body.error).toBe('Internal Server Error');
+  });
 });
 
 describe('handleDomainError', () => {
