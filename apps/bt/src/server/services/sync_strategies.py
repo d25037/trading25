@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from typing import Any, Callable, Protocol
 
 from loguru import logger
@@ -227,7 +227,8 @@ class IncrementalSyncStrategy:
             last_date = ctx.market_db.get_latest_trading_date()
             params: dict[str, Any] = {}
             if last_date:
-                params["from"] = last_date
+                # J-Quants は YYYYMMDD 形式が安定しているため、既存データ形式（YYYY-MM-DD / YYYYMMDD）を吸収する
+                params["from"] = _to_jquants_date_param(last_date)
 
             topix_data = await ctx.client.get_paginated("/indices/bars/daily/topix", params=params)
             total_calls += 1
@@ -258,7 +259,17 @@ class IncrementalSyncStrategy:
 
             # Step 3: 新しい日付の株価データ
             ctx.on_progress("stock_data", 2, 3, "Fetching new stock data...")
-            new_dates = sorted({r["date"] for r in topix_rows if last_date and r["date"] > last_date})
+            if last_date:
+                new_dates = sorted(
+                    {
+                        r["date"]
+                        for r in topix_rows
+                        if r.get("date") and _is_date_after(r["date"], last_date)
+                    },
+                    key=_date_sort_key,
+                )
+            else:
+                new_dates = sorted({r["date"] for r in topix_rows if r.get("date")}, key=_date_sort_key)
             for date in new_dates:
                 if ctx.cancelled.is_set():
                     return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
@@ -342,3 +353,43 @@ def _convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]
             "created_at": datetime.now(UTC).isoformat(),
         })
     return rows
+
+
+def _parse_date(value: str) -> date | None:
+    """YYYY-MM-DD / YYYYMMDD を date に正規化して返す。"""
+    if not value:
+        return None
+    text = value.strip()
+    if not text:
+        return None
+    try:
+        if len(text) == 8 and text.isdigit():
+            return datetime.strptime(text, "%Y%m%d").date()  # noqa: DTZ007
+        return datetime.strptime(text, "%Y-%m-%d").date()  # noqa: DTZ007
+    except ValueError:
+        return None
+
+
+def _to_jquants_date_param(value: str) -> str:
+    """J-Quants 向けの日付パラメータ（YYYYMMDD）に変換。"""
+    parsed = _parse_date(value)
+    if parsed is None:
+        return value
+    return parsed.strftime("%Y%m%d")
+
+
+def _is_date_after(lhs: str, rhs: str) -> bool:
+    """日付文字列（YYYY-MM-DD / YYYYMMDD）の大小比較。"""
+    left = _parse_date(lhs)
+    right = _parse_date(rhs)
+    if left is None or right is None:
+        return lhs > rhs
+    return left > right
+
+
+def _date_sort_key(value: str) -> tuple[int, str]:
+    """日付ソート用キー（parse 失敗時は末尾に回す）。"""
+    parsed = _parse_date(value)
+    if parsed is None:
+        return (1, value)
+    return (0, parsed.isoformat())
