@@ -1,12 +1,7 @@
 /**
  * Watchlist Management Module
- * Lightweight stock monitoring lists with SQLite storage
- *
- * Uses Drizzle ORM for type-safe database operations
+ * Shared types and errors for watchlist API contracts.
  */
-
-// Re-export Drizzle implementation as WatchlistDatabase
-export { DrizzleWatchlistDatabase as WatchlistDatabase } from '../db/drizzle-watchlist-database';
 
 export type {
   CreateWatchlistInput,

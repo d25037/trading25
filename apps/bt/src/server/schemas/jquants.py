@@ -94,9 +94,12 @@ class ApiListedInfo(BaseModel):
     companyNameEnglish: str | None = None
     marketCode: str | None = None
     marketCodeName: str | None = None
+    sector17Code: str | None = None
+    sector17CodeName: str | None = None
     sector33Code: str | None = None
     sector33CodeName: str | None = None
     scaleCategory: str | None = None
+    date: str | None = None
 
 
 class ApiListedInfoResponse(BaseModel):

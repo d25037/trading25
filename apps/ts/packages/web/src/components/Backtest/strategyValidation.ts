@@ -38,6 +38,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+function isNumericConstraint(value: unknown): value is number {
+  return typeof value === 'number' && Number.isFinite(value);
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation logic needs explicit branch handling
 function validateFieldValue(
   sectionName: string,
@@ -59,17 +63,23 @@ function validateFieldValue(
       return;
     }
 
-    if (field.constraints?.gt !== undefined && value <= field.constraints.gt) {
-      errors.push(`${fieldPath} must be > ${field.constraints.gt}`);
+    const constraints = field.constraints;
+    const gt = constraints?.gt;
+    const ge = constraints?.ge;
+    const lt = constraints?.lt;
+    const le = constraints?.le;
+
+    if (isNumericConstraint(gt) && value <= gt) {
+      errors.push(`${fieldPath} must be > ${gt}`);
     }
-    if (field.constraints?.ge !== undefined && value < field.constraints.ge) {
-      errors.push(`${fieldPath} must be >= ${field.constraints.ge}`);
+    if (isNumericConstraint(ge) && value < ge) {
+      errors.push(`${fieldPath} must be >= ${ge}`);
     }
-    if (field.constraints?.lt !== undefined && value >= field.constraints.lt) {
-      errors.push(`${fieldPath} must be < ${field.constraints.lt}`);
+    if (isNumericConstraint(lt) && value >= lt) {
+      errors.push(`${fieldPath} must be < ${lt}`);
     }
-    if (field.constraints?.le !== undefined && value > field.constraints.le) {
-      errors.push(`${fieldPath} must be <= ${field.constraints.le}`);
+    if (isNumericConstraint(le) && value > le) {
+      errors.push(`${fieldPath} must be <= ${le}`);
     }
     return;
   }
@@ -84,6 +94,7 @@ function validateFieldValue(
   }
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation logic needs explicit branch handling
 function validateSignalSection(
   sectionName: 'entry_filter_params' | 'exit_trigger_params',
   sectionValue: unknown,
@@ -95,9 +106,22 @@ function validateSignalSection(
     return;
   }
 
+  // Signal reference未取得時はunknown signal誤検知を避ける
+  if (signalDefinitions.length === 0) {
+    return;
+  }
+
   const signalMap = new Map(signalDefinitions.map((signal) => [signal.key, signal]));
 
   for (const [signalKey, signalConfig] of Object.entries(sectionValue)) {
+    // fundamentalは子シグナル構造（per/roe/...)を持つため、トップレベル名の検証は除外
+    if (signalKey === 'fundamental') {
+      if (!isPlainObject(signalConfig)) {
+        errors.push(`${sectionName}.${signalKey} must be an object`);
+      }
+      continue;
+    }
+
     const signalDef = signalMap.get(signalKey);
     if (!signalDef) {
       errors.push(`${sectionName}.${signalKey} is not a valid signal name`);
@@ -108,12 +132,6 @@ function validateSignalSection(
       errors.push(`${sectionName}.${signalKey} must be an object`);
       continue;
     }
-
-    // fundamentalのようなネスト構造は誤検知を避けるため、シグナル名の存在確認のみに留める
-    if (signalKey === 'fundamental') {
-      continue;
-    }
-
     const allowedFields = new Map(signalDef.fields.map((field) => [field.name, field]));
 
     for (const [paramName, paramValue] of Object.entries(signalConfig)) {

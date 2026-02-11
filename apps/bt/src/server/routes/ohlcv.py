@@ -11,10 +11,11 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
 from src.api.exceptions import APIError, APINotFoundError
+from src.lib.market_db.market_reader import MarketDbReader
 
 from src.server.schemas.indicators import (
     OHLCVResampleRequest,
@@ -52,49 +53,52 @@ def _resample_ohlcv(
     end_date: Any,
     benchmark_code: str | None,
     relative_options: dict[str, Any] | None,
+    market_reader: MarketDbReader | None,
 ) -> dict[str, Any]:
     """OHLCVリサンプル処理（同期処理）"""
-    service = IndicatorService()
+    service = IndicatorService(market_reader=market_reader)
+    try:
+        # OHLCVデータをロード
+        ohlcv = service.load_ohlcv(stock_code, source, start_date, end_date)
+        source_bars = len(ohlcv)
 
-    # OHLCVデータをロード
-    ohlcv = service.load_ohlcv(stock_code, source, start_date, end_date)
-    source_bars = len(ohlcv)
+        # 相対モード: ベンチマークでOHLCVを変換
+        if benchmark_code:
+            benchmark_df = service.load_benchmark_ohlcv(
+                benchmark_code, start_date, end_date
+            )
+            opts = relative_options or {}
+            handle_zero = opts.get("handle_zero_division", "skip")
+            ohlcv = calculate_relative_ohlcv(ohlcv, benchmark_df, handle_zero)
 
-    # 相対モード: ベンチマークでOHLCVを変換
-    if benchmark_code:
-        benchmark_df = service.load_benchmark_ohlcv(
-            benchmark_code, start_date, end_date
-        )
-        opts = relative_options or {}
-        handle_zero = opts.get("handle_zero_division", "skip")
-        ohlcv = calculate_relative_ohlcv(ohlcv, benchmark_df, handle_zero)
+        # Timeframe変換
+        ohlcv = service.resample_timeframe(ohlcv, timeframe)
+        resampled_bars = len(ohlcv)
 
-    # Timeframe変換
-    ohlcv = service.resample_timeframe(ohlcv, timeframe)
-    resampled_bars = len(ohlcv)
+        # レコード形式に変換（NaN/Infをクリーニング）
+        records: list[dict[str, Any]] = []
+        for idx, row in ohlcv.iterrows():
+            records.append({
+                "date": _format_date(idx),
+                "open": _clean_value(row["Open"]),
+                "high": _clean_value(row["High"]),
+                "low": _clean_value(row["Low"]),
+                "close": _clean_value(row["Close"]),
+                "volume": _clean_value(row["Volume"]),
+            })
 
-    # レコード形式に変換（NaN/Infをクリーニング）
-    records: list[dict[str, Any]] = []
-    for idx, row in ohlcv.iterrows():
-        records.append({
-            "date": _format_date(idx),
-            "open": _clean_value(row["Open"]),
-            "high": _clean_value(row["High"]),
-            "low": _clean_value(row["Low"]),
-            "close": _clean_value(row["Close"]),
-            "volume": _clean_value(row["Volume"]),
-        })
-
-    return {
-        "stock_code": stock_code,
-        "timeframe": timeframe,
-        "benchmark_code": benchmark_code,
-        "meta": {
-            "source_bars": source_bars,
-            "resampled_bars": resampled_bars,
-        },
-        "data": records,
-    }
+        return {
+            "stock_code": stock_code,
+            "timeframe": timeframe,
+            "benchmark_code": benchmark_code,
+            "meta": {
+                "source_bars": source_bars,
+                "resampled_bars": resampled_bars,
+            },
+            "data": records,
+        }
+    finally:
+        service.close()
 
 
 @router.post(
@@ -120,7 +124,10 @@ OHLCVデータを指定したTimeframe（週足/月足）に変換します。
 - Volume: sum（期間の出来高合計）
 """,
 )
-async def resample_ohlcv(request: OHLCVResampleRequest) -> OHLCVResampleResponse:
+async def resample_ohlcv(
+    request: OHLCVResampleRequest,
+    http_request: Request,
+) -> OHLCVResampleResponse:
     """OHLCVデータをリサンプル"""
     logger.info(
         f"OHLCVリサンプル: {request.stock_code} "
@@ -131,6 +138,7 @@ async def resample_ohlcv(request: OHLCVResampleRequest) -> OHLCVResampleResponse
     relative_opts = (
         request.relative_options.model_dump() if request.relative_options else None
     )
+    market_reader = getattr(http_request.app.state, "market_reader", None)
 
     loop = asyncio.get_running_loop()
     try:
@@ -145,6 +153,7 @@ async def resample_ohlcv(request: OHLCVResampleRequest) -> OHLCVResampleResponse
                 request.end_date,
                 request.benchmark_code,
                 relative_opts,
+                market_reader,
             ),
             timeout=TIMEOUT_SECONDS,
         )

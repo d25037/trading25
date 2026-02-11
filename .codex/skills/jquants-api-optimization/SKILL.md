@@ -1,8 +1,8 @@
 ---
 name: jquants-api-optimization
-description: Compatibility alias for ts-jquants-api-optimization. Use when the legacy skill name jquants-api-optimization is referenced.
+description: Compatibility alias for bt-jquants-proxy-optimization. Use when the legacy skill name jquants-api-optimization is referenced.
 ---
 
 # compatibility alias
 
-Use `../ts-jquants-api-optimization/SKILL.md` as the source of truth.
+Use `../bt-jquants-proxy-optimization/SKILL.md` as the source of truth.

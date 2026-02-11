@@ -10,7 +10,7 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
 - **`packages/api/`** - **ARCHIVED** — 旧 Hono サーバー（Phase 3F で FastAPI に完全移行） → [API AGENTS.md](./packages/api/AGENTS.md)
-- **`packages/shared/`** - JQuants API, SQLite, TA indicators, FA module → [Shared AGENTS.md](./packages/shared/AGENTS.md)
+- **`packages/shared/`** - JQuants API clients, shared API types, TA/FA utilities → [Shared AGENTS.md](./packages/shared/AGENTS.md)
 - **`packages/cli/`** - Gunshi CLI for dataset/portfolio/analysis → [CLI AGENTS.md](./packages/cli/AGENTS.md)
 
 ## Critical Rules
@@ -40,7 +40,7 @@ export interface RankingParams { ... }
 
 ## TypeScript Configuration
 
-Root `tsconfig.json` excludes web and api packages (compiled separately).
+Root `tsconfig.json` は shared / cli を対象にし、web は別設定で型検査する。
 - **Root**: packages/shared, packages/cli
 - **Web**: JSX + DOM APIs (React 19)
 - **API**: Node.js-specific (ESNext)
@@ -100,20 +100,19 @@ bun run --filter @trading25/shared bt:sync  # Fetch schema + generate types
 
 **ステップ**:
 1. Lint (`bun run lint`)
-2. OpenAPI 型生成 (`cd packages/api && bun run generate:types`)
-3. bt OpenAPI 型生成 (`cd packages/shared && bun run bt:generate-types`)
-4. Build shared package (`bun run --filter @trading25/shared build`)
-5. Typecheck (`bun run typecheck:all`)
-6. Test with coverage (`bun run test:coverage`)
-7. Coverage threshold 検証 (`bun run check:coverage`)
+2. bt OpenAPI 型生成 (`cd packages/shared && bun run bt:generate-types`)
+3. Build shared package (`bun run --filter @trading25/shared build`)
+4. Typecheck (`bun run typecheck:all`)
+5. Test with coverage (`bun run test:coverage`)
+6. Coverage threshold 検証 (`bun run check:coverage`)
 
 ## Technology Stack
 
 - **Core**: TypeScript + Bun workspaces + Biome 2.1.4
 - **Testing**: Bun (backend) + Vitest (web)
 - **Web**: React 19 + Vite 7 + Tailwind CSS v4 + TanStack Query + Zustand
-- **API**: Hono + @hono/zod-openapi + Zod v4 + Scalar
-- **Data**: SQLite (bun:sqlite) + Drizzle ORM + JQuants API
+- **API**: FastAPI (`apps/bt`, port `3002`) + OpenAPI
+- **Data**: FastAPI (:3002) + OpenAPI generated types + JQuants API
 - **CLI**: Gunshi + Chalk + Ora
 
 ## Environment Variables
