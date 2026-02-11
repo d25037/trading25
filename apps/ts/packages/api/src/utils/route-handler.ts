@@ -13,6 +13,7 @@ import {
   type ErrorResponseResult,
   type ErrorStatusCode,
   type ErrorType,
+  isErrorStatusCode,
   resolveAllowedStatus,
 } from './error-responses';
 
@@ -50,6 +51,7 @@ export function handleDomainError<Code extends ErrorStatusCode = ErrorStatusCode
   allowedStatusCodes?: readonly Code[]
 ): ErrorResponseResult<Code> {
   const errorMessage = getErrorMessage(error);
+  const errorStack = getErrorStack(error);
   const errorConfig = classifyError(error);
 
   if (errorConfig) {
@@ -67,7 +69,7 @@ export function handleDomainError<Code extends ErrorStatusCode = ErrorStatusCode
   logger.error(`Failed to ${operationName}`, {
     correlationId,
     error: errorMessage,
-    stack: getErrorStack(error),
+    stack: errorStack,
     ...logContext,
   });
 
@@ -98,6 +100,33 @@ export interface RouteErrorConfig {
   errorMappings?: ErrorMapping[];
   /** Default error type for unhandled errors (default: 'Internal Server Error') */
   defaultErrorType?: ErrorType;
+}
+
+interface ErrorWithStatusCode {
+  statusCode?: unknown;
+}
+
+function statusToErrorType(statusCode: ErrorStatusCode): ErrorType {
+  switch (statusCode) {
+    case 400:
+      return 'Bad Request';
+    case 404:
+      return 'Not Found';
+    case 409:
+      return 'Conflict';
+    case 422:
+      return 'Unprocessable Entity';
+    case 500:
+    default:
+      return 'Internal Server Error';
+  }
+}
+
+function getStatusCodeFromError(error: unknown): ErrorStatusCode | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const statusCode = (error as ErrorWithStatusCode).statusCode;
+  if (typeof statusCode !== 'number') return null;
+  return isErrorStatusCode(statusCode) ? statusCode : null;
 }
 
 /**
@@ -138,6 +167,7 @@ export function handleRouteError<Code extends ErrorStatusCode = ErrorStatusCode>
   config: RouteErrorConfig & { allowedStatusCodes?: readonly Code[] }
 ): ErrorResponseResult<Code> {
   const errorMessage = getErrorMessage(error);
+  const errorStack = getErrorStack(error);
 
   // Validate allowedStatusCodes includes 422 when checkDatabaseErrors is enabled
   if (config.checkDatabaseErrors && config.allowedStatusCodes && !config.allowedStatusCodes.includes(422 as Code)) {
@@ -157,11 +187,41 @@ export function handleRouteError<Code extends ErrorStatusCode = ErrorStatusCode>
     if (dbResponse) return dbResponse as ErrorResponseResult<Code>;
   }
 
+  const statusCodeFromError = getStatusCodeFromError(error);
+  if (statusCodeFromError !== null) {
+    const statusCode = resolveAllowedStatus(statusCodeFromError, config.allowedStatusCodes);
+    const errorType = statusToErrorType(statusCode);
+
+    if (statusCode >= 500) {
+      logger.error(`Failed to ${config.operationName}`, {
+        correlationId,
+        statusCode,
+        error: errorMessage,
+        stack: errorStack,
+        ...config.logContext,
+      });
+    } else {
+      logger.warn(`${config.operationName} failed`, {
+        correlationId,
+        statusCode,
+        error: errorMessage,
+        ...config.logContext,
+      });
+    }
+
+    return c.json(
+      createErrorResponse({
+        error: errorType,
+        message: errorMessage,
+        correlationId,
+      }),
+      statusCode
+    ) as ErrorResponseResult<Code>;
+  }
+
   // Check custom error mappings
   const allMappings = [...(config.errorMappings ?? []), ...COMMON_ERROR_MAPPINGS];
   const mapping = findErrorMapping(errorMessage, allMappings);
-
-  const errorStack = getErrorStack(error);
 
   if (mapping) {
     // Log at appropriate level based on status code

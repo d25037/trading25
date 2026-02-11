@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const mockAnalyzePortfolio = mock();
 
@@ -14,6 +14,10 @@ import portfolioFactorRegressionApp from '../analytics/portfolio-factor-regressi
 describe('Portfolio Factor Regression Routes', () => {
   beforeEach(() => {
     mockAnalyzePortfolio.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it('returns regression results for valid portfolio', async () => {

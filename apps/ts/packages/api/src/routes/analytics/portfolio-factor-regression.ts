@@ -1,7 +1,4 @@
 import { createRoute } from '@hono/zod-openapi';
-import { FactorRegressionError } from '@trading25/shared/factor-regression';
-import { PortfolioNotFoundError } from '@trading25/shared/portfolio';
-import { logger } from '@trading25/shared/utils/logger';
 import { getCorrelationId } from '../../middleware/correlation';
 import { ErrorResponseSchema } from '../../schemas/common';
 import {
@@ -10,7 +7,7 @@ import {
   PortfolioFactorRegressionResponseSchema,
 } from '../../schemas/portfolio-factor-regression';
 import { PortfolioFactorRegressionService } from '../../services/portfolio-factor-regression-service';
-import { createErrorResponse, createManagedService, createOpenAPIApp } from '../../utils';
+import { createManagedService, createOpenAPIApp, handleRouteError } from '../../utils';
 
 const getPortfolioFactorRegressionService = createManagedService('PortfolioFactorRegressionService', {
   factory: () => new PortfolioFactorRegressionService(),
@@ -107,51 +104,18 @@ portfolioFactorRegressionApp.openapi(getPortfolioFactorRegressionRoute, async (c
 
     return c.json(result, 200);
   } catch (error) {
-    const errorMessage = error instanceof Error ? error.message : String(error);
-
-    logger.error('Failed to perform portfolio factor regression', {
-      correlationId,
-      portfolioId,
-      lookbackDays: query.lookbackDays,
-      error: errorMessage,
+    return handleRouteError(c, error, correlationId, {
+      operationName: 'perform portfolio factor regression',
+      logContext: { portfolioId, lookbackDays: query.lookbackDays },
+      errorMappings: [
+        { pattern: 'not found', errorType: 'Not Found', statusCode: 404 },
+        { pattern: 'insufficient', errorType: 'Unprocessable Entity', statusCode: 422 },
+        { pattern: 'no valid', errorType: 'Unprocessable Entity', statusCode: 422 },
+        { pattern: 'zero', errorType: 'Unprocessable Entity', statusCode: 422 },
+        { pattern: 'no stocks', errorType: 'Unprocessable Entity', statusCode: 422 },
+      ],
+      allowedStatusCodes: [400, 404, 422, 500] as const,
     });
-
-    // Handle specific error cases
-    if (error instanceof PortfolioNotFoundError) {
-      return c.json(
-        createErrorResponse({
-          error: 'Not Found',
-          message: errorMessage,
-          correlationId,
-        }),
-        404
-      );
-    }
-
-    if (
-      error instanceof FactorRegressionError &&
-      (error.code === 'NO_VALID_STOCKS' ||
-        error.code === 'INSUFFICIENT_PORTFOLIO_DATA' ||
-        error.code === 'ZERO_PORTFOLIO_VALUE')
-    ) {
-      return c.json(
-        createErrorResponse({
-          error: 'Unprocessable Entity',
-          message: errorMessage,
-          correlationId,
-        }),
-        422
-      );
-    }
-
-    return c.json(
-      createErrorResponse({
-        error: 'Internal Server Error',
-        message: errorMessage,
-        correlationId,
-      }),
-      500
-    );
   }
 });
 
