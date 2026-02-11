@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const mockAnalyzeStock = mock();
 
@@ -14,6 +14,10 @@ import factorRegressionApp from '../analytics/factor-regression';
 describe('Factor Regression Routes', () => {
   beforeEach(() => {
     mockAnalyzeStock.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it('returns factor regression results', async () => {

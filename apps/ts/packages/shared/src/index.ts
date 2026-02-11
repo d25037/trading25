@@ -7,7 +7,6 @@
  * - @trading25/shared/ta
  * - @trading25/shared/dataset
  * - @trading25/shared/portfolio
- * - @trading25/shared/fundamental-analysis
  */
 
 // ===== CLIENT EXPORTS =====
@@ -209,37 +208,6 @@ export {
   NotFoundError,
   Trading25Error,
 } from './errors';
-export type {
-  FinancialRatios,
-  FundamentalAnalysisResult,
-  ROECalculationOptions,
-  ROEMetadata,
-  ROEResult,
-} from './fundamental-analysis';
-// ===== FUNDAMENTAL ANALYSIS EXPORTS =====
-export {
-  calculateBPS,
-  calculateDilutedEPS,
-  calculateEPS,
-  calculateNetMargin,
-  calculateOperatingMargin,
-  calculatePBR,
-  calculatePER,
-  calculateROA,
-  calculateROE,
-  calculateROEBatch,
-  canCalculateROE,
-  formatROEResult,
-  getAccountingStandard,
-  getEquity,
-  getNetProfit,
-  getNetSales,
-  getOperatingProfit,
-  getTotalAssets,
-  hasConsolidatedData,
-  isConsolidatedStatement,
-  ROECalculationError,
-} from './fundamental-analysis';
 
 // ===== PORTFOLIO EXPORTS =====
 export type {

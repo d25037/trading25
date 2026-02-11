@@ -10,7 +10,6 @@ import { BacktestClient, type OHLCVRecord as BtOHLCVRecord } from '@trading25/sh
 import { DatasetReader } from '@trading25/shared/dataset';
 import { INDEX_MASTER_DATA } from '@trading25/shared/db/constants/index-master-data';
 import { INDEX_CATEGORIES } from '@trading25/shared/db/schema/market-schema';
-import { hasActualFinancialData, isFiscalYear } from '@trading25/shared/fundamental-analysis';
 import { getDatasetPath } from '@trading25/shared/utils/dataset-paths';
 import { logger } from '@trading25/shared/utils/logger';
 import type {
@@ -68,6 +67,27 @@ function buildDateRange(startDate?: string, endDate?: string): { from: Date; to:
     from: parseDate(startDate) ?? new Date('1900-01-01'),
     to: parseDate(endDate) ?? new Date(),
   };
+}
+
+function isFiscalYear(periodType: string | null | undefined): boolean {
+  return periodType === 'FY';
+}
+
+function isValidEps(eps: number | null | undefined): eps is number {
+  return typeof eps === 'number' && Number.isFinite(eps) && eps !== 0;
+}
+
+function hasActualFinancialData(data: {
+  roe?: number | null;
+  eps?: number | null;
+  netProfit?: number | null;
+  equity?: number | null;
+}): boolean {
+  if (data.roe !== null && data.roe !== undefined) return true;
+  if (isValidEps(data.eps)) return true;
+  if (typeof data.netProfit === 'number') return true;
+  if (typeof data.equity === 'number') return true;
+  return false;
 }
 
 /** Internal type for raw OHLCV data from DatasetReader */

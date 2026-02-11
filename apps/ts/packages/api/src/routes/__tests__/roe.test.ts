@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
 const mockCalculateROE = mock();
 
@@ -13,6 +13,10 @@ describe('ROE Routes', () => {
   beforeEach(async () => {
     mockCalculateROE.mockReset();
     roeApp = (await import('../analytics/roe')).default;
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it('returns 400 when required params are missing', async () => {

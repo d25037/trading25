@@ -1,7 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
 
-const mockHasActualFinancialData = mock((input: { equity: number | null }) => input.equity !== null);
-const mockIsFiscalYear = mock((period: string | null | undefined) => period === 'FY');
 const mockGetDatasetPath = mock(() => '/tmp/test-dataset.db');
 const mockLogger = {
   debug: mock(),
@@ -125,11 +123,6 @@ mock.module('@trading25/shared/dataset', () => ({
   DatasetReader: MockDatasetReader,
 }));
 
-mock.module('@trading25/shared/fundamental-analysis', () => ({
-  hasActualFinancialData: mockHasActualFinancialData,
-  isFiscalYear: mockIsFiscalYear,
-}));
-
 mock.module('@trading25/shared/utils/dataset-paths', () => ({
   getDatasetPath: mockGetDatasetPath,
 }));
@@ -151,8 +144,6 @@ describe('DatasetDataService', () => {
     MockDatasetReader.closeCount = 0;
 
     mockResampleOHLCV.mockClear();
-    mockHasActualFinancialData.mockClear();
-    mockIsFiscalYear.mockClear();
 
     const moduleUrl = new URL('./dataset-data-service.ts', import.meta.url);
     moduleUrl.searchParams.set('test', 'dataset-service');
@@ -414,8 +405,6 @@ describe('DatasetDataService', () => {
 
     expect(result).toHaveLength(1);
     expect(result?.[0]?.typeOfCurrentPeriod).toBe('FY');
-    expect(mockHasActualFinancialData).toHaveBeenCalledTimes(1);
-    expect(mockIsFiscalYear).toHaveBeenCalledWith('FY');
     expect(MockDatasetReader.closeCount).toBe(1);
   });
 

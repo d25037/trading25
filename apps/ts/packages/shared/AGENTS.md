@@ -7,7 +7,7 @@ Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（DB/dat
 - **Core**: JQuants API v2 client with API key authentication
 - **Database**: SQLite with Drizzle ORM (see `drizzle-orm` skill)
 - **Logger**: Node.js specific (separate from frontend)
-- **Submodules**: `/dataset`, `/ta`, `/core`, `/fundamental-analysis`, `/factor-regression`, `/screening`
+- **Submodules**: `/dataset`, `/ta`, `/core`, `/portfolio`, `/watchlist`, `/db`
 
 ## Modules
 
@@ -15,9 +15,6 @@ Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（DB/dat
 |--------|---------|
 | `@trading25/shared/dataset` | dataset API client / builder / reader / validators |
 | `@trading25/shared/ta` | Utilities only (Timeframe変換、Relative OHLC、インジケータ計算は全てapps/bt/ API移行完了) |
-| `@trading25/shared/fundamental-analysis` | ROE, ROA, PER, PBR, EPS, BPS calculations |
-| `@trading25/shared/factor-regression` | Two-stage factor regression for risk decomposition |
-| `@trading25/shared/screening` | Range Break detection algorithms |
 | `@trading25/shared/portfolio` | portfolio DB 操作と型定義 |
 | `@trading25/shared/watchlist` | watchlist DB 操作と型定義 |
 | `@trading25/shared/market-sync` | Market data sync and rankings |
