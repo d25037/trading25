@@ -10,11 +10,8 @@
  */
 
 // ===== CLIENT EXPORTS =====
-export { BaseJQuantsClient } from '@trading25/clients-ts/base/BaseJQuantsClient';
-export { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
-export { CalendarClient } from '@trading25/clients-ts/markets/CalendarClient';
-export { IndexClient } from '@trading25/clients-ts/markets/IndexClient';
-export { StockDataClient } from '@trading25/clients-ts/markets/StockDataClient';
+// Direct J-Quants clients are intentionally not re-exported.
+// Use bt FastAPI endpoints (`/api/jquants/*`) from web/cli/shared modules.
 // ===== CONFIGURATION EXPORTS =====
 export type {
   AppConfig,
@@ -74,7 +71,6 @@ export {
   getMarketCode,
   getMarketCodes,
   getMarketType,
-  getRequestsPerSecond,
   getUniqueValues,
   groupStocksByMarket,
   groupStocksBySector,
@@ -85,8 +81,6 @@ export {
   isValidDateRange,
   isValidSectorCode,
   isValidStockCode,
-  JQUANTS_PLAN_LIMITS,
-  type JQuantsPlan,
   MarginDataSchema,
   MarketTypeSchema,
   MultiStageProgressTracker,
@@ -105,6 +99,7 @@ export {
   safeJsonStringify,
   safeValidateStockDataArray,
   safeValidateStockInfo,
+  resolveDatasetConcurrency,
   sanitizeFilePath,
   sleep,
   TopixDataSchema,
