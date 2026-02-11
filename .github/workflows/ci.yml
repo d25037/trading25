@@ -11,6 +11,8 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: "1.3.8"
@@ -26,6 +28,8 @@ jobs:
       - name: Install deps (apps/bt)
         run: uv sync --locked
         working-directory: apps/bt
+      - name: Audit codex skills
+        run: python scripts/skills/audit_skills.py --strict-legacy
       - name: Lint
         run: ./scripts/lint.sh
       - name: Typecheck
