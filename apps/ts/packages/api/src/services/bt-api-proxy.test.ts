@@ -7,13 +7,13 @@ const originalBtApiTimeout = process.env.BT_API_TIMEOUT;
 
 function restoreEnv(): void {
   if (originalBtApiUrl === undefined) {
-    delete process.env.BT_API_URL;
+    process.env.BT_API_URL = undefined;
   } else {
     process.env.BT_API_URL = originalBtApiUrl;
   }
 
   if (originalBtApiTimeout === undefined) {
-    delete process.env.BT_API_TIMEOUT;
+    process.env.BT_API_TIMEOUT = undefined;
   } else {
     process.env.BT_API_TIMEOUT = originalBtApiTimeout;
   }
@@ -33,7 +33,7 @@ async function expectBtApiProxyError<T>(promise: Promise<T>): Promise<BtApiProxy
 describe('btGet', () => {
   beforeEach(() => {
     process.env.BT_API_URL = 'http://bt.local';
-    delete process.env.BT_API_TIMEOUT;
+    process.env.BT_API_TIMEOUT = undefined;
   });
 
   afterEach(() => {
