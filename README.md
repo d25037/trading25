@@ -63,7 +63,8 @@ bun run --filter @trading25/shared bt:sync
 
 `.github/workflows/ci.yml` で以下を実行:
 
-1. Lint
-2. Typecheck
-3. Package unit tests
-4. App integration tests
+1. Codex skills audit（`scripts/skills/audit_skills.py --strict-legacy`）
+2. Lint
+3. Typecheck
+4. Package unit tests
+5. App integration tests

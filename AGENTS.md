@@ -116,9 +116,17 @@ bun lint && bun check:fix        # リント（Biome）
 プロジェクトルートの `issues/`（オープン）、`issues/done/`（クローズ済み）で管理。
 フォーマット: `{id}-{slug}.md`（例: `bt-016-test-coverage-70.md`）
 
+## Skills ガバナンス
+
+- プロジェクト正本のスキルは `/.codex/skills` に配置する
+- `apps/ts/.claude/skills` と `apps/bt/.claude/skills` は legacy 参照用（read-only）
+- 参照生成: `scripts/skills/refresh_skill_references.py`
+- 監査: `scripts/skills/audit_skills.py --strict-legacy`
+
 ## CI
 
 `.github/workflows/ci.yml` により全ブランチ push / PR で自動実行。
+- **skills**: audit（stale検知 / frontmatter検証 / legacy変更検知）
 - **ts**: lint → 型生成 → build → typecheck → test + coverage
 - **bt**: lint → typecheck → test + coverage（ゲート70%）
 

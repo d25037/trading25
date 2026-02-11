@@ -48,7 +48,9 @@ htmlcov/
 **/.claude/settings.json
 .mcp.json
 .agent/
-.codex/
+**/.codex/
+!/.codex/
+!/.codex/**
 
 # === apps/bt ===
 apps/bt/notebooks/generated/
