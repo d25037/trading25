@@ -63,7 +63,7 @@ function EpsMetricCard({ actualEps, forecastEps, changeRate }: EpsMetricCardProp
   };
 
   return (
-    <div className="col-span-2 flex min-h-16 flex-col justify-center rounded-md bg-background/50 px-2 py-1.5">
+    <div className="flex min-h-16 flex-col justify-center rounded-md bg-background/50 px-2 py-1.5">
       <span className="mb-0.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">
         EPS
       </span>
