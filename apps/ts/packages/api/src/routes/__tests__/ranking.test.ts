@@ -1,23 +1,24 @@
-import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { afterAll, beforeEach, describe, expect, it, mock } from 'bun:test';
 
-const mockGetRankings = mock();
+const mockBtGet = mock();
 
-mock.module('../../services/market/market-ranking-service', () => ({
-  MarketRankingService: class {
-    getRankings = mockGetRankings;
-    close = () => {};
-  },
+mock.module('../../services/bt-api-proxy', () => ({
+  btGet: mockBtGet,
 }));
 
 import rankingApp from '../analytics/ranking';
 
 describe('Market Ranking Routes', () => {
   beforeEach(() => {
-    mockGetRankings.mockReset();
+    mockBtGet.mockReset();
+  });
+
+  afterAll(() => {
+    mock.restore();
   });
 
   it('returns rankings and passes parsed query to service', async () => {
-    mockGetRankings.mockResolvedValue({
+    mockBtGet.mockResolvedValue({
       date: '2025-01-15',
       markets: ['prime', 'standard'],
       lookbackDays: 3,
@@ -37,7 +38,7 @@ describe('Market Ranking Routes', () => {
     );
 
     expect(res.status).toBe(200);
-    expect(mockGetRankings).toHaveBeenCalledWith({
+    expect(mockBtGet).toHaveBeenCalledWith('/api/analytics/ranking', {
       date: '2025-01-15',
       limit: 5,
       markets: 'prime,standard',

@@ -13,6 +13,7 @@ import {
   type ErrorResponseResult,
   type ErrorStatusCode,
   type ErrorType,
+  isErrorStatusCode,
   resolveAllowedStatus,
 } from './error-responses';
 
@@ -50,6 +51,7 @@ export function handleDomainError<Code extends ErrorStatusCode = ErrorStatusCode
   allowedStatusCodes?: readonly Code[]
 ): ErrorResponseResult<Code> {
   const errorMessage = getErrorMessage(error);
+  const errorStack = getErrorStack(error);
   const errorConfig = classifyError(error);
 
   if (errorConfig) {
@@ -67,7 +69,7 @@ export function handleDomainError<Code extends ErrorStatusCode = ErrorStatusCode
   logger.error(`Failed to ${operationName}`, {
     correlationId,
     error: errorMessage,
-    stack: getErrorStack(error),
+    stack: errorStack,
     ...logContext,
   });
 
@@ -98,6 +100,115 @@ export interface RouteErrorConfig {
   errorMappings?: ErrorMapping[];
   /** Default error type for unhandled errors (default: 'Internal Server Error') */
   defaultErrorType?: ErrorType;
+}
+
+interface ErrorWithStatusCode {
+  statusCode?: unknown;
+}
+
+function statusToErrorType(statusCode: ErrorStatusCode): ErrorType {
+  switch (statusCode) {
+    case 400:
+      return 'Bad Request';
+    case 404:
+      return 'Not Found';
+    case 409:
+      return 'Conflict';
+    case 422:
+      return 'Unprocessable Entity';
+    default:
+      return 'Internal Server Error';
+  }
+}
+
+function getStatusCodeFromError(error: unknown): ErrorStatusCode | null {
+  if (typeof error !== 'object' || error === null) return null;
+  const statusCode = (error as ErrorWithStatusCode).statusCode;
+  if (typeof statusCode !== 'number') return null;
+  return isErrorStatusCode(statusCode) ? statusCode : null;
+}
+
+function logByStatusCode(
+  operationName: string,
+  correlationId: string,
+  statusCode: ErrorStatusCode,
+  errorMessage: string,
+  errorStack: string | undefined,
+  logContext?: Record<string, unknown>,
+  reason?: string
+): void {
+  if (statusCode >= 500) {
+    logger.error(`Failed to ${operationName}`, {
+      correlationId,
+      statusCode,
+      error: errorMessage,
+      stack: errorStack,
+      ...logContext,
+    });
+    return;
+  }
+
+  logger.warn(`${operationName} failed`, {
+    correlationId,
+    statusCode,
+    reason,
+    error: errorMessage,
+    ...logContext,
+  });
+}
+
+function createStatusCodeResponse<Code extends ErrorStatusCode = ErrorStatusCode>(
+  c: Context,
+  statusCodeFromError: ErrorStatusCode,
+  errorMessage: string,
+  correlationId: string,
+  operationName: string,
+  errorStack: string | undefined,
+  config: RouteErrorConfig & { allowedStatusCodes?: readonly Code[] }
+): ErrorResponseResult<Code> {
+  const statusCode = resolveAllowedStatus(statusCodeFromError, config.allowedStatusCodes);
+  const errorType = statusToErrorType(statusCode);
+
+  logByStatusCode(operationName, correlationId, statusCode, errorMessage, errorStack, config.logContext);
+
+  return c.json(
+    createErrorResponse({
+      error: errorType,
+      message: errorMessage,
+      correlationId,
+    }),
+    statusCode
+  ) as ErrorResponseResult<Code>;
+}
+
+function createMappedResponse<Code extends ErrorStatusCode = ErrorStatusCode>(
+  c: Context,
+  mapping: ErrorMapping,
+  errorMessage: string,
+  correlationId: string,
+  operationName: string,
+  errorStack: string | undefined,
+  config: RouteErrorConfig & { allowedStatusCodes?: readonly Code[] }
+): ErrorResponseResult<Code> {
+  logByStatusCode(
+    operationName,
+    correlationId,
+    mapping.statusCode as ErrorStatusCode,
+    errorMessage,
+    errorStack,
+    config.logContext,
+    mapping.errorType
+  );
+
+  const statusCode = resolveAllowedStatus(mapping.statusCode as ErrorStatusCode, config.allowedStatusCodes);
+  return c.json(
+    createErrorResponse({
+      error: mapping.errorType,
+      message: mapping.message ?? errorMessage,
+      correlationId,
+    }),
+    statusCode
+  ) as ErrorResponseResult<Code>;
 }
 
 /**
@@ -138,6 +249,7 @@ export function handleRouteError<Code extends ErrorStatusCode = ErrorStatusCode>
   config: RouteErrorConfig & { allowedStatusCodes?: readonly Code[] }
 ): ErrorResponseResult<Code> {
   const errorMessage = getErrorMessage(error);
+  const errorStack = getErrorStack(error);
 
   // Validate allowedStatusCodes includes 422 when checkDatabaseErrors is enabled
   if (config.checkDatabaseErrors && config.allowedStatusCodes && !config.allowedStatusCodes.includes(422 as Code)) {
@@ -157,39 +269,17 @@ export function handleRouteError<Code extends ErrorStatusCode = ErrorStatusCode>
     if (dbResponse) return dbResponse as ErrorResponseResult<Code>;
   }
 
+  const statusCodeFromError = getStatusCodeFromError(error);
+  if (statusCodeFromError !== null) {
+    return createStatusCodeResponse(c, statusCodeFromError, errorMessage, correlationId, config.operationName, errorStack, config);
+  }
+
   // Check custom error mappings
   const allMappings = [...(config.errorMappings ?? []), ...COMMON_ERROR_MAPPINGS];
   const mapping = findErrorMapping(errorMessage, allMappings);
 
-  const errorStack = getErrorStack(error);
-
   if (mapping) {
-    // Log at appropriate level based on status code
-    if (mapping.statusCode >= 500) {
-      logger.error(`Failed to ${config.operationName}`, {
-        correlationId,
-        error: errorMessage,
-        stack: errorStack,
-        ...config.logContext,
-      });
-    } else {
-      logger.warn(`${config.operationName} failed`, {
-        correlationId,
-        reason: mapping.errorType,
-        error: errorMessage,
-        ...config.logContext,
-      });
-    }
-
-    const statusCode = resolveAllowedStatus(mapping.statusCode as ErrorStatusCode, config.allowedStatusCodes);
-    return c.json(
-      createErrorResponse({
-        error: mapping.errorType,
-        message: mapping.message ?? errorMessage,
-        correlationId,
-      }),
-      statusCode
-    ) as ErrorResponseResult<Code>;
+    return createMappedResponse(c, mapping, errorMessage, correlationId, config.operationName, errorStack, config);
   }
 
   // Default to 500 Internal Server Error

@@ -1,25 +1,33 @@
 ---
 name: ts-financial-analysis
-description: ts 側の分析機能（ROE, ranking, screening, factor regression, portfolio factor regression）を現行 API 契約に合わせて扱うスキル。分析表示、CLI出力、型整合の実装/修正/レビュー時に使用する。
+description: bt FastAPI 分析APIを ts/web と ts/cli から利用する統合スキル。UI表示、CLI出力、型同期、API呼び出し整合の実装/修正/レビュー時に使用する。
 ---
 
 # ts-financial-analysis
 
+`apps/bt` が financial-analysis の Single Source of Truth。  
+このスキルは ts 側の **consumer/integration** のみを扱う。
+
 ## Source of Truth
 
 - OpenAPI snapshot: `apps/ts/packages/shared/openapi/bt-openapi.json`
-- Web hooks: `apps/ts/packages/web/src/hooks/useRanking.ts`, `useFundamentals.ts`, `useFactorRegression.ts`, `usePortfolioFactorRegression.ts`
+- Web hooks: `apps/ts/packages/web/src/hooks/useRanking.ts`, `useScreening.ts`, `useFundamentals.ts`, `useFactorRegression.ts`, `usePortfolioFactorRegression.ts`
 - CLI commands: `apps/ts/packages/cli/src/commands/analysis/**`
 - Shared types: `@trading25/shared/types/api-types`, `@trading25/shared/types/api-response-types`
 
-## Checks
+## Workflow
 
-1. `/api/analytics/*` の path/query と呼び出し実装が一致していること。
-2. 欠損値、ゼロ除算、時系列欠落に対する表示/集計が破綻しないこと。
-3. web と cli が同じ shared 型を使っていること。
-4. 並び順やランキング項目が API レスポンス仕様と一致していること。
+1. `bt-openapi.json` で対象エンドポイントの path/query/response を確認する。
+2. ts 側の呼び出し実装（web hooks / cli api-client）が契約通りか確認する。
+3. 契約変更時は `bun run --filter @trading25/shared bt:sync` を実行して型同期する。
+4. Web/CLI の表示・整形・エラーハンドリングの破綻を確認する。
+
+## Guardrails
+
+- ts 側で financial-analysis の計算ロジックを再実装しない。
+- Archived Hono analytics サービス層は bt プロキシ方針を維持する。
+- ts 側は「API呼び出し・型整合・表示整形」に責務を限定する。
 
 ## Notes
 
-- 計算ロジックが bt API 側にある機能は ts で再実装しない。
-- 契約更新時は `bt:sync` 後に分析系型とテストを確認する。
+- bt 側の分析ロジック実装変更は `bt-financial-analysis` スキルを使用する。

@@ -55,14 +55,6 @@
       "import": "./dist/portfolio-performance/*.js",
       "types": "./dist/portfolio-performance/*.d.ts"
     },
-    "./fundamental-analysis": {
-      "import": "./dist/fundamental-analysis/index.js",
-      "types": "./dist/fundamental-analysis/index.d.ts"
-    },
-    "./fundamental-analysis/*": {
-      "import": "./dist/fundamental-analysis/*.js",
-      "types": "./dist/fundamental-analysis/*.d.ts"
-    },
     "./watchlist": {
       "import": "./dist/watchlist/index.js",
       "types": "./dist/watchlist/index.d.ts"
