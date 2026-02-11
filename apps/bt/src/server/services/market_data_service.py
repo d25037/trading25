@@ -34,13 +34,23 @@ class MarketDataService:
         """Convert DB volume value to int with safe fallback for null/invalid values."""
         if value is None:
             return 0
-        try:
+
+        if isinstance(value, int):
+            return value
+
+        if isinstance(value, float):
             return int(value)
-        except (TypeError, ValueError):
+
+        if isinstance(value, str):
             try:
-                return int(float(str(value)))
-            except (TypeError, ValueError):
-                return 0
+                return int(value)
+            except ValueError:
+                try:
+                    return int(float(value))
+                except ValueError:
+                    return 0
+
+        return 0
 
     def get_stock_info(self, code: str) -> StockInfo | None:
         """単一銘柄の情報を取得"""
