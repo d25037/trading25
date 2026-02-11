@@ -116,7 +116,6 @@ function statusToErrorType(statusCode: ErrorStatusCode): ErrorType {
       return 'Conflict';
     case 422:
       return 'Unprocessable Entity';
-    case 500:
     default:
       return 'Internal Server Error';
   }
@@ -127,6 +126,89 @@ function getStatusCodeFromError(error: unknown): ErrorStatusCode | null {
   const statusCode = (error as ErrorWithStatusCode).statusCode;
   if (typeof statusCode !== 'number') return null;
   return isErrorStatusCode(statusCode) ? statusCode : null;
+}
+
+function logByStatusCode(
+  operationName: string,
+  correlationId: string,
+  statusCode: ErrorStatusCode,
+  errorMessage: string,
+  errorStack: string | undefined,
+  logContext?: Record<string, unknown>,
+  reason?: string
+): void {
+  if (statusCode >= 500) {
+    logger.error(`Failed to ${operationName}`, {
+      correlationId,
+      statusCode,
+      error: errorMessage,
+      stack: errorStack,
+      ...logContext,
+    });
+    return;
+  }
+
+  logger.warn(`${operationName} failed`, {
+    correlationId,
+    statusCode,
+    reason,
+    error: errorMessage,
+    ...logContext,
+  });
+}
+
+function createStatusCodeResponse<Code extends ErrorStatusCode = ErrorStatusCode>(
+  c: Context,
+  statusCodeFromError: ErrorStatusCode,
+  errorMessage: string,
+  correlationId: string,
+  operationName: string,
+  errorStack: string | undefined,
+  config: RouteErrorConfig & { allowedStatusCodes?: readonly Code[] }
+): ErrorResponseResult<Code> {
+  const statusCode = resolveAllowedStatus(statusCodeFromError, config.allowedStatusCodes);
+  const errorType = statusToErrorType(statusCode);
+
+  logByStatusCode(operationName, correlationId, statusCode, errorMessage, errorStack, config.logContext);
+
+  return c.json(
+    createErrorResponse({
+      error: errorType,
+      message: errorMessage,
+      correlationId,
+    }),
+    statusCode
+  ) as ErrorResponseResult<Code>;
+}
+
+function createMappedResponse<Code extends ErrorStatusCode = ErrorStatusCode>(
+  c: Context,
+  mapping: ErrorMapping,
+  errorMessage: string,
+  correlationId: string,
+  operationName: string,
+  errorStack: string | undefined,
+  config: RouteErrorConfig & { allowedStatusCodes?: readonly Code[] }
+): ErrorResponseResult<Code> {
+  logByStatusCode(
+    operationName,
+    correlationId,
+    mapping.statusCode as ErrorStatusCode,
+    errorMessage,
+    errorStack,
+    config.logContext,
+    mapping.errorType
+  );
+
+  const statusCode = resolveAllowedStatus(mapping.statusCode as ErrorStatusCode, config.allowedStatusCodes);
+  return c.json(
+    createErrorResponse({
+      error: mapping.errorType,
+      message: mapping.message ?? errorMessage,
+      correlationId,
+    }),
+    statusCode
+  ) as ErrorResponseResult<Code>;
 }
 
 /**
@@ -189,34 +271,7 @@ export function handleRouteError<Code extends ErrorStatusCode = ErrorStatusCode>
 
   const statusCodeFromError = getStatusCodeFromError(error);
   if (statusCodeFromError !== null) {
-    const statusCode = resolveAllowedStatus(statusCodeFromError, config.allowedStatusCodes);
-    const errorType = statusToErrorType(statusCode);
-
-    if (statusCode >= 500) {
-      logger.error(`Failed to ${config.operationName}`, {
-        correlationId,
-        statusCode,
-        error: errorMessage,
-        stack: errorStack,
-        ...config.logContext,
-      });
-    } else {
-      logger.warn(`${config.operationName} failed`, {
-        correlationId,
-        statusCode,
-        error: errorMessage,
-        ...config.logContext,
-      });
-    }
-
-    return c.json(
-      createErrorResponse({
-        error: errorType,
-        message: errorMessage,
-        correlationId,
-      }),
-      statusCode
-    ) as ErrorResponseResult<Code>;
+    return createStatusCodeResponse(c, statusCodeFromError, errorMessage, correlationId, config.operationName, errorStack, config);
   }
 
   // Check custom error mappings
@@ -224,32 +279,7 @@ export function handleRouteError<Code extends ErrorStatusCode = ErrorStatusCode>
   const mapping = findErrorMapping(errorMessage, allMappings);
 
   if (mapping) {
-    // Log at appropriate level based on status code
-    if (mapping.statusCode >= 500) {
-      logger.error(`Failed to ${config.operationName}`, {
-        correlationId,
-        error: errorMessage,
-        stack: errorStack,
-        ...config.logContext,
-      });
-    } else {
-      logger.warn(`${config.operationName} failed`, {
-        correlationId,
-        reason: mapping.errorType,
-        error: errorMessage,
-        ...config.logContext,
-      });
-    }
-
-    const statusCode = resolveAllowedStatus(mapping.statusCode as ErrorStatusCode, config.allowedStatusCodes);
-    return c.json(
-      createErrorResponse({
-        error: mapping.errorType,
-        message: mapping.message ?? errorMessage,
-        correlationId,
-      }),
-      statusCode
-    ) as ErrorResponseResult<Code>;
+    return createMappedResponse(c, mapping, errorMessage, correlationId, config.operationName, errorStack, config);
   }
 
   // Default to 500 Internal Server Error
