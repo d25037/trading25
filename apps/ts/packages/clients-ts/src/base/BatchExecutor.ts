@@ -1,6 +1,6 @@
 /**
  * BatchExecutor - Handles batch execution with retry logic
- * Rate limiting is handled by BaseJQuantsClient, not here
+ * Rate limiting is handled by backend services, not here
  */
 
 export interface BatchExecutorConfig {

@@ -3,7 +3,6 @@
  * JQuants API commands for fetching Japanese stock market data with lazy-loaded subcommands
  */
 
-import { JQuantsClient } from '@trading25/shared';
 import chalk from 'chalk';
 import { cli, define, lazy } from 'gunshi';
 import { CLI_NAME, CLI_VERSION } from '../../utils/constants.js';
@@ -59,20 +58,6 @@ async function jquantsCommandRunner(args: string[]): Promise<void> {
 
 // Export command runner for this group
 export default jquantsCommandRunner;
-
-// Utility functions exported for use by subcommands
-export function createJQuantsClient(options?: { useEnv?: boolean }): JQuantsClient {
-  const config: Record<string, string | undefined> = {};
-
-  if (options?.useEnv || process.env.JQUANTS_MAIL_ADDRESS) {
-    config.mailAddress = process.env.JQUANTS_MAIL_ADDRESS;
-    config.password = process.env.JQUANTS_PASSWORD;
-    config.refreshToken = process.env.JQUANTS_REFRESH_TOKEN;
-    config.idToken = process.env.JQUANTS_ID_TOKEN;
-  }
-
-  return new JQuantsClient(config);
-}
 
 export function handleApiError(error: unknown, message: string): never {
   console.error(chalk.red(`\n❌ ${message}`));

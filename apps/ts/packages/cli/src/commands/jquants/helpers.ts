@@ -1,13 +1,5 @@
-import { JQuantsClient } from '@trading25/shared';
 import chalk from 'chalk';
 import { CsvExporter } from '../../utils/csv-exporter';
-
-export async function setupJQuantsClient(): Promise<JQuantsClient> {
-  // Create client with environment variables (will be loaded automatically)
-  // API key is loaded from JQUANTS_API_KEY env var
-  const client = new JQuantsClient();
-  return client;
-}
 
 export async function exportData<T>(
   data: T[],

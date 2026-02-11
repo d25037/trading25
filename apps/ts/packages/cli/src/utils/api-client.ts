@@ -198,7 +198,7 @@ export class ApiClient {
       if (error instanceof Error) {
         if (error.message.includes('fetch failed') || error.message.includes('ECONNREFUSED')) {
           throw new Error(
-            'Cannot connect to API server. Please ensure the API server is running with "bun run dev" in packages/api'
+            'Cannot connect to API server. Please ensure bt FastAPI is running with "uv run bt server --port 3002"'
           );
         }
         throw error;

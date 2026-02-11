@@ -4,7 +4,6 @@
  */
 
 import * as fs from 'node:fs';
-import type { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import { DATASET_METADATA_KEYS, DrizzleDatasetDatabase } from '../db';
 import { ApiClient } from './api-client';
 import { getDateRange, validateConfig } from './config';
@@ -42,14 +41,14 @@ export class DatasetBuilder {
 
   constructor(
     private config: DatasetConfig,
-    jquantsClient: JQuantsClient,
+    apiBaseUrl?: unknown,
     debugConfig: DebugConfig = DEFAULT_DEBUG_CONFIG,
     signal?: AbortSignal
   ) {
     this.signal = signal;
     validateConfig(config);
     this.debugConfig = debugConfig;
-    this.apiClient = new ApiClient(jquantsClient, debugConfig);
+    this.apiClient = new ApiClient(apiBaseUrl, debugConfig);
     this.fetcher = new DataFetcher(this.apiClient, undefined, undefined, debugConfig);
     this.dateRange = getDateRange(config);
 
@@ -70,7 +69,7 @@ export class DatasetBuilder {
               from: this.dateRange.from.toISOString().split('T')[0],
               to: this.dateRange.to.toISOString().split('T')[0],
             }
-          : 'API default (based on subscription plan)',
+          : 'backend API default',
         debugConfig: this.debugConfig,
       });
     }
@@ -887,7 +886,7 @@ export class DatasetBuilder {
   getConfigSummary(): string {
     const dateRangeStr = this.dateRange
       ? `${this.dateRange.from.toISOString().split('T')[0]} to ${this.dateRange.to.toISOString().split('T')[0]}`
-      : 'API default (based on subscription plan)';
+      : 'backend API default';
     const parts = [
       `Markets: ${this.config.markets.join(', ')}`,
       `Date range: ${dateRangeStr}`,

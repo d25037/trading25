@@ -3,9 +3,9 @@
  * Single class replacing 12 specialized fetchers
  */
 
-import { calculatePlanConcurrency, validateJQuantsPlan } from '@trading25/clients-ts/base/BaseJQuantsClient';
 import { type BatchExecutor, categorizeErrorType, createBatchExecutor } from '@trading25/clients-ts/base/BatchExecutor';
 import { getAllIndexCodesExcludingTOPIX } from '../db/constants/index-master-data';
+import { resolveDatasetConcurrency } from './backend-concurrency';
 import type { ApiClient } from './api-client';
 import { type StreamConfig, StreamingFetchers, StreamingUtils } from './streaming/memory-efficient-fetchers';
 import type {
@@ -133,7 +133,7 @@ export class DataFetcher {
   /**
    * Fetch quotes for multiple stocks with rate limiting
    * Traditional batch processing - loads all data into memory
-   * Uses concurrent processing based on JQuants plan for optimal performance
+   * Uses backend-aware concurrent processing for optimal performance
    */
   async fetchAllStockQuotes(
     stockCodes: string[],
@@ -157,8 +157,7 @@ export class DataFetcher {
       }
     });
 
-    const plan = validateJQuantsPlan(process.env.JQUANTS_PLAN);
-    const concurrency = calculatePlanConcurrency(plan);
+    const concurrency = resolveDatasetConcurrency(stockCodes.length);
 
     console.log(`[QUOTES] Starting fetch for ${stockCodes.length} stocks (concurrency: ${concurrency})`);
 
@@ -264,7 +263,7 @@ export class DataFetcher {
 
   /**
    * Fetch margin data for multiple stocks
-   * Uses concurrent processing based on JQuants plan for optimal performance
+   * Uses backend-aware concurrent processing for optimal performance
    */
   async fetchAllMarginData(
     stockCodes: string[],
@@ -288,8 +287,7 @@ export class DataFetcher {
       }
     });
 
-    const plan = validateJQuantsPlan(process.env.JQUANTS_PLAN);
-    const concurrency = calculatePlanConcurrency(plan);
+    const concurrency = resolveDatasetConcurrency(stockCodes.length);
 
     console.log(`[MARGIN] Starting fetch for ${stockCodes.length} stocks (concurrency: ${concurrency})`);
 
@@ -513,8 +511,7 @@ export class DataFetcher {
       )
     );
 
-    const plan = validateJQuantsPlan(process.env.JQUANTS_PLAN);
-    const concurrency = calculatePlanConcurrency(plan);
+    const concurrency = resolveDatasetConcurrency(stockCodes.length);
 
     if (isDebugMode) {
       console.log(`[STATEMENTS FETCHER] Execution config: concurrency=${concurrency}`);

@@ -41,7 +41,7 @@ import { DatasetBuilder, DatasetReader, presets } from '@trading25/shared/datase
 
 // Build a dataset
 const config = presets.primeMarket();
-const builder = new DatasetBuilder(config, jquantsClient);
+const builder = new DatasetBuilder(config, 'http://localhost:3002');
 const result = await builder.build(progress => {
   console.log(`${progress.stage}: ${progress.processed}/${progress.total}`);
 });
@@ -82,10 +82,10 @@ const config = createConfig({
 ## Core Classes
 
 ### `DatasetBuilder`
-Primary class for creating datasets from JQuants API data.
+Primary class for creating datasets from bt JQuants proxy data.
 
 ```typescript
-const builder = new DatasetBuilder(config, client);
+const builder = new DatasetBuilder(config, 'http://localhost:3002');
 const result = await builder.build(onProgress);
 ```
 
@@ -141,7 +141,7 @@ The API server provides the following dataset endpoints:
   - TOPIX index data
   - 33 sector indices
   - Financial statements
-  - Rate limiting & progress reporting
+  - Backend-friendly concurrency & progress reporting
 
 - **Dramatically simplified**
   - Single point of entry for each operation
