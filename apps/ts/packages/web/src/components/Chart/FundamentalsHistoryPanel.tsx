@@ -131,7 +131,7 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
                   {formatFundamentalValue(fy.adjustedBps ?? fy.bps, 'yen')}
                 </td>
                 <td className="py-2.5 px-3 text-right text-foreground">
-                  {formatFundamentalValue(fy.adjustedDividendFy ?? fy.dividendFy, 'yen')}
+                  {formatFundamentalValue(fy.adjustedDividendFy ?? fy.dividendFy ?? null, 'yen')}
                 </td>
                 <td className="py-2.5 px-3 text-right text-foreground">{formatFundamentalValue(fy.roe, 'percent')}</td>
                 <td className={cn('py-2.5 px-3 text-right', getFundamentalColor(fy.cashFlowOperating, 'cashFlow'))}>
