@@ -3,7 +3,10 @@
   "private": true,
   "type": "module",
   "workspaces": [
-    "packages/*"
+    "packages/cli",
+    "packages/clients-ts",
+    "packages/shared",
+    "packages/web"
   ],
   "scripts": {
     "cli": "bun packages/cli/src/index.ts",
@@ -12,11 +15,10 @@
     "dev:web": "bun run --filter @trading25/web dev",
     "dev:api": "echo '[ARCHIVED] Hono server archived. Use: uv run bt server --port 3002'",
     "dev:cli": "bun run --filter @trading25/cli dev",
-    "build": "bun run build:clients && bun run build:shared && bun run build:web && bun run build:api && bun run build:cli",
+    "build": "bun run build:clients && bun run build:shared && bun run build:web && bun run build:cli",
     "build:clients": "bun run --filter @trading25/clients-ts build",
     "build:shared": "bun run --filter @trading25/shared build",
     "build:web": "bun run --filter @trading25/web build",
-    "build:api": "bun run --filter @trading25/api build",
     "build:cli": "bun run --filter @trading25/cli build",
     "start": "echo 'Use: uv run bt server --port 3002'",
     "test": "bun run test:packages && bun run test:apps",
@@ -33,7 +35,6 @@
     "check:fix": "biome check . --write",
     "typecheck": "tsc --noEmit",
     "typecheck:web": "bun run --filter @trading25/web typecheck",
-    "typecheck:api": "bun run --filter @trading25/api typecheck",
     "typecheck:all": "bun run typecheck && bun run --filter @trading25/clients-ts typecheck && bun run typecheck:web"
   },
   "devDependencies": {
