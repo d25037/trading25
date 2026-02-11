@@ -278,13 +278,17 @@ class FundamentalsService:
         eps_shares: float | None,
         bps_shares: float | None,
         forecast_shares: float | None,
+        dividend_shares: float | None,
         base_shares: float | None,
     ) -> FundamentalDataPoint:
-        """Build a new FundamentalDataPoint with share-adjusted EPS/BPS/Forecast and recalculated PER/PBR."""
+        """Build a new FundamentalDataPoint with share-adjusted per-share metrics and recalculated PER/PBR."""
         adjusted_eps = self._compute_adjusted_value(item.eps, eps_shares, base_shares)
         adjusted_bps = self._compute_adjusted_value(item.bps, bps_shares, base_shares)
         adjusted_forecast = self._compute_adjusted_value(
             item.forecastEps, forecast_shares, base_shares
+        )
+        adjusted_dividend = self._compute_adjusted_value(
+            item.dividendFy, dividend_shares, base_shares
         )
         display_eps = adjusted_eps if adjusted_eps is not None else item.eps
         display_bps = adjusted_bps if adjusted_bps is not None else item.bps
@@ -295,6 +299,7 @@ class FundamentalsService:
                 "adjustedEps": adjusted_eps,
                 "adjustedForecastEps": adjusted_forecast,
                 "adjustedBps": adjusted_bps,
+                "adjustedDividendFy": adjusted_dividend,
                 "per": self._round_or_none(self._calculate_per(display_eps, item.stockPrice)),
                 "pbr": self._round_or_none(self._calculate_pbr(display_bps, item.stockPrice)),
             }
@@ -306,7 +311,7 @@ class FundamentalsService:
         statements: list[JQuantsStatement],
         latest_metrics: FundamentalDataPoint | None,
     ) -> tuple[list[FundamentalDataPoint], FundamentalDataPoint | None]:
-        """Apply share-based adjustments to EPS/BPS/Forecast EPS."""
+        """Apply share-based adjustments to per-share metrics (EPS/BPS/forecast/dividend)."""
         shares_map = self._build_shares_map(statements)
         base_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
 
@@ -315,7 +320,7 @@ class FundamentalsService:
             current_shares = self._get_shares_for_datapoint(item, shares_map)
             updated_data.append(
                 self._build_adjusted_datapoint(
-                    item, current_shares, current_shares, current_shares, base_shares
+                    item, current_shares, current_shares, current_shares, current_shares, base_shares
                 )
             )
 
@@ -350,7 +355,7 @@ class FundamentalsService:
         eps_bps_shares = fy_shares or metrics_shares
 
         return self._build_adjusted_datapoint(
-            metrics, eps_bps_shares, eps_bps_shares, metrics_shares, base_shares
+            metrics, eps_bps_shares, eps_bps_shares, metrics_shares, metrics_shares, base_shares
         )
 
     def _get_stock_info(self, symbol: str) -> StockInfo | None:
@@ -522,6 +527,7 @@ class FundamentalsService:
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
             stmt, eps, prefer_consolidated
         )
+        dividend_fy = self._round_or_none(stmt.DivAnn)
 
         normalized_period_type = normalize_period_type(stmt.CurPerType)
 
@@ -535,6 +541,8 @@ class FundamentalsService:
             eps=self._round_or_none(eps),
             dilutedEps=self._round_or_none(diluted_eps),
             bps=self._round_or_none(bps),
+            dividendFy=dividend_fy,
+            adjustedDividendFy=dividend_fy,
             per=self._round_or_none(per),
             pbr=self._round_or_none(pbr),
             roa=self._round_or_none(roa),
