@@ -98,7 +98,7 @@ uv run pyright src/              # 型チェック
 |---|---|
 | `packages/api/` | **Archived** — 旧 Hono サーバー（Phase 3F で廃止） |
 | `packages/web/` | React 19 + Vite フロントエンド |
-| `packages/shared/` | 共有ライブラリ（JQuants, SQLite, TA/FA指標） |
+| `packages/shared/` | 共有ライブラリ（OpenAPI 生成型, JQuants, TA/FA指標） |
 | `packages/cli/` | Gunshi CLI（dataset/portfolio/analysis） |
 
 ```bash
@@ -109,7 +109,7 @@ bun typecheck:all                # 型チェック
 bun lint && bun check:fix        # リント（Biome）
 ```
 
-主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, Drizzle ORM
+主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 
 ## Issue管理
 

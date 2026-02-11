@@ -1,12 +1,7 @@
 /**
  * Portfolio Management Module
- * XDG-compliant portfolio tracking with SQLite storage
- *
- * Uses Drizzle ORM for type-safe database operations
+ * Shared types and errors for portfolio API contracts.
  */
-
-// Re-export Drizzle implementation as PortfolioDatabase for backward compatibility
-export { DrizzlePortfolioDatabase as PortfolioDatabase } from '../db/drizzle-portfolio-database';
 
 export type {
   CreatePortfolioInput,
