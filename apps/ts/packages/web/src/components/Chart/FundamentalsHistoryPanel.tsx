@@ -105,9 +105,11 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
           <thead>
             <tr className="border-b border-border/30 text-xs text-muted-foreground">
               <th className="text-left py-2 px-3 font-medium">FY期</th>
+              <th className="text-left py-2 px-3 font-medium">発表日</th>
               <th className="text-right py-2 px-3 font-medium">EPS</th>
               <th className="text-right py-2 px-3 font-medium">来期予想EPS</th>
               <th className="text-right py-2 px-3 font-medium">BPS</th>
+              <th className="text-right py-2 px-3 font-medium">1株配当</th>
               <th className="text-right py-2 px-3 font-medium">ROE</th>
               <th className="text-right py-2 px-3 font-medium">営業CF</th>
               <th className="text-right py-2 px-3 font-medium">投資CF</th>
@@ -118,6 +120,7 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
             {fyHistory.map((fy) => (
               <tr key={fy.date} className="border-b border-border/20 hover:bg-background/40">
                 <td className="py-2.5 px-3 font-medium text-foreground">{formatFyLabel(fy.date)}</td>
+                <td className="py-2.5 px-3 text-xs text-muted-foreground">{fy.disclosedDate}</td>
                 <td className="py-2.5 px-3 text-right text-foreground">
                   {formatFundamentalValue(fy.adjustedEps ?? fy.eps, 'yen')}
                 </td>
@@ -126,6 +129,9 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
                 </td>
                 <td className="py-2.5 px-3 text-right text-foreground">
                   {formatFundamentalValue(fy.adjustedBps ?? fy.bps, 'yen')}
+                </td>
+                <td className="py-2.5 px-3 text-right text-foreground">
+                  {formatFundamentalValue(fy.adjustedDividendFy ?? fy.dividendFy ?? null, 'yen')}
                 </td>
                 <td className="py-2.5 px-3 text-right text-foreground">{formatFundamentalValue(fy.roe, 'percent')}</td>
                 <td className={cn('py-2.5 px-3 text-right', getFundamentalColor(fy.cashFlowOperating, 'cashFlow'))}>

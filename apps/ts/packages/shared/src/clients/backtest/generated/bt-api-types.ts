@@ -2217,12 +2217,18 @@ export interface components {
             marketCode?: string | null;
             /** Marketcodename */
             marketCodeName?: string | null;
+            /** Sector17Code */
+            sector17Code?: string | null;
+            /** Sector17Codename */
+            sector17CodeName?: string | null;
             /** Sector33Code */
             sector33Code?: string | null;
             /** Sector33Codename */
             sector33CodeName?: string | null;
             /** Scalecategory */
             scaleCategory?: string | null;
+            /** Date */
+            date?: string | null;
         };
         /**
          * ApiListedInfoResponse
@@ -2732,10 +2738,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * DefaultConfigResponse
@@ -2922,6 +2928,16 @@ export interface components {
              * @description Adjusted BPS using share count (JPY)
              */
             adjustedBps?: number | null;
+            /**
+             * Dividendfy
+             * @description Dividend per share for FY (JPY)
+             */
+            dividendFy?: number | null;
+            /**
+             * Adjusteddividendfy
+             * @description Adjusted FY dividend per share using share count (JPY)
+             */
+            adjustedDividendFy?: number | null;
             /**
              * Per
              * @description Price to earnings ratio
@@ -3712,7 +3728,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -4433,19 +4449,40 @@ export interface components {
             /** Close */
             close: number;
         };
-        /** OHLCVRecord */
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
         OHLCVRecord: {
-            /** Date */
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
             date: string;
-            /** Open */
+            /**
+             * Open
+             * @description 始値
+             */
             open: number;
-            /** High */
+            /**
+             * High
+             * @description 高値
+             */
             high: number;
-            /** Low */
+            /**
+             * Low
+             * @description 安値
+             */
             low: number;
-            /** Close */
+            /**
+             * Close
+             * @description 終値
+             */
             close: number;
-            /** Volume */
+            /**
+             * Volume
+             * @description 出来高
+             */
             volume: number;
         };
         /**
@@ -4524,7 +4561,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
+            data: components["schemas"]["OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -4856,7 +4893,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5186,6 +5223,8 @@ export interface components {
             FEPS?: number | null;
             /** Nxfeps */
             NxFEPS?: number | null;
+            /** Divann */
+            DivAnn?: number | null;
             /** Ncsales */
             NCSales?: number | null;
             /** Ncop */
@@ -5719,7 +5758,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -5730,7 +5769,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6293,7 +6332,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -6424,12 +6463,20 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** DateRange */
-        src__server__schemas__db__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
+        /** OHLCVRecord */
+        src__server__schemas__dataset_data__OHLCVRecord: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /** Volume */
+            volume: number;
         };
         /**
          * DateRange
@@ -6457,41 +6504,12 @@ export interface components {
             /** Beta */
             beta: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
-        src__server__schemas__indicators__OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
-            date: string;
-            /**
-             * Open
-             * @description 始値
-             */
-            open: number;
-            /**
-             * High
-             * @description 高値
-             */
-            high: number;
-            /**
-             * Low
-             * @description 安値
-             */
-            low: number;
-            /**
-             * Close
-             * @description 終値
-             */
-            close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
-            volume: number;
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /** DateRange */
         src__server__schemas__portfolio_performance__DateRange: {
@@ -11220,7 +11238,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["OHLCVRecord"][];
+                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                     };
                 };
             };
@@ -11283,7 +11301,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OHLCVRecord"][];
+                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */
