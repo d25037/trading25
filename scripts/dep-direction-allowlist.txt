@@ -33,6 +33,11 @@ apps/ts/packages/web/vite.config.ts
 # CLI api-client (localhost:3002 default)
 apps/ts/packages/cli/src/utils/api-client.ts
 
+# Shared dataset/fixtures now route via bt FastAPI proxy (:3002)
+apps/ts/packages/shared/src/dataset/api-client.ts
+apps/ts/packages/shared/src/ta/__fixtures__/fetch-margin-data.ts
+apps/ts/packages/shared/src/ta/__fixtures__/fetch-test-data.ts
+
 # CLI backtest commands (BT_API_URL reference)
 apps/ts/packages/cli/src/commands/backtest/run.ts
 apps/ts/packages/cli/src/commands/backtest/cancel.ts
