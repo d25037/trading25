@@ -178,6 +178,10 @@ export interface ApiFundamentalDataPoint {
   adjustedForecastEps?: number | null;
   /** Adjusted BPS using share count (円) */
   adjustedBps?: number | null;
+  /** FY dividend per share (円) */
+  dividendFy?: number | null;
+  /** Adjusted FY dividend per share using share count (円) */
+  adjustedDividendFy?: number | null;
   /** Price to Earnings Ratio (倍) - calculated with disclosure date price */
   per: number | null;
   /** Price to Book Ratio (倍) - calculated with disclosure date price */

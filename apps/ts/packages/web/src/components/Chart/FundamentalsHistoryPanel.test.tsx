@@ -248,7 +248,7 @@ describe('FundamentalsHistoryPanel', () => {
     const rows = screen.getAllByRole('row');
     const dataRow = rows[1];
     const cells = dataRow?.querySelectorAll('td');
-    // forecastEps is the 3rd column (index 2)
-    expect(cells?.[2]?.textContent).toBe('-');
+    // forecastEps is the 4th column (index 3) after adding disclosedDate
+    expect(cells?.[3]?.textContent).toBe('-');
   });
 });

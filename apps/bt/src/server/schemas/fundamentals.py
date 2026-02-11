@@ -61,6 +61,10 @@ class FundamentalDataPoint(BaseModel):
     adjustedBps: float | None = Field(
         None, description="Adjusted BPS using share count (JPY)"
     )
+    dividendFy: float | None = Field(None, description="Dividend per share for FY (JPY)")
+    adjustedDividendFy: float | None = Field(
+        None, description="Adjusted FY dividend per share using share count (JPY)"
+    )
     per: float | None = Field(None, description="Price to earnings ratio")
     pbr: float | None = Field(None, description="Price to book ratio")
 

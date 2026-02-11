@@ -295,6 +295,7 @@ class JQuantsProxyService:
                     AvgSh=stmt.get("AvgSh"),
                     FEPS=stmt.get("FEPS"),
                     NxFEPS=stmt.get("NxFEPS"),
+                    DivAnn=stmt.get("DivAnn"),
                     NCSales=stmt.get("NCSales"),
                     NCOP=stmt.get("NCOP"),
                     NCOdP=stmt.get("NCOdP"),
