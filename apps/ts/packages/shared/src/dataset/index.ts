@@ -28,26 +28,16 @@ export type {
   TopixData,
 } from './types';
 
-// ===== CORE CLASSES =====
+// ===== CORE CLIENTS =====
 
-export {
-  calculatePlanConcurrency,
-  getRequestsPerSecond,
-  JQUANTS_PLAN_LIMITS,
-  type JQuantsPlan,
-  validateJQuantsPlan,
-} from '@trading25/clients-ts/base/BaseJQuantsClient';
-// Batch execution (rate limiting is in BaseJQuantsClient)
+export { resolveDatasetConcurrency } from './backend-concurrency';
+// Batch execution (request pacing is handled by bt backend and BatchExecutor)
 export {
   BatchExecutor,
   categorizeErrorType,
   createBatchExecutor,
 } from '@trading25/clients-ts/base/BatchExecutor';
-// Database operations (for advanced users)
-export { DrizzleDatasetDatabase as Database } from '../db';
 export { ApiClient } from './api-client';
-// Main user-facing classes
-export { DatasetBuilder } from './builder';
 // ===== CONFIGURATION =====
 export {
   createConfig,
@@ -68,8 +58,6 @@ export {
   presets,
   validateConfig,
 } from './config';
-// Data fetching (for custom implementations)
-export { DataFetcher } from './fetchers';
 // ===== PROGRESS REPORTING =====
 export {
   ConsoleProgressFormatter,
@@ -78,7 +66,6 @@ export {
   MultiStageProgressTracker,
   ProgressTracker,
 } from './progress';
-export { DatasetReader } from './reader';
 // ===== STREAMING UTILITIES =====
 export {
   type StreamConfig,

@@ -12,6 +12,8 @@ from typing import Any, Literal
 import pandas as pd
 from loguru import logger
 
+from src.lib.market_db.market_reader import MarketDbReader
+from src.server.services.market_ohlcv_loader import load_stock_ohlcv_df
 from src.strategies.signals.registry import SIGNAL_REGISTRY, SignalDefinition
 
 # Phase 1対象シグナル（OHLCV系: ohlc/volume データのみ使用）
@@ -83,7 +85,8 @@ def _extract_trigger_dates(signal_series: pd.Series[bool]) -> list[str]:
 class SignalService:
     """シグナル計算サービス"""
 
-    def __init__(self) -> None:
+    def __init__(self, market_reader: MarketDbReader | None = None) -> None:
+        self._market_reader = market_reader
         self._market_client = None
         self._client_lock = threading.Lock()
 
@@ -98,6 +101,11 @@ class SignalService:
                     self._market_client = MarketAPIClient()
         return self._market_client
 
+    def close(self) -> None:
+        if self._market_client is not None:
+            self._market_client.close()
+            self._market_client = None
+
     def load_ohlcv(
         self,
         stock_code: str,
@@ -110,7 +118,10 @@ class SignalService:
         end_str = end_date.isoformat() if end_date else None
 
         if source == "market":
-            df = self.market_client.get_stock_ohlcv(stock_code, start_str, end_str)
+            if self._market_reader is not None:
+                df = load_stock_ohlcv_df(self._market_reader, stock_code, start_str, end_str)
+            else:
+                df = self.market_client.get_stock_ohlcv(stock_code, start_str, end_str)
         else:
             from src.api.dataset import DatasetAPIClient
 

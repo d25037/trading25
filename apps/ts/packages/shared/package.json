@@ -79,11 +79,9 @@
   },
   "dependencies": {
     "@trading25/clients-ts": "workspace:*",
-    "drizzle-orm": "^0.44.0",
     "zod": "^4.1.5"
   },
   "devDependencies": {
-    "drizzle-kit": "^0.30.0",
     "openapi-typescript": "^7.10.1"
   }
 }

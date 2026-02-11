@@ -15,12 +15,14 @@ import pandas as pd
 import vectorbt as vbt
 from loguru import logger
 
+from src.lib.market_db.market_reader import MarketDbReader
 from src.lib.indicators import (
     compute_atr_support_line,
     compute_nbar_support,
     compute_trading_value_ma,
     compute_volume_mas,
 )
+from src.server.services.market_ohlcv_loader import load_stock_ohlcv_df, load_topix_df
 
 
 class ComputeFn(Protocol):
@@ -489,7 +491,8 @@ MARGIN_REGISTRY: dict[str, Any] = {
 class IndicatorService:
     """インジケーター計算サービス"""
 
-    def __init__(self) -> None:
+    def __init__(self, market_reader: MarketDbReader | None = None) -> None:
+        self._market_reader = market_reader
         self._market_client = None
 
     @property
@@ -499,6 +502,11 @@ class IndicatorService:
 
             self._market_client = MarketAPIClient()
         return self._market_client
+
+    def close(self) -> None:
+        if self._market_client is not None:
+            self._market_client.close()
+            self._market_client = None
 
     def load_ohlcv(
         self,
@@ -521,7 +529,10 @@ class IndicatorService:
         ed = end_date.isoformat() if end_date else None
 
         if source == "market":
-            df = self.market_client.get_stock_ohlcv(stock_code, sd, ed)
+            if self._market_reader is not None:
+                df = load_stock_ohlcv_df(self._market_reader, stock_code, sd, ed)
+            else:
+                df = self.market_client.get_stock_ohlcv(stock_code, sd, ed)
         else:
             # sourceをデータセット名として使用
             with DatasetAPIClient(source) as client:
@@ -575,7 +586,10 @@ class IndicatorService:
         ed = end_date.isoformat() if end_date else None
 
         if benchmark_code == "topix":
-            df = self.market_client.get_topix(sd, ed)
+            if self._market_reader is not None:
+                df = load_topix_df(self._market_reader, sd, ed)
+            else:
+                df = self.market_client.get_topix(sd, ed)
         else:
             raise ValueError(f"未対応のベンチマーク: {benchmark_code}")
 
@@ -684,7 +698,6 @@ class IndicatorService:
             end_date: 終了日
         """
         from src.api.jquants_client import JQuantsAPIClient
-        from src.api.market_client import MarketAPIClient
 
         sd = start_date.isoformat() if start_date else None
         ed = end_date.isoformat() if end_date else None
@@ -697,13 +710,18 @@ class IndicatorService:
                     f"銘柄 {stock_code} の信用データが取得できません"
                 )
 
-        # Market API経由でOHLCVデータを取得
-        with MarketAPIClient() as market_client:
-            ohlcv = market_client.get_stock_ohlcv(stock_code, sd, ed)
-            if ohlcv.empty:
-                raise ValueError(
-                    f"銘柄 {stock_code} のOHLCVデータが取得できません"
-                )
+        if self._market_reader is not None:
+            ohlcv = load_stock_ohlcv_df(self._market_reader, stock_code, sd, ed)
+        else:
+            from src.api.market_client import MarketAPIClient
+
+            with MarketAPIClient() as market_client:
+                ohlcv = market_client.get_stock_ohlcv(stock_code, sd, ed)
+
+        if ohlcv.empty:
+            raise ValueError(
+                f"銘柄 {stock_code} のOHLCVデータが取得できません"
+            )
 
         volume = ohlcv["Volume"]
 

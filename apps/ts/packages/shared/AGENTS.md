@@ -1,24 +1,24 @@
 # Shared Package
 
-Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（DB/dataset/portfolio/watchlist + 補助ユーティリティ）を提供する。
+Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（API 型・dataset 設定・portfolio/watchlist 型 + 補助ユーティリティ）を提供する。
 
 ## Architecture
 
 - **Core**: JQuants API v2 client with API key authentication
-- **Database**: SQLite with Drizzle ORM (see `drizzle-orm` skill)
 - **Logger**: Node.js specific (separate from frontend)
-- **Submodules**: `/dataset`, `/ta`, `/core`, `/portfolio`, `/watchlist`, `/db`
+- **Submodules**: `/dataset`, `/ta`, `/core`, `/fundamental-analysis`, `/factor-regression`, `/screening`
 
 ## Modules
 
 | Module | Purpose |
 |--------|---------|
-| `@trading25/shared/dataset` | dataset API client / builder / reader / validators |
+| `@trading25/shared/dataset` | dataset API client / preset config / validators / progress utilities |
 | `@trading25/shared/ta` | Utilities only (Timeframe変換、Relative OHLC、インジケータ計算は全てapps/bt/ API移行完了) |
-| `@trading25/shared/portfolio` | portfolio DB 操作と型定義 |
-| `@trading25/shared/watchlist` | watchlist DB 操作と型定義 |
-| `@trading25/shared/market-sync` | Market data sync and rankings |
-| `@trading25/shared/db` | market/dataset/portfolio/watchlist 向け Drizzle DB 境界 |
+| `@trading25/shared/fundamental-analysis` | ROE, ROA, PER, PBR, EPS, BPS calculations |
+| `@trading25/shared/factor-regression` | Two-stage factor regression for risk decomposition |
+| `@trading25/shared/screening` | Range Break detection algorithms |
+| `@trading25/shared/portfolio` | portfolio API 契約の型定義とエラー型 |
+| `@trading25/shared/watchlist` | watchlist API 契約の型定義とエラー型 |
 
 ## API Authentication
 
@@ -64,7 +64,6 @@ const first = getFirstElementOrFail(array, 'Expected element');
 - **JQuants API optimization**: `jquants-api-optimization` skill
 - **Financial analysis**: `financial-analysis` skill
 - **Portfolio operations**: `portfolio-management` skill
-- **Database schema**: `drizzle-orm` skill
 
 ## Development
 

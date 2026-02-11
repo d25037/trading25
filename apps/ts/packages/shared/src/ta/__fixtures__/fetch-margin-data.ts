@@ -5,31 +5,55 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
 import type { JQuantsWeeklyMarginInterest } from '../../types/jquants';
 
-export async function fetchToyotaMarginData(days = 365): Promise<void> {
-  const client = new JQuantsClient({
-    apiKey: process.env.JQUANTS_API_KEY,
-  });
+interface BtMarginInterestItem {
+  date: string;
+  code: string;
+  shortMarginTradeVolume: number;
+  longMarginTradeVolume: number;
+  shortMarginOutstandingBalance: number | null;
+  longMarginOutstandingBalance: number | null;
+}
 
+export async function fetchToyotaMarginData(days = 365): Promise<void> {
   // Calculate date range
   const to = new Date();
   const from = new Date();
   from.setDate(from.getDate() - days);
+  const fromDate = from.toISOString().split('T')[0] ?? '';
+  const toDate = to.toISOString().split('T')[0] ?? '';
+  const apiBaseUrl = process.env.API_BASE_URL || 'http://localhost:3002';
 
-  console.log(
-    `Fetching Toyota (7203) margin data from ${from.toISOString().split('T')[0]} to ${to.toISOString().split('T')[0]}`
-  );
+  console.log(`Fetching Toyota (7203) margin data from ${fromDate} to ${toDate} via ${apiBaseUrl}`);
 
   try {
-    const response = await client.getWeeklyMarginInterest({
-      code: '7203',
-      from: from.toISOString().split('T')[0],
-      to: to.toISOString().split('T')[0],
+    const query = new URLSearchParams({
+      from: fromDate,
+      to: toDate,
     });
+    const response = await fetch(`${apiBaseUrl}/api/jquants/stocks/7203/margin-interest?${query.toString()}`);
 
-    if (response.data && response.data.length > 0) {
+    if (!response.ok) {
+      throw new Error(`HTTP ${response.status}: ${await response.text()}`);
+    }
+
+    const payload = (await response.json()) as { marginInterest: BtMarginInterestItem[] };
+    const normalized = payload.marginInterest.map(
+      (item): JQuantsWeeklyMarginInterest => ({
+        Date: item.date,
+        Code: item.code,
+        ShrtVol: item.shortMarginOutstandingBalance ?? item.shortMarginTradeVolume,
+        LongVol: item.longMarginOutstandingBalance ?? item.longMarginTradeVolume,
+        ShrtNegVol: 0,
+        LongNegVol: 0,
+        ShrtStdVol: item.shortMarginTradeVolume,
+        LongStdVol: item.longMarginTradeVolume,
+        IssType: '',
+      })
+    );
+
+    if (normalized.length > 0) {
       // Convert to CSV format (using v2 field names)
       const headers = [
         'Date',
@@ -43,7 +67,7 @@ export async function fetchToyotaMarginData(days = 365): Promise<void> {
         'IssType',
       ];
 
-      const csvRows = response.data.map((margin: JQuantsWeeklyMarginInterest) => [
+      const csvRows = normalized.map((margin: JQuantsWeeklyMarginInterest) => [
         margin.Date,
         margin.Code,
         margin.ShrtVol,
@@ -63,29 +87,29 @@ export async function fetchToyotaMarginData(days = 365): Promise<void> {
 
       fs.writeFileSync(filePath, csvContent, 'utf-8');
 
-      console.log(`✅ Saved ${response.data.length} margin records to ${filePath}`);
+      console.log(`✅ Saved ${normalized.length} margin records to ${filePath}`);
 
       // Also save as JSON for easier testing
       const jsonPath = path.join(fixturesDir, 'toyota_7203_margin.json');
-      fs.writeFileSync(jsonPath, JSON.stringify(response.data, null, 2), 'utf-8');
+      fs.writeFileSync(jsonPath, JSON.stringify(normalized, null, 2), 'utf-8');
 
       console.log(`✅ Also saved as JSON to ${jsonPath}`);
 
       // Display summary
-      const firstMargin = response.data[0];
-      const lastMargin = response.data[response.data.length - 1];
+      const firstMargin = normalized[0];
+      const lastMargin = normalized[normalized.length - 1];
 
       console.log('\n📊 Margin Data Summary:');
       console.log(`Stock: Toyota Motor Corporation (7203)`);
       console.log(`Period: ${firstMargin?.Date} to ${lastMargin?.Date}`);
-      console.log(`Records: ${response.data.length}`);
+      console.log(`Records: ${normalized.length}`);
       console.log(`Latest Short Volume: ${lastMargin?.ShrtVol?.toLocaleString()}`);
       console.log(`Latest Long Volume: ${lastMargin?.LongVol?.toLocaleString()}`);
       console.log(
         `Issue Type: ${lastMargin?.IssType === '1' ? 'Credit Issue' : lastMargin?.IssType === '2' ? 'Lending/Borrowing Issue' : 'Other'}`
       );
     } else {
-      console.error('No margin data received from JQuants API');
+      console.error('No margin data received from bt JQuants proxy API');
     }
   } catch (error) {
     console.error('Error fetching margin data:', error);

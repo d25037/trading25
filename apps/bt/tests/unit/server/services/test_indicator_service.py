@@ -9,6 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.lib.market_db.market_reader import MarketDbReader
 from src.server.services.indicator_service import (
     INDICATOR_REGISTRY,
     _compute_relative_ohlc_column,
@@ -384,6 +385,18 @@ class TestIndicatorServiceLoadOHLCV:
         assert len(df) == 50
         mock_client.get_stock_ohlcv.assert_called_once()
 
+    @patch("src.api.market_client.MarketAPIClient")
+    def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
+        reader = MarketDbReader(market_db_path)
+        try:
+            service = IndicatorService(market_reader=reader)
+            df = service.load_ohlcv("7203", "market")
+            assert len(df) == 3
+            assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+            MockMarketClient.assert_not_called()
+        finally:
+            reader.close()
+
     @patch("src.api.dataset.DatasetAPIClient")
     def test_load_with_dates(self, MockClient):
         service = IndicatorService()
@@ -633,6 +646,28 @@ class TestIndicatorServiceComputeMarginIndicators:
             start_date=date(2024, 1, 1), end_date=date(2024, 6, 30),
         )
         mock_jquants.get_margin_interest.assert_called_once_with("7203", "2024-01-01", "2024-06-30")
+
+    @patch("src.api.market_client.MarketAPIClient")
+    @patch("src.api.jquants_client.JQuantsAPIClient")
+    def test_margin_prefers_market_reader(self, MockJQuantsClient, MockMarketClient, market_db_path):
+        reader = MarketDbReader(market_db_path)
+        try:
+            service = IndicatorService(market_reader=reader)
+
+            mock_jquants = MagicMock()
+            mock_jquants.get_margin_interest.return_value = self._make_margin_df()
+            mock_jquants.__enter__ = MagicMock(return_value=mock_jquants)
+            mock_jquants.__exit__ = MagicMock(return_value=False)
+            MockJQuantsClient.return_value = mock_jquants
+
+            result = service.compute_margin_indicators(
+                "7203", "topix500", ["margin_long_pressure"],
+            )
+
+            assert "margin_long_pressure" in result["indicators"]
+            MockMarketClient.assert_not_called()
+        finally:
+            reader.close()
 
 
 class TestMarginEdgeCases:

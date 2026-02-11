@@ -17,14 +17,13 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 | ts/web | 5173 | Vite + React 19 |
 
 - **FastAPI** が唯一のバックエンド（117 EP: Hono 移行 90 + bt 固有 27）
-- financial-analysis（ROE/ranking/screening/factor regression など）の SoT は `apps/bt`
 - **bt** は SQLite に直接アクセス（`contracts/` スキーマ準拠、SQLAlchemy Core 使用）
   - **market.db**: 読み書き（SQLAlchemy Core）
   - **portfolio.db**: CRUD（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
 - 市場コードフィルタは legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う
 - **ts/web** は `/api` パスを FastAPI (:3002) にプロキシ
-- **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は互換プロキシ層）
+- **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は archived・read-only）
 
 ## OpenAPI契約
 
@@ -97,9 +96,9 @@ uv run pyright src/              # 型チェック
 
 | パッケージ | 役割 |
 |---|---|
-| `packages/api/` | 旧 Hono サーバー由来の互換 API 層（analytics は bt API へプロキシ） |
+| `packages/api/` | **Archived** — 旧 Hono サーバー（Phase 3F で廃止） |
 | `packages/web/` | React 19 + Vite フロントエンド |
-| `packages/shared/` | 共有ライブラリ（JQuants, SQLite, dataset/portfolio/TA ユーティリティ） |
+| `packages/shared/` | 共有ライブラリ（OpenAPI 生成型, JQuants, TA/FA指標） |
 | `packages/cli/` | Gunshi CLI（dataset/portfolio/analysis） |
 
 ```bash
@@ -110,7 +109,7 @@ bun typecheck:all                # 型チェック
 bun lint && bun check:fix        # リント（Biome）
 ```
 
-主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, Drizzle ORM
+主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 
 ## Issue管理
 

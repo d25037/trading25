@@ -3,18 +3,14 @@
  *
  * This module provides a carefully curated public API.
  * For specialized functionality, use subpath imports:
- * - @trading25/shared/db
  * - @trading25/shared/ta
  * - @trading25/shared/dataset
  * - @trading25/shared/portfolio
  */
 
 // ===== CLIENT EXPORTS =====
-export { BaseJQuantsClient } from '@trading25/clients-ts/base/BaseJQuantsClient';
-export { JQuantsClient } from '@trading25/clients-ts/JQuantsClient';
-export { CalendarClient } from '@trading25/clients-ts/markets/CalendarClient';
-export { IndexClient } from '@trading25/clients-ts/markets/IndexClient';
-export { StockDataClient } from '@trading25/clients-ts/markets/StockDataClient';
+// Direct J-Quants clients are intentionally not re-exported.
+// Use bt FastAPI endpoints (`/api/jquants/*`) from web/cli/shared modules.
 // ===== CONFIGURATION EXPORTS =====
 export type {
   AppConfig,
@@ -60,9 +56,6 @@ export {
   createErrorSummary,
   createForDateRangeConfig,
   createSilentProgressCallback,
-  DataFetcher,
-  DatasetBuilder,
-  DatasetReader,
   DEFAULT_DEBUG_CONFIG,
   debounce,
   filterStocksByMarkets,
@@ -77,7 +70,6 @@ export {
   getMarketCode,
   getMarketCodes,
   getMarketType,
-  getRequestsPerSecond,
   getUniqueValues,
   groupStocksByMarket,
   groupStocksBySector,
@@ -88,8 +80,6 @@ export {
   isValidDateRange,
   isValidSectorCode,
   isValidStockCode,
-  JQUANTS_PLAN_LIMITS,
-  type JQuantsPlan,
   MarginDataSchema,
   MarketTypeSchema,
   MultiStageProgressTracker,
@@ -108,6 +98,7 @@ export {
   safeJsonStringify,
   safeValidateStockDataArray,
   safeValidateStockInfo,
+  resolveDatasetConcurrency,
   sanitizeFilePath,
   sleep,
   TopixDataSchema,
@@ -129,75 +120,6 @@ export {
   validateStockInfoArray,
   validateTopixData,
 } from './dataset';
-// ===== DATABASE EXPORTS =====
-export type { AdjustmentEvent, RankingItem, StockSearchResult } from './db';
-export {
-  // Dataset schema
-  DATASET_SCHEMA_VERSION,
-  type DatasetDailyQuote,
-  type DatasetIndex,
-  type DatasetInfoRecord,
-  type DatasetMarginData,
-  type DatasetStatement,
-  type DatasetStock,
-  type DatasetTopix,
-  DrizzleDatasetDatabase,
-  DrizzleMarketDatabase,
-  DrizzleMarketDataReader,
-  DrizzlePortfolioDatabase,
-  datasetDailyQuotes,
-  datasetIndices,
-  datasetInfo,
-  datasetMarginData,
-  datasetStatements,
-  datasetStocks,
-  datasetTopix,
-  expandStockCode,
-  INDEX_CATEGORIES,
-  type IndexCategory,
-  type IndexMasterInsert,
-  type IndexMasterRow,
-  type IndicesDataInsert,
-  type IndicesDataRow,
-  indexMaster,
-  indicesData,
-  isValidStockCode as isValidStockCodeColumn,
-  // Market schema
-  MARKET_SCHEMA_VERSION,
-  METADATA_KEYS,
-  type NewDatasetDailyQuote,
-  type NewDatasetIndex,
-  type NewDatasetInfoRecord,
-  type NewDatasetMarginData,
-  type NewDatasetStatement,
-  type NewDatasetStock,
-  type NewDatasetTopix,
-  normalizeStockCode,
-  // Portfolio schema
-  PORTFOLIO_SCHEMA_VERSION,
-  type PortfolioInsert,
-  type PortfolioItemInsert,
-  type PortfolioItemRow,
-  type PortfolioMetadataInsert,
-  type PortfolioMetadataRow,
-  type PortfolioRow,
-  portfolioItems,
-  portfolioMetadata,
-  portfolios,
-  type StockDataInsert,
-  type StockDataRow,
-  type StockInsert,
-  type StockRow,
-  type SyncMetadataInsert,
-  type SyncMetadataRow,
-  stockCode,
-  stockData,
-  stocks,
-  syncMetadata,
-  type TopixDataInsert,
-  type TopixDataRow,
-  topixData,
-} from './db';
 // ===== ERROR EXPORTS =====
 export {
   BadRequestError,
