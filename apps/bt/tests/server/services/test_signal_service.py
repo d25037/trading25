@@ -5,13 +5,14 @@ OHLCV系シグナルの計算テスト
 """
 
 import threading
-from unittest.mock import patch
+from unittest.mock import MagicMock, patch
 
 import pandas as pd
 import pytest
 
 from datetime import date
 
+from src.lib.market_db.market_reader import MarketDbReader
 from src.server.services.signal_service import (
     PHASE1_SIGNAL_NAMES,
     SignalService,
@@ -20,6 +21,16 @@ from src.server.services.signal_service import (
     _extract_trigger_dates,
     _get_signal_definition,
 )
+
+
+def _make_ohlcv_df(n: int = 5) -> pd.DataFrame:
+    return pd.DataFrame({
+        "Open": [100.0 + i for i in range(n)],
+        "High": [105.0 + i for i in range(n)],
+        "Low": [95.0 + i for i in range(n)],
+        "Close": [102.0 + i for i in range(n)],
+        "Volume": [1000 + i * 10 for i in range(n)],
+    }, index=pd.date_range("2025-01-01", periods=n))
 
 
 class TestGetSignalDefinition:
@@ -80,24 +91,101 @@ class TestSignalService:
 
     def test_phase1_signal_validation(self, service):
         """Phase 1非対応シグナルの拒否テスト"""
-        import pandas as pd
-
         # ダミーデータ
         data = {
-            "ohlc_data": pd.DataFrame({
-                "Open": [100.0],
-                "High": [105.0],
-                "Low": [95.0],
-                "Close": [102.0],
-            }),
-            "close": pd.Series([102.0]),
-            "execution_close": pd.Series([102.0]),
-            "volume": pd.Series([1000]),
+            "ohlc_data": _make_ohlcv_df(1),
+            "close": pd.Series([102.0], index=pd.date_range("2025-01-01", periods=1)),
+            "execution_close": pd.Series([102.0], index=pd.date_range("2025-01-01", periods=1)),
+            "volume": pd.Series([1000], index=pd.date_range("2025-01-01", periods=1)),
         }
 
         # Phase 1非対応シグナル（例: per）はエラーになるべき
         with pytest.raises(ValueError, match="Phase 1では未対応"):
             service.compute_signal("per", {}, "entry", data)
+
+    @patch("src.api.market_client.MarketAPIClient")
+    def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
+        reader = MarketDbReader(market_db_path)
+        try:
+            service = SignalService(market_reader=reader)
+            df = service.load_ohlcv("7203", "market")
+            assert len(df) == 3
+            assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+            MockMarketClient.assert_not_called()
+        finally:
+            reader.close()
+
+    @patch("src.api.dataset.DatasetAPIClient")
+    def test_load_dataset_source(self, MockDatasetClient):
+        service = SignalService()
+        mock_client = MagicMock()
+        mock_client.get_stock_ohlcv.return_value = _make_ohlcv_df()
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        MockDatasetClient.return_value = mock_client
+
+        df = service.load_ohlcv("7203", "my_dataset")
+        assert len(df) == 5
+        mock_client.get_stock_ohlcv.assert_called_once_with("7203", None, None)
+
+    def test_load_market_source_empty_raises(self):
+        service = SignalService()
+        mock_client = MagicMock()
+        mock_client.get_stock_ohlcv.return_value = pd.DataFrame()
+        service._market_client = mock_client
+
+        with pytest.raises(ValueError, match="取得できません"):
+            service.load_ohlcv("7203", "market")
+
+    def test_compute_signal_exit_disabled(self, service):
+        data = {
+            "ohlc_data": _make_ohlcv_df(3),
+            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
+        }
+
+        with pytest.raises(ValueError, match="Exitモード"):
+            service.compute_signal("buy_and_hold", {}, "exit", data)
+
+    def test_build_signal_params_unknown_raises(self, service):
+        with pytest.raises(ValueError, match="未対応のシグナル"):
+            service._build_signal_params("unknown_signal", {}, "entry")
+
+    def test_build_signal_params_nested_updates(self, service):
+        signal_params = service._build_signal_params(
+            "per",
+            {"threshold": 20.0, "condition": "above"},
+            "entry",
+        )
+        assert signal_params.fundamental.enabled is True
+        assert signal_params.fundamental.per.enabled is True
+        assert signal_params.fundamental.per.threshold == 20.0
+        assert signal_params.fundamental.per.condition == "above"
+
+    def test_update_top_level_field_unknown_is_noop(self, service):
+        from src.models.signals import SignalParams
+
+        signal_params = SignalParams()
+        before = signal_params.model_dump()
+
+        service._update_top_level_field(signal_params, "unknown_field", {"threshold": 9.9})
+
+        assert signal_params.model_dump() == before
+
+    def test_update_nested_field_unknown_parent_is_noop(self, service):
+        from src.models.signals import SignalParams
+
+        signal_params = SignalParams()
+        before = signal_params.model_dump()
+
+        service._update_nested_field(
+            signal_params,
+            ["unknown_parent", "per"],
+            {"threshold": 9.9},
+        )
+
+        assert signal_params.model_dump() == before
 
 
 class TestSignalDefinitionMap:
@@ -120,6 +208,17 @@ class TestSignalDefinitionMap:
         mapping = _build_signal_definition_map()
         assert "per" in mapping
         assert mapping["per"].param_key == "fundamental.per"
+
+    def test_build_signal_definition_map_logs_duplicate_warning(self):
+        sig_def = _get_signal_definition("volume")
+        assert sig_def is not None
+
+        with patch("src.server.services.signal_service.SIGNAL_REGISTRY", [sig_def, sig_def]):
+            with patch("src.server.services.signal_service.logger") as mock_logger:
+                mapping = _build_signal_definition_map()
+
+        assert mapping["volume"] is sig_def
+        mock_logger.warning.assert_called_once()
 
 
 class TestThreadSafety:
@@ -154,6 +253,16 @@ class TestThreadSafety:
         assert len(errors) == 0
         # すべて同じインスタンスを取得していることを確認
         assert all(r is results[0] for r in results)
+
+    def test_close_closes_market_client(self):
+        service = SignalService()
+        mock_client = MagicMock()
+        service._market_client = mock_client
+
+        service.close()
+
+        mock_client.close.assert_called_once()
+        assert service._market_client is None
 
 
 class TestEmptySignalsValidation:
@@ -261,6 +370,12 @@ class TestExtractTriggerDates:
         )
         result = _extract_trigger_dates(series)
         assert result == []
+
+    def test_non_datetime_index_is_stringified(self):
+        """非datetimeインデックスでも文字列化される"""
+        series = pd.Series([True, False], index=[1, 2])
+        result = _extract_trigger_dates(series)
+        assert result == ["1"]
 
 
 class TestDateRangeValidation:

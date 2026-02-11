@@ -9,6 +9,7 @@ WAL pragma は読み取り側で設定しない（書き込み側の ts/api が�
 from __future__ import annotations
 
 import sqlite3
+import threading
 from typing import Any
 
 from src.lib.market_db.query_helpers import stock_code_candidates
@@ -19,20 +20,38 @@ class MarketDbReader:
 
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
-        self._conn: sqlite3.Connection | None = None
+        self._conns: dict[int, sqlite3.Connection] = {}
+        self._conn_lock = threading.Lock()
+
+    def _create_connection(self) -> sqlite3.Connection:
+        uri = f"file:{self._db_path}?mode=ro"
+        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _get_thread_connection(self) -> sqlite3.Connection:
+        thread_id = threading.get_ident()
+        conn = self._conns.get(thread_id)
+        if conn is not None:
+            return conn
+
+        with self._conn_lock:
+            conn = self._conns.get(thread_id)
+            if conn is None:
+                conn = self._create_connection()
+                self._conns[thread_id] = conn
+        return conn
 
     @property
     def conn(self) -> sqlite3.Connection:
-        if self._conn is None:
-            uri = f"file:{self._db_path}?mode=ro"
-            self._conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
-            self._conn.row_factory = sqlite3.Row
-        return self._conn
+        return self._get_thread_connection()
 
     def close(self) -> None:
-        if self._conn is not None:
-            self._conn.close()
-            self._conn = None
+        with self._conn_lock:
+            conns = list(self._conns.values())
+            self._conns.clear()
+        for conn in conns:
+            conn.close()
 
     def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
         """SQL クエリを実行して結果を返す"""

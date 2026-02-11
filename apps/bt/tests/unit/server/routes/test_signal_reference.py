@@ -38,3 +38,47 @@ class TestGetSignalReference:
         ):
             resp = client.get("/api/signals/reference")
             assert resp.status_code == 500
+
+
+class TestGetSignalSchema:
+    def test_success(self, client: TestClient) -> None:
+        resp = client.get("/api/signals/schema")
+        assert resp.status_code == 200
+
+    def test_error_returns_500(self, client: TestClient) -> None:
+        with patch(
+            "src.server.routes.signal_reference.SignalParams.model_json_schema",
+            side_effect=Exception("schema-fail"),
+        ):
+            resp = client.get("/api/signals/schema")
+            assert resp.status_code == 500
+
+
+class TestComputeSignals:
+    def test_value_error_returns_400(self, client: TestClient) -> None:
+        with patch(
+            "src.server.routes.signal_reference.SignalService.compute_signals",
+            side_effect=ValueError("invalid input"),
+        ):
+            resp = client.post(
+                "/api/signals/compute",
+                json={
+                    "stock_code": "7203",
+                    "signals": [{"type": "volume", "params": {"threshold": 1.5}}],
+                },
+            )
+            assert resp.status_code == 400
+
+    def test_unexpected_error_returns_500(self, client: TestClient) -> None:
+        with patch(
+            "src.server.routes.signal_reference.SignalService.compute_signals",
+            side_effect=RuntimeError("boom"),
+        ):
+            resp = client.post(
+                "/api/signals/compute",
+                json={
+                    "stock_code": "7203",
+                    "signals": [{"type": "volume", "params": {"threshold": 1.5}}],
+                },
+            )
+            assert resp.status_code == 500
