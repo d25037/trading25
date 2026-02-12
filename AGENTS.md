@@ -99,7 +99,7 @@ uv run pyright src/              # 型チェック
 | `packages/api/` | **Archived** — 旧 Hono サーバー（Phase 3F で廃止） |
 | `packages/web/` | React 19 + Vite フロントエンド |
 | `packages/shared/` | 共有ライブラリ（OpenAPI 生成型, JQuants, TA/FA指標） |
-| `packages/cli/` | Gunshi CLI（dataset/portfolio/analysis） |
+| `packages/cli/` | Gunshi CLI（dataset/portfolio/analysis/backtest attribution） |
 
 ```bash
 bun dev                          # web 起動（FastAPI :3002 にプロキシ）
@@ -107,7 +107,10 @@ bun dev:full                     # bt:sync + dev
 bun run test                     # テスト
 bun typecheck:all                # 型チェック
 bun lint && bun check:fix        # リント（Biome）
+bun run cli backtest attribution run <strategy> --wait
 ```
+
+- Backtest UI は `Attribution` サブタブを持ち、進捗取得は 2 秒ポーリング
 
 主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 

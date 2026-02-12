@@ -15,9 +15,14 @@ vi.mock('@/stores/backtestStore', () => ({
 vi.mock('@/components/Backtest', () => ({
   BacktestRunner: () => <div>Runner Panel</div>,
   BacktestResults: () => <div>Results Panel</div>,
+  BacktestAttribution: () => <div>Attribution Panel</div>,
   BacktestStrategies: () => <div>Strategies Panel</div>,
   BacktestStatus: () => <div>Status Panel</div>,
   DatasetManager: () => <div>Dataset Panel</div>,
+}));
+
+vi.mock('@/components/Lab', () => ({
+  LabPanel: () => <div>Lab Panel</div>,
 }));
 
 describe('BacktestPage', () => {
@@ -40,5 +45,28 @@ describe('BacktestPage', () => {
 
     await user.click(screen.getByRole('button', { name: /Results/i }));
     expect(mockBacktestState.setActiveSubTab).toHaveBeenCalledWith('results');
+  });
+
+  it('renders attribution tab content', () => {
+    mockBacktestState.activeSubTab = 'attribution';
+    render(<BacktestPage />);
+    expect(screen.getByText('Attribution Panel')).toBeInTheDocument();
+  });
+
+  it('renders remaining tab panels', () => {
+    const matrix = [
+      { tab: 'strategies', text: 'Strategies Panel' },
+      { tab: 'status', text: 'Status Panel' },
+      { tab: 'dataset', text: 'Dataset Panel' },
+      { tab: 'lab', text: 'Lab Panel' },
+    ] as const;
+
+    const { rerender } = render(<BacktestPage />);
+
+    for (const item of matrix) {
+      mockBacktestState.activeSubTab = item.tab;
+      rerender(<BacktestPage />);
+      expect(screen.getByText(item.text)).toBeInTheDocument();
+    }
   });
 });

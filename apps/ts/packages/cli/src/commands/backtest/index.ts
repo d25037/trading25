@@ -5,6 +5,7 @@
  */
 
 import { define } from 'gunshi';
+import { attributionCommand } from './attribution/index.js';
 import { cancelCommand } from './cancel.js';
 import { listCommand } from './list.js';
 import { resultsCommand } from './results.js';
@@ -22,6 +23,7 @@ export const backtestCommand = define({
     results: resultsCommand,
     status: statusCommand,
     cancel: cancelCommand,
+    attribution: attributionCommand,
   },
   run: (ctx) => {
     ctx.log('Use --help to see available backtest commands');
