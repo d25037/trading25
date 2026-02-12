@@ -6,7 +6,6 @@ from __future__ import annotations
 import argparse
 import json
 import re
-import sys
 from collections import defaultdict
 from pathlib import Path
 
@@ -100,12 +99,10 @@ def _extract_commands(path: Path, decorator: str, prefix: str) -> list[str]:
 def _render_cli_reference(repo_root: Path) -> str:
     bt_main = repo_root / "apps/bt/src/cli_bt/__init__.py"
     bt_lab = repo_root / "apps/bt/src/cli_bt/lab.py"
-    portfolio = repo_root / "apps/bt/src/cli_portfolio/__init__.py"
 
     commands = []
     commands.extend(_extract_commands(bt_main, "app", "bt"))
     commands.extend(_extract_commands(bt_lab, "lab_app", "bt lab"))
-    commands.extend(_extract_commands(portfolio, "app", "portfolio"))
     commands = sorted(set(commands))
 
     lines = [
@@ -126,7 +123,6 @@ def _render_cli_reference(repo_root: Path) -> str:
             "",
             "- `apps/bt/src/cli_bt/__init__.py`",
             "- `apps/bt/src/cli_bt/lab.py`",
-            "- `apps/bt/src/cli_portfolio/__init__.py`",
             "",
         ]
     )

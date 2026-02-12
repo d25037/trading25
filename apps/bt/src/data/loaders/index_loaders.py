@@ -1,13 +1,13 @@
 """
 インデックス・ベンチマークデータローダー
 
-localhost:3001 API経由でインデックス・ベンチマークデータを読み込み、VectorBTで使用できる形式に変換します。
+localhost:3002 API経由でインデックス・ベンチマークデータを読み込み、VectorBTで使用できる形式に変換します。
 
 TOPIXデータの二重ロードパス:
     1. load_topix_data() — dataset.db の topix テーブルからロード（バックテスト専用）
        長期間の過去データを使用するバックテストシミュレーション向け。
     2. load_topix_data_from_market_db() — market.db の topix_data テーブルからロード
-       日次更新の直近データを使用する signal_screening のβ値計算 および cli_portfolio のPCA分析向け。
+       日次更新の直近データを使用する signal_screening のβ値計算 および portfolio factor regression API向け。
 """
 
 from typing import Optional
@@ -66,7 +66,7 @@ def load_topix_data_from_market_db(
 
     日次更新の直近データを使用する以下の用途向け:
         - signal_screening: β値シグナル計算のベンチマークデータ
-        - cli_portfolio: PCA分析のベンチマークデータ
+        - analytics API: ポートフォリオ分析のベンチマークデータ
 
     Args:
         _dataset: 未使用（後方互換性のため残存、API経由のため不要）
