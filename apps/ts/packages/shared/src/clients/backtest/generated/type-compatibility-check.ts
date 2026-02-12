@@ -41,6 +41,18 @@ import type {
   OptimizationHtmlFileListResponse as ManualOptimizationHtmlFileListResponse,
   OptimizationJobResponse as ManualOptimizationJobResponse,
   OptimizationRequest as ManualOptimizationRequest,
+  SignalAttributionJobResponse as ManualSignalAttributionJobResponse,
+  SignalAttributionLooResult as ManualSignalAttributionLooResult,
+  SignalAttributionMetrics as ManualSignalAttributionMetrics,
+  SignalAttributionRequest as ManualSignalAttributionRequest,
+  SignalAttributionResult as ManualSignalAttributionResult,
+  SignalAttributionResultResponse as ManualSignalAttributionResultResponse,
+  SignalAttributionShapleyMeta as ManualSignalAttributionShapleyMeta,
+  SignalAttributionShapleyResult as ManualSignalAttributionShapleyResult,
+  SignalAttributionSignalResult as ManualSignalAttributionSignalResult,
+  SignalAttributionTiming as ManualSignalAttributionTiming,
+  SignalAttributionTopNScore as ManualSignalAttributionTopNScore,
+  SignalAttributionTopNSelection as ManualSignalAttributionTopNSelection,
   SignalCategory as ManualSignalCategory,
   SignalDefinition as ManualSignalDefinition,
   SignalFieldDefinition as ManualSignalFieldDefinition,
@@ -100,6 +112,55 @@ type _BacktestJobResponse = AssertExtends<
 type _BacktestResultResponse = AssertExtends<
   Normalize<Omit<ManualBacktestResultResponse, 'summary'>>,
   Normalize<Omit<Schemas['BacktestResultResponse'], 'summary'>>
+>;
+// strategy_config_override: manual uses `T | undefined`, generated uses `T | null`.
+type _SignalAttributionRequest = AssertExtends<
+  Omit<Normalize<ManualSignalAttributionRequest>, 'strategy_config_override'>,
+  Omit<Normalize<Schemas['SignalAttributionRequest']>, 'strategy_config_override'>
+>;
+type _SignalAttributionMetrics = AssertExtends<
+  Normalize<ManualSignalAttributionMetrics>,
+  Normalize<Schemas['SignalAttributionMetrics']>
+>;
+type _SignalAttributionLooResult = AssertExtends<
+  Normalize<Omit<ManualSignalAttributionLooResult, 'variant_metrics'>>,
+  Normalize<Omit<Schemas['SignalAttributionLooResult'], 'variant_metrics'>>
+>;
+type _SignalAttributionShapleyResult = AssertExtends<
+  Normalize<ManualSignalAttributionShapleyResult>,
+  Normalize<Schemas['SignalAttributionShapleyResult']>
+>;
+type _SignalAttributionSignalResult = AssertExtends<
+  Normalize<Omit<ManualSignalAttributionSignalResult, 'loo' | 'shapley'>>,
+  Normalize<Omit<Schemas['SignalAttributionSignalResult'], 'loo' | 'shapley'>>
+>;
+type _SignalAttributionTopNScore = AssertExtends<
+  Normalize<ManualSignalAttributionTopNScore>,
+  Normalize<Schemas['SignalAttributionTopNScore']>
+>;
+type _SignalAttributionTopNSelection = AssertExtends<
+  Normalize<Omit<ManualSignalAttributionTopNSelection, 'scores'>>,
+  Normalize<Omit<Schemas['SignalAttributionTopNSelection'], 'scores'>>
+>;
+type _SignalAttributionTiming = AssertExtends<
+  Normalize<ManualSignalAttributionTiming>,
+  Normalize<Schemas['SignalAttributionTiming']>
+>;
+type _SignalAttributionShapleyMeta = AssertExtends<
+  Normalize<ManualSignalAttributionShapleyMeta>,
+  Normalize<Schemas['SignalAttributionShapleyMeta']>
+>;
+type _SignalAttributionResult = AssertExtends<
+  Normalize<Omit<ManualSignalAttributionResult, 'baseline_metrics' | 'signals' | 'top_n_selection' | 'timing' | 'shapley'>>,
+  Normalize<Omit<Schemas['SignalAttributionResult'], 'baseline_metrics' | 'signals' | 'top_n_selection' | 'timing' | 'shapley'>>
+>;
+type _SignalAttributionJobResponse = AssertExtends<
+  Normalize<Omit<ManualSignalAttributionJobResponse, 'result_data'>>,
+  Normalize<Omit<Schemas['SignalAttributionJobResponse'], 'result_data'>>
+>;
+type _SignalAttributionResultResponse = AssertExtends<
+  Normalize<Omit<ManualSignalAttributionResultResponse, 'result'>>,
+  Normalize<Omit<Schemas['SignalAttributionResultResponse'], 'result'>>
 >;
 
 // ===== STRATEGY =====
@@ -219,6 +280,18 @@ export type TypeChecks = [
   _BacktestRequest,
   _BacktestJobResponse,
   _BacktestResultResponse,
+  _SignalAttributionRequest,
+  _SignalAttributionMetrics,
+  _SignalAttributionLooResult,
+  _SignalAttributionShapleyResult,
+  _SignalAttributionSignalResult,
+  _SignalAttributionTopNScore,
+  _SignalAttributionTopNSelection,
+  _SignalAttributionTiming,
+  _SignalAttributionShapleyMeta,
+  _SignalAttributionResult,
+  _SignalAttributionJobResponse,
+  _SignalAttributionResultResponse,
   _StrategyMetadata,
   _StrategyListResponse,
   _StrategyDetailResponse,

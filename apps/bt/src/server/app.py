@@ -29,6 +29,7 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.lib.market_db.market_reader import MarketDbReader
 from src.lib.market_db.market_db import MarketDb
 from src.lib.market_db.portfolio_db import PortfolioDb
+from src.server.services.backtest_attribution_service import backtest_attribution_service
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import job_manager
 from src.server.services.jquants_proxy_service import JQuantsProxyService
@@ -172,6 +173,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # _broken フラグを確認してから shutdown する。
     for executor in [
         backtest_service._executor,
+        backtest_attribution_service._executor,
         optimization_service._executor,
         lab_service._executor,
         indicators._executor,

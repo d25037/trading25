@@ -1157,6 +1157,368 @@
         }
       }
     },
+    "/api/backtest/attribution/run": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Run Signal Attribution",
+        "description": "シグナル寄与分析ジョブをサブミット",
+        "operationId": "run_signal_attribution_api_backtest_attribution_run_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SignalAttributionRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalAttributionJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/attribution/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Get Signal Attribution Job",
+        "description": "シグナル寄与分析ジョブの状態を取得",
+        "operationId": "get_signal_attribution_job_api_backtest_attribution_jobs__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalAttributionJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/attribution/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Cancel Signal Attribution Job",
+        "description": "シグナル寄与分析ジョブをキャンセル",
+        "operationId": "cancel_signal_attribution_job_api_backtest_attribution_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalAttributionJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/attribution/jobs/{job_id}/stream": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Stream Signal Attribution Events",
+        "description": "シグナル寄与分析ジョブの進捗をSSEでストリーミング",
+        "operationId": "stream_signal_attribution_events_api_backtest_attribution_jobs__job_id__stream_get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/attribution/result/{job_id}": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Get Signal Attribution Result",
+        "description": "シグナル寄与分析結果を取得",
+        "operationId": "get_signal_attribution_result_api_backtest_attribution_result__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SignalAttributionResultResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/backtest/html-files": {
       "get": {
         "tags": [
@@ -11502,7 +11864,8 @@
           "min",
           "max"
         ],
-        "title": "DateRange"
+        "title": "DateRange",
+        "description": "分析期間"
       },
       "DefaultConfigResponse": {
         "properties": {
@@ -11679,7 +12042,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           }
         },
         "type": "object",
@@ -17302,6 +17665,589 @@
         ],
         "title": "SectorWithCount"
       },
+      "SignalAttributionJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "進捗（0.0 - 1.0）"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "ステータスメッセージ"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "開始日時"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "完了日時"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラーメッセージ"
+          },
+          "result_data": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalAttributionResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "寄与分析結果（完了時のみ）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at"
+        ],
+        "title": "SignalAttributionJobResponse",
+        "description": "シグナル寄与分析ジョブレスポンス"
+      },
+      "SignalAttributionLooResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "description": "計算ステータス"
+          },
+          "variant_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalAttributionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "当該シグナル無効化時のメトリクス"
+          },
+          "delta_total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Total Return",
+            "description": "baseline - variant の total_return 差分"
+          },
+          "delta_sharpe_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Delta Sharpe Ratio",
+            "description": "baseline - variant の sharpe_ratio 差分"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラー詳細"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status"
+        ],
+        "title": "SignalAttributionLooResult",
+        "description": "LOO（1シグナル無効化）結果"
+      },
+      "SignalAttributionMetrics": {
+        "properties": {
+          "total_return": {
+            "type": "number",
+            "title": "Total Return",
+            "description": "トータルリターン"
+          },
+          "sharpe_ratio": {
+            "type": "number",
+            "title": "Sharpe Ratio",
+            "description": "シャープレシオ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_return",
+          "sharpe_ratio"
+        ],
+        "title": "SignalAttributionMetrics",
+        "description": "シグナル寄与分析で使用するメトリクス"
+      },
+      "SignalAttributionRequest": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Strategy Name",
+            "description": "戦略名（例: 'range_break_v5', 'production/range_break_v5'）"
+          },
+          "strategy_config_override": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Config Override",
+            "description": "戦略設定のオーバーライド（オプション）"
+          },
+          "shapley_top_n": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Shapley Top N",
+            "description": "Shapley計算対象にする上位シグナル数",
+            "default": 5
+          },
+          "shapley_permutations": {
+            "type": "integer",
+            "minimum": 1,
+            "title": "Shapley Permutations",
+            "description": "Shapley近似時の順列サンプル数",
+            "default": 128
+          },
+          "random_seed": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Random Seed",
+            "description": "Shapley近似の乱数シード"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name"
+        ],
+        "title": "SignalAttributionRequest",
+        "description": "シグナル寄与分析リクエスト"
+      },
+      "SignalAttributionResult": {
+        "properties": {
+          "baseline_metrics": {
+            "$ref": "#/components/schemas/SignalAttributionMetrics",
+            "description": "ベースラインのメトリクス"
+          },
+          "signals": {
+            "items": {
+              "$ref": "#/components/schemas/SignalAttributionSignalResult"
+            },
+            "type": "array",
+            "title": "Signals",
+            "description": "シグナル別寄与結果"
+          },
+          "top_n_selection": {
+            "$ref": "#/components/schemas/SignalAttributionTopNSelection",
+            "description": "Shapley対象TopNの選定情報"
+          },
+          "timing": {
+            "$ref": "#/components/schemas/SignalAttributionTiming"
+          },
+          "shapley": {
+            "$ref": "#/components/schemas/SignalAttributionShapleyMeta"
+          }
+        },
+        "type": "object",
+        "required": [
+          "baseline_metrics",
+          "signals",
+          "top_n_selection",
+          "timing",
+          "shapley"
+        ],
+        "title": "SignalAttributionResult",
+        "description": "シグナル寄与分析結果"
+      },
+      "SignalAttributionResultResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名"
+          },
+          "result": {
+            "$ref": "#/components/schemas/SignalAttributionResult",
+            "description": "寄与分析結果"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "strategy_name",
+          "result",
+          "created_at"
+        ],
+        "title": "SignalAttributionResultResponse",
+        "description": "シグナル寄与分析結果レスポンス（詳細）"
+      },
+      "SignalAttributionShapleyMeta": {
+        "properties": {
+          "method": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Method",
+            "description": "計算方式（exact/permutation/error）"
+          },
+          "sample_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Size",
+            "description": "近似時のサンプル数"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラー詳細"
+          },
+          "evaluations": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evaluations",
+            "description": "評価実行回数"
+          }
+        },
+        "type": "object",
+        "title": "SignalAttributionShapleyMeta",
+        "description": "Shapley計算メタ情報"
+      },
+      "SignalAttributionShapleyResult": {
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "ok",
+              "error"
+            ],
+            "title": "Status",
+            "description": "計算ステータス"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Total Return",
+            "description": "total_returnへのShapley寄与"
+          },
+          "sharpe_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sharpe Ratio",
+            "description": "sharpe_ratioへのShapley寄与"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method",
+            "description": "計算方式（exact/permutation/error）"
+          },
+          "sample_size": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sample Size",
+            "description": "計算に使ったサンプル数"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラー詳細"
+          }
+        },
+        "type": "object",
+        "required": [
+          "status",
+          "method"
+        ],
+        "title": "SignalAttributionShapleyResult",
+        "description": "Shapley寄与結果"
+      },
+      "SignalAttributionSignalResult": {
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "title": "Signal Id",
+            "description": "シグナル識別子（entry.<param_key> / exit.<param_key>）"
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "entry",
+              "exit"
+            ],
+            "title": "Scope",
+            "description": "シグナルの適用スコープ"
+          },
+          "param_key": {
+            "type": "string",
+            "title": "Param Key",
+            "description": "SignalParams上のparam_key"
+          },
+          "signal_name": {
+            "type": "string",
+            "title": "Signal Name",
+            "description": "表示用シグナル名"
+          },
+          "loo": {
+            "$ref": "#/components/schemas/SignalAttributionLooResult",
+            "description": "LOO寄与結果"
+          },
+          "shapley": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalAttributionShapleyResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Shapley寄与結果（topN対象外はnull）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signal_id",
+          "scope",
+          "param_key",
+          "signal_name",
+          "loo"
+        ],
+        "title": "SignalAttributionSignalResult",
+        "description": "シグナル単位の寄与結果"
+      },
+      "SignalAttributionTiming": {
+        "properties": {
+          "total_seconds": {
+            "type": "number",
+            "title": "Total Seconds",
+            "description": "総処理時間（秒）"
+          },
+          "baseline_seconds": {
+            "type": "number",
+            "title": "Baseline Seconds",
+            "description": "baseline計算時間（秒）"
+          },
+          "loo_seconds": {
+            "type": "number",
+            "title": "Loo Seconds",
+            "description": "LOO計算時間（秒）"
+          },
+          "shapley_seconds": {
+            "type": "number",
+            "title": "Shapley Seconds",
+            "description": "Shapley計算時間（秒）"
+          }
+        },
+        "type": "object",
+        "required": [
+          "total_seconds",
+          "baseline_seconds",
+          "loo_seconds",
+          "shapley_seconds"
+        ],
+        "title": "SignalAttributionTiming",
+        "description": "処理時間情報"
+      },
+      "SignalAttributionTopNScore": {
+        "properties": {
+          "signal_id": {
+            "type": "string",
+            "title": "Signal Id",
+            "description": "シグナル識別子"
+          },
+          "score": {
+            "type": "number",
+            "title": "Score",
+            "description": "LOO絶対値正規化の合成スコア"
+          }
+        },
+        "type": "object",
+        "required": [
+          "signal_id",
+          "score"
+        ],
+        "title": "SignalAttributionTopNScore",
+        "description": "TopN選定時のスコア"
+      },
+      "SignalAttributionTopNSelection": {
+        "properties": {
+          "top_n_requested": {
+            "type": "integer",
+            "title": "Top N Requested",
+            "description": "要求されたTopN"
+          },
+          "top_n_effective": {
+            "type": "integer",
+            "title": "Top N Effective",
+            "description": "実際に選定されたTopN"
+          },
+          "selected_signal_ids": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Selected Signal Ids",
+            "description": "Shapley計算対象のsignal_id一覧"
+          },
+          "scores": {
+            "items": {
+              "$ref": "#/components/schemas/SignalAttributionTopNScore"
+            },
+            "type": "array",
+            "title": "Scores",
+            "description": "上位シグナルの選定スコア"
+          }
+        },
+        "type": "object",
+        "required": [
+          "top_n_requested",
+          "top_n_effective",
+          "selected_signal_ids"
+        ],
+        "title": "SignalAttributionTopNSelection",
+        "description": "Shapley対象のTopN選定情報"
+      },
       "SignalCategorySchema": {
         "properties": {
           "key": {
@@ -19624,25 +20570,6 @@
         ],
         "title": "OHLCVRecord"
       },
-      "src__server__schemas__factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange",
-        "description": "分析期間"
-      },
       "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
           "indexCode": {
@@ -19676,6 +20603,24 @@
         ],
         "title": "IndexMatch",
         "description": "指数マッチ結果"
+      },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
       },
       "src__server__schemas__portfolio_factor_regression__DateRange": {
         "properties": {
