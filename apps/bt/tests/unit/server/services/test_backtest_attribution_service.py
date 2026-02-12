@@ -1,6 +1,7 @@
 """BacktestAttributionService unit tests."""
 
 import asyncio
+import threading
 from types import SimpleNamespace
 from typing import Any
 
@@ -61,6 +62,56 @@ def test_execute_attribution_sync_uses_threadsafe_progress(monkeypatch):
     assert init_args["shapley_permutations"] == 128
     assert init_args["random_seed"] == 42
     assert result["baseline_metrics"]["total_return"] == 1.0
+    service._executor.shutdown(wait=False)
+
+
+def test_execute_attribution_sync_skips_progress_when_cancelled(monkeypatch):
+    service = BacktestAttributionService()
+
+    async def _dummy_update_job_status(*args, **kwargs):
+        return None
+
+    service._manager.update_job_status = _dummy_update_job_status  # type: ignore[assignment]
+    called = {"count": 0}
+
+    def _fake_run_coroutine_threadsafe(coro, loop):
+        called["count"] += 1
+        return object()
+
+    class _FakeAnalyzer:
+        def __init__(self, **_kwargs):
+            pass
+
+        def run(self, progress_callback=None):
+            assert progress_callback is not None
+            progress_callback("running", 0.1)
+            return {"ok": True}
+
+    monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_run_coroutine_threadsafe)
+    monkeypatch.setattr(
+        "src.server.services.backtest_attribution_service.SignalAttributionAnalyzer",
+        _FakeAnalyzer,
+    )
+
+    cancel_event = threading.Event()
+    cancel_event.set()
+    loop = asyncio.new_event_loop()
+    try:
+        result = service._execute_attribution_sync(
+            "job-1",
+            "strategy-1",
+            loop,
+            None,
+            5,
+            128,
+            None,
+            cancel_event,
+        )
+    finally:
+        loop.close()
+
+    assert result["ok"] is True
+    assert called["count"] == 0
     service._executor.shutdown(wait=False)
 
 
@@ -225,6 +276,7 @@ async def test_run_attribution_cancelled_sets_cancelled_status(monkeypatch):
     service = BacktestAttributionService(manager=manager)
     loop = _DummyLoop(exc=asyncio.CancelledError())
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+    cancel_event = threading.Event()
 
     await service._run_attribution(
         job_id="job-1",
@@ -233,8 +285,10 @@ async def test_run_attribution_cancelled_sets_cancelled_status(monkeypatch):
         shapley_top_n=5,
         shapley_permutations=128,
         random_seed=None,
+        cancel_event=cancel_event,
     )
 
     assert manager.release_count == 1
     assert manager.status_updates[-1]["status"] == JobStatus.CANCELLED
+    assert cancel_event.is_set()
     service._executor.shutdown(wait=False)

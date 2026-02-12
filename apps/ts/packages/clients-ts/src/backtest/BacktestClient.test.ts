@@ -337,6 +337,100 @@ describe('BacktestClient', () => {
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/attribution/result/attr-1');
   });
 
+  test('runSignalAttributionAndWait polls until completion', async () => {
+    const pending = {
+      job_id: 'attr-1',
+      status: 'pending',
+      progress: null,
+      message: null,
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: null,
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+    const running = {
+      job_id: 'attr-1',
+      status: 'running',
+      progress: 0.5,
+      message: 'running',
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: '2024-01-01T00:00:01Z',
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+    const completed = {
+      job_id: 'attr-1',
+      status: 'completed',
+      progress: 1,
+      message: null,
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: '2024-01-01T00:00:01Z',
+      completed_at: '2024-01-01T00:01:00Z',
+      error: null,
+      result_data: {
+        baseline_metrics: { total_return: 0.2, sharpe_ratio: 1.1 },
+        signals: [],
+        top_n_selection: {
+          top_n_requested: 5,
+          top_n_effective: 0,
+          selected_signal_ids: [],
+          scores: [],
+        },
+        timing: {
+          total_seconds: 1,
+          baseline_seconds: 0.2,
+          loo_seconds: 0.4,
+          shapley_seconds: 0.4,
+        },
+        shapley: {
+          method: null,
+          sample_size: null,
+          error: null,
+          evaluations: null,
+        },
+      },
+    };
+
+    fetchSpy
+      .mockResolvedValueOnce(createMockResponse(pending))
+      .mockResolvedValueOnce(createMockResponse(running))
+      .mockResolvedValueOnce(createMockResponse(completed));
+
+    const progressCalls: string[] = [];
+    const result = await client.runSignalAttributionAndWait(
+      { strategy_name: 'sma_cross' },
+      {
+        pollInterval: 10,
+        onProgress: (job) => progressCalls.push(job.status),
+      }
+    );
+
+    expect(result.status).toBe('completed');
+    expect(progressCalls).toEqual(['running', 'completed']);
+  });
+
+  test('runSignalAttributionAndWait returns immediately if job already completed', async () => {
+    const completed = {
+      job_id: 'attr-1',
+      status: 'completed',
+      progress: 1,
+      message: null,
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: null,
+      completed_at: '2024-01-01T00:01:00Z',
+      error: null,
+      result_data: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(completed));
+
+    const result = await client.runSignalAttributionAndWait({ strategy_name: 'sma_cross' }, { pollInterval: 10 });
+
+    expect(result.status).toBe('completed');
+    expect(fetchSpy.mock.calls.length).toBe(1);
+  });
+
   // runAndWait
   test('runAndWait polls until completion', async () => {
     const pending = {

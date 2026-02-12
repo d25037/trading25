@@ -154,6 +154,27 @@ export class BacktestClient {
     return this.request<SignalAttributionResultResponse>(`/api/backtest/attribution/result/${encodeURIComponent(jobId)}`);
   }
 
+  async runSignalAttributionAndWait(
+    request: SignalAttributionRequest,
+    options?: {
+      pollInterval?: number;
+      onProgress?: (job: SignalAttributionJobResponse) => void;
+    }
+  ): Promise<SignalAttributionJobResponse> {
+    const pollInterval = options?.pollInterval ?? 2000;
+
+    const initialJob = await this.runSignalAttribution(request);
+
+    let job = initialJob;
+    while (job.status === 'pending' || job.status === 'running') {
+      await new Promise((resolve) => setTimeout(resolve, pollInterval));
+      job = await this.getSignalAttributionJob(job.job_id);
+      options?.onProgress?.(job);
+    }
+
+    return job;
+  }
+
   /**
    * バックテストを実行し、完了まで待機
    * @param request バックテストリクエスト

@@ -1,5 +1,6 @@
-import { Activity, BarChart3, Code, Database, FlaskConical, Play } from 'lucide-react';
+import { Activity, BarChart3, Code, Database, FlaskConical, GitBranch, Play } from 'lucide-react';
 import {
+  BacktestAttribution,
   BacktestResults,
   BacktestRunner,
   BacktestStatus,
@@ -14,6 +15,7 @@ import type { BacktestSubTab } from '@/types/backtest';
 const subTabs: { id: BacktestSubTab; label: string; icon: typeof Play }[] = [
   { id: 'runner', label: 'Runner', icon: Play },
   { id: 'results', label: 'Results', icon: BarChart3 },
+  { id: 'attribution', label: 'Attribution', icon: GitBranch },
   { id: 'strategies', label: 'Strategies', icon: Code },
   { id: 'status', label: 'Status', icon: Activity },
   { id: 'dataset', label: 'Dataset', icon: Database },
@@ -59,6 +61,7 @@ export function BacktestPage() {
           </div>
         )}
         {activeSubTab === 'results' && <BacktestResults />}
+        {activeSubTab === 'attribution' && <BacktestAttribution />}
         {activeSubTab === 'strategies' && <BacktestStrategies />}
         {activeSubTab === 'status' && <BacktestStatus />}
         {activeSubTab === 'dataset' && <DatasetManager />}

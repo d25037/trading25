@@ -79,7 +79,7 @@ def _get_attribution_job_or_404(job_id: str) -> JobInfo:
 def _build_signal_attribution_job_response(job: JobInfo) -> SignalAttributionJobResponse:
     """JobInfoからSignalAttributionJobResponseを構築"""
     result_data = None
-    if job.raw_result and job.status == JobStatus.COMPLETED:
+    if job.raw_result is not None and job.status == JobStatus.COMPLETED:
         try:
             result_data = SignalAttributionResult.model_validate(job.raw_result)
         except Exception as e:

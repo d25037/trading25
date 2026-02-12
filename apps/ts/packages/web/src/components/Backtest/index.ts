@@ -1,3 +1,4 @@
+export { BacktestAttribution } from './BacktestAttribution';
 export { BacktestResults } from './BacktestResults';
 export { BacktestRunner } from './BacktestRunner';
 export { BacktestStatus } from './BacktestStatus';
