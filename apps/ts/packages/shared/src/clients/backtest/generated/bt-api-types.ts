@@ -5076,7 +5076,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["PortfolioDateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6933,7 +6933,7 @@ export interface components {
             to: string;
         };
         /** DateRange */
-        PortfolioDateRange: {
+        src__server__schemas__portfolio_performance__DateRange: {
             /** From */
             from: string;
             /** To */
