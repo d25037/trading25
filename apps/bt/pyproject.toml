@@ -32,7 +32,6 @@ build-backend = "setuptools.build_meta"
 [project.scripts]
 # 統一CLIコマンド
 bt = "src.cli_bt:app"
-portfolio = "src.cli_portfolio:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -82,7 +81,6 @@ source = ["src"]
 omit = [
     "src/*/__init__.py",
     "src/cli_bt/__main__.py",
-    "src/cli_portfolio/__main__.py",
 ]
 branch = true
 

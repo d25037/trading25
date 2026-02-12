@@ -133,7 +133,7 @@ ${CLI_NAME} db stats --json
       console.error(chalk.red(`\nError: ${errorMessage}`));
 
       console.error(chalk.gray('\nTroubleshooting tips:'));
-      console.error(chalk.gray('   - Ensure the API server is running: bun run dev:api'));
+      console.error(chalk.gray('   - Ensure the API server is running: uv run bt server --port 3002'));
       console.error(chalk.gray(`   - Run "${CLI_NAME} db sync --init" if database is not initialized`));
 
       throw new CLIError(errorMessage, 1, true, { cause: error });

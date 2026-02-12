@@ -82,7 +82,7 @@ export async function executeROEAnalysis(options: ROEOptions): Promise<void> {
   } catch (error) {
     if (error instanceof Error && error.message.includes('Cannot connect to API server')) {
       output.error('Cannot connect to API server.');
-      output.info('Please ensure the API server is running with "bun dev:api" or "bun dev"');
+      output.info('Please ensure the API server is running with "uv run bt server --port 3002"');
       throw error;
     }
     throw error;

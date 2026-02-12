@@ -38,7 +38,6 @@ bun run dev           # web 起動 (Vite :5173, /api -> :3002 proxy)
 bun run dev:web
 bun run dev:cli
 bun run dev:full      # bt:sync + dev:web
-bun run dev:api       # archived notice only
 
 # Quality
 bun run lint
@@ -54,6 +53,8 @@ bun run test:coverage
 # Build
 bun run build
 ```
+
+`bun run dev:api` は互換目的の archived notice のみで、API サーバー起動には使用しません。
 
 ## API / Type Sync
 

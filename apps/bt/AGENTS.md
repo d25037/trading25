@@ -128,7 +128,6 @@
 └── cache/                         # キャッシュ
     ├── agent/              # 戦略自動生成・最適化（GA/Optuna）
     ├── cli_bt/             # バックテストCLI（bt コマンド）
-    ├── cli_portfolio/      # ポートフォリオCLI（portfolio コマンド）
     ├── api/                # REST APIクライアント（Dataset/Market/Portfolio）
     ├── analysis/           # ポートフォリオ分析（PCA/リスク分析/回帰分析）
     ├── data/               # データ処理・ローダーシステム
@@ -170,6 +169,10 @@ uv run bt validate range_break_v5
 uv run bt server
 uv run bt server --port 3002 --reload
 ```
+
+### ポートフォリオCLI
+`apps/bt` の `portfolio` コマンドは廃止済み。ポートフォリオ操作は `apps/ts/packages/cli` の
+`bun cli portfolio ...` を使用する。
 
 ### 開発・検証
 ```bash

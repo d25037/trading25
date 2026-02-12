@@ -148,7 +148,7 @@ function handleScreeningError(error: unknown): void {
   }
 
   console.error(chalk.gray('\n💡 Troubleshooting tips:'));
-  console.error(chalk.gray('   • Ensure the API server is running: bun run dev:api'));
+  console.error(chalk.gray('   • Ensure the API server is running: uv run bt server --port 3002'));
   console.error(chalk.gray(`   • Ensure market.db exists: ${CLI_NAME} db sync`));
   console.error(chalk.gray('   • Try with --debug flag for more information'));
 }
