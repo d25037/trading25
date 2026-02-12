@@ -5,7 +5,7 @@ BacktestRunner unit tests
 from pathlib import Path
 from typing import Any
 
-from src.backtest.runner import BacktestRunner
+from src.lib.backtest_core.runner import BacktestRunner
 
 
 class _FakeExecutor:
@@ -13,10 +13,18 @@ class _FakeExecutor:
         self.output_dir = output_dir
         self.executed_template_path = None
         self.executed_strategy_name = None
+        self.executed_extra_env = None
 
-    def execute_notebook(self, template_path: str, parameters: dict, strategy_name: str):
+    def execute_notebook(
+        self,
+        template_path: str,
+        parameters: dict,
+        strategy_name: str,
+        extra_env: dict[str, str] | None = None,
+    ):
         self.executed_template_path = template_path
         self.executed_strategy_name = strategy_name
+        self.executed_extra_env = extra_env
         html_path = Path(self.output_dir) / "result.html"
         html_path.write_text("<html></html>", encoding="utf-8")
         return html_path
@@ -66,6 +74,36 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
     assert result.html_path.exists()
     assert fake_executor.executed_template_path == "custom_template.py"
     assert fake_executor.executed_strategy_name == "test_strategy"
+
+
+def test_backtest_runner_propagates_direct_access_mode(monkeypatch, tmp_path: Path):
+    runner = BacktestRunner()
+    fake_executor = _FakeExecutor(str(tmp_path))
+
+    monkeypatch.setattr(
+        runner.config_loader,
+        "load_strategy_config",
+        lambda _strategy: {"shared_config": {"dataset": "sample"}},
+    )
+    monkeypatch.setattr(
+        runner.config_loader,
+        "get_template_notebook_path",
+        lambda _: Path("template.py"),
+    )
+    monkeypatch.setattr(
+        runner.config_loader,
+        "get_output_directory",
+        lambda _: tmp_path,
+    )
+    monkeypatch.setattr(
+        "src.lib.backtest_core.runner.MarimoExecutor",
+        lambda _output_dir: fake_executor,
+    )
+
+    runner.execute("production/test_strategy", data_access_mode="direct")
+
+    assert fake_executor.executed_extra_env is not None
+    assert fake_executor.executed_extra_env.get("BT_DATA_ACCESS_MODE") == "direct"
 
 
 class TestBuildParametersConfigOverride:

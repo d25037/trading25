@@ -171,6 +171,7 @@ class BacktestService:
             strategy=strategy_name,
             progress_callback=progress_callback,
             config_override=config_override,
+            data_access_mode="direct",
         )
 
     def _extract_result_summary(self, result: BacktestResult) -> BacktestResultSummary:

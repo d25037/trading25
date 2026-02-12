@@ -21,6 +21,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
   - **market.db**: 読み書き（SQLAlchemy Core）
   - **portfolio.db**: CRUD（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
+- Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - 市場コードフィルタは legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う
 - **ts/web** は `/api` パスを FastAPI (:3002) にプロキシ
 - **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は archived・read-only）

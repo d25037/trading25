@@ -5,6 +5,7 @@ CLI/Streamlit両対応のバックテスト実行ロジック
 """
 
 import json
+import os
 import subprocess
 import sys
 import time
@@ -15,6 +16,11 @@ from typing import Any, Callable
 from loguru import logger
 from pydantic import BaseModel, Field
 
+from src.data.access.mode import (
+    DATA_ACCESS_MODE_ENV,
+    data_access_mode_context,
+    normalize_data_access_mode,
+)
 from src.lib.backtest_core.marimo_executor import MarimoExecutor
 from src.lib.strategy_runtime.loader import ConfigLoader
 
@@ -47,6 +53,7 @@ class BacktestRunner:
         strategy: str,
         progress_callback: Callable[[str, float], None] | None = None,
         config_override: dict[str, Any] | None = None,
+        data_access_mode: str | None = None,
     ) -> BacktestResult:
         """
         バックテストを実行
@@ -55,6 +62,7 @@ class BacktestRunner:
             strategy: 戦略名（例: "range_break_v5", "production/range_break_v5"）
             progress_callback: 進捗通知コールバック(status_text, elapsed_time)
             config_override: 設定オーバーライド辞書（オプション）
+            data_access_mode: データアクセスモード（"http" | "direct"）
 
         Returns:
             BacktestResult（html_path, elapsed_time, summary含む）
@@ -72,66 +80,79 @@ class BacktestRunner:
                 progress_callback(status, elapsed)
 
         strategy_name_only = strategy.split("/")[-1]
-
-        notify("設定を読み込み中...")
-
-        strategy_config = self.config_loader.load_strategy_config(strategy)
-
-        parameters = self._build_parameters(strategy_config, config_override)
-
-        shared_config = parameters.get("shared_config", {})
-        dataset_name = shared_config.get("dataset", "unknown")
-
-        notify("バックテストを実行中...")
-
-        executor_output_dir = self.config_loader.get_output_directory(strategy_config)
-        executor = MarimoExecutor(str(executor_output_dir))
-        template_path = str(self.config_loader.get_template_notebook_path(strategy_config))
-
-        logger.debug(f"バックテスト実行開始: strategy={strategy_name_only}")
-        logger.debug(f"出力ディレクトリ: {executor_output_dir}")
-        logger.debug(f"テンプレートパス: {template_path}")
-
-        html_path = executor.execute_notebook(
-            template_path=template_path,
-            parameters=parameters,
-            strategy_name=strategy_name_only,
+        mode_override = (
+            normalize_data_access_mode(data_access_mode)
+            if data_access_mode is not None
+            else None
         )
 
-        elapsed_time = time.time() - start_time
+        with data_access_mode_context(mode_override):
+            notify("設定を読み込み中...")
 
-        if not html_path.exists():
-            logger.error(f"HTMLファイルが見つかりません: {html_path}")
-            raise RuntimeError(f"HTML file not found after execution: {html_path}")
+            strategy_config = self.config_loader.load_strategy_config(strategy)
 
-        logger.info(f"バックテスト完了: {html_path} (elapsed: {elapsed_time:.2f}s)")
+            parameters = self._build_parameters(strategy_config, config_override)
 
-        notify("完了！")
+            shared_config = parameters.get("shared_config", {})
+            dataset_name = shared_config.get("dataset", "unknown")
 
-        summary = executor.get_execution_summary(html_path)
-        summary["execution_time"] = elapsed_time
-        summary["html_path"] = str(html_path)
-        walk_forward_result = self._run_walk_forward(parameters)
-        if walk_forward_result:
-            summary["walk_forward"] = walk_forward_result
+            notify("バックテストを実行中...")
 
-        manifest_path = self._write_manifest(
-            html_path=html_path,
-            parameters=parameters,
-            strategy_name=strategy_name_only,
-            dataset_name=dataset_name,
-            elapsed_time=elapsed_time,
-            walk_forward=walk_forward_result,
-        )
-        summary["manifest_path"] = str(manifest_path)
+            executor_output_dir = self.config_loader.get_output_directory(strategy_config)
+            executor = MarimoExecutor(str(executor_output_dir))
+            template_path = str(self.config_loader.get_template_notebook_path(strategy_config))
 
-        return BacktestResult(
-            html_path=html_path,
-            elapsed_time=elapsed_time,
-            summary=summary,
-            strategy_name=strategy_name_only,
-            dataset_name=dataset_name,
-        )
+            logger.debug(f"バックテスト実行開始: strategy={strategy_name_only}")
+            logger.debug(f"出力ディレクトリ: {executor_output_dir}")
+            logger.debug(f"テンプレートパス: {template_path}")
+
+            extra_env: dict[str, str] | None = None
+            if mode_override is not None:
+                extra_env = {DATA_ACCESS_MODE_ENV: mode_override}
+            elif DATA_ACCESS_MODE_ENV in os.environ:
+                extra_env = {DATA_ACCESS_MODE_ENV: os.environ[DATA_ACCESS_MODE_ENV]}
+
+            html_path = executor.execute_notebook(
+                template_path=template_path,
+                parameters=parameters,
+                strategy_name=strategy_name_only,
+                extra_env=extra_env,
+            )
+
+            elapsed_time = time.time() - start_time
+
+            if not html_path.exists():
+                logger.error(f"HTMLファイルが見つかりません: {html_path}")
+                raise RuntimeError(f"HTML file not found after execution: {html_path}")
+
+            logger.info(f"バックテスト完了: {html_path} (elapsed: {elapsed_time:.2f}s)")
+
+            notify("完了！")
+
+            summary = executor.get_execution_summary(html_path)
+            summary["execution_time"] = elapsed_time
+            summary["html_path"] = str(html_path)
+            walk_forward_result = self._run_walk_forward(parameters)
+            if walk_forward_result:
+                summary["walk_forward"] = walk_forward_result
+
+            manifest_path = self._write_manifest(
+                html_path=html_path,
+                parameters=parameters,
+                strategy_name=strategy_name_only,
+                dataset_name=dataset_name,
+                elapsed_time=elapsed_time,
+                walk_forward=walk_forward_result,
+            )
+            summary["manifest_path"] = str(manifest_path)
+
+            return BacktestResult(
+                html_path=html_path,
+                elapsed_time=elapsed_time,
+                summary=summary,
+                strategy_name=strategy_name_only,
+                dataset_name=dataset_name,
+            )
 
     def _write_manifest(
         self,
