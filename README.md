@@ -80,3 +80,4 @@ bun run --filter @trading25/shared bt:sync
 3. Typecheck
 4. Package unit tests
 5. App integration tests
+6. Web E2E smoke tests（Playwright Chromium + bt server）

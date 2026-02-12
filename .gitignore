@@ -21,6 +21,8 @@ htmlcov/
 **/.mypy_cache/
 **/.ruff_cache/
 **/coverage/
+**/playwright-report/
+**/test-results/
 
 # === Jupyter ===
 .ipynb_checkpoints/
