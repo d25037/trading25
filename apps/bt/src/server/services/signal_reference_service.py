@@ -87,6 +87,31 @@ def _get_field_type(annotation: Any) -> SignalFieldTypeValue:
     return "string"
 
 
+def _extract_parenthetical_segments(text: str) -> list[str]:
+    """最外括弧の内容を順序通りに抽出（ネスト対応）"""
+    close_to_open = {"）": "（", ")": "("}
+    stack: list[tuple[str, int]] = []
+    segments: list[str] = []
+
+    for idx, char in enumerate(text):
+        if char in ("（", "("):
+            stack.append((char, idx))
+            continue
+
+        if char not in close_to_open or not stack:
+            continue
+
+        open_char, start_idx = stack[-1]
+        if open_char != close_to_open[char]:
+            continue
+
+        stack.pop()
+        if not stack:
+            segments.append(text[start_idx + 1:idx])
+
+    return segments
+
+
 def _get_field_options(annotation: Any, field_info: FieldInfo) -> list[str] | None:
     """フィールドの選択肢を抽出
 
@@ -101,32 +126,16 @@ def _get_field_options(annotation: Any, field_info: FieldInfo) -> list[str] | No
 
     # str型: descriptionから選択肢を抽出
     if annotation is str and field_info.description:
-        desc = field_info.description
-        # パターン: "xxx（yyy=aaa、zzz=bbb）" から選択肢を抽出
-        match = re.search(r"[（(](.+?)[=＝]", desc)
-        if match:
-            # 全角・半角両方の括弧に対応して選択肢を抽出
-            try:
-                if "（" in desc and "）" in desc:
-                    start = desc.index("（") + 1
-                    end = desc.index("）")
-                    options_str = desc[start:end]
-                elif "(" in desc and ")" in desc:
-                    start = desc.index("(") + 1
-                    end = desc.index(")")
-                    options_str = desc[start:end]
-                else:
-                    options_str = ""
-            except ValueError:
-                options_str = ""
-            if options_str:
-                options = re.findall(r"(\w+)\s*[=＝]", options_str)
-                if options:
-                    return options
-        # "sma/ema" のようなスラッシュ区切り
-        match = re.search(r"[（(](\w+(?:/\w+)+)[）)]", desc)
-        if match:
-            return match.group(1).split("/")
+        for segment in _extract_parenthetical_segments(field_info.description):
+            # パターン: "xxx（yyy=aaa、zzz=bbb）" から選択肢を抽出
+            options = re.findall(r"([A-Za-z0-9_]+)\s*[=＝]", segment)
+            if options:
+                return list(dict.fromkeys(options))
+
+            # "sma/ema" のようなスラッシュ区切り
+            match = re.search(r"([A-Za-z0-9_]+(?:/[A-Za-z0-9_]+)+)", segment)
+            if match:
+                return match.group(1).split("/")
 
     return None
 
