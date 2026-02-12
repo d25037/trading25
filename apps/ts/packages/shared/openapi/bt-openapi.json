@@ -7008,7 +7008,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/OHLCVRecord"
+                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -7128,7 +7128,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/OHLCVRecord"
+                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -11850,19 +11850,19 @@
       },
       "DateRange": {
         "properties": {
-          "from": {
+          "min": {
             "type": "string",
-            "title": "From"
+            "title": "Min"
           },
-          "to": {
+          "max": {
             "type": "string",
-            "title": "To"
+            "title": "Max"
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "min",
+          "max"
         ],
         "title": "DateRange",
         "description": "分析期間"
@@ -12228,6 +12228,30 @@
             ],
             "title": "Adjustedbps",
             "description": "Adjusted BPS using share count (JPY)"
+          },
+          "dividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dividendfy",
+            "description": "Dividend per share for FY (JPY)"
+          },
+          "adjustedDividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjusteddividendfy",
+            "description": "Adjusted FY dividend per share using share count (JPY)"
           },
           "per": {
             "anyOf": [
@@ -13727,7 +13751,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -15176,27 +15200,33 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date"
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
           },
           "open": {
             "type": "number",
-            "title": "Open"
+            "title": "Open",
+            "description": "始値"
           },
           "high": {
             "type": "number",
-            "title": "High"
+            "title": "High",
+            "description": "高値"
           },
           "low": {
             "type": "number",
-            "title": "Low"
+            "title": "Low",
+            "description": "安値"
           },
           "close": {
             "type": "number",
-            "title": "Close"
+            "title": "Close",
+            "description": "終値"
           },
           "volume": {
-            "type": "integer",
-            "title": "Volume"
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
           }
         },
         "type": "object",
@@ -15208,7 +15238,8 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord"
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -15329,7 +15360,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
+              "$ref": "#/components/schemas/OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -17000,6 +17031,17 @@
               }
             ],
             "title": "Nxfeps"
+          },
+          "DivAnn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Divann"
           },
           "NCSales": {
             "anyOf": [
@@ -19007,7 +19049,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -19035,7 +19077,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -20096,7 +20138,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -20490,23 +20532,43 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__db__DateRange": {
+      "src__server__schemas__dataset_data__OHLCVRecord": {
         "properties": {
-          "min": {
+          "date": {
             "type": "string",
-            "title": "Min"
+            "title": "Date"
           },
-          "max": {
-            "type": "string",
-            "title": "Max"
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "volume": {
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
         "required": [
-          "min",
-          "max"
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
         ],
-        "title": "DateRange"
+        "title": "OHLCVRecord"
       },
       "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
@@ -20542,50 +20604,23 @@
         "title": "IndexMatch",
         "description": "指数マッチ結果"
       },
-      "src__server__schemas__indicators__OHLCVRecord": {
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
         "properties": {
-          "date": {
+          "from": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "From"
           },
-          "open": {
-            "type": "number",
-            "title": "Open",
-            "description": "始値"
-          },
-          "high": {
-            "type": "number",
-            "title": "High",
-            "description": "高値"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low",
-            "description": "安値"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close",
-            "description": "終値"
-          },
-          "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+          "to": {
+            "type": "string",
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
+          "from",
+          "to"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "DateRange"
       },
       "src__server__schemas__portfolio_factor_regression__DateRange": {
         "properties": {

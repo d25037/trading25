@@ -2073,3 +2073,116 @@ class TestGetDailyStockPrices:
 
         result = service._get_daily_stock_prices("7203")
         assert result == {}
+
+
+class TestDividendPerShare:
+    """1株当たり配当の算出/株式数調整テスト"""
+
+    @pytest.fixture
+    def service(self):
+        return FundamentalsService()
+
+    def test_calculate_all_metrics_sets_dividend(self, service: FundamentalsService):
+        stmt = JQuantsStatement(
+            DiscDate="2024-05-15",
+            Code="7203",
+            DocType="有価証券報告書・連結",
+            CurPerType="FY",
+            CurPerSt="2023-04-01",
+            CurPerEn="2024-03-31",
+            CurFYSt="2023-04-01",
+            CurFYEn="2024-03-31",
+            NxtFYSt=None,
+            NxtFYEn=None,
+            Sales=None,
+            OP=None,
+            OdP=None,
+            NP=None,
+            EPS=300.0,
+            DEPS=None,
+            TA=None,
+            Eq=None,
+            EqAR=None,
+            BPS=2000.0,
+            CFO=None,
+            CFI=None,
+            CFF=None,
+            CashEq=None,
+            ShOutFY=100.0,
+            TrShFY=0,
+            AvgSh=100.0,
+            FEPS=None,
+            NxFEPS=None,
+            DivAnn=75.0,
+            NCSales=None,
+            NCOP=None,
+            NCOdP=None,
+            NCNP=None,
+            NCEPS=None,
+            NCTA=None,
+            NCEq=None,
+            NCEqAR=None,
+            NCBPS=None,
+            FNCEPS=None,
+            NxFNCEPS=None,
+        )
+
+        point = service._calculate_all_metrics(stmt, {"2024-05-15": 3000.0}, True)
+        assert point.dividendFy == 75.0
+        assert point.adjustedDividendFy == 75.0
+
+    def test_build_adjusted_datapoint_adjusts_dividend_for_split(
+        self, service: FundamentalsService
+    ):
+        point = FundamentalDataPoint(
+            date="2024-03-31",
+            disclosedDate="2024-05-15",
+            periodType="FY",
+            isConsolidated=True,
+            accountingStandard=None,
+            roe=None,
+            eps=200.0,
+            dilutedEps=None,
+            bps=1000.0,
+            dividendFy=80.0,
+            adjustedDividendFy=80.0,
+            per=None,
+            pbr=None,
+            roa=None,
+            operatingMargin=None,
+            netMargin=None,
+            stockPrice=2000.0,
+            netProfit=None,
+            equity=None,
+            totalAssets=None,
+            netSales=None,
+            operatingProfit=None,
+            cashFlowOperating=None,
+            cashFlowInvesting=None,
+            cashFlowFinancing=None,
+            cashAndEquivalents=None,
+            fcf=None,
+            fcfYield=None,
+            fcfMargin=None,
+            cfoToNetProfitRatio=None,
+            tradingValueToMarketCapRatio=None,
+            forecastEps=None,
+            forecastEpsChangeRate=None,
+            revisedForecastEps=None,
+            revisedForecastSource=None,
+            prevCashFlowOperating=None,
+            prevCashFlowInvesting=None,
+            prevCashFlowFinancing=None,
+            prevCashAndEquivalents=None,
+        )
+
+        adjusted = service._build_adjusted_datapoint(
+            point,
+            eps_shares=200.0,
+            bps_shares=200.0,
+            forecast_shares=200.0,
+            dividend_shares=200.0,
+            base_shares=400.0,
+        )
+
+        assert adjusted.adjustedDividendFy == 40.0

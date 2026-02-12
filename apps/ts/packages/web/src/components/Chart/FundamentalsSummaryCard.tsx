@@ -101,6 +101,7 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
   const displayEps = metrics.adjustedEps ?? metrics.eps;
   const displayForecastEps = metrics.adjustedForecastEps ?? metrics.forecastEps;
   const displayBps = metrics.adjustedBps ?? metrics.bps;
+  const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
 
   return (
     <div className="h-full min-h-0 flex flex-col">
@@ -117,6 +118,7 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
             changeRate={metrics.forecastEpsChangeRate}
           />
           <MetricCard label="BPS" value={displayBps} format="yen" />
+          <MetricCard label="1株配当" value={displayDividendFy} format="yen" />
           <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />
           <MetricCard label="純利益率" value={metrics.netMargin} format="percent" />
 

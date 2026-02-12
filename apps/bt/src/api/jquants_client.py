@@ -64,6 +64,8 @@ class JQuantsStatement(BaseModel):
     # Forecast EPS
     FEPS: NullableFloat
     NxFEPS: NullableFloat
+    # Dividend
+    DivAnn: NullableFloat = None
     # Non-Consolidated Financial Performance
     NCSales: NullableFloat
     NCOP: NullableFloat

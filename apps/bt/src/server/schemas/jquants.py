@@ -199,6 +199,8 @@ class RawStatementItem(BaseModel):
     # Forecast EPS
     FEPS: NullableFloat = None
     NxFEPS: NullableFloat = None
+    # Dividend
+    DivAnn: NullableFloat = None
     # Non-Consolidated Financial Performance
     NCSales: NullableFloat = None
     NCOP: NullableFloat = None
