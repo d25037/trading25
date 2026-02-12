@@ -78,7 +78,7 @@ CLICancelError        // User cancellation (exitCode=0, silent=true)
   handleCommandError(error, spinner, {
     failMessage: 'Operation failed',
     debug,
-    tips: ['Ensure the API server is running: bun run dev:api'],
+    tips: ['Ensure the API server is running: uv run bt server --port 3002'],
   });
 }
 ```

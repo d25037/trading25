@@ -52,7 +52,6 @@ Root `tsconfig.json` は shared / cli を対象にし、web は別設定で型�
 bun dev                     # Web only (FastAPI :3002 にプロキシ)
 bun dev:full                # bt:sync + dev (syncs bt types first)
 bun dev:web                 # Vite (port 5173)
-bun dev:api                 # [ARCHIVED] Hono server は廃止済み
 
 # Build & Test
 bun run build               # All packages
@@ -91,6 +90,8 @@ bun cli backtest results <job-id>
 # bt contract sync (requires trading25-bt backend for fetch)
 bun run --filter @trading25/shared bt:sync  # Fetch schema + generate types
 ```
+
+`bun dev:api` は互換のため残っている archived notice であり、API サーバーの起動コマンドではない。
 
 ## CI
 

@@ -233,7 +233,7 @@ ${CLI_NAME} db validate
       }
 
       console.error(chalk.gray('\n💡 Troubleshooting tips:'));
-      console.error(chalk.gray('   • Ensure API server is running: bun dev:api'));
+      console.error(chalk.gray('   • Ensure API server is running: uv run bt server --port 3002'));
       console.error(chalk.gray(`   • Ensure market.db exists: ${CLI_NAME} db sync --init`));
       throw new CLIError('Validation failed', 1, true, { cause: error });
     }

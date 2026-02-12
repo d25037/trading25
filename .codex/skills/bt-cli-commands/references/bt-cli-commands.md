@@ -2,7 +2,7 @@
 
 Generated from Typer command declarations. Do not edit manually.
 
-Total commands: **13**
+Total commands: **9**
 
 | Command |
 |---|
@@ -15,13 +15,8 @@ Total commands: **13**
 | `bt list` |
 | `bt server` |
 | `bt validate` |
-| `portfolio list` |
-| `portfolio pca` |
-| `portfolio risk` |
-| `portfolio summary` |
 
 ## Source Files
 
 - `apps/bt/src/cli_bt/__init__.py`
 - `apps/bt/src/cli_bt/lab.py`
-- `apps/bt/src/cli_portfolio/__init__.py`
