@@ -15,6 +15,23 @@ bun run test:ui
 bun run test:coverage
 ```
 
+## E2E Smoke (Web)
+
+Web package has Playwright smoke tests for browser-level critical paths.
+
+```bash
+cd packages/web
+
+# Install Chromium browser used by CI/local smoke
+bun run e2e:install
+
+# Run smoke scenarios only
+bun run e2e:smoke
+
+# Open Playwright UI
+bun run e2e:ui
+```
+
 ## Package-specific Testing
 
 ### Shared Package (`packages/shared/`)
