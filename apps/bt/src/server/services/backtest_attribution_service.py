@@ -5,12 +5,16 @@ Runs signal attribution as an async background job.
 """
 
 import asyncio
+import threading
 from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from loguru import logger
 
-from src.lib.backtest_core.signal_attribution import SignalAttributionAnalyzer
+from src.lib.backtest_core.signal_attribution import (
+    SignalAttributionAnalyzer,
+    SignalAttributionCancelled,
+)
 from src.server.schemas.backtest import JobStatus
 from src.server.services.job_manager import JobManager, job_manager
 
@@ -39,6 +43,7 @@ class BacktestAttributionService:
             strategy_name=strategy_name,
             job_type="backtest_attribution",
         )
+        cancel_event = threading.Event()
 
         task = asyncio.create_task(
             self._run_attribution(
@@ -48,6 +53,7 @@ class BacktestAttributionService:
                 shapley_top_n=shapley_top_n,
                 shapley_permutations=shapley_permutations,
                 random_seed=random_seed,
+                cancel_event=cancel_event,
             )
         )
         await self._manager.set_job_task(job_id, task)
@@ -61,7 +67,9 @@ class BacktestAttributionService:
         shapley_top_n: int,
         shapley_permutations: int,
         random_seed: int | None,
+        cancel_event: threading.Event | None = None,
     ) -> None:
+        run_cancel_event = cancel_event or threading.Event()
         try:
             await self._manager.acquire_slot()
             await self._manager.update_job_status(
@@ -84,6 +92,7 @@ class BacktestAttributionService:
                 shapley_top_n,
                 shapley_permutations,
                 random_seed,
+                run_cancel_event,
             )
 
             job = self._manager.get_job(job_id)
@@ -98,6 +107,15 @@ class BacktestAttributionService:
             )
             logger.info(f"シグナル寄与分析完了: {job_id}")
         except asyncio.CancelledError:
+            run_cancel_event.set()
+            logger.info(f"シグナル寄与分析がキャンセルされました: {job_id}")
+            await self._manager.update_job_status(
+                job_id,
+                JobStatus.CANCELLED,
+                message="シグナル寄与分析がキャンセルされました",
+            )
+        except SignalAttributionCancelled:
+            run_cancel_event.set()
             logger.info(f"シグナル寄与分析がキャンセルされました: {job_id}")
             await self._manager.update_job_status(
                 job_id,
@@ -124,8 +142,13 @@ class BacktestAttributionService:
         shapley_top_n: int,
         shapley_permutations: int,
         random_seed: int | None,
+        cancel_event: threading.Event | None = None,
     ) -> dict[str, Any]:
+        run_cancel_event = cancel_event or threading.Event()
+
         def progress_callback(message: str, progress: float) -> None:
+            if run_cancel_event.is_set():
+                return
             asyncio.run_coroutine_threadsafe(
                 self._manager.update_job_status(
                     job_id,
@@ -142,9 +165,9 @@ class BacktestAttributionService:
             shapley_top_n=shapley_top_n,
             shapley_permutations=shapley_permutations,
             random_seed=random_seed,
+            cancel_check=run_cancel_event.is_set,
         )
         return analyzer.run(progress_callback=progress_callback)
 
 
 backtest_attribution_service = BacktestAttributionService()
-

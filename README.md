@@ -42,6 +42,17 @@ bun run dev
 
 `bun run dev:full` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。
 
+### 3) Signal Attribution（LOO + Shapley top-N）
+- Web: Backtest ページの `Attribution` サブタブから実行
+- CLI:
+```bash
+cd apps/ts
+bun run cli backtest attribution run <strategy> --wait
+bun run cli backtest attribution status <job-id>
+bun run cli backtest attribution results <job-id>
+bun run cli backtest attribution cancel <job-id>
+```
+
 ## Monorepo Commands (root)
 
 ```bash

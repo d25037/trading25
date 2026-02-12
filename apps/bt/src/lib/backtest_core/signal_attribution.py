@@ -32,6 +32,10 @@ ProgressCallback = Callable[[str, float], None]
 _EXACT_SHAPLEY_THRESHOLD = 8
 
 
+class SignalAttributionCancelled(Exception):
+    """Raised when signal attribution is cooperatively cancelled."""
+
+
 @dataclass(frozen=True)
 class AttributionMetrics:
     """Backtest metrics used by attribution logic."""
@@ -254,6 +258,7 @@ class SignalAttributionAnalyzer:
             tuple[AttributionMetrics, StrategyRuntimeCache],
         ]
         | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> None:
         self.strategy_name = strategy_name
         self.config_override = config_override
@@ -262,7 +267,12 @@ class SignalAttributionAnalyzer:
         self.random_seed = random_seed
         self._parameters_hook = parameters_hook
         self._evaluate_hook = evaluate_hook
+        self._cancel_check = cancel_check
         self._runner = BacktestRunner()
+
+    def _raise_if_cancelled(self) -> None:
+        if self._cancel_check is not None and self._cancel_check():
+            raise SignalAttributionCancelled("Signal attribution cancelled")
 
     def _load_parameters(self) -> dict[str, Any]:
         if self._parameters_hook is not None:
@@ -277,9 +287,13 @@ class SignalAttributionAnalyzer:
         parameters: dict[str, Any],
         runtime_cache: StrategyRuntimeCache | None = None,
     ) -> tuple[AttributionMetrics, StrategyRuntimeCache]:
+        self._raise_if_cancelled()
         if self._evaluate_hook is not None:
-            return self._evaluate_hook(parameters, runtime_cache)
-        return _evaluate_parameters(parameters, runtime_cache)
+            metrics, cache = self._evaluate_hook(parameters, runtime_cache)
+        else:
+            metrics, cache = _evaluate_parameters(parameters, runtime_cache)
+        self._raise_if_cancelled()
+        return metrics, cache
 
     def run(
         self,
@@ -292,11 +306,13 @@ class SignalAttributionAnalyzer:
 
         started = time.time()
         parameters = self._load_parameters()
+        self._raise_if_cancelled()
 
         entry_params, exit_params = _build_signal_params(parameters)
         enabled_signals = _iter_enabled_signals(entry_params, exit_params)
 
         baseline_started = time.time()
+        self._raise_if_cancelled()
         notify("Signal attribution: baseline 実行中...", 0.05)
         baseline_metrics, runtime_cache = self._evaluate(parameters, runtime_cache=None)
         baseline_seconds = time.time() - baseline_started
@@ -308,6 +324,7 @@ class SignalAttributionAnalyzer:
         total_loo = len(enabled_signals)
 
         for index, signal in enumerate(enabled_signals, start=1):
+            self._raise_if_cancelled()
             variant_parameters = _clone_parameters(parameters)
             _disable_signal_in_parameters(
                 variant_parameters,
@@ -330,6 +347,8 @@ class SignalAttributionAnalyzer:
                     "error": None,
                 }
                 successful_loo.append((signal, delta_return, delta_sharpe))
+            except SignalAttributionCancelled:
+                raise
             except Exception as e:
                 logger.warning(f"LOO evaluation failed for {signal.signal_id}: {e}")
                 loo_records[signal.signal_id] = {
@@ -367,6 +386,7 @@ class SignalAttributionAnalyzer:
         selected_ids = [signal.signal_id for signal in selected_for_shapley]
 
         shapley_started = time.time()
+        self._raise_if_cancelled()
         shapley_values: dict[str, dict[str, Any]] = {}
         shapley_meta: dict[str, Any] = {"method": None, "sample_size": None, "error": None}
 
@@ -378,6 +398,8 @@ class SignalAttributionAnalyzer:
                     runtime_cache=runtime_cache,
                     progress_callback=notify,
                 )
+            except SignalAttributionCancelled:
+                raise
             except Exception as e:
                 logger.warning(f"Shapley evaluation failed: {e}")
                 shapley_meta = {
@@ -396,6 +418,7 @@ class SignalAttributionAnalyzer:
                     }
 
         shapley_seconds = time.time() - shapley_started
+        self._raise_if_cancelled()
         notify("Signal attribution: 完了", 1.0)
 
         signal_results: list[dict[str, Any]] = []
@@ -452,6 +475,7 @@ class SignalAttributionAnalyzer:
         runtime_cache: StrategyRuntimeCache,
         progress_callback: ProgressCallback | None = None,
     ) -> tuple[dict[str, dict[str, Any]], dict[str, Any]]:
+        self._raise_if_cancelled()
         signal_by_id = {signal.signal_id: signal for signal in selected_signals}
         players = list(signal_by_id.keys())
         n_players = len(players)
@@ -462,6 +486,7 @@ class SignalAttributionAnalyzer:
                 progress_callback(message, progress)
 
         def evaluate_subset(enabled_player_ids: frozenset[str]) -> AttributionMetrics:
+            self._raise_if_cancelled()
             if enabled_player_ids in values_cache:
                 return values_cache[enabled_player_ids]
 
@@ -478,6 +503,7 @@ class SignalAttributionAnalyzer:
                 )
 
             metrics, _ = self._evaluate(subset_parameters, runtime_cache=runtime_cache)
+            self._raise_if_cancelled()
             values_cache[enabled_player_ids] = metrics
             return metrics
 
@@ -486,6 +512,7 @@ class SignalAttributionAnalyzer:
             sample_size = 2**n_players
             all_subsets = list(_subsets(players))
             for idx, subset in enumerate(all_subsets, start=1):
+                self._raise_if_cancelled()
                 evaluate_subset(subset)
                 progress = 0.8 + (0.2 * idx / max(1, len(all_subsets)))
                 notify(
@@ -530,12 +557,14 @@ class SignalAttributionAnalyzer:
             counts = {player: 0 for player in players}
 
             for idx in range(sample_size):
+                self._raise_if_cancelled()
                 perm = players[:]
                 rnd.shuffle(perm)
 
                 current_set = frozenset()
                 current_metrics = evaluate_subset(current_set)
                 for player in perm:
+                    self._raise_if_cancelled()
                     next_set = frozenset(set(current_set) | {player})
                     next_metrics = evaluate_subset(next_set)
                     prev_total = totals[player]
@@ -584,6 +613,7 @@ class SignalAttributionAnalyzer:
 
 __all__ = [
     "AttributionMetrics",
+    "SignalAttributionCancelled",
     "SignalAttributionAnalyzer",
     "SignalTarget",
     "StrategyRuntimeCache",

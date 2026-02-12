@@ -47,6 +47,18 @@ export type {
   OptimizationRequest,
   OptimizeTrialItem,
   SignalCategory,
+  SignalAttributionJobResponse,
+  SignalAttributionLooResult,
+  SignalAttributionMetrics,
+  SignalAttributionRequest,
+  SignalAttributionResult,
+  SignalAttributionResultResponse,
+  SignalAttributionShapleyMeta,
+  SignalAttributionShapleyResult,
+  SignalAttributionSignalResult,
+  SignalAttributionTiming,
+  SignalAttributionTopNScore,
+  SignalAttributionTopNSelection,
   SignalDefinition,
   SignalFieldDefinition,
   SignalReferenceResponse,
@@ -65,4 +77,4 @@ export type {
 } from '@trading25/clients-ts/backtest';
 
 // Frontend-specific types
-export type BacktestSubTab = 'runner' | 'results' | 'strategies' | 'status' | 'dataset' | 'lab';
+export type BacktestSubTab = 'runner' | 'results' | 'attribution' | 'strategies' | 'status' | 'dataset' | 'lab';
