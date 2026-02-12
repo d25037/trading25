@@ -5045,7 +5045,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6922,13 +6922,6 @@ export interface components {
         };
         /** DateRange */
         "src__server__schemas__portfolio_factor_regression__DateRange": {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /** DateRange */
-        "src__server__schemas__portfolio_performance__DateRange": {
             /** From */
             from: string;
             /** To */
