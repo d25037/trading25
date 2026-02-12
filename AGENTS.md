@@ -107,6 +107,7 @@ bun dev:full                     # bt:sync + dev
 bun run test                     # テスト
 bun typecheck:all                # 型チェック
 bun lint && bun check:fix        # リント（Biome）
+bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 bun run cli backtest attribution run <strategy> --wait
 ```
 
@@ -131,6 +132,7 @@ bun run cli backtest attribution run <strategy> --wait
 `.github/workflows/ci.yml` により全ブランチ push / PR で自動実行。
 - **skills**: audit（stale検知 / frontmatter検証 / legacy変更検知）
 - **ts**: lint → 型生成 → build → typecheck → test + coverage
+- **web e2e**: Playwright Chromium smoke（bt server :3002 を起動して実行）
 - **bt**: lint → typecheck → test + coverage（ゲート70%）
 
 ## ロードマップ
