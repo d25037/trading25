@@ -4965,7 +4965,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["PortfolioDateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5045,7 +5045,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"] | null;
+            dateRange?: components["schemas"]["PortfolioDateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6921,7 +6921,7 @@ export interface components {
             volume: number;
         };
         /** DateRange */
-        "src__server__schemas__portfolio_factor_regression__DateRange": {
+        PortfolioDateRange: {
             /** From */
             from: string;
             /** To */
