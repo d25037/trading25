@@ -2,11 +2,26 @@ import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 
-import type { SignalAttributionJobResponse } from '@trading25/clients-ts/backtest';
+import type { SignalAttributionJobResponse, SignalAttributionRequest } from '@trading25/clients-ts/backtest';
 import { CLI_NAME } from '../../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../../utils/error-handling.js';
 import { handleBacktestError } from '../error-handler.js';
 import { parseTableJsonFormat } from './format.js';
+
+type RunContext = {
+  log: (message: string) => void;
+};
+
+type RunOptions = {
+  strategy: string;
+  wait: boolean;
+  topN: number;
+  permutations: number;
+  seed: number | null;
+  format: 'table' | 'json';
+  btUrl: string;
+  debug: boolean;
+};
 
 function parsePositiveInt(value: string, name: string): number {
   if (!/^\d+$/.test(value.trim())) {
@@ -62,6 +77,89 @@ function printCompletedSummary(ctx: { log: (msg: string) => void }, job: SignalA
   if (result.top_n_selection.selected_signal_ids.length > 0) {
     ctx.log(`Shapley Signals: ${result.top_n_selection.selected_signal_ids.join(', ')}`);
   }
+}
+
+function parseRunOptions(values: Record<string, unknown>): RunOptions {
+  const strategy = typeof values.strategy === 'string' ? values.strategy : '';
+  if (!strategy) {
+    throw new CLIValidationError('strategy name is required');
+  }
+
+  const wait = values.wait !== false;
+  const topN = parsePositiveInt(String(values['shapley-top-n'] ?? ''), 'shapleyTopN');
+  const permutations = parsePositiveInt(String(values['shapley-permutations'] ?? ''), 'shapleyPermutations');
+  const seed = parseOptionalInt(typeof values['random-seed'] === 'string' ? values['random-seed'] : undefined);
+  const format = parseTableJsonFormat(String(values.format ?? 'table'));
+  const btUrl =
+    typeof values['bt-url'] === 'string' && values['bt-url'].trim().length > 0
+      ? values['bt-url']
+      : process.env.BT_API_URL ?? 'http://localhost:3002';
+  const debug = values.debug === true;
+
+  return {
+    strategy,
+    wait,
+    topN,
+    permutations,
+    seed,
+    format,
+    btUrl,
+    debug,
+  };
+}
+
+function buildRequest(options: RunOptions): SignalAttributionRequest {
+  return {
+    strategy_name: options.strategy,
+    shapley_top_n: options.topN,
+    shapley_permutations: options.permutations,
+    random_seed: options.seed,
+  };
+}
+
+function updateWaitSpinner(spinner: ReturnType<typeof ora>, job: SignalAttributionJobResponse): void {
+  const progress = job.progress != null ? `${(job.progress * 100).toFixed(0)}%` : '';
+  const message = job.message ?? 'Processing...';
+  spinner.text = `${message} ${progress}`;
+}
+
+function renderWaitResult(
+  ctx: RunContext,
+  spinner: ReturnType<typeof ora>,
+  job: SignalAttributionJobResponse,
+  format: 'table' | 'json'
+): void {
+  if (job.status === 'completed') {
+    spinner.succeed('Signal attribution completed');
+    if (format === 'json') {
+      ctx.log(JSON.stringify(job, null, 2));
+      return;
+    }
+    printCompletedSummary(ctx, job);
+    return;
+  }
+
+  if (job.status === 'cancelled') {
+    spinner.warn('Signal attribution was cancelled');
+    return;
+  }
+
+  spinner.fail(`Signal attribution failed: ${job.error ?? 'Unknown error'}`);
+  throw new CLIError(`Signal attribution failed: ${job.error ?? 'Unknown error'}`, 1, true);
+}
+
+function renderSubmitResult(
+  ctx: RunContext,
+  spinner: ReturnType<typeof ora>,
+  job: SignalAttributionJobResponse,
+  format: 'table' | 'json'
+): void {
+  spinner.succeed(`Signal attribution submitted: ${job.job_id}`);
+  if (format === 'json') {
+    ctx.log(JSON.stringify(job, null, 2));
+    return;
+  }
+  ctx.log(chalk.dim(`Check status: ${CLI_NAME} backtest attribution status ${job.job_id}`));
 }
 
 export const runCommand = define({
@@ -120,76 +218,25 @@ ${CLI_NAME} backtest attribution run range_break_v5 --no-wait
   # Run attribution with advanced parameters
 ${CLI_NAME} backtest attribution run range_break_v5 --shapley-top-n 8 --shapley-permutations 256 --random-seed 42`,
   run: async (ctx) => {
-    const strategy = ctx.values.strategy;
-    const wait = ctx.values.wait;
-    const shapleyTopN = ctx.values['shapley-top-n'];
-    const shapleyPermutations = ctx.values['shapley-permutations'];
-    const randomSeed = ctx.values['random-seed'];
-    const format = parseTableJsonFormat(ctx.values.format);
-    const btUrl = ctx.values['bt-url'];
-    const debug = ctx.values.debug;
-    if (!strategy) {
-      throw new CLIValidationError('strategy name is required');
-    }
-
-    const topN = parsePositiveInt(shapleyTopN, 'shapleyTopN');
-    const permutations = parsePositiveInt(shapleyPermutations, 'shapleyPermutations');
-    const seed = parseOptionalInt(randomSeed);
+    const options = parseRunOptions(ctx.values as Record<string, unknown>);
+    const request = buildRequest(options);
 
     const { BacktestClient } = await import('@trading25/clients-ts/backtest');
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = new BacktestClient({ baseUrl: options.btUrl });
 
     const spinner = ora('Submitting signal attribution job...').start();
     try {
-      if (wait) {
-        const job = await client.runSignalAttributionAndWait(
-          {
-            strategy_name: strategy,
-            shapley_top_n: topN,
-            shapley_permutations: permutations,
-            random_seed: seed,
-          },
-          {
-            pollInterval: 2000,
-            onProgress: (j) => {
-              const progress = j.progress != null ? `${(j.progress * 100).toFixed(0)}%` : '';
-              const message = j.message ?? 'Processing...';
-              spinner.text = `${message} ${progress}`;
-            },
-          }
-        );
-
-        if (job.status === 'completed') {
-          spinner.succeed('Signal attribution completed');
-          if (format === 'json') {
-            ctx.log(JSON.stringify(job, null, 2));
-            return;
-          }
-          printCompletedSummary(ctx, job);
-          return;
-        }
-
-        if (job.status === 'cancelled') {
-          spinner.warn('Signal attribution was cancelled');
-          return;
-        }
-
-        spinner.fail(`Signal attribution failed: ${job.error ?? 'Unknown error'}`);
-        throw new CLIError(`Signal attribution failed: ${job.error ?? 'Unknown error'}`, 1, true);
+      if (options.wait) {
+        const job = await client.runSignalAttributionAndWait(request, {
+          pollInterval: 2000,
+          onProgress: (progressJob) => updateWaitSpinner(spinner, progressJob),
+        });
+        renderWaitResult(ctx, spinner, job, options.format);
+        return;
       }
 
-      const job = await client.runSignalAttribution({
-        strategy_name: strategy,
-        shapley_top_n: topN,
-        shapley_permutations: permutations,
-        random_seed: seed,
-      });
-      spinner.succeed(`Signal attribution submitted: ${job.job_id}`);
-      if (format === 'json') {
-        ctx.log(JSON.stringify(job, null, 2));
-      } else {
-        ctx.log(chalk.dim(`Check status: ${CLI_NAME} backtest attribution status ${job.job_id}`));
-      }
+      const job = await client.runSignalAttribution(request);
+      renderSubmitResult(ctx, spinner, job, options.format);
     } catch (error) {
       if (error instanceof CLIError) {
         spinner.stop();
@@ -197,7 +244,7 @@ ${CLI_NAME} backtest attribution run range_break_v5 --shapley-top-n 8 --shapley-
       }
       spinner.fail('Signal attribution failed');
       handleBacktestError(ctx, error);
-      if (debug) {
+      if (options.debug) {
         console.error(error);
       }
       throw new CLIError('Signal attribution failed', 1, true, { cause: error });
