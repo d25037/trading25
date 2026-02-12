@@ -1,5 +1,5 @@
 import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ComponentProps } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -13,12 +13,25 @@ import {
   useStrategies,
 } from '@/hooks/useBacktest';
 import { useBacktestStore } from '@/stores/backtestStore';
-import type { JobStatus, SignalAttributionSignalResult } from '@/types/backtest';
+import type {
+  JobStatus,
+  SignalAttributionJobResponse,
+  SignalAttributionResult,
+  SignalAttributionSignalResult,
+} from '@/types/backtest';
 import { formatRate } from '@/utils/formatters';
 import { StrategySelector } from './StrategySelector';
 
 const DEFAULT_TOP_N = 5;
 const DEFAULT_PERMUTATIONS = 128;
+
+type StrategyOptions = ComponentProps<typeof StrategySelector>['strategies'];
+
+type ParsedRunParameters = {
+  topN: number;
+  permutations: number;
+  randomSeed: number | null;
+};
 
 function StatusIcon({ status }: { status: JobStatus }) {
   switch (status) {
@@ -56,6 +69,33 @@ function isActiveStatus(status: JobStatus | undefined): boolean {
   return status === 'pending' || status === 'running';
 }
 
+function parseRunParameters(
+  topNInput: string,
+  permutationsInput: string,
+  randomSeedInput: string
+): { value: ParsedRunParameters | null; error: string | null } {
+  const topN = parsePositiveInt(topNInput, DEFAULT_TOP_N);
+  const permutations = parsePositiveInt(permutationsInput, DEFAULT_PERMUTATIONS);
+
+  if (randomSeedInput.trim().length === 0) {
+    return { value: { topN, permutations, randomSeed: null }, error: null };
+  }
+
+  const seedNumber = Number(randomSeedInput);
+  if (!Number.isInteger(seedNumber)) {
+    return { value: null, error: 'Random seed must be an integer.' };
+  }
+
+  return {
+    value: {
+      topN,
+      permutations,
+      randomSeed: seedNumber,
+    },
+    error: null,
+  };
+}
+
 function renderSignalRow(signal: SignalAttributionSignalResult, selectedForShapley: Set<string>) {
   const isSelected = selectedForShapley.has(signal.signal_id);
   return (
@@ -72,174 +112,193 @@ function renderSignalRow(signal: SignalAttributionSignalResult, selectedForShapl
   );
 }
 
-export function BacktestAttribution() {
-  const [advancedOpen, setAdvancedOpen] = useState(false);
-  const [topN, setTopN] = useState(String(DEFAULT_TOP_N));
-  const [permutations, setPermutations] = useState(String(DEFAULT_PERMUTATIONS));
-  const [randomSeed, setRandomSeed] = useState('');
-  const [validationError, setValidationError] = useState<string | null>(null);
+function ErrorBanner({ message }: { message: string }) {
+  return <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{message}</div>;
+}
 
-  const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
-  const { selectedStrategy, setSelectedStrategy, activeAttributionJobId, setActiveAttributionJobId } = useBacktestStore();
-  const runSignalAttribution = useRunSignalAttribution();
-  const cancelSignalAttribution = useCancelSignalAttribution();
-  const jobStatus = useSignalAttributionJobStatus(activeAttributionJobId);
-  const resultDetail = useSignalAttributionResult(
-    jobStatus.data?.status === 'completed' && !jobStatus.data?.result_data ? activeAttributionJobId : null
+function AdvancedParameterFields({
+  topN,
+  permutations,
+  randomSeed,
+  isRunning,
+  onTopNChange,
+  onPermutationsChange,
+  onRandomSeedChange,
+}: {
+  topN: string;
+  permutations: string;
+  randomSeed: string;
+  isRunning: boolean;
+  onTopNChange: (value: string) => void;
+  onPermutationsChange: (value: string) => void;
+  onRandomSeedChange: (value: string) => void;
+}) {
+  return (
+    <div className="grid gap-3 md:grid-cols-3">
+      <div className="space-y-1">
+        <Label htmlFor="attr-top-n">Shapley Top N</Label>
+        <Input id="attr-top-n" type="number" min={1} value={topN} onChange={(e) => onTopNChange(e.target.value)} disabled={isRunning} />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="attr-permutations">Shapley Permutations</Label>
+        <Input
+          id="attr-permutations"
+          type="number"
+          min={1}
+          value={permutations}
+          onChange={(e) => onPermutationsChange(e.target.value)}
+          disabled={isRunning}
+        />
+      </div>
+      <div className="space-y-1">
+        <Label htmlFor="attr-random-seed">Random Seed (optional)</Label>
+        <Input
+          id="attr-random-seed"
+          type="number"
+          value={randomSeed}
+          onChange={(e) => onRandomSeedChange(e.target.value)}
+          disabled={isRunning}
+        />
+      </div>
+    </div>
   );
+}
 
-  const activeJob = jobStatus.data;
-  const isRunning = runSignalAttribution.isPending || isActiveStatus(activeJob?.status);
+function AttributionRunCard({
+  strategies,
+  isLoadingStrategies,
+  selectedStrategy,
+  isRunning,
+  advancedOpen,
+  topN,
+  permutations,
+  randomSeed,
+  validationError,
+  runErrorMessage,
+  onStrategyChange,
+  onToggleAdvanced,
+  onTopNChange,
+  onPermutationsChange,
+  onRandomSeedChange,
+  onRun,
+}: {
+  strategies: StrategyOptions;
+  isLoadingStrategies: boolean;
+  selectedStrategy: string | null;
+  isRunning: boolean;
+  advancedOpen: boolean;
+  topN: string;
+  permutations: string;
+  randomSeed: string;
+  validationError: string | null;
+  runErrorMessage: string | null;
+  onStrategyChange: (strategy: string | null) => void;
+  onToggleAdvanced: () => void;
+  onTopNChange: (value: string) => void;
+  onPermutationsChange: (value: string) => void;
+  onRandomSeedChange: (value: string) => void;
+  onRun: () => void;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-3">
+        <CardTitle className="text-base">Run Attribution</CardTitle>
+        <CardDescription>Run async signal attribution for the selected strategy.</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="space-y-1.5">
+          <span className="text-sm font-medium">Strategy</span>
+          <StrategySelector
+            strategies={strategies}
+            isLoading={isLoadingStrategies}
+            value={selectedStrategy}
+            onChange={onStrategyChange}
+            disabled={isRunning}
+          />
+        </div>
 
-  const resultData = useMemo(
-    () => resultDetail.data?.result ?? activeJob?.result_data ?? null,
-    [activeJob?.result_data, resultDetail.data?.result]
+        <Button type="button" variant="outline" size="sm" className="gap-2" onClick={onToggleAdvanced}>
+          <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
+          Advanced Parameters
+        </Button>
+
+        {advancedOpen && (
+          <AdvancedParameterFields
+            topN={topN}
+            permutations={permutations}
+            randomSeed={randomSeed}
+            isRunning={isRunning}
+            onTopNChange={onTopNChange}
+            onPermutationsChange={onPermutationsChange}
+            onRandomSeedChange={onRandomSeedChange}
+          />
+        )}
+
+        {validationError && <ErrorBanner message={validationError} />}
+        {runErrorMessage && <ErrorBanner message={runErrorMessage} />}
+
+        <Button onClick={onRun} disabled={!selectedStrategy || isRunning} className="w-full">
+          {isRunning ? 'Running...' : 'Run Signal Attribution'}
+        </Button>
+      </CardContent>
+    </Card>
   );
-  const selectedForShapley = useMemo(
-    () => new Set(resultData?.top_n_selection.selected_signal_ids ?? []),
-    [resultData?.top_n_selection.selected_signal_ids]
-  );
+}
 
-  const handleRun = async () => {
-    if (!selectedStrategy) return;
-
-    const parsedTopN = parsePositiveInt(topN, DEFAULT_TOP_N);
-    const parsedPermutations = parsePositiveInt(permutations, DEFAULT_PERMUTATIONS);
-    let parsedSeed: number | null = null;
-
-    if (randomSeed.trim().length > 0) {
-      const seedNumber = Number(randomSeed);
-      if (!Number.isInteger(seedNumber)) {
-        setValidationError('Random seed must be an integer.');
-        return;
-      }
-      parsedSeed = seedNumber;
-    }
-
-    setValidationError(null);
-    const started = await runSignalAttribution.mutateAsync({
-      strategy_name: selectedStrategy,
-      shapley_top_n: parsedTopN,
-      shapley_permutations: parsedPermutations,
-      random_seed: parsedSeed,
-    });
-    setActiveAttributionJobId(started.job_id);
-  };
+function AttributionJobCard({
+  activeJob,
+  cancelPending,
+  cancelErrorMessage,
+  onCancel,
+}: {
+  activeJob: SignalAttributionJobResponse | null;
+  cancelPending: boolean;
+  cancelErrorMessage: string | null;
+  onCancel: (jobId: string) => void;
+}) {
+  if (!activeJob) {
+    return null;
+  }
 
   return (
-    <div className="max-w-6xl space-y-4">
-      <div className="flex items-center gap-2">
-        <GitBranch className="h-5 w-5 text-primary" />
-        <div>
-          <h2 className="text-lg font-semibold">Signal Attribution</h2>
-          <p className="text-xs text-muted-foreground">LOO + Shapley top-N contribution analysis</p>
+    <Card>
+      <CardHeader className="pb-3">
+        <div className="flex items-center justify-between">
+          <CardTitle className="flex items-center gap-2 text-base">
+            <StatusIcon status={activeJob.status} />
+            <span className="capitalize">{activeJob.status}</span>
+          </CardTitle>
+          {isActiveStatus(activeJob.status) && (
+            <Button variant="ghost" size="sm" onClick={() => onCancel(activeJob.job_id)} disabled={cancelPending}>
+              Cancel
+            </Button>
+          )}
         </div>
-      </div>
+      </CardHeader>
+      <CardContent className="space-y-2">
+        <div className="text-xs text-muted-foreground">Job ID: {activeJob.job_id}</div>
+        {activeJob.message && <div className="text-sm">{activeJob.message}</div>}
+        {activeJob.progress != null && (
+          <div className="text-sm text-muted-foreground">Progress: {(activeJob.progress * 100).toFixed(0)}%</div>
+        )}
+        {activeJob.error && <ErrorBanner message={activeJob.error} />}
+        {cancelErrorMessage && <ErrorBanner message={cancelErrorMessage} />}
+      </CardContent>
+    </Card>
+  );
+}
 
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Run Attribution</CardTitle>
-          <CardDescription>Run async signal attribution for the selected strategy.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="space-y-1.5">
-            <span className="text-sm font-medium">Strategy</span>
-            <StrategySelector
-              strategies={strategiesData?.strategies}
-              isLoading={isLoadingStrategies}
-              value={selectedStrategy}
-              onChange={setSelectedStrategy}
-              disabled={isRunning}
-            />
-          </div>
-
-          <Button type="button" variant="outline" size="sm" className="gap-2" onClick={() => setAdvancedOpen((v) => !v)}>
-            <ChevronDown className={`h-4 w-4 transition-transform ${advancedOpen ? 'rotate-180' : ''}`} />
-            Advanced Parameters
-          </Button>
-
-          {advancedOpen && (
-            <div className="grid gap-3 md:grid-cols-3">
-              <div className="space-y-1">
-                <Label htmlFor="attr-top-n">Shapley Top N</Label>
-                <Input
-                  id="attr-top-n"
-                  type="number"
-                  min={1}
-                  value={topN}
-                  onChange={(e) => setTopN(e.target.value)}
-                  disabled={isRunning}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="attr-permutations">Shapley Permutations</Label>
-                <Input
-                  id="attr-permutations"
-                  type="number"
-                  min={1}
-                  value={permutations}
-                  onChange={(e) => setPermutations(e.target.value)}
-                  disabled={isRunning}
-                />
-              </div>
-              <div className="space-y-1">
-                <Label htmlFor="attr-random-seed">Random Seed (optional)</Label>
-                <Input
-                  id="attr-random-seed"
-                  type="number"
-                  value={randomSeed}
-                  onChange={(e) => setRandomSeed(e.target.value)}
-                  disabled={isRunning}
-                />
-              </div>
-            </div>
-          )}
-
-          {validationError && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{validationError}</div>}
-          {runSignalAttribution.isError && (
-            <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runSignalAttribution.error.message}</div>
-          )}
-
-          <Button onClick={handleRun} disabled={!selectedStrategy || isRunning} className="w-full">
-            {isRunning ? 'Running...' : 'Run Signal Attribution'}
-          </Button>
-        </CardContent>
-      </Card>
-
-      {activeJob && (
-        <Card>
-          <CardHeader className="pb-3">
-            <div className="flex items-center justify-between">
-              <CardTitle className="flex items-center gap-2 text-base">
-                <StatusIcon status={activeJob.status} />
-                <span className="capitalize">{activeJob.status}</span>
-              </CardTitle>
-              {isActiveStatus(activeJob.status) && (
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  onClick={() => cancelSignalAttribution.mutate(activeJob.job_id)}
-                  disabled={cancelSignalAttribution.isPending}
-                >
-                  Cancel
-                </Button>
-              )}
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <div className="text-xs text-muted-foreground">Job ID: {activeJob.job_id}</div>
-            {activeJob.message && <div className="text-sm">{activeJob.message}</div>}
-            {activeJob.progress != null && (
-              <div className="text-sm text-muted-foreground">Progress: {(activeJob.progress * 100).toFixed(0)}%</div>
-            )}
-            {activeJob.error && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{activeJob.error}</div>}
-            {cancelSignalAttribution.isError && (
-              <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{cancelSignalAttribution.error.message}</div>
-            )}
-          </CardContent>
-        </Card>
-      )}
-
+function AttributionResultCards({
+  resultData,
+  selectedForShapley,
+  resultErrorMessage,
+}: {
+  resultData: SignalAttributionResult | null;
+  selectedForShapley: Set<string>;
+  resultErrorMessage: string | null;
+}) {
+  return (
+    <>
       {resultData && (
         <>
           <Card>
@@ -282,9 +341,104 @@ export function BacktestAttribution() {
         </>
       )}
 
-      {resultDetail.isError && (
-        <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{resultDetail.error.message}</div>
-      )}
+      {resultErrorMessage && <ErrorBanner message={resultErrorMessage} />}
+    </>
+  );
+}
+
+export function BacktestAttribution() {
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+  const [topN, setTopN] = useState(String(DEFAULT_TOP_N));
+  const [permutations, setPermutations] = useState(String(DEFAULT_PERMUTATIONS));
+  const [randomSeed, setRandomSeed] = useState('');
+  const [validationError, setValidationError] = useState<string | null>(null);
+
+  const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
+  const { selectedStrategy, setSelectedStrategy, activeAttributionJobId, setActiveAttributionJobId } = useBacktestStore();
+  const runSignalAttribution = useRunSignalAttribution();
+  const cancelSignalAttribution = useCancelSignalAttribution();
+  const jobStatus = useSignalAttributionJobStatus(activeAttributionJobId);
+  const resultDetail = useSignalAttributionResult(
+    jobStatus.data?.status === 'completed' && !jobStatus.data?.result_data ? activeAttributionJobId : null
+  );
+
+  const activeJob = jobStatus.data ?? null;
+  const isRunning = runSignalAttribution.isPending || isActiveStatus(activeJob?.status);
+  const runErrorMessage = runSignalAttribution.isError ? runSignalAttribution.error.message : null;
+  const cancelErrorMessage = cancelSignalAttribution.isError ? cancelSignalAttribution.error.message : null;
+  const resultErrorMessage = resultDetail.isError ? resultDetail.error.message : null;
+
+  const resultData = useMemo(
+    () => resultDetail.data?.result ?? activeJob?.result_data ?? null,
+    [activeJob?.result_data, resultDetail.data?.result]
+  );
+  const selectedForShapley = useMemo(
+    () => new Set(resultData?.top_n_selection.selected_signal_ids ?? []),
+    [resultData?.top_n_selection.selected_signal_ids]
+  );
+
+  const handleRun = async () => {
+    if (!selectedStrategy) {
+      return;
+    }
+
+    const parsed = parseRunParameters(topN, permutations, randomSeed);
+    if (!parsed.value) {
+      setValidationError(parsed.error);
+      return;
+    }
+
+    setValidationError(null);
+    const started = await runSignalAttribution.mutateAsync({
+      strategy_name: selectedStrategy,
+      shapley_top_n: parsed.value.topN,
+      shapley_permutations: parsed.value.permutations,
+      random_seed: parsed.value.randomSeed,
+    });
+    setActiveAttributionJobId(started.job_id);
+  };
+
+  return (
+    <div className="max-w-6xl space-y-4">
+      <div className="flex items-center gap-2">
+        <GitBranch className="h-5 w-5 text-primary" />
+        <div>
+          <h2 className="text-lg font-semibold">Signal Attribution</h2>
+          <p className="text-xs text-muted-foreground">LOO + Shapley top-N contribution analysis</p>
+        </div>
+      </div>
+
+      <AttributionRunCard
+        strategies={strategiesData?.strategies}
+        isLoadingStrategies={isLoadingStrategies}
+        selectedStrategy={selectedStrategy}
+        isRunning={isRunning}
+        advancedOpen={advancedOpen}
+        topN={topN}
+        permutations={permutations}
+        randomSeed={randomSeed}
+        validationError={validationError}
+        runErrorMessage={runErrorMessage}
+        onStrategyChange={setSelectedStrategy}
+        onToggleAdvanced={() => setAdvancedOpen((value) => !value)}
+        onTopNChange={setTopN}
+        onPermutationsChange={setPermutations}
+        onRandomSeedChange={setRandomSeed}
+        onRun={handleRun}
+      />
+
+      <AttributionJobCard
+        activeJob={activeJob}
+        cancelPending={cancelSignalAttribution.isPending}
+        cancelErrorMessage={cancelErrorMessage}
+        onCancel={(jobId) => cancelSignalAttribution.mutate(jobId)}
+      />
+
+      <AttributionResultCards
+        resultData={resultData}
+        selectedForShapley={selectedForShapley}
+        resultErrorMessage={resultErrorMessage}
+      />
     </div>
   );
 }
