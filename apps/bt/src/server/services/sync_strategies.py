@@ -18,6 +18,7 @@ from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.lib.market_db.query_helpers import normalize_stock_code
 from src.server.schemas.db import SyncResult
+from src.server.services.stock_data_row_builder import build_stock_data_row
 
 
 @dataclass
@@ -224,7 +225,12 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            last_date = ctx.market_db.get_latest_trading_date()
+            # NOTE:
+            # stock_data が一部日付で取りこぼされると topix_data より遅れる場合があるため、
+            # 増分同期の基準日は stock_data の最新日を優先する。
+            last_topix_date = ctx.market_db.get_latest_trading_date()
+            last_stock_date = ctx.market_db.get_latest_stock_data_date()
+            last_date = last_stock_date or last_topix_date
             params: dict[str, Any] = {}
             if last_date:
                 # J-Quants は YYYYMMDD 形式が安定しているため、既存データ形式（YYYY-MM-DD / YYYYMMDD）を吸収する
@@ -336,22 +342,28 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 def _convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """JQuants 株価データ → DB 行"""
-    rows = []
+    rows: list[dict[str, Any]] = []
+    skipped = 0
+    sample_codes: list[str] = []
+    created_at = datetime.now(UTC).isoformat()
+
     for d in data:
-        code = normalize_stock_code(d.get("Code", ""))
-        if not code:
+        row = build_stock_data_row(d, created_at=created_at)
+        if row is None:
+            skipped += 1
+            code = normalize_stock_code(d.get("Code", ""))
+            if code and code not in sample_codes and len(sample_codes) < 5:
+                sample_codes.append(code)
             continue
-        rows.append({
-            "code": code,
-            "date": d.get("Date", ""),
-            "open": d.get("O", 0),
-            "high": d.get("H", 0),
-            "low": d.get("L", 0),
-            "close": d.get("C", 0),
-            "volume": d.get("Vo", 0),
-            "adjustment_factor": d.get("AdjFactor"),
-            "created_at": datetime.now(UTC).isoformat(),
-        })
+        rows.append(row)
+
+    if skipped > 0:
+        sample = ", ".join(sample_codes) if sample_codes else "unknown"
+        logger.warning(
+            "Skipped {} daily quotes with incomplete OHLCV data (sample codes: {})",
+            skipped,
+            sample,
+        )
     return rows
 
 

@@ -16,6 +16,7 @@ from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.lib.market_db.query_helpers import expand_stock_code, normalize_stock_code
 from src.server.schemas.db import RefreshResponse, RefreshStockResult
+from src.server.services.stock_data_row_builder import build_stock_data_row
 
 
 async def refresh_stocks(
@@ -46,23 +47,31 @@ async def refresh_stocks(
 
             # TOPIX 日付範囲でフィルタ
             rows: list[dict[str, Any]] = []
+            skipped_rows = 0
+            created_at = datetime.now(UTC).isoformat()
             for d in data:
-                date = d.get("Date", "")
+                row = build_stock_data_row(
+                    d,
+                    normalized_code=normalized,
+                    created_at=created_at,
+                )
+                if row is None:
+                    skipped_rows += 1
+                    continue
+
+                date = row["date"]
                 if min_date and date < min_date:
                     continue
                 if max_date and date > max_date:
                     continue
-                rows.append({
-                    "code": normalized,
-                    "date": date,
-                    "open": d.get("O", 0),
-                    "high": d.get("H", 0),
-                    "low": d.get("L", 0),
-                    "close": d.get("C", 0),
-                    "volume": d.get("Vo", 0),
-                    "adjustment_factor": d.get("AdjFactor"),
-                    "created_at": datetime.now(UTC).isoformat(),
-                })
+                rows.append(row)
+
+            if skipped_rows > 0:
+                logger.warning(
+                    "Skipped {} rows with incomplete OHLCV during stock refresh: {}",
+                    skipped_rows,
+                    normalized,
+                )
 
             stored = market_db.upsert_stock_data(rows) if rows else 0
             total_stored += stored
