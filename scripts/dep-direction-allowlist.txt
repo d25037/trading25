@@ -14,6 +14,8 @@
 # [permanent] bt:sync tooling — required for OpenAPI schema → TS type generation
 # ─────────────────────────────────────────────────────────
 apps/ts/packages/shared/scripts/fetch-bt-openapi.ts
+# PR #28: bt:sync source-first fallback behavior tests
+apps/ts/packages/shared/scripts/fetch-bt-openapi.test.ts
 apps/ts/packages/shared/scripts/check-bt-types.ts
 apps/ts/packages/shared/src/clients/backtest/generated/type-compatibility-check.ts
 
