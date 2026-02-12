@@ -1,7 +1,10 @@
 """BacktestAttributionService unit tests."""
 
 import asyncio
+import json
 import threading
+from datetime import UTC, datetime
+from pathlib import Path
 from types import SimpleNamespace
 from typing import Any
 
@@ -117,7 +120,16 @@ def test_execute_attribution_sync_skips_progress_when_cancelled(monkeypatch):
 
 class _DummyManager:
     def __init__(self, with_job: bool = True) -> None:
-        self.job = SimpleNamespace(raw_result=None) if with_job else None
+        self.job = (
+            SimpleNamespace(
+                raw_result=None,
+                created_at=datetime.now(UTC),
+                started_at=datetime.now(UTC),
+                status=JobStatus.RUNNING,
+            )
+            if with_job
+            else None
+        )
         self.created_jobs: list[tuple[str, str]] = []
         self.status_updates: list[dict[str, Any]] = []
         self.set_task_calls: list[tuple[str, Any]] = []
@@ -291,4 +303,82 @@ async def test_run_attribution_cancelled_sets_cancelled_status(monkeypatch):
     assert manager.release_count == 1
     assert manager.status_updates[-1]["status"] == JobStatus.CANCELLED
     assert cancel_event.is_set()
+    service._executor.shutdown(wait=False)
+
+
+def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Path):
+    manager = _DummyManager(with_job=True)
+    service = BacktestAttributionService(manager=manager)
+
+    monkeypatch.setattr(
+        "src.server.services.backtest_attribution_service.get_backtest_attribution_dir",
+        lambda: tmp_path,
+    )
+    monkeypatch.setattr(
+        "src.server.services.backtest_attribution_service.find_strategy_path",
+        lambda _name: Path("/tmp/strategies/experimental/range_break_v18.yaml"),
+    )
+    monkeypatch.setattr(
+        "src.server.services.backtest_attribution_service.get_settings",
+        lambda: SimpleNamespace(
+            market_db_path="/tmp/market.db",
+            portfolio_db_path="/tmp/portfolio.db",
+            dataset_base_path="/tmp/datasets",
+        ),
+    )
+    service._runner.config_loader.load_strategy_config = lambda _name: {  # type: ignore[assignment]
+        "entry_filter_params": {"volume": {"enabled": True}},
+    }
+    service._runner.build_parameters_for_strategy = lambda strategy, config_override: {  # type: ignore[assignment]
+        "shared_config": {"dataset": "prime_202601"},
+        "entry_filter_params": {"volume": {"enabled": True}},
+        "exit_trigger_params": {},
+    }
+
+    saved_path = service._persist_attribution_artifact(
+        job_id="job-1",
+        strategy_name="experimental/range_break_v18",
+        config_override={"shared_config": {"initial_cash": 123456}},
+        shapley_top_n=5,
+        shapley_permutations=128,
+        random_seed=42,
+        result={"baseline_metrics": {"total_return": 0.12, "sharpe_ratio": 1.34}},
+    )
+
+    assert saved_path.exists()
+    assert saved_path.parent == (tmp_path / "experimental" / "range_break_v18")
+
+    payload = json.loads(saved_path.read_text(encoding="utf-8"))
+    assert payload["strategy"]["name"] == "experimental/range_break_v18"
+    assert payload["strategy"]["yaml_path"] == "/tmp/strategies/experimental/range_break_v18.yaml"
+    assert payload["strategy"]["effective_parameters"]["shared_config"]["dataset"] == "prime_202601"
+    assert payload["runtime"]["shapley_top_n"] == 5
+    assert payload["databases"]["market_db"]["name"] == "market.db"
+    assert payload["databases"]["dataset_name"] == "prime_202601"
+    assert payload["result"]["baseline_metrics"]["total_return"] == pytest.approx(0.12)
+    service._executor.shutdown(wait=False)
+
+
+@pytest.mark.asyncio
+async def test_run_attribution_persistence_failure_does_not_fail_job(monkeypatch):
+    manager = _DummyManager(with_job=True)
+    service = BacktestAttributionService(manager=manager)
+    loop = _DummyLoop(result={"ok": True})
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
+
+    def _raise_persist(**_kwargs):
+        raise RuntimeError("persist failed")
+
+    service._persist_attribution_artifact = _raise_persist  # type: ignore[assignment]
+
+    await service._run_attribution(
+        job_id="job-1",
+        strategy_name="strategy-1",
+        config_override=None,
+        shapley_top_n=5,
+        shapley_permutations=128,
+        random_seed=None,
+    )
+
+    assert manager.status_updates[-1]["status"] == JobStatus.COMPLETED
     service._executor.shutdown(wait=False)

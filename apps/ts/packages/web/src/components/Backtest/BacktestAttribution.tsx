@@ -1,5 +1,5 @@
 import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
-import { useMemo, useState, type ComponentProps } from 'react';
+import { type ComponentProps, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -20,6 +20,7 @@ import type {
   SignalAttributionSignalResult,
 } from '@/types/backtest';
 import { formatRate } from '@/utils/formatters';
+import { AttributionArtifactBrowser } from './AttributionArtifactBrowser';
 import { StrategySelector } from './StrategySelector';
 
 const DEFAULT_TOP_N = 5;
@@ -137,7 +138,14 @@ function AdvancedParameterFields({
     <div className="grid gap-3 md:grid-cols-3">
       <div className="space-y-1">
         <Label htmlFor="attr-top-n">Shapley Top N</Label>
-        <Input id="attr-top-n" type="number" min={1} value={topN} onChange={(e) => onTopNChange(e.target.value)} disabled={isRunning} />
+        <Input
+          id="attr-top-n"
+          type="number"
+          min={1}
+          value={topN}
+          onChange={(e) => onTopNChange(e.target.value)}
+          disabled={isRunning}
+        />
       </div>
       <div className="space-y-1">
         <Label htmlFor="attr-permutations">Shapley Permutations</Label>
@@ -347,6 +355,7 @@ function AttributionResultCards({
 }
 
 export function BacktestAttribution() {
+  const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [topN, setTopN] = useState(String(DEFAULT_TOP_N));
   const [permutations, setPermutations] = useState(String(DEFAULT_PERMUTATIONS));
@@ -354,7 +363,8 @@ export function BacktestAttribution() {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
-  const { selectedStrategy, setSelectedStrategy, activeAttributionJobId, setActiveAttributionJobId } = useBacktestStore();
+  const { selectedStrategy, setSelectedStrategy, activeAttributionJobId, setActiveAttributionJobId } =
+    useBacktestStore();
   const runSignalAttribution = useRunSignalAttribution();
   const cancelSignalAttribution = useCancelSignalAttribution();
   const jobStatus = useSignalAttributionJobStatus(activeAttributionJobId);
@@ -408,37 +418,68 @@ export function BacktestAttribution() {
         </div>
       </div>
 
-      <AttributionRunCard
-        strategies={strategiesData?.strategies}
-        isLoadingStrategies={isLoadingStrategies}
-        selectedStrategy={selectedStrategy}
-        isRunning={isRunning}
-        advancedOpen={advancedOpen}
-        topN={topN}
-        permutations={permutations}
-        randomSeed={randomSeed}
-        validationError={validationError}
-        runErrorMessage={runErrorMessage}
-        onStrategyChange={setSelectedStrategy}
-        onToggleAdvanced={() => setAdvancedOpen((value) => !value)}
-        onTopNChange={setTopN}
-        onPermutationsChange={setPermutations}
-        onRandomSeedChange={setRandomSeed}
-        onRun={handleRun}
-      />
+      <div className="flex border-b">
+        <button
+          type="button"
+          onClick={() => setActiveTab('run')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'run'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          Run
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('history')}
+          className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+            activeTab === 'history'
+              ? 'border-primary text-primary'
+              : 'border-transparent text-muted-foreground hover:text-foreground'
+          }`}
+        >
+          History
+        </button>
+      </div>
 
-      <AttributionJobCard
-        activeJob={activeJob}
-        cancelPending={cancelSignalAttribution.isPending}
-        cancelErrorMessage={cancelErrorMessage}
-        onCancel={(jobId) => cancelSignalAttribution.mutate(jobId)}
-      />
+      {activeTab === 'run' ? (
+        <>
+          <AttributionRunCard
+            strategies={strategiesData?.strategies}
+            isLoadingStrategies={isLoadingStrategies}
+            selectedStrategy={selectedStrategy}
+            isRunning={isRunning}
+            advancedOpen={advancedOpen}
+            topN={topN}
+            permutations={permutations}
+            randomSeed={randomSeed}
+            validationError={validationError}
+            runErrorMessage={runErrorMessage}
+            onStrategyChange={setSelectedStrategy}
+            onToggleAdvanced={() => setAdvancedOpen((value) => !value)}
+            onTopNChange={setTopN}
+            onPermutationsChange={setPermutations}
+            onRandomSeedChange={setRandomSeed}
+            onRun={handleRun}
+          />
 
-      <AttributionResultCards
-        resultData={resultData}
-        selectedForShapley={selectedForShapley}
-        resultErrorMessage={resultErrorMessage}
-      />
+          <AttributionJobCard
+            activeJob={activeJob}
+            cancelPending={cancelSignalAttribution.isPending}
+            cancelErrorMessage={cancelErrorMessage}
+            onCancel={(jobId) => cancelSignalAttribution.mutate(jobId)}
+          />
+
+          <AttributionResultCards
+            resultData={resultData}
+            selectedForShapley={selectedForShapley}
+            resultErrorMessage={resultErrorMessage}
+          />
+        </>
+      ) : (
+        <AttributionArtifactBrowser />
+      )}
     </div>
   );
 }

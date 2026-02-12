@@ -438,6 +438,54 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backtest/attribution-files": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Attribution Files
+         * @description 保存済みシグナル寄与分析JSONファイル一覧を取得
+         *
+         *     Args:
+         *         strategy: 戦略名でフィルタ（階層パス対応、オプション）
+         *         limit: 取得件数上限（デフォルト100）
+         */
+        get: operations["list_attribution_files_api_backtest_attribution_files_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/attribution-files/content": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Attribution File Content
+         * @description 保存済みシグナル寄与分析JSONファイル内容を取得
+         *
+         *     Args:
+         *         strategy: 戦略名（階層パス対応）
+         *         filename: ファイル名（.json）
+         */
+        get: operations["get_attribution_file_content_api_backtest_attribution_files_content_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/html-files": {
         parameters: {
             query?: never;
@@ -2380,6 +2428,77 @@ export interface components {
             lastUpdated: string;
         };
         /**
+         * AttributionArtifactContentResponse
+         * @description 保存済み attribution JSON ファイル内容レスポンス
+         */
+        AttributionArtifactContentResponse: {
+            /**
+             * Strategy Name
+             * @description 戦略名（ディレクトリ相対パス）
+             */
+            strategy_name: string;
+            /**
+             * Filename
+             * @description ファイル名
+             */
+            filename: string;
+            /**
+             * Artifact
+             * @description 保存済み attribution JSON データ
+             */
+            artifact: {
+                [key: string]: unknown;
+            };
+        };
+        /**
+         * AttributionArtifactInfo
+         * @description 保存済み attribution JSON ファイル情報
+         */
+        AttributionArtifactInfo: {
+            /**
+             * Strategy Name
+             * @description 戦略名（ディレクトリ相対パス）
+             */
+            strategy_name: string;
+            /**
+             * Filename
+             * @description ファイル名
+             */
+            filename: string;
+            /**
+             * Created At
+             * Format: date-time
+             * @description 作成日時
+             */
+            created_at: string;
+            /**
+             * Size Bytes
+             * @description ファイルサイズ（バイト）
+             */
+            size_bytes: number;
+            /**
+             * Job Id
+             * @description ファイル名から推定したジョブID
+             */
+            job_id?: string | null;
+        };
+        /**
+         * AttributionArtifactListResponse
+         * @description 保存済み attribution JSON ファイル一覧レスポンス
+         */
+        AttributionArtifactListResponse: {
+            /**
+             * Files
+             * @description attribution JSON ファイル一覧
+             */
+            files: components["schemas"]["AttributionArtifactInfo"][];
+            /**
+             * Total
+             * @description 総ファイル数
+             */
+            total: number;
+        };
+        /**
          * AuthStatusResponse
          * @description JQuants API v2 認証ステータス
          */
@@ -2836,10 +2955,7 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
-        /**
-         * DateRange
-         * @description 分析期間
-         */
+        /** DateRange */
         DateRange: {
             /** From */
             from: string;
@@ -2941,16 +3057,16 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            sector17Matches: components["schemas"]["IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            sector33Matches: components["schemas"]["IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__factor_regression__DateRange"];
         };
         /**
          * FieldConstraints
@@ -3655,14 +3771,21 @@ export interface components {
              */
             end_date?: string | null;
         };
-        /** IndexMatch */
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
         IndexMatch: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
             /** Rsquared */
             rSquared: number;
+            /** Beta */
+            beta: number;
         };
         /**
          * IndexOHLCRecord
@@ -4552,40 +4675,19 @@ export interface components {
             /** Close */
             close: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
+        /** OHLCVRecord */
         OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+            /** Volume */
             volume: number;
         };
         /**
@@ -4664,7 +4766,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -4987,11 +5089,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["IndexMatch"][];
+            sector17Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["IndexMatch"][];
+            sector33Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            topixStyleMatches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -5076,7 +5178,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6894,21 +6996,6 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** OHLCVRecord */
-        src__server__schemas__dataset_data__OHLCVRecord: {
-            /** Date */
-            date: string;
-            /** Open */
-            open: number;
-            /** High */
-            high: number;
-            /** Low */
-            low: number;
-            /** Close */
-            close: number;
-            /** Volume */
-            volume: number;
-        };
         /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
@@ -6917,20 +7004,50 @@ export interface components {
             max: string;
         };
         /**
-         * IndexMatch
-         * @description 指数マッチ結果
+         * DateRange
+         * @description 分析期間
          */
-        src__server__schemas__factor_regression__IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
-            /** Rsquared */
-            rSquared: number;
-            /** Beta */
-            beta: number;
+        src__server__schemas__factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
         };
         /** DateRange */
         src__server__schemas__portfolio_factor_regression__DateRange: {
@@ -6939,12 +7056,14 @@ export interface components {
             /** To */
             to: string;
         };
-        /** DateRange */
-        src__server__schemas__portfolio_performance__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+        /** IndexMatch */
+        src__server__schemas__portfolio_factor_regression__IndexMatch: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
+            /** Rsquared */
+            rSquared: number;
         };
         /**
          * ErrorDetail
@@ -8168,6 +8287,124 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["SignalAttributionResultResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_attribution_files_api_backtest_attribution_files_get: {
+        parameters: {
+            query?: {
+                strategy?: string | null;
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributionArtifactListResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_attribution_file_content_api_backtest_attribution_files_content_get: {
+        parameters: {
+            query: {
+                strategy: string;
+                filename: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AttributionArtifactContentResponse"];
                 };
             };
             /** @description Bad Request */
@@ -11958,7 +12195,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
                     };
                 };
             };
@@ -12021,7 +12258,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                    "application/json": components["schemas"]["OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

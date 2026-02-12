@@ -403,8 +403,7 @@ def test_load_parameters_uses_runner_when_hook_absent() -> None:
         strategy_name="production/demo",
         config_override={"shared_config": {"initial_cash": 123}},
     )
-    analyzer._runner.config_loader.load_strategy_config = lambda _name: {"dummy": True}  # type: ignore[assignment]
-    analyzer._runner._build_parameters = lambda _cfg, _ov: built_parameters  # type: ignore[assignment]
+    analyzer._runner.build_parameters_for_strategy = lambda strategy, config_override: built_parameters  # type: ignore[assignment]
 
     loaded = analyzer._load_parameters()
     loaded["shared_config"]["dataset"] = "changed"

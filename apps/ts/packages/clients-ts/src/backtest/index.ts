@@ -5,6 +5,9 @@
 export { BacktestApiError, BacktestClient } from './BacktestClient.js';
 export { LabResultDataSchema, validateLabResultData } from './lab-result-schemas.js';
 export type {
+  AttributionArtifactContentResponse,
+  AttributionArtifactInfo,
+  AttributionArtifactListResponse,
   BacktestClientConfig,
   BacktestJobResponse,
   BacktestRequest,

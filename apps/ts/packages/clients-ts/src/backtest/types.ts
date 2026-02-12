@@ -135,6 +135,25 @@ export interface SignalAttributionResultResponse {
   created_at: string;
 }
 
+export interface AttributionArtifactInfo {
+  strategy_name: string;
+  filename: string;
+  created_at: string;
+  size_bytes: number;
+  job_id: string | null;
+}
+
+export interface AttributionArtifactListResponse {
+  files: AttributionArtifactInfo[];
+  total: number;
+}
+
+export interface AttributionArtifactContentResponse {
+  strategy_name: string;
+  filename: string;
+  artifact: Record<string, unknown>;
+}
+
 export interface StrategyMetadata {
   name: string;
   category: string;

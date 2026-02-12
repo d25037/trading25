@@ -74,7 +74,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 
 両プロジェクトが `~/.local/share/trading25/` を共有:
 - `market.db` / `datasets/` / `portfolio.db` — FastAPI が管理
-- `strategies/experimental/` / `backtest/results/` — bt が管理
+- `strategies/experimental/` / `backtest/results/` / `backtest/attribution/` — bt が管理
 
 ## bt (Python / uv)
 VectorBT基盤の高速バックテスト・Marimo Notebook実行システム。
@@ -111,7 +111,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 bun run cli backtest attribution run <strategy> --wait
 ```
 
-- Backtest UI は `Attribution` サブタブを持ち、進捗取得は 2 秒ポーリング
+- Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
 
 主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 

@@ -202,6 +202,31 @@ class SignalAttributionResultResponse(BaseModel):
     created_at: datetime = Field(description="作成日時")
 
 
+class AttributionArtifactInfo(BaseModel):
+    """保存済み attribution JSON ファイル情報"""
+
+    strategy_name: str = Field(description="戦略名（ディレクトリ相対パス）")
+    filename: str = Field(description="ファイル名")
+    created_at: datetime = Field(description="作成日時")
+    size_bytes: int = Field(description="ファイルサイズ（バイト）")
+    job_id: str | None = Field(default=None, description="ファイル名から推定したジョブID")
+
+
+class AttributionArtifactListResponse(BaseModel):
+    """保存済み attribution JSON ファイル一覧レスポンス"""
+
+    files: list[AttributionArtifactInfo] = Field(description="attribution JSON ファイル一覧")
+    total: int = Field(description="総ファイル数")
+
+
+class AttributionArtifactContentResponse(BaseModel):
+    """保存済み attribution JSON ファイル内容レスポンス"""
+
+    strategy_name: str = Field(description="戦略名（ディレクトリ相対パス）")
+    filename: str = Field(description="ファイル名")
+    artifact: dict[str, Any] = Field(description="保存済み attribution JSON データ")
+
+
 class HtmlFileInfo(BaseModel):
     """HTMLファイル情報"""
 

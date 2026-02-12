@@ -5,6 +5,9 @@
 
 // Re-export types from shared package
 export type {
+  AttributionArtifactContentResponse,
+  AttributionArtifactInfo,
+  AttributionArtifactListResponse,
   BacktestJobResponse,
   BacktestRequest,
   BacktestResultResponse,
@@ -46,7 +49,6 @@ export type {
   OptimizationJobResponse,
   OptimizationRequest,
   OptimizeTrialItem,
-  SignalCategory,
   SignalAttributionJobResponse,
   SignalAttributionLooResult,
   SignalAttributionMetrics,
@@ -59,6 +61,7 @@ export type {
   SignalAttributionTiming,
   SignalAttributionTopNScore,
   SignalAttributionTopNSelection,
+  SignalCategory,
   SignalDefinition,
   SignalFieldDefinition,
   SignalReferenceResponse,

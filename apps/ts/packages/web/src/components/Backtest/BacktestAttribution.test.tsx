@@ -72,6 +72,10 @@ vi.mock('@/hooks/useBacktest', () => ({
   useSignalAttributionResult: () => mockHookState.result,
 }));
 
+vi.mock('./AttributionArtifactBrowser', () => ({
+  AttributionArtifactBrowser: () => <div>Attribution History Panel</div>,
+}));
+
 describe('BacktestAttribution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -245,5 +249,13 @@ describe('BacktestAttribution', () => {
     expect(screen.getByText('run failed')).toBeInTheDocument();
     expect(screen.getByText('cancel failed')).toBeInTheDocument();
     expect(screen.getByText('result failed')).toBeInTheDocument();
+  });
+
+  it('switches to history tab', async () => {
+    const user = userEvent.setup();
+    render(<BacktestAttribution />);
+
+    await user.click(screen.getByRole('button', { name: 'History' }));
+    expect(screen.getByText('Attribution History Panel')).toBeInTheDocument();
   });
 });

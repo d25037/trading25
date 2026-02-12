@@ -13,24 +13,26 @@ import type {
 } from '@/types/backtest';
 import {
   backtestKeys,
+  useAttributionArtifactContent,
+  useAttributionArtifactFiles,
   useBacktestHealth,
   useBacktestResult,
   useCancelBacktest,
+  useCancelSignalAttribution,
   useDefaultConfig,
   useDeleteHtmlFile,
   useDeleteStrategy,
   useDuplicateStrategy,
   useHtmlFileContent,
   useHtmlFiles,
-  useSignalAttributionJobStatus,
-  useSignalAttributionResult,
   useJobStatus,
   useJobs,
   useRenameHtmlFile,
   useRenameStrategy,
   useRunBacktest,
   useRunSignalAttribution,
-  useCancelSignalAttribution,
+  useSignalAttributionJobStatus,
+  useSignalAttributionResult,
   useSignalReference,
   useStrategies,
   useStrategy,
@@ -83,6 +85,18 @@ describe('backtestKeys', () => {
     expect(backtestKeys.result('j1', true)).toEqual(['backtest', 'result', 'j1', true]);
     expect(backtestKeys.attributionJob('j1')).toEqual(['backtest', 'attribution-job', 'j1']);
     expect(backtestKeys.attributionResult('j1')).toEqual(['backtest', 'attribution-result', 'j1']);
+    expect(backtestKeys.attributionArtifactFiles('s1', 100)).toEqual([
+      'backtest',
+      'attribution-artifact-files',
+      's1',
+      100,
+    ]);
+    expect(backtestKeys.attributionArtifactContent('s1', 'f1.json')).toEqual([
+      'backtest',
+      'attribution-artifact-content',
+      's1',
+      'f1.json',
+    ]);
     expect(backtestKeys.htmlFiles('s1')).toEqual(['backtest', 'html-files', 's1']);
     expect(backtestKeys.htmlFileContent('s1', 'f1')).toEqual(['backtest', 'html-file-content', 's1', 'f1']);
     expect(backtestKeys.defaultConfig()).toEqual(['backtest', 'default-config']);
@@ -424,6 +438,44 @@ describe('useHtmlFiles', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/backtest/html-files?strategy=myStrategy&limit=100');
+  });
+});
+
+describe('useAttributionArtifactFiles', () => {
+  it('fetches attribution artifact file list', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ files: [] });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useAttributionArtifactFiles('experimental/range_break_v18'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith(
+      '/api/backtest/attribution-files?strategy=experimental%2Frange_break_v18&limit=100'
+    );
+  });
+});
+
+describe('useAttributionArtifactContent', () => {
+  it('fetches attribution artifact content', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ artifact: {} });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(
+      () => useAttributionArtifactContent('experimental/range_break_v18', 'attribution_20260112_120000_job-1.json'),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith(
+      '/api/backtest/attribution-files/content?strategy=experimental%2Frange_break_v18&filename=attribution_20260112_120000_job-1.json'
+    );
+  });
+
+  it('does not fetch when strategy or filename is null', () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useAttributionArtifactContent(null, null), { wrapper });
+
+    expect(result.current.fetchStatus).toBe('idle');
   });
 });
 

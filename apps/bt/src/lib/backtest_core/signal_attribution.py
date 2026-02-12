@@ -278,8 +278,10 @@ class SignalAttributionAnalyzer:
         if self._parameters_hook is not None:
             return _clone_parameters(self._parameters_hook())
 
-        strategy_config = self._runner.config_loader.load_strategy_config(self.strategy_name)
-        parameters = self._runner._build_parameters(strategy_config, self.config_override)
+        parameters = self._runner.build_parameters_for_strategy(
+            strategy=self.strategy_name,
+            config_override=self.config_override,
+        )
         return _clone_parameters(parameters)
 
     def _evaluate(
