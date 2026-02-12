@@ -4,6 +4,8 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { ApiError, apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
 import type {
+  AttributionArtifactContentResponse,
+  AttributionArtifactListResponse,
   BacktestJobResponse,
   BacktestRequest,
   BacktestResultResponse,
@@ -45,6 +47,10 @@ export const backtestKeys = {
   result: (jobId: string, includeHtml?: boolean) => [...backtestKeys.all, 'result', jobId, includeHtml] as const,
   attributionJob: (jobId: string) => [...backtestKeys.all, 'attribution-job', jobId] as const,
   attributionResult: (jobId: string) => [...backtestKeys.all, 'attribution-result', jobId] as const,
+  attributionArtifactFiles: (strategy?: string, limit?: number) =>
+    [...backtestKeys.all, 'attribution-artifact-files', strategy, limit] as const,
+  attributionArtifactContent: (strategy: string, filename: string) =>
+    [...backtestKeys.all, 'attribution-artifact-content', strategy, filename] as const,
   htmlFiles: (strategy?: string) => [...backtestKeys.all, 'html-files', strategy] as const,
   htmlFileContent: (strategy: string, filename: string) =>
     [...backtestKeys.all, 'html-file-content', strategy, filename] as const,
@@ -92,6 +98,24 @@ function fetchSignalAttributionJobStatus(jobId: string): Promise<SignalAttributi
 
 function fetchSignalAttributionResult(jobId: string): Promise<SignalAttributionResultResponse> {
   return apiGet<SignalAttributionResultResponse>(`/api/backtest/attribution/result/${encodeURIComponent(jobId)}`);
+}
+
+function fetchAttributionArtifactFiles(strategy?: string, limit = 100): Promise<AttributionArtifactListResponse> {
+  const params = new URLSearchParams();
+  if (strategy) params.append('strategy', strategy);
+  params.append('limit', limit.toString());
+  return apiGet<AttributionArtifactListResponse>(`/api/backtest/attribution-files?${params.toString()}`);
+}
+
+function fetchAttributionArtifactContent(
+  strategy: string,
+  filename: string
+): Promise<AttributionArtifactContentResponse> {
+  const params = new URLSearchParams({
+    strategy,
+    filename,
+  });
+  return apiGet<AttributionArtifactContentResponse>(`/api/backtest/attribution-files/content?${params.toString()}`);
 }
 
 function fetchHtmlFiles(strategy?: string, limit = 100): Promise<HtmlFileListResponse> {
@@ -279,6 +303,30 @@ export function useSignalAttributionResult(jobId: string | null) {
       return fetchSignalAttributionResult(jobId);
     },
     enabled: !!jobId,
+    staleTime: Infinity,
+  });
+}
+
+export function useAttributionArtifactFiles(strategy?: string, limit = 100) {
+  return useQuery({
+    queryKey: backtestKeys.attributionArtifactFiles(strategy, limit),
+    queryFn: () => {
+      logger.debug('Fetching attribution artifact files', { strategy, limit });
+      return fetchAttributionArtifactFiles(strategy, limit);
+    },
+    staleTime: 60 * 1000, // 1 minute
+  });
+}
+
+export function useAttributionArtifactContent(strategy: string | null, filename: string | null) {
+  return useQuery({
+    queryKey: backtestKeys.attributionArtifactContent(strategy ?? '', filename ?? ''),
+    queryFn: () => {
+      if (!strategy || !filename) throw new Error('Strategy and filename required');
+      logger.debug('Fetching attribution artifact content', { strategy, filename });
+      return fetchAttributionArtifactContent(strategy, filename);
+    },
+    enabled: !!strategy && !!filename,
     staleTime: Infinity,
   });
 }

@@ -393,6 +393,60 @@ class TestSignalAttributionEndpoints:
             assert resp.status_code == 200
 
 
+class TestAttributionArtifactEndpoints:
+    def test_list_attribution_files(self, client, tmp_path):
+        with (
+            patch("src.server.routes.backtest.get_backtest_attribution_dir", return_value=tmp_path),
+            patch("src.server.routes.backtest.list_attribution_files_in_dir") as mock_list,
+        ):
+            mock_list.return_value = (
+                [
+                    {
+                        "strategy_name": "experimental/range_break_v18",
+                        "filename": "attribution_20260112_123000_job-1.json",
+                        "created_at": datetime(2026, 1, 12, 12, 30, 0),
+                        "size_bytes": 2048,
+                        "job_id": "job-1",
+                    }
+                ],
+                1,
+            )
+
+            resp = client.get("/api/backtest/attribution-files?strategy=experimental%2Frange_break_v18&limit=10")
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["total"] == 1
+            assert data["files"][0]["strategy_name"] == "experimental/range_break_v18"
+            assert data["files"][0]["job_id"] == "job-1"
+            mock_list.assert_called_once_with(tmp_path, "experimental/range_break_v18", 10)
+
+    def test_get_attribution_file_content(self, client, tmp_path):
+        with (
+            patch("src.server.routes.backtest.get_backtest_attribution_dir", return_value=tmp_path),
+            patch("src.server.routes.backtest.read_attribution_file") as mock_read,
+        ):
+            mock_read.return_value = {
+                "saved_at": "2026-01-12T12:30:00+00:00",
+                "strategy": {"name": "experimental/range_break_v18"},
+                "runtime": {"shapley_top_n": 5},
+            }
+
+            resp = client.get(
+                "/api/backtest/attribution-files/content"
+                "?strategy=experimental%2Frange_break_v18&filename=attribution_20260112_123000_job-1.json"
+            )
+            assert resp.status_code == 200
+            data = resp.json()
+            assert data["strategy_name"] == "experimental/range_break_v18"
+            assert data["filename"] == "attribution_20260112_123000_job-1.json"
+            assert data["artifact"]["runtime"]["shapley_top_n"] == 5
+            mock_read.assert_called_once_with(
+                tmp_path,
+                "experimental/range_break_v18",
+                "attribution_20260112_123000_job-1.json",
+            )
+
+
 class TestHtmlFileEndpoints:
     def test_list_html_files(self, client, tmp_path):
         with (

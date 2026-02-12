@@ -97,6 +97,28 @@ def get_backtest_results_dir(strategy_name: str | None = None) -> Path:
     return base / strategy_name if strategy_name else base
 
 
+def get_backtest_attribution_dir(strategy_name: str | None = None) -> Path:
+    """
+    シグナル寄与分析結果ディレクトリのパスを取得
+
+    Args:
+        strategy_name: 戦略名（Noneの場合はベースディレクトリを返す）
+
+    Returns:
+        Path: シグナル寄与分析結果ディレクトリパス
+
+    Note:
+        外部ディレクトリ: ~/.local/share/trading25/backtest/attribution/{strategy_name}
+    """
+    env_backtest = os.environ.get(ENV_BACKTEST_DIR)
+    if env_backtest:
+        base = Path(env_backtest) / "attribution"
+    else:
+        base = get_data_dir() / "backtest" / "attribution"
+
+    return base / strategy_name if strategy_name else base
+
+
 def get_optimization_results_dir(strategy_name: str | None = None) -> Path:
     """
     最適化結果ディレクトリのパスを取得
@@ -337,6 +359,7 @@ def ensure_data_dirs() -> None:
         get_strategies_dir("experimental") / "evolved",
         get_strategies_dir("experimental") / "optuna",
         get_backtest_results_dir(),
+        get_backtest_attribution_dir(),
         get_optimization_results_dir(),
         get_optimization_grid_dir(),
         get_cache_dir(),

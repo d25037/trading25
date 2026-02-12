@@ -4,6 +4,9 @@ API Schemas (Pydantic models)
 
 from src.server.schemas.common import BaseJobResponse
 from src.server.schemas.backtest import (
+    AttributionArtifactContentResponse,
+    AttributionArtifactInfo,
+    AttributionArtifactListResponse,
     BacktestJobResponse,
     BacktestRequest,
     BacktestResultResponse,
@@ -38,6 +41,9 @@ from src.server.schemas.signals import (
 
 __all__ = [
     "BaseJobResponse",
+    "AttributionArtifactInfo",
+    "AttributionArtifactListResponse",
+    "AttributionArtifactContentResponse",
     "BacktestRequest",
     "BacktestJobResponse",
     "BacktestResultSummary",

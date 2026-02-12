@@ -9,7 +9,11 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
-from src.paths.resolver import get_backtest_results_dir
+from src.paths.resolver import get_backtest_attribution_dir, get_backtest_results_dir
+from src.server.routes.attribution_file_utils import (
+    list_attribution_files_in_dir,
+    read_attribution_file,
+)
 from src.server.routes.html_file_utils import (
     delete_html_file,
     list_html_files_in_dir,
@@ -17,6 +21,9 @@ from src.server.routes.html_file_utils import (
     rename_html_file,
 )
 from src.server.schemas.backtest import (
+    AttributionArtifactContentResponse,
+    AttributionArtifactInfo,
+    AttributionArtifactListResponse,
     BacktestJobResponse,
     BacktestRequest,
     BacktestResultResponse,
@@ -305,6 +312,63 @@ async def get_signal_attribution_result(job_id: str) -> SignalAttributionResultR
         strategy_name=job.strategy_name,
         result=result,
         created_at=job.created_at,
+    )
+
+
+@router.get(
+    "/api/backtest/attribution-files",
+    response_model=AttributionArtifactListResponse,
+)
+async def list_attribution_files(
+    strategy: str | None = None,
+    limit: int = 100,
+) -> AttributionArtifactListResponse:
+    """
+    保存済みシグナル寄与分析JSONファイル一覧を取得
+
+    Args:
+        strategy: 戦略名でフィルタ（階層パス対応、オプション）
+        limit: 取得件数上限（デフォルト100）
+    """
+    results_dir = get_backtest_attribution_dir()
+    file_dicts, total = list_attribution_files_in_dir(results_dir, strategy, limit)
+
+    files = [
+        AttributionArtifactInfo(
+            strategy_name=f["strategy_name"],
+            filename=f["filename"],
+            created_at=f["created_at"],
+            size_bytes=f["size_bytes"],
+            job_id=f.get("job_id"),
+        )
+        for f in file_dicts
+    ]
+
+    return AttributionArtifactListResponse(files=files, total=total)
+
+
+@router.get(
+    "/api/backtest/attribution-files/content",
+    response_model=AttributionArtifactContentResponse,
+)
+async def get_attribution_file_content(
+    strategy: str,
+    filename: str,
+) -> AttributionArtifactContentResponse:
+    """
+    保存済みシグナル寄与分析JSONファイル内容を取得
+
+    Args:
+        strategy: 戦略名（階層パス対応）
+        filename: ファイル名（.json）
+    """
+    results_dir = get_backtest_attribution_dir()
+    artifact = read_attribution_file(results_dir, strategy, filename)
+
+    return AttributionArtifactContentResponse(
+        strategy_name=strategy,
+        filename=filename,
+        artifact=artifact,
     )
 
 

@@ -106,6 +106,19 @@ class TestPathTraversalProtection:
         response = client.get("/api/backtest/html-files?strategy=..etc")
         assert response.status_code == 400
 
+    def test_attribution_file_list_path_traversal(self, client: TestClient) -> None:
+        """attributionファイル一覧のstrategyフィルタでパストラバーサルを拒否"""
+        response = client.get("/api/backtest/attribution-files?strategy=../../etc")
+        assert response.status_code == 400
+
+    def test_attribution_file_content_invalid_filename(self, client: TestClient) -> None:
+        """attributionファイルcontentで不正filenameを拒否"""
+        response = client.get(
+            "/api/backtest/attribution-files/content"
+            "?strategy=experimental/range_break_v18&filename=..secret.json"
+        )
+        assert response.status_code == 400
+
     def test_optimize_grid_config_backslash_traversal(self, client: TestClient) -> None:
         """Grid設定でバックスラッシュによるパストラバーサルを拒否"""
         response = client.get("/api/optimize/grid-configs/strategy%5C..%5Cetc")

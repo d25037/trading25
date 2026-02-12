@@ -1519,6 +1519,178 @@
         }
       }
     },
+    "/api/backtest/attribution-files": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "List Attribution Files",
+        "description": "保存済みシグナル寄与分析JSONファイル一覧を取得\n\nArgs:\n    strategy: 戦略名でフィルタ（階層パス対応、オプション）\n    limit: 取得件数上限（デフォルト100）",
+        "operationId": "list_attribution_files_api_backtest_attribution_files_get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "default": 100,
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributionArtifactListResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/backtest/attribution-files/content": {
+      "get": {
+        "tags": [
+          "Backtest"
+        ],
+        "summary": "Get Attribution File Content",
+        "description": "保存済みシグナル寄与分析JSONファイル内容を取得\n\nArgs:\n    strategy: 戦略名（階層パス対応）\n    filename: ファイル名（.json）",
+        "operationId": "get_attribution_file_content_api_backtest_attribution_files_content_get",
+        "parameters": [
+          {
+            "name": "strategy",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy"
+            }
+          },
+          {
+            "name": "filename",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Filename"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttributionArtifactContentResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/backtest/html-files": {
       "get": {
         "tags": [
@@ -7008,7 +7180,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                      "$ref": "#/components/schemas/OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -7128,7 +7300,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                    "$ref": "#/components/schemas/OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -10823,6 +10995,104 @@
         "title": "ApiMarginInterestResponse",
         "description": "週次信用取引データレスポンス"
       },
+      "AttributionArtifactContentResponse": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名（ディレクトリ相対パス）"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "ファイル名"
+          },
+          "artifact": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Artifact",
+            "description": "保存済み attribution JSON データ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "filename",
+          "artifact"
+        ],
+        "title": "AttributionArtifactContentResponse",
+        "description": "保存済み attribution JSON ファイル内容レスポンス"
+      },
+      "AttributionArtifactInfo": {
+        "properties": {
+          "strategy_name": {
+            "type": "string",
+            "title": "Strategy Name",
+            "description": "戦略名（ディレクトリ相対パス）"
+          },
+          "filename": {
+            "type": "string",
+            "title": "Filename",
+            "description": "ファイル名"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "title": "Size Bytes",
+            "description": "ファイルサイズ（バイト）"
+          },
+          "job_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Job Id",
+            "description": "ファイル名から推定したジョブID"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategy_name",
+          "filename",
+          "created_at",
+          "size_bytes"
+        ],
+        "title": "AttributionArtifactInfo",
+        "description": "保存済み attribution JSON ファイル情報"
+      },
+      "AttributionArtifactListResponse": {
+        "properties": {
+          "files": {
+            "items": {
+              "$ref": "#/components/schemas/AttributionArtifactInfo"
+            },
+            "type": "array",
+            "title": "Files",
+            "description": "attribution JSON ファイル一覧"
+          },
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "description": "総ファイル数"
+          }
+        },
+        "type": "object",
+        "required": [
+          "files",
+          "total"
+        ],
+        "title": "AttributionArtifactListResponse",
+        "description": "保存済み attribution JSON ファイル一覧レスポンス"
+      },
       "AuthStatusResponse": {
         "properties": {
           "authenticated": {
@@ -11864,8 +12134,7 @@
           "from",
           "to"
         ],
-        "title": "DateRange",
-        "description": "分析期間"
+        "title": "DateRange"
       },
       "DefaultConfigResponse": {
         "properties": {
@@ -12014,21 +12283,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -12042,7 +12311,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__factor_regression__DateRange"
           }
         },
         "type": "object",
@@ -13449,26 +13718,37 @@
       },
       "IndexMatch": {
         "properties": {
-          "code": {
+          "indexCode": {
             "type": "string",
-            "title": "Code"
+            "title": "Indexcode"
           },
-          "name": {
+          "indexName": {
             "type": "string",
-            "title": "Name"
+            "title": "Indexname"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
+          },
+          "beta": {
+            "type": "number",
+            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "code",
-          "name",
-          "rSquared"
+          "indexCode",
+          "indexName",
+          "category",
+          "rSquared",
+          "beta"
         ],
-        "title": "IndexMatch"
+        "title": "IndexMatch",
+        "description": "指数マッチ結果"
       },
       "IndexOHLCRecord": {
         "properties": {
@@ -15200,33 +15480,27 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -15238,8 +15512,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -15360,7 +15633,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -15923,21 +16196,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -16250,7 +16523,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -20532,44 +20805,6 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__dataset_data__OHLCVRecord": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date"
-          },
-          "open": {
-            "type": "number",
-            "title": "Open"
-          },
-          "high": {
-            "type": "number",
-            "title": "High"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "volume": {
-            "type": "integer",
-            "title": "Volume"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord"
-      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -20588,39 +20823,69 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__factor_regression__IndexMatch": {
+      "src__server__schemas__factor_regression__DateRange": {
         "properties": {
-          "indexCode": {
+          "from": {
             "type": "string",
-            "title": "Indexcode"
+            "title": "From"
           },
-          "indexName": {
+          "to": {
             "type": "string",
-            "title": "Indexname"
-          },
-          "category": {
-            "type": "string",
-            "title": "Category"
-          },
-          "rSquared": {
-            "type": "number",
-            "title": "Rsquared"
-          },
-          "beta": {
-            "type": "number",
-            "title": "Beta"
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "indexCode",
-          "indexName",
-          "category",
-          "rSquared",
-          "beta"
+          "from",
+          "to"
         ],
-        "title": "IndexMatch",
-        "description": "指数マッチ結果"
+        "title": "DateRange",
+        "description": "分析期間"
+      },
+      "src__server__schemas__indicators__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
       "src__server__schemas__portfolio_factor_regression__DateRange": {
         "properties": {
@@ -20640,23 +20905,28 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__portfolio_performance__DateRange": {
+      "src__server__schemas__portfolio_factor_regression__IndexMatch": {
         "properties": {
-          "from": {
+          "code": {
             "type": "string",
-            "title": "From"
+            "title": "Code"
           },
-          "to": {
+          "name": {
             "type": "string",
-            "title": "To"
+            "title": "Name"
+          },
+          "rSquared": {
+            "type": "number",
+            "title": "Rsquared"
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "code",
+          "name",
+          "rSquared"
         ],
-        "title": "DateRange"
+        "title": "IndexMatch"
       },
       "ErrorDetail": {
         "description": "バリデーションエラー詳細",

@@ -133,6 +133,24 @@ class BacktestRunner:
             dataset_name=dataset_name,
         )
 
+    def build_parameters_for_strategy(
+        self,
+        strategy: str,
+        config_override: dict[str, Any] | None = None,
+    ) -> dict[str, Any]:
+        """
+        戦略名から実行パラメータを構築
+
+        Args:
+            strategy: 戦略名
+            config_override: 設定オーバーライド辞書（オプション）
+
+        Returns:
+            実行パラメータ辞書
+        """
+        strategy_config = self.config_loader.load_strategy_config(strategy)
+        return self._build_parameters(strategy_config, config_override)
+
     def _write_manifest(
         self,
         html_path: Path,

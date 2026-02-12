@@ -11,6 +11,7 @@ from src.paths import (
     get_data_dir,
     get_strategies_dir,
     get_backtest_results_dir,
+    get_backtest_attribution_dir,
     get_optimization_results_dir,
     get_optimization_grid_dir,
     get_cache_dir,
@@ -85,6 +86,21 @@ class TestGetBacktestResultsDir:
         assert "test_strategy" in str(result)
 
 
+class TestGetBacktestAttributionDir:
+    """get_backtest_attribution_dir関数のテスト"""
+
+    def test_default_attribution_dir(self):
+        """デフォルト寄与分析ディレクトリのテスト"""
+        result = get_backtest_attribution_dir()
+        assert "backtest" in str(result)
+        assert "attribution" in str(result)
+
+    def test_attribution_dir_with_strategy(self):
+        """戦略名付き寄与分析ディレクトリのテスト"""
+        result = get_backtest_attribution_dir("test_strategy")
+        assert "test_strategy" in str(result)
+
+
 class TestGetOptimizationResultsDir:
     """get_optimization_results_dir関数のテスト"""
 
@@ -155,6 +171,7 @@ class TestEnsureDataDirs:
             assert data_dir.exists()
             assert (data_dir / "strategies" / "experimental").exists()
             assert (data_dir / "backtest" / "results").exists()
+            assert (data_dir / "backtest" / "attribution").exists()
             assert (data_dir / "backtest" / "optimization").exists()
             assert (data_dir / "optimization").exists()
             assert (data_dir / "cache").exists()
