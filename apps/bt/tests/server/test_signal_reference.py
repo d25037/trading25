@@ -306,6 +306,41 @@ class TestDescriptionOptionsExtraction:
         result = _get_field_options(str, field_info)
         assert result == ["surge", "drop"]
 
+    def test_nested_brackets_in_desc(self):
+        """入れ子括弧のdescriptionでも選択肢が欠落しないこと"""
+        from pydantic.fields import FieldInfo as FI
+        field_info = FI(
+            default="below",
+            description="閾値条件（below=閾値より下（売られすぎ）、above=閾値より上（買われすぎ））",
+        )
+        result = _get_field_options(str, field_info)
+        assert result == ["below", "above"]
+
+    def test_multiple_parenthetical_segments(self):
+        """複数括弧セグメントでも選択肢を含むセグメントを拾えること"""
+        from pydantic.fields import FieldInfo as FI
+        field_info = FI(
+            default="below",
+            description="補足（一般説明） 閾値条件（below=閾値より下、above=閾値より上）",
+        )
+        result = _get_field_options(str, field_info)
+        assert result == ["below", "above"]
+
+    def test_mismatched_brackets_do_not_raise(self):
+        """括弧不整合でも例外なくNoneを返すこと"""
+        from pydantic.fields import FieldInfo as FI
+        field_info = FI(default="below", description="閾値条件（below=閾値より下, above=閾値より上)")
+        result = _get_field_options(str, field_info)
+        assert result is None
+
+    def test_rsi_threshold_condition_options_in_reference(self):
+        """signal referenceのrsi_threshold.conditionにbelow/aboveが出ること"""
+        result = build_signal_reference()
+        signal = next(s for s in result["signals"] if s["key"] == "rsi_threshold")
+        condition_field = next(f for f in signal["fields"] if f["name"] == "condition")
+        assert condition_field["type"] == "select"
+        assert condition_field["options"] == ["below", "above"]
+
 
 class TestFundamentalParentFieldPropagation:
     """ファンダメンタル子シグナルへの親フィールド伝搬テスト"""
