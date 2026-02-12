@@ -14,6 +14,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - バックエンドは `apps/bt` の FastAPI に一本化済み
 - financial-analysis のロジック SoT は `apps/bt`（ts 側は API consumer / proxy）
 - `apps/ts/packages/api` は互換 API レイヤーとして bt API をプロキシ
+- Backtest 実行パスは `apps/bt` 内で dataset/market DB を直接参照し、内部HTTP self-call を回避
 
 ## Repository Layout
 

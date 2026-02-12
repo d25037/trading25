@@ -17,6 +17,7 @@ from loguru import logger
 
 from src.api.dataset_client import DatasetAPIClient
 from src.api.market_client import MarketAPIClient
+from src.data.access.clients import get_dataset_client, get_market_client
 from src.data.loaders.cache import cached_loader
 from src.data.loaders.utils import extract_dataset_name
 
@@ -45,7 +46,7 @@ def load_topix_data(
     dataset_name = extract_dataset_name(dataset)
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_topix(start_date, end_date)
 
     if df.empty:
@@ -84,7 +85,7 @@ def load_topix_data_from_market_db(
         - 直近1年間の市場データ（日次更新）
         - バックテスト用のload_topix_data()とはテーブル名・データソースが異なる
     """
-    with MarketAPIClient() as client:
+    with get_market_client(http_client_factory=MarketAPIClient) as client:
         df = client.get_topix(start_date, end_date)
 
     if df.empty:
@@ -122,7 +123,7 @@ def load_index_data(
     dataset_name = extract_dataset_name(dataset)
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_index(index_code, start_date, end_date)
 
     if df.empty:
@@ -148,7 +149,7 @@ def get_index_list(dataset: str, min_records: int = 100) -> list[str]:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_index_list(min_records)
 
     if df.empty:
@@ -170,7 +171,7 @@ def get_available_indices(dataset: str, min_records: int = 100) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_index_list(min_records)
 
     return df

@@ -10,6 +10,7 @@ import pandas as pd
 from loguru import logger
 
 from src.api.dataset_client import DatasetAPIClient
+from src.data.access.clients import get_dataset_client
 from src.data.loaders.cache import DataCache, cached_loader
 from src.data.loaders.utils import extract_dataset_name
 
@@ -36,7 +37,7 @@ def get_stock_list(dataset: str, min_records: int = 100) -> list[str]:
             return cached["stockCode"].tolist()
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_stock_list(min_records=min_records)
 
     if df.empty:
@@ -75,7 +76,7 @@ def load_stock_data(
     dataset_name = extract_dataset_name(dataset)
 
     # API呼び出し
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_stock_ohlcv(stock_code, start_date, end_date, timeframe)
 
     if df.empty:
@@ -100,7 +101,7 @@ def get_available_stocks(dataset: str, min_records: int = 1000) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with DatasetAPIClient(dataset_name) as client:
+    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
         df = client.get_available_stocks(min_records=min_records)
 
     return df
