@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **109**
+Total paths: **111**
 
 ## /api/analytics
 
@@ -22,6 +22,8 @@ Total paths: **109**
 
 | Path | Methods |
 |---|---|
+| `/api/backtest/attribution-files` | `GET` |
+| `/api/backtest/attribution-files/content` | `GET` |
 | `/api/backtest/attribution/jobs/{job_id}` | `GET` |
 | `/api/backtest/attribution/jobs/{job_id}/cancel` | `POST` |
 | `/api/backtest/attribution/jobs/{job_id}/stream` | `GET` |
