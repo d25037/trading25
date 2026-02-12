@@ -19,7 +19,7 @@ export function handleBacktestError(ctx: Logger, error: unknown): void {
   } else if (error instanceof Error) {
     if (error.message.includes('ECONNREFUSED') || error.message.includes('fetch failed')) {
       ctx.log(chalk.red('Error: Cannot connect to bt server'));
-      ctx.log(chalk.dim('Make sure bt server is running: uv run bt server'));
+      ctx.log(chalk.dim('Make sure bt server is running: uv run bt server --port 3002'));
     } else {
       ctx.log(chalk.red(`Error: ${error.message}`));
     }

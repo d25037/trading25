@@ -67,7 +67,7 @@ export class CLIAPIError extends CLIError {
  * Default troubleshooting tips for API-related errors
  */
 const DEFAULT_TROUBLESHOOTING_TIPS = [
-  'Ensure the API server is running: bun run dev:api',
+  'Ensure the API server is running: uv run bt server --port 3002',
   'Try with --debug flag for more information',
 ];
 
@@ -118,12 +118,12 @@ export function handleCommandError(
  */
 export const DB_TIPS = {
   refresh: [
-    'Ensure the API server is running: bun run dev:api',
+    'Ensure the API server is running: uv run bt server --port 3002',
     'Ensure market.db exists: bun cli db sync',
     'Try with --debug flag for more information',
   ],
   sync: [
-    'Ensure the API server is running: bun run dev:api',
+    'Ensure the API server is running: uv run bt server --port 3002',
     'Check if another sync is already running',
     'Try with --debug flag for more information',
   ],
@@ -134,12 +134,12 @@ export const DB_TIPS = {
  */
 export const DATASET_TIPS = {
   info: [
-    'Ensure the API server is running: bun run dev:api',
+    'Ensure the API server is running: uv run bt server --port 3002',
     'Verify the dataset name is correct',
     'Try with --debug flag for more information',
   ],
   create: [
-    'Ensure the API server is running: bun run dev:api',
+    'Ensure the API server is running: uv run bt server --port 3002',
     'Check if another dataset creation job is already running',
     'Use --overwrite to replace an existing dataset',
     'Try with --debug flag for more information',
@@ -150,12 +150,12 @@ export const DATASET_TIPS = {
     'Try a smaller preset (e.g., quickTesting)',
   ],
   search: [
-    'Ensure the API server is running: bun run dev:api',
+    'Ensure the API server is running: uv run bt server --port 3002',
     'Verify the dataset name is correct',
     'Try with --debug flag for more information',
   ],
   sample: [
-    'Ensure the API server is running: bun run dev:api',
+    'Ensure the API server is running: uv run bt server --port 3002',
     'Verify the dataset name is correct',
     'Try with --debug flag for more information',
   ],

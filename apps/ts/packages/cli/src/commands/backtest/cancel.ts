@@ -59,7 +59,7 @@ ${CLI_NAME} backtest cancel <job-id>`,
       handleCommandError(error, spinner, {
         failMessage: 'Failed to cancel backtest job',
         debug,
-        tips: ['Ensure the bt server is running: uv run bt server', 'Try with --debug flag for more information'],
+        tips: ['Ensure the bt server is running: uv run bt server --port 3002', 'Try with --debug flag for more information'],
       });
     }
   },

@@ -1,6 +1,8 @@
 # CLIコマンドリファレンス
 
-このプロジェクトのCLIは `bt` / `portfolio` の2系統です。
+このドキュメントは `apps/bt` の `bt` CLI（実行基盤・運用向け）を扱います。
+ユーザー向け一次CLIは `apps/ts/packages/cli`（Gunshi CLI）です。
+ポートフォリオ操作は `bun cli portfolio ...` を利用してください。
 実行は `uv run` 経由を推奨します。
 
 ## bt（バックテスト）
@@ -26,12 +28,6 @@ uv run bt server
 uv run bt server --port 3002 --reload
 ```
 
-## portfolio（ポートフォリオ分析）
-
-```bash
-uv run portfolio --help
-```
-
 ## 出力先（XDG準拠）
 
 バックテスト結果はXDG Base Directory仕様に基づき、デフォルトで以下に保存されます。
@@ -52,5 +48,4 @@ uv run portfolio --help
 
 ```bash
 uv run bt --help
-uv run portfolio --help
 ```
