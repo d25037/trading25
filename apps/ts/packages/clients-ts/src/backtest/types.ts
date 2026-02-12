@@ -43,6 +43,98 @@ export interface BacktestResultResponse {
   created_at: string;
 }
 
+export interface SignalAttributionRequest {
+  strategy_name: string;
+  strategy_config_override?: Record<string, unknown>;
+  shapley_top_n?: number;
+  shapley_permutations?: number;
+  random_seed?: number | null;
+}
+
+export interface SignalAttributionMetrics {
+  total_return: number;
+  sharpe_ratio: number;
+}
+
+export interface SignalAttributionLooResult {
+  status: 'ok' | 'error';
+  variant_metrics: SignalAttributionMetrics | null;
+  delta_total_return: number | null;
+  delta_sharpe_ratio: number | null;
+  error: string | null;
+}
+
+export interface SignalAttributionShapleyResult {
+  status: 'ok' | 'error';
+  total_return: number | null;
+  sharpe_ratio: number | null;
+  method: string;
+  sample_size: number | null;
+  error: string | null;
+}
+
+export interface SignalAttributionSignalResult {
+  signal_id: string;
+  scope: 'entry' | 'exit';
+  param_key: string;
+  signal_name: string;
+  loo: SignalAttributionLooResult;
+  shapley: SignalAttributionShapleyResult | null;
+}
+
+export interface SignalAttributionTopNScore {
+  signal_id: string;
+  score: number;
+}
+
+export interface SignalAttributionTopNSelection {
+  top_n_requested: number;
+  top_n_effective: number;
+  selected_signal_ids: string[];
+  scores: SignalAttributionTopNScore[];
+}
+
+export interface SignalAttributionTiming {
+  total_seconds: number;
+  baseline_seconds: number;
+  loo_seconds: number;
+  shapley_seconds: number;
+}
+
+export interface SignalAttributionShapleyMeta {
+  method: string | null;
+  sample_size: number | null;
+  error: string | null;
+  evaluations: number | null;
+}
+
+export interface SignalAttributionResult {
+  baseline_metrics: SignalAttributionMetrics;
+  signals: SignalAttributionSignalResult[];
+  top_n_selection: SignalAttributionTopNSelection;
+  timing: SignalAttributionTiming;
+  shapley: SignalAttributionShapleyMeta;
+}
+
+export interface SignalAttributionJobResponse {
+  job_id: string;
+  status: JobStatus;
+  progress: number | null;
+  message: string | null;
+  created_at: string;
+  started_at: string | null;
+  completed_at: string | null;
+  error: string | null;
+  result_data: SignalAttributionResult | null;
+}
+
+export interface SignalAttributionResultResponse {
+  job_id: string;
+  strategy_name: string;
+  result: SignalAttributionResult;
+  created_at: string;
+}
+
 export interface StrategyMetadata {
   name: string;
   category: string;

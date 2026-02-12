@@ -235,6 +235,108 @@ describe('BacktestClient', () => {
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('include_html=true');
   });
 
+  test('runSignalAttribution sends POST with request body', async () => {
+    const job = {
+      job_id: 'attr-1',
+      status: 'pending',
+      progress: null,
+      message: null,
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: null,
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const request = {
+      strategy_name: 'sma_cross',
+      shapley_top_n: 5,
+      shapley_permutations: 128,
+      random_seed: 42,
+    };
+    const result = await client.runSignalAttribution(request);
+    expect(result).toEqual(job);
+    const lastCall = fetchSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain('/api/backtest/attribution/run');
+    expect(lastCall?.[1]?.method).toBe('POST');
+  });
+
+  test('getSignalAttributionJob calls correct endpoint', async () => {
+    const job = {
+      job_id: 'attr-1',
+      status: 'running',
+      progress: 0.5,
+      message: 'running',
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: '2024-01-01T00:00:01Z',
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const result = await client.getSignalAttributionJob('attr-1');
+    expect(result).toEqual(job);
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/attribution/jobs/attr-1');
+  });
+
+  test('cancelSignalAttributionJob sends POST to cancel endpoint', async () => {
+    const job = {
+      job_id: 'attr-1',
+      status: 'cancelled',
+      progress: null,
+      message: null,
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: null,
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const result = await client.cancelSignalAttributionJob('attr-1');
+    expect(result).toEqual(job);
+    const lastCall = fetchSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain('/api/backtest/attribution/jobs/attr-1/cancel');
+    expect(lastCall?.[1]?.method).toBe('POST');
+  });
+
+  test('getSignalAttributionResult calls correct endpoint', async () => {
+    const resultData = {
+      job_id: 'attr-1',
+      strategy_name: 'sma_cross',
+      result: {
+        baseline_metrics: { total_return: 0.2, sharpe_ratio: 1.1 },
+        signals: [],
+        top_n_selection: {
+          top_n_requested: 5,
+          top_n_effective: 0,
+          selected_signal_ids: [],
+          scores: [],
+        },
+        timing: {
+          total_seconds: 1,
+          baseline_seconds: 0.2,
+          loo_seconds: 0.4,
+          shapley_seconds: 0.4,
+        },
+        shapley: {
+          method: null,
+          sample_size: null,
+          error: null,
+          evaluations: null,
+        },
+      },
+      created_at: '2024-01-01T00:00:00Z',
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(resultData));
+
+    const result = await client.getSignalAttributionResult('attr-1');
+    expect(result).toEqual(resultData);
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/attribution/result/attr-1');
+  });
+
   // runAndWait
   test('runAndWait polls until completion', async () => {
     const pending = {

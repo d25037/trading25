@@ -28,12 +28,18 @@ from src.server.schemas.backtest import (
     HtmlFileRenameRequest,
     HtmlFileRenameResponse,
     JobStatus,
+    SignalAttributionJobResponse,
+    SignalAttributionRequest,
+    SignalAttributionResult,
+    SignalAttributionResultResponse,
 )
+from src.server.services.backtest_attribution_service import backtest_attribution_service
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import JobInfo, job_manager
 from src.server.services.sse_manager import sse_manager
 
 router = APIRouter(tags=["Backtest"])
+_ATTRIBUTION_JOB_TYPE = "backtest_attribution"
 
 
 def _build_backtest_job_response(job: JobInfo) -> BacktestJobResponse:
@@ -57,6 +63,39 @@ def _get_job_or_404(job_id: str) -> JobInfo:
     if job is None:
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
     return job
+
+
+def _get_attribution_job_or_404(job_id: str) -> JobInfo:
+    """寄与分析ジョブを取得し、存在しなければ404 / 種別不一致は400"""
+    job = _get_job_or_404(job_id)
+    if job.job_type != _ATTRIBUTION_JOB_TYPE:
+        raise HTTPException(
+            status_code=400,
+            detail=f"シグナル寄与分析ジョブではありません: {job.job_type}",
+        )
+    return job
+
+
+def _build_signal_attribution_job_response(job: JobInfo) -> SignalAttributionJobResponse:
+    """JobInfoからSignalAttributionJobResponseを構築"""
+    result_data = None
+    if job.raw_result and job.status == JobStatus.COMPLETED:
+        try:
+            result_data = SignalAttributionResult.model_validate(job.raw_result)
+        except Exception as e:
+            logger.warning(f"寄与分析結果のパースに失敗: {e}")
+
+    return SignalAttributionJobResponse(
+        job_id=job.job_id,
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        error=job.error,
+        result_data=result_data,
+    )
 
 
 @router.post("/api/backtest/run", response_model=BacktestJobResponse)
@@ -169,6 +208,102 @@ async def get_result(job_id: str, include_html: bool = False) -> BacktestResultR
         summary=job.result,
         execution_time=job.execution_time or 0.0,
         html_content=html_content,
+        created_at=job.created_at,
+    )
+
+
+@router.post(
+    "/api/backtest/attribution/run",
+    response_model=SignalAttributionJobResponse,
+)
+async def run_signal_attribution(
+    request: SignalAttributionRequest,
+) -> SignalAttributionJobResponse:
+    """シグナル寄与分析ジョブをサブミット"""
+    try:
+        job_id = await backtest_attribution_service.submit_attribution(
+            strategy_name=request.strategy_name,
+            config_override=request.strategy_config_override,
+            shapley_top_n=request.shapley_top_n,
+            shapley_permutations=request.shapley_permutations,
+            random_seed=request.random_seed,
+        )
+        job = _get_attribution_job_or_404(job_id)
+        return _build_signal_attribution_job_response(job)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("シグナル寄与分析サブミットエラー")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.get(
+    "/api/backtest/attribution/jobs/{job_id}",
+    response_model=SignalAttributionJobResponse,
+)
+async def get_signal_attribution_job(job_id: str) -> SignalAttributionJobResponse:
+    """シグナル寄与分析ジョブの状態を取得"""
+    job = _get_attribution_job_or_404(job_id)
+    return _build_signal_attribution_job_response(job)
+
+
+@router.post(
+    "/api/backtest/attribution/jobs/{job_id}/cancel",
+    response_model=SignalAttributionJobResponse,
+)
+async def cancel_signal_attribution_job(job_id: str) -> SignalAttributionJobResponse:
+    """シグナル寄与分析ジョブをキャンセル"""
+    _get_attribution_job_or_404(job_id)
+
+    cancelled_job = await job_manager.cancel_job(job_id)
+    if cancelled_job is None:
+        job = job_manager.get_job(job_id)
+        status = job.status if job else "unknown"
+        raise HTTPException(
+            status_code=409,
+            detail=f"ジョブは既に終了しています（状態: {status}）",
+        )
+
+    return _build_signal_attribution_job_response(cancelled_job)
+
+
+@router.get(
+    "/api/backtest/attribution/jobs/{job_id}/stream",
+)
+async def stream_signal_attribution_events(job_id: str) -> EventSourceResponse:
+    """シグナル寄与分析ジョブの進捗をSSEでストリーミング"""
+    _get_attribution_job_or_404(job_id)
+    return EventSourceResponse(sse_manager.job_event_generator(job_id))
+
+
+@router.get(
+    "/api/backtest/attribution/result/{job_id}",
+    response_model=SignalAttributionResultResponse,
+)
+async def get_signal_attribution_result(job_id: str) -> SignalAttributionResultResponse:
+    """シグナル寄与分析結果を取得"""
+    job = _get_attribution_job_or_404(job_id)
+
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ジョブが完了していません（状態: {job.status}）",
+        )
+    if not job.raw_result:
+        raise HTTPException(status_code=500, detail="結果がありません")
+
+    try:
+        result = SignalAttributionResult.model_validate(job.raw_result)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"結果の復元に失敗しました: {e}",
+        ) from e
+
+    return SignalAttributionResultResponse(
+        job_id=job.job_id,
+        strategy_name=job.strategy_name,
+        result=result,
         created_at=job.created_at,
     )
 

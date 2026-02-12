@@ -338,6 +338,106 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/backtest/attribution/run": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Run Signal Attribution
+         * @description シグナル寄与分析ジョブをサブミット
+         */
+        post: operations["run_signal_attribution_api_backtest_attribution_run_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/attribution/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Signal Attribution Job
+         * @description シグナル寄与分析ジョブの状態を取得
+         */
+        get: operations["get_signal_attribution_job_api_backtest_attribution_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/attribution/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel Signal Attribution Job
+         * @description シグナル寄与分析ジョブをキャンセル
+         */
+        post: operations["cancel_signal_attribution_job_api_backtest_attribution_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/attribution/jobs/{job_id}/stream": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Stream Signal Attribution Events
+         * @description シグナル寄与分析ジョブの進捗をSSEでストリーミング
+         */
+        get: operations["stream_signal_attribution_events_api_backtest_attribution_jobs__job_id__stream_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/backtest/attribution/result/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Signal Attribution Result
+         * @description シグナル寄与分析結果を取得
+         */
+        get: operations["get_signal_attribution_result_api_backtest_attribution_result__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/backtest/html-files": {
         parameters: {
             query?: never;
@@ -2736,7 +2836,10 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
-        /** DateRange */
+        /**
+         * DateRange
+         * @description 分析期間
+         */
         DateRange: {
             /** Min */
             min: string;
@@ -2847,7 +2950,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
         };
         /**
          * FieldConstraints
@@ -4973,7 +5076,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            dateRange?: components["schemas"]["PortfolioDateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -5435,6 +5538,334 @@ export interface components {
             sectorName: string;
             /** Count */
             count: number;
+        };
+        /**
+         * SignalAttributionJobResponse
+         * @description シグナル寄与分析ジョブレスポンス
+         */
+        SignalAttributionJobResponse: {
+            /**
+             * Job Id
+             * @description ジョブID
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Progress
+             * @description 進捗（0.0 - 1.0）
+             */
+            progress?: number | null;
+            /**
+             * Message
+             * @description ステータスメッセージ
+             */
+            message?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description 作成日時
+             */
+            created_at: string;
+            /**
+             * Started At
+             * @description 開始日時
+             */
+            started_at?: string | null;
+            /**
+             * Completed At
+             * @description 完了日時
+             */
+            completed_at?: string | null;
+            /**
+             * Error
+             * @description エラーメッセージ
+             */
+            error?: string | null;
+            /** @description 寄与分析結果（完了時のみ） */
+            result_data?: components["schemas"]["SignalAttributionResult"] | null;
+        };
+        /**
+         * SignalAttributionLooResult
+         * @description LOO（1シグナル無効化）結果
+         */
+        SignalAttributionLooResult: {
+            /**
+             * Status
+             * @description 計算ステータス
+             * @enum {string}
+             */
+            status: "ok" | "error";
+            /** @description 当該シグナル無効化時のメトリクス */
+            variant_metrics?: components["schemas"]["SignalAttributionMetrics"] | null;
+            /**
+             * Delta Total Return
+             * @description baseline - variant の total_return 差分
+             */
+            delta_total_return?: number | null;
+            /**
+             * Delta Sharpe Ratio
+             * @description baseline - variant の sharpe_ratio 差分
+             */
+            delta_sharpe_ratio?: number | null;
+            /**
+             * Error
+             * @description エラー詳細
+             */
+            error?: string | null;
+        };
+        /**
+         * SignalAttributionMetrics
+         * @description シグナル寄与分析で使用するメトリクス
+         */
+        SignalAttributionMetrics: {
+            /**
+             * Total Return
+             * @description トータルリターン
+             */
+            total_return: number;
+            /**
+             * Sharpe Ratio
+             * @description シャープレシオ
+             */
+            sharpe_ratio: number;
+        };
+        /**
+         * SignalAttributionRequest
+         * @description シグナル寄与分析リクエスト
+         */
+        SignalAttributionRequest: {
+            /**
+             * Strategy Name
+             * @description 戦略名（例: 'range_break_v5', 'production/range_break_v5'）
+             */
+            strategy_name: string;
+            /**
+             * Strategy Config Override
+             * @description 戦略設定のオーバーライド（オプション）
+             */
+            strategy_config_override?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Shapley Top N
+             * @description Shapley計算対象にする上位シグナル数
+             * @default 5
+             */
+            shapley_top_n: number;
+            /**
+             * Shapley Permutations
+             * @description Shapley近似時の順列サンプル数
+             * @default 128
+             */
+            shapley_permutations: number;
+            /**
+             * Random Seed
+             * @description Shapley近似の乱数シード
+             */
+            random_seed?: number | null;
+        };
+        /**
+         * SignalAttributionResult
+         * @description シグナル寄与分析結果
+         */
+        SignalAttributionResult: {
+            /** @description ベースラインのメトリクス */
+            baseline_metrics: components["schemas"]["SignalAttributionMetrics"];
+            /**
+             * Signals
+             * @description シグナル別寄与結果
+             */
+            signals: components["schemas"]["SignalAttributionSignalResult"][];
+            /** @description Shapley対象TopNの選定情報 */
+            top_n_selection: components["schemas"]["SignalAttributionTopNSelection"];
+            timing: components["schemas"]["SignalAttributionTiming"];
+            shapley: components["schemas"]["SignalAttributionShapleyMeta"];
+        };
+        /**
+         * SignalAttributionResultResponse
+         * @description シグナル寄与分析結果レスポンス（詳細）
+         */
+        SignalAttributionResultResponse: {
+            /**
+             * Job Id
+             * @description ジョブID
+             */
+            job_id: string;
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /** @description 寄与分析結果 */
+            result: components["schemas"]["SignalAttributionResult"];
+            /**
+             * Created At
+             * Format: date-time
+             * @description 作成日時
+             */
+            created_at: string;
+        };
+        /**
+         * SignalAttributionShapleyMeta
+         * @description Shapley計算メタ情報
+         */
+        SignalAttributionShapleyMeta: {
+            /**
+             * Method
+             * @description 計算方式（exact/permutation/error）
+             */
+            method?: string | null;
+            /**
+             * Sample Size
+             * @description 近似時のサンプル数
+             */
+            sample_size?: number | null;
+            /**
+             * Error
+             * @description エラー詳細
+             */
+            error?: string | null;
+            /**
+             * Evaluations
+             * @description 評価実行回数
+             */
+            evaluations?: number | null;
+        };
+        /**
+         * SignalAttributionShapleyResult
+         * @description Shapley寄与結果
+         */
+        SignalAttributionShapleyResult: {
+            /**
+             * Status
+             * @description 計算ステータス
+             * @enum {string}
+             */
+            status: "ok" | "error";
+            /**
+             * Total Return
+             * @description total_returnへのShapley寄与
+             */
+            total_return?: number | null;
+            /**
+             * Sharpe Ratio
+             * @description sharpe_ratioへのShapley寄与
+             */
+            sharpe_ratio?: number | null;
+            /**
+             * Method
+             * @description 計算方式（exact/permutation/error）
+             */
+            method: string;
+            /**
+             * Sample Size
+             * @description 計算に使ったサンプル数
+             */
+            sample_size?: number | null;
+            /**
+             * Error
+             * @description エラー詳細
+             */
+            error?: string | null;
+        };
+        /**
+         * SignalAttributionSignalResult
+         * @description シグナル単位の寄与結果
+         */
+        SignalAttributionSignalResult: {
+            /**
+             * Signal Id
+             * @description シグナル識別子（entry.<param_key> / exit.<param_key>）
+             */
+            signal_id: string;
+            /**
+             * Scope
+             * @description シグナルの適用スコープ
+             * @enum {string}
+             */
+            scope: "entry" | "exit";
+            /**
+             * Param Key
+             * @description SignalParams上のparam_key
+             */
+            param_key: string;
+            /**
+             * Signal Name
+             * @description 表示用シグナル名
+             */
+            signal_name: string;
+            /** @description LOO寄与結果 */
+            loo: components["schemas"]["SignalAttributionLooResult"];
+            /** @description Shapley寄与結果（topN対象外はnull） */
+            shapley?: components["schemas"]["SignalAttributionShapleyResult"] | null;
+        };
+        /**
+         * SignalAttributionTiming
+         * @description 処理時間情報
+         */
+        SignalAttributionTiming: {
+            /**
+             * Total Seconds
+             * @description 総処理時間（秒）
+             */
+            total_seconds: number;
+            /**
+             * Baseline Seconds
+             * @description baseline計算時間（秒）
+             */
+            baseline_seconds: number;
+            /**
+             * Loo Seconds
+             * @description LOO計算時間（秒）
+             */
+            loo_seconds: number;
+            /**
+             * Shapley Seconds
+             * @description Shapley計算時間（秒）
+             */
+            shapley_seconds: number;
+        };
+        /**
+         * SignalAttributionTopNScore
+         * @description TopN選定時のスコア
+         */
+        SignalAttributionTopNScore: {
+            /**
+             * Signal Id
+             * @description シグナル識別子
+             */
+            signal_id: string;
+            /**
+             * Score
+             * @description LOO絶対値正規化の合成スコア
+             */
+            score: number;
+        };
+        /**
+         * SignalAttributionTopNSelection
+         * @description Shapley対象のTopN選定情報
+         */
+        SignalAttributionTopNSelection: {
+            /**
+             * Top N Requested
+             * @description 要求されたTopN
+             */
+            top_n_requested: number;
+            /**
+             * Top N Effective
+             * @description 実際に選定されたTopN
+             */
+            top_n_effective: number;
+            /**
+             * Selected Signal Ids
+             * @description Shapley計算対象のsignal_id一覧
+             */
+            selected_signal_ids: string[];
+            /**
+             * Scores
+             * @description 上位シグナルの選定スコア
+             */
+            scores?: components["schemas"]["SignalAttributionTopNScore"][];
         };
         /**
          * SignalCategorySchema
@@ -6479,16 +6910,6 @@ export interface components {
             volume: number;
         };
         /**
-         * DateRange
-         * @description 分析期間
-         */
-        src__server__schemas__factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /**
          * IndexMatch
          * @description 指数マッチ結果
          */
@@ -6512,7 +6933,7 @@ export interface components {
             to: string;
         };
         /** DateRange */
-        src__server__schemas__portfolio_performance__DateRange: {
+        PortfolioDateRange: {
             /** From */
             from: string;
             /** To */
@@ -7448,6 +7869,298 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["BacktestResultResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    run_signal_attribution_api_backtest_attribution_run_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["SignalAttributionRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalAttributionJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_signal_attribution_job_api_backtest_attribution_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalAttributionJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_signal_attribution_job_api_backtest_attribution_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalAttributionJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    stream_signal_attribution_events_api_backtest_attribution_jobs__job_id__stream_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_signal_attribution_result_api_backtest_attribution_result__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SignalAttributionResultResponse"];
                 };
             };
             /** @description Bad Request */

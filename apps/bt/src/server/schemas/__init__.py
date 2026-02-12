@@ -9,6 +9,10 @@ from src.server.schemas.backtest import (
     BacktestResultResponse,
     BacktestResultSummary,
     JobStatus,
+    SignalAttributionJobResponse,
+    SignalAttributionRequest,
+    SignalAttributionResult,
+    SignalAttributionResultResponse,
 )
 from src.server.schemas.optimize import (
     OptimizationGridConfig,
@@ -38,6 +42,10 @@ __all__ = [
     "BacktestJobResponse",
     "BacktestResultSummary",
     "BacktestResultResponse",
+    "SignalAttributionRequest",
+    "SignalAttributionJobResponse",
+    "SignalAttributionResult",
+    "SignalAttributionResultResponse",
     "JobStatus",
     "OptimizationRequest",
     "OptimizationJobResponse",
