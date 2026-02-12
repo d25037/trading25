@@ -83,6 +83,12 @@ class MarketDb(BaseDbAccess):
             row = conn.execute(select(func.max(topix_data.c.date))).fetchone()
             return row[0] if row else None
 
+    def get_latest_stock_data_date(self) -> str | None:
+        """stock_data の最新取引日を取得"""
+        with self.engine.connect() as conn:
+            row = conn.execute(select(func.max(stock_data.c.date))).fetchone()
+            return row[0] if row else None
+
     # --- Write ---
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:

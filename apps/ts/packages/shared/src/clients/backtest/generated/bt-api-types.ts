@@ -2841,10 +2841,10 @@ export interface components {
          * @description 分析期間
          */
         DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * DefaultConfigResponse
@@ -3831,7 +3831,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -6189,7 +6189,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -6200,7 +6200,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6763,7 +6763,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -6908,6 +6908,13 @@ export interface components {
             close: number;
             /** Volume */
             volume: number;
+        };
+        /** DateRange */
+        src__server__schemas__db__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * IndexMatch
