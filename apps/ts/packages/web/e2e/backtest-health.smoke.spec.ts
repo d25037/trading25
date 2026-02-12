@@ -7,6 +7,6 @@ test.describe('backtest health smoke', () => {
     await page.getByRole('button', { name: 'Status' }).click();
     await expect(page.getByRole('heading', { name: 'Backtest Server' })).toBeVisible();
     await expect(page.getByText('Connected')).toBeVisible();
-    await expect(page.getByText('trading25-bt')).toBeVisible();
+    await expect(page.getByText('trading25-bt', { exact: true })).toBeVisible();
   });
 });

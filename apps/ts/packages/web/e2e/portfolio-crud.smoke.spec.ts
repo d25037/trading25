@@ -144,7 +144,7 @@ test.describe('portfolio CRUD smoke', () => {
     await page.getByRole('button', { name: 'Create' }).click();
 
     await expect(page.getByRole('button', { name: `Select ${portfolioName} portfolio` })).toBeVisible();
-    await expect(page.getByRole('heading', { name: portfolioName })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 2, name: portfolioName })).toBeVisible();
 
     await page.getByRole('button', { name: 'Delete' }).click();
     const deleteDialog = page.getByRole('dialog', { name: 'Delete Portfolio' });
