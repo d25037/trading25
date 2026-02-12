@@ -14,6 +14,9 @@ import type {
   HealthResponse,
   OHLCVResampleRequest,
   OHLCVResampleResponse,
+  SignalAttributionJobResponse,
+  SignalAttributionRequest,
+  SignalAttributionResultResponse,
   StrategyDetailResponse,
   StrategyListResponse,
   StrategyValidationRequest,
@@ -127,6 +130,28 @@ export class BacktestClient {
   async getResult(jobId: string, includeHtml = false): Promise<BacktestResultResponse> {
     const params = includeHtml ? '?include_html=true' : '';
     return this.request<BacktestResultResponse>(`/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
+  }
+
+  async runSignalAttribution(request: SignalAttributionRequest): Promise<SignalAttributionJobResponse> {
+    return this.request<SignalAttributionJobResponse>('/api/backtest/attribution/run', {
+      method: 'POST',
+      body: JSON.stringify(request),
+    });
+  }
+
+  async getSignalAttributionJob(jobId: string): Promise<SignalAttributionJobResponse> {
+    return this.request<SignalAttributionJobResponse>(`/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  async cancelSignalAttributionJob(jobId: string): Promise<SignalAttributionJobResponse> {
+    return this.request<SignalAttributionJobResponse>(
+      `/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}/cancel`,
+      { method: 'POST' }
+    );
+  }
+
+  async getSignalAttributionResult(jobId: string): Promise<SignalAttributionResultResponse> {
+    return this.request<SignalAttributionResultResponse>(`/api/backtest/attribution/result/${encodeURIComponent(jobId)}`);
   }
 
   /**
