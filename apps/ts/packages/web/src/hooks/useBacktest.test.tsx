@@ -5,6 +5,7 @@ import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import type {
   BacktestRequest,
   DefaultConfigUpdateRequest,
+  SignalAttributionRequest,
   StrategyDuplicateRequest,
   StrategyRenameRequest,
   StrategyUpdateRequest,
@@ -21,11 +22,15 @@ import {
   useDuplicateStrategy,
   useHtmlFileContent,
   useHtmlFiles,
+  useSignalAttributionJobStatus,
+  useSignalAttributionResult,
   useJobStatus,
   useJobs,
   useRenameHtmlFile,
   useRenameStrategy,
   useRunBacktest,
+  useRunSignalAttribution,
+  useCancelSignalAttribution,
   useSignalReference,
   useStrategies,
   useStrategy,
@@ -76,6 +81,8 @@ describe('backtestKeys', () => {
     expect(backtestKeys.jobs(10)).toEqual(['backtest', 'jobs', 10]);
     expect(backtestKeys.job('j1')).toEqual(['backtest', 'job', 'j1']);
     expect(backtestKeys.result('j1', true)).toEqual(['backtest', 'result', 'j1', true]);
+    expect(backtestKeys.attributionJob('j1')).toEqual(['backtest', 'attribution-job', 'j1']);
+    expect(backtestKeys.attributionResult('j1')).toEqual(['backtest', 'attribution-result', 'j1']);
     expect(backtestKeys.htmlFiles('s1')).toEqual(['backtest', 'html-files', 's1']);
     expect(backtestKeys.htmlFileContent('s1', 'f1')).toEqual(['backtest', 'html-file-content', 's1', 'f1']);
     expect(backtestKeys.defaultConfig()).toEqual(['backtest', 'default-config']);
@@ -193,6 +200,66 @@ describe('useBacktestResult', () => {
     const { result } = renderHook(() => useBacktestResult(null), { wrapper });
 
     expect(result.current.fetchStatus).toBe('idle');
+  });
+});
+
+describe('signal attribution hooks', () => {
+  it('runs signal attribution and invalidates attribution job cache', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'attr-1', status: 'pending' });
+
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useRunSignalAttribution(), { wrapper });
+
+    const request = { strategy_name: 'test.yml' } as SignalAttributionRequest;
+    await act(async () => {
+      await result.current.mutateAsync(request);
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/backtest/attribution/run', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.attributionJob('attr-1') });
+  });
+
+  it('fetches attribution job status when jobId is provided', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ job_id: 'attr-1', status: 'completed' });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useSignalAttributionJobStatus('attr-1'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/attribution/jobs/attr-1');
+  });
+
+  it('does not fetch attribution job status when jobId is null', () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useSignalAttributionJobStatus(null), { wrapper });
+
+    expect(result.current.fetchStatus).toBe('idle');
+  });
+
+  it('fetches attribution result when jobId is provided', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ job_id: 'attr-1', result: {} });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useSignalAttributionResult('attr-1'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/backtest/attribution/result/attr-1');
+  });
+
+  it('cancels attribution job and invalidates job query', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'attr-1', status: 'cancelled' });
+
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useCancelSignalAttribution(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync('attr-1');
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/backtest/attribution/jobs/attr-1/cancel');
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.attributionJob('attr-1') });
   });
 });
 

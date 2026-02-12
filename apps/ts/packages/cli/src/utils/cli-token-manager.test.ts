@@ -13,6 +13,7 @@ mock.module('chalk', () => ({
     red: mock((text: string) => text),
     green: mock((text: string) => text),
     yellow: mock((text: string) => text),
+    blue: mock((text: string) => text),
     cyan: mock((text: string) => text),
     white: mock((text: string) => text),
     gray: mock((text: string) => text),

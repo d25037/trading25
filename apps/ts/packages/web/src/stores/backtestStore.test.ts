@@ -6,6 +6,7 @@ const resetBacktestStore = () => {
     activeSubTab: 'runner',
     selectedStrategy: null,
     activeJobId: null,
+    activeAttributionJobId: null,
     selectedResultJobId: null,
     activeOptimizationJobId: null,
     activeDatasetJobId: null,
@@ -26,6 +27,7 @@ describe('backtestStore', () => {
       setActiveSubTab,
       setSelectedStrategy,
       setActiveJobId,
+      setActiveAttributionJobId,
       setSelectedResultJobId,
       setActiveOptimizationJobId,
       setActiveDatasetJobId,
@@ -35,6 +37,7 @@ describe('backtestStore', () => {
     setActiveSubTab('results');
     setSelectedStrategy('strategy.yml');
     setActiveJobId('job-1');
+    setActiveAttributionJobId('attr-1');
     setSelectedResultJobId('job-2');
     setActiveOptimizationJobId('opt-1');
     setActiveDatasetJobId('ds-1');
@@ -44,6 +47,7 @@ describe('backtestStore', () => {
     expect(state.activeSubTab).toBe('results');
     expect(state.selectedStrategy).toBe('strategy.yml');
     expect(state.activeJobId).toBe('job-1');
+    expect(state.activeAttributionJobId).toBe('attr-1');
     expect(state.selectedResultJobId).toBe('job-2');
     expect(state.activeOptimizationJobId).toBe('opt-1');
     expect(state.activeDatasetJobId).toBe('ds-1');

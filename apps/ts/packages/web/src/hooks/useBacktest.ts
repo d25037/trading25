@@ -16,6 +16,9 @@ import type {
   HtmlFileListResponse,
   HtmlFileRenameRequest,
   HtmlFileRenameResponse,
+  SignalAttributionJobResponse,
+  SignalAttributionRequest,
+  SignalAttributionResultResponse,
   SignalReferenceResponse,
   StrategyDeleteResponse,
   StrategyDetailResponse,
@@ -40,6 +43,8 @@ export const backtestKeys = {
   jobs: (limit?: number) => [...backtestKeys.all, 'jobs', limit] as const,
   job: (jobId: string) => [...backtestKeys.all, 'job', jobId] as const,
   result: (jobId: string, includeHtml?: boolean) => [...backtestKeys.all, 'result', jobId, includeHtml] as const,
+  attributionJob: (jobId: string) => [...backtestKeys.all, 'attribution-job', jobId] as const,
+  attributionResult: (jobId: string) => [...backtestKeys.all, 'attribution-result', jobId] as const,
   htmlFiles: (strategy?: string) => [...backtestKeys.all, 'html-files', strategy] as const,
   htmlFileContent: (strategy: string, filename: string) =>
     [...backtestKeys.all, 'html-file-content', strategy, filename] as const,
@@ -75,6 +80,18 @@ function fetchResult(jobId: string, includeHtml = false): Promise<BacktestResult
 
 function runBacktest(request: BacktestRequest): Promise<BacktestJobResponse> {
   return apiPost<BacktestJobResponse>('/api/backtest/run', request);
+}
+
+function runSignalAttribution(request: SignalAttributionRequest): Promise<SignalAttributionJobResponse> {
+  return apiPost<SignalAttributionJobResponse>('/api/backtest/attribution/run', request);
+}
+
+function fetchSignalAttributionJobStatus(jobId: string): Promise<SignalAttributionJobResponse> {
+  return apiGet<SignalAttributionJobResponse>(`/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}`);
+}
+
+function fetchSignalAttributionResult(jobId: string): Promise<SignalAttributionResultResponse> {
+  return apiGet<SignalAttributionResultResponse>(`/api/backtest/attribution/result/${encodeURIComponent(jobId)}`);
 }
 
 function fetchHtmlFiles(strategy?: string, limit = 100): Promise<HtmlFileListResponse> {
@@ -220,6 +237,52 @@ export function useRunBacktest() {
   });
 }
 
+export function useRunSignalAttribution() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: runSignalAttribution,
+    onSuccess: (data) => {
+      logger.debug('Signal attribution started', { jobId: data.job_id, status: data.status });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.attributionJob(data.job_id) });
+    },
+    onError: (error) => {
+      logger.error('Failed to start signal attribution', { error: error.message });
+    },
+  });
+}
+
+export function useSignalAttributionJobStatus(jobId: string | null) {
+  return useQuery({
+    queryKey: backtestKeys.attributionJob(jobId ?? ''),
+    queryFn: () => {
+      if (!jobId) throw new Error('Job ID required');
+      logger.debug('Polling attribution job status', { jobId });
+      return fetchSignalAttributionJobStatus(jobId);
+    },
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'running' || status === 'pending') return 2000;
+      return false;
+    },
+    staleTime: 0,
+  });
+}
+
+export function useSignalAttributionResult(jobId: string | null) {
+  return useQuery({
+    queryKey: backtestKeys.attributionResult(jobId ?? ''),
+    queryFn: () => {
+      if (!jobId) throw new Error('Job ID required');
+      logger.debug('Fetching attribution result', { jobId });
+      return fetchSignalAttributionResult(jobId);
+    },
+    enabled: !!jobId,
+    staleTime: Infinity,
+  });
+}
+
 // ============================================
 // Cancel Backtest
 // ============================================
@@ -253,6 +316,33 @@ export function useCancelBacktest() {
         return;
       }
       logger.error('Failed to cancel backtest', { error: error.message });
+    },
+  });
+}
+
+function cancelSignalAttribution(jobId: string): Promise<SignalAttributionJobResponse> {
+  return apiPost<SignalAttributionJobResponse>(`/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}/cancel`);
+}
+
+export function useCancelSignalAttribution() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: cancelSignalAttribution,
+    onMutate: async (jobId) => {
+      await queryClient.cancelQueries({ queryKey: backtestKeys.attributionJob(jobId) });
+    },
+    onSuccess: (data) => {
+      logger.debug('Signal attribution cancelled', { jobId: data.job_id });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.attributionJob(data.job_id) });
+    },
+    onError: (error, jobId) => {
+      if (error instanceof ApiError && error.status === 409) {
+        logger.debug('Cancel rejected (attribution job already terminal), refreshing state');
+        queryClient.invalidateQueries({ queryKey: backtestKeys.attributionJob(jobId) });
+        return;
+      }
+      logger.error('Failed to cancel signal attribution', { error: error.message });
     },
   });
 }

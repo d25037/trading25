@@ -10,6 +10,7 @@ import pytest
 from src.lib.backtest_core.signal_attribution import (
     AttributionMetrics,
     SignalAttributionAnalyzer,
+    SignalAttributionCancelled,
     SignalTarget,
     StrategyRuntimeCache,
     _build_signal_params,
@@ -250,6 +251,61 @@ def test_run_with_no_enabled_signals() -> None:
     assert result["top_n_selection"]["selected_signal_ids"] == []
     assert result["shapley"]["method"] is None
     assert progresses[-1] == 1.0
+
+
+def test_run_raises_when_cancelled_after_baseline() -> None:
+    parameters = _make_parameters(
+        entry={"volume": {"enabled": True}},
+        exit_={"volume": {"enabled": True}},
+    )
+    weights = {
+        "entry.volume": (1.0, 0.1),
+        "exit.volume": (1.0, 0.1),
+    }
+    cancel_state = {"cancel": False}
+
+    analyzer = SignalAttributionAnalyzer(
+        strategy_name="dummy",
+        parameters_hook=lambda: parameters,
+        evaluate_hook=_evaluate_from_weights(weights),
+        cancel_check=lambda: cancel_state["cancel"],
+    )
+
+    def _progress(message: str, _progress: float) -> None:
+        if message == "Signal attribution: baseline 完了":
+            cancel_state["cancel"] = True
+
+    with pytest.raises(SignalAttributionCancelled):
+        analyzer.run(progress_callback=_progress)
+
+
+def test_compute_shapley_raises_when_cancelled() -> None:
+    selected_signals = [
+        SignalTarget(
+            signal_id="entry.sig",
+            scope="entry",
+            param_key="sig",
+            signal_name="sig",
+            definition=SIGNAL_REGISTRY[0],
+        )
+    ]
+
+    analyzer = SignalAttributionAnalyzer(
+        strategy_name="dummy",
+        evaluate_hook=lambda _p, rc: (
+            AttributionMetrics(total_return=1.0, sharpe_ratio=1.0),
+            rc or StrategyRuntimeCache(),
+        ),
+        cancel_check=lambda: True,
+    )
+
+    with pytest.raises(SignalAttributionCancelled):
+        analyzer._compute_shapley(
+            baseline_parameters={},
+            selected_signals=selected_signals,
+            runtime_cache=StrategyRuntimeCache(),
+            progress_callback=None,
+        )
 
 
 def test_shapley_failure_is_reported_without_stopping_job() -> None:
