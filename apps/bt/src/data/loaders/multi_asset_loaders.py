@@ -10,6 +10,7 @@ import pandas as pd
 from loguru import logger
 
 from src.api.dataset_client import DatasetAPIClient
+from src.data.access.clients import get_dataset_client
 from src.exceptions import BatchAPIError, NoValidDataError
 
 from src.api.dataset.statements_mixin import APIPeriodType
@@ -53,7 +54,7 @@ def load_multiple_stocks(
     if use_batch_api and not cache.is_enabled():
         dataset_name = extract_dataset_name(dataset)
         try:
-            with DatasetAPIClient(dataset_name) as client:
+            with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
                 batch_data = client.get_stocks_ohlcv_batch(
                     stock_codes, start_date, end_date, timeframe
                 )
@@ -161,7 +162,7 @@ def load_multiple_margin_data(
 
     # バッチAPIを試行
     try:
-        with DatasetAPIClient(dataset_name) as client:
+        with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
             batch_data = client.get_margin_batch(
                 stock_codes, start_date, end_date
             )
@@ -228,7 +229,7 @@ def load_multiple_statements_data(
 
     # バッチAPIを試行
     try:
-        with DatasetAPIClient(dataset_name) as client:
+        with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
             batch_data = client.get_statements_batch(
                 stock_codes, start_date, end_date,
                 period_type=period_type, actual_only=True,

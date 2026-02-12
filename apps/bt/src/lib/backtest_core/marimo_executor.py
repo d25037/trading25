@@ -5,6 +5,7 @@ Marimoを使用したNotebook実行・HTML出力ラッパー
 """
 
 import json
+import os
 import re
 import subprocess
 import sys
@@ -144,6 +145,7 @@ class MarimoExecutor:
         strategy_name: str | None = None,
         output_filename: str | None = None,
         timeout: int = 600,
+        extra_env: dict[str, str] | None = None,
     ) -> Path:
         """
         Marimo notebookを実行してHTML出力
@@ -154,6 +156,7 @@ class MarimoExecutor:
             strategy_name: 戦略名
             output_filename: 出力ファイル名（拡張子なし）
             timeout: タイムアウト秒数
+            extra_env: marimo subprocess に追加注入する環境変数
 
         Returns:
             html_path - 出力HTMLのパス
@@ -228,6 +231,7 @@ class MarimoExecutor:
                 text=True,
                 timeout=timeout,
                 stdin=subprocess.DEVNULL,
+                env={**os.environ, **(extra_env or {})},
             )
 
             logger.debug(
