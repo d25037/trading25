@@ -20622,24 +20622,6 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange"
-      },
       "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {
           "from": {

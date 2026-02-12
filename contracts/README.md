@@ -63,7 +63,7 @@ bun run --filter @trading25/shared bt:sync
 ## OpenAPI Snapshot
 
 - `apps/ts/packages/shared/openapi/bt-openapi.json`  
-  `bt:sync` で更新される FastAPI スナップショット。
+  `bt:sync` で更新される FastAPI 契約スナップショット（`apps/bt` ソースからの直接生成を優先し、失敗時のみ `/openapi.json` 取得にフォールバック）。
 
 ## Dataset Note
 

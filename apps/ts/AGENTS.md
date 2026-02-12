@@ -87,8 +87,8 @@ bun cli backtest cancel <job-id>
 bun cli backtest list
 bun cli backtest results <job-id>
 
-# bt contract sync (requires trading25-bt backend for fetch)
-bun run --filter @trading25/shared bt:sync  # Fetch schema + generate types
+# bt contract sync (serverless local generation first; HTTP fetch is fallback)
+bun run --filter @trading25/shared bt:sync  # Generate schema + generate types
 ```
 
 `bun dev:api` は互換のため残っている archived notice であり、API サーバーの起動コマンドではない。
