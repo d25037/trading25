@@ -6921,14 +6921,14 @@ export interface components {
             volume: number;
         };
         /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
+        "src__server__schemas__portfolio_factor_regression__DateRange": {
             /** From */
             from: string;
             /** To */
             to: string;
         };
         /** DateRange */
-        src__server__schemas__portfolio_performance__DateRange: {
+        "src__server__schemas__portfolio_performance__DateRange": {
             /** From */
             from: string;
             /** To */
