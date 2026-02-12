@@ -28,7 +28,7 @@ bun install
 bun run dev
 ```
 
-`bun run dev:full` は起動前に `bt:sync` を実行し、FastAPI の OpenAPI から型を再生成します。
+`bun run dev:full` は起動前に `bt:sync` を実行し、まず `apps/bt` ソースから OpenAPI を直接生成して型を再生成します（失敗時は `http://localhost:3002/openapi.json` 取得にフォールバック）。
 
 ## Common Commands
 
@@ -62,6 +62,7 @@ bun run build
 - Web は `/api` を `http://localhost:3002` にプロキシ
 - CLI の既定 API URL は `http://localhost:3002`（`API_BASE_URL` で上書き可）
 - API ドキュメントは FastAPI 側 `http://localhost:3002/doc`
+- `bt:sync` はサーバー起動不要（`apps/bt` ソースから OpenAPI 生成）。生成不能時のみ FastAPI 取得にフォールバック
 - スキーマ変更時は以下を実行
 
 ```bash
