@@ -49,6 +49,7 @@ bun run test
 bun run test:packages
 bun run test:apps
 bun run test:coverage
+bun run --filter @trading25/web e2e:smoke
 
 # Build
 bun run build
