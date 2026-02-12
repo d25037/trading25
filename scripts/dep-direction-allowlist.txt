@@ -46,6 +46,12 @@ apps/ts/packages/cli/src/commands/backtest/results.ts
 apps/ts/packages/cli/src/commands/backtest/status.ts
 apps/ts/packages/cli/src/commands/backtest/validate.ts
 apps/ts/packages/cli/src/commands/backtest/error-handler.ts
+# PR #26: attribution subcommands (use BacktestClient/BT_API_URL)
+apps/ts/packages/cli/src/commands/backtest/attribution/run.ts
+apps/ts/packages/cli/src/commands/backtest/attribution/status.ts
+apps/ts/packages/cli/src/commands/backtest/attribution/results.ts
+apps/ts/packages/cli/src/commands/backtest/attribution/cancel.ts
+apps/ts/packages/cli/src/commands/backtest/attribution/commands.test.ts
 
 # Canonical client package (Phase 4A)
 apps/ts/packages/clients-ts/src/backtest/BacktestClient.ts
