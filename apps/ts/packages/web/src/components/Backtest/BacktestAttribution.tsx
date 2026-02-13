@@ -1,5 +1,5 @@
 import { AlertCircle, Ban, CheckCircle2, ChevronDown, GitBranch, Loader2, XCircle } from 'lucide-react';
-import { type ComponentProps, useMemo, useState } from 'react';
+import { type ComponentProps, useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -68,6 +68,17 @@ function parsePositiveInt(value: string, fallback: number): number {
 
 function isActiveStatus(status: JobStatus | undefined): boolean {
   return status === 'pending' || status === 'running';
+}
+
+function clampProgressPercentage(progress: number | null | undefined): number | null {
+  if (progress == null || !Number.isFinite(progress)) return null;
+  return Math.min(100, Math.max(0, progress * 100));
+}
+
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return `${m}:${String(s).padStart(2, '0')}`;
 }
 
 function parseRunParameters(
@@ -264,6 +275,25 @@ function AttributionJobCard({
   cancelErrorMessage: string | null;
   onCancel: (jobId: string) => void;
 }) {
+  const isActive = isActiveStatus(activeJob?.status);
+  const progressPercent = clampProgressPercentage(activeJob?.progress);
+  const progressValue = progressPercent == null ? undefined : Math.round(progressPercent);
+  const progressLabel = progressPercent == null ? null : `${progressPercent.toFixed(1)}%`;
+  const startTime = activeJob?.started_at ?? activeJob?.created_at ?? null;
+  const [elapsed, setElapsed] = useState(0);
+
+  useEffect(() => {
+    if (!isActive || !startTime) {
+      setElapsed(0);
+      return;
+    }
+    const start = new Date(startTime).getTime();
+    const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
+    update();
+    const id = setInterval(update, 1000);
+    return () => clearInterval(id);
+  }, [isActive, startTime]);
+
   if (!activeJob) {
     return null;
   }
@@ -276,18 +306,43 @@ function AttributionJobCard({
             <StatusIcon status={activeJob.status} />
             <span className="capitalize">{activeJob.status}</span>
           </CardTitle>
-          {isActiveStatus(activeJob.status) && (
-            <Button variant="ghost" size="sm" onClick={() => onCancel(activeJob.job_id)} disabled={cancelPending}>
-              Cancel
-            </Button>
+          {isActive && (
+            <div className="flex items-center gap-2">
+              <span className="text-xs text-muted-foreground">⏱ {formatElapsed(elapsed)}</span>
+              <Button variant="ghost" size="sm" onClick={() => onCancel(activeJob.job_id)} disabled={cancelPending}>
+                Cancel
+              </Button>
+            </div>
           )}
         </div>
       </CardHeader>
       <CardContent className="space-y-2">
         <div className="text-xs text-muted-foreground">Job ID: {activeJob.job_id}</div>
         {activeJob.message && <div className="text-sm">{activeJob.message}</div>}
-        {activeJob.progress != null && (
-          <div className="text-sm text-muted-foreground">Progress: {(activeJob.progress * 100).toFixed(0)}%</div>
+        {(isActive || progressPercent != null) && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>Progress</span>
+              <span className="font-medium">{progressLabel ?? 'Tracking...'}</span>
+            </div>
+            <div
+              role="progressbar"
+              aria-valuemin={0}
+              aria-valuemax={100}
+              aria-valuenow={progressValue}
+              aria-valuetext={progressLabel ?? 'In progress'}
+              className="h-2 w-full rounded-full bg-secondary overflow-hidden"
+            >
+              {progressPercent != null ? (
+                <div
+                  className="h-full rounded-full bg-blue-500 transition-all duration-300"
+                  style={{ width: `${progressPercent}%` }}
+                />
+              ) : (
+                <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
+              )}
+            </div>
+          </div>
         )}
         {activeJob.error && <ErrorBanner message={activeJob.error} />}
         {cancelErrorMessage && <ErrorBanner message={cancelErrorMessage} />}
