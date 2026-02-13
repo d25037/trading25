@@ -43,7 +43,7 @@ ${CLI_NAME} watchlist remove-stock "Tech Stocks" 7203
       }
 
       const resolvedId = await resolveWatchlistId(apiClient, watchlistNameOrId);
-      const watchlist = await apiClient.getWatchlist(resolvedId);
+      const watchlist = await apiClient.watchlist.getWatchlist(resolvedId);
       const item = watchlist.items.find((i: { code: string }) => i.code === code);
 
       if (!item) {
@@ -51,7 +51,7 @@ ${CLI_NAME} watchlist remove-stock "Tech Stocks" 7203
       }
 
       // Delete item
-      await apiClient.deleteWatchlistItem(resolvedId, item.id);
+      await apiClient.watchlist.deleteWatchlistItem(resolvedId, item.id);
 
       console.log(
         chalk.green(`✓ Removed ${chalk.bold(item.companyName)} (${item.code}) from watchlist "${watchlistNameOrId}"`)

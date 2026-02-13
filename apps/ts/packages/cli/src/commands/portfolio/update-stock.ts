@@ -170,7 +170,7 @@ ${CLI_NAME} portfolio update-stock "Growth" 6758 -q 200 -p 2600 -a "NISA"
       }
 
       // Update stock via API
-      const updatedItem = await apiClient.updatePortfolioStock(portfolioName, code, updateInput);
+      const updatedItem = await apiClient.portfolio.updatePortfolioStock(portfolioName, code, updateInput);
 
       // Display success message
       displayUpdatedStock(updatedItem);

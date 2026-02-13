@@ -72,7 +72,7 @@ ${CLI_NAME} portfolio remove-stock "Growth" 6758 --debug
       }
 
       // Delete stock via API
-      const response = await apiClient.deletePortfolioStock(portfolioName, code);
+      const response = await apiClient.portfolio.deletePortfolioStock(portfolioName, code);
 
       // Success message
       console.log(

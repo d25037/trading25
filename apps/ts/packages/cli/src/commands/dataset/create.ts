@@ -116,7 +116,7 @@ function checkTimeoutWarnings(elapsed: number, timeoutMs: number, state: Warning
 }
 
 async function pollJobStatus(
-  apiClient: ApiClient,
+  datasetClient: ApiClient['dataset'],
   jobId: string,
   spinner: ReturnType<typeof ora>,
   debug: boolean,
@@ -135,7 +135,7 @@ async function pollJobStatus(
 
     checkTimeoutWarnings(elapsed, timeoutMs, warningState);
 
-    const job = await apiClient.getDatasetJobStatus(jobId);
+    const job = await datasetClient.getDatasetJobStatus(jobId);
 
     if (debug) {
       console.log(chalk.gray(`[DEBUG] Job status: ${job.status} (elapsed: ${formatElapsedTime(elapsed)})`));
@@ -203,7 +203,7 @@ function handleJobResult(job: DatasetJobResponse, spinner: ReturnType<typeof ora
 
 async function handleTimeoutError(
   error: JobTimeoutError,
-  apiClient: ApiClient,
+  datasetClient: ApiClient['dataset'],
   spinner: ReturnType<typeof ora>
 ): Promise<never> {
   spinner.fail('Dataset creation timed out');
@@ -213,7 +213,7 @@ async function handleTimeoutError(
   // Try to cancel the job
   try {
     console.log(chalk.gray('Attempting to cancel the job...'));
-    await apiClient.cancelDatasetJob(error.jobId);
+    await datasetClient.cancelDatasetJob(error.jobId);
     displayWarning('Job cancelled successfully');
   } catch {
     console.log(chalk.gray('Could not cancel the job (it may have already completed or failed)'));
@@ -238,7 +238,7 @@ function handleCreateError(error: unknown, spinner: ReturnType<typeof ora>, debu
  */
 async function handleError(
   error: unknown,
-  apiClient: ApiClient,
+  datasetClient: ApiClient['dataset'],
   spinner: ReturnType<typeof ora>,
   isDebug: boolean
 ): Promise<never> {
@@ -247,7 +247,7 @@ async function handleError(
     throw error;
   }
   if (error instanceof JobTimeoutError) {
-    return handleTimeoutError(error, apiClient, spinner);
+    return handleTimeoutError(error, datasetClient, spinner);
   }
   return handleCreateError(error, spinner, isDebug);
 }
@@ -350,24 +350,25 @@ EXAMPLES:
 
     const spinner = ora(isResume ? 'Initializing dataset resume...' : 'Initializing dataset creation...').start();
     const apiClient = new ApiClient();
+    const datasetClient = apiClient.dataset;
 
     logDebug(isDebug, `Normalized preset: ${normalizedPreset}, Timeout: ${timeoutMinutes}m, Resume: ${isResume}`);
 
     try {
       spinner.text = isResume ? 'Starting dataset resume job...' : 'Starting dataset creation job...';
       const createResponse = isResume
-        ? await apiClient.startDatasetResume(output, normalizedPreset)
-        : await apiClient.startDatasetCreate(output, normalizedPreset, overwrite ?? false);
+        ? await datasetClient.startDatasetResume(output, normalizedPreset)
+        : await datasetClient.startDatasetCreate(output, normalizedPreset, overwrite ?? false);
 
       logDebug(isDebug, `Job ID: ${createResponse.jobId}, Estimated: ${createResponse.estimatedTime || 'unknown'}`);
 
       const actionText = isResume ? 'resume' : 'creation';
       spinner.text = `Dataset ${actionText} started (estimated: ${createResponse.estimatedTime || 'unknown'}, timeout: ${timeoutMinutes}m)...`;
 
-      const job = await pollJobStatus(apiClient, createResponse.jobId, spinner, isDebug, timeoutMinutes);
+      const job = await pollJobStatus(datasetClient, createResponse.jobId, spinner, isDebug, timeoutMinutes);
       handleJobResult(job, spinner);
     } catch (error) {
-      await handleError(error, apiClient, spinner, isDebug);
+      await handleError(error, datasetClient, spinner, isDebug);
     }
   },
 });

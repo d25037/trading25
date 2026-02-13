@@ -145,7 +145,7 @@ ${CLI_NAME} portfolio add-stock "Growth" 6758 -q 50 -p 15000 -d 2024-06-15 -a "N
 
       if (Number.isNaN(portfolioId)) {
         // Search by name
-        const response = await apiClient.listPortfolios();
+        const response = await apiClient.portfolio.listPortfolios();
         const found = response.portfolios.find((p: { name: string }) => p.name === portfolioNameOrId);
 
         if (!found) {
@@ -164,7 +164,7 @@ ${CLI_NAME} portfolio add-stock "Growth" 6758 -q 50 -p 15000 -d 2024-06-15 -a "N
 
       // Add to portfolio via API (company name will be fetched by API)
       spinner.text = 'Adding stock to portfolio...';
-      const item = await apiClient.addPortfolioItem(portfolio.id, {
+      const item = await apiClient.portfolio.addPortfolioItem(portfolio.id, {
         code,
         quantity: validated.quantity,
         purchasePrice: validated.purchasePrice,

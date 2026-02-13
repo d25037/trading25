@@ -8,6 +8,18 @@ export interface LogEntry {
   context?: LogContext;
 }
 
+let hasReportedBrowserDetectionError = false;
+
+function reportBrowserDetectionError(error: unknown): void {
+  if (process.env.NODE_ENV === 'test' || hasReportedBrowserDetectionError) {
+    return;
+  }
+  hasReportedBrowserDetectionError = true;
+  console.warn(
+    `[clients-ts logger] Browser environment detection failed; defaulting to server logger mode: ${error instanceof Error ? error.message : String(error)}`
+  );
+}
+
 class LoggerImpl implements ILogger {
   private level: LogLevel;
   private isBrowser: boolean;
@@ -22,7 +34,8 @@ class LoggerImpl implements ILogger {
     try {
       // Check if we're in a browser environment
       return typeof globalThis !== 'undefined' && 'window' in globalThis && 'document' in globalThis;
-    } catch {
+    } catch (error) {
+      reportBrowserDetectionError(error);
       return false;
     }
   }

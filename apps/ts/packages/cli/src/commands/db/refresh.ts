@@ -110,7 +110,7 @@ ${CLI_NAME} db refresh 7203 --debug
 
       spinner.text = `Refreshing historical data for ${codes.length} stock(s) via API...`;
 
-      const result = await apiClient.refreshStocks(codes);
+      const result = await apiClient.database.refreshStocks(codes);
 
       spinner.stop();
       displayRefetchResult(result);

@@ -25,7 +25,7 @@ export async function fetchDailyQuotes(code: string, options: FetchOptions): Pro
     if (options.to) params.to = options.to;
     if (options.date) params.date = options.date;
 
-    const response = await apiClient.getDailyQuotes(code, params);
+    const response = await apiClient.jquants.getDailyQuotes(code, params);
 
     if (response.data && response.data.length > 0) {
       spinner.succeed(chalk.green(`Fetched ${response.data.length} daily quotes`));

@@ -31,7 +31,7 @@ ${CLI_NAME} watchlist list
         console.log(chalk.gray('[DEBUG] Fetching watchlists from API'));
       }
 
-      const response = await apiClient.listWatchlists();
+      const response = await apiClient.watchlist.listWatchlists();
       const watchlists = response.watchlists;
 
       if (watchlists.length === 0) {

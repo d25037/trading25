@@ -302,9 +302,10 @@ ${CLI_NAME} dataset info prime.db --strict
 
     try {
       const apiClient = new ApiClient();
+      const datasetClient = apiClient.dataset;
 
       spinner.text = 'Retrieving dataset statistics...';
-      const info = await apiClient.getDatasetInfo(datasetName);
+      const info = await datasetClient.getDatasetInfo(datasetName);
 
       spinner.stop();
 
