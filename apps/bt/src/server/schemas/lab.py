@@ -10,6 +10,17 @@ from pydantic import BaseModel, Field
 
 from src.server.schemas.common import BaseJobResponse
 
+LabSignalCategory = Literal[
+    "breakout",
+    "trend",
+    "oscillator",
+    "volatility",
+    "volume",
+    "macro",
+    "fundamental",
+    "sector",
+]
+
 
 # ============================================
 # Request Models
@@ -28,6 +39,14 @@ class LabGenerateRequest(BaseModel):
     )
     timeframe: Literal["daily", "weekly"] = Field(default="daily", description="タイムフレーム")
     dataset: str = Field(default="primeExTopix500", description="データセット名")
+    entry_filter_only: bool = Field(
+        default=False,
+        description="Entryフィルターのみ生成（Exitシグナルを生成しない）",
+    )
+    allowed_categories: list[LabSignalCategory] | None = Field(
+        default=None,
+        description="許可するシグナルカテゴリ（未指定時は全カテゴリ）",
+    )
 
 
 class LabEvolveRequest(BaseModel):
@@ -56,6 +75,14 @@ class LabImproveRequest(BaseModel):
 
     strategy_name: str = Field(..., min_length=1, description="改善対象の戦略名")
     auto_apply: bool = Field(default=True, description="改善を自動適用")
+    entry_filter_only: bool = Field(
+        default=False,
+        description="Entryフィルターの改善のみを許可",
+    )
+    allowed_categories: list[LabSignalCategory] | None = Field(
+        default=None,
+        description="改善対象として許可するカテゴリ（未指定時は全カテゴリ）",
+    )
 
 
 # ============================================

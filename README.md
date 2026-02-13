@@ -55,6 +55,14 @@ bun run cli backtest attribution cancel <job-id>
 ```
 - 保存先（XDG）: `~/.local/share/trading25/backtest/attribution/<strategy>/`
 
+### 4) Lab（fundamental 制約付き生成/改善）
+```bash
+cd apps/bt
+uv run bt lab generate --count 50 --top 5 --entry-filter-only --allowed-category fundamental
+uv run bt lab improve experimental/base_strategy_01 --entry-filter-only --allowed-category fundamental --no-apply
+```
+- API では `/api/lab/generate` と `/api/lab/improve` に `entry_filter_only` と `allowed_categories` を指定可能
+
 ## Monorepo Commands (root)
 
 ```bash

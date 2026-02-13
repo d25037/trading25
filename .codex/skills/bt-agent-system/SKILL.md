@@ -21,3 +21,9 @@ description: bt の戦略自動生成・進化最適化（agent/lab 系）を扱
 
 - API 契約は OpenAPI を正とする。
 - `uv run bt server --port 3002` 前提を崩さない。
+
+## Lab Constraints
+
+- `bt lab generate` は `--entry-filter-only` と `--allowed-category` を受け付ける。
+- `bt lab improve` も同様に `--entry-filter-only` と `--allowed-category` を受け付ける。
+- API は `/api/lab/generate` と `/api/lab/improve` の `entry_filter_only`, `allowed_categories` を SoT とする。

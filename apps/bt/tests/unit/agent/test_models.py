@@ -29,6 +29,8 @@ class TestGeneratorConfig:
         assert config.exit_signal_min == 2
         assert config.exit_signal_max == 4
         assert config.seed is None
+        assert config.entry_filter_only is False
+        assert config.allowed_categories == []
 
     def test_custom_values(self):
         """カスタム値が正しく設定されることを確認"""
@@ -37,10 +39,14 @@ class TestGeneratorConfig:
             entry_signal_min=3,
             entry_signal_max=4,
             seed=42,
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
         )
         assert config.n_strategies == 50
         assert config.entry_signal_min == 3
         assert config.seed == 42
+        assert config.entry_filter_only is True
+        assert config.allowed_categories == ["fundamental"]
 
     def test_validation_n_strategies_min(self):
         """n_strategies の最小値バリデーション"""
