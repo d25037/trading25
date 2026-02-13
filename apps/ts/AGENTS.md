@@ -9,9 +9,9 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 ## Architecture
 
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
-- **`packages/api/`** - **ARCHIVED** — 旧 Hono サーバー（Phase 3F で FastAPI に完全移行） → [API AGENTS.md](./packages/api/AGENTS.md)
 - **`packages/shared/`** - JQuants API clients, shared API types, TA/FA utilities → [Shared AGENTS.md](./packages/shared/AGENTS.md)
 - **`packages/cli/`** - Gunshi CLI for dataset/portfolio/analysis → [CLI AGENTS.md](./packages/cli/AGENTS.md)
+- **`packages/clients-ts/`** - FastAPI client packages (backtest/JQuants)
 
 ## Critical Rules
 
@@ -91,7 +91,7 @@ bun cli backtest results <job-id>
 bun run --filter @trading25/shared bt:sync  # Generate schema + generate types
 ```
 
-`bun dev:api` は互換のため残っている archived notice であり、API サーバーの起動コマンドではない。
+`bun dev:api` は FastAPI 起動コマンドへの案内表示であり、API サーバーの起動コマンドではない。
 
 ## CI
 
