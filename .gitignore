@@ -64,8 +64,6 @@ apps/bt/**/*.pickle
 apps/bt/**/*.pkl
 
 # === apps/ts ===
-apps/ts/packages/api/openapi.json
-apps/ts/packages/api/openapi.yaml
 apps/ts/**/test-portfolio-*.db
 apps/ts/**/test-portfolio-*.db-shm
 apps/ts/**/test-portfolio-*.db-wal
