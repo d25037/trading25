@@ -86,6 +86,35 @@ class TestValidateStrategy:
         assert data["valid"] is False
         assert any("kelly_fraction" in e for e in data["errors"])
 
+    def test_strict_nested_typo(self, client, mock_config_loader):
+        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
+            mock_runner = MagicMock()
+            mock_runner.get_execution_info.return_value = {}
+            mock_runner_cls.return_value = mock_runner
+            resp = client.post(
+                "/api/strategies/test/validate",
+                json={
+                    "config": {
+                        "entry_filter_params": {
+                            "fundamental": {
+                                "foward_eps_growth": {
+                                    "enabled": True,
+                                    "threshold": 0.2,
+                                    "condition": "above",
+                                }
+                            }
+                        }
+                    }
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+        assert any(
+            "entry_filter_params.fundamental.foward_eps_growth" in e
+            for e in data["errors"]
+        )
+
 
 class TestUpdateStrategy:
     def test_success(self, client, mock_config_loader):

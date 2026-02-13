@@ -1,8 +1,11 @@
 """strategy_config/models.py のテスト"""
 
 from src.strategy_config.models import (
+    StrategyConfigStrictValidationError,
     try_validate_strategy_config_dict,
+    try_validate_strategy_config_dict_strict,
     validate_strategy_config_dict,
+    validate_strategy_config_dict_strict,
 )
 
 import pytest
@@ -33,3 +36,40 @@ class TestTryValidateStrategyConfigDict:
         assert is_valid is False
         assert error is not None
         assert len(error) > 0
+
+
+class TestStrictValidation:
+    def test_strict_valid_config(self) -> None:
+        config = {"entry_filter_params": {"volume": {"enabled": True}}}
+        result = validate_strategy_config_dict_strict(config)
+        assert result.entry_filter_params is not None
+
+    def test_strict_nested_typo_rejected(self) -> None:
+        config = {
+            "entry_filter_params": {
+                "fundamental": {
+                    "foward_eps_growth": {  # typo
+                        "enabled": True,
+                        "threshold": 0.2,
+                        "condition": "above",
+                    }
+                }
+            }
+        }
+
+        with pytest.raises(StrategyConfigStrictValidationError):
+            validate_strategy_config_dict_strict(config)
+
+    def test_try_strict_returns_all_errors(self) -> None:
+        config = {
+            "entry_filter_params": {
+                "fundamental": {
+                    "foward_eps_growth": {  # typo
+                        "enabled": True,
+                    }
+                }
+            }
+        }
+        is_valid, errors = try_validate_strategy_config_dict_strict(config)
+        assert is_valid is False
+        assert any("entry_filter_params.fundamental.foward_eps_growth" in e for e in errors)

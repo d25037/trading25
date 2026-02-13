@@ -3,12 +3,13 @@ id: ts-111
 title: "Coverage Gate: shared 80/80"
 status: open
 priority: medium
-labels: [test]
+labels: [test, coverage]
 project: ts
 created: 2026-02-01
-updated: 2026-02-01
+updated: 2026-02-13
 depends_on: []
 blocks: []
+parent: ts-129
 ---
 
 # ts-111 Coverage Gate: shared 80/80
@@ -27,3 +28,6 @@ blocks: []
 ## 受け入れ条件
 - `bun run test` 全パス
 - `bun run check:coverage` が新閾値で通る
+
+## 整理メモ
+- coverage backlog 整理用の親Issue: `ts-129`
