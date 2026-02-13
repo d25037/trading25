@@ -50,6 +50,7 @@ type FundamentalSpec = {
 
 const FUNDAMENTAL_PARENT_FIELD_FALLBACK = ['enabled', 'period_type', 'use_adjusted'];
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Inference combines parse/fallback/intersection checks.
 function extractFundamentalParentFieldNames(fundamentalDefs: SignalDefinition[]): string[] {
   let inferredParentFields: Set<string> | null = null;
 
@@ -223,7 +224,6 @@ function validateFieldValue(
   }
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation logic needs explicit branch handling
 function validateSignalSection(
   sectionName: 'entry_filter_params' | 'exit_trigger_params',
   sectionValue: unknown,
@@ -274,11 +274,11 @@ function validateSignalSection(
   }
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation combines schema/key/type/range checks in one pass
 /**
  * @deprecated Backend strict validation (`/api/strategies/{name}/validate`) is the source of truth.
  * Keep this only for temporary compatibility and tests.
  */
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation combines schema/key/type/range checks in one pass.
 export function validateStrategyConfigLocally(
   config: Record<string, unknown>,
   signalDefinitions: SignalDefinition[]
