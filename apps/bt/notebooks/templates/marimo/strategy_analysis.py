@@ -574,8 +574,10 @@ def export_metrics_json(json, Path, pd, kelly_portfolio, allocation_info, output
             metrics["total_return"] = _extract_stat(stats, "Total Return [%]")
             metrics["max_drawdown"] = _extract_stat(stats, "Max Drawdown [%]")
             metrics["sharpe_ratio"] = _extract_stat(stats, "Sharpe Ratio")
+            metrics["sortino_ratio"] = _extract_stat(stats, "Sortino Ratio")
             metrics["calmar_ratio"] = _extract_stat(stats, "Calmar Ratio")
             metrics["win_rate"] = _extract_stat(stats, "Win Rate [%]")
+            metrics["profit_factor"] = _extract_stat(stats, "Profit Factor")
             total_trades = _extract_stat(stats, "Total Trades")
             metrics["total_trades"] = int(total_trades) if total_trades is not None else None
 
