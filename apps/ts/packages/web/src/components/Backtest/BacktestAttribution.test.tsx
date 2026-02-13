@@ -135,8 +135,50 @@ describe('BacktestAttribution', () => {
     render(<BacktestAttribution />);
 
     expect(screen.getByText('Job ID: attr-running')).toBeInTheDocument();
+    expect(screen.getByText('50.0%')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '50');
     await user.click(screen.getByRole('button', { name: 'Cancel' }));
     expect(mockCancelMutate).toHaveBeenCalledWith('attr-running');
+  });
+
+  it('renders indeterminate progress when progress value is missing', () => {
+    mockStore.activeAttributionJobId = 'attr-running-no-progress';
+    mockHookState.jobStatus.data = {
+      job_id: 'attr-running-no-progress',
+      status: 'running',
+      progress: null,
+      message: 'running',
+      created_at: '2025-01-01T00:00:00Z',
+      started_at: '2025-01-01T00:00:01Z',
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+
+    render(<BacktestAttribution />);
+
+    expect(screen.getByText('Tracking...')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+  });
+
+  it('clamps out-of-range progress values into 0-100 for display', () => {
+    mockStore.activeAttributionJobId = 'attr-out-of-range-progress';
+    mockHookState.jobStatus.data = {
+      job_id: 'attr-out-of-range-progress',
+      status: 'running',
+      progress: 1.4,
+      message: 'running',
+      created_at: '2025-01-01T00:00:00Z',
+      started_at: '2025-01-01T00:00:01Z',
+      completed_at: null,
+      error: null,
+      result_data: null,
+    };
+
+    render(<BacktestAttribution />);
+
+    expect(screen.getByText('100.0%')).toBeInTheDocument();
+    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
   });
 
   it('shows dash placeholders for non-topN shapley cells', () => {
