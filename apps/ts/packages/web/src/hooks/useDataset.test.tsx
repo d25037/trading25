@@ -47,7 +47,7 @@ describe('datasetKeys', () => {
 
 describe('useDatasets', () => {
   it('fetches datasets list', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ datasets: [] });
+    vi.mocked(apiGet).mockResolvedValueOnce([]);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDatasets(), { wrapper });
