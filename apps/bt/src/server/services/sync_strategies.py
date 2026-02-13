@@ -55,40 +55,22 @@ class IndicesOnlySyncStrategy:
             indices_list = body.get("data", [])
 
             # index_master に保存
-            master_rows = []
-            for idx in indices_list:
-                master_rows.append({
-                    "code": idx.get("code", ""),
-                    "name": idx.get("name", ""),
-                    "name_english": idx.get("name_english"),
-                    "category": idx.get("category", ""),
-                    "data_start_date": idx.get("data_start_date"),
-                    "created_at": datetime.now(UTC).isoformat(),
-                })
+            master_rows = _convert_index_master_rows(indices_list)
             if master_rows:
                 await asyncio.to_thread(ctx.market_db.upsert_index_master, master_rows)
 
             # 2. 各指数のデータ取得
             ctx.on_progress("indices_data", 1, 2, f"Fetching data for {len(indices_list)} indices...")
-            for _i, idx in enumerate(indices_list):
+            for idx in indices_list:
                 if ctx.cancelled.is_set():
                     return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-                code = idx.get("code", "")
+                code = _extract_index_code(idx)
+                if not code:
+                    continue
                 try:
                     data = await ctx.client.get_paginated("/indices/bars/daily", params={"code": code})
                     total_calls += 1
-                    rows = []
-                    for d in data:
-                        rows.append({
-                            "code": code,
-                            "date": d.get("Date", ""),
-                            "open": d.get("O"),
-                            "high": d.get("H"),
-                            "low": d.get("L"),
-                            "close": d.get("C"),
-                            "sector_name": d.get("SectorName"),
-                            "created_at": datetime.now(UTC).isoformat(),
-                        })
+                    rows = _convert_indices_data_rows(data, code)
                     if rows:
                         await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
                 except Exception as e:
@@ -208,7 +190,7 @@ class IncrementalSyncStrategy:
     """増分同期: 最終同期日以降のデータのみ取得"""
 
     def estimate_api_calls(self) -> int:
-        return 5
+        return 60
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
@@ -221,7 +203,7 @@ class IncrementalSyncStrategy:
                 return SyncResult(success=False, errors=["No last_sync_date found. Run initial sync first."])
 
             # Step 1: TOPIX（増分）
-            ctx.on_progress("topix", 0, 3, "Fetching incremental TOPIX data...")
+            ctx.on_progress("topix", 0, 4, "Fetching incremental TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -253,7 +235,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_topix_data, topix_rows)
 
             # Step 2: 銘柄マスタ更新
-            ctx.on_progress("stocks", 1, 3, "Updating stock master...")
+            ctx.on_progress("stocks", 1, 4, "Updating stock master...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -264,7 +246,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
             # Step 3: 新しい日付の株価データ
-            ctx.on_progress("stock_data", 2, 3, "Fetching new stock data...")
+            ctx.on_progress("stock_data", 2, 4, "Fetching new stock data...")
             if last_date:
                 new_dates = sorted(
                     {
@@ -289,11 +271,52 @@ class IncrementalSyncStrategy:
                 except Exception as e:
                     errors.append(f"Date {date}: {e}")
 
+            # Step 4: 指数データ（増分）
+            ctx.on_progress("indices", 3, 4, "Fetching incremental index data...")
+            if ctx.cancelled.is_set():
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            indices_body = await ctx.client.get("/indices")
+            total_calls += 1
+            indices_list = indices_body.get("data", [])
+
+            master_rows = _convert_index_master_rows(indices_list)
+            if master_rows:
+                await asyncio.to_thread(ctx.market_db.upsert_index_master, master_rows)
+
+            latest_index_dates = ctx.market_db.get_latest_indices_data_dates()
+            for idx in indices_list:
+                if ctx.cancelled.is_set():
+                    return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+                code = _extract_index_code(idx)
+                if not code:
+                    continue
+
+                params: dict[str, Any] = {"code": code}
+                last_index_date = latest_index_dates.get(code)
+                if last_index_date:
+                    params["from"] = _to_jquants_date_param(last_index_date)
+
+                try:
+                    data = await ctx.client.get_paginated("/indices/bars/daily", params=params)
+                    total_calls += 1
+
+                    rows = _convert_indices_data_rows(data, code)
+                    if last_index_date:
+                        rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
+
+                    if rows:
+                        await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+                except Exception as e:
+                    errors.append(f"Index {code}: {e}")
+                    logger.warning(f"Index {code} incremental sync error: {e}")
+
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 3, 3, "Incremental sync complete!")
+            ctx.on_progress("complete", 4, 4, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
@@ -364,6 +387,58 @@ def _convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]
             skipped,
             sample,
         )
+    return rows
+
+
+def _extract_index_code(index_info: dict[str, Any]) -> str:
+    """指数コードをキー揺れを吸収して取得。"""
+    code = index_info.get("code") or index_info.get("Code") or ""
+    return str(code).strip()
+
+
+def _convert_index_master_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """JQuants 指数マスタ → DB 行。"""
+    rows: list[dict[str, Any]] = []
+    created_at = datetime.now(UTC).isoformat()
+    for idx in data:
+        code = _extract_index_code(idx)
+        if not code:
+            continue
+        rows.append({
+            "code": code,
+            "name": idx.get("name") or idx.get("Name") or "",
+            "name_english": idx.get("name_english") or idx.get("nameEnglish"),
+            "category": idx.get("category") or idx.get("Category") or "",
+            "data_start_date": idx.get("data_start_date") or idx.get("dataStartDate"),
+            "created_at": created_at,
+        })
+    return rows
+
+
+def _convert_indices_data_rows(data: list[dict[str, Any]], code: str) -> list[dict[str, Any]]:
+    """JQuants 指数データ → DB 行。日付欠損行はスキップ。"""
+    rows: list[dict[str, Any]] = []
+    created_at = datetime.now(UTC).isoformat()
+    skipped = 0
+
+    for d in data:
+        row_date = d.get("Date") or d.get("date") or ""
+        if not row_date:
+            skipped += 1
+            continue
+        rows.append({
+            "code": code,
+            "date": row_date,
+            "open": d.get("O", d.get("open")),
+            "high": d.get("H", d.get("high")),
+            "low": d.get("L", d.get("low")),
+            "close": d.get("C", d.get("close")),
+            "sector_name": d.get("SectorName", d.get("sector_name")),
+            "created_at": created_at,
+        })
+
+    if skipped > 0:
+        logger.warning("Skipped {} index rows with missing date (code={})", skipped, code)
     return rows
 
 
