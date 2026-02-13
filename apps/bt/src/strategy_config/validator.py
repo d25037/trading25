@@ -4,7 +4,9 @@ from typing import Any
 
 from loguru import logger
 
-from src.lib.strategy_runtime.models import try_validate_strategy_config_dict
+from src.lib.strategy_runtime.models import (
+    try_validate_strategy_config_dict_strict as try_validate_strategy_config_dict,
+)
 from src.lib.strategy_runtime.validator import (
     DANGEROUS_PATH_PATTERNS,
     MAX_STRATEGY_NAME_LENGTH,
@@ -29,9 +31,16 @@ def validate_strategy_config(config: dict[str, Any]) -> bool:
     Keep this function in the legacy module so monkeypatch targets like
     `src.strategy_config.validator.try_validate_strategy_config_dict` remain valid.
     """
-    is_valid, error = try_validate_strategy_config_dict(config)
+    is_valid, errors = try_validate_strategy_config_dict(config)
     if not is_valid:
-        logger.error(f"戦略設定バリデーションエラー: {error}")
+        error_messages = (
+            errors
+            if isinstance(errors, list)
+            else [str(errors)] if errors is not None else []
+        )
+        logger.error(
+            "戦略設定バリデーションエラー: {}", "; ".join(error_messages)
+        )
         return False
 
     entry_filter_params = config.get("entry_filter_params", {})

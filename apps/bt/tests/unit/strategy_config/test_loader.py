@@ -267,6 +267,30 @@ def test_save_strategy_config_reference_raises():
         loader.save_strategy_config("reference/my_strategy", config)
 
 
+def test_save_strategy_config_strict_validation_raises(tmp_path):
+    """ネストされた未知キーを含む設定の保存は ValueError"""
+    config_dir = tmp_path / "config"
+    strategies_dir = config_dir / "strategies" / "experimental"
+    strategies_dir.mkdir(parents=True)
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    config = {
+        "entry_filter_params": {
+            "fundamental": {
+                "foward_eps_growth": {  # typo
+                    "enabled": True,
+                    "threshold": 0.2,
+                    "condition": "above",
+                }
+            }
+        }
+    }
+
+    with pytest.raises(ValueError, match="foward_eps_growth"):
+        loader.save_strategy_config("strict_invalid", config, force=True)
+
+
 # ========== duplicate_strategy テスト ==========
 
 
@@ -326,9 +350,17 @@ def test_duplicate_strategy_target_exists_raises(tmp_path):
         loader.duplicate_strategy("experimental/source", "existing")
 
 
-def test_duplicate_strategy_with_category_raises():
+def test_duplicate_strategy_with_category_raises(tmp_path):
     """複製先にカテゴリを含めると ValueError"""
-    loader = ConfigLoader()
+    config_dir = tmp_path / "config"
+    reference_dir = config_dir / "strategies" / "reference"
+    reference_dir.mkdir(parents=True)
+    (reference_dir / "strategy_template.yaml").write_text(
+        "entry_filter_params: {}",
+        encoding="utf-8",
+    )
+
+    loader = ConfigLoader(config_dir=str(config_dir))
 
     with pytest.raises(ValueError, match="カテゴリを含めないでください"):
         loader.duplicate_strategy("reference/strategy_template", "experimental/new_strategy")

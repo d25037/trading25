@@ -23,6 +23,7 @@ from src.server.schemas.strategy import (
     StrategyValidationResponse,
 )
 from src.lib.strategy_runtime.loader import ConfigLoader
+from src.lib.strategy_runtime.models import try_validate_strategy_config_dict_strict
 
 router = APIRouter(tags=["Strategies"])
 
@@ -129,6 +130,11 @@ async def validate_strategy(
             config = request.config
         else:
             config = _config_loader.load_strategy_config(strategy_name)
+
+        # 厳密バリデーション（深いネスト未知キー検出を含む）
+        strict_valid, strict_errors = try_validate_strategy_config_dict_strict(config)
+        if not strict_valid:
+            errors.extend(strict_errors)
 
         # 基本的な検証
         if "entry_filter_params" not in config and "exit_trigger_params" not in config:

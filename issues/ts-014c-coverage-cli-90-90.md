@@ -3,12 +3,13 @@ id: ts-014c
 title: "Coverage Gate: cli 90/90"
 status: open
 priority: medium
-labels: [test]
+labels: [test, coverage]
 project: ts
 created: 2026-01-31
-updated: 2026-01-31
-depends_on: []
+updated: 2026-02-13
+depends_on: [ts-113]
 blocks: []
+parent: ts-129
 ---
 
 # ts-014c Coverage Gate: cli 90/90
@@ -29,3 +30,7 @@ blocks: []
 
 ## 受け入れ条件
 - `bun run check:coverage` が新閾値で通る
+
+## 整理メモ
+- `ts-113`（CLI 70/70）を先行タスクとして依存関係を設定。
+- 本Issueは CLI coverage の最終ストレッチ（90/90）として管理する。
