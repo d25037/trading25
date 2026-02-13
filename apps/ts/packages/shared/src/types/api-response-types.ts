@@ -189,10 +189,7 @@ export interface DatasetListItem {
   createdAt: string | null;
 }
 
-export interface DatasetListResponse {
-  datasets: DatasetListItem[];
-  totalCount: number;
-}
+export type DatasetListResponse = DatasetListItem[];
 
 export interface DatasetDeleteResponse {
   success: boolean;
