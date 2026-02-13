@@ -89,6 +89,22 @@ class MarketDb(BaseDbAccess):
             row = conn.execute(select(func.max(stock_data.c.date))).fetchone()
             return row[0] if row else None
 
+    def get_latest_indices_data_dates(self) -> dict[str, str]:
+        """indices_data の銘柄コードごとの最新取引日を取得"""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(
+                    indices_data.c.code,
+                    func.max(indices_data.c.date).label("max_date"),
+                )
+                .group_by(indices_data.c.code)
+            ).fetchall()
+        return {
+            row.code: row.max_date
+            for row in rows
+            if row.code and row.max_date
+        }
+
     # --- Write ---
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
