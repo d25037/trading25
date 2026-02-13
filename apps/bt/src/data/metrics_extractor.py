@@ -10,6 +10,17 @@ from dataclasses import dataclass
 from pathlib import Path
 
 
+TH_METRIC_FIELDS: tuple[tuple[str, str], ...] = (
+    ("total_return", "Total Return [%]"),
+    ("max_drawdown", "Max Drawdown [%]"),
+    ("sharpe_ratio", "Sharpe Ratio"),
+    ("sortino_ratio", "Sortino Ratio"),
+    ("calmar_ratio", "Calmar Ratio"),
+    ("win_rate", "Win Rate [%]"),
+    ("profit_factor", "Profit Factor"),
+)
+
+
 @dataclass
 class BacktestMetrics:
     """バックテスト結果のメトリクス"""
@@ -98,9 +109,19 @@ def extract_metrics_from_html(html_path: Path) -> BacktestMetrics:
             metrics.profit_factor = data.get("profit_factor")
             metrics.total_trades = data.get("total_trades")
             metrics.optimal_allocation = data.get("optimal_allocation")
-            return metrics
         except (OSError, json.JSONDecodeError, TypeError, ValueError):
             pass
+
+    should_fallback_to_html = any(
+        getattr(metrics, field_name) is None for field_name, _ in TH_METRIC_FIELDS
+    )
+    should_fallback_to_html = (
+        should_fallback_to_html
+        or metrics.total_trades is None
+        or metrics.optimal_allocation is None
+    )
+    if not should_fallback_to_html:
+        return metrics
 
     try:
         content = html_path.read_text(encoding="utf-8")
@@ -108,21 +129,23 @@ def extract_metrics_from_html(html_path: Path) -> BacktestMetrics:
         return metrics
 
     # Final Portfolio Statistics テーブル (<th>/<td> 形式)
-    metrics.total_return = _extract_float_from_html(content, "Total Return [%]")
-    metrics.max_drawdown = _extract_float_from_html(content, "Max Drawdown [%]")
-    metrics.sharpe_ratio = _extract_float_from_html(content, "Sharpe Ratio")
-    metrics.sortino_ratio = _extract_float_from_html(content, "Sortino Ratio")
-    metrics.calmar_ratio = _extract_float_from_html(content, "Calmar Ratio")
-    metrics.win_rate = _extract_float_from_html(content, "Win Rate [%]")
-    metrics.profit_factor = _extract_float_from_html(content, "Profit Factor")
+    for field_name, html_metric_name in TH_METRIC_FIELDS:
+        if getattr(metrics, field_name) is None:
+            setattr(
+                metrics,
+                field_name,
+                _extract_float_from_html(content, html_metric_name),
+            )
 
-    total_trades = _extract_float_from_html(content, "Total Trades")
-    if total_trades is not None:
-        metrics.total_trades = int(total_trades)
+    if metrics.total_trades is None:
+        total_trades = _extract_float_from_html(content, "Total Trades")
+        if total_trades is not None:
+            metrics.total_trades = int(total_trades)
 
     # Kelly Allocation Info テーブル (<td>/<td> 形式)
-    allocation = _extract_float_from_html(content, "最適配分率", use_th=False)
-    if allocation is not None:
-        metrics.optimal_allocation = allocation / 100  # パーセント → 小数
+    if metrics.optimal_allocation is None:
+        allocation = _extract_float_from_html(content, "最適配分率", use_th=False)
+        if allocation is not None:
+            metrics.optimal_allocation = allocation / 100  # パーセント → 小数
 
     return metrics
