@@ -1,7 +1,7 @@
 ---
 id: ts-114
 title: "Coverage Gate: web 45/70"
-status: open
+status: done
 priority: medium
 labels: [test, coverage]
 project: ts
@@ -33,6 +33,15 @@ parent: ts-129
 ## 受け入れ条件
 - `bun run test` 全パス
 - `bun run check:coverage` が新閾値で通る
+
+## 実施内容
+- `apps/ts/scripts/check-coverage.ts` を更新し、`web` の閾値を `lines 45%` / `functions 70%` に変更
+- `packages/web/src/pages/SettingsPage.test.tsx` を追加し、Sync 開始/進行中/失敗時の描画とキャンセル実行をカバー
+- `packages/web/src/pages/IndicesPage.test.tsx` を追加し、インデックス一覧・セクタ株一覧・選択イベントをカバー
+- `src/components` / `src/pages` の主要 UI 未テスト領域に対する回帰テストを追加
+
+## 結果
+対応済み
 
 ## 整理メモ
 - coverage backlog 整理用の親Issue: `ts-129`
