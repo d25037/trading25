@@ -4,9 +4,13 @@
 戦略の自動生成・最適化・改善を行うCLIインターフェース
 """
 
+from typing import cast
+
 import typer
 from rich.console import Console
 from rich.table import Table
+
+from src.agent.models import SignalCategory
 
 console = Console()
 
@@ -41,6 +45,17 @@ def generate_command(
         "-D",
         help="データセット名 (primeExTopix500/topix500等)",
     ),
+    entry_filter_only: bool = typer.Option(
+        False,
+        "--entry-filter-only",
+        help="Entryフィルターのみ生成（Exitシグナルは生成しない）",
+    ),
+    allowed_category: list[str] | None = typer.Option(
+        None,
+        "--allowed-category",
+        "-C",
+        help="許可カテゴリ（複数指定可: --allowed-category fundamental）",
+    ),
 ):
     """
     新規戦略を自動生成
@@ -69,13 +84,42 @@ def generate_command(
         console.print(f"[red]エラー[/red]: --timeframe は {valid_timeframes} のいずれか")
         raise typer.Exit(code=1)
 
+    valid_categories = (
+        "breakout",
+        "trend",
+        "oscillator",
+        "volatility",
+        "volume",
+        "macro",
+        "fundamental",
+        "sector",
+    )
+    allowed_categories_raw = [c.lower() for c in (allowed_category or [])]
+    invalid_categories = [c for c in allowed_categories_raw if c not in valid_categories]
+    if invalid_categories:
+        console.print(
+            f"[red]エラー[/red]: 無効な --allowed-category {invalid_categories} "
+            f"(有効値: {valid_categories})"
+        )
+        raise typer.Exit(code=1)
+    allowed_categories = cast(list[SignalCategory], allowed_categories_raw)
+
     console.print(
         f"[bold blue]戦略自動生成[/bold blue]: {count}個生成 → 上位{top}個評価"
     )
     console.print(f"  direction: {direction}, timeframe: {timeframe}, dataset: {dataset}")
+    console.print(
+        f"  entry_filter_only: {entry_filter_only}, "
+        f"allowed_categories: {allowed_categories or ['all']}"
+    )
 
     # 生成設定
-    config = GeneratorConfig(n_strategies=count, seed=seed)
+    config = GeneratorConfig(
+        n_strategies=count,
+        seed=seed,
+        entry_filter_only=entry_filter_only,
+        allowed_categories=allowed_categories,
+    )
 
     # 生成
     generator = StrategyGenerator(config=config)
@@ -266,6 +310,17 @@ def improve_command(
     auto_apply: bool = typer.Option(
         True, "--auto-apply/--no-apply", help="改善を自動適用"
     ),
+    entry_filter_only: bool = typer.Option(
+        False,
+        "--entry-filter-only",
+        help="Entryフィルターの改善のみを許可",
+    ),
+    allowed_category: list[str] | None = typer.Option(
+        None,
+        "--allowed-category",
+        "-C",
+        help="改善対象カテゴリ（複数指定可）",
+    ),
 ):
     """
     既存戦略を分析して改善
@@ -282,10 +337,33 @@ def improve_command(
     from src.lib.strategy_runtime.loader import ConfigLoader
 
     console.print(f"[bold blue]戦略分析[/bold blue]: {strategy}")
+    valid_categories = (
+        "breakout",
+        "trend",
+        "oscillator",
+        "volatility",
+        "volume",
+        "macro",
+        "fundamental",
+        "sector",
+    )
+    allowed_categories_raw = [c.lower() for c in (allowed_category or [])]
+    invalid_categories = [c for c in allowed_categories_raw if c not in valid_categories]
+    if invalid_categories:
+        console.print(
+            f"[red]エラー[/red]: 無効な --allowed-category {invalid_categories} "
+            f"(有効値: {valid_categories})"
+        )
+        raise typer.Exit(code=1)
+    allowed_categories = cast(list[SignalCategory], allowed_categories_raw)
 
     # 分析
     improver = StrategyImprover()
-    report = improver.analyze(strategy)
+    report = improver.analyze(
+        strategy,
+        entry_filter_only=entry_filter_only,
+        allowed_categories=allowed_categories,
+    )
 
     # 弱点表示
     console.print("\n[bold yellow]弱点分析結果[/bold yellow]:")
@@ -306,7 +384,12 @@ def improve_command(
     # 具体的な改善案生成
     config_loader = ConfigLoader()
     strategy_config = config_loader.load_strategy_config(strategy)
-    improvements = improver.suggest_improvements(report, strategy_config)
+    improvements = improver.suggest_improvements(
+        report,
+        strategy_config,
+        entry_filter_only=entry_filter_only,
+        allowed_categories=allowed_categories,
+    )
 
     if improvements:
         console.print("\n[bold green]具体的な改善案[/bold green]:")

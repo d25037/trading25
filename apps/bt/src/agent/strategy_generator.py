@@ -6,11 +6,16 @@
 
 import random
 import uuid
+import copy
 from typing import Any
 
 from loguru import logger
 
-from .models import GeneratorConfig, SignalConstraints, StrategyCandidate
+from .models import (
+    GeneratorConfig,
+    SignalConstraints,
+    StrategyCandidate,
+)
 from .parameter_evolver import ParameterEvolver
 
 # 利用可能なシグナル定義
@@ -21,87 +26,107 @@ AVAILABLE_SIGNALS: list[SignalConstraints] = [
         required_data=[],
         usage="both",
         recommended_with=["volume", "bollinger_bands"],
+        category="breakout",
     ),
     SignalConstraints(
         name="ma_breakout",
         required_data=[],
         usage="both",
         recommended_with=["volume", "rsi_threshold"],
+        category="trend",
     ),
     SignalConstraints(
         name="crossover",
         required_data=[],
         usage="both",
         recommended_with=["volume"],
+        category="trend",
     ),
     SignalConstraints(
         name="mean_reversion",
         required_data=[],
         usage="both",
         mutually_exclusive=["period_breakout"],  # トレンドフォローと平均回帰は相反
+        category="oscillator",
     ),
     SignalConstraints(
         name="bollinger_bands",
         required_data=[],
         usage="both",
         recommended_with=["rsi_threshold"],
+        category="volatility",
     ),
     SignalConstraints(
         name="atr_support_break",
         required_data=[],
         usage="both",
+        category="volatility",
     ),
     SignalConstraints(
         name="rsi_threshold",
         required_data=[],
         usage="both",
         recommended_with=["volume"],
+        category="oscillator",
     ),
     SignalConstraints(
         name="rsi_spread",
         required_data=[],
         usage="both",
         mutually_exclusive=["rsi_threshold"],  # RSI系は1つで十分
+        category="oscillator",
     ),
     SignalConstraints(
         name="volume",
         required_data=[],
         usage="both",
+        category="volume",
     ),
     SignalConstraints(
         name="trading_value",
         required_data=[],
         usage="both",
         mutually_exclusive=["trading_value_range"],
+        category="volume",
     ),
     SignalConstraints(
         name="trading_value_range",
         required_data=[],
         usage="both",
         mutually_exclusive=["trading_value"],
+        category="volume",
     ),
     SignalConstraints(
         name="beta",
         required_data=["benchmark_data"],
         usage="entry",  # Entryフィルターとして使用
         recommended_with=["volume"],
+        category="macro",
     ),
     SignalConstraints(
         name="margin",
         required_data=["margin_data"],
         usage="entry",
+        category="macro",
     ),
     SignalConstraints(
         name="index_daily_change",
         required_data=["benchmark_data"],
         usage="both",
+        category="macro",
     ),
     SignalConstraints(
         name="index_macd_histogram",
         required_data=["benchmark_data"],
         usage="both",
+        category="macro",
     ),
-    # fundamentalは複雑なネスト構造のため除外（将来対応）
+    SignalConstraints(
+        name="fundamental",
+        required_data=["statements_data"],
+        usage="entry",
+        category="fundamental",
+    ),
     # retracement, buy_and_hold も特殊用途のため除外
 ]
 
@@ -135,10 +160,13 @@ class StrategyGenerator:
         self.entry_signals = self._filter_signals("entry")
         self.exit_signals = self._filter_signals("exit")
 
+        categories = ",".join(self.config.allowed_categories) or "all"
         logger.info(
             f"StrategyGenerator initialized: "
             f"entry_signals={len(self.entry_signals)}, "
-            f"exit_signals={len(self.exit_signals)}"
+            f"exit_signals={len(self.exit_signals)}, "
+            f"entry_filter_only={self.config.entry_filter_only}, "
+            f"allowed_categories={categories}"
         )
 
     def _filter_signals(self, usage_type: str) -> list[SignalConstraints]:
@@ -151,10 +179,18 @@ class StrategyGenerator:
         Returns:
             フィルタリング済みシグナルリスト
         """
+        if usage_type == "exit" and self.config.entry_filter_only:
+            return []
+
+        allowed_categories = set(self.config.allowed_categories)
         filtered = []
         for signal in AVAILABLE_SIGNALS:
             # 除外シグナルをスキップ
             if signal.name in self.config.exclude_signals:
+                continue
+
+            # カテゴリ制約
+            if allowed_categories and signal.category not in allowed_categories:
                 continue
 
             # 使用タイプでフィルタ
@@ -204,10 +240,13 @@ class StrategyGenerator:
         entry_signals = self._select_signals(self.entry_signals, n_entry, "entry")
 
         # Exitシグナル選択
-        n_exit = random.randint(
-            self.config.exit_signal_min, self.config.exit_signal_max
-        )
-        exit_signals = self._select_signals(self.exit_signals, n_exit, "exit")
+        if self.config.entry_filter_only:
+            exit_signals: list[SignalConstraints] = []
+        else:
+            n_exit = random.randint(
+                self.config.exit_signal_min, self.config.exit_signal_max
+            )
+            exit_signals = self._select_signals(self.exit_signals, n_exit, "exit")
 
         # 必須シグナルを追加
         for required in self.config.required_signals:
@@ -231,6 +270,8 @@ class StrategyGenerator:
                 "generation_index": index,
                 "entry_signals": [s.name for s in entry_signals],
                 "exit_signals": [s.name for s in exit_signals],
+                "entry_filter_only": self.config.entry_filter_only,
+                "allowed_categories": self.config.allowed_categories,
             },
         )
 
@@ -321,6 +362,9 @@ class StrategyGenerator:
         Returns:
             ランダム化されたパラメータ
         """
+        if signal_name == "fundamental":
+            return self._randomize_fundamental_params(params)
+
         randomized = params.copy()
         ranges = ParameterEvolver.PARAM_RANGES.get(signal_name, {})
 
@@ -336,6 +380,38 @@ class StrategyGenerator:
                     randomized[param_name] = random.randint(int(min_val), int(max_val))
                 else:  # float
                     randomized[param_name] = random.uniform(min_val, max_val)
+
+        return randomized
+
+    def _randomize_fundamental_params(self, params: dict[str, Any]) -> dict[str, Any]:
+        """fundamental ネスト構造のしきい値をランダム化"""
+        randomized = copy.deepcopy(params)
+
+        ranges: dict[str, dict[str, tuple[float, float, str]]] = {
+            "per": {"threshold": (5.0, 40.0, "float")},
+            "pbr": {"threshold": (0.3, 5.0, "float")},
+            "peg_ratio": {"threshold": (0.3, 3.0, "float")},
+            "forward_eps_growth": {"threshold": (0.02, 0.5, "float")},
+            "eps_growth": {"threshold": (0.02, 0.5, "float"), "periods": (1, 8, "int")},
+            "roe": {"threshold": (3.0, 25.0, "float")},
+            "roa": {"threshold": (2.0, 15.0, "float")},
+            "operating_margin": {"threshold": (3.0, 30.0, "float")},
+            "dividend_yield": {"threshold": (0.5, 8.0, "float")},
+            "market_cap": {"threshold": (50.0, 5000.0, "float")},
+        }
+
+        for field_name, field_ranges in ranges.items():
+            field_value = randomized.get(field_name)
+            if not isinstance(field_value, dict) or not field_value.get("enabled"):
+                continue
+
+            for param_name, (min_val, max_val, param_type) in field_ranges.items():
+                if param_name not in field_value:
+                    continue
+                if param_type == "int":
+                    field_value[param_name] = random.randint(int(min_val), int(max_val))
+                else:
+                    field_value[param_name] = random.uniform(min_val, max_val)
 
         return randomized
 
@@ -438,9 +514,90 @@ class StrategyGenerator:
                 "signal_period": 9,
                 "direction": "positive" if usage_type == "entry" else "negative",
             },
+            "fundamental": self._get_default_fundamental_params(usage_type),
         }
 
         return signal_defaults.get(signal_name, {})
+
+    def _get_default_fundamental_params(self, usage_type: str) -> dict[str, Any]:
+        """fundamental 用のネストパラメータを生成"""
+        if usage_type != "entry":
+            return {
+                "use_adjusted": True,
+                "period_type": "FY",
+                "per": {
+                    "enabled": False,
+                    "threshold": 20.0,
+                    "condition": "below",
+                    "exclude_negative": True,
+                },
+            }
+
+        options: dict[str, dict[str, Any]] = {
+            "per": {
+                "enabled": False,
+                "threshold": 15.0,
+                "condition": "below",
+                "exclude_negative": True,
+            },
+            "pbr": {
+                "enabled": False,
+                "threshold": 1.2,
+                "condition": "below",
+                "exclude_negative": True,
+            },
+            "peg_ratio": {
+                "enabled": False,
+                "threshold": 1.2,
+                "condition": "below",
+            },
+            "forward_eps_growth": {
+                "enabled": False,
+                "threshold": 0.1,
+                "condition": "above",
+            },
+            "eps_growth": {
+                "enabled": False,
+                "threshold": 0.1,
+                "periods": 1,
+                "condition": "above",
+            },
+            "roe": {
+                "enabled": False,
+                "threshold": 10.0,
+                "condition": "above",
+            },
+            "roa": {
+                "enabled": False,
+                "threshold": 5.0,
+                "condition": "above",
+            },
+            "operating_margin": {
+                "enabled": False,
+                "threshold": 10.0,
+                "condition": "above",
+            },
+            "dividend_yield": {
+                "enabled": False,
+                "threshold": 2.0,
+                "condition": "above",
+            },
+            "market_cap": {
+                "enabled": False,
+                "threshold": 300.0,
+                "condition": "above",
+                "use_floating_shares": True,
+            },
+        }
+
+        selected_key = random.choice(list(options.keys()))
+        options[selected_key]["enabled"] = True
+
+        return {
+            "use_adjusted": True,
+            "period_type": "FY",
+            **options,
+        }
 
     def generate_from_template(
         self, template_signals: dict[str, list[str]], n_variations: int = 10

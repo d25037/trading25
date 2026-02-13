@@ -4,9 +4,20 @@
 戦略生成・最適化・改善に必要なデータ構造を型安全に管理
 """
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
+
+SignalCategory = Literal[
+    "breakout",
+    "trend",
+    "oscillator",
+    "volatility",
+    "volume",
+    "macro",
+    "fundamental",
+    "sector",
+]
 
 
 class SignalConstraints(BaseModel):
@@ -26,6 +37,12 @@ class SignalConstraints(BaseModel):
 
     # Entryのみ/Exitのみ/両用
     usage: str = Field(default="both", description="entry/exit/both")
+
+    # シグナルカテゴリ（制約指定用）
+    category: SignalCategory = Field(
+        default="breakout",
+        description="signal category",
+    )
 
 
 class GeneratorConfig(BaseModel):
@@ -50,6 +67,12 @@ class GeneratorConfig(BaseModel):
 
     # 必須シグナル（必ず含める）
     required_signals: list[str] = Field(default_factory=list)
+
+    # Entryフィルターのみ生成（Exitは空）
+    entry_filter_only: bool = Field(default=False)
+
+    # 許可カテゴリ（空なら全カテゴリ許可）
+    allowed_categories: list[SignalCategory] = Field(default_factory=list)
 
 
 class EvolutionConfig(BaseModel):

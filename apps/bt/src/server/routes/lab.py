@@ -119,6 +119,8 @@ async def run_lab_generate(request: LabGenerateRequest) -> LabJobResponse:
             "direction": request.direction,
             "timeframe": request.timeframe,
             "dataset": request.dataset,
+            "entry_filter_only": request.entry_filter_only,
+            "allowed_categories": request.allowed_categories,
         },
         error_label="generate",
     )
@@ -163,6 +165,8 @@ async def run_lab_improve(request: LabImproveRequest) -> LabJobResponse:
         {
             "strategy_name": request.strategy_name,
             "auto_apply": request.auto_apply,
+            "entry_filter_only": request.entry_filter_only,
+            "allowed_categories": request.allowed_categories,
         },
         error_label="improve",
     )
