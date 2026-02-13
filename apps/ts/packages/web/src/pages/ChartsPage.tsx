@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
 import { AlertCircle, BookOpen, Loader2, TrendingUp, Wallet } from 'lucide-react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
 import { FundamentalsHistoryPanel } from '@/components/Chart/FundamentalsHistoryPanel';
@@ -26,8 +26,8 @@ import type {
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
-import { logger } from '@/utils/logger';
 import { formatMarketCap } from '@/utils/formatters';
+import { logger } from '@/utils/logger';
 
 // Helper component for margin pressure indicators section
 function MarginPressureIndicatorsSection({
@@ -116,11 +116,7 @@ function useLazySectionVisibility(rootMargin = '160px 0px') {
   };
 }
 
-function shouldRenderEmptyState(
-  isLoading: boolean,
-  error: unknown,
-  selectedSymbol: string | null
-): boolean {
+function shouldRenderEmptyState(isLoading: boolean, error: unknown, selectedSymbol: string | null): boolean {
   return !isLoading && !error && !selectedSymbol;
 }
 
@@ -459,32 +455,6 @@ export function ChartsPage() {
               </div>
             )}
 
-            {/* Margin Pressure Indicators Row - 3 charts */}
-            <div ref={marginSection.sectionRef} className="h-72">
-              <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                <div className="absolute inset-0 gradient-glass opacity-50" />
-                <div className="relative z-10 h-full">
-                  <div className="p-4 border-b border-border/30">
-                    <h3 className="text-lg font-semibold text-foreground">
-                      信用圧力指標
-                      {marginPressureData && (
-                        <span className="text-sm font-normal text-muted-foreground ml-2">
-                          ({marginPressureData.averagePeriod}日平均)
-                        </span>
-                      )}
-                    </h3>
-                  </div>
-                  <div className="h-[calc(100%-4rem)] p-4">
-                    <MarginPressureIndicatorsSection
-                      data={marginPressureData}
-                      isLoading={marginPressureLoading}
-                      error={marginPressureError}
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
             {/* Fundamentals Panel Section */}
             <div ref={fundamentalsSection.sectionRef} className="h-[440px]">
               <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
@@ -512,12 +482,38 @@ export function ChartsPage() {
                 <div className="absolute inset-0 gradient-glass opacity-50" />
                 <div className="relative z-10 h-full">
                   <div className="p-4 border-b border-border/30">
-                    <h3 className="text-lg font-semibold text-foreground">FY推移（過去5期）</h3>
+                    <h3 className="text-lg font-semibold text-foreground">FY推移</h3>
                   </div>
                   <div className="h-[calc(100%-4rem)] p-4">
                     <ErrorBoundary>
                       <FundamentalsHistoryPanel symbol={selectedSymbol} enabled={fundamentalsSection.isVisible} />
                     </ErrorBoundary>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Margin Pressure Indicators Row - 3 charts */}
+            <div ref={marginSection.sectionRef} className="h-72">
+              <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+                <div className="absolute inset-0 gradient-glass opacity-50" />
+                <div className="relative z-10 h-full">
+                  <div className="p-4 border-b border-border/30">
+                    <h3 className="text-lg font-semibold text-foreground">
+                      信用圧力指標
+                      {marginPressureData && (
+                        <span className="text-sm font-normal text-muted-foreground ml-2">
+                          ({marginPressureData.averagePeriod}日平均)
+                        </span>
+                      )}
+                    </h3>
+                  </div>
+                  <div className="h-[calc(100%-4rem)] p-4">
+                    <MarginPressureIndicatorsSection
+                      data={marginPressureData}
+                      isLoading={marginPressureLoading}
+                      error={marginPressureError}
+                    />
                   </div>
                 </div>
               </div>
