@@ -194,6 +194,22 @@ class TestGenerateImprovementSuggestions:
         suggestions = improver._generate_improvement_suggestions(report, config)
         assert not any("ドローダウン" in s for s in suggestions)
 
+    def test_suggestions_respect_fundamental_only_constraints(self):
+        improver = StrategyImprover()
+        report = WeaknessReport(
+            strategy_name="test",
+            max_drawdown=0.5,
+            performance_by_market_condition={"bear_market_avg": -0.05},
+        )
+        config = {"entry_filter_params": {}, "exit_trigger_params": {}}
+        suggestions = improver._generate_improvement_suggestions(
+            report,
+            config,
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
+        )
+        assert all("下落相場" not in s for s in suggestions)
+
 
 # ===== suggest_improvements =====
 
@@ -244,6 +260,37 @@ class TestSuggestImprovements:
         for imp in improvements:
             assert isinstance(imp, Improvement)
             assert imp.improvement_type in ("add_signal", "remove_signal", "adjust_param")
+
+    def test_entry_filter_only_blocks_exit_improvements(self):
+        improver = StrategyImprover()
+        report = WeaknessReport(strategy_name="test", max_drawdown=0.5)
+        config = {"entry_filter_params": {}, "exit_trigger_params": {}}
+        improvements = improver.suggest_improvements(
+            report,
+            config,
+            entry_filter_only=True,
+        )
+        assert all(imp.target == "entry" for imp in improvements)
+        assert all(imp.signal_name != "atr_support_break" for imp in improvements)
+
+    def test_fundamental_only_constraints(self):
+        improver = StrategyImprover()
+        report = WeaknessReport(
+            strategy_name="test",
+            max_drawdown=0.5,
+            performance_by_market_condition={"bear_market_avg": -0.05},
+        )
+        config = {"entry_filter_params": {}, "exit_trigger_params": {}}
+        improvements = improver.suggest_improvements(
+            report,
+            config,
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
+        )
+
+        assert len(improvements) >= 1
+        assert all(imp.target == "entry" for imp in improvements)
+        assert all(imp.signal_name == "fundamental" for imp in improvements)
 
 
 # ===== apply_improvements =====

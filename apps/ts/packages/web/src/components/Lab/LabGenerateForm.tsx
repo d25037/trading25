@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Switch } from '@/components/ui/switch';
 import type { LabGenerateRequest } from '@/types/backtest';
 
 interface LabGenerateFormProps {
@@ -16,6 +17,8 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
   const [direction, setDirection] = useState<'longonly' | 'shortonly' | 'both'>('longonly');
   const [timeframe, setTimeframe] = useState('daily');
   const [dataset, setDataset] = useState('');
+  const [entryFilterOnly, setEntryFilterOnly] = useState(false);
+  const [categoryScope, setCategoryScope] = useState<'all' | 'fundamental'>('all');
 
   const handleSubmit = () => {
     const request: LabGenerateRequest = {
@@ -26,6 +29,12 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
     };
     if (dataset.trim()) {
       request.dataset = dataset.trim();
+    }
+    if (entryFilterOnly) {
+      request.entry_filter_only = true;
+    }
+    if (categoryScope === 'fundamental') {
+      request.allowed_categories = ['fundamental'];
     }
     onSubmit(request);
   };
@@ -102,6 +111,35 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
           onChange={(e) => setDataset(e.target.value)}
           disabled={disabled}
         />
+      </div>
+
+      <div className="flex items-center justify-between">
+        <Label htmlFor="gen-entry-only" className="text-xs">
+          Entry Filter Only
+        </Label>
+        <Switch
+          id="gen-entry-only"
+          checked={entryFilterOnly}
+          onCheckedChange={setEntryFilterOnly}
+          disabled={disabled}
+        />
+      </div>
+
+      <div className="space-y-1.5">
+        <Label className="text-xs">Allowed Categories</Label>
+        <Select
+          value={categoryScope}
+          onValueChange={(v) => setCategoryScope(v as typeof categoryScope)}
+          disabled={disabled}
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="all">All</SelectItem>
+            <SelectItem value="fundamental">Fundamental Only</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled}>

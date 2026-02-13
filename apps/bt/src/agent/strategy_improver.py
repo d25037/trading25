@@ -5,7 +5,7 @@
 """
 
 import copy
-from typing import Any
+from typing import Any, Literal
 
 import numpy as np
 import pandas as pd
@@ -16,8 +16,12 @@ from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
 from src.lib.strategy_runtime.loader import ConfigLoader
 
-from .models import Improvement, WeaknessReport
+from .models import Improvement, SignalCategory, WeaknessReport
 from .strategy_generator import AVAILABLE_SIGNALS
+
+SIGNAL_CATEGORY_MAP: dict[str, SignalCategory] = {
+    signal.name: signal.category for signal in AVAILABLE_SIGNALS
+}
 
 
 class StrategyImprover:
@@ -45,7 +49,12 @@ class StrategyImprover:
         """
         self.shared_config_dict = shared_config_dict
 
-    def analyze(self, strategy_name: str) -> WeaknessReport:
+    def analyze(
+        self,
+        strategy_name: str,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
+    ) -> WeaknessReport:
         """
         戦略の弱点を分析
 
@@ -89,7 +98,10 @@ class StrategyImprover:
 
         # 改善提案生成
         report.suggested_improvements = self._generate_improvement_suggestions(
-            report, strategy_config
+            report,
+            strategy_config,
+            entry_filter_only=entry_filter_only,
+            allowed_categories=allowed_categories,
         )
 
         return report
@@ -202,7 +214,11 @@ class StrategyImprover:
         return report
 
     def _generate_improvement_suggestions(
-        self, report: WeaknessReport, strategy_config: dict[str, Any]
+        self,
+        report: WeaknessReport,
+        strategy_config: dict[str, Any],
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> list[str]:
         """
         改善提案を生成
@@ -215,9 +231,17 @@ class StrategyImprover:
             改善提案リスト
         """
         suggestions: list[str] = []
+        allowed_category_set = set(allowed_categories or [])
 
         # 高ドローダウン対策
-        if report.max_drawdown > 0.3:  # 30%以上
+        if report.max_drawdown > 0.3 and (
+            self._is_signal_allowed(
+                "atr_support_break", "exit", entry_filter_only, allowed_category_set
+            )
+            or self._is_signal_allowed(
+                "rsi_threshold", "exit", entry_filter_only, allowed_category_set
+            )
+        ):
             suggestions.append(
                 f"最大ドローダウンが{report.max_drawdown:.1%}と高い。"
                 "ATRサポートブレイクやRSI閾値によるエグジット条件追加を推奨"
@@ -226,7 +250,17 @@ class StrategyImprover:
         # 連続損失対策
         for pattern in report.losing_trade_patterns:
             is_consecutive = pattern.get("type") == "consecutive_losses"
-            if is_consecutive and pattern.get("count", 0) >= 5:
+            if is_consecutive and pattern.get("count", 0) >= 5 and (
+                self._is_signal_allowed(
+                    "volume", "entry", entry_filter_only, allowed_category_set
+                )
+                or self._is_signal_allowed(
+                    "bollinger_bands",
+                    "entry",
+                    entry_filter_only,
+                    allowed_category_set,
+                )
+            ):
                 suggestions.append(
                     f"連続{pattern['count']}回の損失が発生。"
                     "ボリュームフィルターやボリンジャーバンドの追加を推奨"
@@ -236,7 +270,20 @@ class StrategyImprover:
         market_perf = report.performance_by_market_condition
         if market_perf:
             bear_avg = market_perf.get("bear_market_avg", 0)
-            if bear_avg < -0.02:  # 下落相場で2%以上損失
+            if bear_avg < -0.02 and (
+                self._is_signal_allowed(
+                    "index_daily_change",
+                    "entry",
+                    entry_filter_only,
+                    allowed_category_set,
+                )
+                or self._is_signal_allowed(
+                    "index_macd_histogram",
+                    "entry",
+                    entry_filter_only,
+                    allowed_category_set,
+                )
+            ):
                 suggestions.append(
                     "下落相場でのパフォーマンスが悪い。"
                     "指数前日比シグナルやINDEXヒストグラムシグナルの追加を推奨"
@@ -250,6 +297,13 @@ class StrategyImprover:
         # 未使用シグナルの提案
         for signal in AVAILABLE_SIGNALS:
             if signal.name not in used_signals:
+                target: Literal["entry", "exit"] = (
+                    "exit" if signal.usage == "exit" else "entry"
+                )
+                if not self._is_signal_allowed(
+                    signal.name, target, entry_filter_only, allowed_category_set
+                ):
+                    continue
                 # 推奨組み合わせチェック
                 for rec in signal.recommended_with:
                     if rec in used_signals:
@@ -262,7 +316,11 @@ class StrategyImprover:
         return suggestions[:5]  # 最大5件
 
     def suggest_improvements(
-        self, report: WeaknessReport, strategy_config: dict[str, Any]
+        self,
+        report: WeaknessReport,
+        strategy_config: dict[str, Any],
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> list[Improvement]:
         """
         具体的な改善案を生成
@@ -275,12 +333,18 @@ class StrategyImprover:
             改善案リスト
         """
         improvements: list[Improvement] = []
+        allowed_category_set = set(allowed_categories or [])
 
         entry_signals = strategy_config.get("entry_filter_params", {})
         exit_signals = strategy_config.get("exit_trigger_params", {})
 
         # 高ドローダウン対策
-        if report.max_drawdown > 0.3:
+        if (
+            report.max_drawdown > 0.3
+            and self._is_signal_allowed(
+                "atr_support_break", "exit", entry_filter_only, allowed_category_set
+            )
+        ):
             # ATRサポートブレイクをエグジットに追加
             if "atr_support_break" not in exit_signals:
                 improvements.append(
@@ -301,7 +365,12 @@ class StrategyImprover:
                 )
 
         # ボリュームフィルター追加
-        if "volume" not in entry_signals:
+        if (
+            "volume" not in entry_signals
+            and self._is_signal_allowed(
+                "volume", "entry", entry_filter_only, allowed_category_set
+            )
+        ):
             improvements.append(
                 Improvement(
                     improvement_type="add_signal",
@@ -323,7 +392,12 @@ class StrategyImprover:
         # 市場環境フィルター追加
         market_perf = report.performance_by_market_condition
         if market_perf and market_perf.get("bear_market_avg", 0) < -0.02:
-            if "index_daily_change" not in entry_signals:
+            if "index_daily_change" not in entry_signals and self._is_signal_allowed(
+                "index_daily_change",
+                "entry",
+                entry_filter_only,
+                allowed_category_set,
+            ):
                 improvements.append(
                     Improvement(
                         improvement_type="add_signal",
@@ -339,7 +413,74 @@ class StrategyImprover:
                     )
                 )
 
+        # ファンダメンタルズエントリー追加（カテゴリ制約時の主用途）
+        if self._is_signal_allowed(
+            "fundamental", "entry", entry_filter_only, allowed_category_set
+        ):
+            fundamental_params = entry_signals.get("fundamental")
+            has_per_enabled = bool(
+                isinstance(fundamental_params, dict)
+                and isinstance(fundamental_params.get("per"), dict)
+                and fundamental_params.get("per", {}).get("enabled")
+            )
+
+            if not isinstance(fundamental_params, dict):
+                improvements.append(
+                    Improvement(
+                        improvement_type="add_signal",
+                        target="entry",
+                        signal_name="fundamental",
+                        changes={
+                            "enabled": True,
+                            "use_adjusted": True,
+                            "period_type": "FY",
+                            "per": {
+                                "enabled": True,
+                                "threshold": 15.0,
+                                "condition": "below",
+                                "exclude_negative": True,
+                            },
+                        },
+                        reason="ファンダメンタルズで割安銘柄を選別",
+                        expected_impact="エントリーの質を改善",
+                    )
+                )
+            elif not has_per_enabled:
+                improvements.append(
+                    Improvement(
+                        improvement_type="adjust_param",
+                        target="entry",
+                        signal_name="fundamental",
+                        changes={
+                            "enabled": True,
+                            "per": {
+                                "enabled": True,
+                                "threshold": 15.0,
+                                "condition": "below",
+                                "exclude_negative": True,
+                            },
+                        },
+                        reason="既存fundamentalにPERフィルターを追加",
+                        expected_impact="割高銘柄のエントリー抑制",
+                    )
+                )
+
         return improvements
+
+    def _is_signal_allowed(
+        self,
+        signal_name: str,
+        target: Literal["entry", "exit"],
+        entry_filter_only: bool,
+        allowed_categories: set[SignalCategory],
+    ) -> bool:
+        """制約に基づいて改善対象シグナルを許可するか判定"""
+        if entry_filter_only and target != "entry":
+            return False
+        if not allowed_categories:
+            return True
+        category = SIGNAL_CATEGORY_MAP.get(signal_name)
+        return category in allowed_categories
 
     def apply_improvements(
         self,

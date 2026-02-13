@@ -48,6 +48,8 @@ class TestLabGenerateRequestSchema:
         assert req.direction == "longonly"
         assert req.timeframe == "daily"
         assert req.dataset == "primeExTopix500"
+        assert req.entry_filter_only is False
+        assert req.allowed_categories is None
 
     def test_custom_values(self) -> None:
         """カスタム値が設定できる"""
@@ -59,6 +61,8 @@ class TestLabGenerateRequestSchema:
             direction="both",
             timeframe="weekly",
             dataset="custom_dataset",
+            entry_filter_only=True,
+            allowed_categories=["fundamental", "volume"],
         )
         assert req.count == 500
         assert req.top == 20
@@ -66,6 +70,8 @@ class TestLabGenerateRequestSchema:
         assert req.save is False
         assert req.direction == "both"
         assert req.timeframe == "weekly"
+        assert req.entry_filter_only is True
+        assert req.allowed_categories == ["fundamental", "volume"]
 
     def test_count_too_small(self) -> None:
         """countが1未満でバリデーションエラー"""
@@ -96,6 +102,11 @@ class TestLabGenerateRequestSchema:
         """不正なtimeframeでバリデーションエラー"""
         with pytest.raises(ValidationError):
             LabGenerateRequest(timeframe="monthly")  # type: ignore[arg-type]
+
+    def test_invalid_allowed_category(self) -> None:
+        """不正なallowed_categoriesでバリデーションエラー"""
+        with pytest.raises(ValidationError):
+            LabGenerateRequest(allowed_categories=["invalid"])  # type: ignore[list-item]
 
 
 class TestLabEvolveRequestSchema:
@@ -182,11 +193,23 @@ class TestLabImproveRequestSchema:
         req = LabImproveRequest(strategy_name="test")
         assert req.strategy_name == "test"
         assert req.auto_apply is True
+        assert req.entry_filter_only is False
+        assert req.allowed_categories is None
 
     def test_empty_strategy_name(self) -> None:
         """空の戦略名でバリデーションエラー"""
         with pytest.raises(ValidationError):
             LabImproveRequest(strategy_name="")
+
+    def test_allowed_categories(self) -> None:
+        """allowed_categories が設定できる"""
+        req = LabImproveRequest(
+            strategy_name="test",
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
+        )
+        assert req.entry_filter_only is True
+        assert req.allowed_categories == ["fundamental"]
 
 
 class TestLabResultModels:
@@ -514,28 +537,35 @@ class TestLabSubmitEndpoints:
 
     def test_submit_generate(self, client: TestClient) -> None:
         """generate サブミットが成功する"""
-        mock_job_id = "test-gen-001"
+        job_id = job_manager.create_job("generate(n=50,top=5)", job_type="lab_generate")
         with patch(
             "src.server.routes.lab.lab_service.submit_generate",
             new_callable=AsyncMock,
-            return_value=mock_job_id,
-        ):
-            # ジョブを事前作成（submit_generateのmock後にルートで_get_lab_job_or_404が呼ばれるため）
-            job_manager.create_job.__wrapped__ if hasattr(job_manager.create_job, "__wrapped__") else None
-            job_id = job_manager.create_job("generate(n=100,top=10)", job_type="lab_generate")
-            # mockのreturn_valueを実際のjob_idに合わせる
-            with patch(
-                "src.server.routes.lab.lab_service.submit_generate",
-                new_callable=AsyncMock,
-                return_value=job_id,
-            ):
-                response = client.post(
-                    "/api/lab/generate",
-                    json={"count": 50, "top": 5},
-                )
-                assert response.status_code == 200
-                data = response.json()
-                assert data["lab_type"] == "generate"
+            return_value=job_id,
+        ) as mock_submit:
+            response = client.post(
+                "/api/lab/generate",
+                json={
+                    "count": 50,
+                    "top": 5,
+                    "entry_filter_only": True,
+                    "allowed_categories": ["fundamental"],
+                },
+            )
+            assert response.status_code == 200
+            data = response.json()
+            assert data["lab_type"] == "generate"
+            mock_submit.assert_awaited_once_with(
+                count=50,
+                top=5,
+                seed=None,
+                save=True,
+                direction="longonly",
+                timeframe="daily",
+                dataset="primeExTopix500",
+                entry_filter_only=True,
+                allowed_categories=["fundamental"],
+            )
 
     def test_submit_evolve(self, client: TestClient) -> None:
         """evolve サブミットが成功する"""
@@ -581,14 +611,25 @@ class TestLabSubmitEndpoints:
             "src.server.routes.lab.lab_service.submit_improve",
             new_callable=AsyncMock,
             return_value=job_id,
-        ):
+        ) as mock_submit:
             response = client.post(
                 "/api/lab/improve",
-                json={"strategy_name": "test_strategy", "auto_apply": False},
+                json={
+                    "strategy_name": "test_strategy",
+                    "auto_apply": False,
+                    "entry_filter_only": True,
+                    "allowed_categories": ["fundamental"],
+                },
             )
             assert response.status_code == 200
             data = response.json()
             assert data["lab_type"] == "improve"
+            mock_submit.assert_awaited_once_with(
+                strategy_name="test_strategy",
+                auto_apply=False,
+                entry_filter_only=True,
+                allowed_categories=["fundamental"],
+            )
 
     def test_submit_generate_error(self, client: TestClient) -> None:
         """generate サブミットが例外で500を返す"""
@@ -1170,6 +1211,40 @@ class TestLabServiceSyncMethods:
             )
 
         assert result["saved_strategy_path"] is None
+        service._executor.shutdown(wait=False)
+
+    def test_execute_generate_sync_with_constraints(self) -> None:
+        """_execute_generate_syncで制約がGeneratorConfigに渡る"""
+        from src.server.services.lab_service import LabService
+
+        service = LabService(max_workers=1)
+
+        with (
+            patch("src.agent.strategy_generator.StrategyGenerator") as MockGen,
+            patch("src.agent.evaluator.StrategyEvaluator") as MockEval,
+        ):
+            MockGen.return_value.generate.return_value = []
+            MockEval.return_value.evaluate_batch.return_value = []
+
+            service._execute_generate_sync(
+                count=5,
+                top=1,
+                seed=7,
+                save=False,
+                direction="longonly",
+                timeframe="daily",
+                dataset="test",
+                entry_filter_only=True,
+                allowed_categories=["fundamental"],
+            )
+
+            assert MockGen.call_count == 1
+            call_args = MockGen.call_args.kwargs
+            assert "config" in call_args
+            config = call_args["config"]
+            assert config.entry_filter_only is True
+            assert config.allowed_categories == ["fundamental"]
+
         service._executor.shutdown(wait=False)
 
     def test_execute_evolve_sync(self) -> None:

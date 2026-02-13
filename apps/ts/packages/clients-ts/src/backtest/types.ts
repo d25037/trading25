@@ -418,6 +418,15 @@ export interface DefaultConfigUpdateResponse {
 // ============================================
 
 export type LabType = 'generate' | 'evolve' | 'optimize' | 'improve';
+export type LabSignalCategory =
+  | 'breakout'
+  | 'trend'
+  | 'oscillator'
+  | 'volatility'
+  | 'volume'
+  | 'macro'
+  | 'fundamental'
+  | 'sector';
 
 // Request types
 
@@ -429,6 +438,8 @@ export interface LabGenerateRequest {
   direction?: 'longonly' | 'shortonly' | 'both';
   timeframe?: string;
   dataset?: string;
+  entry_filter_only?: boolean;
+  allowed_categories?: LabSignalCategory[];
 }
 
 export interface LabEvolveRequest {
@@ -449,6 +460,8 @@ export interface LabOptimizeRequest {
 export interface LabImproveRequest {
   strategy_name: string;
   auto_apply?: boolean;
+  entry_filter_only?: boolean;
+  allowed_categories?: LabSignalCategory[];
 }
 
 // Result item types

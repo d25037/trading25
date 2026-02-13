@@ -44,6 +44,7 @@ export type {
   LabOptimizeRequest,
   LabOptimizeResult,
   LabResultData,
+  LabSignalCategory,
   LabSSEEvent,
   LabType,
   OHLCVRecord,
