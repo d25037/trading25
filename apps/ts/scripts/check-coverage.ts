@@ -10,14 +10,12 @@ type CoverageSummary = {
 
 const thresholds: Record<string, CoverageThreshold> = {
   shared: { lines: 0.7, functions: 0.7 },
-  api: { lines: 0.65, functions: 0.45 },
   cli: { lines: 0.6, functions: 0.6 },
   web: { lines: 0.35, functions: 0.6 },
 };
 
 const coverageFiles: Record<string, string> = {
   shared: 'packages/shared/coverage/lcov.info',
-  api: 'packages/api/coverage/lcov.info',
   cli: 'packages/cli/coverage/lcov.info',
   web: 'packages/web/coverage/lcov.info',
 };

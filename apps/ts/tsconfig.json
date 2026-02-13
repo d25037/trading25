@@ -34,7 +34,6 @@
       "@trading25/shared": ["packages/shared/src"],
       "@trading25/shared/*": ["packages/shared/src/*"],
       "@trading25/web": ["packages/web/src"],
-      "@trading25/api": ["packages/api/src"],
       "@trading25/cli": ["packages/cli/src"]
     }
   },

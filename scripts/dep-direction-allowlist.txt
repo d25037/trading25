@@ -8,7 +8,6 @@
 # - When a file's bt reference is removed, delete its entry here
 # - CI staleness check will fail if an entry no longer matches any pattern
 # - Lines starting with # are comments; blank lines are ignored
-# - `apps/ts/packages/api` (archived) is excluded from dep-direction scanning
 
 # ─────────────────────────────────────────────────────────
 # [permanent] bt:sync tooling — required for OpenAPI schema → TS type generation
