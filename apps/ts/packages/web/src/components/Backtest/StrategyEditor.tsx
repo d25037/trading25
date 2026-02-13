@@ -11,14 +11,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { useSignalReference, useStrategy, useUpdateStrategy, useValidateStrategy } from '@/hooks/useBacktest';
+import { useStrategy, useUpdateStrategy, useValidateStrategy } from '@/hooks/useBacktest';
 import { cn } from '@/lib/utils';
+import type { StrategyValidationResponse } from '@/types/backtest';
 import { SignalReferencePanel } from './SignalReferencePanel';
-import {
-  mergeValidationResults,
-  type StrategyValidationResult,
-  validateStrategyConfigLocally,
-} from './strategyValidation';
 
 interface StrategyEditorProps {
   open: boolean;
@@ -31,9 +27,8 @@ interface StrategyEditorProps {
 export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
-  const [validationResult, setValidationResult] = useState<StrategyValidationResult | null>(null);
+  const [validationResult, setValidationResult] = useState<StrategyValidationResponse | null>(null);
   const { data: strategyDetail, isLoading: isLoadingStrategy } = useStrategy(open ? strategyName : null);
-  const { data: signalReference } = useSignalReference();
   const updateStrategy = useUpdateStrategy();
   const validateStrategy = useValidateStrategy();
 
@@ -63,47 +58,41 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     }
   }, [yamlContent]);
 
+  const validateWithBackend = useCallback(
+    async (config: Record<string, unknown>): Promise<StrategyValidationResponse> => {
+      try {
+        return await validateStrategy.mutateAsync({
+          name: strategyName,
+          request: { config },
+        });
+      } catch (error) {
+        const message = error instanceof Error ? error.message : 'Unknown validation error';
+        return {
+          valid: false,
+          errors: [`Validation request failed: ${message}`],
+          warnings: [],
+        };
+      }
+    },
+    [strategyName, validateStrategy]
+  );
+
   const handleValidate = useCallback(async () => {
     const config = parseYaml();
     if (!config) return;
 
-    const localValidation = validateStrategyConfigLocally(config, signalReference?.signals ?? []);
-    if (!localValidation.valid) {
-      setValidationResult(localValidation);
-      return;
-    }
-
-    const serverValidation = await validateStrategy
-      .mutateAsync({
-        name: strategyName,
-        request: { config },
-      })
-      .catch(() => null);
-
-    setValidationResult(mergeValidationResults(localValidation, serverValidation));
-  }, [parseYaml, signalReference?.signals, strategyName, validateStrategy]);
+    const serverValidation = await validateWithBackend(config);
+    setValidationResult(serverValidation);
+  }, [parseYaml, validateWithBackend]);
 
   const handleSave = useCallback(async () => {
     const config = parseYaml();
     if (!config) return;
 
-    const localValidation = validateStrategyConfigLocally(config, signalReference?.signals ?? []);
-    if (!localValidation.valid) {
-      setValidationResult(localValidation);
-      return;
-    }
+    const serverValidation = await validateWithBackend(config);
+    setValidationResult(serverValidation);
 
-    const serverValidation = await validateStrategy
-      .mutateAsync({
-        name: strategyName,
-        request: { config },
-      })
-      .catch(() => null);
-
-    const mergedValidation = mergeValidationResults(localValidation, serverValidation);
-    setValidationResult(mergedValidation);
-
-    if (!mergedValidation?.valid) {
+    if (!serverValidation.valid) {
       return;
     }
 
@@ -116,7 +105,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
         },
       }
     );
-  }, [parseYaml, signalReference?.signals, strategyName, validateStrategy, updateStrategy, onOpenChange, onSuccess]);
+  }, [parseYaml, validateWithBackend, strategyName, updateStrategy, onOpenChange, onSuccess]);
 
   const handleOpenChange = useCallback(
     (open: boolean) => {

@@ -18,6 +18,41 @@ const signalDefs: SignalDefinition[] = [
       { name: 'threshold', type: 'number', description: '', constraints: { gt: 0 } },
     ],
   },
+  {
+    key: 'fundamental_market_cap',
+    name: 'Market Cap',
+    category: 'fundamental',
+    description: '',
+    usage_hint: '',
+    yaml_snippet: '',
+    exit_disabled: false,
+    data_requirements: [],
+    fields: [
+      { name: 'enabled', type: 'boolean', description: '' },
+      { name: 'period_type', type: 'select', description: '', options: ['FY', 'all', '1Q', '2Q', '3Q'] },
+      { name: 'use_adjusted', type: 'boolean', description: '' },
+      { name: 'threshold', type: 'number', description: '', constraints: { gt: 0 } },
+      { name: 'condition', type: 'select', description: '', options: ['above', 'below'] },
+      { name: 'use_floating_shares', type: 'boolean', description: '' },
+    ],
+  },
+  {
+    key: 'fundamental_forward_eps_growth',
+    name: 'Forward EPS Growth',
+    category: 'fundamental',
+    description: '',
+    usage_hint: '',
+    yaml_snippet: '',
+    exit_disabled: false,
+    data_requirements: [],
+    fields: [
+      { name: 'enabled', type: 'boolean', description: '' },
+      { name: 'period_type', type: 'select', description: '', options: ['FY', 'all', '1Q', '2Q', '3Q'] },
+      { name: 'use_adjusted', type: 'boolean', description: '' },
+      { name: 'threshold', type: 'number', description: '', constraints: { gt: 0 } },
+      { name: 'condition', type: 'select', description: '', options: ['above', 'below'] },
+    ],
+  },
 ];
 
 describe('validateStrategyConfigLocally', () => {
@@ -103,19 +138,64 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('does not reject nested fundamental group key', () => {
+  it('validates nested fundamental group key and fields', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: {
           fundamental: {
-            per: { enabled: true, threshold: 15 },
+            enabled: true,
+            period_type: 'FY',
+            use_adjusted: true,
+            market_cap: { enabled: true, threshold: 700, condition: 'below', use_floating_shares: true },
+            forward_eps_growth: { enabled: true, threshold: 0.2, condition: 'above' },
           },
         },
       },
       signalDefs
     );
 
-    expect(result.errors).not.toContain('entry_filter_params.fundamental is not a valid signal name');
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('returns error for typo in nested fundamental key', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: {
+          fundamental: {
+            enabled: true,
+            foward_eps_growth: { enabled: true, threshold: 0.2, condition: 'above' },
+          },
+        },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain('entry_filter_params.fundamental.foward_eps_growth is not a valid parameter name');
+  });
+
+  it('returns error for unknown nested parameter in fundamental child', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: {
+          fundamental: {
+            market_cap: {
+              enabled: true,
+              threshold: 700,
+              condition: 'below',
+              threshold_typo: 1,
+            },
+          },
+        },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      'entry_filter_params.fundamental.market_cap.threshold_typo is not a valid parameter name'
+    );
   });
 
   it('skips signal-name validation when signal reference is unavailable', () => {
