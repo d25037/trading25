@@ -38,3 +38,14 @@ if (typeof global !== 'undefined') {
     disconnect: vi.fn(),
   }));
 }
+
+// Radix Select relies on pointer capture APIs that are not implemented in happy-dom.
+if (!Element.prototype.hasPointerCapture) {
+  Element.prototype.hasPointerCapture = () => false;
+}
+if (!Element.prototype.setPointerCapture) {
+  Element.prototype.setPointerCapture = () => {};
+}
+if (!Element.prototype.releasePointerCapture) {
+  Element.prototype.releasePointerCapture = () => {};
+}

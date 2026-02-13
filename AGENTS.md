@@ -86,6 +86,8 @@ FastAPI サーバー（:3002）とtyper CLI を提供。
 uv sync                          # 環境セットアップ
 uv run bt server --port 3002     # APIサーバー起動
 uv run bt backtest <strategy>    # バックテスト実行
+uv run bt lab generate --entry-filter-only --allowed-category fundamental
+uv run bt lab improve <strategy> --entry-filter-only --allowed-category fundamental
 uv run pytest tests/             # テスト
 uv run ruff check src/           # リント
 uv run pyright src/              # 型チェック

@@ -17,6 +17,7 @@ class TestStrategyGenerator:
         """利用可能シグナルが定義されていることを確認"""
         assert len(AVAILABLE_SIGNALS) > 0
         assert len(SIGNAL_CONSTRAINTS_MAP) > 0
+        assert "fundamental" in SIGNAL_CONSTRAINTS_MAP
 
     def test_signal_constraints_have_required_fields(self):
         """シグナル制約が必須フィールドを持つことを確認"""
@@ -228,3 +229,57 @@ class TestStrategyGenerator:
             for signal_name in c1.exit_trigger_params:
                 if signal_name in c2.exit_trigger_params:
                     assert c1.exit_trigger_params[signal_name] == c2.exit_trigger_params[signal_name]
+
+    def test_allowed_categories_filters_signals(self):
+        """allowed_categories で候補シグナルが絞り込まれる"""
+        config = GeneratorConfig(
+            n_strategies=3,
+            seed=42,
+            allowed_categories=["fundamental"],
+            entry_signal_min=1,
+            entry_signal_max=1,
+        )
+        generator = StrategyGenerator(config=config)
+
+        assert [s.name for s in generator.entry_signals] == ["fundamental"]
+        assert generator.exit_signals == []
+
+    def test_entry_filter_only_generates_no_exit_signals(self):
+        """entry_filter_only=True のとき exit_trigger_params は空"""
+        config = GeneratorConfig(
+            n_strategies=3,
+            seed=42,
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
+            entry_signal_min=1,
+            entry_signal_max=1,
+        )
+        generator = StrategyGenerator(config=config)
+        candidates = generator.generate()
+
+        assert len(candidates) == 3
+        for candidate in candidates:
+            assert candidate.exit_trigger_params == {}
+            assert "fundamental" in candidate.entry_filter_params
+
+    def test_fundamental_params_have_parent_and_child_enabled(self):
+        """fundamental 生成時に親 enabled と子シグナル enabled が設定される"""
+        config = GeneratorConfig(
+            n_strategies=1,
+            seed=42,
+            allowed_categories=["fundamental"],
+            entry_signal_min=1,
+            entry_signal_max=1,
+            entry_filter_only=True,
+        )
+        generator = StrategyGenerator(config=config)
+        candidate = generator.generate()[0]
+
+        fundamental = candidate.entry_filter_params["fundamental"]
+        assert fundamental["enabled"] is True
+        child_enabled = [
+            key
+            for key, value in fundamental.items()
+            if isinstance(value, dict) and value.get("enabled")
+        ]
+        assert len(child_enabled) >= 1

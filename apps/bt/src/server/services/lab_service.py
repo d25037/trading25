@@ -11,6 +11,7 @@ from typing import Any
 
 from loguru import logger
 
+from src.agent.models import SignalCategory
 from src.server.schemas.backtest import JobStatus
 from src.server.schemas.lab import (
     EvolutionHistoryItem,
@@ -134,8 +135,11 @@ class LabService:
         direction: str = "longonly",
         timeframe: str = "daily",
         dataset: str = "primeExTopix500",
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> str:
         """戦略自動生成ジョブをサブミット"""
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         return await self._submit_job(
             strategy_name=f"generate(n={count},top={top})",
             job_type="lab_generate",
@@ -146,7 +150,17 @@ class LabService:
             fail_message="戦略生成に失敗しました",
             log_detail=f"count={count}, top={top}",
             sync_fn=self._execute_generate_sync,
-            sync_args=(count, top, seed, save, direction, timeframe, dataset),
+            sync_args=(
+                count,
+                top,
+                seed,
+                save,
+                direction,
+                timeframe,
+                dataset,
+                entry_filter_only,
+                resolved_categories,
+            ),
         )
 
     def _execute_generate_sync(
@@ -158,6 +172,8 @@ class LabService:
         direction: str,
         timeframe: str,
         dataset: str,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> dict[str, Any]:
         """同期的に戦略生成を実行"""
         from src.agent.evaluator import StrategyEvaluator
@@ -165,7 +181,13 @@ class LabService:
         from src.agent.strategy_generator import StrategyGenerator
         from src.agent.yaml_updater import YamlUpdater
 
-        config = GeneratorConfig(n_strategies=count, seed=seed)
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        config = GeneratorConfig(
+            n_strategies=count,
+            seed=seed,
+            entry_filter_only=entry_filter_only,
+            allowed_categories=resolved_categories,
+        )
         generator = StrategyGenerator(config=config)
         candidates = generator.generate()
 
@@ -454,8 +476,11 @@ class LabService:
         self,
         strategy_name: str,
         auto_apply: bool = True,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> str:
         """戦略改善ジョブをサブミット"""
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         return await self._submit_job(
             strategy_name=strategy_name,
             job_type="lab_improve",
@@ -466,25 +491,42 @@ class LabService:
             fail_message="戦略改善に失敗しました",
             log_detail=f"戦略: {strategy_name}",
             sync_fn=self._execute_improve_sync,
-            sync_args=(strategy_name, auto_apply),
+            sync_args=(
+                strategy_name,
+                auto_apply,
+                entry_filter_only,
+                resolved_categories,
+            ),
         )
 
     def _execute_improve_sync(
         self,
         strategy_name: str,
         auto_apply: bool,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> dict[str, Any]:
         """同期的に戦略改善を実行"""
         from src.agent.strategy_improver import StrategyImprover
         from src.agent.yaml_updater import YamlUpdater
         from src.lib.strategy_runtime.loader import ConfigLoader
 
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         improver = StrategyImprover()
-        report = improver.analyze(strategy_name)
+        report = improver.analyze(
+            strategy_name,
+            entry_filter_only=entry_filter_only,
+            allowed_categories=resolved_categories,
+        )
 
         config_loader = ConfigLoader()
         strategy_config = config_loader.load_strategy_config(strategy_name)
-        improvements = improver.suggest_improvements(report, strategy_config)
+        improvements = improver.suggest_improvements(
+            report,
+            strategy_config,
+            entry_filter_only=entry_filter_only,
+            allowed_categories=resolved_categories,
+        )
 
         improvement_items = [
             ImprovementItem(

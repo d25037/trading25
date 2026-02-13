@@ -4086,6 +4086,17 @@ export interface components {
              * @default primeExTopix500
              */
             dataset: string;
+            /**
+             * Entry Filter Only
+             * @description Entryフィルターのみ生成（Exitシグナルを生成しない）
+             * @default false
+             */
+            entry_filter_only: boolean;
+            /**
+             * Allowed Categories
+             * @description 許可するシグナルカテゴリ（未指定時は全カテゴリ）
+             */
+            allowed_categories?: ("breakout" | "trend" | "oscillator" | "volatility" | "volume" | "macro" | "fundamental" | "sector")[] | null;
         };
         /**
          * LabGenerateResult
@@ -4129,6 +4140,17 @@ export interface components {
              * @default true
              */
             auto_apply: boolean;
+            /**
+             * Entry Filter Only
+             * @description Entryフィルターの改善のみを許可
+             * @default false
+             */
+            entry_filter_only: boolean;
+            /**
+             * Allowed Categories
+             * @description 改善対象として許可するカテゴリ（未指定時は全カテゴリ）
+             */
+            allowed_categories?: ("breakout" | "trend" | "oscillator" | "volatility" | "volume" | "macro" | "fundamental" | "sector")[] | null;
         };
         /**
          * LabImproveResult
@@ -4675,19 +4697,40 @@ export interface components {
             /** Close */
             close: number;
         };
-        /** OHLCVRecord */
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
         OHLCVRecord: {
-            /** Date */
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
             date: string;
-            /** Open */
+            /**
+             * Open
+             * @description 始値
+             */
             open: number;
-            /** High */
+            /**
+             * High
+             * @description 高値
+             */
             high: number;
-            /** Low */
+            /**
+             * Low
+             * @description 安値
+             */
             low: number;
-            /** Close */
+            /**
+             * Close
+             * @description 終値
+             */
             close: number;
-            /** Volume */
+            /**
+             * Volume
+             * @description 出来高
+             */
             volume: number;
         };
         /**
@@ -4766,7 +4809,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
+            data: components["schemas"]["OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -5098,7 +5141,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5178,7 +5221,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6996,6 +7039,21 @@ export interface components {
             /** Max */
             max: string;
         };
+        /** OHLCVRecord */
+        src__server__schemas__dataset_data__OHLCVRecord: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /** Volume */
+            volume: number;
+        };
         /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
@@ -7013,49 +7071,6 @@ export interface components {
             /** To */
             to: string;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
-        src__server__schemas__indicators__OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
-            date: string;
-            /**
-             * Open
-             * @description 始値
-             */
-            open: number;
-            /**
-             * High
-             * @description 高値
-             */
-            high: number;
-            /**
-             * Low
-             * @description 安値
-             */
-            low: number;
-            /**
-             * Close
-             * @description 終値
-             */
-            close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
-            volume: number;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
         /** IndexMatch */
         src__server__schemas__portfolio_factor_regression__IndexMatch: {
             /** Code */
@@ -7064,6 +7079,13 @@ export interface components {
             name: string;
             /** Rsquared */
             rSquared: number;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_performance__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * ErrorDetail
@@ -12195,7 +12217,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["OHLCVRecord"][];
+                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                     };
                 };
             };
@@ -12258,7 +12280,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OHLCVRecord"][];
+                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */
