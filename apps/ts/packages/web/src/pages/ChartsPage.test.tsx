@@ -52,6 +52,10 @@ const mockSettings = {
   showPPOChart: true,
   showVolumeComparison: true,
   showTradingValueMA: true,
+  showFundamentalsPanel: true,
+  showFundamentalsHistoryPanel: true,
+  showMarginPressurePanel: true,
+  showFactorRegressionPanel: true,
   visibleBars: 120,
   relativeMode: true,
 };
@@ -174,6 +178,10 @@ describe('ChartsPage', () => {
     mockSettings.showPPOChart = true;
     mockSettings.showVolumeComparison = true;
     mockSettings.showTradingValueMA = true;
+    mockSettings.showFundamentalsPanel = true;
+    mockSettings.showFundamentalsHistoryPanel = true;
+    mockSettings.showMarginPressurePanel = true;
+    mockSettings.showFactorRegressionPanel = true;
     mockSettings.tradingValueMA.period = 15;
     mockSettings.relativeMode = true;
 
@@ -293,6 +301,46 @@ describe('ChartsPage', () => {
       enabled: false,
       tradingValuePeriod: 15,
     });
+  });
+
+  it('hides panel sections and disables related queries when panel flags are off', () => {
+    mockSettings.showFundamentalsPanel = false;
+    mockSettings.showFundamentalsHistoryPanel = false;
+    mockSettings.showMarginPressurePanel = false;
+    mockSettings.showFactorRegressionPanel = false;
+
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    render(<ChartsPage />);
+
+    expect(screen.queryByText('Fundamentals Panel')).not.toBeInTheDocument();
+    expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
+    expect(screen.queryByText('Factor Regression Panel')).not.toBeInTheDocument();
+    expect(screen.queryByText('信用圧力指標')).not.toBeInTheDocument();
+    expect(screen.queryByText(/時価総額/)).not.toBeInTheDocument();
+
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
+    expect(mockFactorRegressionPanelProps).not.toHaveBeenCalled();
   });
 
   it('renders FY, margin pressure, and factor sections in the expected order', () => {

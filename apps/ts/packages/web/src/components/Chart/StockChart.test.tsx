@@ -14,6 +14,10 @@ const mockChartStore = {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showFundamentalsPanel: true,
+    showFundamentalsHistoryPanel: true,
+    showMarginPressurePanel: true,
+    showFactorRegressionPanel: true,
     visibleBars: 30,
     relativeMode: false,
     indicators: {

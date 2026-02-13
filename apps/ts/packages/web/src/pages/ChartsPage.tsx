@@ -132,20 +132,25 @@ function shouldRenderChartPanels(
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Page intentionally coordinates multiple chart panels and state gates.
 export function ChartsPage() {
   const marginSection = useLazySectionVisibility();
-  const fundamentalsSection = useLazySectionVisibility();
+  const fundamentalsPanelSection = useLazySectionVisibility();
+  const fundamentalsHistorySection = useLazySectionVisibility();
   const factorSection = useLazySectionVisibility();
 
   const { chartData, signalMarkers, isLoading, error, selectedSymbol } = useMultiTimeframeChart();
   const { settings } = useChartStore();
+  const shouldFetchMarginPressure = settings.showMarginPressurePanel && marginSection.isVisible;
+  const shouldFetchFundamentals =
+    (settings.showFundamentalsPanel && fundamentalsPanelSection.isVisible) ||
+    (settings.showFundamentalsHistoryPanel && fundamentalsHistorySection.isVisible);
   const {
     data: marginPressureData,
     isLoading: marginPressureLoading,
     error: marginPressureError,
-  } = useBtMarginIndicators(selectedSymbol, { enabled: marginSection.isVisible });
+  } = useBtMarginIndicators(selectedSymbol, { enabled: shouldFetchMarginPressure });
   const { data: stockData } = useStockData(selectedSymbol, 'daily'); // Get stock data for company name
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
   const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
-    enabled: fundamentalsSection.isVisible,
+    enabled: shouldFetchFundamentals,
     tradingValuePeriod,
   });
   const showEmptyState = shouldRenderEmptyState(isLoading, error, selectedSymbol);
@@ -188,10 +193,11 @@ export function ChartsPage() {
   );
 
   const latestMarketCap = useMemo(() => {
+    if (!settings.showFundamentalsPanel && !settings.showFundamentalsHistoryPanel) return null;
     const daily = fundamentalsData?.dailyValuation;
     if (!daily || daily.length === 0) return null;
     return daily[daily.length - 1]?.marketCap ?? null;
-  }, [fundamentalsData]);
+  }, [fundamentalsData, settings.showFundamentalsHistoryPanel, settings.showFundamentalsPanel]);
 
   const renderErrorState = () => (
     <div className="flex h-full items-center justify-center">
@@ -456,85 +462,99 @@ export function ChartsPage() {
             )}
 
             {/* Fundamentals Panel Section */}
-            <div ref={fundamentalsSection.sectionRef} className="h-[440px]">
-              <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                <div className="absolute inset-0 gradient-glass opacity-50" />
-                <div className="relative z-10 h-full">
-                  <div className="p-4 border-b border-border/30">
-                    <h3 className="text-lg font-semibold text-foreground">Fundamental Analysis</h3>
-                  </div>
-                  <div className="h-[calc(100%-4rem)] p-4">
-                    <ErrorBoundary>
-                      <FundamentalsPanel
-                        symbol={selectedSymbol}
-                        enabled={fundamentalsSection.isVisible}
-                        tradingValuePeriod={tradingValuePeriod}
-                      />
-                    </ErrorBoundary>
+            {settings.showFundamentalsPanel && (
+              <div ref={fundamentalsPanelSection.sectionRef} className="h-[440px]">
+                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+                  <div className="absolute inset-0 gradient-glass opacity-50" />
+                  <div className="relative z-10 h-full">
+                    <div className="p-4 border-b border-border/30">
+                      <h3 className="text-lg font-semibold text-foreground">Fundamental Analysis</h3>
+                    </div>
+                    <div className="h-[calc(100%-4rem)] p-4">
+                      <ErrorBoundary>
+                        <FundamentalsPanel
+                          symbol={selectedSymbol}
+                          enabled={fundamentalsPanelSection.isVisible}
+                          tradingValuePeriod={tradingValuePeriod}
+                        />
+                      </ErrorBoundary>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* FY History Panel Section */}
-            <div className="h-[340px]">
-              <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                <div className="absolute inset-0 gradient-glass opacity-50" />
-                <div className="relative z-10 h-full">
-                  <div className="p-4 border-b border-border/30">
-                    <h3 className="text-lg font-semibold text-foreground">FY推移</h3>
-                  </div>
-                  <div className="h-[calc(100%-4rem)] p-4">
-                    <ErrorBoundary>
-                      <FundamentalsHistoryPanel symbol={selectedSymbol} enabled={fundamentalsSection.isVisible} />
-                    </ErrorBoundary>
+            {settings.showFundamentalsHistoryPanel && (
+              <div ref={fundamentalsHistorySection.sectionRef} className="h-[340px]">
+                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+                  <div className="absolute inset-0 gradient-glass opacity-50" />
+                  <div className="relative z-10 h-full">
+                    <div className="p-4 border-b border-border/30">
+                      <h3 className="text-lg font-semibold text-foreground">FY推移</h3>
+                    </div>
+                    <div className="h-[calc(100%-4rem)] p-4">
+                      <ErrorBoundary>
+                        <FundamentalsHistoryPanel
+                          symbol={selectedSymbol}
+                          enabled={fundamentalsHistorySection.isVisible}
+                        />
+                      </ErrorBoundary>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Margin Pressure Indicators Row - 3 charts */}
-            <div ref={marginSection.sectionRef} className="h-72">
-              <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                <div className="absolute inset-0 gradient-glass opacity-50" />
-                <div className="relative z-10 h-full">
-                  <div className="p-4 border-b border-border/30">
-                    <h3 className="text-lg font-semibold text-foreground">
-                      信用圧力指標
-                      {marginPressureData && (
-                        <span className="text-sm font-normal text-muted-foreground ml-2">
-                          ({marginPressureData.averagePeriod}日平均)
-                        </span>
-                      )}
-                    </h3>
-                  </div>
-                  <div className="h-[calc(100%-4rem)] p-4">
-                    <MarginPressureIndicatorsSection
-                      data={marginPressureData}
-                      isLoading={marginPressureLoading}
-                      error={marginPressureError}
-                    />
+            {settings.showMarginPressurePanel && (
+              <div ref={marginSection.sectionRef} className="h-72">
+                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+                  <div className="absolute inset-0 gradient-glass opacity-50" />
+                  <div className="relative z-10 h-full">
+                    <div className="p-4 border-b border-border/30">
+                      <h3 className="text-lg font-semibold text-foreground">
+                        信用圧力指標
+                        {marginPressureData && (
+                          <span className="text-sm font-normal text-muted-foreground ml-2">
+                            ({marginPressureData.averagePeriod}日平均)
+                          </span>
+                        )}
+                      </h3>
+                    </div>
+                    <div className="h-[calc(100%-4rem)] p-4">
+                      <MarginPressureIndicatorsSection
+                        data={marginPressureData}
+                        isLoading={marginPressureLoading}
+                        error={marginPressureError}
+                      />
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
 
             {/* Factor Regression Panel Section */}
-            <div ref={factorSection.sectionRef} className="h-64">
-              <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                <div className="absolute inset-0 gradient-glass opacity-50" />
-                <div className="relative z-10 h-full">
-                  <div className="p-4 border-b border-border/30">
-                    <h3 className="text-lg font-semibold text-foreground">Factor Regression Analysis</h3>
-                  </div>
-                  <div className="h-[calc(100%-4rem)] p-4">
-                    <ErrorBoundary>
-                      <FactorRegressionPanel symbol={selectedSymbol} enabled={factorSection.isVisible} />
-                    </ErrorBoundary>
+            {settings.showFactorRegressionPanel && (
+              <div ref={factorSection.sectionRef} className="h-64">
+                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+                  <div className="absolute inset-0 gradient-glass opacity-50" />
+                  <div className="relative z-10 h-full">
+                    <div className="p-4 border-b border-border/30">
+                      <h3 className="text-lg font-semibold text-foreground">Factor Regression Analysis</h3>
+                    </div>
+                    <div className="h-[calc(100%-4rem)] p-4">
+                      <ErrorBoundary>
+                        <FactorRegressionPanel
+                          symbol={selectedSymbol}
+                          enabled={settings.showFactorRegressionPanel && factorSection.isVisible}
+                        />
+                      </ErrorBoundary>
+                    </div>
                   </div>
                 </div>
               </div>
-            </div>
+            )}
           </div>
         )}
       </div>
