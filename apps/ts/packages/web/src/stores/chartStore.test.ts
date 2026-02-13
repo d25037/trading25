@@ -38,13 +38,14 @@ describe('chartStore', () => {
   it('updates settings and toggles indicators', () => {
     const { updateSettings, toggleIndicator, toggleRelativeMode, setDisplayTimeframe } = useChartStore.getState();
 
-    updateSettings({ showVolume: false, chartType: 'line' });
+    updateSettings({ showVolume: false, chartType: 'line', showFundamentalsPanel: false });
     toggleIndicator('sma');
     toggleRelativeMode();
     setDisplayTimeframe('weekly');
 
     const state = useChartStore.getState();
     expect(state.settings.showVolume).toBe(false);
+    expect(state.settings.showFundamentalsPanel).toBe(false);
     expect(state.settings.chartType).toBe('line');
     expect(state.settings.indicators.sma.enabled).toBe(true);
     expect(state.settings.relativeMode).toBe(true);
@@ -117,12 +118,23 @@ describe('chartStore', () => {
   it('creates preset with current settings snapshot', () => {
     const { updateSettings, createPreset } = useChartStore.getState();
 
-    updateSettings({ showVolume: false, chartType: 'area' });
+    updateSettings({
+      showVolume: false,
+      chartType: 'area',
+      showFundamentalsPanel: false,
+      showFundamentalsHistoryPanel: false,
+      showMarginPressurePanel: false,
+      showFactorRegressionPanel: false,
+    });
     const id = createPreset('Custom');
 
     const preset = useChartStore.getState().presets.find((p) => p.id === id);
     expect(preset?.settings.showVolume).toBe(false);
     expect(preset?.settings.chartType).toBe('area');
+    expect(preset?.settings.showFundamentalsPanel).toBe(false);
+    expect(preset?.settings.showFundamentalsHistoryPanel).toBe(false);
+    expect(preset?.settings.showMarginPressurePanel).toBe(false);
+    expect(preset?.settings.showFactorRegressionPanel).toBe(false);
     expect(useChartStore.getState().activePresetId).toBe(id);
   });
 
@@ -130,14 +142,26 @@ describe('chartStore', () => {
     const { createPreset, updateSettings, loadPreset } = useChartStore.getState();
 
     const id = createPreset('Saved');
-    updateSettings({ chartType: 'line', showVolume: false });
+    updateSettings({
+      chartType: 'line',
+      showVolume: false,
+      showFundamentalsPanel: false,
+      showFundamentalsHistoryPanel: false,
+      showMarginPressurePanel: false,
+      showFactorRegressionPanel: false,
+    });
 
     expect(useChartStore.getState().settings.chartType).toBe('line');
+    expect(useChartStore.getState().settings.showFundamentalsPanel).toBe(false);
 
     loadPreset(id);
 
     expect(useChartStore.getState().settings.chartType).toBe('candlestick');
     expect(useChartStore.getState().settings.showVolume).toBe(true);
+    expect(useChartStore.getState().settings.showFundamentalsPanel).toBe(true);
+    expect(useChartStore.getState().settings.showFundamentalsHistoryPanel).toBe(true);
+    expect(useChartStore.getState().settings.showMarginPressurePanel).toBe(true);
+    expect(useChartStore.getState().settings.showFactorRegressionPanel).toBe(true);
   });
 
   it('loadPreset does nothing for non-existent preset', () => {
@@ -219,6 +243,10 @@ describe('chartStore', () => {
     expect(state.settings.indicators.sma.period).toBe(50);
     expect(state.settings.indicators.ema.period).toBe(defaultSettings.indicators.ema.period);
     expect(state.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
+    expect(state.settings.showFundamentalsPanel).toBe(defaultSettings.showFundamentalsPanel);
+    expect(state.settings.showFundamentalsHistoryPanel).toBe(defaultSettings.showFundamentalsHistoryPanel);
+    expect(state.settings.showMarginPressurePanel).toBe(defaultSettings.showMarginPressurePanel);
+    expect(state.settings.showFactorRegressionPanel).toBe(defaultSettings.showFactorRegressionPanel);
     expect(state.settings.signalOverlay.enabled).toBe(false);
     expect(state.settings.signalOverlay.signals).toEqual([]);
     expect(state.presets[0]?.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
@@ -235,6 +263,7 @@ describe('chartStore', () => {
             displayTimeframe: 123,
             chartType: 'invalid-type',
             showPPOChart: 'true',
+            showFundamentalsPanel: 'false',
             visibleBars: '250',
             indicators: {
               ppo: {
@@ -259,11 +288,20 @@ describe('chartStore', () => {
     expect(state.settings.displayTimeframe).toBe(defaultSettings.displayTimeframe);
     expect(state.settings.chartType).toBe(defaultSettings.chartType);
     expect(state.settings.showPPOChart).toBe(defaultSettings.showPPOChart);
+    expect(state.settings.showFundamentalsPanel).toBe(defaultSettings.showFundamentalsPanel);
     expect(state.settings.visibleBars).toBe(defaultSettings.visibleBars);
     expect(state.settings.indicators.ppo.enabled).toBe(defaultSettings.indicators.ppo.enabled);
     expect(state.settings.indicators.ppo.fast).toBe(defaultSettings.indicators.ppo.fast);
     expect(state.settings.signalOverlay.enabled).toBe(defaultSettings.signalOverlay.enabled);
     expect(state.settings.signalOverlay.signals).toHaveLength(1);
     expect(state.settings.signalOverlay.signals[0]?.enabled).toBe(true);
+  });
+
+  it('defaults panel visibility flags to true', () => {
+    const settings = useChartStore.getState().settings;
+    expect(settings.showFundamentalsPanel).toBe(true);
+    expect(settings.showFundamentalsHistoryPanel).toBe(true);
+    expect(settings.showMarginPressurePanel).toBe(true);
+    expect(settings.showFactorRegressionPanel).toBe(true);
   });
 });
