@@ -14,6 +14,10 @@ from src.lib.strategy_runtime.file_operations import (
     load_yaml_file,
     save_yaml_file,
 )
+from src.lib.strategy_runtime.models import (
+    StrategyConfigStrictValidationError,
+    validate_strategy_config_dict_strict,
+)
 from src.lib.strategy_runtime.parameter_extractor import (
     extract_entry_filter_params,
     extract_exit_trigger_params,
@@ -214,6 +218,14 @@ class ConfigLoader:
 
         validate_path_within_strategies(strategy_path, self.config_dir)
         strategy_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            validate_strategy_config_dict_strict(config)
+        except StrategyConfigStrictValidationError as e:
+            raise ValueError(
+                "戦略設定の厳密バリデーションに失敗しました: "
+                + "; ".join(e.errors)
+            ) from e
 
         if strategy_path.exists() and not force:
             logger.warning(f"既存ファイルを上書きします: {strategy_path}")

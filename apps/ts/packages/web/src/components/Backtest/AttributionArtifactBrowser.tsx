@@ -1,5 +1,7 @@
 import { FileJson, Loader2, Search } from 'lucide-react';
 import { useMemo, useState } from 'react';
+import { JsonView, allExpanded, defaultStyles } from 'react-json-view-lite';
+import 'react-json-view-lite/dist/index.css';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -41,6 +43,67 @@ function readNumber(record: Record<string, unknown> | null, key: string): number
   if (!record) return null;
   const value = record[key];
   return typeof value === 'number' ? value : null;
+}
+
+function asArray(value: unknown): unknown[] {
+  return Array.isArray(value) ? value : [];
+}
+
+function toJsonViewData(value: unknown): Record<string, unknown> | unknown[] {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (value && typeof value === 'object') {
+    return value as Record<string, unknown>;
+  }
+  return { value };
+}
+
+type BestScore = {
+  signalId: string;
+  score: number;
+};
+
+function selectBestScore(scores: Record<string, unknown>[]): BestScore | null {
+  return scores.reduce<BestScore | null>((best, scoreItem) => {
+    const signalId = readString(scoreItem, 'signal_id');
+    const score = readNumber(scoreItem, 'score');
+    if (!signalId || score == null || !Number.isFinite(score)) return best;
+    if (!best || score > best.score) {
+      return { signalId, score };
+    }
+    return best;
+  }, null);
+}
+
+function resolveSignalParameter(
+  effectiveParameters: Record<string, unknown> | null,
+  signalId: string
+): { parameterPath: string; value: unknown } | null {
+  if (!effectiveParameters) return null;
+
+  const [scope, ...paramPathParts] = signalId.split('.');
+  if (paramPathParts.length === 0) return null;
+
+  const sectionKey = scope === 'entry' ? 'entry_filter_params' : scope === 'exit' ? 'exit_trigger_params' : null;
+  if (!sectionKey) return null;
+
+  let current: unknown = effectiveParameters[sectionKey];
+  const traversed: string[] = [];
+
+  for (const part of paramPathParts) {
+    const currentRecord = asRecord(current);
+    if (!currentRecord || !(part in currentRecord)) {
+      return null;
+    }
+    current = currentRecord[part];
+    traversed.push(part);
+  }
+
+  return {
+    parameterPath: `${sectionKey}.${traversed.join('.')}`,
+    value: current,
+  };
 }
 
 function formatMetaValue(value: string | number | null): string {
@@ -127,8 +190,9 @@ export function AttributionArtifactBrowser() {
     [filteredFiles]
   );
 
+  const artifact = useMemo(() => asRecord(artifactData?.artifact), [artifactData]);
+
   const metadata = useMemo(() => {
-    const artifact = asRecord(artifactData?.artifact);
     const strategy = asRecord(artifact?.strategy);
     const runtime = asRecord(artifact?.runtime);
     const databases = asRecord(artifact?.databases);
@@ -145,7 +209,36 @@ export function AttributionArtifactBrowser() {
       marketDbName: readString(marketDb, 'name'),
       portfolioDbName: readString(portfolioDb, 'name'),
     };
-  }, [artifactData]);
+  }, [artifact]);
+
+  const bestSignalParameter = useMemo(() => {
+    const result = asRecord(artifact?.result);
+    const strategy = asRecord(artifact?.strategy);
+    const effectiveParameters = asRecord(strategy?.effective_parameters);
+    const topNSelection = asRecord(result?.top_n_selection);
+    const scores = asArray(topNSelection?.scores)
+      .map((item) => asRecord(item))
+      .filter((item): item is Record<string, unknown> => item !== null);
+
+    const bestScore = selectBestScore(scores);
+
+    if (!bestScore) return null;
+
+    const signalInfo = asArray(result?.signals)
+      .map((item) => asRecord(item))
+      .find((item) => readString(item, 'signal_id') === bestScore.signalId);
+
+    const resolved = resolveSignalParameter(effectiveParameters, bestScore.signalId);
+
+    return {
+      signalId: bestScore.signalId,
+      signalName: readString(signalInfo ?? null, 'signal_name'),
+      score: bestScore.score,
+      scope: readString(signalInfo ?? null, 'scope'),
+      parameterPath: resolved?.parameterPath ?? null,
+      parameterValue: resolved?.value ?? null,
+    };
+  }, [artifact]);
 
   const totalCount = filesData?.total ?? 0;
   const showTotalCount = totalCount > sortedFiles.length;
@@ -245,11 +338,38 @@ export function AttributionArtifactBrowser() {
                   <MetadataRow label="Job ID" value={selectedFile.job_id} />
                 </div>
 
+                {bestSignalParameter && (
+                  <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+                    <h4 className="text-sm font-medium">Best Signal Parameters</h4>
+                    <div className="grid gap-2 md:grid-cols-2">
+                      <MetadataRow label="Signal ID" value={bestSignalParameter.signalId} />
+                      <MetadataRow label="Signal Name" value={bestSignalParameter.signalName} />
+                      <MetadataRow label="Scope" value={bestSignalParameter.scope} />
+                      <MetadataRow label="Top-N Score" value={bestSignalParameter.score.toFixed(6)} />
+                      <MetadataRow label="Parameter Path" value={bestSignalParameter.parameterPath} />
+                    </div>
+                    <div>
+                      <h5 className="mb-2 text-xs font-medium text-muted-foreground">Effective Parameter JSON</h5>
+                      <div className="max-h-[260px] overflow-auto rounded-md border bg-background p-3 text-xs">
+                        <JsonView
+                          data={toJsonViewData(bestSignalParameter.parameterValue)}
+                          shouldExpandNode={allExpanded}
+                          style={defaultStyles}
+                        />
+                      </div>
+                    </div>
+                  </div>
+                )}
+
                 <div>
                   <h4 className="text-sm font-medium mb-2">JSON</h4>
-                  <pre className="text-xs bg-muted p-3 rounded-md overflow-auto max-h-[420px]">
-                    {JSON.stringify(artifactData?.artifact ?? {}, null, 2)}
-                  </pre>
+                  <div className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+                    <JsonView
+                      data={toJsonViewData(artifactData?.artifact ?? {})}
+                      shouldExpandNode={(level) => level < 2}
+                      style={defaultStyles}
+                    />
+                  </div>
                 </div>
               </div>
             )}

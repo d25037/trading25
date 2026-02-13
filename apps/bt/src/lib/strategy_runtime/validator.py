@@ -9,7 +9,7 @@ from typing import Any
 
 from loguru import logger
 
-from .models import try_validate_strategy_config_dict
+from .models import try_validate_strategy_config_dict_strict
 
 
 # 戦略名の最大長
@@ -53,9 +53,16 @@ def validate_strategy_config(config: dict[str, Any]) -> bool:
     Returns:
         妥当性チェック結果
     """
-    is_valid, error = try_validate_strategy_config_dict(config)
+    is_valid, errors = try_validate_strategy_config_dict_strict(config)
     if not is_valid:
-        logger.error(f"戦略設定バリデーションエラー: {error}")
+        error_messages = (
+            errors
+            if isinstance(errors, list)
+            else [str(errors)] if errors is not None else []
+        )
+        logger.error(
+            "戦略設定バリデーションエラー: {}", "; ".join(error_messages)
+        )
         return False
 
     # entry_filter_params の構造チェック（基本的な構造の存在確認）

@@ -3,12 +3,13 @@ id: ts-113
 title: "Coverage Gate: cli 70/70"
 status: open
 priority: medium
-labels: [test]
+labels: [test, coverage]
 project: ts
 created: 2026-02-01
-updated: 2026-02-01
+updated: 2026-02-13
 depends_on: []
-blocks: []
+blocks: [ts-014c]
+parent: ts-129
 ---
 
 # ts-113 Coverage Gate: cli 70/70
@@ -26,3 +27,6 @@ blocks: []
 ## 受け入れ条件
 - `bun run test` 全パス
 - `bun run check:coverage` が新閾値で通る
+
+## 整理メモ
+- `ts-014c`（CLI 90/90）は本Issue（70/70）達成後のストレッチ目標として扱う。
