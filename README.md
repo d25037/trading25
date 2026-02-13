@@ -13,13 +13,13 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 
 - バックエンドは `apps/bt` の FastAPI に一本化済み
 - financial-analysis のロジック SoT は `apps/bt`（ts 側は API consumer / proxy）
-- `apps/ts/packages/api` は互換 API レイヤーとして bt API をプロキシ
+- 旧 `apps/ts/packages/api`（Hono 互換 API レイヤー）は削除済み
 - Backtest 実行パスは `apps/bt` 内で dataset/market DB を直接参照し、内部HTTP self-call を回避
 
 ## Repository Layout
 
 - `apps/bt` - Python 3.12 + FastAPI + vectorbt + typer CLI
-- `apps/ts` - Bun workspace（web / cli / shared / clients-ts / compatibility api）
+- `apps/ts` - Bun workspace（web / cli / shared / clients-ts）
 - `contracts` - bt/ts 間の安定インターフェース（JSON Schema, OpenAPI baseline）
 - `docs` - ロードマップ、設計判断、監査レポート
 - `issues` - ローカル Issue 管理（`issues/` と `issues/done/`）

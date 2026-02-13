@@ -11,7 +11,8 @@
 | `packages/cli` | Gunshi CLI（dataset/portfolio/analysis/backtest） | Active |
 | `packages/shared` | 共有ロジック、DBアクセス、型公開、`bt:sync` | Active |
 | `packages/clients-ts` | FastAPI クライアント（backtest/JQuants） | Active |
-| `packages/api` | 旧 Hono API サーバー | Archived / Read-only |
+
+旧 `packages/api`（Hono）は撤去済みです。
 
 ## Quick Start
 
@@ -55,7 +56,7 @@ bun run --filter @trading25/web e2e:smoke
 bun run build
 ```
 
-`bun run dev:api` は互換目的の archived notice のみで、API サーバー起動には使用しません。
+`bun run dev:api` は FastAPI 起動コマンドへの案内表示のみで、API サーバー起動には使用しません。
 
 ## API / Type Sync
 

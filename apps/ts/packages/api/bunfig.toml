@@ -1,4 +1,0 @@
-[test]
-coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["../shared/**"]
-coverageReporter = ["text", "lcov"]

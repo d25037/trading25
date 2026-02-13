@@ -13,7 +13,7 @@
     "dev": "bun run dev:web",
     "dev:full": "(bun run --filter @trading25/shared bt:sync || echo '[WARNING] bt:sync failed - continuing with existing types') && bun run dev:web",
     "dev:web": "bun run --filter @trading25/web dev",
-    "dev:api": "echo '[ARCHIVED] Hono server archived. Use: uv run bt server --port 3002'",
+    "dev:api": "echo 'Use: uv run bt server --port 3002'",
     "dev:cli": "bun run --filter @trading25/cli dev",
     "build": "bun run build:clients && bun run build:shared && bun run build:web && bun run build:cli",
     "build:clients": "bun run --filter @trading25/clients-ts build",

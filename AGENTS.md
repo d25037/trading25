@@ -24,7 +24,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - 市場コードフィルタは legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う
 - **ts/web** は `/api` パスを FastAPI (:3002) にプロキシ
-- **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は archived・read-only）
+- **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は削除済み）
 
 ## OpenAPI契約
 
@@ -97,10 +97,10 @@ uv run pyright src/              # 型チェック
 
 | パッケージ | 役割 |
 |---|---|
-| `packages/api/` | **Archived** — 旧 Hono サーバー（Phase 3F で廃止） |
 | `packages/web/` | React 19 + Vite フロントエンド |
 | `packages/shared/` | 共有ライブラリ（OpenAPI 生成型, JQuants, TA/FA指標） |
 | `packages/cli/` | Gunshi CLI（dataset/portfolio/analysis/backtest attribution） |
+| `packages/clients-ts/` | FastAPI クライアント（backtest/JQuants） |
 
 ```bash
 bun dev                          # web 起動（FastAPI :3002 にプロキシ）

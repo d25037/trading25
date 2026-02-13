@@ -2,7 +2,7 @@
 Fundamentals Service
 
 Calculates fundamental metrics from JQuants financial statements data.
-This is a Python port of apps/ts/packages/api/src/services/fundamentals-data.ts.
+This is a Python port of the legacy TypeScript fundamentals service.
 """
 
 from __future__ import annotations
@@ -91,7 +91,7 @@ class FundamentalsService:
         """
         logger.debug(f"Computing fundamentals for {request.symbol}")
 
-        # Fetch financial statements from apps/ts/api
+        # Fetch financial statements from J-Quants
         statements = self.jquants_client.get_statements(request.symbol)
 
         if not statements:
