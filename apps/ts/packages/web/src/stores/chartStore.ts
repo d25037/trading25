@@ -42,6 +42,10 @@ export interface ChartSettings {
   showPPOChart: boolean;
   showVolumeComparison: boolean;
   showTradingValueMA: boolean;
+  showFundamentalsPanel: boolean;
+  showFundamentalsHistoryPanel: boolean;
+  showMarginPressurePanel: boolean;
+  showFactorRegressionPanel: boolean;
   visibleBars: number;
   relativeMode: boolean;
   signalOverlay: SignalOverlaySettings;
@@ -126,6 +130,10 @@ export const defaultSettings: ChartSettings = {
   showPPOChart: false,
   showVolumeComparison: false,
   showTradingValueMA: false,
+  showFundamentalsPanel: true,
+  showFundamentalsHistoryPanel: true,
+  showMarginPressurePanel: true,
+  showFactorRegressionPanel: true,
   visibleBars: 120,
   relativeMode: false,
   signalOverlay: {
@@ -285,6 +293,22 @@ function normalizeSettings(settings: unknown): ChartSettings {
     showPPOChart: normalizeBoolean(partial.showPPOChart, defaultSettings.showPPOChart),
     showVolumeComparison: normalizeBoolean(partial.showVolumeComparison, defaultSettings.showVolumeComparison),
     showTradingValueMA: normalizeBoolean(partial.showTradingValueMA, defaultSettings.showTradingValueMA),
+    showFundamentalsPanel: normalizeBoolean(
+      partial.showFundamentalsPanel,
+      defaultSettings.showFundamentalsPanel
+    ),
+    showFundamentalsHistoryPanel: normalizeBoolean(
+      partial.showFundamentalsHistoryPanel,
+      defaultSettings.showFundamentalsHistoryPanel
+    ),
+    showMarginPressurePanel: normalizeBoolean(
+      partial.showMarginPressurePanel,
+      defaultSettings.showMarginPressurePanel
+    ),
+    showFactorRegressionPanel: normalizeBoolean(
+      partial.showFactorRegressionPanel,
+      defaultSettings.showFactorRegressionPanel
+    ),
     visibleBars: normalizePositiveInt(partial.visibleBars, defaultSettings.visibleBars),
     relativeMode: normalizeBoolean(partial.relativeMode, defaultSettings.relativeMode),
     signalOverlay: {

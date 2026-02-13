@@ -1,18 +1,21 @@
 import { Activity, BarChart3, Eye, Loader2, Search, Settings as SettingsIcon, TrendingUp } from 'lucide-react';
-import { useCallback, useEffect, useId, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import { useSignalReference } from '@/hooks/useBacktest';
 import { type StockSearchResultItem, useStockSearch } from '@/hooks/useStockSearch';
 import { cn } from '@/lib/utils';
+import type { ChartSettings } from '@/stores/chartStore';
 import { useChartStore } from '@/stores/chartStore';
 import { logger } from '@/utils/logger';
 import { ChartPresetSelector } from './ChartPresetSelector';
 import { IndicatorToggle, NumberInput } from './IndicatorToggle';
 import { SignalOverlayControls } from './SignalMarkers';
+import { buildSignalPanelLinks, type SignalLinkedPanel } from './signalPanelLinks';
 
 const VISIBLE_BAR_OPTIONS = [
   { value: 30, label: '30 bars' },
@@ -22,6 +25,71 @@ const VISIBLE_BAR_OPTIONS = [
   { value: 180, label: '180 bars' },
   { value: 250, label: '250 bars' },
 ] as const;
+
+type PanelSettingKey =
+  | 'showPPOChart'
+  | 'showVolumeComparison'
+  | 'showTradingValueMA'
+  | 'showFundamentalsPanel'
+  | 'showFundamentalsHistoryPanel'
+  | 'showMarginPressurePanel'
+  | 'showFactorRegressionPanel';
+
+interface PanelVisibilityToggle {
+  id: string;
+  label: string;
+  settingKey: PanelSettingKey;
+  linkPanel: SignalLinkedPanel;
+}
+
+const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
+  {
+    id: 'show-ppo-chart-panel',
+    label: 'PPO',
+    settingKey: 'showPPOChart',
+    linkPanel: 'ppo',
+  },
+  {
+    id: 'show-volume-comparison-panel',
+    label: 'Volume Comparison',
+    settingKey: 'showVolumeComparison',
+    linkPanel: 'volumeComparison',
+  },
+  {
+    id: 'show-trading-value-ma-panel',
+    label: 'Trading Value MA',
+    settingKey: 'showTradingValueMA',
+    linkPanel: 'tradingValueMA',
+  },
+  {
+    id: 'show-fundamentals-panel',
+    label: 'Fundamentals',
+    settingKey: 'showFundamentalsPanel',
+    linkPanel: 'fundamentals',
+  },
+  {
+    id: 'show-fundamentals-history-panel',
+    label: 'FY History',
+    settingKey: 'showFundamentalsHistoryPanel',
+    linkPanel: 'fundamentalsHistory',
+  },
+  {
+    id: 'show-margin-pressure-panel',
+    label: 'Margin Pressure',
+    settingKey: 'showMarginPressurePanel',
+    linkPanel: 'marginPressure',
+  },
+  {
+    id: 'show-factor-regression-panel',
+    label: 'Factor Regression',
+    settingKey: 'showFactorRegressionPanel',
+    linkPanel: 'factorRegression',
+  },
+];
+
+function formatPanelSignalMeta(requirements: string[], signalTypes: string[]): string {
+  return `Signal req: ${requirements.join(', ')} | Signals: ${signalTypes.join(', ')}`;
+}
 
 export function ChartControls() {
   const {
@@ -68,6 +136,17 @@ export function ChartControls() {
     limit: 50,
     enabled: debouncedQuery.length >= 1,
   });
+  const { data: signalReferenceData, error: signalReferenceError } = useSignalReference();
+
+  const signalPanelLinks = useMemo(
+    () =>
+      buildSignalPanelLinks({
+        signals: settings.signalOverlay?.signals ?? [],
+        definitions: signalReferenceData?.signals ?? [],
+      }),
+    [settings.signalOverlay?.signals, signalReferenceData?.signals]
+  );
+  const showSignalMeta = !!signalReferenceData && !signalReferenceError;
 
   // Auto-scroll selected item into view
   useEffect(() => {
@@ -144,6 +223,13 @@ export function ChartControls() {
     }
   };
 
+  const updatePanelVisibility = useCallback(
+    (settingKey: PanelSettingKey, checked: boolean) => {
+      updateSettings({ [settingKey]: checked } as Partial<ChartSettings>);
+    },
+    [updateSettings]
+  );
+
   return (
     <div className="space-y-3 p-3">
       <ChartPresetSelector />
@@ -176,7 +262,7 @@ export function ChartControls() {
               )}
               {showSuggestions && searchResults && searchResults.results.length > 0 && (
                 <SearchSuggestions
-                  ref={suggestionsRef}
+                  containerRef={suggestionsRef}
                   results={searchResults.results}
                   selectedIndex={selectedIndex}
                   position={dropdownPosition}
@@ -255,6 +341,31 @@ export function ChartControls() {
               ))}
             </SelectContent>
           </Select>
+        </div>
+      </div>
+
+      {/* Panel Visibility */}
+      <div className="glass-panel rounded-lg p-3 space-y-2">
+        <SectionHeader icon={Eye} title="Panel Visibility" />
+        <div className="space-y-1.5">
+          {PANEL_VISIBILITY_TOGGLES.map((toggle) => {
+            const link = signalPanelLinks[toggle.linkPanel];
+            const meta =
+              showSignalMeta && link.signalTypes.length > 0
+                ? formatPanelSignalMeta(link.requirements, link.signalTypes)
+                : undefined;
+            return (
+              <ToggleRow
+                key={toggle.id}
+                id={toggle.id}
+                icon={BarChart3}
+                label={toggle.label}
+                checked={settings[toggle.settingKey]}
+                onCheckedChange={(checked) => updatePanelVisibility(toggle.settingKey, checked)}
+                meta={meta}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -406,16 +517,20 @@ interface ToggleRowProps {
   label: string;
   checked: boolean;
   onCheckedChange: (checked: boolean) => void;
+  meta?: string;
 }
 
-function ToggleRow({ id, icon: Icon, label, checked, onCheckedChange }: ToggleRowProps) {
+function ToggleRow({ id, icon: Icon, label, checked, onCheckedChange, meta }: ToggleRowProps) {
   return (
-    <div className="flex items-center justify-between p-2 rounded glass-panel">
-      <div className="flex items-center gap-1.5">
+    <div className="flex items-start justify-between p-2 rounded glass-panel gap-2">
+      <div className="flex items-start gap-1.5 min-w-0">
         <Icon className="h-3.5 w-3.5 text-muted-foreground" />
-        <Label htmlFor={id} className="text-xs font-medium cursor-pointer">
-          {label}
-        </Label>
+        <div className="min-w-0">
+          <Label htmlFor={id} className="text-xs font-medium cursor-pointer">
+            {label}
+          </Label>
+          {meta && <p className="text-[10px] text-muted-foreground leading-tight">{meta}</p>}
+        </div>
       </div>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
@@ -423,22 +538,23 @@ function ToggleRow({ id, icon: Icon, label, checked, onCheckedChange }: ToggleRo
 }
 
 interface SearchSuggestionsProps {
+  containerRef: React.RefObject<HTMLDivElement | null>;
   results: StockSearchResultItem[];
   selectedIndex: number;
   position: { top: number; left: number; width: number };
   onSelect: (stock: StockSearchResultItem) => void;
 }
 
-const SearchSuggestions = ({
-  ref,
+function SearchSuggestions({
+  containerRef,
   results,
   selectedIndex,
   position,
   onSelect,
-}: SearchSuggestionsProps & { ref: React.RefObject<HTMLDivElement | null> }) =>
-  createPortal(
+}: SearchSuggestionsProps) {
+  return createPortal(
     <div
-      ref={ref}
+      ref={containerRef}
       style={{ position: 'fixed', top: position.top, left: position.left, width: position.width }}
       className="z-[9999] max-h-96 overflow-auto rounded-lg border border-border/50 bg-background/95 backdrop-blur-md shadow-xl"
     >
@@ -466,3 +582,4 @@ const SearchSuggestions = ({
     </div>,
     document.body
   );
+}
