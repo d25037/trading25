@@ -1,5 +1,6 @@
 """lab CLI コマンドのテスト"""
 
+import re
 from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
@@ -7,6 +8,11 @@ from typer.testing import CliRunner
 from src.cli_bt import app
 
 runner = CliRunner()
+ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
+
+
+def _strip_ansi(text: str) -> str:
+    return ANSI_ESCAPE_RE.sub("", text)
 
 
 def _make_eval_result() -> MagicMock:
@@ -88,8 +94,9 @@ def test_lab_generate_rejects_invalid_timeframe() -> None:
 def test_lab_generate_help_includes_new_options() -> None:
     result = runner.invoke(app, ["lab", "generate", "--help"])
     assert result.exit_code == 0
-    assert "--entry-filter-only" in result.stdout
-    assert "--allowed-category" in result.stdout
+    output = _strip_ansi(result.stdout)
+    assert "--entry-filter-only" in output
+    assert "--allowed-category" in output
 
 
 def test_lab_evolve_command_runs() -> None:
@@ -322,5 +329,6 @@ def test_lab_improve_renders_details_and_auto_applies() -> None:
 def test_lab_improve_help_includes_new_options() -> None:
     result = runner.invoke(app, ["lab", "improve", "--help"])
     assert result.exit_code == 0
-    assert "--entry-filter-only" in result.stdout
-    assert "--allowed-category" in result.stdout
+    output = _strip_ansi(result.stdout)
+    assert "--entry-filter-only" in output
+    assert "--allowed-category" in output
