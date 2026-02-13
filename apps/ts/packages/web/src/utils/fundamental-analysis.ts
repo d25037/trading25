@@ -9,6 +9,10 @@ export function isFiscalYear(periodType: string | null | undefined): boolean {
   return periodType === 'FY';
 }
 
+export function isQuarterPeriod(periodType: string | null | undefined): boolean {
+  return periodType === '1Q' || periodType === '2Q' || periodType === '3Q';
+}
+
 function isValidEps(eps: number | null | undefined): eps is number {
   return typeof eps === 'number' && Number.isFinite(eps) && eps !== 0;
 }
