@@ -47,10 +47,12 @@ export function DatasetList() {
   const [sortKey, setSortKey] = useState<SortKey>('lastModified');
   const [sortDir, setSortDir] = useState<SortDir>('desc');
 
+  const datasets = data ?? [];
+
   const sortedDatasets = useMemo(() => {
-    if (!data?.datasets) return [];
-    return [...data.datasets].sort((a, b) => compareItems(a, b, sortKey, sortDir));
-  }, [data?.datasets, sortKey, sortDir]);
+    const list = data ?? [];
+    return [...list].sort((a, b) => compareItems(a, b, sortKey, sortDir));
+  }, [data, sortKey, sortDir]);
 
   const toggleSort = (key: SortKey) => {
     if (sortKey === key) {
@@ -93,7 +95,7 @@ export function DatasetList() {
           {isLoading && <p className="text-sm text-muted-foreground">読み込み中...</p>}
           {isError && <p className="text-sm text-destructive">Error: {error.message}</p>}
 
-          {data && data.datasets.length === 0 && (
+          {data && datasets.length === 0 && (
             <p className="text-sm text-muted-foreground py-4 text-center">データセットがありません</p>
           )}
 
