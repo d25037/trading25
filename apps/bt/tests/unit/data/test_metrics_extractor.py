@@ -41,6 +41,32 @@ class TestExtractMetricsFromHtml:
         assert metrics.sharpe_ratio == 1.2
         assert metrics.total_trades == 5
 
+    def test_extract_missing_json_metrics_from_html(self, tmp_path: Path) -> None:
+        """JSONに欠損がある場合はHTMLから不足分を補完する"""
+        html_file = _write_html(
+            tmp_path,
+            "metrics.html",
+            """
+            <html><body><table>
+                <tr><th>Total Return [%]</th><td>25.5</td></tr>
+                <tr><th>Sortino Ratio</th><td>2.1</td></tr>
+                <tr><th>Total Trades</th><td>100</td></tr>
+            </table></body></html>
+            """,
+        )
+        json_path = html_file.with_suffix(".metrics.json")
+        json_path.write_text(
+            """{"total_return": 30.0, "sharpe_ratio": 1.2}""",
+            encoding="utf-8",
+        )
+
+        metrics = extract_metrics_from_html(html_file)
+
+        assert metrics.total_return == 30.0
+        assert metrics.sharpe_ratio == 1.2
+        assert metrics.sortino_ratio == 2.1
+        assert metrics.total_trades == 100
+
     def test_extract_metrics_from_valid_html(self, tmp_path: Path) -> None:
         """正常なHTMLからメトリクスを抽出できる"""
         html_file = _write_html(
