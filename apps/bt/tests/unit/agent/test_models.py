@@ -71,7 +71,20 @@ class TestEvolutionConfig:
         assert config.crossover_rate == 0.7
         assert config.elite_ratio == 0.1
         assert config.entry_filter_only is False
+        assert config.target_scope == "both"
         assert config.allowed_categories == []
+
+    def test_target_scope_normalizes_legacy_flag(self):
+        config = EvolutionConfig(entry_filter_only=True)
+        assert config.entry_filter_only is True
+        assert config.target_scope == "entry_filter_only"
+
+    def test_target_scope_conflict_raises(self):
+        with pytest.raises(ValidationError):
+            EvolutionConfig(
+                entry_filter_only=True,
+                target_scope="exit_trigger_only",
+            )
 
     def test_mutation_rate_range(self):
         """mutation_rate の範囲バリデーション"""
@@ -94,7 +107,20 @@ class TestOptunaConfig:
         assert config.sampler == "tpe"
         assert config.pruning is True
         assert config.entry_filter_only is False
+        assert config.target_scope == "both"
         assert config.allowed_categories == []
+
+    def test_optuna_target_scope_normalizes_legacy_flag(self):
+        config = OptunaConfig(entry_filter_only=True)
+        assert config.entry_filter_only is True
+        assert config.target_scope == "entry_filter_only"
+
+    def test_target_scope_conflict_raises(self):
+        with pytest.raises(ValidationError):
+            OptunaConfig(
+                entry_filter_only=True,
+                target_scope="exit_trigger_only",
+            )
 
     def test_sampler_options(self):
         """サンプラー設定"""

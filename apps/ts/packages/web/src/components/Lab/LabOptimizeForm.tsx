@@ -3,13 +3,18 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import type { LabOptimizeRequest } from '@/types/backtest';
 
 type CategoryScope = 'all' | 'fundamental';
+type TargetScope = 'entry_filter_only' | 'exit_trigger_only' | 'both';
 
 function resolveCategoryScope(value: string): CategoryScope {
   return value === 'fundamental' ? 'fundamental' : 'all';
+}
+
+function resolveTargetScope(value: string): TargetScope {
+  if (value === 'entry_filter_only' || value === 'exit_trigger_only' || value === 'both') return value;
+  return 'both';
 }
 
 interface LabOptimizeFormProps {
@@ -20,13 +25,15 @@ interface LabOptimizeFormProps {
 
 export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimizeFormProps) {
   const [trials, setTrials] = useState('50');
-  const [entryFilterOnly, setEntryFilterOnly] = useState(false);
+  const [targetScope, setTargetScope] = useState<TargetScope>('both');
   const [categoryScope, setCategoryScope] = useState<CategoryScope>('all');
   const [sampler, setSampler] = useState<'tpe' | 'random' | 'cmaes'>('tpe');
   const [structureMode, setStructureMode] = useState<'params_only' | 'random_add'>('params_only');
   const [randomAddEntrySignals, setRandomAddEntrySignals] = useState('1');
   const [randomAddExitSignals, setRandomAddExitSignals] = useState('1');
   const [seed, setSeed] = useState('');
+  const isEntryTargeted = targetScope !== 'exit_trigger_only';
+  const isExitTargeted = targetScope !== 'entry_filter_only';
 
   const parseIntInRange = (value: string, defaultValue: number, min: number, max: number) => {
     const parsed = Number.parseInt(value, 10);
@@ -40,33 +47,36 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
-  const handleSubmit = () => {
-    if (!strategyName) return;
+  const applyRandomAddOptions = (request: LabOptimizeRequest) => {
+    if (structureMode !== 'random_add') return;
+    request.random_add_entry_signals = isEntryTargeted ? parseIntInRange(randomAddEntrySignals, 1, 0, 10) : 0;
+    request.random_add_exit_signals = isExitTargeted ? parseIntInRange(randomAddExitSignals, 1, 0, 10) : 0;
 
+    const parsedSeed = parseOptionalInt(seed);
+    if (parsedSeed !== undefined) request.seed = parsedSeed;
+  };
+
+  const applyCompatibilityFlags = (request: LabOptimizeRequest) => {
+    if (targetScope === 'entry_filter_only') request.entry_filter_only = true;
+    if (categoryScope === 'fundamental') request.allowed_categories = ['fundamental'];
+  };
+
+  const buildRequest = (strategy: string): LabOptimizeRequest => {
     const request: LabOptimizeRequest = {
-      strategy_name: strategyName,
+      strategy_name: strategy,
       trials: parseIntInRange(trials, 50, 10, 1000),
       sampler,
       structure_mode: structureMode,
+      target_scope: targetScope,
     };
+    applyRandomAddOptions(request);
+    applyCompatibilityFlags(request);
+    return request;
+  };
 
-    if (structureMode === 'random_add') {
-      request.random_add_entry_signals = parseIntInRange(randomAddEntrySignals, 1, 0, 10);
-      request.random_add_exit_signals = parseIntInRange(randomAddExitSignals, 1, 0, 10);
-      const parsedSeed = parseOptionalInt(seed);
-      if (parsedSeed !== undefined) {
-        request.seed = parsedSeed;
-      }
-    }
-
-    if (entryFilterOnly) {
-      request.entry_filter_only = true;
-    }
-    if (categoryScope === 'fundamental') {
-      request.allowed_categories = ['fundamental'];
-    }
-
-    onSubmit(request);
+  const handleSubmit = () => {
+    if (!strategyName) return;
+    onSubmit(buildRequest(strategyName));
   };
 
   return (
@@ -105,16 +115,22 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
         </div>
       </div>
 
-      <div className="flex items-center justify-between">
-        <Label htmlFor="opt-entry-only" className="text-xs">
-          Entry Filter Only
-        </Label>
-        <Switch
-          id="opt-entry-only"
-          checked={entryFilterOnly}
-          onCheckedChange={setEntryFilterOnly}
+      <div className="space-y-1.5">
+        <Label className="text-xs">Target Scope</Label>
+        <Select
+          value={targetScope}
+          onValueChange={(value) => setTargetScope(resolveTargetScope(value))}
           disabled={disabled}
-        />
+        >
+          <SelectTrigger>
+            <SelectValue />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value="both">both</SelectItem>
+            <SelectItem value="entry_filter_only">entry filter only</SelectItem>
+            <SelectItem value="exit_trigger_only">exit trigger only</SelectItem>
+          </SelectContent>
+        </Select>
       </div>
 
       <div className="space-y-1.5">
@@ -128,8 +144,8 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="all">All</SelectItem>
-            <SelectItem value="fundamental">Fundamental Only</SelectItem>
+            <SelectItem value="all">all</SelectItem>
+            <SelectItem value="fundamental">fundamental only</SelectItem>
           </SelectContent>
         </Select>
       </div>
@@ -145,42 +161,46 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
             <SelectValue />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="params_only">Params Only</SelectItem>
-            <SelectItem value="random_add">Random Add Signals</SelectItem>
+            <SelectItem value="params_only">Adjust Existing Signal Params</SelectItem>
+            <SelectItem value="random_add">Fix Existing Signals + Add New Signals</SelectItem>
           </SelectContent>
         </Select>
       </div>
 
       {structureMode === 'random_add' && (
-        <div className="grid grid-cols-3 gap-3">
-          <div className="space-y-1.5">
-            <Label htmlFor="opt-random-entry" className="text-xs">
-              Add Entry Signals
-            </Label>
-            <Input
-              id="opt-random-entry"
-              type="number"
-              min={0}
-              max={10}
-              value={randomAddEntrySignals}
-              onChange={(e) => setRandomAddEntrySignals(e.target.value)}
-              disabled={disabled}
-            />
-          </div>
-          <div className="space-y-1.5">
-            <Label htmlFor="opt-random-exit" className="text-xs">
-              Add Exit Signals
-            </Label>
-            <Input
-              id="opt-random-exit"
-              type="number"
-              min={0}
-              max={10}
-              value={randomAddExitSignals}
-              onChange={(e) => setRandomAddExitSignals(e.target.value)}
-              disabled={disabled}
-            />
-          </div>
+        <div className={`grid gap-3 ${targetScope === 'both' ? 'grid-cols-3' : 'grid-cols-2'}`}>
+          {isEntryTargeted && (
+            <div className="space-y-1.5">
+              <Label htmlFor="opt-random-entry" className="text-xs">
+                Add Entry Signals
+              </Label>
+              <Input
+                id="opt-random-entry"
+                type="number"
+                min={0}
+                max={10}
+                value={randomAddEntrySignals}
+                onChange={(e) => setRandomAddEntrySignals(e.target.value)}
+                disabled={disabled}
+              />
+            </div>
+          )}
+          {isExitTargeted && (
+            <div className="space-y-1.5">
+              <Label htmlFor="opt-random-exit" className="text-xs">
+                Add Exit Signals
+              </Label>
+              <Input
+                id="opt-random-exit"
+                type="number"
+                min={0}
+                max={10}
+                value={randomAddExitSignals}
+                onChange={(e) => setRandomAddExitSignals(e.target.value)}
+                disabled={disabled}
+              />
+            </div>
+          )}
           <div className="space-y-1.5">
             <Label htmlFor="opt-seed" className="text-xs">
               Seed (optional)

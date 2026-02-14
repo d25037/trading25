@@ -4020,10 +4020,17 @@ export interface components {
             save: boolean;
             /**
              * Entry Filter Only
-             * @description Entryフィルターのみ最適化（Exitパラメータは変更しない）
+             * @description （互換性用）true の場合 target_scope=entry_filter_only と同義
              * @default false
              */
             entry_filter_only: boolean;
+            /**
+             * Target Scope
+             * @description 最適化対象 (entry_filter_only/exit_trigger_only/both)
+             * @default both
+             * @enum {string}
+             */
+            target_scope: "entry_filter_only" | "exit_trigger_only" | "both";
             /**
              * Allowed Categories
              * @description 最適化対象として許可するカテゴリ（未指定時は全カテゴリ）
@@ -4336,10 +4343,17 @@ export interface components {
             save: boolean;
             /**
              * Entry Filter Only
-             * @description Entryフィルターのみ最適化（Exitパラメータは変更しない）
+             * @description （互換性用）true の場合 target_scope=entry_filter_only と同義
              * @default false
              */
             entry_filter_only: boolean;
+            /**
+             * Target Scope
+             * @description 最適化対象 (entry_filter_only/exit_trigger_only/both)
+             * @default both
+             * @enum {string}
+             */
+            target_scope: "entry_filter_only" | "exit_trigger_only" | "both";
             /**
              * Allowed Categories
              * @description 最適化対象として許可するカテゴリ（未指定時は全カテゴリ）

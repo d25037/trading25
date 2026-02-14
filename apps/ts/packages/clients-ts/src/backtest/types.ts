@@ -427,6 +427,7 @@ export type LabSignalCategory =
   | 'macro'
   | 'fundamental'
   | 'sector';
+export type LabTargetScope = 'entry_filter_only' | 'exit_trigger_only' | 'both';
 
 // Request types
 
@@ -451,6 +452,7 @@ export interface LabEvolveRequest {
   random_add_exit_signals?: number;
   seed?: number;
   save?: boolean;
+  target_scope?: LabTargetScope;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
 }
@@ -464,6 +466,7 @@ export interface LabOptimizeRequest {
   random_add_exit_signals?: number;
   seed?: number;
   save?: boolean;
+  target_scope?: LabTargetScope;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
   scoring_weights?: Record<string, number>;

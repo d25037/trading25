@@ -96,6 +96,9 @@ uv run ruff check src/           # リント
 uv run pyright src/              # 型チェック
 ```
 
+- Lab `evolve/optimize` の API/Web は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を受け付ける（`entry_filter_only` は互換フラグとして維持）
+- Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
+
 主要技術: Python 3.12, vectorbt, pydantic, FastAPI, pandas, ruff, pyright, pytest
 
 ## ts (TypeScript / bun)
