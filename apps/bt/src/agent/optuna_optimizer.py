@@ -84,6 +84,28 @@ class OptunaOptimizer:
         self.base_exit_params: dict[str, Any] = {}
         self.base_shared_config: dict[str, Any] = {}
 
+    def _is_usage_targeted(self, usage_type: str) -> bool:
+        """target_scope に基づき対象サイドか判定する。"""
+        if self.config.target_scope == "both":
+            return True
+        if self.config.target_scope == "entry_filter_only":
+            return usage_type == "entry"
+        return usage_type == "exit"
+
+    def _effective_random_add_counts(self) -> tuple[int, int]:
+        """target_scope を反映した random_add 数を返す。"""
+        add_entry = (
+            self.config.random_add_entry_signals
+            if self._is_usage_targeted("entry")
+            else 0
+        )
+        add_exit = (
+            self.config.random_add_exit_signals
+            if self._is_usage_targeted("exit")
+            else 0
+        )
+        return add_entry, add_exit
+
     def optimize(
         self,
         base_strategy: str | StrategyCandidate,
@@ -103,12 +125,10 @@ class OptunaOptimizer:
         base_candidate = self._load_base_strategy(base_strategy)
 
         # random_add モード: ベース戦略に新しいシグナルを追加してから最適化
+        add_entry_signals, add_exit_signals = self._effective_random_add_counts()
         should_random_add = (
             self.config.structure_mode == "random_add"
-            and (
-                self.config.random_add_entry_signals > 0
-                or self.config.random_add_exit_signals > 0
-            )
+            and (add_entry_signals > 0 or add_exit_signals > 0)
         )
         if should_random_add:
             rng = (
@@ -121,8 +141,8 @@ class OptunaOptimizer:
             base_candidate, added = apply_random_add_structure(
                 base_candidate,
                 rng=rng,
-                add_entry_signals=self.config.random_add_entry_signals,
-                add_exit_signals=self.config.random_add_exit_signals,
+                add_entry_signals=add_entry_signals,
+                add_exit_signals=add_exit_signals,
                 base_entry_signals=base_entry,
                 base_exit_signals=base_exit,
             )
@@ -364,7 +384,7 @@ class OptunaOptimizer:
 
     def _is_signal_optimization_allowed(self, signal_name: str, usage_type: str) -> bool:
         """制約に基づいて最適化対象に含めるか判定する。"""
-        if usage_type == "exit" and self.config.entry_filter_only:
+        if not self._is_usage_targeted(usage_type):
             return False
         return is_signal_allowed(signal_name, self.allowed_category_set)
 

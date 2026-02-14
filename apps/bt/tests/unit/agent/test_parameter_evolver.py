@@ -131,6 +131,15 @@ class TestMutation:
         assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is True
         assert evolver._is_signal_mutation_allowed("volume", usage_type="exit") is False
 
+    def test_is_signal_mutation_allowed_exit_trigger_only(self):
+        config = EvolutionConfig(target_scope="exit_trigger_only")
+        evolver = ParameterEvolver(
+            config=config,
+            shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
+        )
+        assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is False
+        assert evolver._is_signal_mutation_allowed("volume", usage_type="exit") is True
+
     def test_is_signal_mutation_allowed_allowed_categories(self):
         config = EvolutionConfig(allowed_categories=["fundamental"])
         evolver = ParameterEvolver(
@@ -141,6 +150,27 @@ class TestMutation:
         assert evolver._is_signal_mutation_allowed(
             "fundamental", usage_type="entry"
         ) is True
+
+    def test_effective_random_add_counts_by_target_scope(self):
+        entry_only = ParameterEvolver(
+            config=EvolutionConfig(
+                target_scope="entry_filter_only",
+                random_add_entry_signals=3,
+                random_add_exit_signals=4,
+            ),
+            shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
+        )
+        assert entry_only._effective_random_add_counts() == (3, 0)
+
+        exit_only = ParameterEvolver(
+            config=EvolutionConfig(
+                target_scope="exit_trigger_only",
+                random_add_entry_signals=3,
+                random_add_exit_signals=4,
+            ),
+            shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
+        )
+        assert exit_only._effective_random_add_counts() == (0, 4)
 
 
 class TestMutateSignalParams:
