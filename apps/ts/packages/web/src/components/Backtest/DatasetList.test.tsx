@@ -93,13 +93,17 @@ function setDatasetsQueryState({
 function getFirstDataRow(): HTMLElement {
   const rows = screen.getAllByRole('row').slice(1);
   expect(rows.length).toBeGreaterThan(0);
-  return rows[0]!;
+  const firstRow = rows[0];
+  if (!firstRow) throw new Error('Expected at least one data row');
+  return firstRow;
 }
 
 function getFirstByTitle(title: string): HTMLElement {
   const elements = screen.getAllByTitle(title);
   expect(elements.length).toBeGreaterThan(0);
-  return elements[0]!;
+  const firstElement = elements[0];
+  if (!firstElement) throw new Error(`Expected at least one element with title: ${title}`);
+  return firstElement;
 }
 
 describe('DatasetList', () => {

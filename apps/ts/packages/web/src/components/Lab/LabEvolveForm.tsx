@@ -47,34 +47,36 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
-  const handleSubmit = () => {
-    if (!strategyName) return;
+  const applyRandomAddOptions = (request: LabEvolveRequest) => {
+    if (structureMode !== 'random_add') return;
+    request.random_add_entry_signals = isEntryTargeted ? parseIntInRange(randomAddEntrySignals, 1, 0, 10) : 0;
+    request.random_add_exit_signals = isExitTargeted ? parseIntInRange(randomAddExitSignals, 1, 0, 10) : 0;
 
+    const parsedSeed = parseOptionalInt(seed);
+    if (parsedSeed !== undefined) request.seed = parsedSeed;
+  };
+
+  const applyCompatibilityFlags = (request: LabEvolveRequest) => {
+    if (targetScope === 'entry_filter_only') request.entry_filter_only = true;
+    if (categoryScope === 'fundamental') request.allowed_categories = ['fundamental'];
+  };
+
+  const buildRequest = (strategy: string): LabEvolveRequest => {
     const request: LabEvolveRequest = {
-      strategy_name: strategyName,
+      strategy_name: strategy,
       generations: parseIntInRange(generations, 10, 1, 100),
       population: parseIntInRange(population, 20, 10, 500),
       structure_mode: structureMode,
       target_scope: targetScope,
     };
+    applyRandomAddOptions(request);
+    applyCompatibilityFlags(request);
+    return request;
+  };
 
-    if (structureMode === 'random_add') {
-      request.random_add_entry_signals = isEntryTargeted ? parseIntInRange(randomAddEntrySignals, 1, 0, 10) : 0;
-      request.random_add_exit_signals = isExitTargeted ? parseIntInRange(randomAddExitSignals, 1, 0, 10) : 0;
-      const parsedSeed = parseOptionalInt(seed);
-      if (parsedSeed !== undefined) {
-        request.seed = parsedSeed;
-      }
-    }
-
-    if (targetScope === 'entry_filter_only') {
-      request.entry_filter_only = true;
-    }
-    if (categoryScope === 'fundamental') {
-      request.allowed_categories = ['fundamental'];
-    }
-
-    onSubmit(request);
+  const handleSubmit = () => {
+    if (!strategyName) return;
+    onSubmit(buildRequest(strategyName));
   };
 
   return (
