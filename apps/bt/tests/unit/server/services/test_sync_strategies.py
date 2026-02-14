@@ -16,6 +16,7 @@ from src.server.services.sync_strategies import (
     _convert_indices_data_rows,
     _convert_stock_rows,
     _date_sort_key,
+    _extract_list_items,
     _is_date_after,
     _parse_date,
     _to_jquants_date_param,
@@ -720,6 +721,14 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
     assert len(index_rows) == 1
     assert index_rows[0]["date"] == "2026-02-10"
     assert index_rows[0]["open"] == 1
+
+
+def test_extract_list_items_handles_key_aliases_and_fallback() -> None:
+    assert _extract_list_items({"data": [{"code": "0000"}]}) == [{"code": "0000"}]
+    assert _extract_list_items({"indices": [{"code": "0000"}]}, preferred_keys=("data", "indices")) == [{"code": "0000"}]
+    assert _extract_list_items({"other": [{"code": "0000"}]}) == [{"code": "0000"}]
+    assert _extract_list_items({"data": ["not-dict", {"code": "0001"}]}) == [{"code": "0001"}]
+    assert _extract_list_items({"count": 0}) == []
 
 
 def test_date_helpers_cover_parse_and_fallback_paths() -> None:
