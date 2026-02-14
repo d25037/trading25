@@ -67,6 +67,15 @@ class TestBuildSignalReference:
         sector_signals = [s for s in result["signals"] if s["category"] == "sector"]
         assert len(sector_signals) == 3
 
+    def test_risk_adjusted_return_is_not_classified_as_fundamental(self):
+        """risk_adjusted_return は fundamental 配下ではなく volatility として返ること"""
+        result = build_signal_reference()
+        signal = next(s for s in result["signals"] if s["key"] == "risk_adjusted_return")
+        assert signal["category"] == "volatility"
+        parsed = yaml.safe_load(signal["yaml_snippet"])
+        assert "risk_adjusted_return" in parsed
+        assert "fundamental" not in parsed
+
 
 class TestYAMLSnippets:
     """YAMLスニペットのテスト"""
