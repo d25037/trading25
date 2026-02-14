@@ -11,7 +11,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agent.models import SignalCategory
+from src.agent.models import LabStructureMode, SignalCategory
 from src.server.schemas.backtest import JobStatus
 from src.server.schemas.lab import (
     EvolutionHistoryItem,
@@ -240,7 +240,7 @@ class LabService:
         strategy_name: str,
         generations: int = 20,
         population: int = 50,
-        structure_mode: str = "params_only",
+        structure_mode: LabStructureMode = "params_only",
         random_add_entry_signals: int = 1,
         random_add_exit_signals: int = 1,
         seed: int | None = None,
@@ -282,7 +282,7 @@ class LabService:
         strategy_name: str,
         generations: int,
         population: int,
-        structure_mode: str,
+        structure_mode: LabStructureMode,
         random_add_entry_signals: int,
         random_add_exit_signals: int,
         seed: int | None,
@@ -347,7 +347,7 @@ class LabService:
         strategy_name: str,
         trials: int = 100,
         sampler: str = "tpe",
-        structure_mode: str = "params_only",
+        structure_mode: LabStructureMode = "params_only",
         random_add_entry_signals: int = 1,
         random_add_exit_signals: int = 1,
         seed: int | None = None,
@@ -386,7 +386,7 @@ class LabService:
         strategy_name: str,
         trials: int,
         sampler: str,
-        structure_mode: str,
+        structure_mode: LabStructureMode,
         random_add_entry_signals: int,
         random_add_exit_signals: int,
         seed: int | None,
@@ -478,7 +478,7 @@ class LabService:
         strategy_name: str,
         trials: int,
         sampler: str,
-        structure_mode: str,
+        structure_mode: LabStructureMode,
         random_add_entry_signals: int,
         random_add_exit_signals: int,
         seed: int | None,
