@@ -9,13 +9,13 @@ import pandas as pd
 from loguru import logger
 
 from src.data.access.clients import get_dataset_client
-
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 from src.exceptions import IndexDataLoadError, SectorDataLoadError
 
 from .index_loaders import load_index_data
 from .utils import extract_dataset_name
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 
 # セクターデータキャッシュ（同一セッション内での重複APIコール回避）
 _sector_indices_cache: dict[str, dict[str, pd.DataFrame]] = {}

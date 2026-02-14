@@ -11,11 +11,11 @@ import pandas as pd
 from loguru import logger
 
 from src.data.access.clients import get_dataset_client
+from src.data.loaders.cache import DataCache
+from src.data.loaders.utils import extract_dataset_name
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
-from src.data.loaders.cache import DataCache
-from src.data.loaders.utils import extract_dataset_name
 
 
 def transform_margin_df(df: pd.DataFrame) -> pd.DataFrame:

@@ -11,10 +11,10 @@ from loguru import logger
 
 from src.data import get_sector_mapping, load_index_data
 from src.data.access.clients import get_dataset_client
+from src.data.loaders.utils import extract_dataset_name
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
-from src.data.loaders.utils import extract_dataset_name
 
 
 def get_sector_index_code(dataset: str, sector_name: str) -> str:

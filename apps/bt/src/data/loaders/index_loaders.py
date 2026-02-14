@@ -17,12 +17,12 @@ import pandas as pd
 from loguru import logger
 
 from src.data.access.clients import get_dataset_client, get_market_client
+from src.data.loaders.cache import cached_loader
+from src.data.loaders.utils import extract_dataset_name
 
 # Backward-compatible symbols for tests patching module-local client constructors.
 DatasetAPIClient = get_dataset_client
 MarketAPIClient = get_market_client
-from src.data.loaders.cache import cached_loader
-from src.data.loaders.utils import extract_dataset_name
 
 
 @cached_loader("topix:{dataset}:{start_date}:{end_date}")
