@@ -1,7 +1,8 @@
 """
 信用残高データローダー
 
-localhost:3001 API経由で信用残高データを読み込み、VectorBTで使用できる形式に変換します。
+データアクセスクライアント経由で信用残高データを読み込み、
+VectorBTで使用できる形式に変換します。
 """
 
 from typing import Optional
@@ -9,10 +10,12 @@ from typing import Optional
 import pandas as pd
 from loguru import logger
 
-from src.api.dataset_client import DatasetAPIClient
 from src.data.access.clients import get_dataset_client
 from src.data.loaders.cache import DataCache
 from src.data.loaders.utils import extract_dataset_name
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 
 
 def transform_margin_df(df: pd.DataFrame) -> pd.DataFrame:
@@ -67,7 +70,7 @@ def load_margin_data(
             return cached
 
     # API呼び出し
-    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+    with DatasetAPIClient(dataset_name) as client:
         df = client.get_margin(stock_code, start_date, end_date)
 
     if df.empty:
@@ -105,7 +108,7 @@ def get_margin_available_stocks(dataset: str, min_records: int = 10) -> pd.DataF
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+    with DatasetAPIClient(dataset_name) as client:
         df = client.get_margin_list(min_records)
 
     return df

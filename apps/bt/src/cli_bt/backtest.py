@@ -17,6 +17,7 @@ from rich.text import Text
 from loguru import logger
 
 from src.constants import THREAD_TIMEOUT_SECONDS
+from src.data.access.mode import DATA_ACCESS_MODE_ENV
 from src.lib.strategy_runtime.loader import ConfigLoader
 
 console = Console()
@@ -123,6 +124,7 @@ def _execute_with_progress(
                 template_path=template_path,
                 parameters=parameters,
                 strategy_name=strategy_name,
+                extra_env={DATA_ACCESS_MODE_ENV: "direct"},
             )
         except Exception as e:
             result["error"] = e

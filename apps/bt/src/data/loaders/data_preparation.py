@@ -9,10 +9,9 @@ from typing import Dict, List, Literal, Optional
 import pandas as pd
 from loguru import logger
 
-from src.api.dataset_client import DatasetAPIClient
 from src.api.dataset.statements_mixin import APIPeriodType
-from src.data.access.clients import get_dataset_client
 from src.api.exceptions import APIError
+from src.data.access.clients import get_dataset_client
 from src.exceptions import (
     BatchAPIError,
     DataPreparationError,
@@ -30,6 +29,9 @@ from .multi_asset_loaders import (
 from .statements_loaders import load_statements_data, transform_statements_df
 from .stock_loaders import get_available_stocks, load_stock_data
 from .utils import extract_dataset_name
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 
 
 def prepare_all_stocks_data(
@@ -243,7 +245,7 @@ def prepare_multi_data(
     ohlcv_batch: Dict[str, pd.DataFrame] = {}
 
     try:
-        with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+        with DatasetAPIClient(dataset_name) as client:
             ohlcv_batch = client.get_stocks_ohlcv_batch(
                 stock_codes, start_date, end_date, timeframe
             )
@@ -270,7 +272,7 @@ def prepare_multi_data(
         logger.debug("信用残高データ読み込み開始（バッチAPI）")
         margin_codes = list(result.keys())
         try:
-            with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+            with DatasetAPIClient(dataset_name) as client:
                 margin_batch = client.get_margin_batch(
                     margin_codes, start_date, end_date
                 )
@@ -303,7 +305,7 @@ def prepare_multi_data(
         logger.debug("財務諸表データ読み込み開始（バッチAPI）")
         statements_codes = list(result.keys())
         try:
-            with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+            with DatasetAPIClient(dataset_name) as client:
                 statements_batch = client.get_statements_batch(
                     statements_codes, start_date, end_date,
                     period_type=period_type, actual_only=True,
