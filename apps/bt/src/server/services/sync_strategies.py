@@ -276,41 +276,95 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            indices_body = await ctx.client.get("/indices")
-            total_calls += 1
-            indices_list = _extract_list_items(indices_body, preferred_keys=("data", "indices"))
+            indices_list: list[dict[str, Any]] = []
+            try:
+                indices_body = await ctx.client.get("/indices")
+                total_calls += 1
+                indices_list = _extract_list_items(indices_body, preferred_keys=("data", "indices"))
+            except Exception as e:
+                # /indices が取得できない環境でも、日付指定で indices_data の増分だけは継続する。
+                logger.warning("Index master fetch failed. Falling back to date-based index sync: {}", e)
 
-            master_rows = _convert_index_master_rows(indices_list)
-            if master_rows:
-                await asyncio.to_thread(ctx.market_db.upsert_index_master, master_rows)
+            if indices_list:
+                master_rows = _convert_index_master_rows(indices_list)
+                if master_rows:
+                    await asyncio.to_thread(ctx.market_db.upsert_index_master, master_rows)
 
             latest_index_dates = ctx.market_db.get_latest_indices_data_dates()
-            for idx in indices_list:
-                if ctx.cancelled.is_set():
-                    return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+            if indices_list:
+                for idx in indices_list:
+                    if ctx.cancelled.is_set():
+                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-                code = _extract_index_code(idx)
-                if not code:
-                    continue
+                    code = _extract_index_code(idx)
+                    if not code:
+                        continue
 
-                params: dict[str, Any] = {"code": code}
-                last_index_date = latest_index_dates.get(code)
-                if last_index_date:
-                    params["from"] = _to_jquants_date_param(last_index_date)
-
-                try:
-                    data = await ctx.client.get_paginated("/indices/bars/daily", params=params)
-                    total_calls += 1
-
-                    rows = _convert_indices_data_rows(data, code)
+                    params: dict[str, Any] = {"code": code}
+                    last_index_date = latest_index_dates.get(code)
                     if last_index_date:
-                        rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
+                        params["from"] = _to_jquants_date_param(last_index_date)
 
-                    if rows:
-                        await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
-                except Exception as e:
-                    errors.append(f"Index {code}: {e}")
-                    logger.warning(f"Index {code} incremental sync error: {e}")
+                    try:
+                        data = await ctx.client.get_paginated("/indices/bars/daily", params=params)
+                        total_calls += 1
+
+                        rows = _convert_indices_data_rows(data, code)
+                        if last_index_date:
+                            rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
+
+                        if rows:
+                            await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+                    except Exception as e:
+                        errors.append(f"Index {code}: {e}")
+                        logger.warning(f"Index {code} incremental sync error: {e}")
+            else:
+                latest_index_date = _latest_date(list(latest_index_dates.values()))
+                fallback_dates = _extract_dates_after(
+                    topix_rows,
+                    latest_index_date,
+                    include_anchor=True,
+                )
+
+                # indices_data が遅れている場合、topix を indices 側アンカーで再取得して候補日を補完する。
+                if (
+                    latest_index_date
+                    and last_date
+                    and _is_date_after(last_date, latest_index_date)
+                ):
+                    topix_for_indices = await ctx.client.get_paginated(
+                        "/indices/bars/daily/topix",
+                        params={"from": _to_jquants_date_param(latest_index_date)},
+                    )
+                    total_calls += 1
+                    topix_dates = [
+                        {"date": d.get("Date", "")}
+                        for d in topix_for_indices
+                        if d.get("Date")
+                    ]
+                    fallback_dates = sorted(
+                        set(fallback_dates) | set(
+                            _extract_dates_after(topix_dates, latest_index_date, include_anchor=True)
+                        ),
+                        key=_date_sort_key,
+                    )
+
+                for index_date in fallback_dates:
+                    if ctx.cancelled.is_set():
+                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+                    try:
+                        data = await ctx.client.get_paginated(
+                            "/indices/bars/daily",
+                            params={"date": _to_jquants_date_param(index_date)},
+                        )
+                        total_calls += 1
+                        rows = _convert_indices_data_rows(data, None)
+                        if rows:
+                            await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+                    except Exception as e:
+                        errors.append(f"Index date {index_date}: {e}")
+                        logger.warning("Index date {} incremental sync error: {}", index_date, e)
 
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
@@ -416,8 +470,13 @@ def _extract_list_items(
 
 def _extract_index_code(index_info: dict[str, Any]) -> str:
     """指数コードをキー揺れを吸収して取得。"""
-    code = index_info.get("code") or index_info.get("Code") or ""
-    return str(code).strip()
+    code = (
+        index_info.get("code")
+        or index_info.get("Code")
+        or index_info.get("index_code")
+        or index_info.get("indexCode")
+    )
+    return _normalize_index_code(code)
 
 
 def _convert_index_master_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -439,19 +498,26 @@ def _convert_index_master_rows(data: list[dict[str, Any]]) -> list[dict[str, Any
     return rows
 
 
-def _convert_indices_data_rows(data: list[dict[str, Any]], code: str) -> list[dict[str, Any]]:
+def _convert_indices_data_rows(data: list[dict[str, Any]], code: str | None) -> list[dict[str, Any]]:
     """JQuants 指数データ → DB 行。日付欠損行はスキップ。"""
     rows: list[dict[str, Any]] = []
     created_at = datetime.now(UTC).isoformat()
-    skipped = 0
+    skipped_missing_date = 0
+    skipped_missing_code = 0
 
     for d in data:
+        row_code = _extract_index_code(d) or _normalize_index_code(code)
+        if not row_code:
+            skipped_missing_code += 1
+            continue
+
         row_date = d.get("Date") or d.get("date") or ""
         if not row_date:
-            skipped += 1
+            skipped_missing_date += 1
             continue
+
         rows.append({
-            "code": code,
+            "code": row_code,
             "date": row_date,
             "open": d.get("O", d.get("open")),
             "high": d.get("H", d.get("high")),
@@ -461,9 +527,54 @@ def _convert_indices_data_rows(data: list[dict[str, Any]], code: str) -> list[di
             "created_at": created_at,
         })
 
-    if skipped > 0:
-        logger.warning("Skipped {} index rows with missing date (code={})", skipped, code)
+    if skipped_missing_date > 0:
+        logger.warning("Skipped {} index rows with missing date (code={})", skipped_missing_date, code)
+    if skipped_missing_code > 0:
+        logger.warning("Skipped {} index rows with missing code", skipped_missing_code)
     return rows
+
+
+def _normalize_index_code(value: Any) -> str:
+    """指数コードを文字列化し、数字コードは 4 桁に正規化する。"""
+    text = str(value).strip() if value is not None else ""
+    if not text:
+        return ""
+    if text.isdigit() and len(text) < 4:
+        return text.zfill(4)
+    return text
+
+
+def _latest_date(values: list[str]) -> str | None:
+    """日付文字列配列から最新日を返す。"""
+    latest: str | None = None
+    for value in values:
+        if not value:
+            continue
+        if latest is None or _is_date_after(value, latest):
+            latest = value
+    return latest
+
+
+def _extract_dates_after(
+    rows: list[dict[str, Any]],
+    anchor_date: str | None,
+    *,
+    include_anchor: bool = False,
+) -> list[str]:
+    """行配列から anchor_date 以降（またはより後）の日付を抽出して昇順化する。"""
+    dates: set[str] = set()
+    for row in rows:
+        row_date = row.get("date")
+        if not row_date:
+            continue
+        if anchor_date:
+            if include_anchor:
+                if _is_date_after(anchor_date, row_date):
+                    continue
+            elif not _is_date_after(row_date, anchor_date):
+                continue
+        dates.add(row_date)
+    return sorted(dates, key=_date_sort_key)
 
 
 def _parse_date(value: str) -> date | None:
