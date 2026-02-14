@@ -2957,10 +2957,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * DefaultConfigResponse
@@ -3057,11 +3057,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["IndexMatch"][];
+            sector17Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["IndexMatch"][];
+            sector33Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -3771,21 +3771,14 @@ export interface components {
              */
             end_date?: string | null;
         };
-        /**
-         * IndexMatch
-         * @description 指数マッチ結果
-         */
+        /** IndexMatch */
         IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
             /** Rsquared */
             rSquared: number;
-            /** Beta */
-            beta: number;
         };
         /**
          * IndexOHLCRecord
@@ -3954,7 +3947,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -3995,6 +3988,30 @@ export interface components {
              * @default 50
              */
             population: number;
+            /**
+             * Structure Mode
+             * @description 探索パターン（params_only=既存シグナルのパラメータのみ、random_add=新しいシグナルを追加して探索）
+             * @default params_only
+             * @enum {string}
+             */
+            structure_mode: "params_only" | "random_add";
+            /**
+             * Random Add Entry Signals
+             * @description random_add時に追加するentryシグナル数（ベースに対する追加分）
+             * @default 1
+             */
+            random_add_entry_signals: number;
+            /**
+             * Random Add Exit Signals
+             * @description random_add時に追加するexitシグナル数（ベースに対する追加分）
+             * @default 1
+             */
+            random_add_exit_signals: number;
+            /**
+             * Seed
+             * @description 乱数シード（再現性用）
+             */
+            seed?: number | null;
             /**
              * Save
              * @description 結果をYAMLに保存
@@ -4287,6 +4304,30 @@ export interface components {
              * @enum {string}
              */
             sampler: "tpe" | "random" | "cmaes";
+            /**
+             * Structure Mode
+             * @description 探索パターン（params_only=既存シグナルのパラメータのみ、random_add=新しいシグナルを追加して探索）
+             * @default params_only
+             * @enum {string}
+             */
+            structure_mode: "params_only" | "random_add";
+            /**
+             * Random Add Entry Signals
+             * @description random_add時に追加するentryシグナル数（ベースに対する追加分）
+             * @default 1
+             */
+            random_add_entry_signals: number;
+            /**
+             * Random Add Exit Signals
+             * @description random_add時に追加するexitシグナル数（ベースに対する追加分）
+             * @default 1
+             */
+            random_add_exit_signals: number;
+            /**
+             * Seed
+             * @description 乱数シード（再現性用）
+             */
+            seed?: number | null;
             /**
              * Save
              * @description 結果をYAMLに保存
@@ -5133,11 +5174,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
+            sector17Matches: components["schemas"]["IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
+            sector33Matches: components["schemas"]["IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -5222,7 +5263,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6335,7 +6376,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -6346,7 +6387,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6909,7 +6950,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -7040,13 +7081,6 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** DateRange */
-        src__server__schemas__db__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
         /**
          * DateRange
          * @description 分析期間
@@ -7056,6 +7090,22 @@ export interface components {
             from: string;
             /** To */
             to: string;
+        };
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
+        src__server__schemas__factor_regression__IndexMatch: {
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
+            /** Rsquared */
+            rSquared: number;
+            /** Beta */
+            beta: number;
         };
         /**
          * OHLCVRecord
@@ -7100,14 +7150,12 @@ export interface components {
             /** To */
             to: string;
         };
-        /** IndexMatch */
-        src__server__schemas__portfolio_factor_regression__IndexMatch: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
-            /** Rsquared */
-            rSquared: number;
+        /** DateRange */
+        src__server__schemas__portfolio_performance__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * ErrorDetail

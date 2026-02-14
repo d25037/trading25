@@ -16,6 +16,70 @@ describe('LabOptimizeForm', () => {
       strategy_name: 'experimental/base_strategy_01',
       trials: 50,
       sampler: 'tpe',
+      structure_mode: 'params_only',
+    });
+  });
+
+  it('submits fundamental-only constraints', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<LabOptimizeForm strategyName="experimental/base_strategy_01" onSubmit={onSubmit} />);
+
+    await user.click(screen.getByRole('switch', { name: 'Entry Filter Only' }));
+    const comboboxes = screen.getAllByRole('combobox');
+    const categoryCombobox = comboboxes[1];
+    expect(categoryCombobox).toBeDefined();
+    if (!categoryCombobox) return;
+    await user.click(categoryCombobox);
+    await user.click(screen.getByText('Fundamental Only'));
+    await user.click(screen.getByRole('button', { name: 'Start Optimization' }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith({
+      strategy_name: 'experimental/base_strategy_01',
+      trials: 50,
+      sampler: 'tpe',
+      structure_mode: 'params_only',
+      entry_filter_only: true,
+      allowed_categories: ['fundamental'],
+    });
+  });
+
+  it('submits random_add payload with signal counts and seed', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<LabOptimizeForm strategyName="experimental/base_strategy_01" onSubmit={onSubmit} />);
+
+    const comboboxes = screen.getAllByRole('combobox');
+    const samplerCombobox = comboboxes[0];
+    const structureCombobox = comboboxes[2];
+    expect(samplerCombobox).toBeDefined();
+    expect(structureCombobox).toBeDefined();
+    if (!samplerCombobox || !structureCombobox) return;
+
+    await user.click(samplerCombobox);
+    await user.click(screen.getByText('Random'));
+    await user.click(structureCombobox);
+    await user.click(screen.getByText('Random Add Signals'));
+
+    await user.clear(screen.getByLabelText('Add Entry Signals'));
+    await user.type(screen.getByLabelText('Add Entry Signals'), '2');
+    await user.clear(screen.getByLabelText('Add Exit Signals'));
+    await user.type(screen.getByLabelText('Add Exit Signals'), '3');
+    await user.type(screen.getByLabelText('Seed (optional)'), '42');
+    await user.click(screen.getByRole('button', { name: 'Start Optimization' }));
+
+    expect(onSubmit).toHaveBeenCalledTimes(1);
+    expect(onSubmit).toHaveBeenCalledWith({
+      strategy_name: 'experimental/base_strategy_01',
+      trials: 50,
+      sampler: 'random',
+      structure_mode: 'random_add',
+      random_add_entry_signals: 2,
+      random_add_exit_signals: 3,
+      seed: 42,
     });
   });
 
@@ -33,33 +97,7 @@ describe('LabOptimizeForm', () => {
       strategy_name: 'experimental/base_strategy_01',
       trials: 50,
       sampler: 'tpe',
-    });
-  });
-
-  it('submits fundamental-only constraints', async () => {
-    const user = userEvent.setup();
-    const onSubmit = vi.fn();
-
-    render(<LabOptimizeForm strategyName="experimental/base_strategy_01" onSubmit={onSubmit} />);
-
-    await user.click(screen.getByRole('switch', { name: 'Entry Filter Only' }));
-    const comboboxes = screen.getAllByRole('combobox');
-    const categoryCombobox = comboboxes.at(1);
-    expect(categoryCombobox).toBeDefined();
-    if (!categoryCombobox) {
-      return;
-    }
-    await user.click(categoryCombobox);
-    await user.click(screen.getByText('Fundamental Only'));
-    await user.click(screen.getByRole('button', { name: 'Start Optimization' }));
-
-    expect(onSubmit).toHaveBeenCalledTimes(1);
-    expect(onSubmit).toHaveBeenCalledWith({
-      strategy_name: 'experimental/base_strategy_01',
-      trials: 50,
-      sampler: 'tpe',
-      entry_filter_only: true,
-      allowed_categories: ['fundamental'],
+      structure_mode: 'params_only',
     });
   });
 

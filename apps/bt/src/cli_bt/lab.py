@@ -196,6 +196,26 @@ def evolve_command(
     strategy: str = typer.Argument(..., help="ベース戦略名"),
     generations: int = typer.Option(20, "--generations", "-g", help="世代数"),
     population: int = typer.Option(50, "--population", "-p", help="個体数"),
+    structure_mode: str = typer.Option(
+        "params_only",
+        "--structure-mode",
+        help="探索パターン (params_only/random_add)",
+    ),
+    random_add_entry_signals: int = typer.Option(
+        1,
+        "--random-add-entry-signals",
+        help="random_add時に追加するentryシグナル数（ベースに対する追加分）",
+    ),
+    random_add_exit_signals: int = typer.Option(
+        1,
+        "--random-add-exit-signals",
+        help="random_add時に追加するexitシグナル数（ベースに対する追加分）",
+    ),
+    seed: int | None = typer.Option(
+        None,
+        "--seed",
+        help="乱数シード（再現性用）",
+    ),
     save: bool = typer.Option(True, "--save/--no-save", help="結果をYAMLに保存"),
     entry_filter_only: bool = typer.Option(
         False,
@@ -227,11 +247,24 @@ def evolve_command(
     console.print(
         f"[bold blue]遺伝的アルゴリズム最適化[/bold blue]: {strategy}"
     )
+    valid_structure_modes = ("params_only", "random_add")
+    if structure_mode not in valid_structure_modes:
+        console.print(
+            f"[red]エラー[/red]: --structure-mode は {valid_structure_modes} のいずれか"
+        )
+        raise typer.Exit(code=1)
+
     console.print(
         f"設定: 世代数={generations}, 個体数={population}, "
+        f"structure_mode={structure_mode}, "
         f"entry_filter_only={entry_filter_only}, "
         f"allowed_categories={allowed_categories or ['all']}"
     )
+    if structure_mode == "random_add":
+        console.print(
+            f"  random_add_entry_signals={random_add_entry_signals}, "
+            f"random_add_exit_signals={random_add_exit_signals}, seed={seed}"
+        )
 
     # 進化設定
     config = EvolutionConfig(
@@ -239,6 +272,10 @@ def evolve_command(
         generations=generations,
         entry_filter_only=entry_filter_only,
         allowed_categories=allowed_categories,
+        structure_mode=structure_mode,
+        random_add_entry_signals=random_add_entry_signals,
+        random_add_exit_signals=random_add_exit_signals,
+        seed=seed,
     )
 
     # 進化実行
@@ -281,6 +318,26 @@ def optimize_command(
     sampler: str = typer.Option(
         "tpe", "--sampler", "-s", help="サンプラー (tpe/random/cmaes)"
     ),
+    structure_mode: str = typer.Option(
+        "params_only",
+        "--structure-mode",
+        help="探索パターン (params_only/random_add)",
+    ),
+    random_add_entry_signals: int = typer.Option(
+        1,
+        "--random-add-entry-signals",
+        help="random_add時に追加するentryシグナル数（ベースに対する追加分）",
+    ),
+    random_add_exit_signals: int = typer.Option(
+        1,
+        "--random-add-exit-signals",
+        help="random_add時に追加するexitシグナル数（ベースに対する追加分）",
+    ),
+    seed: int | None = typer.Option(
+        None,
+        "--seed",
+        help="乱数シード（再現性用）",
+    ),
     save: bool = typer.Option(True, "--save/--no-save", help="結果をYAMLに保存"),
     entry_filter_only: bool = typer.Option(
         False,
@@ -316,16 +373,33 @@ def optimize_command(
     allowed_categories = _resolve_allowed_categories(allowed_category)
 
     console.print(f"[bold blue]Optuna最適化[/bold blue]: {strategy}")
+    valid_structure_modes = ("params_only", "random_add")
+    if structure_mode not in valid_structure_modes:
+        console.print(
+            f"[red]エラー[/red]: --structure-mode は {valid_structure_modes} のいずれか"
+        )
+        raise typer.Exit(code=1)
+
     console.print(
         f"設定: 試行回数={trials}, サンプラー={sampler}, "
+        f"structure_mode={structure_mode}, "
         f"entry_filter_only={entry_filter_only}, "
         f"allowed_categories={allowed_categories or ['all']}"
     )
+    if structure_mode == "random_add":
+        console.print(
+            f"  random_add_entry_signals={random_add_entry_signals}, "
+            f"random_add_exit_signals={random_add_exit_signals}, seed={seed}"
+        )
 
     # 最適化設定
     config = OptunaConfig(
         n_trials=trials,
         sampler=sampler,
+        structure_mode=structure_mode,
+        random_add_entry_signals=random_add_entry_signals,
+        random_add_exit_signals=random_add_exit_signals,
+        seed=seed,
         entry_filter_only=entry_filter_only,
         allowed_categories=allowed_categories,
     )

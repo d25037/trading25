@@ -16,7 +16,7 @@ from .models import (
     SignalConstraints,
     StrategyCandidate,
 )
-from .parameter_evolver import ParameterEvolver
+from .signal_search_space import PARAM_RANGES
 
 # 利用可能なシグナル定義
 # SignalParamsの属性から自動抽出し、制約情報を追加
@@ -366,7 +366,7 @@ class StrategyGenerator:
             return self._randomize_fundamental_params(params)
 
         randomized = params.copy()
-        ranges = ParameterEvolver.PARAM_RANGES.get(signal_name, {})
+        ranges = PARAM_RANGES.get(signal_name, {})
 
         for param_name in params:
             # enabled, カテゴリカルパラメータはスキップ
