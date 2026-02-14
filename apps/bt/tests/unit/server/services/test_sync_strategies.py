@@ -351,6 +351,77 @@ async def test_incremental_sync_skips_index_rows_with_missing_date() -> None:
 
 
 @pytest.mark.asyncio
+async def test_incremental_sync_falls_back_to_date_based_indices_when_master_unavailable() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    client = DummyClient(
+        indices_quotes=[
+            {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"},
+        ]
+    )
+
+    async def _raise_on_indices(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        client.calls.append((path, params))
+        if path == "/indices":
+            raise RuntimeError("indices master unavailable")
+        return {"data": []}
+
+    client.get = _raise_on_indices  # type: ignore[method-assign]
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.errors == []
+    assert any(path == "/indices/bars/daily" and params == {"date": "20260210"} for path, params in client.calls)
+    assert len(market_db.indices_rows) >= 1
+    assert all(row["code"] == "0040" for row in market_db.indices_rows)
+    assert any(row["date"] == "2026-02-10" for row in market_db.indices_rows)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fallback_rechecks_anchor_date_when_master_unavailable() -> None:
+    market_db = DummyMarketDb(
+        latest_trading_date="20260210",
+        latest_stock_data_date="20260210",
+        latest_indices_data_dates={"0000": "20260210"},
+    )
+    client = DummyClient(
+        indices_quotes=[
+            {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"},
+        ]
+    )
+
+    async def _raise_on_indices(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        client.calls.append((path, params))
+        if path == "/indices":
+            raise RuntimeError("indices master unavailable")
+        return {"data": []}
+
+    client.get = _raise_on_indices  # type: ignore[method-assign]
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.errors == []
+    assert any(path == "/indices/bars/daily" and params == {"date": "20260210"} for path, params in client.calls)
+    assert len(market_db.indices_rows) == 1
+    assert market_db.indices_rows[0]["code"] == "0040"
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_requires_last_sync_metadata() -> None:
     market_db = DummyMarketDb()
     market_db.metadata = {}
@@ -721,6 +792,15 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
     assert len(index_rows) == 1
     assert index_rows[0]["date"] == "2026-02-10"
     assert index_rows[0]["open"] == 1
+
+    index_rows_from_payload_code = _convert_indices_data_rows(
+        [
+            {"Date": "2026-02-10", "Code": "40", "O": 1, "H": 2, "L": 1, "C": 2, "SectorName": "TOPIX"},
+        ],
+        code=None,
+    )
+    assert len(index_rows_from_payload_code) == 1
+    assert index_rows_from_payload_code[0]["code"] == "0040"
 
 
 def test_extract_list_items_handles_key_aliases_and_fallback() -> None:
