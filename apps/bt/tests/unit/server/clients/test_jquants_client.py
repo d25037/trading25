@@ -214,6 +214,12 @@ class TestDataKeyExtraction:
         key = client._extract_data_key("/equities/bars/daily", body)
         assert key == "data"
 
+    def test_known_endpoint_falls_back_when_mapped_key_missing(self, client):
+        """既知エンドポイントでも data が無い場合は最初の配列キーへフォールバック"""
+        body = {"indices": [{"Date": "2024-01-01"}]}
+        key = client._extract_data_key("/indices/bars/daily", body)
+        assert key == "indices"
+
     def test_unknown_endpoint_fallback(self, client):
         """未知のエンドポイントのフォールバック"""
         body = {"some_data": [{"id": 1}], "count": 5}

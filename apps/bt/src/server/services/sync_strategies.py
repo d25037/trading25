@@ -52,7 +52,7 @@ class IndicesOnlySyncStrategy:
 
             body = await ctx.client.get("/indices")
             total_calls += 1
-            indices_list = body.get("data", [])
+            indices_list = _extract_list_items(body, preferred_keys=("data", "indices"))
 
             # index_master に保存
             master_rows = _convert_index_master_rows(indices_list)
@@ -278,7 +278,7 @@ class IncrementalSyncStrategy:
 
             indices_body = await ctx.client.get("/indices")
             total_calls += 1
-            indices_list = indices_body.get("data", [])
+            indices_list = _extract_list_items(indices_body, preferred_keys=("data", "indices"))
 
             master_rows = _convert_index_master_rows(indices_list)
             if master_rows:
@@ -388,6 +388,30 @@ def _convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]
             sample,
         )
     return rows
+
+
+def _extract_list_items(
+    body: dict[str, Any],
+    *,
+    preferred_keys: tuple[str, ...] = ("data",),
+) -> list[dict[str, Any]]:
+    """レスポンスの配列ペイロードをキー揺れ込みで取り出す。"""
+    def _coerce_dict_items(value: Any) -> list[dict[str, Any]] | None:
+        if not isinstance(value, list):
+            return None
+        return [item for item in value if isinstance(item, dict)]
+
+    for key in preferred_keys:
+        dict_items = _coerce_dict_items(body.get(key))
+        if dict_items is not None:
+            return dict_items
+
+    for value in body.values():
+        dict_items = _coerce_dict_items(value)
+        if dict_items is not None:
+            return dict_items
+
+    return []
 
 
 def _extract_index_code(index_info: dict[str, Any]) -> str:
