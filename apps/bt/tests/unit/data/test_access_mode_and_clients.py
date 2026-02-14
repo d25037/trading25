@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any, Generator, cast
+from typing import Any, Generator
 
 import pandas as pd
 import pytest
@@ -408,15 +408,25 @@ def test_client_factories_switch_by_mode(monkeypatch: pytest.MonkeyPatch) -> Non
 
     monkeypatch.setattr(clients, "DirectDatasetClient", _DirectDatasetClient)
     monkeypatch.setattr(clients, "DirectMarketClient", _DirectMarketClient)
+    monkeypatch.setattr(
+        clients,
+        "_create_http_dataset_client",
+        lambda dataset_name: _HTTPDatasetClient(dataset_name),
+    )
+    monkeypatch.setattr(
+        clients,
+        "_create_http_market_client",
+        lambda: _HTTPMarketClient(),
+    )
 
     monkeypatch.setattr(clients, "should_use_direct_db", lambda: False)
-    http_dataset = clients.get_dataset_client("sample", cast(Any, _HTTPDatasetClient))
-    http_market = clients.get_market_client(cast(Any, _HTTPMarketClient))
+    http_dataset = clients.get_dataset_client("sample")
+    http_market = clients.get_market_client()
     assert isinstance(http_dataset, _HTTPDatasetClient)
     assert isinstance(http_market, _HTTPMarketClient)
 
     monkeypatch.setattr(clients, "should_use_direct_db", lambda: True)
-    direct_dataset = clients.get_dataset_client("sample", cast(Any, _HTTPDatasetClient))
-    direct_market = clients.get_market_client(cast(Any, _HTTPMarketClient))
+    direct_dataset = clients.get_dataset_client("sample")
+    direct_market = clients.get_market_client()
     assert isinstance(direct_dataset, _DirectDatasetClient)
     assert isinstance(direct_market, _DirectMarketClient)

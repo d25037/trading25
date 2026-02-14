@@ -1,13 +1,13 @@
 """
 セクター・業種別データローダー
 
-localhost:3001 API経由でセクター・業種別データを読み込み、VectorBTで使用できる形式に変換します。
+データアクセスクライアント経由でセクター・業種別データを読み込み、
+VectorBTで使用できる形式に変換します。
 """
 
 import pandas as pd
 from loguru import logger
 
-from src.api.dataset_client import DatasetAPIClient
 from src.data.access.clients import get_dataset_client
 from src.exceptions import IndexDataLoadError, SectorDataLoadError
 
@@ -35,7 +35,7 @@ def get_sector_mapping(dataset: str) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_sector_mapping()
 
     return df
@@ -169,7 +169,7 @@ def get_stock_sector_mapping(dataset: str) -> dict[str, str]:
     logger.info("銘柄→セクターマッピング取得開始")
 
     try:
-        with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+        with get_dataset_client(dataset_name) as client:
             mapping = client.get_stock_sector_mapping()
 
         logger.info(f"銘柄→セクターマッピング取得完了: {len(mapping)}銘柄")
