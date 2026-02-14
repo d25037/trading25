@@ -67,8 +67,35 @@ def _create_test_db(tmp_path: Path) -> str:
 
         # Statements
         conn.execute(insert(statements).values(
-            code="7203", disclosed_date="2024-01-15",
-            earnings_per_share=150.0, profit=2000000.0, equity=10000000.0,
+            code="7203",
+            disclosed_date="2024-01-15",
+            earnings_per_share=150.0,
+            profit=2000000.0,
+            equity=10000000.0,
+            type_of_current_period="FY",
+        ))
+        conn.execute(insert(statements).values(
+            code="7203",
+            disclosed_date="2024-04-15",
+            earnings_per_share=40.0,
+            profit=500000.0,
+            equity=10200000.0,
+            type_of_current_period="1Q",
+        ))
+        conn.execute(insert(statements).values(
+            code="7203",
+            disclosed_date="2024-07-15",
+            earnings_per_share=45.0,
+            profit=550000.0,
+            equity=10300000.0,
+            type_of_current_period="Q1",
+        ))
+        # Forecast-only row (actual_only=True should exclude this)
+        conn.execute(insert(statements).values(
+            code="7203",
+            disclosed_date="2024-10-15",
+            type_of_current_period="FY",
+            next_year_forecast_earnings_per_share=180.0,
         ))
 
         # Dataset info
@@ -115,6 +142,10 @@ class TestDatasetDbOHLCV:
         result = ds_db.get_stock_ohlcv("7203", start="2024-01-16")
         assert len(result) == 2
 
+    def test_get_stock_ohlcv_with_end(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_stock_ohlcv("7203", end="2024-01-16")
+        assert len(result) == 2
+
     def test_get_stock_ohlcv_5digit(self, ds_db: DatasetDb) -> None:
         result = ds_db.get_stock_ohlcv("72030")  # 5桁→4桁自動変換
         assert len(result) == 3
@@ -138,6 +169,10 @@ class TestDatasetDbTopix:
         result = ds_db.get_topix(start="2024-01-16")
         assert len(result) == 1
 
+    def test_get_topix_with_end(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_topix(end="2024-01-15")
+        assert len(result) == 1
+
 
 class TestDatasetDbIndices:
     def test_get_indices(self, ds_db: DatasetDb) -> None:
@@ -147,6 +182,10 @@ class TestDatasetDbIndices:
 
     def test_get_index_data(self, ds_db: DatasetDb) -> None:
         result = ds_db.get_index_data("0000")
+        assert len(result) == 1
+
+    def test_get_index_data_with_range(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_index_data("0000", start="2024-01-01", end="2024-01-20")
         assert len(result) == 1
 
 
@@ -165,16 +204,65 @@ class TestDatasetDbMargin:
         assert len(result["7203"]) == 1
         assert len(result["6758"]) == 0
 
+    def test_get_margin_with_date_range(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_margin(code="7203", start="2024-01-01", end="2024-01-20")
+        assert len(result) == 1
+
 
 class TestDatasetDbStatements:
     def test_get_statements(self, ds_db: DatasetDb) -> None:
         result = ds_db.get_statements("7203")
-        assert len(result) == 1
+        assert len(result) == 3
         assert result[0].earnings_per_share == 150.0
 
     def test_get_statements_batch(self, ds_db: DatasetDb) -> None:
         result = ds_db.get_statements_batch(["7203", "6758"])
-        assert len(result["7203"]) == 1
+        assert len(result["7203"]) == 3
+        assert len(result["6758"]) == 0
+
+    def test_get_statements_batch_empty_codes(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_statements_batch([])
+        assert result == {}
+
+    def test_get_statements_period_type_fy(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_statements("7203", period_type="FY")
+        assert len(result) == 1
+        assert all(row.type_of_current_period == "FY" for row in result)
+
+    def test_get_statements_period_type_1q_includes_legacy_q1(
+        self, ds_db: DatasetDb
+    ) -> None:
+        result = ds_db.get_statements("7203", period_type="1Q")
+        assert len(result) == 2
+        assert {row.type_of_current_period for row in result} == {"1Q", "Q1"}
+
+    def test_get_statements_actual_only_false_includes_forecast_only(
+        self, ds_db: DatasetDb
+    ) -> None:
+        result = ds_db.get_statements("7203", actual_only=False)
+        assert len(result) == 4
+        assert any(row.disclosed_date == "2024-10-15" for row in result)
+
+    def test_get_statements_with_date_range(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_statements(
+            "7203",
+            start="2024-04-01",
+            end="2024-08-01",
+        )
+        assert len(result) == 2
+        assert [row.disclosed_date for row in result] == ["2024-04-15", "2024-07-15"]
+
+    def test_get_statements_batch_applies_filters(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_statements_batch(
+            ["7203", "6758"],
+            period_type="FY",
+            actual_only=False,
+        )
+        assert len(result["7203"]) == 2
+        assert {row.disclosed_date for row in result["7203"]} == {
+            "2024-01-15",
+            "2024-10-15",
+        }
         assert len(result["6758"]) == 0
 
 
@@ -206,3 +294,54 @@ class TestDatasetDbInfo:
 
     def test_get_stock_count(self, ds_db: DatasetDb) -> None:
         assert ds_db.get_stock_count() == 2
+
+
+class TestDatasetDbExtended:
+    def test_search_stocks_partial(self, ds_db: DatasetDb) -> None:
+        result = ds_db.search_stocks("トヨ")
+        assert len(result) == 1
+        assert result[0].code == "7203"
+        assert result[0].match_type == "partial"
+
+    def test_search_stocks_exact(self, ds_db: DatasetDb) -> None:
+        result = ds_db.search_stocks("7203", exact=True)
+        assert len(result) == 1
+        assert result[0].code == "7203"
+        assert result[0].match_type == "exact"
+
+    def test_get_sample_codes(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_sample_codes(size=10, seed=42)
+        assert len(result) == 2
+        assert set(result) == {"7203", "6758"}
+
+    def test_get_table_counts(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_table_counts()
+        assert result["stocks"] == 2
+        assert result["stock_data"] == 3
+        assert result["topix_data"] == 2
+        assert result["indices_data"] == 1
+        assert result["margin_data"] == 1
+        assert result["statements"] == 4
+        assert result["dataset_info"] == 2
+
+    def test_get_date_range(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_date_range()
+        assert result == {"min": "2024-01-15", "max": "2024-01-17"}
+
+    def test_get_stocks_with_quotes_count(self, ds_db: DatasetDb) -> None:
+        result = ds_db.get_stocks_with_quotes_count()
+        assert result == 1
+
+    def test_get_date_range_returns_none_when_no_stock_data(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "dataset-empty.db")
+        engine = create_engine(f"sqlite:///{db_path}")
+        dataset_meta.create_all(engine)
+        engine.dispose()
+
+        db = DatasetDb(db_path)
+        try:
+            result = db.get_date_range()
+            assert result is None
+            assert db.get_sample_codes() == []
+        finally:
+            db.close()

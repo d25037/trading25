@@ -125,6 +125,8 @@ def test_conversion_helpers_empty_rows() -> None:
 
 
 def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
     class _FakeDatasetDb:
         def get_stock_ohlcv(self, code: str, start=None, end=None):  # noqa: ANN001, ANN202
             assert code == "7203"
@@ -246,8 +248,21 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
                 )
             ]
 
-        def get_statements(self, code: str) -> list[SimpleNamespace]:
+        def get_statements(
+            self,
+            code: str,
+            start=None,  # noqa: ANN001
+            end=None,  # noqa: ANN001
+            period_type: str = "all",
+            actual_only: bool = True,
+        ) -> list[SimpleNamespace]:
             assert code == "7203"
+            captured["single"] = {
+                "start": start,
+                "end": end,
+                "period_type": period_type,
+                "actual_only": actual_only,
+            }
             return [
                 _ns(
                     code="7203",
@@ -274,8 +289,21 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
                 )
             ]
 
-        def get_statements_batch(self, codes: list[str]) -> dict[str, list[SimpleNamespace]]:
+        def get_statements_batch(
+            self,
+            codes: list[str],
+            start=None,  # noqa: ANN001
+            end=None,  # noqa: ANN001
+            period_type: str = "all",
+            actual_only: bool = True,
+        ) -> dict[str, list[SimpleNamespace]]:
             assert codes == ["7203", "6501"]
+            captured["batch"] = {
+                "start": start,
+                "end": end,
+                "period_type": period_type,
+                "actual_only": actual_only,
+            }
             return {"7203": self.get_statements("7203"), "6501": []}
 
         def get_sectors(self) -> list[dict[str, str]]:
@@ -328,9 +356,35 @@ def test_direct_dataset_client_methods(monkeypatch: pytest.MonkeyPatch) -> None:
     assert len(client.get_margin_list(codes=["7203"])) == 1
     assert client.get_margin_list(codes=["UNKNOWN"]).empty
 
-    statements_df = client.get_statements("7203")
+    statements_df = client.get_statements(
+        "7203",
+        "2024-01-01",
+        "2024-12-31",
+        period_type="FY",
+        actual_only=False,
+    )
     assert "dividendFY" in statements_df.columns
-    assert list(client.get_statements_batch(["7203", "6501"]).keys()) == ["7203"]
+    assert captured["single"] == {
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "period_type": "FY",
+        "actual_only": False,
+    }
+    assert list(
+        client.get_statements_batch(
+            ["7203", "6501"],
+            "2024-01-01",
+            "2024-12-31",
+            period_type="FY",
+            actual_only=False,
+        ).keys()
+    ) == ["7203"]
+    assert captured["batch"] == {
+        "start": "2024-01-01",
+        "end": "2024-12-31",
+        "period_type": "FY",
+        "actual_only": False,
+    }
 
     sector_mapping = client.get_sector_mapping()
     assert list(sector_mapping.columns) == [
