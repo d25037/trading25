@@ -446,6 +446,10 @@ export interface LabEvolveRequest {
   strategy_name: string;
   generations?: number;
   population?: number;
+  structure_mode?: 'params_only' | 'random_add';
+  random_add_entry_signals?: number;
+  random_add_exit_signals?: number;
+  seed?: number;
   save?: boolean;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
@@ -454,7 +458,11 @@ export interface LabEvolveRequest {
 export interface LabOptimizeRequest {
   strategy_name: string;
   trials?: number;
-  sampler?: string;
+  sampler?: 'tpe' | 'random' | 'cmaes';
+  structure_mode?: 'params_only' | 'random_add';
+  random_add_entry_signals?: number;
+  random_add_exit_signals?: number;
+  seed?: number;
   save?: boolean;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];

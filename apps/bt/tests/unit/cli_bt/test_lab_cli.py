@@ -163,6 +163,55 @@ def test_lab_evolve_command_runs_without_save() -> None:
     assert result.exit_code == 0
 
 
+def test_lab_evolve_accepts_random_add_options() -> None:
+    with patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver:
+        candidate = MagicMock()
+        candidate.strategy_id = "evolved_x"
+        MockEvolver.return_value.evolve.return_value = (candidate, [])
+        MockEvolver.return_value.get_evolution_history.return_value = [
+            {"generation": 1, "best_score": 1.0, "avg_score": 0.5}
+        ]
+
+        result = runner.invoke(
+            app,
+            [
+                "lab",
+                "evolve",
+                "experimental/base_strategy_01",
+                "--generations",
+                "2",
+                "--population",
+                "10",
+                "--structure-mode",
+                "random_add",
+                "--random-add-entry-signals",
+                "2",
+                "--random-add-exit-signals",
+                "0",
+                "--seed",
+                "123",
+                "--no-save",
+            ],
+        )
+
+    assert result.exit_code == 0
+    config = MockEvolver.call_args.kwargs["config"]
+    assert config.structure_mode == "random_add"
+    assert config.random_add_entry_signals == 2
+    assert config.random_add_exit_signals == 0
+    assert config.seed == 123
+
+
+def test_lab_evolve_rejects_invalid_structure_mode() -> None:
+    result = runner.invoke(
+        app,
+        ["lab", "evolve", "experimental/base_strategy_01", "--structure-mode", "invalid"],
+    )
+
+    assert result.exit_code == 1
+    assert "--structure-mode" in result.stdout
+
+
 def test_lab_optimize_command_runs() -> None:
     with (
         patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer,
@@ -256,6 +305,51 @@ def test_lab_optimize_command_runs_without_save() -> None:
         )
 
     assert result.exit_code == 0
+
+
+def test_lab_optimize_accepts_random_add_options() -> None:
+    with patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer:
+        candidate = MagicMock()
+        study = MagicMock()
+        study.best_value = 1.5
+        study.best_params = {}
+        MockOptimizer.return_value.optimize.return_value = (candidate, study)
+        MockOptimizer.return_value.get_optimization_history.return_value = []
+
+        result = runner.invoke(
+            app,
+            [
+                "lab",
+                "optimize",
+                "experimental/base_strategy_01",
+                "--trials",
+                "10",
+                "--structure-mode",
+                "random_add",
+                "--random-add-entry-signals",
+                "1",
+                "--random-add-exit-signals",
+                "1",
+                "--seed",
+                "7",
+                "--no-save",
+            ],
+        )
+
+    assert result.exit_code == 0
+    config = MockOptimizer.call_args.kwargs["config"]
+    assert config.structure_mode == "random_add"
+    assert config.seed == 7
+
+
+def test_lab_optimize_rejects_invalid_structure_mode() -> None:
+    result = runner.invoke(
+        app,
+        ["lab", "optimize", "experimental/base_strategy_01", "--structure-mode", "invalid"],
+    )
+
+    assert result.exit_code == 1
+    assert "--structure-mode" in result.stdout
 
 
 def test_lab_generate_handles_failed_results() -> None:

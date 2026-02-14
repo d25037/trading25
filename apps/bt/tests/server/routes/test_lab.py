@@ -615,6 +615,10 @@ class TestLabSubmitEndpoints:
                     "strategy_name": "test_strategy",
                     "generations": 10,
                     "population": 30,
+                    "structure_mode": "random_add",
+                    "random_add_entry_signals": 2,
+                    "random_add_exit_signals": 0,
+                    "seed": 123,
                     "entry_filter_only": True,
                     "allowed_categories": ["fundamental"],
                 },
@@ -627,6 +631,10 @@ class TestLabSubmitEndpoints:
                 strategy_name="test_strategy",
                 generations=10,
                 population=30,
+                structure_mode="random_add",
+                random_add_entry_signals=2,
+                random_add_exit_signals=0,
+                seed=123,
                 save=True,
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
@@ -646,6 +654,10 @@ class TestLabSubmitEndpoints:
                     "strategy_name": "test_strategy",
                     "trials": 50,
                     "sampler": "cmaes",
+                    "structure_mode": "random_add",
+                    "random_add_entry_signals": 1,
+                    "random_add_exit_signals": 1,
+                    "seed": 7,
                     "entry_filter_only": True,
                     "allowed_categories": ["fundamental"],
                 },
@@ -657,6 +669,10 @@ class TestLabSubmitEndpoints:
                 strategy_name="test_strategy",
                 trials=50,
                 sampler="cmaes",
+                structure_mode="random_add",
+                random_add_entry_signals=1,
+                random_add_exit_signals=1,
+                seed=7,
                 save=True,
                 entry_filter_only=True,
                 allowed_categories=["fundamental"],
@@ -999,7 +1015,18 @@ class TestLabServiceAsync:
         }
         with patch.object(service, "_execute_optimize_sync", return_value=mock_result):
             await service._run_optimize(
-                job_id, "test_strat", 50, "tpe", False, False, [], None
+                job_id,
+                "test_strat",
+                50,
+                "tpe",
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+                False,
+                [],
+                None,
             )
 
         job = manager.get_job(job_id)
@@ -1071,7 +1098,18 @@ class TestLabServiceAsync:
             patch.object(manager, "get_job", return_value=None),
         ):
             await service._run_optimize(
-                job_id, "test_strat", 10, "tpe", False, False, [], None
+                job_id,
+                "test_strat",
+                10,
+                "tpe",
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+                False,
+                [],
+                None,
             )
 
         job = manager.get_job(job_id)
@@ -1153,7 +1191,18 @@ class TestLabServiceAsync:
             service, "_execute_optimize_sync", side_effect=RuntimeError("optエラー")
         ):
             await service._run_optimize(
-                job_id, "test", 50, "tpe", False, False, [], None
+                job_id,
+                "test",
+                50,
+                "tpe",
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+                False,
+                [],
+                None,
             )
 
         job = manager.get_job(job_id)
@@ -1230,7 +1279,18 @@ class TestLabServiceAsync:
             service, "_execute_optimize_sync", side_effect=asyncio.CancelledError
         ):
             await service._run_optimize(
-                job_id, "test", 50, "tpe", False, False, [], None
+                job_id,
+                "test",
+                50,
+                "tpe",
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+                False,
+                [],
+                None,
             )
 
         job = manager.get_job(job_id)
@@ -1413,6 +1473,10 @@ class TestLabServiceSyncMethods:
                 "test_strat",
                 10,
                 30,
+                "params_only",
+                1,
+                1,
+                None,
                 True,
                 True,
                 ["fundamental"],
@@ -1443,7 +1507,16 @@ class TestLabServiceSyncMethods:
             MockEvolver.return_value.evolve.return_value = (mock_candidate, [])
             MockEvolver.return_value.get_evolution_history.return_value = []
 
-            result = service._execute_evolve_sync("test_strat", 5, 20, False)
+            result = service._execute_evolve_sync(
+                "test_strat",
+                5,
+                20,
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+            )
 
         assert result["saved_strategy_path"] is None
         assert result["saved_history_path"] is None
@@ -1478,7 +1551,18 @@ class TestLabServiceSyncMethods:
             MockYaml.return_value.save_optuna_result.return_value = ("/tmp/opt.yaml", "/tmp/hist.yaml")
 
             result = service._execute_optimize_sync(
-                "test_strat", 50, "tpe", True, True, ["fundamental"], None, None,
+                "test_strat",
+                50,
+                "tpe",
+                "params_only",
+                1,
+                1,
+                None,
+                True,
+                True,
+                ["fundamental"],
+                None,
+                None,
             )
 
         assert result["lab_type"] == "optimize"
@@ -1509,7 +1593,18 @@ class TestLabServiceSyncMethods:
             MockOpt.return_value.get_optimization_history.return_value = []
 
             result = service._execute_optimize_sync(
-                "test_strat", 10, "tpe", False, False, [], None, None
+                "test_strat",
+                10,
+                "tpe",
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+                False,
+                [],
+                None,
+                None,
             )
 
         assert result["best_score"] == 0.0

@@ -240,6 +240,10 @@ class LabService:
         strategy_name: str,
         generations: int = 20,
         population: int = 50,
+        structure_mode: str = "params_only",
+        random_add_entry_signals: int = 1,
+        random_add_exit_signals: int = 1,
+        seed: int | None = None,
         save: bool = True,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
@@ -254,12 +258,19 @@ class LabService:
             complete_message="GA進化完了",
             cancel_message="GA進化がキャンセルされました",
             fail_message="GA進化に失敗しました",
-            log_detail=f"戦略: {strategy_name}, generations={generations}, population={population}",
+            log_detail=(
+                f"戦略: {strategy_name}, generations={generations}, population={population}, "
+                f"structure_mode={structure_mode}"
+            ),
             sync_fn=self._execute_evolve_sync,
             sync_args=(
                 strategy_name,
                 generations,
                 population,
+                structure_mode,
+                random_add_entry_signals,
+                random_add_exit_signals,
+                seed,
                 save,
                 entry_filter_only,
                 resolved_categories,
@@ -271,6 +282,10 @@ class LabService:
         strategy_name: str,
         generations: int,
         population: int,
+        structure_mode: str,
+        random_add_entry_signals: int,
+        random_add_exit_signals: int,
+        seed: int | None,
         save: bool,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
@@ -287,6 +302,10 @@ class LabService:
             n_jobs=1,
             entry_filter_only=entry_filter_only,
             allowed_categories=resolved_categories,
+            structure_mode=structure_mode,
+            random_add_entry_signals=random_add_entry_signals,
+            random_add_exit_signals=random_add_exit_signals,
+            seed=seed,
         )
         evolver = ParameterEvolver(config=config)
         best_candidate, _ = evolver.evolve(strategy_name)
@@ -328,6 +347,10 @@ class LabService:
         strategy_name: str,
         trials: int = 100,
         sampler: str = "tpe",
+        structure_mode: str = "params_only",
+        random_add_entry_signals: int = 1,
+        random_add_exit_signals: int = 1,
+        seed: int | None = None,
         save: bool = True,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
@@ -343,6 +366,10 @@ class LabService:
                 strategy_name,
                 trials,
                 sampler,
+                structure_mode,
+                random_add_entry_signals,
+                random_add_exit_signals,
+                seed,
                 save,
                 entry_filter_only,
                 resolved_categories,
@@ -359,6 +386,10 @@ class LabService:
         strategy_name: str,
         trials: int,
         sampler: str,
+        structure_mode: str,
+        random_add_entry_signals: int,
+        random_add_exit_signals: int,
+        seed: int | None,
         save: bool,
         entry_filter_only: bool,
         allowed_categories: list[SignalCategory],
@@ -379,7 +410,7 @@ class LabService:
 
             logger.info(
                 f"Lab optimize 開始: {job_id} (戦略: {strategy_name}, "
-                f"trials={trials}, sampler={sampler})"
+                f"trials={trials}, sampler={sampler}, structure_mode={structure_mode})"
             )
 
             loop = asyncio.get_running_loop()
@@ -403,6 +434,10 @@ class LabService:
                 strategy_name,
                 trials,
                 sampler,
+                structure_mode,
+                random_add_entry_signals,
+                random_add_exit_signals,
+                seed,
                 save,
                 entry_filter_only,
                 allowed_categories,
@@ -443,6 +478,10 @@ class LabService:
         strategy_name: str,
         trials: int,
         sampler: str,
+        structure_mode: str,
+        random_add_entry_signals: int,
+        random_add_exit_signals: int,
+        seed: int | None,
         save: bool,
         entry_filter_only: bool,
         allowed_categories: list[SignalCategory],
@@ -460,6 +499,10 @@ class LabService:
             n_jobs=1,
             entry_filter_only=entry_filter_only,
             allowed_categories=allowed_categories,
+            structure_mode=structure_mode,
+            random_add_entry_signals=random_add_entry_signals,
+            random_add_exit_signals=random_add_exit_signals,
+            seed=seed,
         )
 
         optimizer = OptunaOptimizer(
