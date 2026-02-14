@@ -11,6 +11,9 @@ from loguru import logger
 
 from src.data import get_sector_mapping, load_index_data
 from src.data.access.clients import get_dataset_client
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 from src.data.loaders.utils import extract_dataset_name
 
 
@@ -53,7 +56,7 @@ def get_sector_stocks(dataset: str, sector_name: str) -> list[str]:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name) as client:
+    with DatasetAPIClient(dataset_name) as client:
         stocks = client.get_sector_stocks(sector_name)
 
     if not stocks:
@@ -78,7 +81,7 @@ def get_all_sectors(dataset: str) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name) as client:
+    with DatasetAPIClient(dataset_name) as client:
         df = client.get_all_sectors()
 
     return df
