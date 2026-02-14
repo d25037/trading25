@@ -62,9 +62,16 @@ uv run bt lab generate --count 50 --top 5 --entry-filter-only --allowed-category
 uv run bt lab evolve experimental/base_strategy_01 --entry-filter-only --allowed-category fundamental
 uv run bt lab optimize experimental/base_strategy_01 --entry-filter-only --allowed-category fundamental
 uv run bt lab improve experimental/base_strategy_01 --entry-filter-only --allowed-category fundamental --no-apply
+uv run bt lab evolve experimental/base_strategy_01 --structure-mode params_only
+uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mode random_add --random-add-entry-signals 1 --random-add-exit-signals 1 --seed 42
 ```
 - API では `/api/lab/generate` `/api/lab/evolve` `/api/lab/optimize` `/api/lab/improve` に
-  `entry_filter_only` と `allowed_categories` を指定可能
+  `entry_filter_only` / `allowed_categories` を指定可能
+- `evolve` / `optimize` は `--structure-mode` で探索方式を切り替え可能
+  - `params_only`: 既存シグナルのパラメータのみ探索
+  - `random_add`: ランダムなシグナル追加 + パラメータ探索（追加数は `--random-add-entry-signals` / `--random-add-exit-signals`）
+- API では `/api/lab/evolve` と `/api/lab/optimize` に `structure_mode` / `random_add_*` / `seed` も指定可能
+- Web の Backtest > Lab ページでも `evolve` / `optimize` に同じ `structure_mode` 設定を反映済み
 
 ## Monorepo Commands (root)
 
