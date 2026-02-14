@@ -12,6 +12,7 @@ import vectorbt as vbt
 from src.models.allocation import AllocationInfo
 
 CostParams = Tuple[float, float]
+GroupedPortfolioInputs = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
 
 if TYPE_CHECKING:
     from .protocols import StrategyProtocol
@@ -51,6 +52,30 @@ def _any_signal_enabled(
 class BacktestExecutorMixin:
     """バックテスト実行機能ミックスイン"""
 
+    def _find_signal_for_data_requirement(
+        self: "StrategyProtocol",
+        requirement: str,
+    ) -> str | None:
+        """指定データ要件が必要な有効シグナルを探索してパスを返す。"""
+        from src.strategies.signals.registry import SIGNAL_REGISTRY
+
+        entry_params = getattr(self, "entry_filter_params", None)
+        exit_params = getattr(self, "exit_trigger_params", None)
+
+        for signal_def in SIGNAL_REGISTRY:
+            if not any(
+                req == requirement or req.startswith(f"{requirement}:")
+                for req in signal_def.data_requirements
+            ):
+                continue
+
+            if entry_params is not None and signal_def.enabled_checker(entry_params):
+                return f"entry_filter_params.{signal_def.param_key}"
+            if exit_params is not None and signal_def.enabled_checker(exit_params):
+                return f"exit_trigger_params.{signal_def.param_key}"
+
+        return None
+
     def _should_load_sector_data(self: "StrategyProtocol") -> bool:
         """セクターデータのロードが必要かチェック"""
         entry_params = getattr(self, "entry_filter_params", None)
@@ -74,6 +99,26 @@ class BacktestExecutorMixin:
         self._log("ベンチマーク不要: 該当シグナルが有効化されていません", "debug")
         return False
 
+    def _should_load_margin_data(self: "StrategyProtocol") -> bool:
+        """信用残高データのロードが必要かチェック。"""
+        matched = self._find_signal_for_data_requirement("margin")
+        if matched:
+            self._log(f"信用残高データ必要: {matched}", "debug")
+            return True
+
+        self._log("信用残高データ不要: 依存シグナルが有効化されていません", "debug")
+        return False
+
+    def _should_load_statements_data(self: "StrategyProtocol") -> bool:
+        """財務諸表データのロードが必要かチェック。"""
+        matched = self._find_signal_for_data_requirement("statements")
+        if matched:
+            self._log(f"財務諸表データ必要: {matched}", "debug")
+            return True
+
+        self._log("財務諸表データ不要: 依存シグナルが有効化されていません", "debug")
+        return False
+
     def _calculate_cost_params(self: "StrategyProtocol") -> CostParams:
         """比例手数料とスリッページを計算する。
 
@@ -85,6 +130,140 @@ class BacktestExecutorMixin:
         if getattr(self, "direction", "longonly") in ["shortonly", "both"]:
             effective_fees += self.borrow_fee
         return effective_fees, self.slippage
+
+    def _set_grouped_portfolio_inputs_cache(
+        self: "StrategyProtocol",
+        close_data: pd.DataFrame,
+        all_entries: pd.DataFrame,
+        all_exits: pd.DataFrame,
+    ) -> None:
+        """第2段階最適化用に統合ポートフォリオ入力を保持する。"""
+        setattr(
+            self,
+            "_grouped_portfolio_inputs_cache",
+            (close_data, all_entries, all_exits),
+        )
+
+    def _clear_grouped_portfolio_inputs_cache(self: "StrategyProtocol") -> None:
+        """統合ポートフォリオ入力キャッシュをクリアする。"""
+        setattr(self, "_grouped_portfolio_inputs_cache", None)
+
+    def _get_grouped_portfolio_inputs_cache(
+        self: "StrategyProtocol",
+    ) -> GroupedPortfolioInputs | None:
+        """保持済みの統合ポートフォリオ入力を取得する。"""
+        cached = getattr(self, "_grouped_portfolio_inputs_cache", None)
+        if cached is None:
+            return None
+
+        if not isinstance(cached, tuple) or len(cached) != 3:
+            return None
+
+        close_data, all_entries, all_exits = cached
+        if not (
+            isinstance(close_data, pd.DataFrame)
+            and isinstance(all_entries, pd.DataFrame)
+            and isinstance(all_exits, pd.DataFrame)
+        ):
+            return None
+
+        return cast(GroupedPortfolioInputs, cached)
+
+    def _create_grouped_portfolio(
+        self: "StrategyProtocol",
+        close_data: pd.DataFrame,
+        all_entries: pd.DataFrame,
+        all_exits: pd.DataFrame,
+        allocation_pct: Optional[float] = None,
+    ) -> vbt.Portfolio:
+        """統合ポートフォリオを作成する。"""
+        effective_fees, effective_slippage = self._calculate_cost_params()
+
+        # ピラミッディング機能（現在未実装、常にFalse）
+        pyramid_enabled = False
+
+        if len(self.stock_codes) > 1:
+            # マルチアセット戦略: 共有キャッシュプール + 適切なサイズ配分
+            if allocation_pct is not None:
+                # 2段階最適化: 最適化された配分率を使用
+                allocation_per_asset = allocation_pct
+                self._log(f"⚡ 最適化配分使用: {allocation_per_asset:.1%}", "info")
+            else:
+                # 通常実行: 均等配分率を使用
+                allocation_per_asset = 1.0 / len(self.stock_codes)  # 均等配分率
+
+            self._log(
+                f"💰 資金配分: 総額{self.initial_cash:,}円（共有キャッシュプール）",
+                "info",
+            )
+            self._log(
+                f"📊 各銘柄配分率: {allocation_per_asset:.1%} ({allocation_per_asset * 100:.1f}%)",
+                "info",
+            )
+
+            portfolio_kwargs = dict(
+                close=close_data,
+                entries=all_entries,
+                exits=all_exits,
+                direction=getattr(
+                    self, "direction", "longonly"
+                ),  # 🆕 追加: 取引方向設定
+                init_cash=self.initial_cash,  # 🔧 修正: 共有キャッシュプール全体
+                size=allocation_per_asset,  # 🆕 追加: 各銘柄への配分率
+                size_type="percent",  # 🆕 追加: パーセント指定
+                fees=effective_fees,
+                slippage=effective_slippage,  # 約定価格シフト（ネイティブ対応）
+                cash_sharing=True,  # 資金共有有効
+                group_by=True,  # 統合ポートフォリオ
+                accumulate=pyramid_enabled,  # 🆕 追加: ピラミッディング対応
+                call_seq="auto",  # 🆕 追加: 実行順序最適化
+                freq="D",
+            )
+            if self.max_exposure is not None:
+                portfolio_kwargs["max_size"] = self.max_exposure
+
+            return vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
+
+        # シングル銘柄戦略: 従来通り
+        portfolio_kwargs = dict(
+            close=close_data,
+            entries=all_entries,
+            exits=all_exits,
+            direction=getattr(
+                self, "direction", "longonly"
+            ),  # 🆕 追加: 取引方向設定
+            init_cash=self.initial_cash,
+            fees=effective_fees,
+            slippage=effective_slippage,  # 約定価格シフト（ネイティブ対応）
+            cash_sharing=self.cash_sharing,
+            group_by=True if self.cash_sharing else None,
+            accumulate=pyramid_enabled,  # 🆕 追加: ピラミッディング対応
+            freq="D",
+        )
+        if self.max_exposure is not None:
+            portfolio_kwargs["max_size"] = self.max_exposure
+
+        return vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
+
+    def run_multi_backtest_from_cached_signals(
+        self: "StrategyProtocol",
+        allocation_pct: float,
+    ) -> vbt.Portfolio:
+        """保持済みシグナルを再利用して配分のみ変更して再実行する。"""
+        cached = self._get_grouped_portfolio_inputs_cache()
+        if cached is None:
+            raise ValueError("統合ポートフォリオ入力キャッシュが存在しません")
+
+        close_data, all_entries, all_exits = cached
+        self._log("⚡ キャッシュ済みシグナルを再利用して第2段階を実行", "info")
+        portfolio = self._create_grouped_portfolio(
+            close_data=close_data,
+            all_entries=all_entries,
+            all_exits=all_exits,
+            allocation_pct=allocation_pct,
+        )
+        self.combined_portfolio = portfolio
+        return portfolio
 
     def run_multi_backtest(
         self: "StrategyProtocol",
@@ -101,6 +280,10 @@ class BacktestExecutorMixin:
                 - ポートフォリオオブジェクト
                 - エントリーシグナルDataFrame（統合ポートフォリオの場合のみ、個別ポートフォリオの場合はNone）
         """
+        if allocation_pct is None:
+            # 新規の第1段階実行時は以前のキャッシュを無効化
+            self._clear_grouped_portfolio_inputs_cache()
+
         # パラメータ設定
         use_group_by = self.group_by
 
@@ -341,8 +524,6 @@ class BacktestExecutorMixin:
             # 統合ポートフォリオの場合
             # VectorBTネイティブ統合ポートフォリオ作成
             try:
-                effective_fees, effective_slippage = self._calculate_cost_params()
-
                 # データ統合（VectorBT対応のため終値のみ使用）
                 close_data = pd.DataFrame(
                     {
@@ -391,83 +572,24 @@ class BacktestExecutorMixin:
                     "info",
                 )
 
-                # ピラミッディング機能（現在未実装、常にFalse）
-                pyramid_enabled = False
-
                 # 同時保有ポジション数の上限（簡易: 日次のエントリー数を制限）
                 if self.max_concurrent_positions:
                     all_entries = self._limit_entries_per_day(
                         all_entries, self.max_concurrent_positions
                     )
 
-                # 🔧 FIX: マルチアセット戦略での適切な資金配分
-                # VectorBT cash_sharing=Trueでは init_cash は共有キャッシュプール全体を指定
-                # 各銘柄への配分は size パラメータで制御
+                self._set_grouped_portfolio_inputs_cache(
+                    close_data=close_data,
+                    all_entries=all_entries,
+                    all_exits=all_exits,
+                )
 
-                if len(self.stock_codes) > 1:
-                    # マルチアセット戦略: 共有キャッシュプール + 適切なサイズ配分
-                    if allocation_pct is not None:
-                        # 2段階最適化: 最適化された配分率を使用
-                        allocation_per_asset = allocation_pct
-                        self._log(
-                            f"⚡ 最適化配分使用: {allocation_per_asset:.1%}", "info"
-                        )
-                    else:
-                        # 通常実行: 均等配分率を使用
-                        allocation_per_asset = 1.0 / len(self.stock_codes)  # 均等配分率
-
-                    self._log(
-                        f"💰 資金配分: 総額{self.initial_cash:,}円（共有キャッシュプール）",
-                        "info",
-                    )
-                    self._log(
-                        f"📊 各銘柄配分率: {allocation_per_asset:.1%} ({allocation_per_asset * 100:.1f}%)",
-                        "info",
-                    )
-
-                    portfolio_kwargs = dict(
-                        close=close_data,
-                        entries=all_entries,
-                        exits=all_exits,
-                        direction=getattr(
-                            self, "direction", "longonly"
-                        ),  # 🆕 追加: 取引方向設定
-                        init_cash=self.initial_cash,  # 🔧 修正: 共有キャッシュプール全体
-                        size=allocation_per_asset,  # 🆕 追加: 各銘柄への配分率
-                        size_type="percent",  # 🆕 追加: パーセント指定
-                        fees=effective_fees,
-                        slippage=effective_slippage,  # 約定価格シフト（ネイティブ対応）
-                        cash_sharing=True,  # 資金共有有効
-                        group_by=True,  # 統合ポートフォリオ
-                        accumulate=pyramid_enabled,  # 🆕 追加: ピラミッディング対応
-                        call_seq="auto",  # 🆕 追加: 実行順序最適化
-                        freq="D",
-                    )
-                    if self.max_exposure is not None:
-                        portfolio_kwargs["max_size"] = self.max_exposure
-
-                    portfolio = vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
-                else:
-                    # シングル銘柄戦略: 従来通り
-                    portfolio_kwargs = dict(
-                        close=close_data,
-                        entries=all_entries,
-                        exits=all_exits,
-                        direction=getattr(
-                            self, "direction", "longonly"
-                        ),  # 🆕 追加: 取引方向設定
-                        init_cash=self.initial_cash,
-                        fees=effective_fees,
-                        slippage=effective_slippage,  # 約定価格シフト（ネイティブ対応）
-                        cash_sharing=self.cash_sharing,
-                        group_by=True if self.cash_sharing else None,
-                        accumulate=pyramid_enabled,  # 🆕 追加: ピラミッディング対応
-                        freq="D",
-                    )
-                    if self.max_exposure is not None:
-                        portfolio_kwargs["max_size"] = self.max_exposure
-
-                    portfolio = vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
+                portfolio = self._create_grouped_portfolio(
+                    close_data=close_data,
+                    all_entries=all_entries,
+                    all_exits=all_exits,
+                    allocation_pct=allocation_pct,
+                )
 
                 self.combined_portfolio = portfolio
                 self._log("統合ポートフォリオ作成完了", "info")
@@ -478,6 +600,7 @@ class BacktestExecutorMixin:
                 self._log(f"ポートフォリオ作成エラー: {e}", "error")
                 raise RuntimeError(f"Failed to create portfolio: {e}")
         else:
+            self._clear_grouped_portfolio_inputs_cache()
             # 個別ポートフォリオの場合（ピラミッディングは未実装）
             pyramid_enabled = False
             portfolio = self._create_individual_portfolios(

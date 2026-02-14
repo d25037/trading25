@@ -52,6 +52,9 @@ class StrategyProtocol(Protocol):
     relative_data_dict: dict[str, dict[str, pd.DataFrame]] | None
     execution_data_dict: dict[str, dict[str, pd.DataFrame]] | None
     multi_data_dict: dict[str, dict[str, pd.DataFrame]] | None
+    _grouped_portfolio_inputs_cache: (
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None
+    )
 
     # Logger method
     def _log(self, message: str, level: str = "info") -> None:
@@ -71,6 +74,14 @@ class StrategyProtocol(Protocol):
 
     def load_benchmark_data(self) -> pd.DataFrame:
         """Load benchmark data."""
+        ...
+
+    def _should_load_margin_data(self) -> bool:
+        """Return whether margin data is required."""
+        ...
+
+    def _should_load_statements_data(self) -> bool:
+        """Return whether statements data is required."""
         ...
 
     def generate_multi_signals(
@@ -95,6 +106,13 @@ class StrategyProtocol(Protocol):
         **kwargs: Any,
     ) -> Any:
         """Run multi-stock backtest."""
+        ...
+
+    def run_multi_backtest_from_cached_signals(
+        self,
+        allocation_pct: float,
+    ) -> vbt.Portfolio:
+        """Run grouped backtest by reusing cached close/entry/exit matrices."""
         ...
 
 
