@@ -20,6 +20,32 @@ lab_app = typer.Typer(
     rich_markup_mode="rich",
 )
 
+VALID_SIGNAL_CATEGORIES: tuple[SignalCategory, ...] = (
+    "breakout",
+    "trend",
+    "oscillator",
+    "volatility",
+    "volume",
+    "macro",
+    "fundamental",
+    "sector",
+)
+
+
+def _resolve_allowed_categories(allowed_category: list[str] | None) -> list[SignalCategory]:
+    """カテゴリ制約を検証して正規化する。"""
+    allowed_categories_raw = [c.lower() for c in (allowed_category or [])]
+    invalid_categories = [
+        c for c in allowed_categories_raw if c not in VALID_SIGNAL_CATEGORIES
+    ]
+    if invalid_categories:
+        console.print(
+            f"[red]エラー[/red]: 無効な --allowed-category {invalid_categories} "
+            f"(有効値: {VALID_SIGNAL_CATEGORIES})"
+        )
+        raise typer.Exit(code=1)
+    return cast(list[SignalCategory], allowed_categories_raw)
+
 
 @lab_app.command(name="generate")
 def generate_command(
@@ -84,25 +110,7 @@ def generate_command(
         console.print(f"[red]エラー[/red]: --timeframe は {valid_timeframes} のいずれか")
         raise typer.Exit(code=1)
 
-    valid_categories = (
-        "breakout",
-        "trend",
-        "oscillator",
-        "volatility",
-        "volume",
-        "macro",
-        "fundamental",
-        "sector",
-    )
-    allowed_categories_raw = [c.lower() for c in (allowed_category or [])]
-    invalid_categories = [c for c in allowed_categories_raw if c not in valid_categories]
-    if invalid_categories:
-        console.print(
-            f"[red]エラー[/red]: 無効な --allowed-category {invalid_categories} "
-            f"(有効値: {valid_categories})"
-        )
-        raise typer.Exit(code=1)
-    allowed_categories = cast(list[SignalCategory], allowed_categories_raw)
+    allowed_categories = _resolve_allowed_categories(allowed_category)
 
     console.print(
         f"[bold blue]戦略自動生成[/bold blue]: {count}個生成 → 上位{top}個評価"
@@ -189,6 +197,17 @@ def evolve_command(
     generations: int = typer.Option(20, "--generations", "-g", help="世代数"),
     population: int = typer.Option(50, "--population", "-p", help="個体数"),
     save: bool = typer.Option(True, "--save/--no-save", help="結果をYAMLに保存"),
+    entry_filter_only: bool = typer.Option(
+        False,
+        "--entry-filter-only",
+        help="Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+    ),
+    allowed_category: list[str] | None = typer.Option(
+        None,
+        "--allowed-category",
+        "-C",
+        help="最適化対象カテゴリ（複数指定可）",
+    ),
 ):
     """
     遺伝的アルゴリズムでパラメータ最適化
@@ -203,16 +222,23 @@ def evolve_command(
     from src.agent.models import EvolutionConfig
     from src.agent.parameter_evolver import ParameterEvolver
     from src.agent.yaml_updater import YamlUpdater
+    allowed_categories = _resolve_allowed_categories(allowed_category)
 
     console.print(
         f"[bold blue]遺伝的アルゴリズム最適化[/bold blue]: {strategy}"
     )
-    console.print(f"設定: 世代数={generations}, 個体数={population}")
+    console.print(
+        f"設定: 世代数={generations}, 個体数={population}, "
+        f"entry_filter_only={entry_filter_only}, "
+        f"allowed_categories={allowed_categories or ['all']}"
+    )
 
     # 進化設定
     config = EvolutionConfig(
         population_size=population,
         generations=generations,
+        entry_filter_only=entry_filter_only,
+        allowed_categories=allowed_categories,
     )
 
     # 進化実行
@@ -256,6 +282,17 @@ def optimize_command(
         "tpe", "--sampler", "-s", help="サンプラー (tpe/random/cmaes)"
     ),
     save: bool = typer.Option(True, "--save/--no-save", help="結果をYAMLに保存"),
+    entry_filter_only: bool = typer.Option(
+        False,
+        "--entry-filter-only",
+        help="Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+    ),
+    allowed_category: list[str] | None = typer.Option(
+        None,
+        "--allowed-category",
+        "-C",
+        help="最適化対象カテゴリ（複数指定可）",
+    ),
 ):
     """
     Optuna（ベイズ最適化）でパラメータ最適化
@@ -276,12 +313,22 @@ def optimize_command(
         console.print(f"[bold red]エラー[/bold red]: {e}")
         console.print("Optunaをインストールしてください: uv add optuna")
         raise typer.Exit(code=1)
+    allowed_categories = _resolve_allowed_categories(allowed_category)
 
     console.print(f"[bold blue]Optuna最適化[/bold blue]: {strategy}")
-    console.print(f"設定: 試行回数={trials}, サンプラー={sampler}")
+    console.print(
+        f"設定: 試行回数={trials}, サンプラー={sampler}, "
+        f"entry_filter_only={entry_filter_only}, "
+        f"allowed_categories={allowed_categories or ['all']}"
+    )
 
     # 最適化設定
-    config = OptunaConfig(n_trials=trials, sampler=sampler)
+    config = OptunaConfig(
+        n_trials=trials,
+        sampler=sampler,
+        entry_filter_only=entry_filter_only,
+        allowed_categories=allowed_categories,
+    )
 
     # 最適化実行
     optimizer = OptunaOptimizer(config=config)
@@ -337,25 +384,7 @@ def improve_command(
     from src.lib.strategy_runtime.loader import ConfigLoader
 
     console.print(f"[bold blue]戦略分析[/bold blue]: {strategy}")
-    valid_categories = (
-        "breakout",
-        "trend",
-        "oscillator",
-        "volatility",
-        "volume",
-        "macro",
-        "fundamental",
-        "sector",
-    )
-    allowed_categories_raw = [c.lower() for c in (allowed_category or [])]
-    invalid_categories = [c for c in allowed_categories_raw if c not in valid_categories]
-    if invalid_categories:
-        console.print(
-            f"[red]エラー[/red]: 無効な --allowed-category {invalid_categories} "
-            f"(有効値: {valid_categories})"
-        )
-        raise typer.Exit(code=1)
-    allowed_categories = cast(list[SignalCategory], allowed_categories_raw)
+    allowed_categories = _resolve_allowed_categories(allowed_category)
 
     # 分析
     improver = StrategyImprover()

@@ -136,6 +136,8 @@ async def run_lab_evolve(request: LabEvolveRequest) -> LabJobResponse:
             "generations": request.generations,
             "population": request.population,
             "save": request.save,
+            "entry_filter_only": request.entry_filter_only,
+            "allowed_categories": request.allowed_categories,
         },
         error_label="evolve",
     )
@@ -151,6 +153,8 @@ async def run_lab_optimize(request: LabOptimizeRequest) -> LabJobResponse:
             "trials": request.trials,
             "sampler": request.sampler,
             "save": request.save,
+            "entry_filter_only": request.entry_filter_only,
+            "allowed_categories": request.allowed_categories,
             "scoring_weights": request.scoring_weights,
         },
         error_label="optimize",

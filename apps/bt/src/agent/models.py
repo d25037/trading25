@@ -102,6 +102,12 @@ class EvolutionConfig(BaseModel):
     # 評価タイムアウト（秒）
     timeout_seconds: int = Field(default=600, ge=60, le=3600)
 
+    # Entryフィルターのみ最適化（Exitパラメータは変更しない）
+    entry_filter_only: bool = Field(default=False)
+
+    # 最適化対象として許可するシグナルカテゴリ（空なら全カテゴリ）
+    allowed_categories: list[SignalCategory] = Field(default_factory=list)
+
 
 class StrategyCandidate(BaseModel):
     """戦略候補"""
@@ -213,3 +219,9 @@ class OptunaConfig(BaseModel):
 
     # SQLite保存パス（永続化用）
     storage_path: str | None = None
+
+    # Entryフィルターのみ最適化（Exitパラメータは変更しない）
+    entry_filter_only: bool = Field(default=False)
+
+    # 最適化対象として許可するシグナルカテゴリ（空なら全カテゴリ）
+    allowed_categories: list[SignalCategory] = Field(default_factory=list)
