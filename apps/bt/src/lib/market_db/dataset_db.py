@@ -23,6 +23,26 @@ from src.lib.market_db.tables import (
     margin_data,
     statements,
 )
+from src.models.types import normalize_period_type
+
+_LEGACY_PERIOD_TYPE_MAP = {
+    "1Q": "Q1",
+    "2Q": "Q2",
+    "3Q": "Q3",
+}
+
+
+def _resolve_period_filter_values(period_type: str) -> list[str] | None:
+    """Normalize period type and include legacy aliases when needed."""
+    normalized_period = normalize_period_type(period_type)
+    if normalized_period is None or normalized_period == "all":
+        return None
+
+    values = [normalized_period]
+    legacy_value = _LEGACY_PERIOD_TYPE_MAP.get(normalized_period)
+    if legacy_value is not None:
+        values.append(legacy_value)
+    return values
 
 
 class DatasetDb(BaseDbAccess):
@@ -158,27 +178,79 @@ class DatasetDb(BaseDbAccess):
 
     # --- Statements ---
 
-    def get_statements(self, code: str) -> list[Row[Any]]:
-        """財務諸表データを取得"""
-        code = normalize_stock_code(code)
-        with self.engine.connect() as conn:
-            return list(
-                conn.execute(
-                    select(statements)
-                    .where(statements.c.code == code)
-                    .order_by(statements.c.disclosed_date)
-                ).fetchall()
+    def _apply_statements_filters(
+        self,
+        stmt: Any,
+        start: str | None = None,
+        end: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> Any:
+        """Apply common filters for statements queries."""
+        if start:
+            stmt = stmt.where(statements.c.disclosed_date >= start)
+        if end:
+            stmt = stmt.where(statements.c.disclosed_date <= end)
+
+        period_values = _resolve_period_filter_values(period_type)
+        if period_values:
+            stmt = stmt.where(statements.c.type_of_current_period.in_(period_values))
+
+        if actual_only:
+            stmt = stmt.where(
+                (statements.c.earnings_per_share.is_not(None))
+                | (statements.c.profit.is_not(None))
+                | (statements.c.equity.is_not(None))
             )
 
-    def get_statements_batch(self, codes: list[str]) -> dict[str, list[Row[Any]]]:
+        return stmt
+
+    def get_statements(
+        self,
+        code: str,
+        start: str | None = None,
+        end: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> list[Row[Any]]:
+        """財務諸表データを取得"""
+        code = normalize_stock_code(code)
+        stmt = select(statements).where(statements.c.code == code)
+        stmt = self._apply_statements_filters(
+            stmt,
+            start=start,
+            end=end,
+            period_type=period_type,
+            actual_only=actual_only,
+        )
+        stmt = stmt.order_by(statements.c.disclosed_date)
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def get_statements_batch(
+        self,
+        codes: list[str],
+        start: str | None = None,
+        end: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> dict[str, list[Row[Any]]]:
         """複数銘柄の財務諸表データを一括取得"""
         normalized = [normalize_stock_code(c) for c in codes]
+        if not normalized:
+            return {}
+
+        stmt = select(statements).where(statements.c.code.in_(normalized))
+        stmt = self._apply_statements_filters(
+            stmt,
+            start=start,
+            end=end,
+            period_type=period_type,
+            actual_only=actual_only,
+        )
+        stmt = stmt.order_by(statements.c.code, statements.c.disclosed_date)
         with self.engine.connect() as conn:
-            rows = conn.execute(
-                select(statements)
-                .where(statements.c.code.in_(normalized))
-                .order_by(statements.c.code, statements.c.disclosed_date)
-            ).fetchall()
+            rows = conn.execute(stmt).fetchall()
         result: dict[str, list[Row[Any]]] = {c: [] for c in normalized}
         for row in rows:
             result.setdefault(row.code, []).append(row)

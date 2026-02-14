@@ -26,6 +26,7 @@ from urllib.parse import unquote
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from src.models.types import StatementsPeriodType
 from src.server.schemas.dataset_data import (
     IndexListItem,
     MarginListItem,
@@ -250,12 +251,22 @@ def get_dataset_statements_batch(
     request: Request,
     name: str,
     codes: str = Query(..., description="Comma-separated stock codes (max 100)"),
+    start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    period_type: StatementsPeriodType = Query(default="all"),
+    actual_only: bool = Query(default=True),
 ) -> dict[str, list[StatementRecord]]:
     db = _resolve_dataset(request, name)
     code_list = [c.strip() for c in codes.split(",") if c.strip()]
     if len(code_list) > 100:
         raise HTTPException(status_code=400, detail="Too many codes (max 100)")
-    batch = db.get_statements_batch(code_list)
+    batch = db.get_statements_batch(
+        code_list,
+        start=start_date,
+        end=end_date,
+        period_type=period_type,
+        actual_only=actual_only,
+    )
     return batch_to_statements(batch)
 
 
@@ -268,9 +279,19 @@ def get_dataset_statements(
     request: Request,
     name: str,
     code: str,
+    start_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    end_date: str | None = Query(default=None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
+    period_type: StatementsPeriodType = Query(default="all"),
+    actual_only: bool = Query(default=True),
 ) -> list[StatementRecord]:
     db = _resolve_dataset(request, name)
-    rows = db.get_statements(code)
+    rows = db.get_statements(
+        code,
+        start=start_date,
+        end=end_date,
+        period_type=period_type,
+        actual_only=actual_only,
+    )
     return rows_to_statements(rows)
 
 
