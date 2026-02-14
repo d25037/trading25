@@ -6,7 +6,7 @@
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 SignalCategory = Literal[
     "breakout",
@@ -20,6 +20,7 @@ SignalCategory = Literal[
 ]
 
 LabStructureMode = Literal["params_only", "random_add"]
+LabTargetScope = Literal["entry_filter_only", "exit_trigger_only", "both"]
 
 
 class SignalConstraints(BaseModel):
@@ -104,8 +105,14 @@ class EvolutionConfig(BaseModel):
     # 評価タイムアウト（秒）
     timeout_seconds: int = Field(default=600, ge=60, le=3600)
 
-    # Entryフィルターのみ最適化（Exitパラメータは変更しない）
+    # 互換性用: true の場合は target_scope=entry_filter_only と同義
     entry_filter_only: bool = Field(default=False)
+
+    # 最適化対象（entryのみ/exitのみ/両方）
+    target_scope: LabTargetScope = Field(
+        default="both",
+        description="最適化対象 (entry_filter_only/exit_trigger_only/both)",
+    )
 
     # 最適化対象として許可するシグナルカテゴリ（空なら全カテゴリ）
     allowed_categories: list[SignalCategory] = Field(default_factory=list)
@@ -119,6 +126,18 @@ class EvolutionConfig(BaseModel):
 
     # 乱数シード（再現性用、Noneで固定シードを使用）
     seed: int | None = None
+
+    @model_validator(mode="after")
+    def _normalize_target_scope(self) -> "EvolutionConfig":
+        if self.target_scope == "exit_trigger_only" and self.entry_filter_only:
+            raise ValueError(
+                "entry_filter_only=true と target_scope=exit_trigger_only は同時指定できません"
+            )
+        if self.target_scope == "both" and self.entry_filter_only:
+            self.target_scope = "entry_filter_only"
+        self.entry_filter_only = self.target_scope == "entry_filter_only"
+        return self
+
 
 class StrategyCandidate(BaseModel):
     """戦略候補"""
@@ -230,8 +249,14 @@ class OptunaConfig(BaseModel):
 
     # SQLite保存パス（永続化用）
     storage_path: str | None = None
-    # Entryフィルターのみ最適化（Exitパラメータは変更しない）
+    # 互換性用: true の場合は target_scope=entry_filter_only と同義
     entry_filter_only: bool = Field(default=False)
+
+    # 最適化対象（entryのみ/exitのみ/両方）
+    target_scope: LabTargetScope = Field(
+        default="both",
+        description="最適化対象 (entry_filter_only/exit_trigger_only/both)",
+    )
 
     # 最適化対象として許可するシグナルカテゴリ（空なら全カテゴリ）
     allowed_categories: list[SignalCategory] = Field(default_factory=list)
@@ -245,3 +270,14 @@ class OptunaConfig(BaseModel):
 
     # 乱数シード（再現性用）
     seed: int | None = None
+
+    @model_validator(mode="after")
+    def _normalize_target_scope(self) -> "OptunaConfig":
+        if self.target_scope == "exit_trigger_only" and self.entry_filter_only:
+            raise ValueError(
+                "entry_filter_only=true と target_scope=exit_trigger_only は同時指定できません"
+            )
+        if self.target_scope == "both" and self.entry_filter_only:
+            self.target_scope = "entry_filter_only"
+        self.entry_filter_only = self.target_scope == "entry_filter_only"
+        return self
