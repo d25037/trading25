@@ -12,9 +12,6 @@ from loguru import logger
 from src.api.dataset.statements_mixin import APIPeriodType
 from src.api.exceptions import APIError
 from src.data.access.clients import get_dataset_client
-
-# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
-DatasetAPIClient = get_dataset_client
 from src.exceptions import (
     BatchAPIError,
     DataPreparationError,
@@ -32,6 +29,9 @@ from .multi_asset_loaders import (
 from .statements_loaders import load_statements_data, transform_statements_df
 from .stock_loaders import get_available_stocks, load_stock_data
 from .utils import extract_dataset_name
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 
 
 def prepare_all_stocks_data(

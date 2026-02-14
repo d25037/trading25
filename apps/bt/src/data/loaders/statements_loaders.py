@@ -13,11 +13,11 @@ from loguru import logger
 
 from src.api.dataset.statements_mixin import APIPeriodType
 from src.data.access.clients import get_dataset_client
+from src.data.loaders.utils import extract_dataset_name
+from src.models.types import normalize_period_type
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
-from src.data.loaders.utils import extract_dataset_name
-from src.models.types import normalize_period_type
 
 # カラム名マッピング（API -> VectorBT PascalCase）
 _COLUMN_MAPPING = {

@@ -11,11 +11,11 @@ import pandas as pd
 from loguru import logger
 
 from src.data.access.clients import get_dataset_client
+from src.data.loaders.cache import DataCache, cached_loader
+from src.data.loaders.utils import extract_dataset_name
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
-from src.data.loaders.cache import DataCache, cached_loader
-from src.data.loaders.utils import extract_dataset_name
 
 
 def get_stock_list(dataset: str, min_records: int = 100) -> list[str]:
