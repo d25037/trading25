@@ -616,7 +616,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         },
         entry_purpose="高リスク調整リターン銘柄選別",
         exit_purpose="低リスク調整リターン警告",
-        category="fundamental",
+        category="volatility",
         description="シャープレシオ/ソルティノレシオの判定",
         param_key="risk_adjusted_return",
         data_checker=lambda d: "close" in d,
