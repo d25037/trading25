@@ -13,6 +13,9 @@ from loguru import logger
 
 from src.api.dataset.statements_mixin import APIPeriodType
 from src.data.access.clients import get_dataset_client
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 from src.data.loaders.utils import extract_dataset_name
 from src.models.types import normalize_period_type
 
@@ -178,7 +181,7 @@ def load_statements_data(
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name) as client:
+    with DatasetAPIClient(dataset_name) as client:
         df = client.get_statements(
             stock_code,
             start_date,

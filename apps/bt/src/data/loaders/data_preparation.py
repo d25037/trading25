@@ -12,6 +12,9 @@ from loguru import logger
 from src.api.dataset.statements_mixin import APIPeriodType
 from src.api.exceptions import APIError
 from src.data.access.clients import get_dataset_client
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 from src.exceptions import (
     BatchAPIError,
     DataPreparationError,
@@ -242,7 +245,7 @@ def prepare_multi_data(
     ohlcv_batch: Dict[str, pd.DataFrame] = {}
 
     try:
-        with get_dataset_client(dataset_name) as client:
+        with DatasetAPIClient(dataset_name) as client:
             ohlcv_batch = client.get_stocks_ohlcv_batch(
                 stock_codes, start_date, end_date, timeframe
             )
@@ -269,7 +272,7 @@ def prepare_multi_data(
         logger.debug("信用残高データ読み込み開始（バッチAPI）")
         margin_codes = list(result.keys())
         try:
-            with get_dataset_client(dataset_name) as client:
+            with DatasetAPIClient(dataset_name) as client:
                 margin_batch = client.get_margin_batch(
                     margin_codes, start_date, end_date
                 )
@@ -302,7 +305,7 @@ def prepare_multi_data(
         logger.debug("財務諸表データ読み込み開始（バッチAPI）")
         statements_codes = list(result.keys())
         try:
-            with get_dataset_client(dataset_name) as client:
+            with DatasetAPIClient(dataset_name) as client:
                 statements_batch = client.get_statements_batch(
                     statements_codes, start_date, end_date,
                     period_type=period_type, actual_only=True,

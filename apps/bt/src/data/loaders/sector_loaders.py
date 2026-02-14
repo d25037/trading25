@@ -9,6 +9,9 @@ import pandas as pd
 from loguru import logger
 
 from src.data.access.clients import get_dataset_client
+
+# Backward-compatible symbol for tests patching module-local DatasetAPIClient.
+DatasetAPIClient = get_dataset_client
 from src.exceptions import IndexDataLoadError, SectorDataLoadError
 
 from .index_loaders import load_index_data
@@ -35,7 +38,7 @@ def get_sector_mapping(dataset: str) -> pd.DataFrame:
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name) as client:
+    with DatasetAPIClient(dataset_name) as client:
         df = client.get_sector_mapping()
 
     return df
@@ -169,7 +172,7 @@ def get_stock_sector_mapping(dataset: str) -> dict[str, str]:
     logger.info("銘柄→セクターマッピング取得開始")
 
     try:
-        with get_dataset_client(dataset_name) as client:
+        with DatasetAPIClient(dataset_name) as client:
             mapping = client.get_stock_sector_mapping()
 
         logger.info(f"銘柄→セクターマッピング取得完了: {len(mapping)}銘柄")
