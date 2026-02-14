@@ -219,6 +219,15 @@ class TestSignalRegistry:
         params.fundamental.market_cap.enabled = False
         assert not sig.enabled_checker(params)
 
+    def test_risk_adjusted_return_registered_as_volatility(self) -> None:
+        """risk_adjusted_return は独立シグナルとして volatility に分類されること"""
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "risk_adjusted_return"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "リスク調整リターン"
+        assert sig.category == "volatility"
+        assert sig.data_requirements == ["ohlc"]
+
 
 class TestFundamentalAdjustedSelection:
     def _get_signal(self, param_key: str):
