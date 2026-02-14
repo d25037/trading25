@@ -314,8 +314,15 @@ class DirectDatasetClient:
         period_type: str = "all",
         actual_only: bool = True,
     ) -> pd.DataFrame:
-        _ = (start_date, end_date, period_type, actual_only)
-        return _to_statements_df(self._db.get_statements(stock_code))
+        return _to_statements_df(
+            self._db.get_statements(
+                stock_code,
+                start=start_date,
+                end=end_date,
+                period_type=period_type,
+                actual_only=actual_only,
+            )
+        )
 
     def get_statements_batch(
         self,
@@ -325,8 +332,13 @@ class DirectDatasetClient:
         period_type: str = "all",
         actual_only: bool = True,
     ) -> dict[str, pd.DataFrame]:
-        _ = (start_date, end_date, period_type, actual_only)
-        batch = self._db.get_statements_batch(stock_codes)
+        batch = self._db.get_statements_batch(
+            stock_codes,
+            start=start_date,
+            end=end_date,
+            period_type=period_type,
+            actual_only=actual_only,
+        )
         return {code: _to_statements_df(rows) for code, rows in batch.items() if rows}
 
     def get_sector_mapping(self) -> pd.DataFrame:

@@ -8,6 +8,7 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
+from src.server.routes import dataset_data as dataset_data_routes
 from src.server.app import create_app
 from src.server.services.dataset_resolver import DatasetResolver
 
@@ -80,6 +81,10 @@ def test_dataset_dir(tmp_path):
         INSERT INTO margin_data VALUES ('9984', '2024-01-04', 40000, 20000);
 
         INSERT INTO statements VALUES ('7203', '2024-01-30', 150.0, 2000000, 5000000, 'FY', 'AnnualReport', 160.0, 3000, 20000000, 1500000, 1600000, 1800000, 60.0, 165.0, -500000, -300000, 4000000, 50000000, 330000000, 10000000);
+        INSERT INTO statements VALUES ('7203', '2024-04-30', 45.0, 550000, 5100000, '1Q', 'QuarterlyReport', 170.0, 3050, 5200000, 420000, 430000, 510000, 15.0, 172.0, -110000, -90000, 4100000, 50100000, 331000000, 10000000);
+        INSERT INTO statements VALUES ('7203', '2024-07-30', 48.0, 600000, 5200000, 'Q1', 'QuarterlyReport', 175.0, 3100, 5400000, 450000, 460000, 530000, 16.0, 176.0, -100000, -85000, 4200000, 50200000, 332000000, 10000000);
+        -- forecast-only row (actual_only=true では除外される)
+        INSERT INTO statements VALUES ('7203', '2024-10-30', NULL, NULL, NULL, 'FY', 'ForecastRevision', 180.0, NULL, NULL, NULL, NULL, NULL, NULL, 180.0, NULL, NULL, NULL, NULL, NULL, NULL);
 
         INSERT INTO dataset_info VALUES ('preset', 'primeMarket', NULL);
     """)
@@ -106,6 +111,14 @@ class TestDatasetDataRoutes:
     def test_stocks_list_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/nonexistent/stocks")
         assert resp.status_code == 404
+
+    def test_dataset_resolver_not_initialized(self, test_dataset_dir: str) -> None:
+        app = create_app()
+        # 初期化漏れを再現
+        app.state.dataset_resolver = None
+        local_client = TestClient(app, raise_server_exceptions=False)
+        resp = local_client.get("/api/dataset/test-market/stocks")
+        assert resp.status_code == 422
 
     def test_stock_ohlcv(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/stocks/7203/ohlcv")
@@ -167,11 +180,16 @@ class TestDatasetDataRoutes:
         data = resp.json()
         assert "7203" in data
 
+    def test_margin_batch_too_many(self, client: TestClient) -> None:
+        codes = ",".join([f"000{i}" for i in range(101)])
+        resp = client.get(f"/api/dataset/test-market/margin/batch?codes={codes}")
+        assert resp.status_code == 400
+
     def test_statements_single(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/statements/7203")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data) == 1
+        assert len(data) == 3
         assert data[0]["disclosedDate"] == "2024-01-30"
         assert data[0]["earningsPerShare"] == 150.0
 
@@ -180,6 +198,56 @@ class TestDatasetDataRoutes:
         assert resp.status_code == 200
         data = resp.json()
         assert "7203" in data
+        assert len(data["7203"]) == 3
+
+    def test_statements_single_fy_filter(self, client: TestClient) -> None:
+        resp = client.get("/api/dataset/test-market/statements/7203?period_type=FY")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 1
+        assert data[0]["typeOfCurrentPeriod"] == "FY"
+
+    def test_statements_single_1q_filter_includes_legacy_q1(
+        self, client: TestClient
+    ) -> None:
+        resp = client.get("/api/dataset/test-market/statements/7203?period_type=1Q")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        assert {row["typeOfCurrentPeriod"] for row in data} == {"1Q", "Q1"}
+
+    def test_statements_single_actual_only_false(self, client: TestClient) -> None:
+        resp = client.get("/api/dataset/test-market/statements/7203?actual_only=false")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 4
+        assert any(row["disclosedDate"] == "2024-10-30" for row in data)
+
+    def test_statements_single_date_range(self, client: TestClient) -> None:
+        resp = client.get(
+            "/api/dataset/test-market/statements/7203?start_date=2024-04-01&end_date=2024-08-01"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert [row["disclosedDate"] for row in data] == ["2024-04-30", "2024-07-30"]
+
+    def test_statements_batch_with_filters(self, client: TestClient) -> None:
+        resp = client.get(
+            "/api/dataset/test-market/statements/batch?codes=7203,9984&period_type=FY&actual_only=false"
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "7203" in data
+        assert len(data["7203"]) == 2
+        assert {row["disclosedDate"] for row in data["7203"]} == {
+            "2024-01-30",
+            "2024-10-30",
+        }
+
+    def test_statements_batch_too_many(self, client: TestClient) -> None:
+        codes = ",".join([f"000{i}" for i in range(101)])
+        resp = client.get(f"/api/dataset/test-market/statements/batch?codes={codes}")
+        assert resp.status_code == 400
 
     def test_sectors(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/sectors")
@@ -206,3 +274,11 @@ class TestDatasetDataRoutes:
         assert resp.status_code == 200
         data = resp.json()
         assert "7203" in data
+
+    def test_sector_stocks_invalid_uri_encoding(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        def _raise(_value: str) -> str:
+            raise ValueError("bad encoding")
+
+        monkeypatch.setattr(dataset_data_routes, "unquote", _raise)
+        resp = client.get("/api/dataset/test-market/sectors/invalid/stocks")
+        assert resp.status_code == 400
