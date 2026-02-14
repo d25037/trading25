@@ -1,7 +1,8 @@
 """
 財務諸表データローダー
 
-localhost:3001 API経由で財務諸表データを読み込み、VectorBTで使用できる形式に変換します。
+データアクセスクライアント経由で財務諸表データを読み込み、
+VectorBTで使用できる形式に変換します。
 """
 
 from typing import Optional
@@ -10,7 +11,6 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
-from src.api.dataset_client import DatasetAPIClient
 from src.api.dataset.statements_mixin import APIPeriodType
 from src.data.access.clients import get_dataset_client
 from src.data.loaders.utils import extract_dataset_name
@@ -178,7 +178,7 @@ def load_statements_data(
     """
     dataset_name = extract_dataset_name(dataset)
 
-    with get_dataset_client(dataset_name, http_client_factory=DatasetAPIClient) as client:
+    with get_dataset_client(dataset_name) as client:
         df = client.get_statements(
             stock_code,
             start_date,
