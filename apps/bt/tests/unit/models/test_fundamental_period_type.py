@@ -117,3 +117,73 @@ class TestResolvePeriodType:
 
         result = DataManagerMixin._resolve_period_type(mock_self)
         assert result == "3Q"
+
+    def test_load_multi_data_disables_optional_sources_when_signals_unused(
+        self, monkeypatch
+    ):
+        """依存シグナルが無い場合、margin/statementsロードを無効化すること"""
+        from unittest.mock import MagicMock
+        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+
+        captured: dict[str, object] = {}
+
+        def fake_prepare_multi_data(**kwargs):
+            captured.update(kwargs)
+            return {"7203": {"daily": MagicMock()}}
+
+        monkeypatch.setattr(
+            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            fake_prepare_multi_data,
+        )
+
+        mock_self = MagicMock()
+        mock_self.multi_data_dict = None
+        mock_self.dataset = "primeExTopix500"
+        mock_self.stock_codes = ["7203"]
+        mock_self.start_date = None
+        mock_self.end_date = None
+        mock_self.timeframe = "daily"
+        mock_self.include_margin_data = True
+        mock_self.include_statements_data = True
+        mock_self._resolve_period_type.return_value = "FY"
+        mock_self._should_load_margin_data.return_value = False
+        mock_self._should_load_statements_data.return_value = False
+
+        DataManagerMixin.load_multi_data(mock_self)
+
+        assert captured["include_margin_data"] is False
+        assert captured["include_statements_data"] is False
+
+    def test_load_multi_data_keeps_optional_sources_when_required(self, monkeypatch):
+        """依存シグナルが有効な場合、margin/statementsロードを維持すること"""
+        from unittest.mock import MagicMock
+        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+
+        captured: dict[str, object] = {}
+
+        def fake_prepare_multi_data(**kwargs):
+            captured.update(kwargs)
+            return {"7203": {"daily": MagicMock()}}
+
+        monkeypatch.setattr(
+            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            fake_prepare_multi_data,
+        )
+
+        mock_self = MagicMock()
+        mock_self.multi_data_dict = None
+        mock_self.dataset = "primeExTopix500"
+        mock_self.stock_codes = ["7203"]
+        mock_self.start_date = None
+        mock_self.end_date = None
+        mock_self.timeframe = "daily"
+        mock_self.include_margin_data = True
+        mock_self.include_statements_data = True
+        mock_self._resolve_period_type.return_value = "FY"
+        mock_self._should_load_margin_data.return_value = True
+        mock_self._should_load_statements_data.return_value = True
+
+        DataManagerMixin.load_multi_data(mock_self)
+
+        assert captured["include_margin_data"] is True
+        assert captured["include_statements_data"] is True

@@ -5,6 +5,7 @@ YamlConfigurableStrategy用のケリー基準を用いたポートフォリオ�
 統合ポートフォリオ全体の統計から最適配分率を計算します。
 """
 
+import math
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import pandas as pd
@@ -249,9 +250,23 @@ class PortfolioAnalyzerKellyMixin:
                 "info",
             )
 
-            kelly_portfolio, _ = self.run_multi_backtest(
-                allocation_pct=optimized_allocation,
-            )
+            if self.group_by and hasattr(self, "run_multi_backtest_from_cached_signals"):
+                try:
+                    kelly_portfolio = self.run_multi_backtest_from_cached_signals(
+                        optimized_allocation
+                    )
+                except Exception as e:
+                    self._log(
+                        f"キャッシュ再利用に失敗したため通常実行にフォールバック: {e}",
+                        "debug",
+                    )
+                    kelly_portfolio, _ = self.run_multi_backtest(
+                        allocation_pct=optimized_allocation,
+                    )
+            else:
+                kelly_portfolio, _ = self.run_multi_backtest(
+                    allocation_pct=optimized_allocation,
+                )
 
             # 結果比較ログ
             self._log("✅ ケリー基準2段階最適化バックテスト完了", "info")
@@ -266,7 +281,7 @@ class PortfolioAnalyzerKellyMixin:
                 ):
                     improvement = kelly_return / initial_return
                     # Inf/-Inf チェック
-                    if not pd.isinf(improvement):
+                    if not math.isinf(improvement):
                         self._log(f"  - 第1段階リターン: {initial_return:.1%}", "info")
                         self._log(f"  - 第2段階リターン: {kelly_return:.1%}", "info")
                         self._log(f"  - 改善倍率: {improvement:.2f}x", "info")

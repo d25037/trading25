@@ -99,6 +99,9 @@ class YamlConfigurableStrategy(
         self.multi_data_dict: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None
         self.combined_portfolio: Optional[vbt.Portfolio] = None
         self.portfolio: Optional[vbt.Portfolio] = None
+        self._grouped_portfolio_inputs_cache: Optional[
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+        ] = None
 
         # Relative Mode用の追加属性
         self.relative_data_dict: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None

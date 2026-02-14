@@ -261,6 +261,46 @@ class TestPortfolioAnalyzerKellyMixin:
         expected_allocation = 1.0 / len(self.strategy.stock_codes)
         assert allocation == pytest.approx(expected_allocation, rel=0.01)
 
+    def test_optimize_allocation_kelly_uses_individual_portfolio(self):
+        """combined_portfolio が無い場合は portfolio を使う"""
+        individual_portfolio = MagicMock()
+        self.strategy.combined_portfolio = None
+        self.strategy.portfolio = individual_portfolio
+
+        stats = {
+            "win_rate": 0.5,
+            "avg_win": 100.0,
+            "avg_loss": 80.0,
+            "total_trades": 20,
+        }
+        with patch.object(
+            self.strategy,
+            "_calculate_kelly_for_portfolio",
+            return_value=(0.25, stats),
+        ) as calculate_mock:
+            allocation, returned_stats = self.strategy.optimize_allocation_kelly(
+                MagicMock(), kelly_fraction=1.0
+            )
+
+        calculate_mock.assert_called_once_with(individual_portfolio)
+        assert allocation == pytest.approx(0.25, rel=0.01)
+        assert returned_stats == stats
+
+    def test_optimize_allocation_kelly_returns_default_on_exception(self):
+        """最適化中の例外はデフォルト配分へフォールバックする"""
+        self.strategy.combined_portfolio = MagicMock()
+
+        with patch.object(
+            self.strategy,
+            "_calculate_kelly_for_portfolio",
+            side_effect=RuntimeError("kelly failed"),
+        ):
+            allocation, stats = self.strategy.optimize_allocation_kelly(MagicMock())
+
+        expected_allocation = 1.0 / len(self.strategy.stock_codes)
+        assert allocation == pytest.approx(expected_allocation, rel=0.01)
+        assert stats == {}
+
     def test_optimize_allocation_kelly_half_kelly(self):
         """Half Kelly係数テスト"""
         mock_portfolio = MagicMock()
@@ -353,6 +393,58 @@ class TestPortfolioAnalyzerKellyMixin:
             final_return = final_pf.total_return()
             assert final_return >= initial_return
 
+    def test_run_optimized_backtest_kelly_reuses_cached_signals(self):
+        """キャッシュ再利用経路がある場合、第2段階でrun_multi_backtestを再実行しない"""
+        mock_portfolio_1 = MagicMock()
+        mock_portfolio_1.total_return.return_value = 0.10
+
+        mock_cached_portfolio = MagicMock()
+        mock_cached_portfolio.total_return.return_value = 0.18
+
+        mock_entries = MagicMock()
+        optimized_allocation = 0.22
+        stats = {
+            "win_rate": 0.55,
+            "avg_win": 120.0,
+            "avg_loss": 60.0,
+            "total_trades": 100,
+        }
+
+        with (
+            patch.object(
+                self.strategy,
+                "run_multi_backtest",
+                return_value=(mock_portfolio_1, mock_entries),
+            ) as run_multi_backtest_mock,
+            patch.object(
+                self.strategy,
+                "optimize_allocation_kelly",
+                return_value=(optimized_allocation, stats),
+            ),
+            patch.object(
+                self.strategy,
+                "run_multi_backtest_from_cached_signals",
+                return_value=mock_cached_portfolio,
+                create=True,
+            ) as cached_run_mock,
+        ):
+            (
+                initial_pf,
+                final_pf,
+                allocation,
+                result_stats,
+                all_entries,
+            ) = self.strategy.run_optimized_backtest_kelly()
+
+            assert initial_pf == mock_portfolio_1
+            assert final_pf == mock_cached_portfolio
+            assert allocation == optimized_allocation
+            assert result_stats == stats
+            assert all_entries == mock_entries
+
+            run_multi_backtest_mock.assert_called_once_with()
+            cached_run_mock.assert_called_once_with(optimized_allocation)
+
     def test_logging_messages(self):
         """ログメッセージ記録テスト"""
         mock_portfolio = MagicMock()
@@ -430,6 +522,231 @@ class TestPortfolioAnalyzerKellyMixin:
         # トレード0件時はデフォルト配分を返す
         expected_allocation = 1.0 / len(self.strategy.stock_codes)
         assert allocation == pytest.approx(expected_allocation, rel=0.01)
+
+    def test_calculate_kelly_handles_zero_odds_ratio_guard(self):
+        """極端な値で b が 0 になる場合でもゼロ除算せず処理する"""
+        mock_portfolio = MagicMock()
+        mock_trades = MagicMock()
+        mock_trades.records_readable = pd.DataFrame({"PnL": [5e-324, -1e308]})
+        mock_portfolio.trades = mock_trades
+
+        kelly_value, stats = self.strategy._calculate_kelly_for_portfolio(
+            mock_portfolio
+        )
+
+        assert kelly_value == 0.0
+        assert stats["total_trades"] == 2
+
+    def test_calculate_kelly_without_records_readable(self):
+        """records_readable を持たない trades でもデフォルト値を返す"""
+        mock_portfolio = MagicMock()
+        mock_portfolio.trades = object()
+
+        kelly_value, stats = self.strategy._calculate_kelly_for_portfolio(
+            mock_portfolio
+        )
+
+        assert kelly_value == 0.0
+        assert stats["total_trades"] == 0
+
+    def test_calculate_kelly_exception_returns_default_stats(self):
+        """トレード取得時例外でも安全なデフォルト値を返す"""
+
+        class BrokenPortfolio:
+            @property
+            def trades(self):
+                raise RuntimeError("broken trades")
+
+        kelly_value, stats = self.strategy._calculate_kelly_for_portfolio(
+            BrokenPortfolio()
+        )
+
+        assert kelly_value == 0.0
+        assert stats["total_trades"] == 0
+
+    def test_run_optimized_backtest_kelly_group_by_false_sets_portfolio(self):
+        """group_by=False 時は portfolio 参照が設定される"""
+        self.strategy.group_by = False
+
+        initial_portfolio = MagicMock()
+        initial_portfolio.total_return.return_value = 0.12
+        final_portfolio = MagicMock()
+        final_portfolio.total_return.return_value = 0.15
+        entries = MagicMock()
+        stats = {
+            "win_rate": 0.6,
+            "avg_win": 100.0,
+            "avg_loss": 60.0,
+            "total_trades": 30,
+        }
+
+        with (
+            patch.object(
+                self.strategy,
+                "run_multi_backtest",
+                side_effect=[
+                    (initial_portfolio, entries),
+                    (final_portfolio, entries),
+                ],
+            ),
+            patch.object(
+                self.strategy,
+                "optimize_allocation_kelly",
+                return_value=(0.2, stats),
+            ),
+        ):
+            result = self.strategy.run_optimized_backtest_kelly()
+
+        assert result[0] == initial_portfolio
+        assert result[1] == final_portfolio
+        assert self.strategy.portfolio == initial_portfolio
+
+    def test_run_optimized_backtest_kelly_fallback_when_cache_reuse_fails(self):
+        """キャッシュ再利用失敗時に通常実行へフォールバックする"""
+        initial_portfolio = MagicMock()
+        initial_portfolio.total_return.return_value = 0.10
+        fallback_portfolio = MagicMock()
+        fallback_portfolio.total_return.return_value = 0.14
+        entries = MagicMock()
+        stats = {
+            "win_rate": 0.55,
+            "avg_win": 120.0,
+            "avg_loss": 60.0,
+            "total_trades": 100,
+        }
+
+        with (
+            patch.object(
+                self.strategy,
+                "run_multi_backtest",
+                side_effect=[
+                    (initial_portfolio, entries),
+                    (fallback_portfolio, entries),
+                ],
+            ) as run_multi_backtest_mock,
+            patch.object(
+                self.strategy,
+                "optimize_allocation_kelly",
+                return_value=(0.22, stats),
+            ),
+            patch.object(
+                self.strategy,
+                "run_multi_backtest_from_cached_signals",
+                side_effect=RuntimeError("cache failed"),
+                create=True,
+            ),
+        ):
+            result = self.strategy.run_optimized_backtest_kelly()
+
+        assert result[1] == fallback_portfolio
+        assert run_multi_backtest_mock.call_count == 2
+        assert run_multi_backtest_mock.call_args_list[1].kwargs == {
+            "allocation_pct": 0.22
+        }
+
+    def test_run_optimized_backtest_kelly_logs_infinite_improvement(self):
+        """改善倍率が無限大になる場合は警告ログを出す"""
+        initial_portfolio = MagicMock()
+        initial_portfolio.total_return.return_value = 5e-324
+        final_portfolio = MagicMock()
+        final_portfolio.total_return.return_value = 1.0
+        entries = MagicMock()
+
+        with (
+            patch.object(
+                self.strategy,
+                "run_multi_backtest",
+                side_effect=[
+                    (initial_portfolio, entries),
+                    (final_portfolio, entries),
+                ],
+            ),
+            patch.object(
+                self.strategy,
+                "optimize_allocation_kelly",
+                return_value=(0.2, {"win_rate": 0.5, "avg_win": 1.0, "avg_loss": 1.0, "total_trades": 2}),
+            ),
+        ):
+            self.strategy.run_optimized_backtest_kelly()
+
+        messages = [msg for msg, _ in self.strategy.log_messages]
+        assert any("改善倍率: 計算不可（無限大）" in msg for msg in messages)
+
+    def test_run_optimized_backtest_kelly_logs_zero_baseline_warning(self):
+        """第1段階リターン0のとき改善倍率計算不可ログを出す"""
+        initial_portfolio = MagicMock()
+        initial_portfolio.total_return.return_value = 0.0
+        final_portfolio = MagicMock()
+        final_portfolio.total_return.return_value = 0.05
+        entries = MagicMock()
+
+        with (
+            patch.object(
+                self.strategy,
+                "run_multi_backtest",
+                side_effect=[
+                    (initial_portfolio, entries),
+                    (final_portfolio, entries),
+                ],
+            ),
+            patch.object(
+                self.strategy,
+                "optimize_allocation_kelly",
+                return_value=(0.2, {"win_rate": 0.5, "avg_win": 1.0, "avg_loss": 1.0, "total_trades": 2}),
+            ),
+        ):
+            self.strategy.run_optimized_backtest_kelly()
+
+        messages = [msg for msg, _ in self.strategy.log_messages]
+        assert any("改善倍率: 計算不可（基準値が0またはNaN）" in msg for msg in messages)
+
+    def test_run_optimized_backtest_kelly_handles_return_comparison_error(self):
+        """リターン比較中の例外は握り潰して結果は返す"""
+        initial_portfolio = MagicMock()
+        initial_portfolio.total_return.side_effect = RuntimeError("compare failed")
+        final_portfolio = MagicMock()
+        final_portfolio.total_return.return_value = 0.1
+        entries = MagicMock()
+        stats = {
+            "win_rate": 0.5,
+            "avg_win": 1.0,
+            "avg_loss": 1.0,
+            "total_trades": 2,
+        }
+
+        with (
+            patch.object(
+                self.strategy,
+                "run_multi_backtest",
+                side_effect=[
+                    (initial_portfolio, entries),
+                    (final_portfolio, entries),
+                ],
+            ),
+            patch.object(
+                self.strategy,
+                "optimize_allocation_kelly",
+                return_value=(0.2, stats),
+            ),
+        ):
+            result = self.strategy.run_optimized_backtest_kelly()
+
+        assert result[0] == initial_portfolio
+        assert result[1] == final_portfolio
+        messages = [msg for msg, _ in self.strategy.log_messages]
+        assert any("リターン比較計算エラー" in msg for msg in messages)
+
+    def test_run_optimized_backtest_kelly_raises_runtime_error(self):
+        """内部例外はRuntimeErrorとして再送出される"""
+        with patch.object(
+            self.strategy,
+            "run_multi_backtest",
+            side_effect=RuntimeError("stage1 failed"),
+        ):
+            with pytest.raises(
+                RuntimeError, match="ケリー基準2段階最適化バックテスト実行失敗"
+            ):
+                self.strategy.run_optimized_backtest_kelly()
 
 
 if __name__ == "__main__":
