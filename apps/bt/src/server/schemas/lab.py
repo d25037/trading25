@@ -56,6 +56,14 @@ class LabEvolveRequest(BaseModel):
     generations: int = Field(default=20, ge=1, le=100, description="世代数")
     population: int = Field(default=50, ge=10, le=500, description="個体数")
     save: bool = Field(default=True, description="結果をYAMLに保存")
+    entry_filter_only: bool = Field(
+        default=False,
+        description="Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+    )
+    allowed_categories: list[LabSignalCategory] | None = Field(
+        default=None,
+        description="最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
+    )
 
 
 class LabOptimizeRequest(BaseModel):
@@ -65,6 +73,14 @@ class LabOptimizeRequest(BaseModel):
     trials: int = Field(default=100, ge=10, le=1000, description="試行回数")
     sampler: Literal["tpe", "random", "cmaes"] = Field(default="tpe", description="サンプラー")
     save: bool = Field(default=True, description="結果をYAMLに保存")
+    entry_filter_only: bool = Field(
+        default=False,
+        description="Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+    )
+    allowed_categories: list[LabSignalCategory] | None = Field(
+        default=None,
+        description="最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
+    )
     scoring_weights: dict[str, float] | None = Field(
         default=None, description="スコアリング重み"
     )

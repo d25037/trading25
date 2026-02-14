@@ -241,8 +241,11 @@ class LabService:
         generations: int = 20,
         population: int = 50,
         save: bool = True,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> str:
         """GA進化ジョブをサブミット"""
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         return await self._submit_job(
             strategy_name=strategy_name,
             job_type="lab_evolve",
@@ -253,7 +256,14 @@ class LabService:
             fail_message="GA進化に失敗しました",
             log_detail=f"戦略: {strategy_name}, generations={generations}, population={population}",
             sync_fn=self._execute_evolve_sync,
-            sync_args=(strategy_name, generations, population, save),
+            sync_args=(
+                strategy_name,
+                generations,
+                population,
+                save,
+                entry_filter_only,
+                resolved_categories,
+            ),
         )
 
     def _execute_evolve_sync(
@@ -262,16 +272,21 @@ class LabService:
         generations: int,
         population: int,
         save: bool,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
     ) -> dict[str, Any]:
         """同期的にGA進化を実行"""
         from src.agent.models import EvolutionConfig
         from src.agent.parameter_evolver import ParameterEvolver
         from src.agent.yaml_updater import YamlUpdater
 
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         config = EvolutionConfig(
             population_size=population,
             generations=generations,
             n_jobs=1,
+            entry_filter_only=entry_filter_only,
+            allowed_categories=resolved_categories,
         )
         evolver = ParameterEvolver(config=config)
         best_candidate, _ = evolver.evolve(strategy_name)
@@ -314,14 +329,24 @@ class LabService:
         trials: int = 100,
         sampler: str = "tpe",
         save: bool = True,
+        entry_filter_only: bool = False,
+        allowed_categories: list[SignalCategory] | None = None,
         scoring_weights: dict[str, float] | None = None,
     ) -> str:
         """Optuna最適化ジョブをサブミット"""
         job_id = self._manager.create_job(strategy_name, job_type="lab_optimize")
 
+        resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         task = asyncio.create_task(
             self._run_optimize(
-                job_id, strategy_name, trials, sampler, save, scoring_weights
+                job_id,
+                strategy_name,
+                trials,
+                sampler,
+                save,
+                entry_filter_only,
+                resolved_categories,
+                scoring_weights,
             )
         )
         await self._manager.set_job_task(job_id, task)
@@ -335,6 +360,8 @@ class LabService:
         trials: int,
         sampler: str,
         save: bool,
+        entry_filter_only: bool,
+        allowed_categories: list[SignalCategory],
         scoring_weights: dict[str, float] | None,
     ) -> None:
         """Optuna最適化を実行（バックグラウンド）
@@ -373,7 +400,13 @@ class LabService:
             result = await loop.run_in_executor(
                 self._executor,
                 self._execute_optimize_sync,
-                strategy_name, trials, sampler, save, scoring_weights,
+                strategy_name,
+                trials,
+                sampler,
+                save,
+                entry_filter_only,
+                allowed_categories,
+                scoring_weights,
                 progress_callback,
             )
 
@@ -411,6 +444,8 @@ class LabService:
         trials: int,
         sampler: str,
         save: bool,
+        entry_filter_only: bool,
+        allowed_categories: list[SignalCategory],
         scoring_weights: dict[str, float] | None,
         progress_callback: Any,
     ) -> dict[str, Any]:
@@ -423,6 +458,8 @@ class LabService:
             n_trials=trials,
             sampler=sampler,
             n_jobs=1,
+            entry_filter_only=entry_filter_only,
+            allowed_categories=allowed_categories,
         )
 
         optimizer = OptunaOptimizer(
