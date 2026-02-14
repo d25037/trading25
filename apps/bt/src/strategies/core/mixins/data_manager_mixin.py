@@ -48,14 +48,52 @@ class DataManagerMixin:
             # period_type をシグナルパラメータから解決
             period_type = self._resolve_period_type()
 
+            include_margin_data = self.include_margin_data
+            include_statements_data = self.include_statements_data
+
+            should_load_margin = (
+                self._should_load_margin_data()
+                if hasattr(self, "_should_load_margin_data")
+                else include_margin_data
+            )
+            should_load_statements = (
+                self._should_load_statements_data()
+                if hasattr(self, "_should_load_statements_data")
+                else include_statements_data
+            )
+
+            if include_margin_data and not should_load_margin:
+                self._log(
+                    "信用残高データ読み込みをスキップ: 依存シグナルが無効です",
+                    "debug",
+                )
+            if include_statements_data and not should_load_statements:
+                self._log(
+                    "財務諸表データ読み込みをスキップ: 依存シグナルが無効です",
+                    "debug",
+                )
+
+            if not include_margin_data and should_load_margin:
+                self._log(
+                    "信用残高シグナルが有効ですが include_margin_data=false のためデータは読み込みません",
+                    "warning",
+                )
+            if not include_statements_data and should_load_statements:
+                self._log(
+                    "財務諸表シグナルが有効ですが include_statements_data=false のためデータは読み込みません",
+                    "warning",
+                )
+
             # バッチAPIで一括取得
             self.multi_data_dict = prepare_multi_data(
                 dataset=self.dataset,
                 stock_codes=self.stock_codes,
                 start_date=self.start_date,
                 end_date=self.end_date,
-                include_margin_data=self.include_margin_data,
-                include_statements_data=self.include_statements_data,
+                include_margin_data=include_margin_data and should_load_margin,
+                include_statements_data=(
+                    include_statements_data and should_load_statements
+                ),
                 timeframe=self.timeframe,
                 period_type=period_type,
             )
