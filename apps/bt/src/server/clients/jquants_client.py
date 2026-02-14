@@ -123,8 +123,9 @@ class JQuantsAsyncClient:
         未知の場合はリスト型の最初のキーを返す。
         """
         # 既知のエンドポイントマッピング
-        if path in self._DATA_KEYS:
-            return self._DATA_KEYS[path]
+        mapped_key = self._DATA_KEYS.get(path)
+        if mapped_key and isinstance(body.get(mapped_key), list):
+            return mapped_key
         # フォールバック: 最初のリスト型フィールド
         for key, value in body.items():
             if isinstance(value, list):
