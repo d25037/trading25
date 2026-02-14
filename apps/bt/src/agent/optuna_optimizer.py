@@ -9,9 +9,11 @@ from __future__ import annotations
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+import copy
 import numpy as np
 import pandas as pd
 from loguru import logger
+import random
 
 # 型チェック時のみoptunaをインポート
 if TYPE_CHECKING:
@@ -35,6 +37,8 @@ from src.lib.strategy_runtime.loader import ConfigLoader
 
 from .models import OptunaConfig, SignalCategory, StrategyCandidate
 from .signal_filters import is_signal_allowed
+from .signal_augmentation import apply_random_add_structure
+from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES
 
 
 class OptunaOptimizer:
@@ -44,75 +48,8 @@ class OptunaOptimizer:
     TPEサンプラーを使用してパラメータ空間を効率的に探索
     """
 
-    # パラメータ範囲定義（ParameterEvolverと同じ）
-    PARAM_RANGES: dict[str, dict[str, tuple[float, float, str]]] = {
-        "period_breakout": {
-            "period": (20, 500, "int"),
-            "lookback_days": (1, 30, "int"),
-        },
-        "ma_breakout": {
-            "period": (20, 500, "int"),
-            "lookback_days": (1, 30, "int"),
-        },
-        "crossover": {
-            "fast_period": (5, 50, "int"),
-            "slow_period": (20, 200, "int"),
-            "signal_period": (5, 20, "int"),
-            "lookback_days": (1, 10, "int"),
-        },
-        "mean_reversion": {
-            "baseline_period": (10, 100, "int"),
-            "deviation_threshold": (0.05, 0.5, "float"),
-        },
-        "bollinger_bands": {
-            "window": (10, 100, "int"),
-            "alpha": (1.0, 4.0, "float"),
-        },
-        "atr_support_break": {
-            "lookback_period": (10, 100, "int"),
-            "atr_multiplier": (1.0, 10.0, "float"),
-        },
-        "rsi_threshold": {
-            "period": (5, 50, "int"),
-            "threshold": (10.0, 90.0, "float"),
-        },
-        "rsi_spread": {
-            "fast_period": (5, 20, "int"),
-            "slow_period": (10, 50, "int"),
-            "threshold": (5.0, 30.0, "float"),
-        },
-        "volume": {
-            "threshold": (0.3, 3.0, "float"),
-            "short_period": (10, 100, "int"),
-            "long_period": (50, 300, "int"),
-        },
-        "trading_value": {
-            "period": (5, 50, "int"),
-            "threshold_value": (0.1, 100.0, "float"),
-        },
-        "trading_value_range": {
-            "period": (5, 50, "int"),
-            "min_threshold": (0.1, 50.0, "float"),
-            "max_threshold": (10.0, 500.0, "float"),
-        },
-        "beta": {
-            "lookback_period": (20, 200, "int"),
-            "min_beta": (-1.0, 2.0, "float"),
-            "max_beta": (0.5, 5.0, "float"),
-        },
-        "margin": {
-            "lookback_period": (50, 300, "int"),
-            "percentile_threshold": (0.1, 0.9, "float"),
-        },
-        "index_daily_change": {
-            "max_daily_change_pct": (0.5, 3.0, "float"),
-        },
-        "index_macd_histogram": {
-            "fast_period": (5, 20, "int"),
-            "slow_period": (15, 50, "int"),
-            "signal_period": (5, 15, "int"),
-        },
-    }
+    # Backward-compatible alias.
+    PARAM_RANGES = PARAM_RANGES
 
     def __init__(
         self,
@@ -145,6 +82,7 @@ class OptunaOptimizer:
         # ベース戦略パラメータ（後で設定）
         self.base_entry_params: dict[str, Any] = {}
         self.base_exit_params: dict[str, Any] = {}
+        self.base_shared_config: dict[str, Any] = {}
 
     def optimize(
         self,
@@ -163,8 +101,39 @@ class OptunaOptimizer:
         """
         # ベース戦略の読み込み
         base_candidate = self._load_base_strategy(base_strategy)
+
+        # random_add モード: ベース戦略に新しいシグナルを追加してから最適化
+        should_random_add = (
+            self.config.structure_mode == "random_add"
+            and (
+                self.config.random_add_entry_signals > 0
+                or self.config.random_add_exit_signals > 0
+            )
+        )
+        if should_random_add:
+            rng = (
+                random.Random(self.config.seed)
+                if self.config.seed is not None
+                else random.Random()
+            )
+            base_entry = _extract_enabled_signal_names(base_candidate.entry_filter_params)
+            base_exit = _extract_enabled_signal_names(base_candidate.exit_trigger_params)
+            base_candidate, added = apply_random_add_structure(
+                base_candidate,
+                rng=rng,
+                add_entry_signals=self.config.random_add_entry_signals,
+                add_exit_signals=self.config.random_add_exit_signals,
+                base_entry_signals=base_entry,
+                base_exit_signals=base_exit,
+            )
+            logger.info(
+                "Optuna random-add applied: "
+                f"entry_added={added['entry']}, exit_added={added['exit']}"
+            )
+
         self.base_entry_params = base_candidate.entry_filter_params
         self.base_exit_params = base_candidate.exit_trigger_params
+        self.base_shared_config = base_candidate.shared_config or {}
 
         logger.info(
             f"Starting Optuna optimization: n_trials={self.config.n_trials}, "
@@ -371,15 +340,8 @@ class OptunaOptimizer:
 
             ranges = self.PARAM_RANGES.get(signal_name, {})
 
-            # カテゴリカルパラメータ（スキップ対象）
-            categorical_params = [
-                "enabled", "direction", "condition", "type", "ma_type",
-                "position", "baseline_type", "recovery_price",
-                "recovery_direction", "deviation_direction", "price_column",
-            ]
-
             for param_name in params.keys():
-                if param_name in categorical_params:
+                if param_name in CATEGORICAL_PARAMS:
                     # カテゴリカルパラメータはそのまま
                     continue
 
@@ -457,7 +419,7 @@ class OptunaOptimizer:
             strategy_id="optuna_best",
             entry_filter_params=entry_params,
             exit_trigger_params=exit_params,
-            shared_config={},
+            shared_config=copy.deepcopy(self.base_shared_config),
             metadata={"optimization_method": "optuna"},
         )
 
@@ -485,3 +447,14 @@ class OptunaOptimizer:
                     }
                 )
         return history
+
+
+def _extract_enabled_signal_names(params_dict: dict[str, Any]) -> set[str]:
+    enabled: set[str] = set()
+    for name, value in (params_dict or {}).items():
+        if not isinstance(value, dict):
+            enabled.add(name)
+            continue
+        if value.get("enabled", True):
+            enabled.add(name)
+    return enabled

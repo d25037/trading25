@@ -19,6 +19,8 @@ SignalCategory = Literal[
     "sector",
 ]
 
+LabStructureMode = Literal["params_only", "random_add"]
+
 
 class SignalConstraints(BaseModel):
     """シグナル制約定義"""
@@ -108,6 +110,15 @@ class EvolutionConfig(BaseModel):
     # 最適化対象として許可するシグナルカテゴリ（空なら全カテゴリ）
     allowed_categories: list[SignalCategory] = Field(default_factory=list)
 
+    # 探索パターン（パラメータのみ / ランダムにシグナルを追加）
+    structure_mode: LabStructureMode = Field(default="params_only")
+
+    # random_add モード時: 追加するシグナル数（ベース戦略に対する追加分）
+    random_add_entry_signals: int = Field(default=1, ge=0, le=10)
+    random_add_exit_signals: int = Field(default=1, ge=0, le=10)
+
+    # 乱数シード（再現性用、Noneで固定シードを使用）
+    seed: int | None = None
 
 class StrategyCandidate(BaseModel):
     """戦略候補"""
@@ -219,9 +230,18 @@ class OptunaConfig(BaseModel):
 
     # SQLite保存パス（永続化用）
     storage_path: str | None = None
-
     # Entryフィルターのみ最適化（Exitパラメータは変更しない）
     entry_filter_only: bool = Field(default=False)
 
     # 最適化対象として許可するシグナルカテゴリ（空なら全カテゴリ）
     allowed_categories: list[SignalCategory] = Field(default_factory=list)
+
+    # 探索パターン（パラメータのみ / ランダムにシグナルを追加）
+    structure_mode: LabStructureMode = Field(default="params_only")
+
+    # random_add モード時: 追加するシグナル数（ベース戦略に対する追加分）
+    random_add_entry_signals: int = Field(default=1, ge=0, le=10)
+    random_add_exit_signals: int = Field(default=1, ge=0, le=10)
+
+    # 乱数シード（再現性用）
+    seed: int | None = None

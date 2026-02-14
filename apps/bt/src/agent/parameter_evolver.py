@@ -14,6 +14,8 @@ from src.lib.strategy_runtime.loader import ConfigLoader
 
 from .models import EvolutionConfig, EvaluationResult, SignalCategory, StrategyCandidate
 from .signal_filters import is_signal_allowed
+from .signal_augmentation import apply_random_add_structure
+from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES
 from .strategy_evaluator import StrategyEvaluator
 
 
@@ -24,76 +26,8 @@ class ParameterEvolver:
     戦略のパラメータを進化的に最適化し、最良の組み合わせを探索
     """
 
-    # パラメータ範囲定義（各シグナルパラメータの有効範囲）
-    PARAM_RANGES: dict[str, dict[str, tuple[float, float, str]]] = {
-        # シグナル名: {パラメータ名: (min, max, type)}
-        "period_breakout": {
-            "period": (20, 500, "int"),
-            "lookback_days": (1, 30, "int"),
-        },
-        "ma_breakout": {
-            "period": (20, 500, "int"),
-            "lookback_days": (1, 30, "int"),
-        },
-        "crossover": {
-            "fast_period": (5, 50, "int"),
-            "slow_period": (20, 200, "int"),
-            "signal_period": (5, 20, "int"),
-            "lookback_days": (1, 10, "int"),
-        },
-        "mean_reversion": {
-            "baseline_period": (10, 100, "int"),
-            "deviation_threshold": (0.05, 0.5, "float"),
-        },
-        "bollinger_bands": {
-            "window": (10, 100, "int"),
-            "alpha": (1.0, 4.0, "float"),
-        },
-        "atr_support_break": {
-            "lookback_period": (10, 100, "int"),
-            "atr_multiplier": (1.0, 10.0, "float"),
-        },
-        "rsi_threshold": {
-            "period": (5, 50, "int"),
-            "threshold": (10.0, 90.0, "float"),
-        },
-        "rsi_spread": {
-            "fast_period": (5, 20, "int"),
-            "slow_period": (10, 50, "int"),
-            "threshold": (5.0, 30.0, "float"),
-        },
-        "volume": {
-            "threshold": (0.3, 3.0, "float"),
-            "short_period": (10, 100, "int"),
-            "long_period": (50, 300, "int"),
-        },
-        "trading_value": {
-            "period": (5, 50, "int"),
-            "threshold_value": (0.1, 100.0, "float"),
-        },
-        "trading_value_range": {
-            "period": (5, 50, "int"),
-            "min_threshold": (0.1, 50.0, "float"),
-            "max_threshold": (10.0, 500.0, "float"),
-        },
-        "beta": {
-            "lookback_period": (20, 200, "int"),
-            "min_beta": (-1.0, 2.0, "float"),
-            "max_beta": (0.5, 5.0, "float"),
-        },
-        "margin": {
-            "lookback_period": (50, 300, "int"),
-            "percentile_threshold": (0.1, 0.9, "float"),
-        },
-        "index_daily_change": {
-            "max_daily_change_pct": (0.5, 3.0, "float"),
-        },
-        "index_macd_histogram": {
-            "fast_period": (5, 20, "int"),
-            "slow_period": (15, 50, "int"),
-            "signal_period": (5, 15, "int"),
-        },
-    }
+    # Backward-compatible alias (used by older internal callers).
+    PARAM_RANGES = PARAM_RANGES
 
     def __init__(
         self,
@@ -115,7 +49,7 @@ class ParameterEvolver:
         self.allowed_category_set: set[SignalCategory] = set(self.config.allowed_categories)
 
         # 乱数シード設定
-        random.seed(42)
+        random.seed(self.config.seed if self.config.seed is not None else 42)
 
         # 評価器
         self.evaluator = StrategyEvaluator(
@@ -127,6 +61,8 @@ class ParameterEvolver:
 
         # 進化履歴
         self.history: list[dict[str, Any]] = []
+        self._base_entry_signals: set[str] = set()
+        self._base_exit_signals: set[str] = set()
 
     def evolve(
         self,
@@ -147,6 +83,14 @@ class ParameterEvolver:
         logger.info(
             f"Starting evolution: population={self.config.population_size}, "
             f"generations={self.config.generations}"
+        )
+
+        # random_add モード用: ベース戦略のシグナル集合を記録
+        self._base_entry_signals = _extract_enabled_signal_names(
+            base_candidate.entry_filter_params
+        )
+        self._base_exit_signals = _extract_enabled_signal_names(
+            base_candidate.exit_trigger_params
         )
 
         # 初期集団生成
@@ -255,9 +199,37 @@ class ParameterEvolver:
         # ベース戦略をそのまま1個追加
         population.append(base_candidate)
 
+        is_random_add_mode = self.config.structure_mode == "random_add"
+        should_add_signals = is_random_add_mode and (
+            self.config.random_add_entry_signals > 0
+            or self.config.random_add_exit_signals > 0
+        )
+
+        # random_add モード: ベース + 追加シグナル版も入れて多様性を確保
+        if should_add_signals and len(population) < self.config.population_size:
+            augmented, _ = apply_random_add_structure(
+                base_candidate,
+                rng=random,
+                add_entry_signals=self.config.random_add_entry_signals,
+                add_exit_signals=self.config.random_add_exit_signals,
+                base_entry_signals=self._base_entry_signals,
+                base_exit_signals=self._base_exit_signals,
+            )
+            augmented.strategy_id = "base_augmented"
+            population.append(augmented)
+
         # 残りは変異させて生成
-        for i in range(self.config.population_size - 1):
+        for i in range(self.config.population_size - len(population)):
             mutated = self._mutate(base_candidate, mutation_strength=0.3)
+            if is_random_add_mode:
+                mutated, _ = apply_random_add_structure(
+                    mutated,
+                    rng=random,
+                    add_entry_signals=self.config.random_add_entry_signals,
+                    add_exit_signals=self.config.random_add_exit_signals,
+                    base_entry_signals=self._base_entry_signals,
+                    base_exit_signals=self._base_exit_signals,
+                )
             mutated.strategy_id = f"init_{i}"
             mutated.metadata["generation"] = 0
             population.append(mutated)
@@ -290,6 +262,7 @@ class ParameterEvolver:
             next_population.append(elite)
 
         # 残りを交叉・突然変異で生成
+        is_random_add_mode = self.config.structure_mode == "random_add"
         while len(next_population) < self.config.population_size:
             # トーナメント選択で2親を選択
             parent1 = self._tournament_select(sorted_results)
@@ -304,6 +277,17 @@ class ParameterEvolver:
             # 突然変異
             if random.random() < self.config.mutation_rate:
                 child = self._mutate(child)
+
+            # random_add モード: 子個体のシグナル数を正規化（追加・過剰分トリム）
+            if is_random_add_mode:
+                child, _ = apply_random_add_structure(
+                    child,
+                    rng=random,
+                    add_entry_signals=self.config.random_add_entry_signals,
+                    add_exit_signals=self.config.random_add_exit_signals,
+                    base_entry_signals=self._base_entry_signals,
+                    base_exit_signals=self._base_exit_signals,
+                )
 
             child.strategy_id = f"gen_{len(next_population)}"
             child.metadata["elite"] = False
@@ -420,6 +404,17 @@ class ParameterEvolver:
                 )
 
         mutated.metadata["mutated"] = True
+
+        # random_add モード: 突然変異後も追加シグナル数を維持
+        if self.config.structure_mode == "random_add":
+            mutated, _ = apply_random_add_structure(
+                mutated,
+                rng=random,
+                add_entry_signals=self.config.random_add_entry_signals,
+                add_exit_signals=self.config.random_add_exit_signals,
+                base_entry_signals=self._base_entry_signals,
+                base_exit_signals=self._base_exit_signals,
+            )
         return mutated
 
     def _is_signal_mutation_allowed(self, signal_name: str, usage_type: str) -> bool:
@@ -448,15 +443,8 @@ class ParameterEvolver:
         mutated = params.copy()
         ranges = self.PARAM_RANGES.get(signal_name, {})
 
-        # カテゴリカルパラメータ（スキップ対象）
-        categorical_params = [
-            "enabled", "direction", "condition", "type", "ma_type",
-            "position", "baseline_type", "recovery_price",
-            "recovery_direction", "deviation_direction", "price_column",
-        ]
-
         for param_name, value in params.items():
-            if param_name in categorical_params:
+            if param_name in CATEGORICAL_PARAMS:
                 # カテゴリカルパラメータはスキップ
                 continue
 
@@ -486,3 +474,14 @@ class ParameterEvolver:
             世代ごとの統計情報リスト
         """
         return self.history
+
+
+def _extract_enabled_signal_names(params_dict: dict[str, Any]) -> set[str]:
+    enabled: set[str] = set()
+    for name, value in (params_dict or {}).items():
+        if not isinstance(value, dict):
+            enabled.add(name)
+            continue
+        if value.get("enabled", True):
+            enabled.add(name)
+    return enabled

@@ -8,7 +8,6 @@ import httpx
 import pytest
 import pandas as pd
 import numpy as np
-import vectorbt as vbt
 from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
@@ -80,6 +79,8 @@ def sample_ohlcv_data():
 @pytest.fixture
 def sample_portfolio():
     """サンプルVectorBTポートフォリオを生成"""
+    import vectorbt as vbt
+
     data = pd.DataFrame(
         {"Close": [100, 101, 99, 102, 98, 105, 103]},
         index=pd.date_range("2023-01-01", periods=7),

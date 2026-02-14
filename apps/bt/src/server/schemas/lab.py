@@ -55,6 +55,23 @@ class LabEvolveRequest(BaseModel):
     strategy_name: str = Field(..., min_length=1, description="ベース戦略名")
     generations: int = Field(default=20, ge=1, le=100, description="世代数")
     population: int = Field(default=50, ge=10, le=500, description="個体数")
+    structure_mode: Literal["params_only", "random_add"] = Field(
+        default="params_only",
+        description="探索パターン（params_only=既存シグナルのパラメータのみ、random_add=新しいシグナルを追加して探索）",
+    )
+    random_add_entry_signals: int = Field(
+        default=1,
+        ge=0,
+        le=10,
+        description="random_add時に追加するentryシグナル数（ベースに対する追加分）",
+    )
+    random_add_exit_signals: int = Field(
+        default=1,
+        ge=0,
+        le=10,
+        description="random_add時に追加するexitシグナル数（ベースに対する追加分）",
+    )
+    seed: int | None = Field(default=None, description="乱数シード（再現性用）")
     save: bool = Field(default=True, description="結果をYAMLに保存")
     entry_filter_only: bool = Field(
         default=False,
@@ -72,6 +89,23 @@ class LabOptimizeRequest(BaseModel):
     strategy_name: str = Field(..., min_length=1, description="ベース戦略名")
     trials: int = Field(default=100, ge=10, le=1000, description="試行回数")
     sampler: Literal["tpe", "random", "cmaes"] = Field(default="tpe", description="サンプラー")
+    structure_mode: Literal["params_only", "random_add"] = Field(
+        default="params_only",
+        description="探索パターン（params_only=既存シグナルのパラメータのみ、random_add=新しいシグナルを追加して探索）",
+    )
+    random_add_entry_signals: int = Field(
+        default=1,
+        ge=0,
+        le=10,
+        description="random_add時に追加するentryシグナル数（ベースに対する追加分）",
+    )
+    random_add_exit_signals: int = Field(
+        default=1,
+        ge=0,
+        le=10,
+        description="random_add時に追加するexitシグナル数（ベースに対する追加分）",
+    )
+    seed: int | None = Field(default=None, description="乱数シード（再現性用）")
     save: bool = Field(default=True, description="結果をYAMLに保存")
     entry_filter_only: bool = Field(
         default=False,
