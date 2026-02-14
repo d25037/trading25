@@ -104,7 +104,7 @@ describe('validateStrategyConfigLocally', () => {
       {
         key: 'risk_adjusted_return',
         name: 'Risk Adjusted Return',
-        category: 'fundamental',
+        category: 'volatility',
         description: '',
         usage_hint: '',
         yaml_snippet: '',
