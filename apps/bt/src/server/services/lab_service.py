@@ -416,9 +416,9 @@ class LabService:
         seed: int | None,
         save: bool,
         entry_filter_only: bool,
-        target_scope: LabTargetScope,
-        allowed_categories: list[SignalCategory],
-        scoring_weights: dict[str, float] | None,
+        target_scope: LabTargetScope = "both",
+        allowed_categories: list[SignalCategory] | None = None,
+        scoring_weights: dict[str, float] | None = None,
     ) -> None:
         """Optuna最適化を実行（バックグラウンド）
 
@@ -466,7 +466,7 @@ class LabService:
                 seed,
                 save,
                 entry_filter_only,
-                allowed_categories,
+                list(allowed_categories or []),
                 scoring_weights,
                 progress_callback,
                 target_scope,
