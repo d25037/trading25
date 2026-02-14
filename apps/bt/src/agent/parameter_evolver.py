@@ -150,6 +150,28 @@ class ParameterEvolver:
 
         return best_result.candidate, all_results
 
+    def _is_usage_targeted(self, usage_type: str) -> bool:
+        """target_scope に基づき対象サイドか判定する。"""
+        if self.config.target_scope == "both":
+            return True
+        if self.config.target_scope == "entry_filter_only":
+            return usage_type == "entry"
+        return usage_type == "exit"
+
+    def _effective_random_add_counts(self) -> tuple[int, int]:
+        """target_scope を反映した random_add 数を返す。"""
+        add_entry = (
+            self.config.random_add_entry_signals
+            if self._is_usage_targeted("entry")
+            else 0
+        )
+        add_exit = (
+            self.config.random_add_exit_signals
+            if self._is_usage_targeted("exit")
+            else 0
+        )
+        return add_entry, add_exit
+
     def _load_base_strategy(
         self, base_strategy: str | StrategyCandidate
     ) -> StrategyCandidate:
@@ -195,14 +217,15 @@ class ParameterEvolver:
             初期集団（population_size個）
         """
         population: list[StrategyCandidate] = []
+        add_entry_signals, add_exit_signals = self._effective_random_add_counts()
 
         # ベース戦略をそのまま1個追加
         population.append(base_candidate)
 
         is_random_add_mode = self.config.structure_mode == "random_add"
         should_add_signals = is_random_add_mode and (
-            self.config.random_add_entry_signals > 0
-            or self.config.random_add_exit_signals > 0
+            add_entry_signals > 0
+            or add_exit_signals > 0
         )
 
         # random_add モード: ベース + 追加シグナル版も入れて多様性を確保
@@ -210,8 +233,8 @@ class ParameterEvolver:
             augmented, _ = apply_random_add_structure(
                 base_candidate,
                 rng=random,
-                add_entry_signals=self.config.random_add_entry_signals,
-                add_exit_signals=self.config.random_add_exit_signals,
+                add_entry_signals=add_entry_signals,
+                add_exit_signals=add_exit_signals,
                 base_entry_signals=self._base_entry_signals,
                 base_exit_signals=self._base_exit_signals,
             )
@@ -225,8 +248,8 @@ class ParameterEvolver:
                 mutated, _ = apply_random_add_structure(
                     mutated,
                     rng=random,
-                    add_entry_signals=self.config.random_add_entry_signals,
-                    add_exit_signals=self.config.random_add_exit_signals,
+                    add_entry_signals=add_entry_signals,
+                    add_exit_signals=add_exit_signals,
                     base_entry_signals=self._base_entry_signals,
                     base_exit_signals=self._base_exit_signals,
                 )
@@ -263,6 +286,7 @@ class ParameterEvolver:
 
         # 残りを交叉・突然変異で生成
         is_random_add_mode = self.config.structure_mode == "random_add"
+        add_entry_signals, add_exit_signals = self._effective_random_add_counts()
         while len(next_population) < self.config.population_size:
             # トーナメント選択で2親を選択
             parent1 = self._tournament_select(sorted_results)
@@ -283,8 +307,8 @@ class ParameterEvolver:
                 child, _ = apply_random_add_structure(
                     child,
                     rng=random,
-                    add_entry_signals=self.config.random_add_entry_signals,
-                    add_exit_signals=self.config.random_add_exit_signals,
+                    add_entry_signals=add_entry_signals,
+                    add_exit_signals=add_exit_signals,
                     base_entry_signals=self._base_entry_signals,
                     base_exit_signals=self._base_exit_signals,
                 )
@@ -407,11 +431,12 @@ class ParameterEvolver:
 
         # random_add モード: 突然変異後も追加シグナル数を維持
         if self.config.structure_mode == "random_add":
+            add_entry_signals, add_exit_signals = self._effective_random_add_counts()
             mutated, _ = apply_random_add_structure(
                 mutated,
                 rng=random,
-                add_entry_signals=self.config.random_add_entry_signals,
-                add_exit_signals=self.config.random_add_exit_signals,
+                add_entry_signals=add_entry_signals,
+                add_exit_signals=add_exit_signals,
                 base_entry_signals=self._base_entry_signals,
                 base_exit_signals=self._base_exit_signals,
             )
@@ -419,7 +444,7 @@ class ParameterEvolver:
 
     def _is_signal_mutation_allowed(self, signal_name: str, usage_type: str) -> bool:
         """制約に基づいて変異対象に含めるか判定する。"""
-        if usage_type == "exit" and self.config.entry_filter_only:
+        if not self._is_usage_targeted(usage_type):
             return False
         return is_signal_allowed(signal_name, self.allowed_category_set)
 

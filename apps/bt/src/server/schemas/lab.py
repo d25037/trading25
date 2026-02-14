@@ -6,7 +6,7 @@ Lab API Schemas
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.server.schemas.common import BaseJobResponse
 
@@ -20,6 +20,7 @@ LabSignalCategory = Literal[
     "fundamental",
     "sector",
 ]
+LabTargetScope = Literal["entry_filter_only", "exit_trigger_only", "both"]
 
 
 # ============================================
@@ -75,12 +76,27 @@ class LabEvolveRequest(BaseModel):
     save: bool = Field(default=True, description="結果をYAMLに保存")
     entry_filter_only: bool = Field(
         default=False,
-        description="Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+        description="（互換性用）true の場合 target_scope=entry_filter_only と同義",
+    )
+    target_scope: LabTargetScope = Field(
+        default="both",
+        description="最適化対象 (entry_filter_only/exit_trigger_only/both)",
     )
     allowed_categories: list[LabSignalCategory] | None = Field(
         default=None,
         description="最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
     )
+
+    @model_validator(mode="after")
+    def _normalize_target_scope(self) -> "LabEvolveRequest":
+        if self.target_scope == "exit_trigger_only" and self.entry_filter_only:
+            raise ValueError(
+                "entry_filter_only=true と target_scope=exit_trigger_only は同時指定できません"
+            )
+        if self.target_scope == "both" and self.entry_filter_only:
+            self.target_scope = "entry_filter_only"
+        self.entry_filter_only = self.target_scope == "entry_filter_only"
+        return self
 
 
 class LabOptimizeRequest(BaseModel):
@@ -109,7 +125,11 @@ class LabOptimizeRequest(BaseModel):
     save: bool = Field(default=True, description="結果をYAMLに保存")
     entry_filter_only: bool = Field(
         default=False,
-        description="Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+        description="（互換性用）true の場合 target_scope=entry_filter_only と同義",
+    )
+    target_scope: LabTargetScope = Field(
+        default="both",
+        description="最適化対象 (entry_filter_only/exit_trigger_only/both)",
     )
     allowed_categories: list[LabSignalCategory] | None = Field(
         default=None,
@@ -118,6 +138,17 @@ class LabOptimizeRequest(BaseModel):
     scoring_weights: dict[str, float] | None = Field(
         default=None, description="スコアリング重み"
     )
+
+    @model_validator(mode="after")
+    def _normalize_target_scope(self) -> "LabOptimizeRequest":
+        if self.target_scope == "exit_trigger_only" and self.entry_filter_only:
+            raise ValueError(
+                "entry_filter_only=true と target_scope=exit_trigger_only は同時指定できません"
+            )
+        if self.target_scope == "both" and self.entry_filter_only:
+            self.target_scope = "entry_filter_only"
+        self.entry_filter_only = self.target_scope == "entry_filter_only"
+        return self
 
 
 class LabImproveRequest(BaseModel):

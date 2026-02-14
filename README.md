@@ -67,6 +67,9 @@ uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mod
 ```
 - API では `/api/lab/generate` `/api/lab/evolve` `/api/lab/optimize` `/api/lab/improve` に
   `entry_filter_only` / `allowed_categories` を指定可能
+- `/api/lab/evolve` と `/api/lab/optimize` は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を指定可能
+  - `entry_filter_only` は後方互換フラグとして維持（`target_scope=entry_filter_only` と同義）
+  - `allowed_categories` は `all` または `fundamental` 運用を推奨
 - `evolve` / `optimize` は `--structure-mode` で探索方式を切り替え可能
   - `params_only`: 既存シグナルのパラメータのみ探索
   - `random_add`: ランダムなシグナル追加 + パラメータ探索（追加数は `--random-add-entry-signals` / `--random-add-exit-signals`）

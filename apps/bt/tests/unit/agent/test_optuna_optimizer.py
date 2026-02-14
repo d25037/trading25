@@ -23,6 +23,7 @@ def _make_optimizer(
     timeout=60,
     sampler="tpe",
     entry_filter_only=False,
+    target_scope="both",
     allowed_categories=None,
 ):
     config = OptunaConfig(
@@ -30,6 +31,7 @@ def _make_optimizer(
         timeout_seconds=timeout,
         sampler=sampler,
         entry_filter_only=entry_filter_only,
+        target_scope=target_scope,
         allowed_categories=allowed_categories or [],
     )
     return OptunaOptimizer(
@@ -207,6 +209,32 @@ class TestSampleParams:
         assert result["volume"]["threshold"] == 1.5
         mock_trial.suggest_float.assert_not_called()
         mock_trial.suggest_int.assert_not_called()
+
+    def test_exit_trigger_only_skips_entry_sampling(self):
+        optimizer = _make_optimizer(target_scope="exit_trigger_only")
+        base_entry = {
+            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+        }
+        mock_trial = MagicMock()
+        result = optimizer._sample_params(mock_trial, base_entry, "entry")
+        assert result["volume"]["threshold"] == 1.5
+        mock_trial.suggest_float.assert_not_called()
+        mock_trial.suggest_int.assert_not_called()
+
+    def test_effective_random_add_counts_by_target_scope(self):
+        entry_only = _make_optimizer(
+            target_scope="entry_filter_only",
+        )
+        entry_only.config.random_add_entry_signals = 2
+        entry_only.config.random_add_exit_signals = 5
+        assert entry_only._effective_random_add_counts() == (2, 0)
+
+        exit_only = _make_optimizer(
+            target_scope="exit_trigger_only",
+        )
+        exit_only.config.random_add_entry_signals = 2
+        exit_only.config.random_add_exit_signals = 5
+        assert exit_only._effective_random_add_counts() == (0, 5)
 
     def test_allowed_categories_skip_disallowed_signals(self):
         optimizer = _make_optimizer(allowed_categories=["fundamental"])

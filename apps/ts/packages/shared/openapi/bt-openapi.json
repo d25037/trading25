@@ -14139,8 +14139,19 @@
           "entry_filter_only": {
             "type": "boolean",
             "title": "Entry Filter Only",
-            "description": "Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+            "description": "（互換性用）true の場合 target_scope=entry_filter_only と同義",
             "default": false
+          },
+          "target_scope": {
+            "type": "string",
+            "enum": [
+              "entry_filter_only",
+              "exit_trigger_only",
+              "both"
+            ],
+            "title": "Target Scope",
+            "description": "最適化対象 (entry_filter_only/exit_trigger_only/both)",
+            "default": "both"
           },
           "allowed_categories": {
             "anyOf": [
@@ -14716,8 +14727,19 @@
           "entry_filter_only": {
             "type": "boolean",
             "title": "Entry Filter Only",
-            "description": "Entryフィルターのみ最適化（Exitパラメータは変更しない）",
+            "description": "（互換性用）true の場合 target_scope=entry_filter_only と同義",
             "default": false
+          },
+          "target_scope": {
+            "type": "string",
+            "enum": [
+              "entry_filter_only",
+              "exit_trigger_only",
+              "both"
+            ],
+            "title": "Target Scope",
+            "description": "最適化対象 (entry_filter_only/exit_trigger_only/both)",
+            "default": "both"
           },
           "allowed_categories": {
             "anyOf": [

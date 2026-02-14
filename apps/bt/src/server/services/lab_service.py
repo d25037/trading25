@@ -11,7 +11,7 @@ from typing import Any
 
 from loguru import logger
 
-from src.agent.models import LabStructureMode, SignalCategory
+from src.agent.models import LabStructureMode, LabTargetScope, SignalCategory
 from src.server.schemas.backtest import JobStatus
 from src.server.schemas.lab import (
     EvolutionHistoryItem,
@@ -20,6 +20,19 @@ from src.server.schemas.lab import (
     OptimizeTrialItem,
 )
 from src.server.services.job_manager import JobManager, job_manager
+
+
+def _resolve_target_scope(
+    target_scope: LabTargetScope,
+    entry_filter_only: bool,
+) -> LabTargetScope:
+    if target_scope == "exit_trigger_only" and entry_filter_only:
+        raise ValueError(
+            "entry_filter_only=true と target_scope=exit_trigger_only は同時指定できません"
+        )
+    if target_scope == "both" and entry_filter_only:
+        return "entry_filter_only"
+    return target_scope
 
 
 class LabService:
@@ -246,9 +259,12 @@ class LabService:
         seed: int | None = None,
         save: bool = True,
         entry_filter_only: bool = False,
+        target_scope: LabTargetScope = "both",
         allowed_categories: list[SignalCategory] | None = None,
     ) -> str:
         """GA進化ジョブをサブミット"""
+        resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
+        effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         return await self._submit_job(
             strategy_name=strategy_name,
@@ -260,7 +276,7 @@ class LabService:
             fail_message="GA進化に失敗しました",
             log_detail=(
                 f"戦略: {strategy_name}, generations={generations}, population={population}, "
-                f"structure_mode={structure_mode}"
+                f"structure_mode={structure_mode}, target_scope={resolved_target_scope}"
             ),
             sync_fn=self._execute_evolve_sync,
             sync_args=(
@@ -272,8 +288,9 @@ class LabService:
                 random_add_exit_signals,
                 seed,
                 save,
-                entry_filter_only,
+                effective_entry_filter_only,
                 resolved_categories,
+                resolved_target_scope,
             ),
         )
 
@@ -289,18 +306,21 @@ class LabService:
         save: bool,
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
+        target_scope: LabTargetScope = "both",
     ) -> dict[str, Any]:
         """同期的にGA進化を実行"""
         from src.agent.models import EvolutionConfig
         from src.agent.parameter_evolver import ParameterEvolver
         from src.agent.yaml_updater import YamlUpdater
 
+        resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         config = EvolutionConfig(
             population_size=population,
             generations=generations,
             n_jobs=1,
-            entry_filter_only=entry_filter_only,
+            entry_filter_only=resolved_target_scope == "entry_filter_only",
+            target_scope=resolved_target_scope,
             allowed_categories=resolved_categories,
             structure_mode=structure_mode,
             random_add_entry_signals=random_add_entry_signals,
@@ -353,12 +373,15 @@ class LabService:
         seed: int | None = None,
         save: bool = True,
         entry_filter_only: bool = False,
+        target_scope: LabTargetScope = "both",
         allowed_categories: list[SignalCategory] | None = None,
         scoring_weights: dict[str, float] | None = None,
     ) -> str:
         """Optuna最適化ジョブをサブミット"""
         job_id = self._manager.create_job(strategy_name, job_type="lab_optimize")
 
+        resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
+        effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         task = asyncio.create_task(
             self._run_optimize(
@@ -371,7 +394,8 @@ class LabService:
                 random_add_exit_signals,
                 seed,
                 save,
-                entry_filter_only,
+                effective_entry_filter_only,
+                resolved_target_scope,
                 resolved_categories,
                 scoring_weights,
             )
@@ -392,6 +416,7 @@ class LabService:
         seed: int | None,
         save: bool,
         entry_filter_only: bool,
+        target_scope: LabTargetScope,
         allowed_categories: list[SignalCategory],
         scoring_weights: dict[str, float] | None,
     ) -> None:
@@ -410,7 +435,8 @@ class LabService:
 
             logger.info(
                 f"Lab optimize 開始: {job_id} (戦略: {strategy_name}, "
-                f"trials={trials}, sampler={sampler}, structure_mode={structure_mode})"
+                f"trials={trials}, sampler={sampler}, structure_mode={structure_mode}, "
+                f"target_scope={target_scope})"
             )
 
             loop = asyncio.get_running_loop()
@@ -443,6 +469,7 @@ class LabService:
                 allowed_categories,
                 scoring_weights,
                 progress_callback,
+                target_scope,
             )
 
             job = self._manager.get_job(job_id)
@@ -487,17 +514,20 @@ class LabService:
         allowed_categories: list[SignalCategory],
         scoring_weights: dict[str, float] | None,
         progress_callback: Any,
+        target_scope: LabTargetScope = "both",
     ) -> dict[str, Any]:
         """同期的にOptuna最適化を実行"""
         from src.agent.models import OptunaConfig
         from src.agent.optuna_optimizer import OptunaOptimizer
         from src.agent.yaml_updater import YamlUpdater
 
+        resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         config = OptunaConfig(
             n_trials=trials,
             sampler=sampler,
             n_jobs=1,
-            entry_filter_only=entry_filter_only,
+            entry_filter_only=resolved_target_scope == "entry_filter_only",
+            target_scope=resolved_target_scope,
             allowed_categories=allowed_categories,
             structure_mode=structure_mode,
             random_add_entry_signals=random_add_entry_signals,

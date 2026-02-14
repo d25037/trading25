@@ -120,6 +120,7 @@ class TestLabEvolveRequestSchema:
         assert req.population == 50
         assert req.save is True
         assert req.entry_filter_only is False
+        assert req.target_scope == "both"
         assert req.allowed_categories is None
 
     def test_empty_strategy_name(self) -> None:
@@ -149,12 +150,29 @@ class TestLabEvolveRequestSchema:
             allowed_categories=["fundamental"],
         )
         assert req.entry_filter_only is True
+        assert req.target_scope == "entry_filter_only"
         assert req.allowed_categories == ["fundamental"]
+
+    def test_target_scope_exit_only(self) -> None:
+        req = LabEvolveRequest(
+            strategy_name="test",
+            target_scope="exit_trigger_only",
+        )
+        assert req.entry_filter_only is False
+        assert req.target_scope == "exit_trigger_only"
 
     def test_invalid_allowed_category(self) -> None:
         """不正なallowed_categoriesでバリデーションエラー"""
         with pytest.raises(ValidationError):
             LabEvolveRequest(strategy_name="test", allowed_categories=["invalid"])  # type: ignore[list-item]
+
+    def test_target_scope_conflict(self) -> None:
+        with pytest.raises(ValidationError):
+            LabEvolveRequest(
+                strategy_name="test",
+                target_scope="exit_trigger_only",
+                entry_filter_only=True,
+            )
 
 
 class TestLabOptimizeRequestSchema:
@@ -168,6 +186,7 @@ class TestLabOptimizeRequestSchema:
         assert req.sampler == "tpe"
         assert req.save is True
         assert req.entry_filter_only is False
+        assert req.target_scope == "both"
         assert req.allowed_categories is None
         assert req.scoring_weights is None
 
@@ -211,12 +230,29 @@ class TestLabOptimizeRequestSchema:
             allowed_categories=["fundamental"],
         )
         assert req.entry_filter_only is True
+        assert req.target_scope == "entry_filter_only"
         assert req.allowed_categories == ["fundamental"]
+
+    def test_target_scope_exit_only(self) -> None:
+        req = LabOptimizeRequest(
+            strategy_name="test",
+            target_scope="exit_trigger_only",
+        )
+        assert req.entry_filter_only is False
+        assert req.target_scope == "exit_trigger_only"
 
     def test_invalid_allowed_category(self) -> None:
         """不正なallowed_categoriesでバリデーションエラー"""
         with pytest.raises(ValidationError):
             LabOptimizeRequest(strategy_name="test", allowed_categories=["invalid"])  # type: ignore[list-item]
+
+    def test_target_scope_conflict(self) -> None:
+        with pytest.raises(ValidationError):
+            LabOptimizeRequest(
+                strategy_name="test",
+                target_scope="exit_trigger_only",
+                entry_filter_only=True,
+            )
 
 
 class TestLabImproveRequestSchema:
@@ -620,6 +656,7 @@ class TestLabSubmitEndpoints:
                     "random_add_exit_signals": 0,
                     "seed": 123,
                     "entry_filter_only": True,
+                    "target_scope": "entry_filter_only",
                     "allowed_categories": ["fundamental"],
                 },
             )
@@ -637,6 +674,7 @@ class TestLabSubmitEndpoints:
                 seed=123,
                 save=True,
                 entry_filter_only=True,
+                target_scope="entry_filter_only",
                 allowed_categories=["fundamental"],
             )
 
@@ -659,6 +697,7 @@ class TestLabSubmitEndpoints:
                     "random_add_exit_signals": 1,
                     "seed": 7,
                     "entry_filter_only": True,
+                    "target_scope": "entry_filter_only",
                     "allowed_categories": ["fundamental"],
                 },
             )
@@ -675,6 +714,7 @@ class TestLabSubmitEndpoints:
                 seed=7,
                 save=True,
                 entry_filter_only=True,
+                target_scope="entry_filter_only",
                 allowed_categories=["fundamental"],
                 scoring_weights=None,
             )
@@ -1489,6 +1529,7 @@ class TestLabServiceSyncMethods:
         assert result["saved_strategy_path"] == "/tmp/evo.yaml"
         config = MockEvolver.call_args.kwargs["config"]
         assert config.entry_filter_only is True
+        assert config.target_scope == "entry_filter_only"
         assert config.allowed_categories == ["fundamental"]
         service._executor.shutdown(wait=False)
 
@@ -1571,6 +1612,7 @@ class TestLabServiceSyncMethods:
         assert result["saved_strategy_path"] == "/tmp/opt.yaml"
         config = MockOpt.call_args.kwargs["config"]
         assert config.entry_filter_only is True
+        assert config.target_scope == "entry_filter_only"
         assert config.allowed_categories == ["fundamental"]
         service._executor.shutdown(wait=False)
 
