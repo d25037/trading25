@@ -119,6 +119,8 @@ class TestLabEvolveRequestSchema:
         assert req.generations == 20
         assert req.population == 50
         assert req.save is True
+        assert req.entry_filter_only is False
+        assert req.allowed_categories is None
 
     def test_empty_strategy_name(self) -> None:
         """空の戦略名でバリデーションエラー"""
@@ -139,6 +141,21 @@ class TestLabEvolveRequestSchema:
         with pytest.raises(ValidationError):
             LabEvolveRequest(strategy_name="test", population=501)
 
+    def test_allowed_categories(self) -> None:
+        """allowed_categories が設定できる"""
+        req = LabEvolveRequest(
+            strategy_name="test",
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
+        )
+        assert req.entry_filter_only is True
+        assert req.allowed_categories == ["fundamental"]
+
+    def test_invalid_allowed_category(self) -> None:
+        """不正なallowed_categoriesでバリデーションエラー"""
+        with pytest.raises(ValidationError):
+            LabEvolveRequest(strategy_name="test", allowed_categories=["invalid"])  # type: ignore[list-item]
+
 
 class TestLabOptimizeRequestSchema:
     """LabOptimizeRequestのバリデーションテスト"""
@@ -150,6 +167,8 @@ class TestLabOptimizeRequestSchema:
         assert req.trials == 100
         assert req.sampler == "tpe"
         assert req.save is True
+        assert req.entry_filter_only is False
+        assert req.allowed_categories is None
         assert req.scoring_weights is None
 
     def test_all_samplers(self) -> None:
@@ -183,6 +202,21 @@ class TestLabOptimizeRequestSchema:
             scoring_weights={"sharpe_ratio": 0.6, "calmar_ratio": 0.4},
         )
         assert req.scoring_weights == {"sharpe_ratio": 0.6, "calmar_ratio": 0.4}
+
+    def test_allowed_categories(self) -> None:
+        """allowed_categories が設定できる"""
+        req = LabOptimizeRequest(
+            strategy_name="test",
+            entry_filter_only=True,
+            allowed_categories=["fundamental"],
+        )
+        assert req.entry_filter_only is True
+        assert req.allowed_categories == ["fundamental"]
+
+    def test_invalid_allowed_category(self) -> None:
+        """不正なallowed_categoriesでバリデーションエラー"""
+        with pytest.raises(ValidationError):
+            LabOptimizeRequest(strategy_name="test", allowed_categories=["invalid"])  # type: ignore[list-item]
 
 
 class TestLabImproveRequestSchema:
@@ -574,15 +608,29 @@ class TestLabSubmitEndpoints:
             "src.server.routes.lab.lab_service.submit_evolve",
             new_callable=AsyncMock,
             return_value=job_id,
-        ):
+        ) as mock_submit:
             response = client.post(
                 "/api/lab/evolve",
-                json={"strategy_name": "test_strategy", "generations": 10, "population": 30},
+                json={
+                    "strategy_name": "test_strategy",
+                    "generations": 10,
+                    "population": 30,
+                    "entry_filter_only": True,
+                    "allowed_categories": ["fundamental"],
+                },
             )
             assert response.status_code == 200
             data = response.json()
             assert data["lab_type"] == "evolve"
             assert data["strategy_name"] == "test_strategy"
+            mock_submit.assert_awaited_once_with(
+                strategy_name="test_strategy",
+                generations=10,
+                population=30,
+                save=True,
+                entry_filter_only=True,
+                allowed_categories=["fundamental"],
+            )
 
     def test_submit_optimize(self, client: TestClient) -> None:
         """optimize サブミットが成功する"""
@@ -591,18 +639,29 @@ class TestLabSubmitEndpoints:
             "src.server.routes.lab.lab_service.submit_optimize",
             new_callable=AsyncMock,
             return_value=job_id,
-        ):
+        ) as mock_submit:
             response = client.post(
                 "/api/lab/optimize",
                 json={
                     "strategy_name": "test_strategy",
                     "trials": 50,
                     "sampler": "cmaes",
+                    "entry_filter_only": True,
+                    "allowed_categories": ["fundamental"],
                 },
             )
             assert response.status_code == 200
             data = response.json()
             assert data["lab_type"] == "optimize"
+            mock_submit.assert_awaited_once_with(
+                strategy_name="test_strategy",
+                trials=50,
+                sampler="cmaes",
+                save=True,
+                entry_filter_only=True,
+                allowed_categories=["fundamental"],
+                scoring_weights=None,
+            )
 
     def test_submit_improve(self, client: TestClient) -> None:
         """improve サブミットが成功する"""
@@ -939,13 +998,88 @@ class TestLabServiceAsync:
             "saved_history_path": None,
         }
         with patch.object(service, "_execute_optimize_sync", return_value=mock_result):
-            await service._run_optimize(job_id, "test_strat", 50, "tpe", False, None)
+            await service._run_optimize(
+                job_id, "test_strat", 50, "tpe", False, False, [], None
+            )
 
         job = manager.get_job(job_id)
         assert job is not None
         from src.server.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
+        service._executor.shutdown(wait=False)
+
+    async def test_run_generate_success_without_job_record_for_raw_result(self) -> None:
+        """_run_jobでget_jobがNoneでも完了できる"""
+        from unittest.mock import MagicMock
+
+        from src.server.services.lab_service import LabService
+
+        manager = JobManager()
+        service = LabService(manager=manager, max_workers=1)
+        job_id = manager.create_job("test", job_type="lab_generate")
+        sync_fn = MagicMock(
+            return_value={
+                "lab_type": "generate",
+                "results": [],
+                "total_generated": 1,
+                "saved_strategy_path": None,
+            }
+        )
+
+        with patch.object(manager, "get_job", return_value=None):
+            await service._run_job(
+                job_id=job_id,
+                lab_type="generate",
+                start_message="開始...",
+                complete_message="完了",
+                cancel_message="キャンセル",
+                fail_message="失敗",
+                log_detail="test",
+                sync_fn=sync_fn,
+                sync_args=(),
+            )
+
+        job = manager.get_job(job_id)
+        assert job is not None
+        from src.server.schemas.backtest import JobStatus
+
+        assert job.status == JobStatus.COMPLETED
+        assert job.raw_result is None
+        service._executor.shutdown(wait=False)
+
+    async def test_run_optimize_success_without_job_record_for_raw_result(self) -> None:
+        """_run_optimizeでget_jobがNoneでも完了できる"""
+        from src.server.services.lab_service import LabService
+
+        manager = JobManager()
+        service = LabService(manager=manager, max_workers=1)
+
+        job_id = manager.create_job("test_strat", job_type="lab_optimize")
+        mock_result = {
+            "lab_type": "optimize",
+            "best_score": 0.0,
+            "best_params": {},
+            "total_trials": 0,
+            "history": [],
+            "saved_strategy_path": None,
+            "saved_history_path": None,
+        }
+
+        with (
+            patch.object(service, "_execute_optimize_sync", return_value=mock_result),
+            patch.object(manager, "get_job", return_value=None),
+        ):
+            await service._run_optimize(
+                job_id, "test_strat", 10, "tpe", False, False, [], None
+            )
+
+        job = manager.get_job(job_id)
+        assert job is not None
+        from src.server.schemas.backtest import JobStatus
+
+        assert job.status == JobStatus.COMPLETED
+        assert job.raw_result is None
         service._executor.shutdown(wait=False)
 
     async def test_run_improve_success(self) -> None:
@@ -1018,7 +1152,9 @@ class TestLabServiceAsync:
         with patch.object(
             service, "_execute_optimize_sync", side_effect=RuntimeError("optエラー")
         ):
-            await service._run_optimize(job_id, "test", 50, "tpe", False, None)
+            await service._run_optimize(
+                job_id, "test", 50, "tpe", False, False, [], None
+            )
 
         job = manager.get_job(job_id)
         assert job is not None
@@ -1093,7 +1229,9 @@ class TestLabServiceAsync:
         with patch.object(
             service, "_execute_optimize_sync", side_effect=asyncio.CancelledError
         ):
-            await service._run_optimize(job_id, "test", 50, "tpe", False, None)
+            await service._run_optimize(
+                job_id, "test", 50, "tpe", False, False, [], None
+            )
 
         job = manager.get_job(job_id)
         assert job is not None
@@ -1271,13 +1409,23 @@ class TestLabServiceSyncMethods:
             MockEvolver.return_value.get_evolution_history.return_value = mock_history
             MockYaml.return_value.save_evolution_result.return_value = ("/tmp/evo.yaml", "/tmp/hist.yaml")
 
-            result = service._execute_evolve_sync("test_strat", 10, 30, True)
+            result = service._execute_evolve_sync(
+                "test_strat",
+                10,
+                30,
+                True,
+                True,
+                ["fundamental"],
+            )
 
         assert result["lab_type"] == "evolve"
         assert result["best_strategy_id"] == "evo-001"
         assert result["best_score"] == 2.0
         assert len(result["history"]) == 2
         assert result["saved_strategy_path"] == "/tmp/evo.yaml"
+        config = MockEvolver.call_args.kwargs["config"]
+        assert config.entry_filter_only is True
+        assert config.allowed_categories == ["fundamental"]
         service._executor.shutdown(wait=False)
 
     def test_execute_evolve_sync_no_save(self) -> None:
@@ -1330,13 +1478,44 @@ class TestLabServiceSyncMethods:
             MockYaml.return_value.save_optuna_result.return_value = ("/tmp/opt.yaml", "/tmp/hist.yaml")
 
             result = service._execute_optimize_sync(
-                "test_strat", 50, "tpe", True, None, None,
+                "test_strat", 50, "tpe", True, True, ["fundamental"], None, None,
             )
 
         assert result["lab_type"] == "optimize"
         assert result["best_score"] == 3.0
         assert result["total_trials"] == 2
         assert result["saved_strategy_path"] == "/tmp/opt.yaml"
+        config = MockOpt.call_args.kwargs["config"]
+        assert config.entry_filter_only is True
+        assert config.allowed_categories == ["fundamental"]
+        service._executor.shutdown(wait=False)
+
+    def test_execute_optimize_sync_without_best_trial_and_save(self) -> None:
+        """_execute_optimize_syncでbest_trialなし/save=Falseの分岐を通す"""
+        from unittest.mock import MagicMock
+
+        from src.server.services.lab_service import LabService
+
+        service = LabService(max_workers=1)
+
+        mock_candidate = MagicMock()
+        mock_study = MagicMock()
+        mock_study.best_trial = None
+        mock_study.best_value = 9.9
+        mock_study.trials = []
+
+        with patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOpt:
+            MockOpt.return_value.optimize.return_value = (mock_candidate, mock_study)
+            MockOpt.return_value.get_optimization_history.return_value = []
+
+            result = service._execute_optimize_sync(
+                "test_strat", 10, "tpe", False, False, [], None, None
+            )
+
+        assert result["best_score"] == 0.0
+        assert result["best_params"] == {}
+        assert result["saved_strategy_path"] is None
+        assert result["saved_history_path"] is None
         service._executor.shutdown(wait=False)
 
     def test_execute_improve_sync(self) -> None:

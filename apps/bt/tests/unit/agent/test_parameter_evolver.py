@@ -1,6 +1,9 @@
 """parameter_evolver.py のテスト (GA操作のユニットテスト)"""
 
 import random
+from unittest.mock import patch
+
+import pytest
 
 
 from src.agent.models import (
@@ -11,15 +14,17 @@ from src.agent.models import (
 from src.agent.parameter_evolver import ParameterEvolver
 
 
-def _make_candidate(sid="test", entry_params=None):
+def _make_candidate(sid="test", entry_params=None, exit_params=None):
     if entry_params is None:
         entry_params = {
             "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
         }
+    if exit_params is None:
+        exit_params = {}
     return StrategyCandidate(
         strategy_id=sid,
         entry_filter_params=entry_params,
-        exit_trigger_params={},
+        exit_trigger_params=exit_params,
     )
 
 
@@ -93,6 +98,50 @@ class TestMutation:
         mutated = evolver._mutate(candidate, mutation_strength=0.5)
         assert "volume" in mutated.entry_filter_params
 
+    def test_mutate_skips_non_dict_params(self):
+        evolver = _make_evolver()
+        candidate = _make_candidate(entry_params={"volume": "invalid"})
+        mutated = evolver._mutate(candidate, mutation_strength=0.5)
+        assert mutated.entry_filter_params["volume"] == "invalid"
+
+    def test_mutate_includes_exit_params(self):
+        evolver = _make_evolver()
+        random.seed(42)
+        candidate = _make_candidate(
+            entry_params={},
+            exit_params={
+                "volume": {
+                    "enabled": True,
+                    "threshold": 1.5,
+                    "short_period": 20,
+                    "long_period": 100,
+                },
+            },
+        )
+        mutated = evolver._mutate(candidate, mutation_strength=1.0)
+        assert "volume" in mutated.exit_trigger_params
+        assert mutated.metadata.get("mutated") is True
+
+    def test_is_signal_mutation_allowed_entry_filter_only(self):
+        config = EvolutionConfig(entry_filter_only=True)
+        evolver = ParameterEvolver(
+            config=config,
+            shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
+        )
+        assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is True
+        assert evolver._is_signal_mutation_allowed("volume", usage_type="exit") is False
+
+    def test_is_signal_mutation_allowed_allowed_categories(self):
+        config = EvolutionConfig(allowed_categories=["fundamental"])
+        evolver = ParameterEvolver(
+            config=config,
+            shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
+        )
+        assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is False
+        assert evolver._is_signal_mutation_allowed(
+            "fundamental", usage_type="entry"
+        ) is True
+
 
 class TestMutateSignalParams:
     def test_known_signal_mutates(self):
@@ -147,6 +196,26 @@ class TestCrossover:
         parent2 = _make_candidate("p2")
         child = evolver._crossover(parent1, parent2)
         assert child.metadata.get("crossover") is True
+
+    def test_crossover_handles_missing_entry_signal_in_selected_parent(self):
+        evolver = _make_evolver()
+        parent1 = _make_candidate("p1", entry_params={"volume": {"enabled": True}})
+        parent2 = _make_candidate("p2", entry_params={})
+        with patch("src.agent.parameter_evolver.random.random", return_value=0.8):
+            child = evolver._crossover(parent1, parent2)
+        assert child.entry_filter_params == {}
+
+    def test_crossover_copies_exit_signal(self):
+        evolver = _make_evolver()
+        parent1 = _make_candidate(
+            "p1",
+            entry_params={},
+            exit_params={"rsi_threshold": {"enabled": True, "period": 14}},
+        )
+        parent2 = _make_candidate("p2", entry_params={}, exit_params={})
+        with patch("src.agent.parameter_evolver.random.random", return_value=0.2):
+            child = evolver._crossover(parent1, parent2)
+        assert "rsi_threshold" in child.exit_trigger_params
 
 
 class TestTournamentSelect:
@@ -213,3 +282,119 @@ class TestGetEvolutionHistory:
         history = evolver.get_evolution_history()
         assert len(history) == 1
         assert history[0]["generation"] == 1
+
+
+class TestEvolveFlow:
+    def test_load_base_strategy_from_name(self):
+        evolver = ParameterEvolver(config=EvolutionConfig(), shared_config_dict=None)
+        with patch("src.agent.parameter_evolver.ConfigLoader") as MockLoader:
+            MockLoader.return_value.load_strategy_config.return_value = {
+                "entry_filter_params": {"volume": {"enabled": True}},
+                "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+                "shared_config": {"dataset": "demo"},
+            }
+            MockLoader.return_value.merge_shared_config.return_value = {"dataset": "demo"}
+
+            candidate = evolver._load_base_strategy("demo_strategy")
+
+        assert candidate.strategy_id == "base_demo_strategy"
+        assert candidate.metadata["base_strategy"] == "demo_strategy"
+        assert evolver.shared_config_dict == {"dataset": "demo"}
+        assert evolver.evaluator.shared_config_dict == {"dataset": "demo"}
+
+    def test_load_base_strategy_keeps_existing_shared_config(self):
+        evolver = ParameterEvolver(
+            config=EvolutionConfig(),
+            shared_config_dict={"dataset": "preconfigured"},
+        )
+        with patch("src.agent.parameter_evolver.ConfigLoader") as MockLoader:
+            MockLoader.return_value.load_strategy_config.return_value = {
+                "entry_filter_params": {"volume": {"enabled": True}},
+                "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+                "shared_config": {"dataset": "demo"},
+            }
+
+            candidate = evolver._load_base_strategy("demo_strategy")
+
+        MockLoader.return_value.merge_shared_config.assert_not_called()
+        assert candidate.strategy_id == "base_demo_strategy"
+        assert evolver.shared_config_dict == {"dataset": "preconfigured"}
+
+    def test_evolve_success(self):
+        evolver = _make_evolver(pop_size=10, generations=2)
+        base = _make_candidate("base")
+        population_g1 = [_make_candidate("g1_a"), _make_candidate("g1_b")]
+        population_g2 = [_make_candidate("g2_a"), _make_candidate("g2_b")]
+
+        results_g1 = [
+            _make_result(population_g1[0], score=0.3),
+            _make_result(population_g1[1], score=0.4),
+        ]
+        results_g2 = [
+            _make_result(population_g2[0], score=0.8),
+            _make_result(population_g2[1], score=0.2),
+        ]
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=population_g1),
+            patch.object(
+                evolver.evaluator,
+                "evaluate_batch",
+                side_effect=[results_g1, results_g2],
+            ),
+            patch.object(evolver, "_evolve_population", return_value=population_g2),
+        ):
+            best_candidate, all_results = evolver.evolve("demo_strategy")
+
+        assert best_candidate.strategy_id == "g2_a"
+        assert len(all_results) == 4
+        assert len(evolver.history) == 2
+        assert evolver.history[-1]["best_score"] == 0.8
+
+    def test_evolve_keeps_best_when_later_generation_is_worse(self):
+        evolver = _make_evolver(pop_size=10, generations=2)
+        base = _make_candidate("base")
+        population_g1 = [_make_candidate("g1_best"), _make_candidate("g1_other")]
+        population_g2 = [_make_candidate("g2_worse"), _make_candidate("g2_other")]
+        results_g1 = [
+            _make_result(population_g1[0], score=0.9),
+            _make_result(population_g1[1], score=0.4),
+        ]
+        results_g2 = [
+            _make_result(population_g2[0], score=0.6),
+            _make_result(population_g2[1], score=0.5),
+        ]
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=population_g1),
+            patch.object(
+                evolver.evaluator,
+                "evaluate_batch",
+                side_effect=[results_g1, results_g2],
+            ),
+            patch.object(evolver, "_evolve_population", return_value=population_g2),
+        ):
+            best_candidate, _ = evolver.evolve("demo_strategy")
+
+        assert best_candidate.strategy_id == "g1_best"
+        assert len(evolver.history) == 2
+
+    def test_evolve_raises_when_no_successful_results(self):
+        evolver = _make_evolver(pop_size=10, generations=2)
+        base = _make_candidate("base")
+        failed = _make_result(base, score=-999.0)
+        failed.success = False
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=[base]),
+            patch.object(
+                evolver.evaluator,
+                "evaluate_batch",
+                side_effect=[[failed], [failed]],
+            ),
+        ):
+            with pytest.raises(RuntimeError, match="no successful evaluations"):
+                evolver.evolve("demo_strategy")

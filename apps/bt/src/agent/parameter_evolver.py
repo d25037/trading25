@@ -12,7 +12,8 @@ from loguru import logger
 
 from src.lib.strategy_runtime.loader import ConfigLoader
 
-from .models import EvolutionConfig, EvaluationResult, StrategyCandidate
+from .models import EvolutionConfig, EvaluationResult, SignalCategory, StrategyCandidate
+from .signal_filters import is_signal_allowed
 from .strategy_evaluator import StrategyEvaluator
 
 
@@ -111,6 +112,7 @@ class ParameterEvolver:
         self.config = config or EvolutionConfig()
         self.shared_config_dict = shared_config_dict
         self.scoring_weights = scoring_weights
+        self.allowed_category_set: set[SignalCategory] = set(self.config.allowed_categories)
 
         # 乱数シード設定
         random.seed(42)
@@ -401,6 +403,8 @@ class ParameterEvolver:
 
         # Entry params の変異
         for signal_name, params in mutated.entry_filter_params.items():
+            if not self._is_signal_mutation_allowed(signal_name, usage_type="entry"):
+                continue
             if isinstance(params, dict):
                 mutated.entry_filter_params[signal_name] = self._mutate_signal_params(
                     signal_name, params, mutation_strength
@@ -408,6 +412,8 @@ class ParameterEvolver:
 
         # Exit params の変異
         for signal_name, params in mutated.exit_trigger_params.items():
+            if not self._is_signal_mutation_allowed(signal_name, usage_type="exit"):
+                continue
             if isinstance(params, dict):
                 mutated.exit_trigger_params[signal_name] = self._mutate_signal_params(
                     signal_name, params, mutation_strength
@@ -415,6 +421,12 @@ class ParameterEvolver:
 
         mutated.metadata["mutated"] = True
         return mutated
+
+    def _is_signal_mutation_allowed(self, signal_name: str, usage_type: str) -> bool:
+        """制約に基づいて変異対象に含めるか判定する。"""
+        if usage_type == "exit" and self.config.entry_filter_only:
+            return False
+        return is_signal_allowed(signal_name, self.allowed_category_set)
 
     def _mutate_signal_params(
         self,
