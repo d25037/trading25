@@ -47,34 +47,36 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
     return Number.isFinite(parsed) ? parsed : undefined;
   };
 
-  const handleSubmit = () => {
-    if (!strategyName) return;
+  const applyRandomAddOptions = (request: LabOptimizeRequest) => {
+    if (structureMode !== 'random_add') return;
+    request.random_add_entry_signals = isEntryTargeted ? parseIntInRange(randomAddEntrySignals, 1, 0, 10) : 0;
+    request.random_add_exit_signals = isExitTargeted ? parseIntInRange(randomAddExitSignals, 1, 0, 10) : 0;
 
+    const parsedSeed = parseOptionalInt(seed);
+    if (parsedSeed !== undefined) request.seed = parsedSeed;
+  };
+
+  const applyCompatibilityFlags = (request: LabOptimizeRequest) => {
+    if (targetScope === 'entry_filter_only') request.entry_filter_only = true;
+    if (categoryScope === 'fundamental') request.allowed_categories = ['fundamental'];
+  };
+
+  const buildRequest = (strategy: string): LabOptimizeRequest => {
     const request: LabOptimizeRequest = {
-      strategy_name: strategyName,
+      strategy_name: strategy,
       trials: parseIntInRange(trials, 50, 10, 1000),
       sampler,
       structure_mode: structureMode,
       target_scope: targetScope,
     };
+    applyRandomAddOptions(request);
+    applyCompatibilityFlags(request);
+    return request;
+  };
 
-    if (structureMode === 'random_add') {
-      request.random_add_entry_signals = isEntryTargeted ? parseIntInRange(randomAddEntrySignals, 1, 0, 10) : 0;
-      request.random_add_exit_signals = isExitTargeted ? parseIntInRange(randomAddExitSignals, 1, 0, 10) : 0;
-      const parsedSeed = parseOptionalInt(seed);
-      if (parsedSeed !== undefined) {
-        request.seed = parsedSeed;
-      }
-    }
-
-    if (targetScope === 'entry_filter_only') {
-      request.entry_filter_only = true;
-    }
-    if (categoryScope === 'fundamental') {
-      request.allowed_categories = ['fundamental'];
-    }
-
-    onSubmit(request);
+  const handleSubmit = () => {
+    if (!strategyName) return;
+    onSubmit(buildRequest(strategyName));
   };
 
   return (
