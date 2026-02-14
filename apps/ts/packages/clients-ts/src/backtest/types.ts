@@ -447,6 +447,8 @@ export interface LabEvolveRequest {
   generations?: number;
   population?: number;
   save?: boolean;
+  entry_filter_only?: boolean;
+  allowed_categories?: LabSignalCategory[];
 }
 
 export interface LabOptimizeRequest {
@@ -454,6 +456,8 @@ export interface LabOptimizeRequest {
   trials?: number;
   sampler?: string;
   save?: boolean;
+  entry_filter_only?: boolean;
+  allowed_categories?: LabSignalCategory[];
   scoring_weights?: Record<string, number>;
 }
 

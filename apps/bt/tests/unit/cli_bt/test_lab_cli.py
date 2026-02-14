@@ -117,10 +117,24 @@ def test_lab_evolve_command_runs() -> None:
 
         result = runner.invoke(
             app,
-            ["lab", "evolve", "experimental/base_strategy_01", "--generations", "2", "--population", "10"],
+            [
+                "lab",
+                "evolve",
+                "experimental/base_strategy_01",
+                "--generations",
+                "2",
+                "--population",
+                "10",
+                "--entry-filter-only",
+                "--allowed-category",
+                "fundamental",
+            ],
         )
 
     assert result.exit_code == 0
+    config = MockEvolver.call_args.kwargs["config"]
+    assert config.entry_filter_only is True
+    assert config.allowed_categories == ["fundamental"]
 
 
 def test_lab_evolve_command_runs_without_save() -> None:
@@ -167,10 +181,58 @@ def test_lab_optimize_command_runs() -> None:
 
         result = runner.invoke(
             app,
-            ["lab", "optimize", "experimental/base_strategy_01", "--trials", "10"],
+            [
+                "lab",
+                "optimize",
+                "experimental/base_strategy_01",
+                "--trials",
+                "10",
+                "--entry-filter-only",
+                "--allowed-category",
+                "fundamental",
+            ],
         )
 
     assert result.exit_code == 0
+    config = MockOptimizer.call_args.kwargs["config"]
+    assert config.entry_filter_only is True
+    assert config.allowed_categories == ["fundamental"]
+
+
+def test_lab_evolve_rejects_invalid_category() -> None:
+    result = runner.invoke(
+        app,
+        ["lab", "evolve", "experimental/base_strategy_01", "--allowed-category", "invalid"],
+    )
+
+    assert result.exit_code == 1
+    assert "無効な --allowed-category" in result.stdout
+
+
+def test_lab_optimize_rejects_invalid_category() -> None:
+    result = runner.invoke(
+        app,
+        ["lab", "optimize", "experimental/base_strategy_01", "--allowed-category", "invalid"],
+    )
+
+    assert result.exit_code == 1
+    assert "無効な --allowed-category" in result.stdout
+
+
+def test_lab_evolve_help_includes_filter_options() -> None:
+    result = runner.invoke(app, ["lab", "evolve", "--help"])
+    assert result.exit_code == 0
+    output = _strip_ansi(result.stdout)
+    assert "--entry-filter-only" in output
+    assert "--allowed-category" in output
+
+
+def test_lab_optimize_help_includes_filter_options() -> None:
+    result = runner.invoke(app, ["lab", "optimize", "--help"])
+    assert result.exit_code == 0
+    output = _strip_ansi(result.stdout)
+    assert "--entry-filter-only" in output
+    assert "--allowed-category" in output
 
 
 def test_lab_optimize_command_runs_without_save() -> None:

@@ -1,14 +1,16 @@
 """optuna_optimizer.py のテスト"""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
+
+import pytest
 
 from src.agent.models import OptunaConfig, StrategyCandidate
 from src.agent.optuna_optimizer import OptunaOptimizer
 
 
-def _make_candidate():
+def _make_candidate(sid: str = "test_strat"):
     return StrategyCandidate(
-        strategy_id="test_strat",
+        strategy_id=sid,
         entry_filter_params={
             "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
         },
@@ -16,11 +18,19 @@ def _make_candidate():
     )
 
 
-def _make_optimizer(n_trials=10, timeout=60, sampler="tpe"):
+def _make_optimizer(
+    n_trials=10,
+    timeout=60,
+    sampler="tpe",
+    entry_filter_only=False,
+    allowed_categories=None,
+):
     config = OptunaConfig(
         n_trials=n_trials,
         timeout_seconds=timeout,
         sampler=sampler,
+        entry_filter_only=entry_filter_only,
+        allowed_categories=allowed_categories or [],
     )
     return OptunaOptimizer(
         config=config,
@@ -48,6 +58,23 @@ class TestOptunaOptimizerInit:
         assert "sharpe_ratio" in optimizer.scoring_weights
         assert "calmar_ratio" in optimizer.scoring_weights
 
+    def test_load_base_strategy_from_name(self):
+        optimizer = _make_optimizer()
+        optimizer.shared_config_dict = None
+        with patch("src.agent.optuna_optimizer.ConfigLoader") as MockLoader:
+            MockLoader.return_value.load_strategy_config.return_value = {
+                "entry_filter_params": {"volume": {"enabled": True}},
+                "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+                "shared_config": {"dataset": "demo"},
+            }
+            MockLoader.return_value.merge_shared_config.return_value = {"dataset": "demo"}
+
+            candidate = optimizer._load_base_strategy("demo_strategy")
+
+        assert candidate.strategy_id == "base_demo_strategy"
+        assert candidate.metadata["base_strategy"] == "demo_strategy"
+        assert optimizer.shared_config_dict == {"dataset": "demo"}
+
 
 class TestCreateSampler:
     def test_tpe_sampler(self):
@@ -70,6 +97,74 @@ class TestCreateSampler:
         sampler = optimizer._create_sampler()
         # Should default to TPESampler
         assert sampler is not None
+
+    def test_raises_when_optuna_unavailable(self):
+        optimizer = _make_optimizer()
+        with patch("src.agent.optuna_optimizer.OPTUNA_AVAILABLE", False):
+            with pytest.raises(ImportError, match="not available"):
+                optimizer._create_sampler()
+
+
+class TestOptimizeFlow:
+    def test_optimize_calls_progress_callback(self):
+        import optuna
+
+        optimizer = _make_optimizer(n_trials=10)
+        study = MagicMock()
+        trial = MagicMock()
+        trial.state = optuna.trial.TrialState.COMPLETE
+        study.trials = [trial]
+        study.best_trial = MagicMock()
+        study.best_value = 1.23
+        study.best_params = {"entry_volume_threshold": 1.8}
+
+        def fake_optimize(_objective, n_trials, n_jobs, show_progress_bar, callbacks):
+            assert n_trials == 10
+            assert n_jobs == 1
+            assert show_progress_bar is True
+            for cb in callbacks:
+                cb(study, trial)
+
+        study.optimize.side_effect = fake_optimize
+        progress_calls = []
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(
+                optimizer,
+                "_build_candidate_from_params",
+                return_value=_make_candidate("best"),
+            ) as mock_build,
+            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            best_candidate, result_study = optimizer.optimize(
+                "demo_strategy",
+                progress_callback=lambda completed, total, best: progress_calls.append(
+                    (completed, total, best)
+                ),
+            )
+
+        assert best_candidate.strategy_id == "best"
+        assert result_study is study
+        assert progress_calls == [(1, 10, 1.23)]
+        mock_build.assert_called_once_with({"entry_volume_threshold": 1.8})
+
+    def test_optimize_without_progress_callback(self):
+        optimizer = _make_optimizer(n_trials=10)
+        study = MagicMock()
+        study.trials = []
+        study.best_trial = MagicMock()
+        study.best_value = 0.42
+        study.best_params = {}
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate()),
+            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer.optimize("demo_strategy", progress_callback=None)
 
 
 class TestSampleParams:
@@ -102,6 +197,28 @@ class TestSampleParams:
         # custom_param is not in PARAM_RANGES, should be preserved as-is
         assert result["volume"]["custom_param"] == 42
 
+    def test_entry_filter_only_skips_exit_sampling(self):
+        optimizer = _make_optimizer(entry_filter_only=True)
+        base_exit = {
+            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+        }
+        mock_trial = MagicMock()
+        result = optimizer._sample_params(mock_trial, base_exit, "exit")
+        assert result["volume"]["threshold"] == 1.5
+        mock_trial.suggest_float.assert_not_called()
+        mock_trial.suggest_int.assert_not_called()
+
+    def test_allowed_categories_skip_disallowed_signals(self):
+        optimizer = _make_optimizer(allowed_categories=["fundamental"])
+        base_entry = {
+            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+        }
+        mock_trial = MagicMock()
+        result = optimizer._sample_params(mock_trial, base_entry, "entry")
+        assert result["volume"]["threshold"] == 1.5
+        mock_trial.suggest_float.assert_not_called()
+        mock_trial.suggest_int.assert_not_called()
+
 
 class TestBuildCandidateFromParams:
     def test_builds_candidate(self):
@@ -131,6 +248,70 @@ class TestBuildCandidateFromParams:
         optimizer.base_exit_params = {}
         candidate = optimizer._build_candidate_from_params({})
         assert candidate.metadata["optimization_method"] == "optuna"
+
+    def test_updates_exit_params_from_flat_keys(self):
+        optimizer = _make_optimizer()
+        optimizer.base_entry_params = {}
+        optimizer.base_exit_params = {
+            "trading_value_range": {"enabled": True, "period": 10},
+        }
+        candidate = optimizer._build_candidate_from_params(
+            {"exit_trading_value_range_period": 25}
+        )
+        assert candidate.exit_trigger_params["trading_value_range"]["period"] == 25
+
+
+class TestObjective:
+    def test_objective_success(self):
+        optimizer = _make_optimizer()
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {"rsi_threshold": {"enabled": True}}
+
+        trial = MagicMock()
+        trial.number = 1
+
+        portfolio = MagicMock()
+        portfolio.sharpe_ratio.return_value = 1.5
+        portfolio.calmar_ratio.return_value = 0.8
+        portfolio.total_return.return_value = 0.2
+
+        strategy_instance = MagicMock()
+        strategy_instance.run_optimized_backtest_kelly.return_value = (
+            None,
+            portfolio,
+            None,
+            None,
+            None,
+        )
+
+        with (
+            patch.object(
+                optimizer,
+                "_sample_params",
+                side_effect=[
+                    {"volume": {"enabled": True}},
+                    {"rsi_threshold": {"enabled": True}},
+                ],
+            ),
+            patch(
+                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                return_value=strategy_instance,
+            ),
+        ):
+            score = optimizer._objective(trial)
+
+        assert score == 1.03
+        trial.set_user_attr.assert_any_call("sharpe_ratio", 1.5)
+        trial.set_user_attr.assert_any_call("calmar_ratio", 0.8)
+        trial.set_user_attr.assert_any_call("total_return", 0.2)
+
+    def test_objective_failure_returns_negative_score(self):
+        optimizer = _make_optimizer()
+        trial = MagicMock()
+        trial.number = 99
+        with patch.object(optimizer, "_sample_params", side_effect=RuntimeError("boom")):
+            score = optimizer._objective(trial)
+        assert score == -999.0
 
 
 class TestGetOptimizationHistory:

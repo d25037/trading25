@@ -33,7 +33,8 @@ from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
 from src.lib.strategy_runtime.loader import ConfigLoader
 
-from .models import OptunaConfig, StrategyCandidate
+from .models import OptunaConfig, SignalCategory, StrategyCandidate
+from .signal_filters import is_signal_allowed
 
 
 class OptunaOptimizer:
@@ -139,6 +140,7 @@ class OptunaOptimizer:
             "calmar_ratio": 0.3,
             "total_return": 0.2,
         }
+        self.allowed_category_set: set[SignalCategory] = set(self.config.allowed_categories)
 
         # ベース戦略パラメータ（後で設定）
         self.base_entry_params: dict[str, Any] = {}
@@ -363,6 +365,10 @@ class OptunaOptimizer:
                 continue
 
             sampled_signal = params.copy()
+            if not self._is_signal_optimization_allowed(signal_name, usage_type):
+                sampled[signal_name] = sampled_signal
+                continue
+
             ranges = self.PARAM_RANGES.get(signal_name, {})
 
             # カテゴリカルパラメータ（スキップ対象）
@@ -393,6 +399,12 @@ class OptunaOptimizer:
             sampled[signal_name] = sampled_signal
 
         return sampled
+
+    def _is_signal_optimization_allowed(self, signal_name: str, usage_type: str) -> bool:
+        """制約に基づいて最適化対象に含めるか判定する。"""
+        if usage_type == "exit" and self.config.entry_filter_only:
+            return False
+        return is_signal_allowed(signal_name, self.allowed_category_set)
 
     def _build_candidate_from_params(
         self, params: dict[str, Any]
@@ -428,7 +440,9 @@ class OptunaOptimizer:
 
                 # signal_nameに複数の_が含まれる場合を処理
                 # (例: entry_trading_value_range_period)
-                for known_signal in self.PARAM_RANGES.keys():
+                for known_signal in sorted(
+                    self.PARAM_RANGES.keys(), key=len, reverse=True
+                ):
                     if param_name.startswith(f"{usage_type}_{known_signal}_"):
                         signal_name = known_signal
                         signal_param = param_name[len(f"{usage_type}_{known_signal}_"):]
