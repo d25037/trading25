@@ -12,6 +12,11 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from src.api.dataset.helpers import (
+    convert_dated_response,
+    convert_index_response,
+    convert_ohlcv_response,
+)
 from src.api.dataset_client import DatasetAPIClient
 from src.api.market_client import MarketAPIClient
 from src.config.settings import get_settings
@@ -25,6 +30,16 @@ _dataset_db_lock = threading.Lock()
 
 _market_reader: MarketDbReader | None = None
 _market_reader_lock = threading.Lock()
+
+
+def _rows_to_records(
+    rows: list[Any],
+    field_map: dict[str, str],
+) -> list[dict[str, Any]]:
+    return [
+        {output_field: getattr(row, source_attr) for output_field, source_attr in field_map.items()}
+        for row in rows
+    ]
 
 
 def _resolve_dataset_db(dataset_name: str) -> DatasetDb:
@@ -57,98 +72,74 @@ def _resolve_market_reader() -> MarketDbReader:
 
 
 def _to_ohlcv_df(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-    index = pd.to_datetime([row.date for row in rows])
-    df = pd.DataFrame(
-        [
-            {
-                "Open": row.open,
-                "High": row.high,
-                "Low": row.low,
-                "Close": row.close,
-                "Volume": row.volume,
-            }
-            for row in rows
-        ]
+    records = _rows_to_records(
+        rows,
+        {
+            "date": "date",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+            "volume": "volume",
+        },
     )
-    df.index = index
-    df.index.name = "date"
-    return df
+    return convert_ohlcv_response(records)
 
 
 def _to_ohlc_df(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-    index = pd.to_datetime([row.date for row in rows])
-    df = pd.DataFrame(
-        [
-            {
-                "Open": row.open,
-                "High": row.high,
-                "Low": row.low,
-                "Close": row.close,
-            }
-            for row in rows
-        ]
+    records = _rows_to_records(
+        rows,
+        {
+            "date": "date",
+            "open": "open",
+            "high": "high",
+            "low": "low",
+            "close": "close",
+        },
     )
-    df.index = index
-    df.index.name = "date"
-    return df
+    return convert_index_response(records)
 
 
 def _to_margin_df(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-    index = pd.to_datetime([row.date for row in rows])
-    df = pd.DataFrame(
-        [
-            {
-                "longMarginVolume": row.long_margin_volume,
-                "shortMarginVolume": row.short_margin_volume,
-            }
-            for row in rows
-        ]
+    records = _rows_to_records(
+        rows,
+        {
+            "date": "date",
+            "longMarginVolume": "long_margin_volume",
+            "shortMarginVolume": "short_margin_volume",
+        },
     )
-    df.index = index
-    df.index.name = "date"
-    return df
+    return convert_dated_response(records)
 
 
 def _to_statements_df(rows: list[Any]) -> pd.DataFrame:
-    if not rows:
-        return pd.DataFrame()
-    index = pd.to_datetime([row.disclosed_date for row in rows])
-    df = pd.DataFrame(
-        [
-            {
-                "code": row.code,
-                "earningsPerShare": row.earnings_per_share,
-                "profit": row.profit,
-                "equity": row.equity,
-                "typeOfCurrentPeriod": row.type_of_current_period,
-                "typeOfDocument": row.type_of_document,
-                "nextYearForecastEarningsPerShare": row.next_year_forecast_earnings_per_share,
-                "bps": row.bps,
-                "sales": row.sales,
-                "operatingProfit": row.operating_profit,
-                "ordinaryProfit": row.ordinary_profit,
-                "operatingCashFlow": row.operating_cash_flow,
-                "dividendFY": row.dividend_fy,
-                "forecastEps": row.forecast_eps,
-                "investingCashFlow": row.investing_cash_flow,
-                "financingCashFlow": row.financing_cash_flow,
-                "cashAndEquivalents": row.cash_and_equivalents,
-                "totalAssets": row.total_assets,
-                "sharesOutstanding": row.shares_outstanding,
-                "treasuryShares": row.treasury_shares,
-            }
-            for row in rows
-        ]
+    records = _rows_to_records(
+        rows,
+        {
+            "code": "code",
+            "disclosedDate": "disclosed_date",
+            "earningsPerShare": "earnings_per_share",
+            "profit": "profit",
+            "equity": "equity",
+            "typeOfCurrentPeriod": "type_of_current_period",
+            "typeOfDocument": "type_of_document",
+            "nextYearForecastEarningsPerShare": "next_year_forecast_earnings_per_share",
+            "bps": "bps",
+            "sales": "sales",
+            "operatingProfit": "operating_profit",
+            "ordinaryProfit": "ordinary_profit",
+            "operatingCashFlow": "operating_cash_flow",
+            "dividendFY": "dividend_fy",
+            "forecastEps": "forecast_eps",
+            "investingCashFlow": "investing_cash_flow",
+            "financingCashFlow": "financing_cash_flow",
+            "cashAndEquivalents": "cash_and_equivalents",
+            "totalAssets": "total_assets",
+            "sharesOutstanding": "shares_outstanding",
+            "treasuryShares": "treasury_shares",
+        },
     )
-    df.index = index
-    df.index.name = "disclosedDate"
-    return df
+    return convert_dated_response(records, date_column="disclosedDate")
 
 
 class DirectDatasetClient:
@@ -415,40 +406,36 @@ class DirectMarketClient:
         sql += " ORDER BY date"
 
         rows = reader.query(sql, tuple(params))
-        if not rows:
-            return pd.DataFrame()
-        index = pd.to_datetime([row["date"] for row in rows])
-
-        df = pd.DataFrame(
-            [
-                {
-                    "Open": row["open"],
-                    "High": row["high"],
-                    "Low": row["low"],
-                    "Close": row["close"],
-                }
-                for row in rows
-            ]
-        )
-        df.index = index
-        df.index.name = "date"
-        return df
+        records = [
+            {
+                "date": row["date"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+            }
+            for row in rows
+        ]
+        return convert_index_response(records)
 
 
-def get_dataset_client(
-    dataset_name: str,
-    http_client_factory: type[DatasetAPIClient] = DatasetAPIClient,
-) -> DatasetAPIClient | DirectDatasetClient:
+def _create_http_dataset_client(dataset_name: str) -> DatasetAPIClient:
+    return DatasetAPIClient(dataset_name)
+
+
+def _create_http_market_client() -> MarketAPIClient:
+    return MarketAPIClient()
+
+
+def get_dataset_client(dataset_name: str) -> DatasetAPIClient | DirectDatasetClient:
     """Return HTTP or direct dataset client based on active data-access mode."""
     if should_use_direct_db():
         return DirectDatasetClient(dataset_name)
-    return http_client_factory(dataset_name)
+    return _create_http_dataset_client(dataset_name)
 
 
-def get_market_client(
-    http_client_factory: type[MarketAPIClient] = MarketAPIClient,
-) -> MarketAPIClient | DirectMarketClient:
+def get_market_client() -> MarketAPIClient | DirectMarketClient:
     """Return HTTP or direct market client based on active data-access mode."""
     if should_use_direct_db():
         return DirectMarketClient()
-    return http_client_factory()
+    return _create_http_market_client()

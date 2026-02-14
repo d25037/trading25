@@ -3,7 +3,11 @@ BacktestService unit tests
 """
 
 import asyncio
+import sys
+import types
 from pathlib import Path
+
+import pytest
 
 from src.lib.backtest_core.runner import BacktestResult
 from src.server.services.backtest_service import BacktestService
@@ -56,7 +60,7 @@ def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: P
     assert called["loop"] is loop
 
 
-def test_execute_backtest_sync_passes_direct_data_access_mode(tmp_path: Path):
+def test_execute_backtest_sync_uses_runner_default_data_access_mode(tmp_path: Path):
     service = BacktestService()
 
     result = BacktestResult(
@@ -81,4 +85,181 @@ def test_execute_backtest_sync_passes_direct_data_access_mode(tmp_path: Path):
     finally:
         loop.close()
 
-    assert captured["data_access_mode"] == "direct"
+    assert "data_access_mode" not in captured
+
+
+@pytest.mark.asyncio
+async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
+    service = BacktestService()
+    captured: dict[str, object] = {}
+
+    async def _dummy_run_backtest(*args, **kwargs):  # noqa: ANN002
+        _ = (args, kwargs)
+        return None
+
+    monkeypatch.setattr(service, "_run_backtest", _dummy_run_backtest)
+    service._manager.create_job = lambda _strategy_name: "job-123"  # type: ignore[assignment]
+
+    async def _set_job_task(job_id: str, task):
+        captured["job_id"] = job_id
+        captured["task"] = task
+        await task
+
+    service._manager.set_job_task = _set_job_task  # type: ignore[assignment]
+
+    job_id = await service.submit_backtest("strategy")
+
+    assert job_id == "job-123"
+    assert captured["job_id"] == "job-123"
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_success_updates_result_and_status(monkeypatch, tmp_path: Path):
+    service = BacktestService()
+    result = BacktestResult(
+        html_path=tmp_path / "result.html",
+        elapsed_time=1.5,
+        summary={"total_return": 10.0},
+        strategy_name="test",
+        dataset_name="sample",
+    )
+
+    events: list[tuple[str, object]] = []
+
+    async def _acquire_slot():
+        events.append(("acquire", None))
+
+    async def _update_job_status(job_id: str, status, **kwargs):
+        events.append(("status", (job_id, status, kwargs)))
+
+    async def _set_job_result(**kwargs):
+        events.append(("result", kwargs))
+
+    service._manager.acquire_slot = _acquire_slot  # type: ignore[assignment]
+    service._manager.update_job_status = _update_job_status  # type: ignore[assignment]
+    service._manager.set_job_result = _set_job_result  # type: ignore[assignment]
+    service._manager.release_slot = lambda: events.append(("release", None))  # type: ignore[assignment]
+
+    class _FakeLoop:
+        def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
+            _ = (executor, fn, args)
+            fut = asyncio.Future()
+            fut.set_result(result)
+            return fut
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _FakeLoop())
+    monkeypatch.setattr(service, "_extract_result_summary", lambda _result: {"ok": True})
+
+    await service._run_backtest("job-1", "strategy-1")
+
+    assert ("acquire", None) in events
+    assert any(name == "result" for name, _ in events)
+    assert any(name == "release" for name, _ in events)
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_handles_cancelled_and_failure(monkeypatch):
+    service = BacktestService()
+    events: list[tuple[str, object]] = []
+    status_values: list[str] = []
+
+    async def _acquire_slot():
+        events.append(("acquire", None))
+
+    async def _update_job_status(job_id: str, status, **kwargs):
+        events.append(("status", (job_id, status, kwargs)))
+        status_values.append(status.value)
+
+    service._manager.acquire_slot = _acquire_slot  # type: ignore[assignment]
+    service._manager.update_job_status = _update_job_status  # type: ignore[assignment]
+    service._manager.release_slot = lambda: events.append(("release", None))  # type: ignore[assignment]
+
+    class _CancelledLoop:
+        def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
+            _ = (executor, fn, args)
+            fut = asyncio.Future()
+            fut.set_exception(asyncio.CancelledError())
+            return fut
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _CancelledLoop())
+    await service._run_backtest("job-cancel", "strategy")
+    assert "cancelled" in status_values
+
+    events.clear()
+    status_values.clear()
+
+    class _FailedLoop:
+        def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
+            _ = (executor, fn, args)
+            fut = asyncio.Future()
+            fut.set_exception(RuntimeError("failed"))
+            return fut
+
+    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _FailedLoop())
+    await service._run_backtest("job-fail", "strategy")
+    assert "failed" in status_values
+
+
+def test_extract_result_summary_prefers_html_metrics(monkeypatch, tmp_path: Path):
+    service = BacktestService()
+    html_path = tmp_path / "result.html"
+    html_path.write_text("<html></html>", encoding="utf-8")
+    result = BacktestResult(
+        html_path=html_path,
+        elapsed_time=1.0,
+        summary={},
+        strategy_name="test",
+        dataset_name="sample",
+    )
+
+    fake_metrics_module = types.SimpleNamespace(
+        extract_metrics_from_html=lambda _path: types.SimpleNamespace(
+            total_return=1.0,
+            sharpe_ratio=2.0,
+            calmar_ratio=3.0,
+            max_drawdown=4.0,
+            win_rate=5.0,
+            total_trades=6,
+        )
+    )
+    monkeypatch.setitem(sys.modules, "src.data.metrics_extractor", fake_metrics_module)
+
+    summary = service._extract_result_summary(result)
+    assert summary.total_return == 1.0
+    assert summary.trade_count == 6
+
+
+def test_extract_result_summary_fallback_when_metrics_fail(monkeypatch, tmp_path: Path):
+    service = BacktestService()
+    html_path = tmp_path / "result.html"
+    html_path.write_text("<html></html>", encoding="utf-8")
+    result = BacktestResult(
+        html_path=html_path,
+        elapsed_time=1.0,
+        summary={
+            "total_return": 7.0,
+            "sharpe_ratio": 8.0,
+            "calmar_ratio": 9.0,
+            "max_drawdown": 10.0,
+            "win_rate": 11.0,
+            "trade_count": 12,
+        },
+        strategy_name="test",
+        dataset_name="sample",
+    )
+
+    fake_metrics_module = types.SimpleNamespace(
+        extract_metrics_from_html=lambda _path: (_ for _ in ()).throw(RuntimeError("bad html"))
+    )
+    monkeypatch.setitem(sys.modules, "src.data.metrics_extractor", fake_metrics_module)
+
+    summary = service._extract_result_summary(result)
+    assert summary.total_return == 7.0
+    assert summary.trade_count == 12
+
+
+def test_get_execution_info_delegates_to_runner():
+    service = BacktestService()
+    service._runner.get_execution_info = lambda name: {"strategy": name}  # type: ignore[assignment]
+
+    assert service.get_execution_info("abc") == {"strategy": "abc"}

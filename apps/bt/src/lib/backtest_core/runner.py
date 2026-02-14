@@ -5,7 +5,6 @@ CLI/Streamlit両対応のバックテスト実行ロジック
 """
 
 import json
-import os
 import subprocess
 import sys
 import time
@@ -53,7 +52,7 @@ class BacktestRunner:
         strategy: str,
         progress_callback: Callable[[str, float], None] | None = None,
         config_override: dict[str, Any] | None = None,
-        data_access_mode: str | None = None,
+        data_access_mode: str | None = "direct",
     ) -> BacktestResult:
         """
         バックテストを実行
@@ -63,6 +62,7 @@ class BacktestRunner:
             progress_callback: 進捗通知コールバック(status_text, elapsed_time)
             config_override: 設定オーバーライド辞書（オプション）
             data_access_mode: データアクセスモード（"http" | "direct"）
+                未指定時は "direct"（内部HTTPを使わない）
 
         Returns:
             BacktestResult（html_path, elapsed_time, summary含む）
@@ -80,13 +80,11 @@ class BacktestRunner:
                 progress_callback(status, elapsed)
 
         strategy_name_only = strategy.split("/")[-1]
-        mode_override = (
-            normalize_data_access_mode(data_access_mode)
-            if data_access_mode is not None
-            else None
+        resolved_mode = normalize_data_access_mode(
+            data_access_mode if data_access_mode is not None else "direct"
         )
 
-        with data_access_mode_context(mode_override):
+        with data_access_mode_context(resolved_mode):
             notify("設定を読み込み中...")
 
             strategy_config = self.config_loader.load_strategy_config(strategy)
@@ -106,17 +104,11 @@ class BacktestRunner:
             logger.debug(f"出力ディレクトリ: {executor_output_dir}")
             logger.debug(f"テンプレートパス: {template_path}")
 
-            extra_env: dict[str, str] | None = None
-            if mode_override is not None:
-                extra_env = {DATA_ACCESS_MODE_ENV: mode_override}
-            elif DATA_ACCESS_MODE_ENV in os.environ:
-                extra_env = {DATA_ACCESS_MODE_ENV: os.environ[DATA_ACCESS_MODE_ENV]}
-
             html_path = executor.execute_notebook(
                 template_path=template_path,
                 parameters=parameters,
                 strategy_name=strategy_name_only,
-                extra_env=extra_env,
+                extra_env={DATA_ACCESS_MODE_ENV: resolved_mode},
             )
 
             elapsed_time = time.time() - start_time
