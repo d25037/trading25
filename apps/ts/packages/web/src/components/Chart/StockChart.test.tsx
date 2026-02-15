@@ -38,6 +38,13 @@ const mockChartStore = {
     tradingValueMA: {
       period: 15,
     },
+    riskAdjustedReturn: {
+      lookbackPeriod: 60,
+      ratioType: 'sortino' as const,
+      threshold: 1.0,
+      condition: 'above' as const,
+    },
+    showRiskAdjustedReturnChart: false,
     signalOverlay: {
       enabled: false,
       signals: [],

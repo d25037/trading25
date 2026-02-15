@@ -28,6 +28,7 @@ const VISIBLE_BAR_OPTIONS = [
 
 type PanelSettingKey =
   | 'showPPOChart'
+  | 'showRiskAdjustedReturnChart'
   | 'showVolumeComparison'
   | 'showTradingValueMA'
   | 'showFundamentalsPanel'
@@ -48,6 +49,12 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     label: 'PPO',
     settingKey: 'showPPOChart',
     linkPanel: 'ppo',
+  },
+  {
+    id: 'show-risk-adjusted-return-panel',
+    label: 'Risk Adjusted Return',
+    settingKey: 'showRiskAdjustedReturnChart',
+    linkPanel: 'riskAdjustedReturn',
   },
   {
     id: 'show-volume-comparison-panel',
@@ -228,6 +235,18 @@ export function ChartControls() {
       updateSettings({ [settingKey]: checked } as Partial<ChartSettings>);
     },
     [updateSettings]
+  );
+
+  const updateRiskAdjustedReturn = useCallback(
+    (newSettings: Partial<ChartSettings['riskAdjustedReturn']>) => {
+      updateSettings({
+        riskAdjustedReturn: {
+          ...settings.riskAdjustedReturn,
+          ...newSettings,
+        },
+      });
+    },
+    [settings.riskAdjustedReturn, updateSettings]
   );
 
   return (
@@ -434,6 +453,74 @@ export function ChartControls() {
       {/* Sub-Chart Indicators */}
       <div className="glass-panel rounded-lg p-3 space-y-2">
         <SectionHeader icon={BarChart3} title="Sub-Chart Indicators" />
+
+        <IndicatorToggle
+          label="Risk Adjusted Return"
+          enabled={settings.showRiskAdjustedReturnChart}
+          onToggle={(checked) => updateSettings({ showRiskAdjustedReturnChart: checked })}
+        >
+          <div className="grid grid-cols-2 gap-1.5">
+            <NumberInput
+              label="Lookback"
+              value={settings.riskAdjustedReturn.lookbackPeriod}
+              onChange={(lookbackPeriod) => updateRiskAdjustedReturn({ lookbackPeriod })}
+              defaultValue={60}
+            />
+            <NumberInput
+              label="Threshold"
+              value={settings.riskAdjustedReturn.threshold}
+              onChange={(threshold) => updateRiskAdjustedReturn({ threshold })}
+              step="0.1"
+              defaultValue={1.0}
+            />
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Ratio Type</Label>
+              <Select
+                value={settings.riskAdjustedReturn.ratioType}
+                onValueChange={(ratioType) =>
+                  updateRiskAdjustedReturn({
+                    ratioType: ratioType as ChartSettings['riskAdjustedReturn']['ratioType'],
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs glass-panel border-border/30 focus:border-primary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                  <SelectItem value="sortino" className="text-xs">
+                    sortino
+                  </SelectItem>
+                  <SelectItem value="sharpe" className="text-xs">
+                    sharpe
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-1">
+              <Label className="text-xs text-muted-foreground">Condition</Label>
+              <Select
+                value={settings.riskAdjustedReturn.condition}
+                onValueChange={(condition) =>
+                  updateRiskAdjustedReturn({
+                    condition: condition as ChartSettings['riskAdjustedReturn']['condition'],
+                  })
+                }
+              >
+                <SelectTrigger className="h-7 text-xs glass-panel border-border/30 focus:border-primary/50">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                  <SelectItem value="above" className="text-xs">
+                    above
+                  </SelectItem>
+                  <SelectItem value="below" className="text-xs">
+                    below
+                  </SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        </IndicatorToggle>
 
         <IndicatorToggle
           label="Volume Comparison"
