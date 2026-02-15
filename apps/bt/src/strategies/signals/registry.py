@@ -23,9 +23,12 @@ from .crossover import indicator_crossover_signal
 from .fundamental import (
     cfo_yield_threshold,
     is_expected_growth_eps,
+    is_growing_cfo_yield,
+    is_growing_dividend_per_share,
     is_growing_eps,
     is_growing_profit,
     is_growing_sales,
+    is_growing_simple_fcf_yield,
     is_high_dividend_yield,
     is_high_operating_margin,
     is_high_roa,
@@ -833,6 +836,26 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=lambda d: _has_statements_columns(d, "OperatingCashFlow", "InvestingCashFlow"),
         data_requirements=["statements:OperatingCashFlow", "statements:InvestingCashFlow"],
     ),
+    # 29-2. 1株配当成長率シグナル
+    SignalDefinition(
+        name="1株配当成長率",
+        signal_func=is_growing_dividend_per_share,
+        enabled_checker=lambda p: p.fundamental.enabled
+        and p.fundamental.dividend_per_share_growth.enabled,
+        param_builder=lambda p, d: {
+            "dividend_fy": d["statements_data"]["DividendFY"],
+            "growth_threshold": p.fundamental.dividend_per_share_growth.threshold,
+            "periods": p.fundamental.dividend_per_share_growth.periods,
+            "condition": p.fundamental.dividend_per_share_growth.condition,
+        },
+        entry_purpose="1株配当成長率が閾値以上の企業を選定",
+        exit_purpose="1株配当成長率が閾値を下回った企業を除外",
+        category="fundamental",
+        description="1株配当成長率の閾値判定",
+        param_key="fundamental.dividend_per_share_growth",
+        data_checker=lambda d: _has_statements_column(d, "DividendFY"),
+        data_requirements=["statements:DividendFY"],
+    ),
     # 30. CFO利回りシグナル（営業CF / 時価総額）
     SignalDefinition(
         name="CFO利回り",
@@ -852,6 +875,31 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         category="fundamental",
         description="CFO利回り（営業CF÷時価総額）の閾値判定",
         param_key="fundamental.cfo_yield",
+        data_checker=lambda d: _has_statements_columns(
+            d, "OperatingCashFlow", "SharesOutstanding"
+        ),
+        data_requirements=["statements:OperatingCashFlow", "statements:SharesOutstanding"],
+    ),
+    # 30-2. CFO利回り成長率シグナル
+    SignalDefinition(
+        name="CFO利回り成長率",
+        signal_func=is_growing_cfo_yield,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.cfo_yield_growth.enabled,
+        param_builder=lambda p, d: {
+            "close": d["execution_close"],
+            "operating_cash_flow": d["statements_data"]["OperatingCashFlow"],
+            "shares_outstanding": d["statements_data"]["SharesOutstanding"],
+            "treasury_shares": d["statements_data"]["TreasuryShares"],
+            "growth_threshold": p.fundamental.cfo_yield_growth.threshold,
+            "periods": p.fundamental.cfo_yield_growth.periods,
+            "condition": p.fundamental.cfo_yield_growth.condition,
+            "use_floating_shares": p.fundamental.cfo_yield_growth.use_floating_shares,
+        },
+        entry_purpose="CFO利回り成長率が閾値以上の企業を選定",
+        exit_purpose="CFO利回り成長率が閾値を下回った企業を除外",
+        category="fundamental",
+        description="CFO利回り成長率の閾値判定",
+        param_key="fundamental.cfo_yield_growth",
         data_checker=lambda d: _has_statements_columns(
             d, "OperatingCashFlow", "SharesOutstanding"
         ),
@@ -881,6 +929,37 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
             d, "OperatingCashFlow", "InvestingCashFlow", "SharesOutstanding"
         ),
         data_requirements=["statements:OperatingCashFlow", "statements:InvestingCashFlow", "statements:SharesOutstanding"],
+    ),
+    # 31-2. 簡易FCF利回り成長率シグナル
+    SignalDefinition(
+        name="簡易FCF利回り成長率",
+        signal_func=is_growing_simple_fcf_yield,
+        enabled_checker=lambda p: p.fundamental.enabled
+        and p.fundamental.simple_fcf_yield_growth.enabled,
+        param_builder=lambda p, d: {
+            "close": d["execution_close"],
+            "operating_cash_flow": d["statements_data"]["OperatingCashFlow"],
+            "investing_cash_flow": d["statements_data"]["InvestingCashFlow"],
+            "shares_outstanding": d["statements_data"]["SharesOutstanding"],
+            "treasury_shares": d["statements_data"]["TreasuryShares"],
+            "growth_threshold": p.fundamental.simple_fcf_yield_growth.threshold,
+            "periods": p.fundamental.simple_fcf_yield_growth.periods,
+            "condition": p.fundamental.simple_fcf_yield_growth.condition,
+            "use_floating_shares": p.fundamental.simple_fcf_yield_growth.use_floating_shares,
+        },
+        entry_purpose="簡易FCF利回り成長率が閾値以上の企業を選定",
+        exit_purpose="簡易FCF利回り成長率が閾値を下回った企業を除外",
+        category="fundamental",
+        description="簡易FCF利回り成長率の閾値判定",
+        param_key="fundamental.simple_fcf_yield_growth",
+        data_checker=lambda d: _has_statements_columns(
+            d, "OperatingCashFlow", "InvestingCashFlow", "SharesOutstanding"
+        ),
+        data_requirements=[
+            "statements:OperatingCashFlow",
+            "statements:InvestingCashFlow",
+            "statements:SharesOutstanding",
+        ],
     ),
     # 31-2. 時価総額シグナル（市場規模フィルター）
     SignalDefinition(

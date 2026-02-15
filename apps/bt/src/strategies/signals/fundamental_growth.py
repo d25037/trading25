@@ -1,7 +1,7 @@
 """
 財務指標シグナル — 成長率系
 
-EPS・利益・売上高の成長率およびForward EPS成長率シグナルを提供
+EPS・利益・売上高・1株配当の成長率およびForward EPS成長率シグナルを提供
 """
 
 from __future__ import annotations
@@ -146,3 +146,33 @@ def is_growing_sales(
         - "all"使用時はperiods=4で前年同期比較
     """
     return _calc_growth_signal(sales, periods, growth_threshold, condition)
+
+
+def is_growing_dividend_per_share(
+    dividend_fy: pd.Series[float],
+    growth_threshold: float = 0.1,
+    periods: int = 1,
+    condition: Literal["above", "below"] = "above",
+) -> pd.Series[bool]:
+    """
+    1株配当成長率シグナル
+
+    1株配当（DividendFY）の成長率を計算し、
+    指定した条件で閾値と比較してTrueを返すシグナル
+
+    Args:
+        dividend_fy: 1株配当データ（日次インデックスに補完済み想定）
+        growth_threshold: 成長率閾値（デフォルト0.1 = 10%）
+        periods: 成長率計算期間（決算期数、デフォルト1 = 前期比）
+        condition: 条件（above=閾値以上、below=閾値以下）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - ffill済みデータから決算発表日を検出し、N期間前の発表値と比較
+        - 過去の配当が0以下またはNaNの場合はFalseを返す
+        - 成長率が極端に高い値（10倍以上）の場合はFalseを返す（異常値処理）
+        - 推奨period_type: "FY"（通期配当の比較）
+    """
+    return _calc_growth_signal(dividend_fy, periods, growth_threshold, condition)

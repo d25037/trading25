@@ -183,6 +183,33 @@ class TestSignalRegistry:
         assert "statements:EPS" in sig.data_requirements
         assert "statements:NextYearForecastEPS" not in sig.data_requirements
 
+    def test_dividend_per_share_growth_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.dividend_per_share_growth"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "1株配当成長率"
+        assert sig.category == "fundamental"
+        assert sig.data_requirements == ["statements:DividendFY"]
+
+    def test_cfo_yield_growth_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.cfo_yield_growth"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "CFO利回り成長率"
+        assert sig.category == "fundamental"
+        assert "statements:OperatingCashFlow" in sig.data_requirements
+        assert "statements:SharesOutstanding" in sig.data_requirements
+
+    def test_simple_fcf_yield_growth_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.simple_fcf_yield_growth"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "簡易FCF利回り成長率"
+        assert sig.category == "fundamental"
+        assert "statements:OperatingCashFlow" in sig.data_requirements
+        assert "statements:InvestingCashFlow" in sig.data_requirements
+        assert "statements:SharesOutstanding" in sig.data_requirements
+
     def test_roa_registered(self) -> None:
         """roa（総資産利益率）がレジストリに登録されていること"""
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.roa"]
@@ -217,6 +244,20 @@ class TestSignalRegistry:
 
         # fundamental.enabled=True, market_cap.enabled=False → disabled
         params.fundamental.market_cap.enabled = False
+        assert not sig.enabled_checker(params)
+
+    def test_cfo_yield_growth_enabled_checker(self) -> None:
+        sig = next(s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.cfo_yield_growth")
+
+        params = SignalParams()
+        params.fundamental.enabled = False
+        params.fundamental.cfo_yield_growth.enabled = True
+        assert not sig.enabled_checker(params)
+
+        params.fundamental.enabled = True
+        assert sig.enabled_checker(params)
+
+        params.fundamental.cfo_yield_growth.enabled = False
         assert not sig.enabled_checker(params)
 
     def test_risk_adjusted_return_registered_as_volatility(self) -> None:
