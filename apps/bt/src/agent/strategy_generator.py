@@ -397,6 +397,18 @@ class StrategyGenerator:
             "roa": {"threshold": (2.0, 15.0, "float")},
             "operating_margin": {"threshold": (3.0, 30.0, "float")},
             "dividend_yield": {"threshold": (0.5, 8.0, "float")},
+            "dividend_per_share_growth": {
+                "threshold": (0.02, 0.5, "float"),
+                "periods": (1, 8, "int"),
+            },
+            "cfo_yield_growth": {
+                "threshold": (0.02, 0.5, "float"),
+                "periods": (1, 8, "int"),
+            },
+            "simple_fcf_yield_growth": {
+                "threshold": (0.02, 0.5, "float"),
+                "periods": (1, 8, "int"),
+            },
             "market_cap": {"threshold": (50.0, 5000.0, "float")},
         }
 
@@ -581,6 +593,26 @@ class StrategyGenerator:
                 "enabled": False,
                 "threshold": 2.0,
                 "condition": "above",
+            },
+            "dividend_per_share_growth": {
+                "enabled": False,
+                "threshold": 0.1,
+                "periods": 1,
+                "condition": "above",
+            },
+            "cfo_yield_growth": {
+                "enabled": False,
+                "threshold": 0.1,
+                "periods": 1,
+                "condition": "above",
+                "use_floating_shares": True,
+            },
+            "simple_fcf_yield_growth": {
+                "enabled": False,
+                "threshold": 0.1,
+                "periods": 1,
+                "condition": "above",
+                "use_floating_shares": True,
             },
             "market_cap": {
                 "enabled": False,

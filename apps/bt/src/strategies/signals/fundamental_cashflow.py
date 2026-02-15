@@ -15,6 +15,7 @@ from src.utils.financial import calc_market_cap
 
 from .fundamental_helpers import (
     _calc_consecutive_threshold_signal,
+    _calc_growth_signal,
     _calc_threshold_signal,
 )
 
@@ -178,6 +179,91 @@ def simple_fcf_yield_threshold(
     fcf_yield = (fcf / market_cap.where(market_cap > 0, np.nan)) * 100
 
     return _calc_threshold_signal(fcf_yield, threshold, condition, require_positive=False)
+
+
+def _freeze_metric_by_release_dates(
+    metric: pd.Series[float],
+    *release_sources: pd.Series,
+) -> pd.Series[float]:
+    """開示更新タイミングのみ値を採用し、日次へffillした系列を返す。"""
+    if metric.empty:
+        return metric
+
+    release_mask = pd.Series(False, index=metric.index)
+    for source in release_sources:
+        aligned_source = source.reindex(metric.index)
+        # NaN継続は「更新なし」とみなす。NaN -> 値 の遷移は更新として扱う。
+        source_release = aligned_source.notna() & aligned_source.ne(aligned_source.shift(1))
+        release_mask |= source_release.fillna(False)
+
+    release_mask.iloc[0] = True
+    return metric.where(release_mask).ffill()
+
+
+def is_growing_cfo_yield(
+    close: pd.Series[float],
+    operating_cash_flow: pd.Series[float],
+    shares_outstanding: pd.Series[int],
+    treasury_shares: pd.Series[int],
+    growth_threshold: float = 0.1,
+    periods: int = 1,
+    condition: Literal["above", "below"] = "above",
+    use_floating_shares: bool = True,
+) -> pd.Series[bool]:
+    """
+    CFO利回り成長率シグナル
+
+    CFO利回り = (CFO / 時価総額) × 100 [%]
+    開示更新日の利回りのみを採用して日次へffillし、決算期間ベースの成長率を判定する。
+    """
+    market_cap = calc_market_cap(
+        close, shares_outstanding, treasury_shares, use_floating_shares
+    )
+    cfo_yield = (operating_cash_flow / market_cap.where(market_cap > 0, np.nan)) * 100
+    release_sources: list[pd.Series] = [operating_cash_flow, shares_outstanding]
+    if use_floating_shares:
+        release_sources.append(treasury_shares)
+    cfo_yield_release = _freeze_metric_by_release_dates(
+        cfo_yield,
+        *release_sources,
+    )
+    return _calc_growth_signal(cfo_yield_release, periods, growth_threshold, condition)
+
+
+def is_growing_simple_fcf_yield(
+    close: pd.Series[float],
+    operating_cash_flow: pd.Series[float],
+    investing_cash_flow: pd.Series[float],
+    shares_outstanding: pd.Series[int],
+    treasury_shares: pd.Series[int],
+    growth_threshold: float = 0.1,
+    periods: int = 1,
+    condition: Literal["above", "below"] = "above",
+    use_floating_shares: bool = True,
+) -> pd.Series[bool]:
+    """
+    簡易FCF利回り成長率シグナル
+
+    簡易FCF利回り = ((CFO + CFI) / 時価総額) × 100 [%]
+    開示更新日の利回りのみを採用して日次へffillし、決算期間ベースの成長率を判定する。
+    """
+    market_cap = calc_market_cap(
+        close, shares_outstanding, treasury_shares, use_floating_shares
+    )
+    fcf = operating_cash_flow + investing_cash_flow
+    fcf_yield = (fcf / market_cap.where(market_cap > 0, np.nan)) * 100
+    release_sources: list[pd.Series] = [
+        operating_cash_flow,
+        investing_cash_flow,
+        shares_outstanding,
+    ]
+    if use_floating_shares:
+        release_sources.append(treasury_shares)
+    fcf_yield_release = _freeze_metric_by_release_dates(
+        fcf_yield,
+        *release_sources,
+    )
+    return _calc_growth_signal(fcf_yield_release, periods, growth_threshold, condition)
 
 
 def market_cap_threshold(
