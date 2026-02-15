@@ -16,7 +16,7 @@ describe('http-client', () => {
     });
 
     test('appends query to absolute URL with baseUrl', () => {
-      expect(buildUrl('/api/test', { limit: 10 }, 'http://localhost:3002')).toBe('http://localhost:3002/api/test?limit=10');
+      expect(buildUrl('/api/test', { limit: 10 }, 'http://localhost:3003')).toBe('http://localhost:3003/api/test?limit=10');
     });
 
     test('appends query with ampersand when path already has query', () => {
@@ -67,10 +67,10 @@ describe('http-client', () => {
 
     test('builds URL from baseUrl and query', async () => {
       await requestJson('/api/health', {
-        baseUrl: 'http://localhost:3002',
+        baseUrl: 'http://localhost:3003',
         query: { limit: 5, skip: undefined },
       });
-      expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3002/api/health?limit=5');
+      expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3003/api/health?limit=5');
     });
 
     test('combines timeout signal with caller signal and cleans listeners', async () => {
