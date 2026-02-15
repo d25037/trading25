@@ -12,6 +12,10 @@ interface JobProgressCardProps {
   isCancelling?: boolean;
 }
 
+type BacktestResultWithSortino = NonNullable<BacktestJobResponse['result']> & {
+  sortino_ratio?: number | null;
+};
+
 function StatusIcon({ status }: { status: JobStatus }) {
   switch (status) {
     case 'pending':
@@ -71,6 +75,11 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
 
   if (!job) return null;
 
+  const formatRatio = (value: number | null | undefined) =>
+    typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-';
+  const completedResult =
+    job.status === 'completed' && job.result ? (job.result as BacktestResultWithSortino) : null;
+
   const formatElapsed = (s: number) => {
     const m = Math.floor(s / 60);
     const sec = s % 60;
@@ -118,30 +127,34 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
         )}
 
         {/* Completed result summary */}
-        {job.status === 'completed' && job.result && (
+        {completedResult && (
           <div className="space-y-2 text-sm">
             <div className="grid grid-cols-2 gap-2">
               <div>
                 <span className="text-muted-foreground">Return:</span>
                 <span
-                  className={`ml-2 font-medium ${job.result.total_return >= 0 ? 'text-green-500' : 'text-red-500'}`}
+                  className={`ml-2 font-medium ${completedResult.total_return >= 0 ? 'text-green-500' : 'text-red-500'}`}
                 >
-                  {formatPercentage(job.result.total_return)}
+                  {formatPercentage(completedResult.total_return)}
                 </span>
               </div>
               <div>
                 <span className="text-muted-foreground">Sharpe:</span>
-                <span className="ml-2 font-medium">{job.result.sharpe_ratio.toFixed(2)}</span>
+                <span className="ml-2 font-medium">{formatRatio(completedResult.sharpe_ratio)}</span>
+              </div>
+              <div>
+                <span className="text-muted-foreground">Sortino:</span>
+                <span className="ml-2 font-medium">{formatRatio(completedResult.sortino_ratio)}</span>
               </div>
               <div>
                 <span className="text-muted-foreground">Max DD:</span>
                 <span className="ml-2 font-medium text-red-500">
-                  {formatPercentage(job.result.max_drawdown, { showSign: false })}
+                  {formatPercentage(completedResult.max_drawdown, { showSign: false })}
                 </span>
               </div>
               <div>
                 <span className="text-muted-foreground">Trades:</span>
-                <span className="ml-2 font-medium">{job.result.trade_count}</span>
+                <span className="ml-2 font-medium">{completedResult.trade_count}</span>
               </div>
             </div>
           </div>
