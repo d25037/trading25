@@ -1,7 +1,7 @@
 """
 Indicator Service
 
-インジケーター計算サービス。Registry patternで11種類のインジケーターを管理。
+インジケーター計算サービス。Registry patternで12種類のインジケーターを管理。
 相対OHLC（ベンチマーク比較）モードにも対応。
 """
 
@@ -19,6 +19,7 @@ from src.lib.market_db.market_reader import MarketDbReader
 from src.lib.indicators import (
     compute_atr_support_line,
     compute_nbar_support,
+    compute_risk_adjusted_return,
     compute_trading_value_ma,
     compute_volume_mas,
 )
@@ -98,7 +99,7 @@ def _make_key(indicator_type: str, **params: Any) -> str:
     return "_".join([indicator_type, *(str(v) for v in params.values())])
 
 
-# ===== 11 Indicator Compute Functions =====
+# ===== 12 Indicator Compute Functions =====
 
 
 def _compute_sma(
@@ -256,6 +257,27 @@ def _compute_trading_value_ma(
     return key, _series_to_records(ma, nan_handling)
 
 
+def _compute_risk_adjusted_return(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    lookback_period = params.get("lookback_period", 60)
+    ratio_type_raw = params.get("ratio_type", "sortino")
+    if ratio_type_raw not in ("sharpe", "sortino"):
+        raise ValueError(f"不正なratio_type: {ratio_type_raw} (sharpe/sortinoのみ)")
+    ratio_type: Literal["sharpe", "sortino"] = ratio_type_raw
+    ratio = compute_risk_adjusted_return(
+        close=ohlcv["Close"],
+        lookback_period=lookback_period,
+        ratio_type=ratio_type,
+    )
+    key = _make_key(
+        "risk_adjusted_return",
+        lookback=lookback_period,
+        ratio=ratio_type,
+    )
+    return key, _series_to_records(ratio, nan_handling)
+
+
 # ===== Relative OHLC =====
 
 
@@ -338,6 +360,7 @@ INDICATOR_REGISTRY: dict[str, ComputeFn] = {
     "nbar_support": _compute_nbar_support,
     "volume_comparison": _compute_volume_comparison,
     "trading_value_ma": _compute_trading_value_ma,
+    "risk_adjusted_return": _compute_risk_adjusted_return,
 }
 
 

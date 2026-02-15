@@ -7,6 +7,9 @@ signal関数とindicator serviceの両方から呼ばれる計算ロジック。
 
 from __future__ import annotations
 
+from typing import Literal
+
+import numpy as np
 import pandas as pd
 import vectorbt as vbt
 
@@ -65,3 +68,43 @@ def compute_nbar_support(
     """N日安値サポート"""
     support: pd.Series[float] = low.rolling(period).min()
     return support
+
+
+def _compute_rolling_downside_std(
+    returns: pd.Series[float],
+    lookback_period: int,
+) -> pd.Series[float]:
+    """Sortino分母: 負リターンのみのローリング標準偏差"""
+    negative_only = returns.where(returns < 0)
+    return negative_only.rolling(window=lookback_period, min_periods=2).std()
+
+
+def compute_risk_adjusted_return(
+    close: pd.Series[float],
+    lookback_period: int = 60,
+    ratio_type: Literal["sharpe", "sortino"] = "sortino",
+) -> pd.Series[float]:
+    """リスク調整リターン (Sharpe / Sortino) を計算"""
+    if ratio_type not in ("sharpe", "sortino"):
+        raise ValueError(f"不正なratio_type: {ratio_type} (sharpe/sortinoのみ)")
+
+    close_clean = close.replace([np.inf, -np.inf], np.nan)
+    returns = close_clean.pct_change()
+
+    rolling_mean = returns.rolling(
+        window=lookback_period,
+        min_periods=lookback_period,
+    ).mean()
+
+    if ratio_type == "sharpe":
+        rolling_denominator = returns.rolling(
+            window=lookback_period,
+            min_periods=lookback_period,
+        ).std()
+    else:
+        rolling_denominator = _compute_rolling_downside_std(returns, lookback_period)
+
+    ratio = pd.Series(np.nan, index=close.index, dtype=float)
+    valid_mask = rolling_denominator > 0
+    ratio[valid_mask] = (rolling_mean[valid_mask] / rolling_denominator[valid_mask]) * np.sqrt(252)
+    return ratio

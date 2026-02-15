@@ -20,6 +20,7 @@ export type IndicatorData = ApiIndicatorData;
 export type MACDIndicatorData = ApiMACDIndicatorData;
 export type PPOIndicatorData = ApiPPOIndicatorData;
 export type IndicatorValue = ApiIndicatorValue;
+export type RiskAdjustedReturnData = ApiIndicatorValue;
 export type MarginVolumeRatioData = ApiMarginVolumeRatioData;
 export type MarginVolumeRatioResponse = ApiMarginVolumeRatioResponse;
 export type MarginLongPressureData = ApiMarginLongPressureData;

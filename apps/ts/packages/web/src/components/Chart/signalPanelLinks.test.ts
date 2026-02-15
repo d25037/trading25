@@ -49,6 +49,8 @@ describe('buildSignalPanelLinks', () => {
 
     expect(result.ppo.signalTypes).toEqual(['rsi_threshold']);
     expect(result.ppo.requirements).toEqual(['ohlc']);
+    expect(result.riskAdjustedReturn.signalTypes).toEqual(['rsi_threshold']);
+    expect(result.riskAdjustedReturn.requirements).toEqual(['ohlc']);
 
     expect(result.volumeComparison.signalTypes).toEqual(['volume']);
     expect(result.volumeComparison.requirements).toEqual(['volume']);
@@ -76,6 +78,7 @@ describe('buildSignalPanelLinks', () => {
     });
 
     expect(result.ppo.signalTypes).toEqual([]);
+    expect(result.riskAdjustedReturn.signalTypes).toEqual([]);
     expect(result.volumeComparison.signalTypes).toEqual([]);
     expect(result.tradingValueMA.signalTypes).toEqual([]);
     expect(result.fundamentals.signalTypes).toEqual([]);
@@ -95,6 +98,8 @@ describe('buildSignalPanelLinks', () => {
     });
 
     expect(withNoSignals.ppo.signalTypes).toEqual([]);
+    expect(withNoSignals.riskAdjustedReturn.signalTypes).toEqual([]);
     expect(withNoDefinitions.ppo.signalTypes).toEqual([]);
+    expect(withNoDefinitions.riskAdjustedReturn.signalTypes).toEqual([]);
   });
 });

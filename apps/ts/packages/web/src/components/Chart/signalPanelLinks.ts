@@ -3,6 +3,7 @@ import type { SignalDefinition } from '@/types/backtest';
 
 export type SignalLinkedPanel =
   | 'ppo'
+  | 'riskAdjustedReturn'
   | 'volumeComparison'
   | 'tradingValueMA'
   | 'fundamentals'
@@ -24,6 +25,7 @@ interface BuildSignalPanelLinksInput {
 
 const PANEL_KEYS: SignalLinkedPanel[] = [
   'ppo',
+  'riskAdjustedReturn',
   'volumeComparison',
   'tradingValueMA',
   'fundamentals',
@@ -35,6 +37,7 @@ const PANEL_KEYS: SignalLinkedPanel[] = [
 function createEmptyLinkMapSets(): Record<SignalLinkedPanel, { signalTypes: Set<string>; requirements: Set<string> }> {
   return {
     ppo: { signalTypes: new Set<string>(), requirements: new Set<string>() },
+    riskAdjustedReturn: { signalTypes: new Set<string>(), requirements: new Set<string>() },
     volumeComparison: { signalTypes: new Set<string>(), requirements: new Set<string>() },
     tradingValueMA: { signalTypes: new Set<string>(), requirements: new Set<string>() },
     fundamentals: { signalTypes: new Set<string>(), requirements: new Set<string>() },
@@ -47,6 +50,7 @@ function createEmptyLinkMapSets(): Record<SignalLinkedPanel, { signalTypes: Set<
 function createEmptyLinkMap(): PanelSignalLinkMap {
   return {
     ppo: { signalTypes: [], requirements: [] },
+    riskAdjustedReturn: { signalTypes: [], requirements: [] },
     volumeComparison: { signalTypes: [], requirements: [] },
     tradingValueMA: { signalTypes: [], requirements: [] },
     fundamentals: { signalTypes: [], requirements: [] },
@@ -90,7 +94,7 @@ function resolvePanelsForRequirement(requirement: string): SignalLinkedPanel[] {
   }
 
   if (requirement === 'ohlc') {
-    return ['ppo'];
+    return ['ppo', 'riskAdjustedReturn'];
   }
 
   return [];
