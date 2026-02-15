@@ -59,6 +59,42 @@ function toJsonViewData(value: unknown): Record<string, unknown> | unknown[] {
   return { value };
 }
 
+function resolveParameterPath(
+  root: unknown,
+  pathParts: string[]
+): { traversed: string[]; value: unknown } | null {
+  let current: unknown = root;
+  const traversed: string[] = [];
+
+  for (const [index, part] of pathParts.entries()) {
+    const currentRecord = asRecord(current);
+    if (!currentRecord) return null;
+    if (part in currentRecord) {
+      current = currentRecord[part];
+      traversed.push(part);
+      continue;
+    }
+
+    // Fallback for payloads that store dotted keys as a single field
+    // (e.g. "fundamental.per") instead of nested objects.
+    const remainingPath = pathParts.slice(index).join('.');
+    if (remainingPath in currentRecord) {
+      current = currentRecord[remainingPath];
+      traversed.push(remainingPath);
+      return { traversed, value: current };
+    }
+
+    return null;
+  }
+
+  return { traversed, value: current };
+}
+
+function shouldExpandArtifactNode(level: number, _value: unknown, field?: string): boolean {
+  if (level < 2) return true;
+  return level === 2 && field === 'effective_parameters';
+}
+
 type BestScore = {
   signalId: string;
   score: number;
@@ -87,22 +123,13 @@ function resolveSignalParameter(
 
   const sectionKey = scope === 'entry' ? 'entry_filter_params' : scope === 'exit' ? 'exit_trigger_params' : null;
   if (!sectionKey) return null;
-
-  let current: unknown = effectiveParameters[sectionKey];
-  const traversed: string[] = [];
-
-  for (const part of paramPathParts) {
-    const currentRecord = asRecord(current);
-    if (!currentRecord || !(part in currentRecord)) {
-      return null;
-    }
-    current = currentRecord[part];
-    traversed.push(part);
-  }
+  const section = effectiveParameters[sectionKey];
+  const resolved = resolveParameterPath(section, paramPathParts);
+  if (!resolved) return null;
 
   return {
-    parameterPath: `${sectionKey}.${traversed.join('.')}`,
-    value: current,
+    parameterPath: `${sectionKey}.${resolved.traversed.join('.')}`,
+    value: resolved.value,
   };
 }
 
@@ -209,6 +236,13 @@ export function AttributionArtifactBrowser() {
       marketDbName: readString(marketDb, 'name'),
       portfolioDbName: readString(portfolioDb, 'name'),
     };
+  }, [artifact]);
+
+  const effectiveParameters = useMemo(() => {
+    const strategy = asRecord(artifact?.strategy);
+    const parameters = strategy?.effective_parameters;
+    if (parameters === undefined || parameters === null) return null;
+    return parameters;
   }, [artifact]);
 
   const bestSignalParameter = useMemo(() => {
@@ -351,12 +385,27 @@ export function AttributionArtifactBrowser() {
                     <div>
                       <h5 className="mb-2 text-xs font-medium text-muted-foreground">Effective Parameter JSON</h5>
                       <div className="max-h-[260px] overflow-auto rounded-md border bg-background p-3 text-xs">
-                        <JsonView
-                          data={toJsonViewData(bestSignalParameter.parameterValue)}
-                          shouldExpandNode={allExpanded}
-                          style={defaultStyles}
-                        />
+                        {bestSignalParameter.parameterPath ? (
+                          <JsonView
+                            data={toJsonViewData(bestSignalParameter.parameterValue)}
+                            shouldExpandNode={allExpanded}
+                            style={defaultStyles}
+                          />
+                        ) : (
+                          <p className="text-muted-foreground">
+                            Parameter value could not be resolved from strategy.effective_parameters.
+                          </p>
+                        )}
                       </div>
+                    </div>
+                  </div>
+                )}
+
+                {effectiveParameters !== null && (
+                  <div>
+                    <h4 className="text-sm font-medium mb-2">Effective Parameters</h4>
+                    <div className="max-h-[320px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+                      <JsonView data={toJsonViewData(effectiveParameters)} shouldExpandNode={allExpanded} style={defaultStyles} />
                     </div>
                   </div>
                 )}
@@ -366,7 +415,7 @@ export function AttributionArtifactBrowser() {
                   <div className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
                     <JsonView
                       data={toJsonViewData(artifactData?.artifact ?? {})}
-                      shouldExpandNode={(level) => level < 2}
+                      shouldExpandNode={shouldExpandArtifactNode}
                       style={defaultStyles}
                     />
                   </div>
