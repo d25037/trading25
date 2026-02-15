@@ -23,6 +23,15 @@ class DeterministicRng:
         return seq[0]
 
 
+class PreferDividendGrowthRng(DeterministicRng):
+    """fundamental選択時に dividend_per_share_growth を優先する乱数"""
+
+    def choice(self, seq):  # type: ignore[no-untyped-def]
+        if "dividend_per_share_growth" in seq:
+            return "dividend_per_share_growth"
+        return seq[0]
+
+
 def _make_candidate(entry: dict, exit: dict | None = None) -> StrategyCandidate:
     return StrategyCandidate(
         strategy_id="base",
@@ -129,3 +138,11 @@ def test_build_fundamental_params_has_child_enabled() -> None:
     # DeterministicRng.choice() で "per" が選ばれる
     assert params["per"]["enabled"] is True
 
+
+def test_build_fundamental_params_can_select_new_growth_signal() -> None:
+    rng = PreferDividendGrowthRng()
+    params = build_signal_params("fundamental", "entry", rng)
+
+    assert params["enabled"] is True
+    assert params["dividend_per_share_growth"]["enabled"] is True
+    assert "periods" in params["dividend_per_share_growth"]
