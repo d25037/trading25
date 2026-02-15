@@ -141,7 +141,7 @@ function createTimeoutSignal(inputSignal: AbortSignal | null | undefined, timeou
 
 async function throwHttpError(response: Response): Promise<never> {
   let errorBody: unknown;
-  const rawResponse = response.clone();
+  const rawResponse = typeof response.clone === 'function' ? response.clone() : response;
   try {
     errorBody = await response.json();
   } catch (parseError) {
