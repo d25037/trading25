@@ -89,6 +89,16 @@ class TradingValueMAParams(BaseModel):
     period: int = Field(default=20, ge=1, le=500, description="MA期間")
 
 
+class RiskAdjustedReturnParams(BaseModel):
+    """リスク調整リターンパラメータ"""
+
+    lookback_period: int = Field(default=60, ge=1, le=500, description="計算期間")
+    ratio_type: Literal["sharpe", "sortino"] = Field(
+        default="sortino",
+        description="レシオ種別",
+    )
+
+
 # ===== Indicator Spec (Discriminated Union) =====
 
 INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
@@ -103,6 +113,7 @@ INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
     "nbar_support": NBarSupportParams,
     "volume_comparison": VolumeComparisonParams,
     "trading_value_ma": TradingValueMAParams,
+    "risk_adjusted_return": RiskAdjustedReturnParams,
 }
 
 INDICATOR_TYPES = Literal[
@@ -117,6 +128,7 @@ INDICATOR_TYPES = Literal[
     "nbar_support",
     "volume_comparison",
     "trading_value_ma",
+    "risk_adjusted_return",
 ]
 
 

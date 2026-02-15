@@ -7,66 +7,12 @@
 
 from __future__ import annotations
 
-import numpy as np
+from typing import Literal, cast
+
 import pandas as pd
 from loguru import logger
 
-ANNUALIZATION_FACTOR: float = np.sqrt(252)
-
-
-def _compute_rolling_downside_std(
-    returns: pd.Series[float], lookback_period: int
-) -> pd.Series[float]:
-    """
-    ベクトル化されたダウンサイド標準偏差計算
-
-    負のリターンのみを対象にローリング標準偏差を計算する。
-    pandas rolling().std()を使用することで、apply()よりも大幅に高速化。
-
-    Args:
-        returns: 日次リターン系列
-        lookback_period: 計算期間（日数）
-
-    Returns:
-        ローリングダウンサイド標準偏差
-    """
-    # 負のリターンのみを抽出（正のリターンはNaNに）
-    negative_only: pd.Series[float] = returns.where(returns < 0)
-
-    # pandasのrolling().std()を使用（内部でddof=1を適用）
-    # min_periods=2 で少なくとも2つの負のリターンが必要
-    result: pd.Series[float] = negative_only.rolling(
-        window=lookback_period, min_periods=2
-    ).std()
-
-    return result
-
-
-def _compute_rolling_denominator(
-    returns: pd.Series[float],
-    lookback_period: int,
-    ratio_type: str,
-) -> pd.Series[float]:
-    """レシオの分母となるローリング標準偏差を計算"""
-    if ratio_type == "sharpe":
-        # min_periods=lookback_period で十分なデータが揃うまでNaNを返す
-        return returns.rolling(window=lookback_period, min_periods=lookback_period).std()
-
-    return _compute_rolling_downside_std(returns, lookback_period)
-
-
-def _compute_ratio_with_zero_division_protection(
-    rolling_mean: pd.Series[float],
-    rolling_denominator: pd.Series[float],
-    index: pd.Index,
-) -> pd.Series[float]:
-    """ゼロ除算対策付きレシオ計算"""
-    ratio: pd.Series[float] = pd.Series(np.nan, index=index, dtype=float)
-    valid_mask: pd.Series[bool] = rolling_denominator > 0
-    ratio[valid_mask] = (
-        rolling_mean[valid_mask] / rolling_denominator[valid_mask]
-    ) * ANNUALIZATION_FACTOR
-    return ratio
+from src.lib.indicators import compute_risk_adjusted_return
 
 
 def risk_adjusted_return_signal(
@@ -122,23 +68,12 @@ def risk_adjusted_return_signal(
     if len(close) == 0:
         return pd.Series(dtype=bool)
 
-    # Inf値をNaNに置換（NaN/Inf検証）
-    close_clean: pd.Series[float] = close.replace([np.inf, -np.inf], np.nan)
+    validated_ratio_type = cast(Literal["sharpe", "sortino"], ratio_type)
 
-    # 日次リターン計算
-    returns: pd.Series[float] = close_clean.pct_change()
-
-    # ローリング統計計算（min_periods=lookback_periodで十分なデータが揃うまでNaN）
-    rolling_mean: pd.Series[float] = returns.rolling(
-        window=lookback_period, min_periods=lookback_period
-    ).mean()
-    rolling_denominator: pd.Series[float] = _compute_rolling_denominator(
-        returns, lookback_period, ratio_type
-    )
-
-    # レシオ計算（ゼロ除算対策付き）
-    ratio: pd.Series[float] = _compute_ratio_with_zero_division_protection(
-        rolling_mean, rolling_denominator, close.index
+    ratio = compute_risk_adjusted_return(
+        close=close,
+        lookback_period=lookback_period,
+        ratio_type=validated_ratio_type,
     )
 
     # 閾値判定

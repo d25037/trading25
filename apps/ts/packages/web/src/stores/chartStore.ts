@@ -2,6 +2,8 @@ import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
 
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
+export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
+export type RiskAdjustedReturnCondition = 'above' | 'below';
 
 // Signal Overlay Types
 export interface SignalConfig {
@@ -37,11 +39,18 @@ export interface ChartSettings {
   tradingValueMA: {
     period: number;
   };
+  riskAdjustedReturn: {
+    lookbackPeriod: number;
+    ratioType: RiskAdjustedReturnRatioType;
+    threshold: number;
+    condition: RiskAdjustedReturnCondition;
+  };
   chartType: 'candlestick' | 'line' | 'area';
   showVolume: boolean;
   showPPOChart: boolean;
   showVolumeComparison: boolean;
   showTradingValueMA: boolean;
+  showRiskAdjustedReturnChart: boolean;
   showFundamentalsPanel: boolean;
   showFundamentalsHistoryPanel: boolean;
   showMarginPressurePanel: boolean;
@@ -125,11 +134,18 @@ export const defaultSettings: ChartSettings = {
   tradingValueMA: {
     period: 15,
   },
+  riskAdjustedReturn: {
+    lookbackPeriod: 60,
+    ratioType: 'sortino',
+    threshold: 1.0,
+    condition: 'above',
+  },
   chartType: 'candlestick',
   showVolume: true,
   showPPOChart: false,
   showVolumeComparison: false,
   showTradingValueMA: false,
+  showRiskAdjustedReturnChart: false,
   showFundamentalsPanel: true,
   showFundamentalsHistoryPanel: true,
   showMarginPressurePanel: true,
@@ -207,6 +223,14 @@ function isValidChartType(value: unknown): value is ChartSettings['chartType'] {
   return value === 'candlestick' || value === 'line' || value === 'area';
 }
 
+function isValidRiskAdjustedReturnRatioType(value: unknown): value is RiskAdjustedReturnRatioType {
+  return value === 'sharpe' || value === 'sortino';
+}
+
+function isValidRiskAdjustedReturnCondition(value: unknown): value is RiskAdjustedReturnCondition {
+  return value === 'above' || value === 'below';
+}
+
 function normalizeSettings(settings: unknown): ChartSettings {
   if (!isRecord(settings)) {
     return structuredClone(defaultSettings);
@@ -216,6 +240,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
   const partialIndicators = toPartialRecord<ChartSettings['indicators']>(partial.indicators);
   const partialVolumeComparison = toPartialRecord<ChartSettings['volumeComparison']>(partial.volumeComparison);
   const partialTradingValueMA = toPartialRecord<ChartSettings['tradingValueMA']>(partial.tradingValueMA);
+  const partialRiskAdjustedReturn = toPartialRecord<ChartSettings['riskAdjustedReturn']>(partial.riskAdjustedReturn);
   const partialSignalOverlay = toPartialRecord<ChartSettings['signalOverlay']>(partial.signalOverlay);
   const partialSma = toPartialRecord<ChartSettings['indicators']['sma']>(partialIndicators.sma);
   const partialEma = toPartialRecord<ChartSettings['indicators']['ema']>(partialIndicators.ema);
@@ -288,11 +313,28 @@ function normalizeSettings(settings: unknown): ChartSettings {
     tradingValueMA: {
       period: normalizePositiveInt(partialTradingValueMA.period, defaultSettings.tradingValueMA.period),
     },
+    riskAdjustedReturn: {
+      lookbackPeriod: normalizePositiveInt(
+        partialRiskAdjustedReturn.lookbackPeriod,
+        defaultSettings.riskAdjustedReturn.lookbackPeriod
+      ),
+      ratioType: isValidRiskAdjustedReturnRatioType(partialRiskAdjustedReturn.ratioType)
+        ? partialRiskAdjustedReturn.ratioType
+        : defaultSettings.riskAdjustedReturn.ratioType,
+      threshold: normalizeFiniteNumber(partialRiskAdjustedReturn.threshold, defaultSettings.riskAdjustedReturn.threshold),
+      condition: isValidRiskAdjustedReturnCondition(partialRiskAdjustedReturn.condition)
+        ? partialRiskAdjustedReturn.condition
+        : defaultSettings.riskAdjustedReturn.condition,
+    },
     chartType: isValidChartType(partial.chartType) ? partial.chartType : defaultSettings.chartType,
     showVolume: normalizeBoolean(partial.showVolume, defaultSettings.showVolume),
     showPPOChart: normalizeBoolean(partial.showPPOChart, defaultSettings.showPPOChart),
     showVolumeComparison: normalizeBoolean(partial.showVolumeComparison, defaultSettings.showVolumeComparison),
     showTradingValueMA: normalizeBoolean(partial.showTradingValueMA, defaultSettings.showTradingValueMA),
+    showRiskAdjustedReturnChart: normalizeBoolean(
+      partial.showRiskAdjustedReturnChart,
+      defaultSettings.showRiskAdjustedReturnChart
+    ),
     showFundamentalsPanel: normalizeBoolean(
       partial.showFundamentalsPanel,
       defaultSettings.showFundamentalsPanel

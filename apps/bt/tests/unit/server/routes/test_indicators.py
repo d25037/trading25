@@ -171,6 +171,31 @@ class TestComputeEndpoint:
         assert len(data["indicators"]) == 3
 
     @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    def test_risk_adjusted_return_indicator(self, mock_compute: MagicMock):
+        mock_compute.return_value = {
+            "stock_code": "7203",
+            "timeframe": "daily",
+            "meta": {"bars": 500},
+            "indicators": {
+                "risk_adjusted_return_60_sortino": [{"date": "2024-01-01", "value": 1.23}],
+            },
+        }
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "indicators": [
+                    {"type": "risk_adjusted_return", "params": {"lookback_period": 60, "ratio_type": "sortino"}},
+                ],
+            },
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "risk_adjusted_return_60_sortino" in data["indicators"]
+
+    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_api_not_found_returns_404(self, mock_compute: MagicMock):
         """APINotFoundError が 404 で返ること"""
         mock_compute.side_effect = APINotFoundError("Resource not found: Stock not found")

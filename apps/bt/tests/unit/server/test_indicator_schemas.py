@@ -18,6 +18,7 @@ from src.server.schemas.indicators import (
     NBarSupportParams,
     PPOParams,
     RSIParams,
+    RiskAdjustedReturnParams,
     SMAParams,
     TradingValueMAParams,
     VolumeComparisonParams,
@@ -104,6 +105,15 @@ class TestParamsModels:
         p = TradingValueMAParams(period=50)
         assert p.period == 50
 
+    def test_risk_adjusted_return_params_default(self):
+        p = RiskAdjustedReturnParams()
+        assert p.lookback_period == 60
+        assert p.ratio_type == "sortino"
+
+    def test_risk_adjusted_return_params_invalid_ratio_type(self):
+        with pytest.raises(ValidationError):
+            RiskAdjustedReturnParams(ratio_type="invalid")
+
 
 class TestIndicatorSpec:
     """IndicatorSpec バリデーションテスト"""
@@ -128,11 +138,11 @@ class TestIndicatorSpec:
         with pytest.raises(ValidationError):
             IndicatorSpec(type="unknown", params={})
 
-    def test_all_11_types(self):
+    def test_all_12_types(self):
         types = [
             "sma", "ema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
-            "trading_value_ma",
+            "trading_value_ma", "risk_adjusted_return",
         ]
         for t in types:
             spec = IndicatorSpec(type=t, params={} if t not in ("sma", "ema") else {"period": 20})

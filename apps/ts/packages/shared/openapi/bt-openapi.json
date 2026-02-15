@@ -13958,7 +13958,8 @@
               "atr_support",
               "nbar_support",
               "volume_comparison",
-              "trading_value_ma"
+              "trading_value_ma",
+              "risk_adjusted_return"
             ],
             "title": "Type",
             "description": "インジケータータイプ"
