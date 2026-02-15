@@ -138,20 +138,20 @@ class TestMakeKey:
         assert _make_key("bollinger", period=20, std=2.0) == "bollinger_20_2.0"
 
 
-# ===== 11 Indicator Compute Function Tests =====
+# ===== 12 Indicator Compute Function Tests =====
 
 
 class TestIndicatorRegistry:
-    """全11インジケーターのレジストリテスト"""
+    """全12インジケーターのレジストリテスト"""
 
-    def test_registry_has_11_entries(self):
-        assert len(INDICATOR_REGISTRY) == 11
+    def test_registry_has_12_entries(self):
+        assert len(INDICATOR_REGISTRY) == 12
 
     def test_all_types_registered(self):
         expected = {
             "sma", "ema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
-            "trading_value_ma",
+            "trading_value_ma", "risk_adjusted_return",
         }
         assert set(INDICATOR_REGISTRY.keys()) == expected
 
@@ -291,6 +291,19 @@ class TestComputeTradingValueMA:
         ohlcv = _make_ohlcv()
         key, records = INDICATOR_REGISTRY["trading_value_ma"](ohlcv, {"period": 20}, "include")
         assert key == "trading_value_ma_20"
+
+
+class TestComputeRiskAdjustedReturn:
+    def test_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["risk_adjusted_return"](
+            ohlcv,
+            {"lookback_period": 60, "ratio_type": "sortino"},
+            "include",
+        )
+        assert key == "risk_adjusted_return_60_sortino"
+        assert len(records) == 200
+        assert "value" in records[-1]
 
 
 # ===== Margin Indicators =====
