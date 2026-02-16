@@ -257,11 +257,13 @@ export function ChartControls() {
       <div className="glass-panel rounded-lg p-3 space-y-2">
         <SectionHeader icon={Search} title="Symbol Search" />
         <div className="space-y-2">
-          <form onSubmit={handleSymbolSubmit} className="space-y-2">
+          <form onSubmit={handleSymbolSubmit} className="space-y-2" autoComplete="off">
             <div className="relative">
               <Input
                 ref={inputRef}
                 id={symbolSearchId}
+                type="search"
+                name="symbol-search"
                 placeholder="銘柄コードまたは会社名で検索..."
                 value={symbolInput}
                 onChange={(e) => {
@@ -273,6 +275,14 @@ export function ChartControls() {
                 onKeyDown={handleKeyDown}
                 className="w-full glass-panel border-border/30 focus:border-primary/50 transition-all duration-200 pr-10"
                 autoComplete="off"
+                autoCapitalize="off"
+                autoCorrect="off"
+                spellCheck={false}
+                inputMode="search"
+                enterKeyHint="search"
+                data-form-type="other"
+                data-lpignore="true"
+                data-1p-ignore="true"
               />
               {isSearching && (
                 <div className="absolute right-3 top-1/2 -translate-y-1/2">
@@ -632,13 +642,7 @@ interface SearchSuggestionsProps {
   onSelect: (stock: StockSearchResultItem) => void;
 }
 
-function SearchSuggestions({
-  containerRef,
-  results,
-  selectedIndex,
-  position,
-  onSelect,
-}: SearchSuggestionsProps) {
+function SearchSuggestions({ containerRef, results, selectedIndex, position, onSelect }: SearchSuggestionsProps) {
   return createPortal(
     <div
       ref={containerRef}
