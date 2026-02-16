@@ -30,14 +30,14 @@ export const subCommands = {
   }),
   dataset: lazy(async () => (await import('./dataset/index.js')).datasetCommand, {
     name: 'dataset',
-    description: 'Dataset management - create, validate, info, sample, search',
+    description: 'Dataset management - create, info, sample, search',
   }),
   jquants: lazy(async () => (await import('./jquants/index.js')).jquantsCommand, {
     name: 'jquants',
     description: 'JQuants API operations - auth, fetch',
   }),
-  portfolio: lazy(async () => (await import('./portfolio/index.js')).portfolioCommand, {
-    name: 'portfolio',
-    description: 'Portfolio management - track stock holdings',
+  backtest: lazy(async () => (await import('./backtest/index.js')).backtestCommand, {
+    name: 'backtest',
+    description: 'Backtest operations - run strategies, check results',
   }),
 };
