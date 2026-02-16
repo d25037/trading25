@@ -3258,11 +3258,6 @@ export interface components {
              */
             tradingValueToMarketCapRatio?: number | null;
             /**
-             * Booktomarket
-             * @description Book-to-Market ratio (BPS / Close)
-             */
-            bookToMarket?: number | null;
-            /**
              * Forecasteps
              * @description Forecast EPS (JPY)
              */

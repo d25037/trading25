@@ -29,7 +29,6 @@ from .fundamental_helpers import (
 
 # バリュエーション系シグナル
 from .fundamental_valuation import (
-    is_high_book_to_market,
     is_undervalued_by_pbr,
     is_undervalued_by_per,
     is_undervalued_growth_by_peg,
@@ -72,7 +71,6 @@ __all__ = [
     # バリュエーション系
     "is_undervalued_by_per",
     "is_undervalued_by_pbr",
-    "is_high_book_to_market",
     "is_undervalued_growth_by_peg",
     # 成長率系
     "is_growing_eps",

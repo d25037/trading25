@@ -216,18 +216,6 @@ class TestMetricCalculations:
         assert service._calculate_pbr(bps=0.0, stock_price=6000.0) is None
         assert service._calculate_pbr(bps=-100.0, stock_price=6000.0) is None
 
-    def test_calculate_book_to_market(self, service: FundamentalsService):
-        """B/M計算"""
-        bm = service._calculate_book_to_market(bps=2250.0, stock_price=6750.0)
-        assert bm == pytest.approx(0.3333333333)
-
-    def test_calculate_book_to_market_invalid(self, service: FundamentalsService):
-        """B/Mの無効値（BPS<=0 or Close<=0）"""
-        assert service._calculate_book_to_market(bps=None, stock_price=6000.0) is None
-        assert service._calculate_book_to_market(bps=2250.0, stock_price=None) is None
-        assert service._calculate_book_to_market(bps=0.0, stock_price=6000.0) is None
-        assert service._calculate_book_to_market(bps=2250.0, stock_price=0.0) is None
-
     def test_calculate_roa(
         self, service: FundamentalsService, sample_statement: JQuantsStatement
     ):
@@ -1077,10 +1065,8 @@ class TestComputeFundamentals:
         assert result.data[0].bps == 2250.0
         assert result.data[0].cfoToNetProfitRatio == 1.5
         assert result.data[0].tradingValueToMarketCapRatio is not None
-        assert result.data[0].bookToMarket is not None
         assert result.latestMetrics is not None
         assert result.latestMetrics.tradingValueToMarketCapRatio is not None
-        assert result.latestMetrics.bookToMarket is not None
 
     def test_share_adjusted_metrics(self, service: FundamentalsService):
         """発行済株式数でEPS/BPS/予想EPSを調整する"""
@@ -1175,9 +1161,6 @@ class TestComputeFundamentals:
         assert latest.adjustedEps == latest.eps
         assert latest.adjustedForecastEps == latest.forecastEps
         assert latest.adjustedBps == latest.bps
-        assert latest.bookToMarket == pytest.approx(
-            round((latest.adjustedBps or latest.bps) / latest.stockPrice, 2)
-        )
 
         assert older.adjustedEps == 50.0
         # FY uses NxFEPS (=110.0), adjusted = 110.0 * (100/200) = 55.0
@@ -2165,7 +2148,6 @@ class TestDividendPerShare:
             adjustedDividendFy=80.0,
             per=None,
             pbr=None,
-            bookToMarket=None,
             roa=None,
             operatingMargin=None,
             netMargin=None,
@@ -2204,4 +2186,3 @@ class TestDividendPerShare:
         )
 
         assert adjusted.adjustedDividendFy == 40.0
-        assert adjusted.bookToMarket == 0.25

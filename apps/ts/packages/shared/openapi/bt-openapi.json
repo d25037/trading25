@@ -12762,18 +12762,6 @@
             "title": "Tradingvaluetomarketcapratio",
             "description": "Market cap / N-day average trading value ratio (x)"
           },
-          "bookToMarket": {
-            "anyOf": [
-              {
-                "type": "number"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Booktomarket",
-            "description": "Book-to-Market ratio (BPS / Close)"
-          },
           "forecastEps": {
             "anyOf": [
               {
