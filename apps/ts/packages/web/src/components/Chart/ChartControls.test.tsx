@@ -223,9 +223,10 @@ describe('ChartControls', () => {
     render(<ChartControls />, { wrapper: TestWrapper });
 
     expect(screen.getByText('Panel Visibility')).toBeInTheDocument();
-    expect(screen.getAllByRole('switch', { name: /ppo/i }).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Volume Comparison').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Trading Value MA').length).toBeGreaterThan(0);
+    expect(screen.getByRole('switch', { name: /show ppo chart/i })).toBeInTheDocument();
+    expect(screen.getAllByRole('switch', { name: /risk adjusted return/i })).toHaveLength(1);
+    expect(screen.getAllByRole('switch', { name: /volume comparison/i })).toHaveLength(1);
+    expect(screen.getAllByRole('switch', { name: /trading value ma/i })).toHaveLength(1);
     expect(screen.getByRole('switch', { name: /fundamentals/i })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /fy history/i })).toBeInTheDocument();
     expect(screen.getByRole('switch', { name: /margin pressure/i })).toBeInTheDocument();

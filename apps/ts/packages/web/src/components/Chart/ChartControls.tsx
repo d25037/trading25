@@ -26,11 +26,7 @@ const VISIBLE_BAR_OPTIONS = [
   { value: 250, label: '250 bars' },
 ] as const;
 
-type PanelSettingKey =
-  | 'showPPOChart'
-  | 'showRiskAdjustedReturnChart'
-  | 'showVolumeComparison'
-  | 'showTradingValueMA'
+type PanelVisibilitySettingKey =
   | 'showFundamentalsPanel'
   | 'showFundamentalsHistoryPanel'
   | 'showMarginPressurePanel'
@@ -39,35 +35,11 @@ type PanelSettingKey =
 interface PanelVisibilityToggle {
   id: string;
   label: string;
-  settingKey: PanelSettingKey;
+  settingKey: PanelVisibilitySettingKey;
   linkPanel: SignalLinkedPanel;
 }
 
 const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
-  {
-    id: 'show-ppo-chart-panel',
-    label: 'PPO',
-    settingKey: 'showPPOChart',
-    linkPanel: 'ppo',
-  },
-  {
-    id: 'show-risk-adjusted-return-panel',
-    label: 'Risk Adjusted Return',
-    settingKey: 'showRiskAdjustedReturnChart',
-    linkPanel: 'riskAdjustedReturn',
-  },
-  {
-    id: 'show-volume-comparison-panel',
-    label: 'Volume Comparison',
-    settingKey: 'showVolumeComparison',
-    linkPanel: 'volumeComparison',
-  },
-  {
-    id: 'show-trading-value-ma-panel',
-    label: 'Trading Value MA',
-    settingKey: 'showTradingValueMA',
-    linkPanel: 'tradingValueMA',
-  },
   {
     id: 'show-fundamentals-panel',
     label: 'Fundamentals',
@@ -155,6 +127,16 @@ export function ChartControls() {
   );
   const showSignalMeta = !!signalReferenceData && !signalReferenceError;
 
+  const getPanelSignalMeta = useCallback(
+    (panel: SignalLinkedPanel): string | undefined => {
+      if (!showSignalMeta) return undefined;
+      const link = signalPanelLinks[panel];
+      if (link.signalTypes.length === 0) return undefined;
+      return formatPanelSignalMeta(link.requirements, link.signalTypes);
+    },
+    [showSignalMeta, signalPanelLinks]
+  );
+
   // Auto-scroll selected item into view
   useEffect(() => {
     if (selectedIndex >= 0 && suggestionsRef.current) {
@@ -231,7 +213,7 @@ export function ChartControls() {
   };
 
   const updatePanelVisibility = useCallback(
-    (settingKey: PanelSettingKey, checked: boolean) => {
+    (settingKey: PanelVisibilitySettingKey, checked: boolean) => {
       updateSettings({ [settingKey]: checked } as Partial<ChartSettings>);
     },
     [updateSettings]
@@ -335,6 +317,7 @@ export function ChartControls() {
           label="Show PPO Chart"
           checked={settings.showPPOChart}
           onCheckedChange={(checked) => updateSettings({ showPPOChart: checked })}
+          meta={getPanelSignalMeta('ppo')}
         />
 
         <ToggleRow
@@ -377,24 +360,17 @@ export function ChartControls() {
       <div className="glass-panel rounded-lg p-3 space-y-2">
         <SectionHeader icon={Eye} title="Panel Visibility" />
         <div className="space-y-1.5">
-          {PANEL_VISIBILITY_TOGGLES.map((toggle) => {
-            const link = signalPanelLinks[toggle.linkPanel];
-            const meta =
-              showSignalMeta && link.signalTypes.length > 0
-                ? formatPanelSignalMeta(link.requirements, link.signalTypes)
-                : undefined;
-            return (
-              <ToggleRow
-                key={toggle.id}
-                id={toggle.id}
-                icon={BarChart3}
-                label={toggle.label}
-                checked={settings[toggle.settingKey]}
-                onCheckedChange={(checked) => updatePanelVisibility(toggle.settingKey, checked)}
-                meta={meta}
-              />
-            );
-          })}
+          {PANEL_VISIBILITY_TOGGLES.map((toggle) => (
+            <ToggleRow
+              key={toggle.id}
+              id={toggle.id}
+              icon={BarChart3}
+              label={toggle.label}
+              checked={settings[toggle.settingKey]}
+              onCheckedChange={(checked) => updatePanelVisibility(toggle.settingKey, checked)}
+              meta={getPanelSignalMeta(toggle.linkPanel)}
+            />
+          ))}
         </div>
       </div>
 
@@ -468,6 +444,7 @@ export function ChartControls() {
           label="Risk Adjusted Return"
           enabled={settings.showRiskAdjustedReturnChart}
           onToggle={(checked) => updateSettings({ showRiskAdjustedReturnChart: checked })}
+          meta={getPanelSignalMeta('riskAdjustedReturn')}
         >
           <div className="grid grid-cols-2 gap-1.5">
             <NumberInput
@@ -536,6 +513,7 @@ export function ChartControls() {
           label="Volume Comparison"
           enabled={settings.showVolumeComparison}
           onToggle={(checked) => updateSettings({ showVolumeComparison: checked })}
+          meta={getPanelSignalMeta('volumeComparison')}
         >
           <div className="grid grid-cols-2 gap-1.5">
             <NumberInput
@@ -571,6 +549,7 @@ export function ChartControls() {
           label="Trading Value MA"
           enabled={settings.showTradingValueMA}
           onToggle={(checked) => updateSettings({ showTradingValueMA: checked })}
+          meta={getPanelSignalMeta('tradingValueMA')}
         >
           <NumberInput
             label="Period"
