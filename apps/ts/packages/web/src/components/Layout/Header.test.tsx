@@ -1,8 +1,16 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { useUiStore } from '@/stores/uiStore';
 import { Header } from './Header';
+
+const mockNavigate = vi.fn();
+let pathname = '/charts';
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
+  useRouterState: ({ select }: { select: (state: { location: { pathname: string } }) => string }) =>
+    select({ location: { pathname } }),
+}));
 
 vi.mock('@/components/ui/theme-toggle', () => ({
   ThemeToggle: () => <button type="button">ThemeToggle</button>,
@@ -10,7 +18,8 @@ vi.mock('@/components/ui/theme-toggle', () => ({
 
 describe('Header', () => {
   beforeEach(() => {
-    useUiStore.setState({ activeTab: 'charts' });
+    vi.clearAllMocks();
+    pathname = '/charts';
   });
 
   it('renders logo and navigation items', () => {
@@ -32,7 +41,14 @@ describe('Header', () => {
 
     await user.click(screen.getByText('Portfolio'));
 
-    expect(useUiStore.getState().activeTab).toBe('portfolio');
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/portfolio' });
+  });
+
+  it('highlights current route', () => {
+    pathname = '/analysis';
+    render(<Header />);
+
+    expect(screen.getByRole('button', { name: 'Analysis' })).toHaveClass('gradient-primary');
   });
 
   it('renders theme toggle', () => {

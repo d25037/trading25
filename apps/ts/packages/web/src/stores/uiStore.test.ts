@@ -4,9 +4,8 @@ import { useUiStore } from './uiStore';
 describe('uiStore', () => {
   afterEach(() => {
     // Reset store to initial state
-    const { setActiveTab, setSelectedPortfolioId, setSelectedWatchlistId, setSelectedIndexCode, setPortfolioSubTab } =
+    const { setSelectedPortfolioId, setSelectedWatchlistId, setSelectedIndexCode, setPortfolioSubTab } =
       useUiStore.getState();
-    setActiveTab('charts');
     setSelectedPortfolioId(null);
     setSelectedWatchlistId(null);
     setSelectedIndexCode(null);
@@ -15,16 +14,10 @@ describe('uiStore', () => {
 
   it('has correct initial state', () => {
     const state = useUiStore.getState();
-    expect(state.activeTab).toBe('charts');
     expect(state.selectedPortfolioId).toBeNull();
     expect(state.selectedWatchlistId).toBeNull();
     expect(state.selectedIndexCode).toBeNull();
     expect(state.portfolioSubTab).toBe('portfolios');
-  });
-
-  it('setActiveTab updates active tab', () => {
-    useUiStore.getState().setActiveTab('analysis');
-    expect(useUiStore.getState().activeTab).toBe('analysis');
   });
 
   it('setSelectedPortfolioId updates portfolio id', () => {
