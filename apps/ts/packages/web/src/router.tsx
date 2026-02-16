@@ -1,4 +1,4 @@
-import { Outlet, createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
+import { Link, Outlet, createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
 import { MainLayout } from '@/components/Layout/MainLayout';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { BacktestPage } from '@/pages/BacktestPage';
@@ -24,6 +24,10 @@ function isLegacyTab(value: string): value is LegacyTab {
   return value in LEGACY_TAB_ROUTE_MAP;
 }
 
+type IndexRouteSearch = {
+  tab?: string;
+};
+
 function RootLayout() {
   return (
     <MainLayout>
@@ -39,13 +43,16 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/',
-  beforeLoad: ({ search }) => {
-    const legacyTab = (search as Record<string, unknown>).tab;
-    if (typeof legacyTab === 'string' && isLegacyTab(legacyTab)) {
-      throw redirect({ to: LEGACY_TAB_ROUTE_MAP[legacyTab] });
-    }
-    throw redirect({ to: '/charts' });
+  validateSearch: (search): IndexRouteSearch => {
+    const tab = typeof search.tab === 'string' ? search.tab : undefined;
+    return { tab };
   },
+  beforeLoad: ({ search }) => {
+    if (!search.tab) {
+      throw redirect({ to: '/charts' });
+    }
+  },
+  component: LegacyTabMigrationPage,
 });
 
 const chartsRoute = createRoute({
@@ -100,6 +107,35 @@ const routeTree = rootRoute.addChildren([
   historyRoute,
   settingsRoute,
 ]);
+
+function LegacyTabMigrationPage() {
+  const { tab } = indexRoute.useSearch();
+  const suggestedPath = tab && isLegacyTab(tab) ? LEGACY_TAB_ROUTE_MAP[tab] : null;
+
+  return (
+    <div className="mx-auto max-w-2xl py-10 text-center">
+      <h1 className="text-2xl font-semibold tracking-tight">404: Legacy URL is no longer supported</h1>
+      <p className="mt-3 text-sm text-muted-foreground">
+        The <code>?tab=</code> query format has been removed. Use path-based routes instead.
+      </p>
+      {tab ? (
+        <p className="mt-2 text-sm text-muted-foreground">
+          Requested URL: <code>?tab={tab}</code>
+        </p>
+      ) : null}
+      <div className="mt-6 flex flex-wrap items-center justify-center gap-3">
+        {suggestedPath ? (
+          <Link to={suggestedPath} className="rounded-md bg-primary px-4 py-2 text-sm text-primary-foreground">
+            Open suggested route ({suggestedPath})
+          </Link>
+        ) : null}
+        <Link to="/charts" className="rounded-md border px-4 py-2 text-sm">
+          Go to /charts
+        </Link>
+      </div>
+    </div>
+  );
+}
 
 export function createAppRouter() {
   return createRouter({ routeTree });

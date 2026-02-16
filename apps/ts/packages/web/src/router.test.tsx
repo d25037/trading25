@@ -56,13 +56,15 @@ describe('router', () => {
     expect(screen.getByRole('heading', { name: 'Charts Page' })).toBeInTheDocument();
   });
 
-  it('supports legacy ?tab= query links', async () => {
+  it('shows migration guidance for legacy ?tab= query links', async () => {
     renderRouterAt('/?tab=history');
 
     await waitFor(() => {
-      expect(window.location.pathname).toBe('/history');
+      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
     });
-    expect(screen.getByRole('heading', { name: 'History Page' })).toBeInTheDocument();
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?tab=history');
+    expect(screen.getByRole('link', { name: 'Open suggested route (/history)' })).toHaveAttribute('href', '/history');
   });
 
   it('renders settings page when path is /settings', async () => {
