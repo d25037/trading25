@@ -12,10 +12,6 @@ interface JobProgressCardProps {
   isCancelling?: boolean;
 }
 
-type BacktestResultWithSortino = NonNullable<BacktestJobResponse['result']> & {
-  sortino_ratio?: number | null;
-};
-
 function formatRatio(value: number | null | undefined) {
   return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-';
 }
@@ -60,7 +56,7 @@ function RunningProgress({ isActive, message }: { isActive: boolean; message: st
   );
 }
 
-function CompletedSummary({ result }: { result: BacktestResultWithSortino | null }) {
+function CompletedSummary({ result }: { result: BacktestJobResponse['result'] }) {
   if (!result) return null;
 
   return (
@@ -135,8 +131,7 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
 
   if (!job) return null;
 
-  const completedResult =
-    job.status === 'completed' && job.result ? (job.result as BacktestResultWithSortino) : null;
+  const completedResult = job.status === 'completed' ? job.result : null;
 
   const formatElapsed = (s: number) => {
     const m = Math.floor(s / 60);

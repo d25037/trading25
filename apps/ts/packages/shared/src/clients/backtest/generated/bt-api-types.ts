@@ -2632,6 +2632,11 @@ export interface components {
              */
             sharpe_ratio: number;
             /**
+             * Sortino Ratio
+             * @description ソルティノレシオ
+             */
+            sortino_ratio?: number | null;
+            /**
              * Calmar Ratio
              * @description カルマーレシオ
              */
