@@ -8,6 +8,7 @@ import {
   useLabGenerate,
   useLabImprove,
   useLabJobStatus,
+  useLabJobs,
   useLabOptimize,
 } from '@/hooks/useLab';
 import { useLabSSE } from '@/hooks/useLabSSE';
@@ -16,17 +17,31 @@ import type { LabType } from '@/types/backtest';
 import { LabEvolveForm } from './LabEvolveForm';
 import { LabGenerateForm } from './LabGenerateForm';
 import { LabImproveForm } from './LabImproveForm';
+import { LabJobHistoryTable } from './LabJobHistoryTable';
 import { LabJobProgress } from './LabJobProgress';
 import { LabOperationSelector } from './LabOperationSelector';
 import { LabOptimizeForm } from './LabOptimizeForm';
 import { LabResultSection } from './LabResultSection';
 
+function tabButtonClass(isActive: boolean): string {
+  return `px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
+    isActive ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground'
+  }`;
+}
+
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: UI component with conditional rendering
 export function LabPanel() {
+  const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
   const [operation, setOperation] = useState<LabType>('generate');
   const { selectedStrategy, setSelectedStrategy, activeLabJobId, setActiveLabJobId, setActiveLabType } =
     useBacktestStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
+  const {
+    data: labJobs,
+    isLoading: isLoadingLabJobs,
+    isFetching: isFetchingLabJobs,
+    refetch: refetchLabJobs,
+  } = useLabJobs(30);
 
   const sse = useLabSSE(activeLabJobId);
   const { data: jobStatus } = useLabJobStatus(activeLabJobId, sse.isConnected);
@@ -59,6 +74,15 @@ export function LabPanel() {
   const handleJobStart = (jobId: string, type: LabType) => {
     setActiveLabJobId(jobId);
     setActiveLabType(type);
+    setActiveTab('run');
+  };
+
+  const handleSelectHistoryJob = (jobId: string, type: LabType | null) => {
+    setActiveLabJobId(jobId);
+    setActiveLabType(type);
+    if (type) {
+      setOperation(type);
+    }
   };
 
   const mutationError = labGenerate.error ?? labEvolve.error ?? labOptimize.error ?? labImprove.error;
@@ -75,66 +99,94 @@ export function LabPanel() {
         </div>
       </div>
 
-      <LabOperationSelector value={operation} onChange={setOperation} disabled={isJobActive} />
+      <div className="flex border-b">
+        <button type="button" onClick={() => setActiveTab('run')} className={tabButtonClass(activeTab === 'run')}>
+          Run
+        </button>
+        <button
+          type="button"
+          onClick={() => setActiveTab('history')}
+          className={tabButtonClass(activeTab === 'history')}
+        >
+          History
+        </button>
+      </div>
 
-      {needsStrategy && (
-        <div className="space-y-1.5">
-          <span className="text-sm font-medium">Strategy</span>
-          <StrategySelector
-            strategies={strategiesData?.strategies}
-            isLoading={isLoadingStrategies}
-            value={selectedStrategy}
-            onChange={setSelectedStrategy}
-            disabled={isJobActive}
-          />
-        </div>
-      )}
+      {activeTab === 'run' ? (
+        <>
+          <LabOperationSelector value={operation} onChange={setOperation} disabled={isJobActive} />
 
-      {operation === 'generate' && (
-        <LabGenerateForm
-          onSubmit={async (req) => {
-            const result = await labGenerate.mutateAsync(req);
-            handleJobStart(result.job_id, 'generate');
+          {needsStrategy && (
+            <div className="space-y-1.5">
+              <span className="text-sm font-medium">Strategy</span>
+              <StrategySelector
+                strategies={strategiesData?.strategies}
+                isLoading={isLoadingStrategies}
+                value={selectedStrategy}
+                onChange={setSelectedStrategy}
+                disabled={isJobActive}
+              />
+            </div>
+          )}
+
+          {operation === 'generate' && (
+            <LabGenerateForm
+              onSubmit={async (req) => {
+                const result = await labGenerate.mutateAsync(req);
+                handleJobStart(result.job_id, 'generate');
+              }}
+              disabled={isJobActive}
+            />
+          )}
+
+          {operation === 'evolve' && (
+            <LabEvolveForm
+              strategyName={selectedStrategy}
+              onSubmit={async (req) => {
+                const result = await labEvolve.mutateAsync(req);
+                handleJobStart(result.job_id, 'evolve');
+              }}
+              disabled={isJobActive}
+            />
+          )}
+
+          {operation === 'optimize' && (
+            <LabOptimizeForm
+              strategyName={selectedStrategy}
+              onSubmit={async (req) => {
+                const result = await labOptimize.mutateAsync(req);
+                handleJobStart(result.job_id, 'optimize');
+              }}
+              disabled={isJobActive}
+            />
+          )}
+
+          {operation === 'improve' && (
+            <LabImproveForm
+              strategyName={selectedStrategy}
+              onSubmit={async (req) => {
+                const result = await labImprove.mutateAsync(req);
+                handleJobStart(result.job_id, 'improve');
+              }}
+              disabled={isJobActive}
+            />
+          )}
+
+          {mutationError && (
+            <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{mutationError.message}</div>
+          )}
+        </>
+      ) : (
+        <LabJobHistoryTable
+          jobs={labJobs}
+          isLoading={isLoadingLabJobs}
+          isRefreshing={isFetchingLabJobs}
+          selectedJobId={activeLabJobId}
+          onSelectJob={(job) => handleSelectHistoryJob(job.job_id, job.lab_type ?? null)}
+          onRefresh={() => {
+            void refetchLabJobs();
           }}
-          disabled={isJobActive}
         />
-      )}
-
-      {operation === 'evolve' && (
-        <LabEvolveForm
-          strategyName={selectedStrategy}
-          onSubmit={async (req) => {
-            const result = await labEvolve.mutateAsync(req);
-            handleJobStart(result.job_id, 'evolve');
-          }}
-          disabled={isJobActive}
-        />
-      )}
-
-      {operation === 'optimize' && (
-        <LabOptimizeForm
-          strategyName={selectedStrategy}
-          onSubmit={async (req) => {
-            const result = await labOptimize.mutateAsync(req);
-            handleJobStart(result.job_id, 'optimize');
-          }}
-          disabled={isJobActive}
-        />
-      )}
-
-      {operation === 'improve' && (
-        <LabImproveForm
-          strategyName={selectedStrategy}
-          onSubmit={async (req) => {
-            const result = await labImprove.mutateAsync(req);
-            handleJobStart(result.job_id, 'improve');
-          }}
-          disabled={isJobActive}
-        />
-      )}
-
-      {mutationError && (
-        <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{mutationError.message}</div>
       )}
 
       {activeLabJobId && currentStatus && (

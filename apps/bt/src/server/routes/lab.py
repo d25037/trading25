@@ -7,7 +7,7 @@ Lab API Endpoints
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
@@ -37,6 +37,7 @@ _LAB_TYPE_MAP: dict[str, LabType] = {
     "lab_optimize": "optimize",
     "lab_improve": "improve",
 }
+_LAB_JOB_TYPES = set(_LAB_TYPE_MAP.keys())
 
 _RESULT_CLASS_MAP: dict[str, type[LabResultData]] = {
     "generate": LabGenerateResult,
@@ -196,6 +197,15 @@ async def get_lab_job_status(job_id: str) -> LabJobResponse:
     """Labジョブのステータスを取得"""
     job = _get_lab_job_or_404(job_id)
     return _build_lab_job_response(job)
+
+
+@router.get("/api/lab/jobs", response_model=list[LabJobResponse])
+async def list_lab_jobs(
+    limit: int = Query(default=50, ge=1, le=200),
+) -> list[LabJobResponse]:
+    """Labジョブ一覧を取得（最新順）"""
+    jobs = job_manager.list_jobs(limit=limit, job_types=_LAB_JOB_TYPES)
+    return [_build_lab_job_response(job) for job in jobs]
 
 
 @router.get("/api/lab/jobs/{job_id}/stream")

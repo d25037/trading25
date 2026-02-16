@@ -968,6 +968,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lab/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Lab Jobs
+         * @description Labジョブ一覧を取得（最新順）
+         */
+        get: operations["list_lab_jobs_api_lab_jobs_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/lab/jobs/{job_id}/stream": {
         parameters: {
             query?: never;
@@ -2948,7 +2968,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -3952,7 +3972,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Bycategory */
             byCategory?: {
                 [key: string]: number;
@@ -6395,7 +6415,7 @@ export interface components {
              * @default 0
              */
             dateCount: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /**
              * Averagestocksperday
              * @default 0
@@ -6406,7 +6426,7 @@ export interface components {
         StockDataValidation: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
             /** Missingdates */
             missingDates?: string[];
             /**
@@ -6969,7 +6989,7 @@ export interface components {
         TopixStats: {
             /** Count */
             count: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
         };
         /** ValidationError */
         ValidationError: {
@@ -7094,7 +7114,7 @@ export interface components {
             description?: string | null;
         };
         /** DateRange */
-        src__server__schemas__dataset__DateRange: {
+        src__server__schemas__db__DateRange: {
             /** Min */
             min: string;
             /** Max */
@@ -9909,6 +9929,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LabJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    list_lab_jobs_api_lab_jobs_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabJobResponse"][];
                 };
             };
             /** @description Bad Request */
@@ -12783,6 +12861,10 @@ export interface operations {
             query: {
                 /** @description Comma-separated stock codes (max 100) */
                 codes: string;
+                start_date?: string | null;
+                end_date?: string | null;
+                period_type?: "all" | "FY" | "1Q" | "2Q" | "3Q";
+                actual_only?: boolean;
             };
             header?: never;
             path: {
@@ -12843,7 +12925,12 @@ export interface operations {
     };
     get_dataset_statements_api_dataset__name__statements__code__get: {
         parameters: {
-            query?: never;
+            query?: {
+                start_date?: string | null;
+                end_date?: string | null;
+                period_type?: "all" | "FY" | "1Q" | "2Q" | "3Q";
+                actual_only?: boolean;
+            };
             header?: never;
             path: {
                 name: string;
