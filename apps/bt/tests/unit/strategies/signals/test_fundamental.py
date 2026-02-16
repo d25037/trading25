@@ -11,6 +11,7 @@ import numpy as np
 from src.strategies.signals.fundamental import (
     is_undervalued_by_per,
     is_undervalued_by_pbr,
+    is_high_book_to_market,
     is_growing_eps,
     is_growing_profit,
     is_growing_sales,
@@ -131,6 +132,45 @@ class TestIsUndervaluedByPbr:
         assert isinstance(signal_high, pd.Series)
         # 高い閾値の方がTrue数が多い
         assert signal_high.sum() >= signal_low.sum()
+
+
+class TestIsHighBookToMarket:
+    """is_high_book_to_market()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.close = pd.Series(np.ones(100) * 80.0, index=self.dates)
+        self.bps = pd.Series(np.ones(100) * 100.0, index=self.dates)  # B/M = 1.25
+
+    def test_bm_basic(self):
+        """B/Mシグナル基本テスト"""
+        signal = is_high_book_to_market(self.close, self.bps, threshold=1.0)
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert signal.all()
+
+    def test_bm_close_zero(self):
+        """Close<=0は無効値としてFalse"""
+        close_with_zero = self.close.copy()
+        close_with_zero.iloc[0:10] = 0.0
+        signal = is_high_book_to_market(close_with_zero, self.bps, threshold=1.0)
+        assert not signal.iloc[0:10].any()
+        assert signal.iloc[10:].all()
+
+    def test_bm_threshold_effect(self):
+        """閾値の効果テスト"""
+        signal_low = is_high_book_to_market(self.close, self.bps, threshold=1.0)
+        signal_high = is_high_book_to_market(self.close, self.bps, threshold=2.0)
+        assert signal_low.sum() >= signal_high.sum()
+
+    def test_bm_non_positive_bps(self):
+        """BPS<=0は無効値としてFalse"""
+        bps_with_zero = self.bps.copy()
+        bps_with_zero.iloc[0:10] = 0.0
+        signal = is_high_book_to_market(self.close, bps_with_zero, threshold=1.0)
+        assert not signal.iloc[0:10].any()
+        assert signal.iloc[10:].all()
 
 
 class TestIsGrowingEps:
@@ -952,6 +992,27 @@ class TestConditionParameterPBR:
         assert signal.all()
 
 
+class TestConditionParameterBookToMarket:
+    """B/Mのconditionパラメータテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.close = pd.Series(np.ones(100) * 80.0, index=self.dates)
+        self.bps = pd.Series(np.ones(100) * 100.0, index=self.dates)  # B/M = 1.25
+
+    def test_condition_above_default(self):
+        """above条件（デフォルト）"""
+        signal = is_high_book_to_market(self.close, self.bps, threshold=1.0)
+        assert signal.all()
+
+    def test_condition_below(self):
+        """below条件"""
+        signal = is_high_book_to_market(
+            self.close, self.bps, threshold=2.0, condition="below"
+        )
+        assert signal.all()
+
+
 class TestConditionParameterROE:
     """ROEのconditionパラメータテスト"""
 
@@ -1283,6 +1344,43 @@ class TestExcludeNegativeParameter:
             self.close, self.bps, threshold=1.5, exclude_negative=True
         )
         pd.testing.assert_series_equal(signal_default, signal_explicit)
+
+    def test_bm_exclude_negative_true_default(self):
+        """B/M: exclude_negative=True（デフォルト）で負のB/Mを除外"""
+        close_with_negative = self.close.copy()
+        close_with_negative.iloc[0:20] = -100.0
+
+        signal = is_high_book_to_market(
+            close_with_negative,
+            pd.Series(np.ones(100) * 100.0, index=self.dates),
+            threshold=0.0,
+            condition="below",
+            exclude_negative=True,
+        )
+        assert not signal.iloc[0:20].any()
+
+    def test_bm_exclude_negative_false(self):
+        """B/M: close<=0はexclude_negativeに関係なくFalse"""
+        close_with_negative = self.close.copy()
+        close_with_negative.iloc[0:20] = -100.0
+
+        signal_exclude = is_high_book_to_market(
+            close_with_negative,
+            pd.Series(np.ones(100) * 100.0, index=self.dates),
+            threshold=0.0,
+            condition="below",
+            exclude_negative=True,
+        )
+        signal_include = is_high_book_to_market(
+            close_with_negative,
+            pd.Series(np.ones(100) * 100.0, index=self.dates),
+            threshold=0.0,
+            condition="below",
+            exclude_negative=False,
+        )
+
+        assert not signal_exclude.iloc[0:20].any()
+        assert not signal_include.iloc[0:20].any()
 
 
 # =====================================================================
@@ -2230,6 +2328,17 @@ class TestFundamentalSignalParamsConfig:
         assert params.forward_eps_growth.threshold == 0.1
         assert params.eps_growth.threshold == 0.2
 
+    def test_book_to_market_field_exists(self):
+        """book_to_marketフィールドが正しくパースされること"""
+        from src.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams(
+            book_to_market={"enabled": True, "threshold": 1.2, "condition": "above"}
+        )
+        assert params.book_to_market.enabled is True
+        assert params.book_to_market.threshold == 1.2
+        assert params.book_to_market.condition == "above"
+
     def test_dividend_per_share_growth_field_exists(self):
         """dividend_per_share_growthフィールドが正しくパースされること"""
         from src.models.signals.fundamental import FundamentalSignalParams
@@ -2256,7 +2365,6 @@ class TestFundamentalSignalParamsConfig:
         assert params.simple_fcf_yield_growth.periods == 1
         assert params.cfo_yield_growth.use_floating_shares is True
         assert params.simple_fcf_yield_growth.use_floating_shares is True
-
 
 # =====================================================================
 # 時価総額シグナルテスト（2026-02追加）

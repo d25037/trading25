@@ -109,6 +109,7 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
         <div className="grid grid-cols-8 gap-1.5 p-2">
           <MetricCard label="PER" value={metrics.per} format="times" colorScheme="per" />
           <MetricCard label="PBR" value={metrics.pbr} format="times" colorScheme="pbr" />
+          <MetricCard label="B/M" value={metrics.bookToMarket ?? null} format="times" colorScheme="neutral" />
           <MetricCard label="ROE" value={metrics.roe} format="percent" colorScheme="roe" />
           <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />
 

@@ -302,6 +302,9 @@ class FundamentalsService:
                 "adjustedDividendFy": adjusted_dividend,
                 "per": self._round_or_none(self._calculate_per(display_eps, item.stockPrice)),
                 "pbr": self._round_or_none(self._calculate_pbr(display_bps, item.stockPrice)),
+                "bookToMarket": self._round_or_none(
+                    self._calculate_book_to_market(display_bps, item.stockPrice)
+                ),
             }
         )
 
@@ -500,6 +503,7 @@ class FundamentalsService:
         # Calculate valuation metrics
         per = self._calculate_per(eps, stock_price)
         pbr = self._calculate_pbr(bps, stock_price)
+        book_to_market = self._calculate_book_to_market(bps, stock_price)
 
         # Calculate profitability metrics
         roa = self._calculate_roa(stmt, prefer_consolidated)
@@ -545,6 +549,7 @@ class FundamentalsService:
             adjustedDividendFy=dividend_fy,
             per=self._round_or_none(per),
             pbr=self._round_or_none(pbr),
+            bookToMarket=self._round_or_none(book_to_market),
             roa=self._round_or_none(roa),
             operatingMargin=self._round_or_none(operating_margin),
             netMargin=self._round_or_none(net_margin),
@@ -668,6 +673,14 @@ class FundamentalsService:
         if bps is None or stock_price is None or bps <= 0:
             return None
         return stock_price / bps
+
+    def _calculate_book_to_market(
+        self, bps: float | None, stock_price: float | None
+    ) -> float | None:
+        """Calculate book-to-market ratio (BPS / Close)."""
+        if bps is None or stock_price is None or bps <= 0 or stock_price <= 0:
+            return None
+        return bps / stock_price
 
     def _calculate_simple_fcf(
         self, cfo: float | None, cfi: float | None
