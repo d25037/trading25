@@ -51,7 +51,7 @@ ${CLI_NAME} portfolio create "Growth Stocks" -d "Long-term growth investments"
       }
 
       // Create portfolio
-      const portfolio = await apiClient.createPortfolio({
+      const portfolio = await apiClient.portfolio.createPortfolio({
         name,
         description,
       });

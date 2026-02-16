@@ -7,6 +7,7 @@ import { FundamentalsPanel } from '@/components/Chart/FundamentalsPanel';
 import { useMultiTimeframeChart } from '@/components/Chart/hooks/useMultiTimeframeChart';
 import { MarginPressureChart } from '@/components/Chart/MarginPressureChart';
 import { PPOChart } from '@/components/Chart/PPOChart';
+import { RiskAdjustedReturnChart } from '@/components/Chart/RiskAdjustedReturnChart';
 import { StockChart } from '@/components/Chart/StockChart';
 import { TimeframeSelector } from '@/components/Chart/TimeframeSelector';
 import { TradingValueMAChart } from '@/components/Chart/TradingValueMAChart';
@@ -23,6 +24,7 @@ import type {
   IndicatorValue,
   MarginPressureIndicatorsResponse,
   PPOIndicatorData,
+  RiskAdjustedReturnData,
   TradingValueMAData,
   VolumeComparisonData,
 } from '@/types/chart';
@@ -400,6 +402,37 @@ export function ChartsPage() {
                         <PPOChart
                           data={(chartData[settings.displayTimeframe]?.indicators.ppo as PPOIndicatorData[]) || []}
                           title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} PPO`}
+                        />
+                      </ErrorBoundary>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Risk Adjusted Return Chart (conditionally displayed) */}
+            {settings.showRiskAdjustedReturnChart && (
+              <div className="h-[200px]">
+                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+                  <div className="absolute inset-0 gradient-glass opacity-50" />
+                  <div className="relative z-10 h-full">
+                    <div className="p-4 border-b border-border/30">
+                      <h3 className="text-lg font-semibold text-foreground capitalize">
+                        {settings.displayTimeframe} Risk Adjusted Return
+                      </h3>
+                    </div>
+                    <div className="h-[calc(100%-4rem)]">
+                      <ErrorBoundary>
+                        <RiskAdjustedReturnChart
+                          data={
+                            (chartData[settings.displayTimeframe]?.indicators
+                              .riskAdjustedReturn as RiskAdjustedReturnData[]) || []
+                          }
+                          lookbackPeriod={settings.riskAdjustedReturn.lookbackPeriod}
+                          ratioType={settings.riskAdjustedReturn.ratioType}
+                          threshold={settings.riskAdjustedReturn.threshold}
+                          condition={settings.riskAdjustedReturn.condition}
+                          title={`${settings.displayTimeframe.charAt(0).toUpperCase() + settings.displayTimeframe.slice(1)} Risk Adjusted Return`}
                         />
                       </ErrorBoundary>
                     </div>

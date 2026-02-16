@@ -27,7 +27,7 @@ export async function fetchToyotaTestData(options: TestDataOptions): Promise<voi
       to: to.toISOString().split('T')[0],
     };
 
-    const response = await apiClient.getDailyQuotes('7203', params);
+    const response = await apiClient.jquants.getDailyQuotes('7203', params);
 
     if (response.data && response.data.length > 0) {
       spinner.succeed(chalk.green(`Fetched ${response.data.length} days of Toyota data`));

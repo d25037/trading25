@@ -42,6 +42,7 @@ export class SecureEnvManager {
   private envManager: EnvManager;
   private encryptionKey: Buffer | null = null;
   private config: EncryptionConfig;
+  private hasReportedTokenParseFailure = false;
 
   constructor(
     envPath?: string,
@@ -158,7 +159,13 @@ export class SecureEnvManager {
         'tag' in parsed &&
         'algorithm' in parsed
       );
-    } catch {
+    } catch (error) {
+      if (process.env.NODE_ENV !== 'test' && !this.hasReportedTokenParseFailure) {
+        this.hasReportedTokenParseFailure = true;
+        console.warn(
+          `[SecureEnvManager] Failed to parse encrypted token payload; treating as plain text: ${error instanceof Error ? error.message : String(error)}`
+        );
+      }
       return false;
     }
   }

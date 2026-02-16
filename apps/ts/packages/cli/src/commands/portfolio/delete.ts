@@ -17,18 +17,18 @@ async function findPortfolio(apiClient: ApiClient, nameOrId: string) {
 
   if (Number.isNaN(portfolioId)) {
     // Search by name
-    const response = await apiClient.listPortfolios();
+    const response = await apiClient.portfolio.listPortfolios();
     const found = response.portfolios.find((p: { name: string }) => p.name === nameOrId);
 
     if (!found) {
       throw new CLINotFoundError(`Portfolio not found: ${nameOrId}. List all portfolios with: portfolio list`);
     }
 
-    return apiClient.getPortfolio(found.id);
+    return apiClient.portfolio.getPortfolio(found.id);
   }
 
   // Get by ID
-  return apiClient.getPortfolio(portfolioId);
+  return apiClient.portfolio.getPortfolio(portfolioId);
 }
 
 /**
@@ -52,7 +52,7 @@ function showDeleteWarning(portfolioName: string, itemCount: number): void {
  */
 async function deletePortfolioWithFeedback(
   apiClient: ApiClient,
-  portfolio: Awaited<ReturnType<typeof apiClient.getPortfolio>>,
+  portfolio: Awaited<ReturnType<typeof apiClient.portfolio.getPortfolio>>,
   itemCount: number,
   debug: boolean
 ): Promise<void> {
@@ -60,7 +60,7 @@ async function deletePortfolioWithFeedback(
     console.log(chalk.gray('[DEBUG] Deleting portfolio via API'));
   }
 
-  await apiClient.deletePortfolio(portfolio.id);
+  await apiClient.portfolio.deletePortfolio(portfolio.id);
 
   console.log(chalk.green(`✓ Deleted portfolio: ${chalk.bold(portfolio.name)}`));
   if (itemCount > 0) {

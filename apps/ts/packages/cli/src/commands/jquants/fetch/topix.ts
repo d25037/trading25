@@ -24,7 +24,7 @@ export async function fetchTOPIX(options: FetchOptions): Promise<void> {
     if (options.to) params.to = options.to;
     if (options.date) params.date = options.date;
 
-    const response = await apiClient.getTOPIX(params);
+    const response = await apiClient.jquants.getTOPIX(params);
 
     if (response.topix && response.topix.length > 0) {
       spinner.succeed(chalk.green(`Fetched ${response.topix.length} TOPIX records`));

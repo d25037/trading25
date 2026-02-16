@@ -32,9 +32,9 @@ from .grid_loader import (
 from .param_builder import build_signal_params
 from .scoring import (
     calculate_composite_score,
-    is_valid_metric,
     normalize_and_recalculate_scores,
 )
+from .metrics import collect_metrics as collect_optimization_metrics
 
 # ワーカープロセス間データ共有用（initializer経由で設定）
 _worker_shared_data: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None
@@ -516,7 +516,7 @@ class ParameterOptimizationEngine:
 
         return kelly_portfolio
 
-    def _collect_metrics(self, portfolio: Any) -> Dict[str, float]:
+    def _collect_metrics(self, portfolio: Any) -> Dict[str, float | int]:
         """
         ポートフォリオからメトリクスを収集
 
@@ -524,24 +524,10 @@ class ParameterOptimizationEngine:
             portfolio: VectorBTポートフォリオオブジェクト
 
         Returns:
-            Dict[str, float]: メトリクス名と値のマッピング
+            Dict[str, float | int]: メトリクス名と値のマッピング
         """
-        metric_values: Dict[str, float] = {}
         scoring_weights = self.optimization_config["scoring_weights"]
-
-        for metric in scoring_weights.keys():
-            if metric == "sharpe_ratio":
-                value = portfolio.sharpe_ratio()
-            elif metric == "calmar_ratio":
-                value = portfolio.calmar_ratio()
-            elif metric == "total_return":
-                value = portfolio.total_return()
-            else:
-                continue
-
-            metric_values[metric] = float(value) if is_valid_metric(value) else 0.0
-
-        return metric_values
+        return collect_optimization_metrics(portfolio, scoring_weights)
 
     def _generate_visualization_notebook(
         self, sorted_results: List[Dict], combinations: List[Dict]

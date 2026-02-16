@@ -1,6 +1,19 @@
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 
+const reportedInvalidPackageJsonPaths = new Set<string>();
+
+function reportProjectIndicatorParseError(packageJsonPath: string, error: unknown): void {
+  if (process.env.NODE_ENV === 'test' || reportedInvalidPackageJsonPaths.has(packageJsonPath)) {
+    return;
+  }
+
+  reportedInvalidPackageJsonPaths.add(packageJsonPath);
+  console.warn(
+    `[findProjectRoot] Ignoring invalid package.json at ${packageJsonPath}: ${error instanceof Error ? error.message : String(error)}`
+  );
+}
+
 /**
  * Check if directory contains project indicators
  */
@@ -18,7 +31,8 @@ function checkForProjectIndicators(dir: string): boolean {
       if (packageJson.workspaces) {
         return true;
       }
-    } catch {
+    } catch (error) {
+      reportProjectIndicatorParseError(packageJsonPath, error);
       // Continue searching if package.json is invalid
     }
   }

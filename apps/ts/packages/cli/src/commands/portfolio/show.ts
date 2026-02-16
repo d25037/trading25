@@ -127,17 +127,17 @@ ${CLI_NAME} portfolio show 1
 
       if (Number.isNaN(portfolioId)) {
         // Search by name
-        const response = await apiClient.listPortfolios();
+        const response = await apiClient.portfolio.listPortfolios();
         const found = response.portfolios.find((p: { name: string }) => p.name === nameOrId);
 
         if (!found) {
           throw new CLINotFoundError(`Portfolio not found: ${nameOrId}. List all portfolios with: portfolio list`);
         }
 
-        portfolio = await apiClient.getPortfolio(found.id);
+        portfolio = await apiClient.portfolio.getPortfolio(found.id);
       } else {
         // Get by ID
-        portfolio = await apiClient.getPortfolio(portfolioId);
+        portfolio = await apiClient.portfolio.getPortfolio(portfolioId);
       }
 
       // Display portfolio information

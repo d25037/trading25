@@ -59,6 +59,42 @@ function toJsonViewData(value: unknown): Record<string, unknown> | unknown[] {
   return { value };
 }
 
+function resolveParameterPath(
+  root: unknown,
+  pathParts: string[]
+): { traversed: string[]; value: unknown } | null {
+  let current: unknown = root;
+  const traversed: string[] = [];
+
+  for (const [index, part] of pathParts.entries()) {
+    const currentRecord = asRecord(current);
+    if (!currentRecord) return null;
+    if (part in currentRecord) {
+      current = currentRecord[part];
+      traversed.push(part);
+      continue;
+    }
+
+    // Fallback for payloads that store dotted keys as a single field
+    // (e.g. "fundamental.per") instead of nested objects.
+    const remainingPath = pathParts.slice(index).join('.');
+    if (remainingPath in currentRecord) {
+      current = currentRecord[remainingPath];
+      traversed.push(remainingPath);
+      return { traversed, value: current };
+    }
+
+    return null;
+  }
+
+  return { traversed, value: current };
+}
+
+function shouldExpandArtifactNode(level: number, _value: unknown, field?: string): boolean {
+  if (level < 2) return true;
+  return level === 2 && field === 'effective_parameters';
+}
+
 type BestScore = {
   signalId: string;
   score: number;
@@ -87,28 +123,115 @@ function resolveSignalParameter(
 
   const sectionKey = scope === 'entry' ? 'entry_filter_params' : scope === 'exit' ? 'exit_trigger_params' : null;
   if (!sectionKey) return null;
-
-  let current: unknown = effectiveParameters[sectionKey];
-  const traversed: string[] = [];
-
-  for (const part of paramPathParts) {
-    const currentRecord = asRecord(current);
-    if (!currentRecord || !(part in currentRecord)) {
-      return null;
-    }
-    current = currentRecord[part];
-    traversed.push(part);
-  }
+  const section = effectiveParameters[sectionKey];
+  const resolved = resolveParameterPath(section, paramPathParts);
+  if (!resolved) return null;
 
   return {
-    parameterPath: `${sectionKey}.${traversed.join('.')}`,
-    value: current,
+    parameterPath: `${sectionKey}.${resolved.traversed.join('.')}`,
+    value: resolved.value,
   };
 }
 
 function formatMetaValue(value: string | number | null): string {
   if (value === null || value === undefined || value === '') return '—';
   return String(value);
+}
+
+type ArtifactMetadata = {
+  savedAt: string | null;
+  strategyName: string | null;
+  yamlPath: string | null;
+  shapleyTopN: number | null;
+  shapleyPermutations: number | null;
+  randomSeed: number | null;
+  datasetName: string | null;
+  marketDbName: string | null;
+  portfolioDbName: string | null;
+};
+
+type BestSignalParameter = {
+  signalId: string;
+  signalName: string | null;
+  score: number;
+  scope: string | null;
+  parameterPath: string | null;
+  parameterValue: unknown;
+};
+
+function buildStrategies(files: AttributionArtifactInfo[] | undefined): string[] {
+  if (!files) return [];
+  const set = new Set(files.map((file) => file.strategy_name));
+  return Array.from(set).sort();
+}
+
+function buildFilteredFiles(
+  files: AttributionArtifactInfo[] | undefined,
+  searchQuery: string
+): AttributionArtifactInfo[] {
+  if (!files) return [];
+  if (!searchQuery) return files;
+  const query = searchQuery.toLowerCase();
+  return files.filter(
+    (file) =>
+      file.filename.toLowerCase().includes(query) ||
+      file.strategy_name.toLowerCase().includes(query) ||
+      (file.job_id ?? '').toLowerCase().includes(query)
+  );
+}
+
+function buildMetadata(artifact: Record<string, unknown> | null): ArtifactMetadata {
+  const strategy = asRecord(artifact?.strategy);
+  const runtime = asRecord(artifact?.runtime);
+  const databases = asRecord(artifact?.databases);
+  const marketDb = asRecord(databases?.market_db);
+  const portfolioDb = asRecord(databases?.portfolio_db);
+  return {
+    savedAt: readString(artifact, 'saved_at'),
+    strategyName: readString(strategy, 'name'),
+    yamlPath: readString(strategy, 'yaml_path'),
+    shapleyTopN: readNumber(runtime, 'shapley_top_n'),
+    shapleyPermutations: readNumber(runtime, 'shapley_permutations'),
+    randomSeed: readNumber(runtime, 'random_seed'),
+    datasetName: readString(databases, 'dataset_name'),
+    marketDbName: readString(marketDb, 'name'),
+    portfolioDbName: readString(portfolioDb, 'name'),
+  };
+}
+
+function buildEffectiveParameters(artifact: Record<string, unknown> | null): unknown | null {
+  const strategy = asRecord(artifact?.strategy);
+  const parameters = strategy?.effective_parameters;
+  if (parameters === undefined || parameters === null) return null;
+  return parameters;
+}
+
+function buildBestSignalParameter(artifact: Record<string, unknown> | null): BestSignalParameter | null {
+  const result = asRecord(artifact?.result);
+  const strategy = asRecord(artifact?.strategy);
+  const effectiveParameters = asRecord(strategy?.effective_parameters);
+  const topNSelection = asRecord(result?.top_n_selection);
+  const scores = asArray(topNSelection?.scores)
+    .map((item) => asRecord(item))
+    .filter((item): item is Record<string, unknown> => item !== null);
+
+  const bestScore = selectBestScore(scores);
+  if (!bestScore) return null;
+
+  const signalInfo = asArray(result?.signals)
+    .map((item) => asRecord(item))
+    .find((item) => readString(item, 'signal_id') === bestScore.signalId);
+
+  const resolved = resolveSignalParameter(effectiveParameters, bestScore.signalId);
+
+  return {
+    signalId: bestScore.signalId,
+    signalName: readString(signalInfo ?? null, 'signal_name'),
+    score: bestScore.score,
+    scope: readString(signalInfo ?? null, 'scope'),
+    parameterPath: resolved?.parameterPath ?? null,
+    parameterValue: resolved?.value ?? null,
+  };
 }
 
 type FileListItemProps = {
@@ -154,6 +277,157 @@ function MetadataRow({ label, value }: MetadataRowProps) {
   );
 }
 
+type FileListPanelProps = {
+  isLoadingFiles: boolean;
+  sortedFiles: AttributionArtifactInfo[];
+  showTotalCount: boolean;
+  totalCount: number;
+  selectedFile: AttributionArtifactInfo | null;
+  onSelect: (file: AttributionArtifactInfo) => void;
+};
+
+function FileListPanel({
+  isLoadingFiles,
+  sortedFiles,
+  showTotalCount,
+  totalCount,
+  selectedFile,
+  onSelect,
+}: FileListPanelProps) {
+  if (isLoadingFiles) {
+    return (
+      <div className="flex items-center justify-center h-48">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  if (sortedFiles.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+        <FileJson className="h-10 w-10 mb-2" />
+        <p className="text-sm">No attribution artifacts found</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4 max-h-[680px] overflow-y-auto">
+      <p className="text-sm text-muted-foreground">
+        {sortedFiles.length} files {showTotalCount ? `(${totalCount} total)` : ''}
+      </p>
+      {sortedFiles.map((file) => (
+        <FileListItem
+          key={`${file.strategy_name}/${file.filename}`}
+          file={file}
+          isSelected={selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename}
+          onSelect={() => onSelect(file)}
+        />
+      ))}
+    </div>
+  );
+}
+
+type ArtifactDetailsPanelProps = {
+  selectedFile: AttributionArtifactInfo | null;
+  isLoadingArtifact: boolean;
+  metadata: ArtifactMetadata;
+  bestSignalParameter: BestSignalParameter | null;
+  effectiveParameters: unknown | null;
+  artifactData: { artifact: unknown } | null | undefined;
+};
+
+function ArtifactDetailsPanel({
+  selectedFile,
+  isLoadingArtifact,
+  metadata,
+  bestSignalParameter,
+  effectiveParameters,
+  artifactData,
+}: ArtifactDetailsPanelProps) {
+  if (!selectedFile) {
+    return (
+      <div className="flex flex-col items-center justify-center h-[680px] text-muted-foreground">
+        <FileJson className="h-12 w-12 mb-3" />
+        <p className="text-sm">Select an attribution artifact from the list</p>
+      </div>
+    );
+  }
+
+  if (isLoadingArtifact) {
+    return (
+      <div className="flex items-center justify-center h-[680px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h3 className="font-medium break-all">{selectedFile.filename}</h3>
+        <p className="text-xs text-muted-foreground break-all">
+          {selectedFile.strategy_name} | {formatDate(selectedFile.created_at)} | {formatBytes(selectedFile.size_bytes)}
+        </p>
+      </div>
+
+      <div className="grid gap-2 md:grid-cols-2">
+        <MetadataRow label="Saved At" value={metadata.savedAt} />
+        <MetadataRow label="Strategy" value={metadata.strategyName} />
+        <MetadataRow label="Dataset" value={metadata.datasetName} />
+        <MetadataRow label="YAML Path" value={metadata.yamlPath} />
+        <MetadataRow label="Shapley Top N" value={metadata.shapleyTopN} />
+        <MetadataRow label="Permutations" value={metadata.shapleyPermutations} />
+        <MetadataRow label="Random Seed" value={metadata.randomSeed} />
+        <MetadataRow label="Market DB" value={metadata.marketDbName} />
+        <MetadataRow label="Portfolio DB" value={metadata.portfolioDbName} />
+        <MetadataRow label="Job ID" value={selectedFile.job_id} />
+      </div>
+
+      {bestSignalParameter && (
+        <div className="space-y-2 rounded-md border bg-muted/20 p-3">
+          <h4 className="text-sm font-medium">Best Signal Parameters</h4>
+          <div className="grid gap-2 md:grid-cols-2">
+            <MetadataRow label="Signal ID" value={bestSignalParameter.signalId} />
+            <MetadataRow label="Signal Name" value={bestSignalParameter.signalName} />
+            <MetadataRow label="Scope" value={bestSignalParameter.scope} />
+            <MetadataRow label="Top-N Score" value={bestSignalParameter.score.toFixed(6)} />
+            <MetadataRow label="Parameter Path" value={bestSignalParameter.parameterPath} />
+          </div>
+          <div>
+            <h5 className="mb-2 text-xs font-medium text-muted-foreground">Effective Parameter JSON</h5>
+            <div className="max-h-[260px] overflow-auto rounded-md border bg-background p-3 text-xs">
+              {bestSignalParameter.parameterPath ? (
+                <JsonView data={toJsonViewData(bestSignalParameter.parameterValue)} shouldExpandNode={allExpanded} style={defaultStyles} />
+              ) : (
+                <p className="text-muted-foreground">
+                  Parameter value could not be resolved from strategy.effective_parameters.
+                </p>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {effectiveParameters !== null && (
+        <div>
+          <h4 className="text-sm font-medium mb-2">Effective Parameters</h4>
+          <div className="max-h-[320px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+            <JsonView data={toJsonViewData(effectiveParameters)} shouldExpandNode={allExpanded} style={defaultStyles} />
+          </div>
+        </div>
+      )}
+
+      <div>
+        <h4 className="text-sm font-medium mb-2">JSON</h4>
+        <div className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
+          <JsonView data={toJsonViewData(artifactData?.artifact ?? {})} shouldExpandNode={shouldExpandArtifactNode} style={defaultStyles} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
 export function AttributionArtifactBrowser() {
   const [selectedStrategy, setSelectedStrategy] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -167,23 +441,9 @@ export function AttributionArtifactBrowser() {
     selectedFile?.filename ?? null
   );
 
-  const strategies = useMemo(() => {
-    if (!filesData?.files) return [];
-    const set = new Set(filesData.files.map((file) => file.strategy_name));
-    return Array.from(set).sort();
-  }, [filesData]);
+  const strategies = useMemo(() => buildStrategies(filesData?.files), [filesData?.files]);
 
-  const filteredFiles = useMemo(() => {
-    if (!filesData?.files) return [];
-    if (!searchQuery) return filesData.files;
-    const query = searchQuery.toLowerCase();
-    return filesData.files.filter(
-      (file) =>
-        file.filename.toLowerCase().includes(query) ||
-        file.strategy_name.toLowerCase().includes(query) ||
-        (file.job_id ?? '').toLowerCase().includes(query)
-    );
-  }, [filesData, searchQuery]);
+  const filteredFiles = useMemo(() => buildFilteredFiles(filesData?.files, searchQuery), [filesData?.files, searchQuery]);
 
   const sortedFiles = useMemo(
     () => [...filteredFiles].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime()),
@@ -192,53 +452,11 @@ export function AttributionArtifactBrowser() {
 
   const artifact = useMemo(() => asRecord(artifactData?.artifact), [artifactData]);
 
-  const metadata = useMemo(() => {
-    const strategy = asRecord(artifact?.strategy);
-    const runtime = asRecord(artifact?.runtime);
-    const databases = asRecord(artifact?.databases);
-    const marketDb = asRecord(databases?.market_db);
-    const portfolioDb = asRecord(databases?.portfolio_db);
-    return {
-      savedAt: readString(artifact, 'saved_at'),
-      strategyName: readString(strategy, 'name'),
-      yamlPath: readString(strategy, 'yaml_path'),
-      shapleyTopN: readNumber(runtime, 'shapley_top_n'),
-      shapleyPermutations: readNumber(runtime, 'shapley_permutations'),
-      randomSeed: readNumber(runtime, 'random_seed'),
-      datasetName: readString(databases, 'dataset_name'),
-      marketDbName: readString(marketDb, 'name'),
-      portfolioDbName: readString(portfolioDb, 'name'),
-    };
-  }, [artifact]);
+  const metadata = useMemo(() => buildMetadata(artifact), [artifact]);
 
-  const bestSignalParameter = useMemo(() => {
-    const result = asRecord(artifact?.result);
-    const strategy = asRecord(artifact?.strategy);
-    const effectiveParameters = asRecord(strategy?.effective_parameters);
-    const topNSelection = asRecord(result?.top_n_selection);
-    const scores = asArray(topNSelection?.scores)
-      .map((item) => asRecord(item))
-      .filter((item): item is Record<string, unknown> => item !== null);
+  const effectiveParameters = useMemo(() => buildEffectiveParameters(artifact), [artifact]);
 
-    const bestScore = selectBestScore(scores);
-
-    if (!bestScore) return null;
-
-    const signalInfo = asArray(result?.signals)
-      .map((item) => asRecord(item))
-      .find((item) => readString(item, 'signal_id') === bestScore.signalId);
-
-    const resolved = resolveSignalParameter(effectiveParameters, bestScore.signalId);
-
-    return {
-      signalId: bestScore.signalId,
-      signalName: readString(signalInfo ?? null, 'signal_name'),
-      score: bestScore.score,
-      scope: readString(signalInfo ?? null, 'scope'),
-      parameterPath: resolved?.parameterPath ?? null,
-      parameterValue: resolved?.value ?? null,
-    };
-  }, [artifact]);
+  const bestSignalParameter = useMemo(() => buildBestSignalParameter(artifact), [artifact]);
 
   const totalCount = filesData?.total ?? 0;
   const showTotalCount = totalCount > sortedFiles.length;
@@ -275,104 +493,27 @@ export function AttributionArtifactBrowser() {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <Card className="lg:col-span-1">
           <CardContent className="pt-4">
-            {isLoadingFiles ? (
-              <div className="flex items-center justify-center h-48">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : sortedFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-                <FileJson className="h-10 w-10 mb-2" />
-                <p className="text-sm">No attribution artifacts found</p>
-              </div>
-            ) : (
-              <div className="space-y-4 max-h-[680px] overflow-y-auto">
-                <p className="text-sm text-muted-foreground">
-                  {sortedFiles.length} files {showTotalCount ? `(${totalCount} total)` : ''}
-                </p>
-                {sortedFiles.map((file) => (
-                  <FileListItem
-                    key={`${file.strategy_name}/${file.filename}`}
-                    file={file}
-                    isSelected={
-                      selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename
-                    }
-                    onSelect={() => setSelectedFile(file)}
-                  />
-                ))}
-              </div>
-            )}
+            <FileListPanel
+              isLoadingFiles={isLoadingFiles}
+              sortedFiles={sortedFiles}
+              showTotalCount={showTotalCount}
+              totalCount={totalCount}
+              selectedFile={selectedFile}
+              onSelect={setSelectedFile}
+            />
           </CardContent>
         </Card>
 
         <Card className="lg:col-span-2">
           <CardContent className="pt-4">
-            {!selectedFile ? (
-              <div className="flex flex-col items-center justify-center h-[680px] text-muted-foreground">
-                <FileJson className="h-12 w-12 mb-3" />
-                <p className="text-sm">Select an attribution artifact from the list</p>
-              </div>
-            ) : isLoadingArtifact ? (
-              <div className="flex items-center justify-center h-[680px]">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : (
-              <div className="space-y-4">
-                <div>
-                  <h3 className="font-medium break-all">{selectedFile.filename}</h3>
-                  <p className="text-xs text-muted-foreground break-all">
-                    {selectedFile.strategy_name} | {formatDate(selectedFile.created_at)} |{' '}
-                    {formatBytes(selectedFile.size_bytes)}
-                  </p>
-                </div>
-
-                <div className="grid gap-2 md:grid-cols-2">
-                  <MetadataRow label="Saved At" value={metadata.savedAt} />
-                  <MetadataRow label="Strategy" value={metadata.strategyName} />
-                  <MetadataRow label="Dataset" value={metadata.datasetName} />
-                  <MetadataRow label="YAML Path" value={metadata.yamlPath} />
-                  <MetadataRow label="Shapley Top N" value={metadata.shapleyTopN} />
-                  <MetadataRow label="Permutations" value={metadata.shapleyPermutations} />
-                  <MetadataRow label="Random Seed" value={metadata.randomSeed} />
-                  <MetadataRow label="Market DB" value={metadata.marketDbName} />
-                  <MetadataRow label="Portfolio DB" value={metadata.portfolioDbName} />
-                  <MetadataRow label="Job ID" value={selectedFile.job_id} />
-                </div>
-
-                {bestSignalParameter && (
-                  <div className="space-y-2 rounded-md border bg-muted/20 p-3">
-                    <h4 className="text-sm font-medium">Best Signal Parameters</h4>
-                    <div className="grid gap-2 md:grid-cols-2">
-                      <MetadataRow label="Signal ID" value={bestSignalParameter.signalId} />
-                      <MetadataRow label="Signal Name" value={bestSignalParameter.signalName} />
-                      <MetadataRow label="Scope" value={bestSignalParameter.scope} />
-                      <MetadataRow label="Top-N Score" value={bestSignalParameter.score.toFixed(6)} />
-                      <MetadataRow label="Parameter Path" value={bestSignalParameter.parameterPath} />
-                    </div>
-                    <div>
-                      <h5 className="mb-2 text-xs font-medium text-muted-foreground">Effective Parameter JSON</h5>
-                      <div className="max-h-[260px] overflow-auto rounded-md border bg-background p-3 text-xs">
-                        <JsonView
-                          data={toJsonViewData(bestSignalParameter.parameterValue)}
-                          shouldExpandNode={allExpanded}
-                          style={defaultStyles}
-                        />
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <h4 className="text-sm font-medium mb-2">JSON</h4>
-                  <div className="max-h-[420px] overflow-auto rounded-md border bg-muted/30 p-3 text-xs">
-                    <JsonView
-                      data={toJsonViewData(artifactData?.artifact ?? {})}
-                      shouldExpandNode={(level) => level < 2}
-                      style={defaultStyles}
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
+            <ArtifactDetailsPanel
+              selectedFile={selectedFile}
+              isLoadingArtifact={isLoadingArtifact}
+              metadata={metadata}
+              bestSignalParameter={bestSignalParameter}
+              effectiveParameters={effectiveParameters}
+              artifactData={artifactData}
+            />
           </CardContent>
         </Card>
       </div>

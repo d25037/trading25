@@ -39,6 +39,7 @@ const mockChartStore = {
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
@@ -62,6 +63,12 @@ const mockChartStore = {
     },
     tradingValueMA: {
       period: 15,
+    },
+    riskAdjustedReturn: {
+      lookbackPeriod: 60,
+      ratioType: 'sortino' as const,
+      threshold: 1.0,
+      condition: 'above' as const,
     },
     signalOverlay: {
       enabled: false,
@@ -209,6 +216,17 @@ describe('ChartControls', () => {
 
     await user.click(screen.getByRole('switch', { name: /fundamentals/i }));
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showFundamentalsPanel: false });
+  });
+
+  it('updates risk adjusted return settings', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    const riskAdjustedSwitches = screen.getAllByRole('switch', { name: /risk adjusted return/i });
+    await user.click(riskAdjustedSwitches[0]!);
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
   });
 
   it('shows signal metadata for panel toggles when reference API is available', () => {

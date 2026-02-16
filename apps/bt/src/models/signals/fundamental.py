@@ -149,6 +149,21 @@ class FundamentalSignalParams(BaseSignalParams):
             description="条件（above=閾値以上、below=閾値以下）",
         )
 
+    class DividendPerShareGrowthParams(BaseModel):
+        """1株配当成長率シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="1株配当成長率シグナル有効")
+        threshold: float = Field(
+            default=0.1, gt=0, le=2.0, description="成長率閾値（10%=0.1）"
+        )
+        periods: int = Field(
+            default=1, ge=1, le=20, description="比較期間（決算発表回数、1=前期比）"
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
     # =========================================================================
     # 収益性・キャッシュフロー系パラメータ
     # =========================================================================
@@ -315,6 +330,44 @@ class FundamentalSignalParams(BaseSignalParams):
             description="流通株式を使用（発行済み-自己株式）、Falseなら発行済み全体",
         )
 
+    class CFOYieldGrowthParams(BaseModel):
+        """CFO利回り成長率シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="CFO利回り成長率シグナル有効")
+        threshold: float = Field(
+            default=0.1, gt=0, le=2.0, description="成長率閾値（10%=0.1）"
+        )
+        periods: int = Field(
+            default=1, ge=1, le=20, description="比較期間（決算発表回数、1=前期比）"
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+        use_floating_shares: bool = Field(
+            default=True,
+            description="流通株式を使用（発行済み-自己株式）、Falseなら発行済み全体",
+        )
+
+    class SimpleFCFYieldGrowthParams(BaseModel):
+        """簡易FCF利回り成長率シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="簡易FCF利回り成長率シグナル有効")
+        threshold: float = Field(
+            default=0.1, gt=0, le=2.0, description="成長率閾値（10%=0.1）"
+        )
+        periods: int = Field(
+            default=1, ge=1, le=20, description="比較期間（決算発表回数、1=前期比）"
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+        use_floating_shares: bool = Field(
+            default=True,
+            description="流通株式を使用（発行済み-自己株式）、Falseなら発行済み全体",
+        )
+
     # =========================================================================
     # 親レベルパラメータ
     # =========================================================================
@@ -351,6 +404,10 @@ class FundamentalSignalParams(BaseSignalParams):
     sales_growth: SalesGrowthParams = Field(
         default_factory=SalesGrowthParams, description="Sales成長率シグナル"
     )
+    dividend_per_share_growth: DividendPerShareGrowthParams = Field(
+        default_factory=DividendPerShareGrowthParams,
+        description="1株配当成長率シグナル",
+    )
 
     # 収益性・キャッシュフロー系
     roe: ROEParams = Field(default_factory=ROEParams, description="ROEシグナル")
@@ -374,6 +431,13 @@ class FundamentalSignalParams(BaseSignalParams):
     )
     simple_fcf_yield: SimpleFCFYieldParams = Field(
         default_factory=SimpleFCFYieldParams, description="簡易FCF利回りシグナル"
+    )
+    cfo_yield_growth: CFOYieldGrowthParams = Field(
+        default_factory=CFOYieldGrowthParams, description="CFO利回り成長率シグナル"
+    )
+    simple_fcf_yield_growth: SimpleFCFYieldGrowthParams = Field(
+        default_factory=SimpleFCFYieldGrowthParams,
+        description="簡易FCF利回り成長率シグナル",
     )
 
     # 時価総額系

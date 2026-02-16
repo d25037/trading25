@@ -10,14 +10,14 @@ export async function resolveWatchlist(apiClient: ApiClient, nameOrId: string): 
   const watchlistId = Number.parseInt(nameOrId, 10);
 
   if (Number.isNaN(watchlistId)) {
-    const response = await apiClient.listWatchlists();
+    const response = await apiClient.watchlist.listWatchlists();
     const found = response.watchlists.find((w) => w.name === nameOrId);
     if (!found) {
       throw new CLINotFoundError(`Watchlist not found: ${nameOrId}. List all watchlists with: watchlist list`);
     }
-    return apiClient.getWatchlist(found.id);
+    return apiClient.watchlist.getWatchlist(found.id);
   }
-  return apiClient.getWatchlist(watchlistId);
+  return apiClient.watchlist.getWatchlist(watchlistId);
 }
 
 /**
@@ -31,7 +31,7 @@ export async function resolveWatchlistId(apiClient: ApiClient, nameOrId: string)
     return watchlistId;
   }
 
-  const response = await apiClient.listWatchlists();
+  const response = await apiClient.watchlist.listWatchlists();
   const found = response.watchlists.find((w) => w.name === nameOrId);
   if (!found) {
     throw new CLINotFoundError(`Watchlist not found: ${nameOrId}. List all watchlists with: watchlist list`);

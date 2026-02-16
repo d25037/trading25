@@ -304,4 +304,41 @@ describe('chartStore', () => {
     expect(settings.showMarginPressurePanel).toBe(true);
     expect(settings.showFactorRegressionPanel).toBe(true);
   });
+
+  it('defaults risk adjusted return chart settings', () => {
+    const settings = useChartStore.getState().settings;
+    expect(settings.showRiskAdjustedReturnChart).toBe(false);
+    expect(settings.riskAdjustedReturn).toEqual({
+      lookbackPeriod: 60,
+      ratioType: 'sortino',
+      threshold: 1.0,
+      condition: 'above',
+    });
+  });
+
+  it('sanitizes invalid persisted risk adjusted return settings during rehydrate', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          settings: {
+            showRiskAdjustedReturnChart: 'true',
+            riskAdjustedReturn: {
+              lookbackPeriod: 'x',
+              ratioType: 'invalid',
+              threshold: 'invalid',
+              condition: 'invalid',
+            },
+          },
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const settings = useChartStore.getState().settings;
+    expect(settings.showRiskAdjustedReturnChart).toBe(defaultSettings.showRiskAdjustedReturnChart);
+    expect(settings.riskAdjustedReturn).toEqual(defaultSettings.riskAdjustedReturn);
+  });
 });

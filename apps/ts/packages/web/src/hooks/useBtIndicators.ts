@@ -119,6 +119,15 @@ export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] 
   if (settings.showTradingValueMA) {
     specs.push({ type: 'trading_value_ma', params: { period: settings.tradingValueMA.period } });
   }
+  if (settings.showRiskAdjustedReturnChart) {
+    specs.push({
+      type: 'risk_adjusted_return',
+      params: {
+        lookback_period: settings.riskAdjustedReturn.lookbackPeriod,
+        ratio_type: settings.riskAdjustedReturn.ratioType,
+      },
+    });
+  }
 
   return specs;
 }
@@ -226,6 +235,10 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
   {
     prefix: 'trading_value_ma_',
     transform: (r) => ({ target: 'tradingValueMA', data: transformTradingValueMARecords(r) }),
+  },
+  {
+    prefix: 'risk_adjusted_return_',
+    transform: (r) => ({ target: 'indicator', name: 'riskAdjustedReturn', data: transformSingleValueRecords(r) }),
   },
 ];
 

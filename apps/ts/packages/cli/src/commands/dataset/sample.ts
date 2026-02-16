@@ -144,9 +144,10 @@ ${CLI_NAME} dataset sample prime.db --output sample.json
 
     try {
       const apiClient = new ApiClient();
+      const datasetClient = apiClient.dataset;
 
       spinner.text = `Sampling ${sampleSize} stocks...`;
-      const response = await apiClient.sampleDataset(datasetName, {
+      const response = await datasetClient.sampleDataset(datasetName, {
         size: sampleSize,
         byMarket,
         bySector,

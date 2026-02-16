@@ -77,13 +77,13 @@ function sleep(ms: number): Promise<void> {
  * Poll for job completion
  */
 async function pollJobStatus(
-  apiClient: ApiClient,
+  databaseClient: ApiClient['database'],
   jobId: string,
   spinner: ReturnType<typeof ora>,
   debug: boolean
 ): Promise<SyncJobResponse> {
   while (true) {
-    const job = await apiClient.getSyncJobStatus(jobId);
+    const job = await databaseClient.getSyncJobStatus(jobId);
 
     if (debug) {
       console.log(chalk.gray(`[DEBUG] Job status: ${job.status}`));
@@ -226,10 +226,11 @@ ${CLI_NAME} db sync --debug
 
     try {
       const apiClient = new ApiClient();
+      const databaseClient = apiClient.database;
 
       // Start sync job
       spinner.text = 'Starting sync job...';
-      const createResponse = await apiClient.startSync(mode);
+      const createResponse = await databaseClient.startSync(mode);
 
       if (debug) {
         console.log(chalk.gray(`[DEBUG] Job ID: ${createResponse.jobId}`));
@@ -239,7 +240,7 @@ ${CLI_NAME} db sync --debug
       spinner.text = `Sync job started (${createResponse.estimatedApiCalls} estimated API calls)...`;
 
       // Poll for completion
-      const job = await pollJobStatus(apiClient, createResponse.jobId, spinner, debug ?? false);
+      const job = await pollJobStatus(databaseClient, createResponse.jobId, spinner, debug ?? false);
 
       // Handle result
       handleJobResult(job, mode, spinner);
