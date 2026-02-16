@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from src.agent.models import OptunaConfig, StrategyCandidate
-from src.agent.optuna_optimizer import OptunaOptimizer
+from src.agent.optuna_optimizer import OptunaOptimizer, _extract_enabled_signal_names
 
 
 def _make_candidate(sid: str = "test_strat"):
@@ -76,6 +76,11 @@ class TestOptunaOptimizerInit:
         assert candidate.strategy_id == "base_demo_strategy"
         assert candidate.metadata["base_strategy"] == "demo_strategy"
         assert optimizer.shared_config_dict == {"dataset": "demo"}
+
+    def test_creation_raises_when_optuna_unavailable(self):
+        with patch("src.agent.optuna_optimizer.OPTUNA_AVAILABLE", False):
+            with pytest.raises(ImportError, match="not installed"):
+                OptunaOptimizer()
 
 
 class TestCreateSampler:
@@ -168,6 +173,38 @@ class TestOptimizeFlow:
         ):
             optimizer.optimize("demo_strategy", progress_callback=None)
 
+    def test_optimize_applies_random_add_structure_when_enabled(self):
+        optimizer = _make_optimizer(n_trials=10, target_scope="entry_filter_only")
+        optimizer.config.structure_mode = "random_add"
+        optimizer.config.random_add_entry_signals = 1
+        optimizer.config.random_add_exit_signals = 0
+        optimizer.config.seed = 7
+
+        study = MagicMock()
+        study.optimize.side_effect = lambda *args, **kwargs: None
+        study.best_trial = MagicMock()
+        study.best_value = 0.5
+        study.best_params = {}
+
+        base = _make_candidate("base")
+        augmented = _make_candidate("base_augmented")
+        augmented.entry_filter_params["period_breakout"] = {"enabled": True, "period": 20}
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=base),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
+            patch(
+                "src.agent.optuna_optimizer.apply_random_add_structure",
+                return_value=(augmented, {"entry": ["period_breakout"], "exit": []}),
+            ) as mock_random_add,
+            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer.optimize("demo_strategy", progress_callback=None)
+
+        mock_random_add.assert_called_once()
+        assert "period_breakout" in optimizer.base_entry_params
+
 
 class TestSampleParams:
     def test_samples_numeric_params(self):
@@ -247,6 +284,24 @@ class TestSampleParams:
         mock_trial.suggest_float.assert_not_called()
         mock_trial.suggest_int.assert_not_called()
 
+    def test_samples_nested_fundamental_params(self):
+        optimizer = _make_optimizer()
+        base_entry = {
+            "fundamental": {
+                "enabled": True,
+                "per": {"enabled": True, "threshold": 15.0},
+                "use_adjusted": True,
+            }
+        }
+        mock_trial = MagicMock()
+        mock_trial.suggest_float.return_value = 12.3
+
+        result = optimizer._sample_params(mock_trial, base_entry, "entry")
+
+        assert result["fundamental"]["per"]["threshold"] == 12.3
+        assert result["fundamental"]["per"]["enabled"] is True
+        assert result["fundamental"]["use_adjusted"] is True
+
 
 class TestBuildCandidateFromParams:
     def test_builds_candidate(self):
@@ -287,6 +342,33 @@ class TestBuildCandidateFromParams:
             {"exit_trading_value_range_period": 25}
         )
         assert candidate.exit_trigger_params["trading_value_range"]["period"] == 25
+
+    def test_build_candidate_updates_nested_path_and_ignores_malformed_key(self):
+        optimizer = _make_optimizer()
+        optimizer.base_entry_params = {
+            "fundamental": {
+                "enabled": True,
+                "per": {"enabled": True, "threshold": 10.0},
+            }
+        }
+        optimizer.base_exit_params = {}
+
+        candidate = optimizer._build_candidate_from_params(
+            {
+                "entry_fundamental_per__threshold": 22.5,
+                "malformed": 1.0,
+            }
+        )
+
+        assert candidate.entry_filter_params["fundamental"]["per"]["threshold"] == 22.5
+
+    def test_set_nested_param_creates_missing_child_dict(self):
+        optimizer = _make_optimizer()
+        params: dict[str, object] = {}
+
+        optimizer._set_nested_param(params, "new.path.value", 3.14)
+
+        assert params == {"new": {"path": {"value": 3.14}}}
 
 
 class TestObjective:
@@ -341,6 +423,44 @@ class TestObjective:
             score = optimizer._objective(trial)
         assert score == -999.0
 
+    def test_objective_uses_only_configured_scoring_weights(self):
+        optimizer = _make_optimizer()
+        optimizer.scoring_weights = {"sharpe_ratio": 1.0}
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {}
+
+        trial = MagicMock()
+        trial.number = 2
+
+        portfolio = MagicMock()
+        portfolio.sharpe_ratio.return_value = 1.2
+        portfolio.calmar_ratio.return_value = 99.0
+        portfolio.total_return.return_value = 99.0
+
+        strategy_instance = MagicMock()
+        strategy_instance.run_optimized_backtest_kelly.return_value = (
+            None,
+            portfolio,
+            None,
+            None,
+            None,
+        )
+
+        with (
+            patch.object(
+                optimizer,
+                "_sample_params",
+                side_effect=[{"volume": {"enabled": True}}, {}],
+            ),
+            patch(
+                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                return_value=strategy_instance,
+            ),
+        ):
+            score = optimizer._objective(trial)
+
+        assert score == 1.2
+
 
 class TestGetOptimizationHistory:
     def test_empty_study(self):
@@ -389,3 +509,15 @@ class TestGetOptimizationHistory:
         mock_study.trials = [complete_trial, failed_trial]
         history = optimizer.get_optimization_history(mock_study)
         assert len(history) == 1
+
+
+def test_extract_enabled_signal_names_handles_non_dict_and_disabled() -> None:
+    params = {
+        "buy_and_hold": True,
+        "volume": {"enabled": True},
+        "fundamental": {"enabled": False},
+    }
+
+    enabled = _extract_enabled_signal_names(params)
+
+    assert enabled == {"buy_and_hold", "volume"}
