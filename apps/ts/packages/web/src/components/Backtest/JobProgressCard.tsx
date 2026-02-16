@@ -12,6 +12,14 @@ interface JobProgressCardProps {
   isCancelling?: boolean;
 }
 
+type BacktestResultWithSortino = NonNullable<BacktestJobResponse['result']> & {
+  sortino_ratio?: number | null;
+};
+
+function formatRatio(value: number | null | undefined) {
+  return typeof value === 'number' && Number.isFinite(value) ? value.toFixed(2) : '-';
+}
+
 function StatusIcon({ status }: { status: JobStatus }) {
   switch (status) {
     case 'pending':
@@ -37,6 +45,62 @@ function StatusLabel({ status }: { status: JobStatus }) {
     cancelled: 'Cancelled',
   };
   return <span className="font-medium capitalize">{labels[status]}</span>;
+}
+
+function RunningProgress({ isActive, message }: { isActive: boolean; message: string | null }) {
+  if (!isActive) return null;
+
+  return (
+    <div className="space-y-2">
+      <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
+        <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
+      </div>
+      {message && <p className="text-xs text-muted-foreground">{message}</p>}
+    </div>
+  );
+}
+
+function CompletedSummary({ result }: { result: BacktestResultWithSortino | null }) {
+  if (!result) return null;
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <span className="text-muted-foreground">Return:</span>
+          <span className={`ml-2 font-medium ${result.total_return >= 0 ? 'text-green-500' : 'text-red-500'}`}>
+            {formatPercentage(result.total_return)}
+          </span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Sharpe:</span>
+          <span className="ml-2 font-medium">{formatRatio(result.sharpe_ratio)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Sortino:</span>
+          <span className="ml-2 font-medium">{formatRatio(result.sortino_ratio)}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Max DD:</span>
+          <span className="ml-2 font-medium text-red-500">{formatPercentage(result.max_drawdown, { showSign: false })}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Trades:</span>
+          <span className="ml-2 font-medium">{result.trade_count}</span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function StatusAlert({ job }: { job: BacktestJobResponse }) {
+  if (job.status === 'failed' && job.error) {
+    return <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{job.error}</div>;
+  }
+  if (job.status === 'cancelled') {
+    return <div className="rounded-md bg-orange-500/10 p-3 text-sm text-orange-500">{job.message ?? 'Backtest was cancelled'}</div>;
+  }
+  return null;
 }
 
 export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobProgressCardProps) {
@@ -70,6 +134,9 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
   }
 
   if (!job) return null;
+
+  const completedResult =
+    job.status === 'completed' && job.result ? (job.result as BacktestResultWithSortino) : null;
 
   const formatElapsed = (s: number) => {
     const m = Math.floor(s / 60);
@@ -107,57 +174,9 @@ export function JobProgressCard({ job, isLoading, onCancel, isCancelling }: JobP
         </div>
       </CardHeader>
       <CardContent>
-        {/* Progress bar (indeterminate) */}
-        {isActive && (
-          <div className="space-y-2">
-            <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
-              <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
-            </div>
-            {job.message && <p className="text-xs text-muted-foreground">{job.message}</p>}
-          </div>
-        )}
-
-        {/* Completed result summary */}
-        {job.status === 'completed' && job.result && (
-          <div className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-muted-foreground">Return:</span>
-                <span
-                  className={`ml-2 font-medium ${job.result.total_return >= 0 ? 'text-green-500' : 'text-red-500'}`}
-                >
-                  {formatPercentage(job.result.total_return)}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Sharpe:</span>
-                <span className="ml-2 font-medium">{job.result.sharpe_ratio.toFixed(2)}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Max DD:</span>
-                <span className="ml-2 font-medium text-red-500">
-                  {formatPercentage(job.result.max_drawdown, { showSign: false })}
-                </span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Trades:</span>
-                <span className="ml-2 font-medium">{job.result.trade_count}</span>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* Failed error */}
-        {job.status === 'failed' && job.error && (
-          <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{job.error}</div>
-        )}
-
-        {/* Cancelled */}
-        {job.status === 'cancelled' && (
-          <div className="rounded-md bg-orange-500/10 p-3 text-sm text-orange-500">
-            {job.message ?? 'Backtest was cancelled'}
-          </div>
-        )}
+        <RunningProgress isActive={isActive} message={job.message} />
+        <CompletedSummary result={completedResult} />
+        <StatusAlert job={job} />
       </CardContent>
     </Card>
   );
