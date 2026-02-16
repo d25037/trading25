@@ -1,20 +1,21 @@
 import { BarChart3, Bell, Briefcase, FlaskConical, LineChart, Settings, TrendingUp } from 'lucide-react';
+import { useNavigate, useRouterState } from '@tanstack/react-router';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
-import { useUiStore } from '@/stores/uiStore';
 
 const navigationItems = [
-  { id: 'charts', label: 'Charts', icon: LineChart },
-  { id: 'portfolio', label: 'Portfolio', icon: Briefcase },
-  { id: 'indices', label: 'Indices', icon: TrendingUp },
-  { id: 'analysis', label: 'Analysis', icon: BarChart3 },
-  { id: 'backtest', label: 'Backtest', icon: FlaskConical },
-  { id: 'settings', label: 'Settings', icon: Settings },
+  { path: '/charts', label: 'Charts', icon: LineChart },
+  { path: '/portfolio', label: 'Portfolio', icon: Briefcase },
+  { path: '/indices', label: 'Indices', icon: TrendingUp },
+  { path: '/analysis', label: 'Analysis', icon: BarChart3 },
+  { path: '/backtest', label: 'Backtest', icon: FlaskConical },
+  { path: '/settings', label: 'Settings', icon: Settings },
 ];
 
 export function Header() {
-  const { activeTab, setActiveTab } = useUiStore();
+  const navigate = useNavigate();
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
 
   return (
     <header
@@ -38,13 +39,15 @@ export function Header() {
         <nav className="flex items-center gap-1">
           {navigationItems.map((item) => {
             const Icon = item.icon;
-            const isActive = activeTab === item.id;
+            const isActive = pathname === item.path;
 
             return (
               <button
-                key={item.id}
+                key={item.path}
                 type="button"
-                onClick={() => setActiveTab(item.id)}
+                onClick={() => {
+                  void navigate({ to: item.path });
+                }}
                 className={cn(
                   'flex items-center gap-2 rounded-lg px-3 py-2 text-sm font-medium transition-all duration-200',
                   'hover:scale-[1.02] active:scale-[0.98]',

@@ -1,11 +1,11 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, Briefcase, TrendingUp } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { type HoldingPerformance, usePortfolioPerformance } from '@/hooks/usePortfolioPerformance';
 import { useChartStore } from '@/stores/chartStore';
-import { useUiStore } from '@/stores/uiStore';
 import type { PortfolioItem, PortfolioWithItems } from '@/types/portfolio';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 import { formatRate } from '@/utils/formatters';
@@ -352,8 +352,8 @@ function HoldingsTable({ items, holdingPerformanceMap, onNavigateToChart }: Hold
 }
 
 export function PortfolioDetail({ portfolio, isLoading, error, onPortfolioDeleted }: PortfolioDetailProps) {
+  const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
-  const { setActiveTab } = useUiStore();
 
   const { data: performanceData, isLoading: isPerformanceLoading } = usePortfolioPerformance(portfolio?.id ?? null);
 
@@ -361,7 +361,7 @@ export function PortfolioDetail({ portfolio, isLoading, error, onPortfolioDelete
 
   const handleNavigateToChart = (code: string) => {
     setSelectedSymbol(code);
-    setActiveTab('charts');
+    void navigate({ to: '/charts' });
   };
 
   if (!portfolio && !isLoading && !error) {

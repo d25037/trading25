@@ -135,7 +135,7 @@ test.describe('portfolio CRUD smoke', () => {
   test('@smoke creates and deletes a portfolio from the portfolio page', async ({ page }) => {
     const portfolioName = `Smoke Portfolio ${Date.now()}`;
 
-    await page.goto('/?tab=portfolio');
+    await page.goto('/portfolio');
     await expect(page.getByRole('button', { name: 'New Portfolio' })).toBeVisible();
 
     await page.getByRole('button', { name: 'New Portfolio' }).click();

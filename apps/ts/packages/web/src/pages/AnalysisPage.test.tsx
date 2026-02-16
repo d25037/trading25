@@ -3,20 +3,18 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { AnalysisPage } from './AnalysisPage';
 
+const mockNavigate = vi.fn();
+
 const mockChartStore = {
   setSelectedSymbol: vi.fn(),
-};
-
-const mockUiStore = {
-  setActiveTab: vi.fn(),
 };
 
 vi.mock('@/stores/chartStore', () => ({
   useChartStore: () => mockChartStore,
 }));
 
-vi.mock('@/stores/uiStore', () => ({
-  useUiStore: () => mockUiStore,
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock('@/hooks/useScreening', () => ({
@@ -78,6 +76,6 @@ describe('AnalysisPage', () => {
 
     await user.click(screen.getByText('Screening Row'));
     expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
-    expect(mockUiStore.setActiveTab).toHaveBeenCalledWith('charts');
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
   });
 });
