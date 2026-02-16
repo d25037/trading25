@@ -47,7 +47,7 @@ ${CLI_NAME} watchlist create "Growth" -d "Growth stocks to monitor"
         console.log(chalk.gray('[DEBUG] Creating watchlist via API'));
       }
 
-      const watchlist = await apiClient.createWatchlist({ name, description });
+      const watchlist = await apiClient.watchlist.createWatchlist({ name, description });
 
       console.log(chalk.green(`✓ Created watchlist: ${chalk.bold(watchlist.name)}`));
       console.log(chalk.gray(`  ID: ${watchlist.id}`));

@@ -35,7 +35,7 @@ async function executePortfolioFactorRegression(options: {
       console.log(chalk.gray(`Looking up portfolio by name: ${options.portfolioId}`));
     }
 
-    const { portfolios } = await apiClient.listPortfolios();
+    const { portfolios } = await apiClient.portfolio.listPortfolios();
     const found = portfolios.find((p) => p.name.toLowerCase() === options.portfolioId.toLowerCase());
 
     if (!found) {
@@ -54,7 +54,7 @@ async function executePortfolioFactorRegression(options: {
   const spinner = ora('Analyzing portfolio risk factors via API...').start();
 
   try {
-    const response = await apiClient.getPortfolioFactorRegression({
+    const response = await apiClient.analytics.getPortfolioFactorRegression({
       portfolioId,
       lookbackDays,
     });

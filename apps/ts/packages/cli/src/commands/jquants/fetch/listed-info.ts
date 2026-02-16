@@ -23,7 +23,7 @@ export async function fetchListedInfo(code: string | undefined, options: FetchOp
     if (code) params.code = code;
     if (options.date) params.date = options.date;
 
-    const response = await apiClient.getListedInfo(params);
+    const response = await apiClient.jquants.getListedInfo(params);
 
     if (response.info && response.info.length > 0) {
       spinner.succeed(chalk.green(`Fetched ${response.info.length} stock listings`));

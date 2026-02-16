@@ -67,7 +67,7 @@ ${CLI_NAME} watchlist delete "Tech Stocks" --force
         console.log(chalk.gray('[DEBUG] Deleting watchlist via API'));
       }
 
-      await apiClient.deleteWatchlist(watchlist.id);
+      await apiClient.watchlist.deleteWatchlist(watchlist.id);
 
       console.log(chalk.green(`✓ Deleted watchlist: ${chalk.bold(watchlist.name)}`));
       if (itemCount > 0) {

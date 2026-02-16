@@ -133,9 +133,10 @@ ${CLI_NAME} dataset search prime.db "Toyota Motor" --exact
 
     try {
       const apiClient = new ApiClient();
+      const datasetClient = apiClient.dataset;
 
       spinner.text = `Searching for "${searchTerm}"...`;
-      const response = await apiClient.searchDataset(datasetName, searchTerm, {
+      const response = await datasetClient.searchDataset(datasetName, searchTerm, {
         limit: limitNum,
         exact,
       });

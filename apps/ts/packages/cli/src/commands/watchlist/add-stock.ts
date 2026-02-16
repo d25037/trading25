@@ -53,7 +53,7 @@ ${CLI_NAME} watchlist add-stock "Growth" 6758 -m "Watching for breakout"
       const resolvedId = await resolveWatchlistId(apiClient, watchlistNameOrId);
 
       spinner.text = 'Adding stock to watchlist...';
-      const item = await apiClient.addWatchlistItem(resolvedId, { code, memo });
+      const item = await apiClient.watchlist.addWatchlistItem(resolvedId, { code, memo });
 
       spinner.succeed(chalk.green(`✓ Added ${chalk.bold(item.companyName)} (${code}) to watchlist`));
 
