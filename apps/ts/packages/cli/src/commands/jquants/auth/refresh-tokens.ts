@@ -1,6 +1,6 @@
 /**
- * JQuants Auth - Status Command
- * Display JQuants API v2 authentication status
+ * JQuants Auth - Deprecated Alias Command
+ * Maintains backward compatibility for v1 command name.
  */
 
 import { getProjectEnvPath } from '@trading25/shared/utils/find-project-root';
@@ -25,17 +25,18 @@ export async function statusAction(): Promise<void> {
 }
 
 /**
- * Status command definition (replaces refresh-tokens for v2)
+ * Deprecated alias for status command
  */
 export const refreshTokensCommand = define({
-  name: 'status',
-  description: 'Display JQuants API v2 authentication status',
+  name: 'refresh-tokens',
+  description: 'Deprecated alias of "jquants auth status"',
   args: {},
   examples: `
-# Check API key status
-${CLI_NAME} jquants auth status
+# Deprecated alias (use jquants auth status)
+${CLI_NAME} jquants auth refresh-tokens
   `.trim(),
   run: async () => {
+    console.log(chalk.yellow(`[DEPRECATED] "${CLI_NAME} jquants auth refresh-tokens" is an alias of "status".`));
     await statusAction();
   },
 });

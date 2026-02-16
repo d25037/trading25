@@ -12,9 +12,9 @@ import { statusCommand } from './status.js';
 // Auth group command definition
 const authCommand = define({
   name: 'auth',
-  description: 'Authentication commands for JQuants API',
+  description: 'JQuants API key status and local auth cache operations',
   run: (ctx) => {
-    ctx.log('Available commands: refresh-tokens, status, clear');
+    ctx.log('Available commands: status, clear, refresh-tokens (deprecated alias)');
     ctx.log(`Use "${CLI_NAME} jquants auth <command> --help" for more information`);
   },
 });
@@ -31,7 +31,7 @@ export default async function authCommandRunner(args: string[]): Promise<void> {
   await cli(args, authCommand, {
     name: `${CLI_NAME} jquants auth`,
     version: CLI_VERSION,
-    description: 'Authentication commands for JQuants API',
+    description: 'JQuants API key status and local auth cache operations',
     subCommands,
   });
 }

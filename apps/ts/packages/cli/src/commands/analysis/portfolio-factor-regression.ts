@@ -177,7 +177,7 @@ function handlePortfolioFactorRegressionError(error: unknown): void {
   console.error(chalk.gray('\nTroubleshooting tips:'));
   console.error(chalk.gray('   Ensure the API server is running: uv run bt server --port 3002'));
   console.error(chalk.gray(`   Ensure market.db has indices data: ${CLI_NAME} db sync`));
-  console.error(chalk.gray(`   Ensure the portfolio exists: ${CLI_NAME} portfolio list`));
+  console.error(chalk.gray('   Ensure the portfolio exists (verify in web Portfolio tab or by portfolio ID)'));
   console.error(chalk.gray('   Try with --debug flag for more information'));
 }
 
