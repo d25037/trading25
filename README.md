@@ -54,6 +54,7 @@ bun run cli backtest attribution results <job-id>
 bun run cli backtest attribution cancel <job-id>
 ```
 - 保存先（XDG）: `~/.local/share/trading25/backtest/attribution/<strategy>/`
+- 補足: `portfolio/watchlist` 操作は CLI から web UI（Portfolio タブ）へ移行済み
 
 ### 4) Lab（fundamental 制約付き生成/進化/最適化/改善）
 ```bash
