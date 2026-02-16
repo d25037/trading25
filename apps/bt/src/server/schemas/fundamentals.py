@@ -67,9 +67,6 @@ class FundamentalDataPoint(BaseModel):
     )
     per: float | None = Field(None, description="Price to earnings ratio")
     pbr: float | None = Field(None, description="Price to book ratio")
-    bookToMarket: float | None = Field(
-        None, description="Book-to-Market ratio (BPS / Close)"
-    )
 
     # Profitability metrics
     roa: float | None = Field(None, description="Return on Assets (%)")
