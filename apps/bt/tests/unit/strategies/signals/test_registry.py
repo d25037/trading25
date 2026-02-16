@@ -228,15 +228,6 @@ class TestSignalRegistry:
         assert sig.category == "fundamental"
         assert "statements:SharesOutstanding" in sig.data_requirements
 
-    def test_book_to_market_registered(self) -> None:
-        """book_to_market（B/M）がレジストリに登録されていること"""
-        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.book_to_market"]
-        assert len(matches) == 1
-        sig = matches[0]
-        assert sig.name == "B/M"
-        assert sig.category == "fundamental"
-        assert "statements:BPS" in sig.data_requirements
-
     def test_market_cap_enabled_checker(self) -> None:
         """market_capのenabled_checkerが正しく動作すること"""
         sig = next(s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.market_cap")
@@ -333,36 +324,3 @@ class TestFundamentalAdjustedSelection:
         sig = self._get_signal("fundamental.per")
         built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
         assert built["eps"].equals(df["EPS"])
-
-    def test_book_to_market_uses_adjusted_by_default(self) -> None:
-        params = SignalParams()
-        params.fundamental.book_to_market.enabled = True
-
-        df = pd.DataFrame(
-            {
-                "BPS": [1.0],
-                "AdjustedBPS": [0.5],
-            }
-        )
-        close = pd.Series([100.0])
-
-        sig = self._get_signal("fundamental.book_to_market")
-        built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
-        assert built["bps"].equals(df["AdjustedBPS"])
-
-    def test_book_to_market_adjusted_can_be_disabled(self) -> None:
-        params = SignalParams()
-        params.fundamental.use_adjusted = False
-        params.fundamental.book_to_market.enabled = True
-
-        df = pd.DataFrame(
-            {
-                "BPS": [1.0],
-                "AdjustedBPS": [0.5],
-            }
-        )
-        close = pd.Series([100.0])
-
-        sig = self._get_signal("fundamental.book_to_market")
-        built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
-        assert built["bps"].equals(df["BPS"])

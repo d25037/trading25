@@ -136,7 +136,6 @@ describe('FundamentalsPanel', () => {
           prevCashAndEquivalents: 450,
           cfoToNetProfitRatio: 0.45,
           tradingValueToMarketCapRatio: 33.333333,
-          bookToMarket: 0.56,
         },
         dailyValuation: [{ per: 18, pbr: 1.4, close: 2500, marketCap: 1000000000 }],
         tradingValuePeriod: 20,
@@ -160,7 +159,6 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.stockPrice).toBe(2500);
     expect(metrics?.cfoToNetProfitRatio).toBe(0.45);
     expect(metrics?.tradingValueToMarketCapRatio).toBeCloseTo(33.333333, 5);
-    expect(metrics?.bookToMarket).toBe(0.56);
     expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 20 });
   });
 

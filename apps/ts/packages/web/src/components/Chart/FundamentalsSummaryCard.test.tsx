@@ -17,7 +17,6 @@ const baseMetrics: ApiFundamentalDataPoint = {
   bps: 2250,
   per: 20,
   pbr: 2.7,
-  bookToMarket: 0.37,
   roa: 4.4,
   operatingMargin: 11.1,
   netMargin: 8.9,
@@ -57,10 +56,8 @@ describe('FundamentalsSummaryCard', () => {
 
     expect(screen.getByText('営業CF/純利益')).toBeInTheDocument();
     expect(screen.getByText('時価総額/20日売買代金')).toBeInTheDocument();
-    expect(screen.getByText('B/M')).toBeInTheDocument();
     expect(screen.getByText('1.50x')).toBeInTheDocument();
     expect(screen.getByText('8.33x')).toBeInTheDocument();
-    expect(screen.getByText('0.37x')).toBeInTheDocument();
   });
 
   it('uses 15-day label by default', () => {

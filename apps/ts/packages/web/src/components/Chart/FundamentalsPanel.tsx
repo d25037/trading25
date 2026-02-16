@@ -51,7 +51,6 @@ export function FundamentalsPanel({
       cfoToNetProfitRatio: data.latestMetrics?.cfoToNetProfitRatio ?? fyData.cfoToNetProfitRatio ?? null,
       tradingValueToMarketCapRatio:
         data.latestMetrics?.tradingValueToMarketCapRatio ?? fyData.tradingValueToMarketCapRatio ?? null,
-      bookToMarket: data.latestMetrics?.bookToMarket ?? fyData.bookToMarket ?? null,
     };
 
     const displayActualEps = result.adjustedEps ?? result.eps ?? null;
