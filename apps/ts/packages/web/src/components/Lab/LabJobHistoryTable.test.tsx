@@ -100,7 +100,14 @@ describe('LabJobHistoryTable', () => {
     expect(refreshButton).toBeDisabled();
     expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(1);
 
-    await user.click(screen.getAllByRole('button', { name: 'Monitor' })[0]);
+    const monitorButtons = screen.getAllByRole('button', { name: 'Monitor' });
+    const firstMonitorButton = monitorButtons[0];
+    expect(firstMonitorButton).toBeDefined();
+    if (!firstMonitorButton) {
+      throw new Error('Monitor button not found');
+    }
+
+    await user.click(firstMonitorButton);
     expect(onSelectJob).toHaveBeenCalledWith(jobs[0]);
   });
 });
