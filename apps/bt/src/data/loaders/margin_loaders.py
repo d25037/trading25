@@ -22,6 +22,7 @@ def transform_margin_df(df: pd.DataFrame) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
     カラム名のリネーム、MarginRatio/TotalMargin計算、NaN処理を行う。
+    後方互換として margin_balance (買い残高) も付与する。
     """
     df = df.rename(
         columns={"longMarginVolume": "LongMargin", "shortMarginVolume": "ShortMargin"}
@@ -32,6 +33,8 @@ def transform_margin_df(df: pd.DataFrame) -> pd.DataFrame:
     total = df["LongMargin"] + df["ShortMargin"]
     df["MarginRatio"] = df["ShortMargin"].div(total).fillna(0)
     df["TotalMargin"] = total
+    # Signal registry は margin_balance を参照するため互換カラムを維持
+    df["margin_balance"] = df["LongMargin"]
     return df
 
 
