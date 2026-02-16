@@ -7,133 +7,19 @@
 import random
 import uuid
 import copy
-from typing import Any
+from typing import Any, cast
 
 from loguru import logger
+
+from src.models.signals import SignalParams
 
 from .models import (
     GeneratorConfig,
     SignalConstraints,
     StrategyCandidate,
 )
-from .signal_search_space import PARAM_RANGES
-
-# 利用可能なシグナル定義
-# SignalParamsの属性から自動抽出し、制約情報を追加
-AVAILABLE_SIGNALS: list[SignalConstraints] = [
-    SignalConstraints(
-        name="period_breakout",
-        required_data=[],
-        usage="both",
-        recommended_with=["volume", "bollinger_bands"],
-        category="breakout",
-    ),
-    SignalConstraints(
-        name="ma_breakout",
-        required_data=[],
-        usage="both",
-        recommended_with=["volume", "rsi_threshold"],
-        category="trend",
-    ),
-    SignalConstraints(
-        name="crossover",
-        required_data=[],
-        usage="both",
-        recommended_with=["volume"],
-        category="trend",
-    ),
-    SignalConstraints(
-        name="mean_reversion",
-        required_data=[],
-        usage="both",
-        mutually_exclusive=["period_breakout"],  # トレンドフォローと平均回帰は相反
-        category="oscillator",
-    ),
-    SignalConstraints(
-        name="bollinger_bands",
-        required_data=[],
-        usage="both",
-        recommended_with=["rsi_threshold"],
-        category="volatility",
-    ),
-    SignalConstraints(
-        name="atr_support_break",
-        required_data=[],
-        usage="both",
-        category="volatility",
-    ),
-    SignalConstraints(
-        name="rsi_threshold",
-        required_data=[],
-        usage="both",
-        recommended_with=["volume"],
-        category="oscillator",
-    ),
-    SignalConstraints(
-        name="rsi_spread",
-        required_data=[],
-        usage="both",
-        mutually_exclusive=["rsi_threshold"],  # RSI系は1つで十分
-        category="oscillator",
-    ),
-    SignalConstraints(
-        name="volume",
-        required_data=[],
-        usage="both",
-        category="volume",
-    ),
-    SignalConstraints(
-        name="trading_value",
-        required_data=[],
-        usage="both",
-        mutually_exclusive=["trading_value_range"],
-        category="volume",
-    ),
-    SignalConstraints(
-        name="trading_value_range",
-        required_data=[],
-        usage="both",
-        mutually_exclusive=["trading_value"],
-        category="volume",
-    ),
-    SignalConstraints(
-        name="beta",
-        required_data=["benchmark_data"],
-        usage="entry",  # Entryフィルターとして使用
-        recommended_with=["volume"],
-        category="macro",
-    ),
-    SignalConstraints(
-        name="margin",
-        required_data=["margin_data"],
-        usage="entry",
-        category="macro",
-    ),
-    SignalConstraints(
-        name="index_daily_change",
-        required_data=["benchmark_data"],
-        usage="both",
-        category="macro",
-    ),
-    SignalConstraints(
-        name="index_macd_histogram",
-        required_data=["benchmark_data"],
-        usage="both",
-        category="macro",
-    ),
-    SignalConstraints(
-        name="fundamental",
-        required_data=["statements_data"],
-        usage="entry",
-        category="fundamental",
-    ),
-    # retracement, buy_and_hold も特殊用途のため除外
-]
-
-# シグナル名→制約のマッピング
-SIGNAL_CONSTRAINTS_MAP: dict[str, SignalConstraints] = {
-    s.name: s for s in AVAILABLE_SIGNALS
-}
+from .signal_catalog import AVAILABLE_SIGNALS, SIGNAL_CONSTRAINTS_MAP
+from .signal_search_space import PARAM_RANGES, ParamType
 
 
 class StrategyGenerator:
@@ -365,67 +251,52 @@ class StrategyGenerator:
         if signal_name == "fundamental":
             return self._randomize_fundamental_params(params)
 
-        randomized = params.copy()
+        randomized = copy.deepcopy(params)
         ranges = PARAM_RANGES.get(signal_name, {})
+        if not ranges:
+            return randomized
 
-        for param_name in params:
-            # enabled, カテゴリカルパラメータはスキップ
-            if param_name == "enabled":
-                continue
-
-            if param_name in ranges:
-                min_val, max_val, param_type = ranges[param_name]
-
-                if param_type == "int":
-                    randomized[param_name] = random.randint(int(min_val), int(max_val))
-                else:  # float
-                    randomized[param_name] = random.uniform(min_val, max_val)
-
+        self._randomize_nested_params(randomized, ranges)
         return randomized
 
     def _randomize_fundamental_params(self, params: dict[str, Any]) -> dict[str, Any]:
         """fundamental ネスト構造のしきい値をランダム化"""
         randomized = copy.deepcopy(params)
+        ranges = PARAM_RANGES.get("fundamental", {})
+        self._randomize_nested_params(randomized, ranges, enabled_gated=True)
+        return randomized
 
-        ranges: dict[str, dict[str, tuple[float, float, str]]] = {
-            "per": {"threshold": (5.0, 40.0, "float")},
-            "pbr": {"threshold": (0.3, 5.0, "float")},
-            "peg_ratio": {"threshold": (0.3, 3.0, "float")},
-            "forward_eps_growth": {"threshold": (0.02, 0.5, "float")},
-            "eps_growth": {"threshold": (0.02, 0.5, "float"), "periods": (1, 8, "int")},
-            "roe": {"threshold": (3.0, 25.0, "float")},
-            "roa": {"threshold": (2.0, 15.0, "float")},
-            "operating_margin": {"threshold": (3.0, 30.0, "float")},
-            "dividend_yield": {"threshold": (0.5, 8.0, "float")},
-            "dividend_per_share_growth": {
-                "threshold": (0.02, 0.5, "float"),
-                "periods": (1, 8, "int"),
-            },
-            "cfo_yield_growth": {
-                "threshold": (0.02, 0.5, "float"),
-                "periods": (1, 8, "int"),
-            },
-            "simple_fcf_yield_growth": {
-                "threshold": (0.02, 0.5, "float"),
-                "periods": (1, 8, "int"),
-            },
-            "market_cap": {"threshold": (50.0, 5000.0, "float")},
-        }
-
-        for field_name, field_ranges in ranges.items():
-            field_value = randomized.get(field_name)
-            if not isinstance(field_value, dict) or not field_value.get("enabled"):
+    def _randomize_nested_params(
+        self,
+        params: dict[str, Any],
+        ranges: dict[str, tuple[float, float, ParamType]],
+        prefix: str = "",
+        enabled_gated: bool = False,
+    ) -> None:
+        for key, value in params.items():
+            if key == "enabled":
                 continue
 
-            for param_name, (min_val, max_val, param_type) in field_ranges.items():
-                if param_name not in field_value:
+            param_name = f"{prefix}.{key}" if prefix else key
+            if isinstance(value, dict):
+                if enabled_gated and "enabled" in value and not bool(value["enabled"]):
                     continue
-                if param_type == "int":
-                    field_value[param_name] = random.randint(int(min_val), int(max_val))
-                else:
-                    field_value[param_name] = random.uniform(min_val, max_val)
+                self._randomize_nested_params(
+                    value,
+                    ranges,
+                    prefix=param_name,
+                    enabled_gated=enabled_gated,
+                )
+                continue
 
-        return randomized
+            if param_name not in ranges:
+                continue
+
+            min_val, max_val, param_type = ranges[param_name]
+            if param_type == "int":
+                params[key] = random.randint(int(min_val), int(max_val))
+            else:
+                params[key] = random.uniform(min_val, max_val)
 
     def _get_default_params(self, signal_name: str, usage_type: str) -> dict[str, Any]:
         """
@@ -529,107 +400,53 @@ class StrategyGenerator:
             "fundamental": self._get_default_fundamental_params(usage_type),
         }
 
-        return signal_defaults.get(signal_name, {})
+        if signal_name in signal_defaults:
+            return signal_defaults[signal_name]
+
+        # 新規シグナルは SignalParams のデフォルト定義から自動取得
+        return self._get_signal_model_defaults(signal_name)
 
     def _get_default_fundamental_params(self, usage_type: str) -> dict[str, Any]:
         """fundamental 用のネストパラメータを生成"""
-        if usage_type != "entry":
-            return {
-                "use_adjusted": True,
-                "period_type": "FY",
-                "per": {
-                    "enabled": False,
-                    "threshold": 20.0,
-                    "condition": "below",
-                    "exclude_negative": True,
-                },
-            }
+        defaults = self._get_signal_model_defaults("fundamental")
+        if not defaults:
+            return {}
 
-        options: dict[str, dict[str, Any]] = {
-            "per": {
-                "enabled": False,
-                "threshold": 15.0,
-                "condition": "below",
-                "exclude_negative": True,
-            },
-            "pbr": {
-                "enabled": False,
-                "threshold": 1.2,
-                "condition": "below",
-                "exclude_negative": True,
-            },
-            "peg_ratio": {
-                "enabled": False,
-                "threshold": 1.2,
-                "condition": "below",
-            },
-            "forward_eps_growth": {
-                "enabled": False,
-                "threshold": 0.1,
-                "condition": "above",
-            },
-            "eps_growth": {
-                "enabled": False,
-                "threshold": 0.1,
-                "periods": 1,
-                "condition": "above",
-            },
-            "roe": {
-                "enabled": False,
-                "threshold": 10.0,
-                "condition": "above",
-            },
-            "roa": {
-                "enabled": False,
-                "threshold": 5.0,
-                "condition": "above",
-            },
-            "operating_margin": {
-                "enabled": False,
-                "threshold": 10.0,
-                "condition": "above",
-            },
-            "dividend_yield": {
-                "enabled": False,
-                "threshold": 2.0,
-                "condition": "above",
-            },
-            "dividend_per_share_growth": {
-                "enabled": False,
-                "threshold": 0.1,
-                "periods": 1,
-                "condition": "above",
-            },
-            "cfo_yield_growth": {
-                "enabled": False,
-                "threshold": 0.1,
-                "periods": 1,
-                "condition": "above",
-                "use_floating_shares": True,
-            },
-            "simple_fcf_yield_growth": {
-                "enabled": False,
-                "threshold": 0.1,
-                "periods": 1,
-                "condition": "above",
-                "use_floating_shares": True,
-            },
-            "market_cap": {
-                "enabled": False,
-                "threshold": 300.0,
-                "condition": "above",
-                "use_floating_shares": True,
-            },
-        }
+        child_keys = self._list_enable_children(defaults)
+        for key in child_keys:
+            child = defaults.get(key)
+            if isinstance(child, dict):
+                child["enabled"] = False
 
-        selected_key = random.choice(list(options.keys()))
-        options[selected_key]["enabled"] = True
+        if usage_type == "entry" and child_keys:
+            selected_key = random.choice(child_keys)
+            selected = defaults.get(selected_key)
+            if isinstance(selected, dict):
+                selected["enabled"] = True
 
-        return {
-            "use_adjusted": True,
-            "period_type": "FY",
-            **options,
-        }
+        return defaults
+
+    def _get_signal_model_defaults(self, signal_name: str) -> dict[str, Any]:
+        """SignalParams からシグナルのデフォルト辞書を取得する。"""
+        field_info = SignalParams.model_fields.get(signal_name)
+        if field_info is None:
+            return {}
+
+        default_value = field_info.get_default(call_default_factory=True)
+        if default_value is None:
+            return {}
+        if isinstance(default_value, dict):
+            return copy.deepcopy(default_value)
+        if hasattr(default_value, "model_dump"):
+            return cast(dict[str, Any], default_value.model_dump())
+        return {}
+
+    def _list_enable_children(self, params: dict[str, Any]) -> list[str]:
+        keys: list[str] = []
+        for key, value in params.items():
+            if isinstance(value, dict) and "enabled" in value:
+                keys.append(key)
+        return keys
 
     def generate_from_template(
         self, template_signals: dict[str, list[str]], n_variations: int = 10
