@@ -210,7 +210,7 @@ class LabService:
                 "timeframe": timeframe,
                 "dataset": dataset,
             },
-            n_jobs=1,
+            n_jobs=-1,
         )
         results = evaluator.evaluate_batch(candidates, top_k=top)
 
@@ -318,7 +318,7 @@ class LabService:
         config = EvolutionConfig(
             population_size=population,
             generations=generations,
-            n_jobs=1,
+            n_jobs=-1,
             entry_filter_only=resolved_target_scope == "entry_filter_only",
             target_scope=resolved_target_scope,
             allowed_categories=resolved_categories,
@@ -525,7 +525,7 @@ class LabService:
         config = OptunaConfig(
             n_trials=trials,
             sampler=sampler,
-            n_jobs=1,
+            n_jobs=-1,
             entry_filter_only=resolved_target_scope == "entry_filter_only",
             target_scope=resolved_target_scope,
             allowed_categories=allowed_categories,

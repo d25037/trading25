@@ -1410,6 +1410,7 @@ class TestLabServiceSyncMethods:
         assert result["total_generated"] == 10
         assert result["saved_strategy_path"] == "/tmp/saved.yaml"
         assert len(result["results"]) == 1
+        assert MockEval.call_args.kwargs["n_jobs"] == -1
         service._executor.shutdown(wait=False)
 
     def test_execute_generate_sync_no_save(self) -> None:
@@ -1528,6 +1529,7 @@ class TestLabServiceSyncMethods:
         assert len(result["history"]) == 2
         assert result["saved_strategy_path"] == "/tmp/evo.yaml"
         config = MockEvolver.call_args.kwargs["config"]
+        assert config.n_jobs == -1
         assert config.entry_filter_only is True
         assert config.target_scope == "entry_filter_only"
         assert config.allowed_categories == ["fundamental"]
@@ -1611,6 +1613,7 @@ class TestLabServiceSyncMethods:
         assert result["total_trials"] == 2
         assert result["saved_strategy_path"] == "/tmp/opt.yaml"
         config = MockOpt.call_args.kwargs["config"]
+        assert config.n_jobs == -1
         assert config.entry_filter_only is True
         assert config.target_scope == "entry_filter_only"
         assert config.allowed_categories == ["fundamental"]
