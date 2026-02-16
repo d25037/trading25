@@ -27,6 +27,7 @@ from src.server.schemas.backtest import (
     BacktestJobResponse,
     BacktestRequest,
     BacktestResultResponse,
+    BacktestResultSummary,
     HtmlFileContentResponse,
     HtmlFileDeleteResponse,
     HtmlFileInfo,
@@ -41,6 +42,7 @@ from src.server.schemas.backtest import (
     SignalAttributionResultResponse,
 )
 from src.server.services.backtest_attribution_service import backtest_attribution_service
+from src.server.services.backtest_result_summary import resolve_backtest_result_summary
 from src.server.services.backtest_service import backtest_service
 from src.server.services.job_manager import JobInfo, job_manager
 from src.server.services.sse_manager import sse_manager
@@ -49,8 +51,27 @@ router = APIRouter(tags=["Backtest"])
 _ATTRIBUTION_JOB_TYPE = "backtest_attribution"
 
 
+def _resolve_job_backtest_summary(job: JobInfo) -> BacktestResultSummary | None:
+    """ジョブ情報から成果物SoTベースのサマリーを解決"""
+    fallback = (
+        job.result
+        if job.result is not None
+        else (job.raw_result if isinstance(job.raw_result, dict) else None)
+    )
+    summary = resolve_backtest_result_summary(html_path=job.html_path, fallback=fallback)
+    if summary is not None:
+        job.result = summary
+    return summary
+
+
 def _build_backtest_job_response(job: JobInfo) -> BacktestJobResponse:
     """JobInfoからBacktestJobResponseを構築"""
+    result_summary = job.result
+    if job.status == JobStatus.COMPLETED:
+        resolved = _resolve_job_backtest_summary(job)
+        if resolved is not None:
+            result_summary = resolved
+
     return BacktestJobResponse(
         job_id=job.job_id,
         status=job.status,
@@ -60,7 +81,7 @@ def _build_backtest_job_response(job: JobInfo) -> BacktestJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
-        result=job.result,
+        result=result_summary,
     )
 
 
@@ -194,7 +215,8 @@ async def get_result(job_id: str, include_html: bool = False) -> BacktestResultR
             detail=f"ジョブが完了していません（状態: {job.status}）",
         )
 
-    if job.result is None:
+    summary = _resolve_job_backtest_summary(job)
+    if summary is None:
         raise HTTPException(status_code=500, detail="結果がありません")
 
     # HTMLコンテンツを読み込み（オプション）
@@ -212,7 +234,7 @@ async def get_result(job_id: str, include_html: bool = False) -> BacktestResultR
         job_id=job.job_id,
         strategy_name=job.strategy_name,
         dataset_name=job.dataset_name or "unknown",
-        summary=job.result,
+        summary=summary,
         execution_time=job.execution_time or 0.0,
         html_content=html_content,
         created_at=job.created_at,
