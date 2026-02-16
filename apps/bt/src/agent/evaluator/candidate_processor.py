@@ -10,6 +10,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from src.data.access.mode import data_access_mode_context
 from src.models.config import SharedConfig
 from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
@@ -52,52 +53,53 @@ def evaluate_single_candidate(
         entry_params = SignalParams(**candidate.entry_filter_params)
         exit_params = SignalParams(**candidate.exit_trigger_params)
 
-        # SharedConfig構築（候補のshared_configをマージ）
-        merged_config = {**shared_config_dict, **candidate.shared_config}
+        with data_access_mode_context("direct"):
+            # SharedConfig構築（候補のshared_configをマージ）
+            merged_config = {**shared_config_dict, **candidate.shared_config}
 
-        # 事前取得した銘柄リストを設定（ProcessPoolExecutor対応）
-        # 並列実行では各ワーカーが独自のメモリ空間を持つため、
-        # DataCacheが機能せずAPIを何度も叩く問題を回避
-        if pre_fetched_stock_codes is not None:
-            merged_config["stock_codes"] = pre_fetched_stock_codes
+            # 事前取得した銘柄リストを設定（ProcessPoolExecutor対応）
+            # 並列実行では各ワーカーが独自のメモリ空間を持つため、
+            # DataCacheが機能せずAPIを何度も叩く問題を回避
+            if pre_fetched_stock_codes is not None:
+                merged_config["stock_codes"] = pre_fetched_stock_codes
 
-        shared_config = SharedConfig(**merged_config)
+            shared_config = SharedConfig(**merged_config)
 
-        # 事前取得OHLCVデータをDataFrameに復元
-        restored_ohlcv_data: dict[str, dict[str, pd.DataFrame]] | None = None
-        if pre_fetched_ohlcv_data is not None:
-            restored_ohlcv_data = convert_dict_to_dataframes(pre_fetched_ohlcv_data)
+            # 事前取得OHLCVデータをDataFrameに復元
+            restored_ohlcv_data: dict[str, dict[str, pd.DataFrame]] | None = None
+            if pre_fetched_ohlcv_data is not None:
+                restored_ohlcv_data = convert_dict_to_dataframes(pre_fetched_ohlcv_data)
 
-        # 事前取得ベンチマークデータをDataFrameに復元
-        restored_benchmark_data: pd.DataFrame | None = None
-        if pre_fetched_benchmark_data is not None:
-            restored_benchmark_data = pd.DataFrame(
-                data=pre_fetched_benchmark_data["data"],
-                index=pd.to_datetime(pre_fetched_benchmark_data["index"]),
-                columns=pre_fetched_benchmark_data["columns"],
+            # 事前取得ベンチマークデータをDataFrameに復元
+            restored_benchmark_data: pd.DataFrame | None = None
+            if pre_fetched_benchmark_data is not None:
+                restored_benchmark_data = pd.DataFrame(
+                    data=pre_fetched_benchmark_data["data"],
+                    index=pd.to_datetime(pre_fetched_benchmark_data["index"]),
+                    columns=pre_fetched_benchmark_data["columns"],
+                )
+
+            # 戦略インスタンス作成
+            strategy = YamlConfigurableStrategy(
+                shared_config=shared_config,
+                entry_filter_params=entry_params,
+                exit_trigger_params=exit_params,
             )
 
-        # 戦略インスタンス作成
-        strategy = YamlConfigurableStrategy(
-            shared_config=shared_config,
-            entry_filter_params=entry_params,
-            exit_trigger_params=exit_params,
-        )
+            # 事前取得OHLCVデータを設定（APIスキップ）
+            if restored_ohlcv_data is not None:
+                strategy.multi_data_dict = restored_ohlcv_data
 
-        # 事前取得OHLCVデータを設定（APIスキップ）
-        if restored_ohlcv_data is not None:
-            strategy.multi_data_dict = restored_ohlcv_data
+            # 事前取得ベンチマークデータを設定（APIスキップ）
+            if restored_benchmark_data is not None:
+                strategy.benchmark_data = restored_benchmark_data
 
-        # 事前取得ベンチマークデータを設定（APIスキップ）
-        if restored_benchmark_data is not None:
-            strategy.benchmark_data = restored_benchmark_data
-
-        # Kelly基準バックテスト実行
-        _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
-            kelly_fraction=shared_config.kelly_fraction,
-            min_allocation=shared_config.min_allocation,
-            max_allocation=shared_config.max_allocation,
-        )
+            # Kelly基準バックテスト実行
+            _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
+                kelly_fraction=shared_config.kelly_fraction,
+                min_allocation=shared_config.min_allocation,
+                max_allocation=shared_config.max_allocation,
+            )
 
         # メトリクス抽出
         sharpe = portfolio.sharpe_ratio()

@@ -127,7 +127,7 @@ class TestOptimizeFlow:
 
         def fake_optimize(_objective, n_trials, n_jobs, show_progress_bar, callbacks):
             assert n_trials == 10
-            assert n_jobs == 1
+            assert n_jobs == -1
             assert show_progress_bar is True
             for cb in callbacks:
                 cb(study, trial)

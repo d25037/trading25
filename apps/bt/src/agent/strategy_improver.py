@@ -11,6 +11,7 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from src.data.access.mode import data_access_mode_context
 from src.models.config import SharedConfig
 from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
@@ -74,24 +75,25 @@ class StrategyImprover:
         if self.shared_config_dict is None:
             self.shared_config_dict = config_loader.merge_shared_config(strategy_config)
 
-        # SignalParams構築
-        entry_params = SignalParams(**strategy_config.get("entry_filter_params", {}))
-        exit_params = SignalParams(**strategy_config.get("exit_trigger_params", {}))
-        shared_config = SharedConfig(**self.shared_config_dict)
+        with data_access_mode_context("direct"):
+            # SignalParams構築
+            entry_params = SignalParams(**strategy_config.get("entry_filter_params", {}))
+            exit_params = SignalParams(**strategy_config.get("exit_trigger_params", {}))
+            shared_config = SharedConfig(**self.shared_config_dict)
 
-        # 戦略インスタンス作成
-        strategy = YamlConfigurableStrategy(
-            shared_config=shared_config,
-            entry_filter_params=entry_params,
-            exit_trigger_params=exit_params,
-        )
+            # 戦略インスタンス作成
+            strategy = YamlConfigurableStrategy(
+                shared_config=shared_config,
+                entry_filter_params=entry_params,
+                exit_trigger_params=exit_params,
+            )
 
-        # バックテスト実行
-        _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
-            kelly_fraction=shared_config.kelly_fraction,
-            min_allocation=shared_config.min_allocation,
-            max_allocation=shared_config.max_allocation,
-        )
+            # バックテスト実行
+            _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
+                kelly_fraction=shared_config.kelly_fraction,
+                min_allocation=shared_config.min_allocation,
+                max_allocation=shared_config.max_allocation,
+            )
 
         # 弱点分析
         report = self._analyze_portfolio(portfolio, strategy_name)

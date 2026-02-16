@@ -30,6 +30,7 @@ except ImportError:
     OPTUNA_AVAILABLE = False
     optuna_runtime = None  # type: ignore
 
+from src.data.access.mode import data_access_mode_context
 from src.models.config import SharedConfig
 from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
@@ -195,7 +196,7 @@ class OptunaOptimizer:
         study.optimize(
             self._objective,
             n_trials=self.config.n_trials,
-            n_jobs=1,  # バックテストは内部で並列化しているため
+            n_jobs=self.config.n_jobs,
             show_progress_bar=True,
             callbacks=callbacks,
         )
@@ -279,22 +280,23 @@ class OptunaOptimizer:
             entry_signal_params = SignalParams(**entry_params)
             exit_signal_params = SignalParams(**exit_params)
 
-            # SharedConfig構築
-            shared_config = SharedConfig(**self.shared_config_dict)
+            with data_access_mode_context("direct"):
+                # SharedConfig構築
+                shared_config = SharedConfig(**self.shared_config_dict)
 
-            # 戦略インスタンス作成
-            strategy = YamlConfigurableStrategy(
-                shared_config=shared_config,
-                entry_filter_params=entry_signal_params,
-                exit_trigger_params=exit_signal_params,
-            )
+                # 戦略インスタンス作成
+                strategy = YamlConfigurableStrategy(
+                    shared_config=shared_config,
+                    entry_filter_params=entry_signal_params,
+                    exit_trigger_params=exit_signal_params,
+                )
 
-            # Kelly基準バックテスト実行
-            _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
-                kelly_fraction=shared_config.kelly_fraction,
-                min_allocation=shared_config.min_allocation,
-                max_allocation=shared_config.max_allocation,
-            )
+                # Kelly基準バックテスト実行
+                _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
+                    kelly_fraction=shared_config.kelly_fraction,
+                    min_allocation=shared_config.min_allocation,
+                    max_allocation=shared_config.max_allocation,
+                )
 
             # メトリクス抽出
             sharpe = portfolio.sharpe_ratio()
