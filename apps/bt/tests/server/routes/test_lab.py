@@ -438,6 +438,32 @@ class TestLabEndpoints:
         assert data["strategy_name"] == "test_strategy"
         assert data["result_data"] is None
 
+    def test_list_lab_jobs_filters_non_lab_jobs(self, client: TestClient) -> None:
+        """一覧APIはLabジョブのみ返す"""
+        lab_job_id = job_manager.create_job("list_target", job_type="lab_generate")
+        non_lab_job_id = job_manager.create_job("list_target", job_type="backtest")
+
+        response = client.get("/api/lab/jobs?limit=50")
+        assert response.status_code == 200
+        data = response.json()
+        listed_ids = {item["job_id"] for item in data}
+
+        assert lab_job_id in listed_ids
+        assert non_lab_job_id not in listed_ids
+
+    def test_list_lab_jobs_respects_limit(self, client: TestClient) -> None:
+        """一覧APIはlimit件数を守る"""
+        older_lab_id = job_manager.create_job("limit_old", job_type="lab_generate")
+        newer_lab_id = job_manager.create_job("limit_new", job_type="lab_optimize")
+
+        response = client.get("/api/lab/jobs?limit=1")
+        assert response.status_code == 200
+        data = response.json()
+
+        assert len(data) == 1
+        assert data[0]["job_id"] == newer_lab_id
+        assert data[0]["job_id"] != older_lab_id
+
     def test_get_lab_job_with_result(self, client: TestClient) -> None:
         """結果付きLabジョブが取得できる"""
         job_id = job_manager.create_job("test_strategy", job_type="lab_generate")

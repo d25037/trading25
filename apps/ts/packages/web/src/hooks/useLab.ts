@@ -11,8 +11,14 @@ import { logger } from '@/utils/logger';
 
 export const labKeys = {
   all: ['lab'] as const,
+  jobsAll: () => [...labKeys.all, 'jobs'] as const,
+  jobs: (limit?: number) => [...labKeys.jobsAll(), limit] as const,
   job: (jobId: string) => [...labKeys.all, 'job', jobId] as const,
 };
+
+function fetchLabJobs(limit = 50): Promise<LabJobResponse[]> {
+  return apiGet<LabJobResponse[]>(`/api/lab/jobs?limit=${limit}`);
+}
 
 function fetchLabJobStatus(jobId: string): Promise<LabJobResponse> {
   return apiGet<LabJobResponse>(`/api/lab/jobs/${encodeURIComponent(jobId)}`);
@@ -45,6 +51,7 @@ export function useLabGenerate() {
     mutationFn: postLabGenerate,
     onSuccess: (data) => {
       logger.debug('Lab generate started', { jobId: data.job_id });
+      queryClient.invalidateQueries({ queryKey: labKeys.jobsAll() });
       queryClient.invalidateQueries({ queryKey: labKeys.job(data.job_id) });
     },
     onError: (error) => {
@@ -60,6 +67,7 @@ export function useLabEvolve() {
     mutationFn: postLabEvolve,
     onSuccess: (data) => {
       logger.debug('Lab evolve started', { jobId: data.job_id });
+      queryClient.invalidateQueries({ queryKey: labKeys.jobsAll() });
       queryClient.invalidateQueries({ queryKey: labKeys.job(data.job_id) });
     },
     onError: (error) => {
@@ -75,6 +83,7 @@ export function useLabOptimize() {
     mutationFn: postLabOptimize,
     onSuccess: (data) => {
       logger.debug('Lab optimize started', { jobId: data.job_id });
+      queryClient.invalidateQueries({ queryKey: labKeys.jobsAll() });
       queryClient.invalidateQueries({ queryKey: labKeys.job(data.job_id) });
     },
     onError: (error) => {
@@ -90,6 +99,7 @@ export function useLabImprove() {
     mutationFn: postLabImprove,
     onSuccess: (data) => {
       logger.debug('Lab improve started', { jobId: data.job_id });
+      queryClient.invalidateQueries({ queryKey: labKeys.jobsAll() });
       queryClient.invalidateQueries({ queryKey: labKeys.job(data.job_id) });
     },
     onError: (error) => {
@@ -117,6 +127,23 @@ export function useLabJobStatus(jobId: string | null, sseConnected = false) {
   });
 }
 
+export function useLabJobs(limit = 50) {
+  return useQuery({
+    queryKey: labKeys.jobs(limit),
+    queryFn: () => {
+      logger.debug('Fetching lab jobs', { limit });
+      return fetchLabJobs(limit);
+    },
+    refetchInterval: (query) => {
+      const jobs = query.state.data;
+      if (!jobs) return false;
+      if (jobs.some((job) => job.status === 'pending' || job.status === 'running')) return 2000;
+      return false;
+    },
+    staleTime: 10 * 1000,
+  });
+}
+
 export function useCancelLabJob() {
   const queryClient = useQueryClient();
 
@@ -127,6 +154,7 @@ export function useCancelLabJob() {
     },
     onSuccess: (data) => {
       logger.debug('Lab job cancelled', { jobId: data.job_id });
+      queryClient.invalidateQueries({ queryKey: labKeys.jobsAll() });
       queryClient.invalidateQueries({ queryKey: labKeys.job(data.job_id) });
     },
     onError: (error) => {
