@@ -12,6 +12,7 @@ from src.server.services.sync_strategies import (
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
     SyncContext,
+    _build_fallback_index_master_rows,
     _convert_index_master_rows,
     _convert_indices_data_rows,
     _convert_stock_rows,
@@ -59,6 +60,13 @@ class DummyMarketDb:
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         return dict(self.latest_indices_data_dates)
+
+    def get_index_master_codes(self) -> set[str]:
+        return {
+            row.get("code")
+            for row in self.index_master_rows
+            if row.get("code")
+        }
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
         self.topix_rows.extend(rows)
@@ -382,6 +390,56 @@ async def test_incremental_sync_falls_back_to_date_based_indices_when_master_una
     assert len(market_db.indices_rows) >= 1
     assert all(row["code"] == "0040" for row in market_db.indices_rows)
     assert any(row["date"] == "2026-02-10" for row in market_db.indices_rows)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fallback_inserts_missing_master_for_fk_compatibility() -> None:
+    class FkAwareMarketDb(DummyMarketDb):
+        def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
+            known_codes = self.get_index_master_codes()
+            missing_codes = sorted(
+                {
+                    str(row.get("code"))
+                    for row in rows
+                    if row.get("code") and row.get("code") not in known_codes
+                }
+            )
+            if missing_codes:
+                raise RuntimeError(f"FOREIGN KEY constraint failed for codes: {','.join(missing_codes)}")
+            return super().upsert_indices_data(rows)
+
+    market_db = FkAwareMarketDb(latest_trading_date="20260206")
+    client = DummyClient(
+        indices_quotes=[
+            {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102},
+        ]
+    )
+
+    async def _raise_on_indices(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        client.calls.append((path, params))
+        if path == "/indices":
+            raise RuntimeError("indices master unavailable")
+        return {"data": []}
+
+    client.get = _raise_on_indices  # type: ignore[method-assign]
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.errors == []
+    assert any(row["code"] == "0040" for row in market_db.index_master_rows)
+    fallback_master = next(row for row in market_db.index_master_rows if row["code"] == "0040")
+    assert fallback_master["category"] == "unknown"
+    assert fallback_master["name"] == "0040"
+    assert len(market_db.indices_rows) >= 1
+    assert all(row["code"] == "0040" for row in market_db.indices_rows)
 
 
 @pytest.mark.asyncio
@@ -801,6 +859,25 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
     )
     assert len(index_rows_from_payload_code) == 1
     assert index_rows_from_payload_code[0]["code"] == "0040"
+
+
+def test_build_fallback_index_master_rows_deduplicates_and_keeps_inputs_immutable() -> None:
+    known_codes = {"0000"}
+    rows = [
+        {"code": "40", "date": "2026-02-10", "sector_name": None},
+        {"code": "0040", "date": "2026-02-11", "sector_name": "Electric"},
+        {"code": "0000", "date": "2026-02-11", "sector_name": "TOPIX"},
+    ]
+
+    fallback_rows = _build_fallback_index_master_rows(rows, known_codes)
+
+    assert known_codes == {"0000"}
+    assert len(fallback_rows) == 1
+    assert fallback_rows[0]["code"] == "0040"
+    assert fallback_rows[0]["name"] == "Electric"
+    assert fallback_rows[0]["category"] == "unknown"
+    assert fallback_rows[0]["data_start_date"] == "2026-02-10"
+    assert fallback_rows[0]["created_at"]
 
 
 def test_extract_list_items_handles_key_aliases_and_fallback() -> None:
