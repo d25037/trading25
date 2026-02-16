@@ -15,7 +15,7 @@ from src.lib.strategy_runtime.loader import ConfigLoader
 from .models import EvolutionConfig, EvaluationResult, SignalCategory, StrategyCandidate
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
-from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES
+from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
 from .strategy_evaluator import StrategyEvaluator
 
 
@@ -465,31 +465,52 @@ class ParameterEvolver:
         Returns:
             変異後のパラメータ
         """
-        mutated = params.copy()
+        mutated = copy.deepcopy(params)
         ranges = self.PARAM_RANGES.get(signal_name, {})
 
-        for param_name, value in params.items():
-            if param_name in CATEGORICAL_PARAMS:
-                # カテゴリカルパラメータはスキップ
+        self._mutate_nested_params(mutated, ranges, mutation_strength)
+        return mutated
+
+    def _mutate_nested_params(
+        self,
+        params: dict[str, Any],
+        ranges: dict[str, tuple[float, float, ParamType]],
+        mutation_strength: float,
+        prefix: str = "",
+    ) -> None:
+        for key, value in params.items():
+            param_name = f"{prefix}.{key}" if prefix else key
+
+            if key in CATEGORICAL_PARAMS or param_name in CATEGORICAL_PARAMS:
                 continue
 
-            if param_name in ranges:
-                min_val, max_val, param_type = ranges[param_name]
+            if isinstance(value, dict):
+                self._mutate_nested_params(
+                    value,
+                    ranges,
+                    mutation_strength,
+                    prefix=param_name,
+                )
+                continue
 
-                if random.random() < mutation_strength:
-                    if param_type == "int":
-                        # ガウシアン摂動（整数）
-                        delta = int((max_val - min_val) * 0.2 * random.gauss(0, 1))
-                        new_value = int(value) + delta
-                        new_value = max(int(min_val), min(int(max_val), new_value))
-                        mutated[param_name] = new_value
-                    else:
-                        # ガウシアン摂動（浮動小数点）
-                        delta = (max_val - min_val) * 0.2 * random.gauss(0, 1)
-                        new_value = float(value) + delta
-                        mutated[param_name] = max(min_val, min(max_val, new_value))
+            if param_name not in ranges:
+                continue
+            if random.random() >= mutation_strength:
+                continue
+            if isinstance(value, bool):
+                continue
 
-        return mutated
+            min_val, max_val, param_type = ranges[param_name]
+            if param_type == "int":
+                # ガウシアン摂動（整数）
+                delta = int((max_val - min_val) * 0.2 * random.gauss(0, 1))
+                new_value = int(value) + delta
+                params[key] = max(int(min_val), min(int(max_val), new_value))
+            else:
+                # ガウシアン摂動（浮動小数点）
+                delta = (max_val - min_val) * 0.2 * random.gauss(0, 1)
+                new_value = float(value) + delta
+                params[key] = max(min_val, min(max_val, new_value))
 
     def get_evolution_history(self) -> list[dict[str, Any]]:
         """

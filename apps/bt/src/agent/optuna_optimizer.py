@@ -38,7 +38,7 @@ from src.lib.strategy_runtime.loader import ConfigLoader
 from .models import OptunaConfig, SignalCategory, StrategyCandidate
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
-from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES
+from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
 
 
 class OptunaOptimizer:
@@ -353,34 +353,65 @@ class OptunaOptimizer:
             if not isinstance(params, dict):
                 continue
 
-            sampled_signal = params.copy()
+            sampled_signal = copy.deepcopy(params)
             if not self._is_signal_optimization_allowed(signal_name, usage_type):
                 sampled[signal_name] = sampled_signal
                 continue
 
             ranges = self.PARAM_RANGES.get(signal_name, {})
-
-            for param_name in params.keys():
-                if param_name in CATEGORICAL_PARAMS:
-                    # カテゴリカルパラメータはそのまま
-                    continue
-
-                if param_name in ranges:
-                    min_val, max_val, param_type = ranges[param_name]
-                    suggest_name = f"{usage_type}_{signal_name}_{param_name}"
-
-                    if param_type == "int":
-                        sampled_signal[param_name] = trial.suggest_int(
-                            suggest_name, int(min_val), int(max_val)
-                        )
-                    else:
-                        sampled_signal[param_name] = trial.suggest_float(
-                            suggest_name, min_val, max_val
-                        )
+            self._sample_nested_params(
+                trial=trial,
+                usage_type=usage_type,
+                signal_name=signal_name,
+                params=sampled_signal,
+                ranges=ranges,
+            )
 
             sampled[signal_name] = sampled_signal
 
         return sampled
+
+    def _sample_nested_params(
+        self,
+        trial: optuna.Trial,
+        usage_type: str,
+        signal_name: str,
+        params: dict[str, Any],
+        ranges: dict[str, tuple[float, float, ParamType]],
+        prefix: str = "",
+    ) -> None:
+        for key, value in params.items():
+            param_name = f"{prefix}.{key}" if prefix else key
+
+            if key in CATEGORICAL_PARAMS or param_name in CATEGORICAL_PARAMS:
+                continue
+
+            if isinstance(value, dict):
+                self._sample_nested_params(
+                    trial=trial,
+                    usage_type=usage_type,
+                    signal_name=signal_name,
+                    params=value,
+                    ranges=ranges,
+                    prefix=param_name,
+                )
+                continue
+
+            if param_name not in ranges or isinstance(value, bool):
+                continue
+
+            min_val, max_val, param_type = ranges[param_name]
+            suggest_suffix = param_name.replace(".", "__")
+            suggest_name = f"{usage_type}_{signal_name}_{suggest_suffix}"
+
+            if param_type == "int":
+                params[key] = trial.suggest_int(
+                    suggest_name, int(min_val), int(max_val)
+                )
+            else:
+                params[key] = trial.suggest_float(
+                    suggest_name, min_val, max_val
+                )
 
     def _is_signal_optimization_allowed(self, signal_name: str, usage_type: str) -> bool:
         """制約に基づいて最適化対象に含めるか判定する。"""
@@ -406,11 +437,11 @@ class OptunaOptimizer:
         # ベースパラメータをコピー
         for signal_name, signal_params in self.base_entry_params.items():
             if isinstance(signal_params, dict):
-                entry_params[signal_name] = signal_params.copy()
+                entry_params[signal_name] = copy.deepcopy(signal_params)
 
         for signal_name, signal_params in self.base_exit_params.items():
             if isinstance(signal_params, dict):
-                exit_params[signal_name] = signal_params.copy()
+                exit_params[signal_name] = copy.deepcopy(signal_params)
 
         # Optunaパラメータで上書き
         for param_name, value in params.items():
@@ -430,10 +461,12 @@ class OptunaOptimizer:
                         signal_param = param_name[len(f"{usage_type}_{known_signal}_"):]
                         break
 
+                signal_param = signal_param.replace("__", ".")
+
                 if usage_type == "entry" and signal_name in entry_params:
-                    entry_params[signal_name][signal_param] = value
+                    self._set_nested_param(entry_params[signal_name], signal_param, value)
                 elif usage_type == "exit" and signal_name in exit_params:
-                    exit_params[signal_name][signal_param] = value
+                    self._set_nested_param(exit_params[signal_name], signal_param, value)
 
         return StrategyCandidate(
             strategy_id="optuna_best",
@@ -442,6 +475,24 @@ class OptunaOptimizer:
             shared_config=copy.deepcopy(self.base_shared_config),
             metadata={"optimization_method": "optuna"},
         )
+
+    def _set_nested_param(
+        self,
+        params: dict[str, Any],
+        path: str,
+        value: Any,
+    ) -> None:
+        parts = path.split(".")
+        current = params
+
+        for part in parts[:-1]:
+            child = current.get(part)
+            if not isinstance(child, dict):
+                child = {}
+                current[part] = child
+            current = child
+
+        current[parts[-1]] = value
 
     def get_optimization_history(self, study: optuna.Study) -> list[dict[str, Any]]:
         """

@@ -1,25 +1,7 @@
 """Lab用のシグナルフィルター判定ヘルパー。"""
 
 from .models import SignalCategory
-
-SIGNAL_CATEGORY_MAP: dict[str, SignalCategory] = {
-    "period_breakout": "breakout",
-    "ma_breakout": "trend",
-    "crossover": "trend",
-    "mean_reversion": "oscillator",
-    "bollinger_bands": "volatility",
-    "atr_support_break": "volatility",
-    "rsi_threshold": "oscillator",
-    "rsi_spread": "oscillator",
-    "volume": "volume",
-    "trading_value": "volume",
-    "trading_value_range": "volume",
-    "beta": "macro",
-    "margin": "macro",
-    "index_daily_change": "macro",
-    "index_macd_histogram": "macro",
-    "fundamental": "fundamental",
-}
+from .signal_catalog import SIGNAL_CATEGORY_MAP
 
 
 def is_signal_allowed(
