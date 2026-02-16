@@ -23,6 +23,14 @@ def _mock_cache_disabled():
     return cache
 
 
+def _mock_cache_enabled(get_value=None):
+    """キャッシュ有効モックを生成"""
+    cache = MagicMock()
+    cache.is_enabled.return_value = True
+    cache.get.return_value = get_value
+    return cache
+
+
 class TestTransformMarginDf:
     def test_basic_transform(self):
         df = pd.DataFrame({
@@ -34,7 +42,9 @@ class TestTransformMarginDf:
         assert "ShortMargin" in result.columns
         assert "TotalMargin" in result.columns
         assert "MarginRatio" in result.columns
+        assert "margin_balance" in result.columns
         assert result["TotalMargin"].iloc[0] == 1500.0
+        assert result["margin_balance"].iloc[0] == 1000.0
         assert result["MarginRatio"].iloc[0] == pytest.approx(500.0 / 1500.0)
 
     def test_nan_handling(self):
@@ -113,6 +123,43 @@ class TestLoadMarginData:
         result = load_margin_data("testds", "7203", daily_index=daily_idx)
         assert len(result) == 10
         assert result.isna().sum().sum() == 0
+
+    @patch("src.data.loaders.margin_loaders.DataCache")
+    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    def test_cache_hit_skips_api(self, mock_client_cls, mock_extract, mock_cache_cls):
+        from src.data.loaders.margin_loaders import load_margin_data
+
+        mock_extract.return_value = "testds"
+        cached_df = pd.DataFrame({"LongMargin": [100.0], "ShortMargin": [50.0]})
+        mock_cache_cls.get_instance.return_value = _mock_cache_enabled(get_value=cached_df)
+        client = _mock_api_client()
+        mock_client_cls.return_value = client
+
+        result = load_margin_data("testds", "7203")
+        assert result is cached_df
+        client.get_margin.assert_not_called()
+
+    @patch("src.data.loaders.margin_loaders.DataCache")
+    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    def test_cache_set_on_miss(self, mock_client_cls, mock_extract, mock_cache_cls):
+        from src.data.loaders.margin_loaders import load_margin_data
+
+        mock_extract.return_value = "testds"
+        cache = _mock_cache_enabled(get_value=None)
+        mock_cache_cls.get_instance.return_value = cache
+        client = _mock_api_client()
+        idx = pd.date_range("2025-01-01", periods=2, freq="W")
+        client.get_margin.return_value = pd.DataFrame(
+            {"longMarginVolume": [100, 200], "shortMarginVolume": [50, 100]},
+            index=idx,
+        )
+        mock_client_cls.return_value = client
+
+        result = load_margin_data("testds", "7203")
+        assert "margin_balance" in result.columns
+        cache.set.assert_called_once()
 
 
 class TestGetMarginAvailableStocks:

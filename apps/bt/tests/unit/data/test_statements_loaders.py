@@ -345,5 +345,38 @@ class TestTransformStatementsAdjusted:
         assert result.loc["2024-04-28", "AdjustedForecastEPS"] == 60.0
 
 
+class TestTransformStatementsRoa:
+    def test_transform_calculates_roa_from_total_assets(self):
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28"), pd.Timestamp("2024-07-30")],
+                "profit": [2_000_000, 1_200_000],
+                "equity": [5_000_000, 5_200_000],
+                "totalAssets": [20_000_000, 24_000_000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        assert "ROA" in result.columns
+        assert result.loc["2024-04-28", "ROA"] == pytest.approx(10.0)
+        assert result.loc["2024-07-30", "ROA"] == pytest.approx(5.0)
+
+    def test_transform_roa_is_nan_when_total_assets_invalid(self):
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28"), pd.Timestamp("2024-07-30")],
+                "profit": [2_000_000, 1_200_000],
+                "equity": [5_000_000, 5_200_000],
+                "totalAssets": [0, None],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        assert pd.isna(result.loc["2024-04-28", "ROA"])
+        assert pd.isna(result.loc["2024-07-30", "ROA"])
+
+
 if __name__ == "__main__":
     pytest.main([__file__])
