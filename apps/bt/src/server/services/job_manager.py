@@ -87,19 +87,24 @@ class JobManager:
         """
         return self._jobs.get(job_id)
 
-    def list_jobs(self, limit: int = 50) -> list[JobInfo]:
+    def list_jobs(
+        self, limit: int = 50, job_types: set[str] | None = None
+    ) -> list[JobInfo]:
         """
         ジョブ一覧を取得（最新順）
 
         Args:
             limit: 取得件数上限
+            job_types: ジョブタイプのフィルタ（None の場合は全件）
 
         Returns:
             ジョブ情報リスト
         """
-        sorted_jobs = sorted(
-            self._jobs.values(), key=lambda j: j.created_at, reverse=True
-        )
+        jobs = list(self._jobs.values())
+        if job_types is not None:
+            jobs = [job for job in jobs if job.job_type in job_types]
+
+        sorted_jobs = sorted(jobs, key=lambda j: j.created_at, reverse=True)
         return sorted_jobs[:limit]
 
     async def update_job_status(

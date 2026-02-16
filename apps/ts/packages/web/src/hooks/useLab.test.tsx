@@ -10,6 +10,7 @@ import {
   useLabGenerate,
   useLabImprove,
   useLabJobStatus,
+  useLabJobs,
   useLabOptimize,
 } from './useLab';
 
@@ -36,6 +37,8 @@ const createWrapper = () => {
 describe('labKeys', () => {
   it('generates correct query keys', () => {
     expect(labKeys.all).toEqual(['lab']);
+    expect(labKeys.jobsAll()).toEqual(['lab', 'jobs']);
+    expect(labKeys.jobs(25)).toEqual(['lab', 'jobs', 25]);
     expect(labKeys.job('j1')).toEqual(['lab', 'job', 'j1']);
   });
 });
@@ -55,6 +58,7 @@ describe('useLabGenerate', () => {
     });
 
     expect(apiPost).toHaveBeenCalledWith('/api/lab/generate', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.jobsAll() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('gen-1') });
   });
 
@@ -92,6 +96,7 @@ describe('useLabEvolve', () => {
     });
 
     expect(apiPost).toHaveBeenCalledWith('/api/lab/evolve', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.jobsAll() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('evo-1') });
   });
 });
@@ -111,6 +116,7 @@ describe('useLabOptimize', () => {
     });
 
     expect(apiPost).toHaveBeenCalledWith('/api/lab/optimize', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.jobsAll() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('opt-1') });
   });
 });
@@ -130,7 +136,20 @@ describe('useLabImprove', () => {
     });
 
     expect(apiPost).toHaveBeenCalledWith('/api/lab/improve', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.jobsAll() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('imp-1') });
+  });
+});
+
+describe('useLabJobs', () => {
+  it('fetches lab jobs list with limit', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce([{ job_id: 'lab-1', status: 'completed' }]);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useLabJobs(20), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/lab/jobs?limit=20');
   });
 });
 
@@ -175,6 +194,7 @@ describe('useCancelLabJob', () => {
 
     expect(apiPost).toHaveBeenCalledWith('/api/lab/jobs/gen-1/cancel');
     expect(cancelSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('gen-1') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.jobsAll() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('gen-1') });
   });
 

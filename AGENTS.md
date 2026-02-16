@@ -99,6 +99,7 @@ uv run pyright src/              # 型チェック
 
 - Lab `evolve/optimize` の API/Web は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を受け付ける（`entry_filter_only` は互換フラグとして維持）
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
+- Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
 - Optimization HTML（`notebooks/templates/marimo/optimization_analysis.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
 
 主要技術: Python 3.12, vectorbt, pydantic, FastAPI, pandas, ruff, pyright, pytest
