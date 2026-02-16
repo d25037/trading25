@@ -45,7 +45,7 @@ export async function executeROEAnalysis(options: ROEOptions): Promise<void> {
   const apiClient = new ApiClient();
 
   try {
-    const response = await apiClient.getROE({
+    const response = await apiClient.analytics.getROE({
       code: options.code,
       date: options.date,
       annualize: options.annualize !== false,

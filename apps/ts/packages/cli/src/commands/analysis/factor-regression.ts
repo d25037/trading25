@@ -58,7 +58,7 @@ async function executeFactorRegression(options: {
   const spinner = ora('Analyzing risk factors via API...').start();
 
   try {
-    const response = await apiClient.getFactorRegression({
+    const response = await apiClient.analytics.getFactorRegression({
       symbol: options.code,
       lookbackDays,
     });

@@ -71,7 +71,7 @@ ${CLI_NAME} portfolio list --detailed
       }
 
       // Get portfolios from API
-      const response = await apiClient.listPortfolios();
+      const response = await apiClient.portfolio.listPortfolios();
       const portfolios = response.portfolios;
 
       if (portfolios.length === 0) {

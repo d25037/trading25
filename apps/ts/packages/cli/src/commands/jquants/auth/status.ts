@@ -34,7 +34,7 @@ ${CLI_NAME} jquants auth status
 
       // Check authentication status via API
       const apiClient = new ApiClient();
-      const authStatus = await apiClient.getAuthStatus();
+      const authStatus = await apiClient.auth.getAuthStatus();
 
       spinner.stop();
       console.log(chalk.cyan('\n🔐 Authentication Status'));

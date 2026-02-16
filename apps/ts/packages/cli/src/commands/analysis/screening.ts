@@ -102,7 +102,7 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
   const spinner = ora(spinnerText).start();
 
   try {
-    const response = await apiClient.runMarketScreening(buildApiParams(options));
+    const response = await apiClient.analytics.runMarketScreening(buildApiParams(options));
 
     spinner.succeed(chalk.green(`Screening completed: ${response.summary.matchCount} matches found`));
 

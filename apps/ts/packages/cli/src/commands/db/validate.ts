@@ -203,7 +203,7 @@ ${CLI_NAME} db validate
     const spinner = ora('Validating market database...').start();
 
     try {
-      const data = await apiClient.validateMarketDatabase();
+      const data = await apiClient.database.validateMarketDatabase();
       spinner.succeed(chalk.green('Validation complete'));
 
       console.log(chalk.bold(`\n${'='.repeat(60)}`));
