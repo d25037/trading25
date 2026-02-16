@@ -1,4 +1,5 @@
 import { BarChart3, Filter } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useState } from 'react';
 import { RankingFilters, RankingSummary, RankingTable } from '@/components/Ranking';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
@@ -9,7 +10,6 @@ import { useRanking } from '@/hooks/useRanking';
 import { useScreening } from '@/hooks/useScreening';
 import { cn } from '@/lib/utils';
 import { useChartStore } from '@/stores/chartStore';
-import { useUiStore } from '@/stores/uiStore';
 import type { RankingParams } from '@/types/ranking';
 import type { ScreeningParams } from '@/types/screening';
 
@@ -42,8 +42,8 @@ export function AnalysisPage() {
   const [screeningParams, setScreeningParams] = useState<ScreeningParams>(DEFAULT_SCREENING_PARAMS);
   const [rankingParams, setRankingParams] = useState<RankingParams>(DEFAULT_RANKING_PARAMS);
 
+  const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
-  const { setActiveTab } = useUiStore();
 
   // Fetch data based on active sub-tab
   const screeningQuery = useScreening(screeningParams, activeSubTab === 'screening');
@@ -52,9 +52,9 @@ export function AnalysisPage() {
   const handleStockClick = useCallback(
     (code: string) => {
       setSelectedSymbol(code);
-      setActiveTab('charts');
+      void navigate({ to: '/charts' });
     },
-    [setSelectedSymbol, setActiveTab]
+    [setSelectedSymbol, navigate]
   );
 
   return (

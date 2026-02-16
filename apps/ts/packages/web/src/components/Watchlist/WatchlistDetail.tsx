@@ -1,4 +1,5 @@
 import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
@@ -22,7 +23,6 @@ import {
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
 import { useChartStore } from '@/stores/chartStore';
-import { useUiStore } from '@/stores/uiStore';
 import type { WatchlistItem, WatchlistStockPrice, WatchlistWithItems } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 
@@ -178,7 +178,7 @@ function StockRow({ item, price, watchlistId, onNavigateToChart }: StockRowProps
       <td className="py-3 px-4">
         <button
           type="button"
-          onClick={() => onNavigateToChart(item.companyName)}
+          onClick={() => onNavigateToChart(item.code)}
           aria-label={`View chart for ${item.companyName}`}
           className="text-left hover:text-primary transition-colors"
         >
@@ -292,8 +292,8 @@ function WatchlistDetailContent({
   watchlist: WatchlistWithItems;
   onWatchlistDeleted?: () => void;
 }) {
+  const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
-  const { setActiveTab } = useUiStore();
   const { data: pricesData } = useWatchlistPrices(watchlist.id);
 
   const priceMap = useMemo(() => {
@@ -308,7 +308,7 @@ function WatchlistDetailContent({
 
   const handleNavigateToChart = (code: string) => {
     setSelectedSymbol(code);
-    setActiveTab('charts');
+    void navigate({ to: '/charts' });
   };
 
   return (

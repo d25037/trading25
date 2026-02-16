@@ -24,7 +24,7 @@ let selectedIndexCode: string | null = null;
 const mockSetSelectedIndexCode = vi.fn((code: string | null) => {
   selectedIndexCode = code;
 });
-const mockSetActiveTab = vi.fn();
+const mockNavigate = vi.fn();
 
 const mockSetSelectedSymbol = vi.fn();
 
@@ -36,8 +36,11 @@ vi.mock('@/stores/uiStore', () => ({
   useUiStore: () => ({
     selectedIndexCode,
     setSelectedIndexCode: mockSetSelectedIndexCode,
-    setActiveTab: mockSetActiveTab,
   }),
+}));
+
+vi.mock('@tanstack/react-router', () => ({
+  useNavigate: () => mockNavigate,
 }));
 
 vi.mock('@/stores/chartStore', () => ({
@@ -166,7 +169,7 @@ describe('IndicesPage', () => {
     await user.click(screen.getByText('Sample Energy'));
 
     expect(mockSetSelectedSymbol).toHaveBeenCalledWith('1301');
-    expect(mockSetActiveTab).toHaveBeenCalledWith('charts');
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
   });
 
   it('renders empty state and chart placeholder when no index is selected', () => {

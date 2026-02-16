@@ -1,4 +1,5 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
+import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StockChart } from '@/components/Chart/StockChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -461,7 +462,8 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
 }
 
 export function IndicesPage() {
-  const { selectedIndexCode, setSelectedIndexCode, setActiveTab } = useUiStore();
+  const navigate = useNavigate();
+  const { selectedIndexCode, setSelectedIndexCode } = useUiStore();
   const { setSelectedSymbol } = useChartStore();
   const { data: indicesData, isLoading: indicesLoading, error: indicesError } = useIndicesList();
   const listContainerRef = useRef<HTMLDivElement>(null);
@@ -469,9 +471,9 @@ export function IndicesPage() {
   const handleStockClick = useCallback(
     (code: string) => {
       setSelectedSymbol(code);
-      setActiveTab('charts');
+      void navigate({ to: '/charts' });
     },
-    [setSelectedSymbol, setActiveTab]
+    [setSelectedSymbol, navigate]
   );
 
   // Get the currently selected index info
