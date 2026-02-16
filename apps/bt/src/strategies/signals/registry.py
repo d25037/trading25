@@ -22,6 +22,7 @@ from .buy_and_hold import generate_buy_and_hold_signals
 from .crossover import indicator_crossover_signal
 from .fundamental import (
     cfo_yield_threshold,
+    is_high_book_to_market,
     is_expected_growth_eps,
     is_growing_cfo_yield,
     is_growing_dividend_per_share,
@@ -647,6 +648,28 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         category="fundamental",
         description="PBR（株価純資産倍率）の閾値判定",
         param_key="fundamental.pbr",
+        data_checker=lambda d: _has_statements_column(d, "BPS"),
+        data_requirements=["statements:BPS"],
+    ),
+    # 21-2. B/Mシグナル（簿価時価比率）
+    SignalDefinition(
+        name="B/M",
+        signal_func=is_high_book_to_market,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.book_to_market.enabled,
+        param_builder=lambda p, d: {
+            "close": d["execution_close"],
+            "bps": d["statements_data"][
+                _select_fundamental_column(p, "AdjustedBPS", "BPS")
+            ],
+            "threshold": p.fundamental.book_to_market.threshold,
+            "condition": p.fundamental.book_to_market.condition,
+            "exclude_negative": p.fundamental.book_to_market.exclude_negative,
+        },
+        entry_purpose="B/M（簿価時価比率）が閾値以上の割安株を選定",
+        exit_purpose="B/Mが閾値を下回った割安度低下株を除外",
+        category="fundamental",
+        description="B/M（簿価時価比率）の閾値判定",
+        param_key="fundamental.book_to_market",
         data_checker=lambda d: _has_statements_column(d, "BPS"),
         data_requirements=["statements:BPS"],
     ),

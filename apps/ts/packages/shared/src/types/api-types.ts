@@ -186,6 +186,8 @@ export interface ApiFundamentalDataPoint {
   per: number | null;
   /** Price to Book Ratio (倍) - calculated with disclosure date price */
   pbr: number | null;
+  /** Book-to-Market Ratio = BPS / Close (倍) */
+  bookToMarket?: number | null;
   // Profitability metrics
   /** Return on Assets (%) */
   roa: number | null;

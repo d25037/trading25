@@ -59,7 +59,8 @@
         "periodType": { "type": "string" },
         "isConsolidated": { "type": "boolean" },
         "cfoToNetProfitRatio": { "type": ["number", "null"] },
-        "tradingValueToMarketCapRatio": { "type": ["number", "null"] }
+        "tradingValueToMarketCapRatio": { "type": ["number", "null"] },
+        "bookToMarket": { "type": ["number", "null"] }
       }
     },
     "daily_valuation_point": {
