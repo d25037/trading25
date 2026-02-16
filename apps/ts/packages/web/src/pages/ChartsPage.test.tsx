@@ -47,11 +47,18 @@ const mockSettings = {
   tradingValueMA: {
     period: 15,
   },
+  riskAdjustedReturn: {
+    lookbackPeriod: 60,
+    ratioType: 'sortino' as const,
+    threshold: 1.0,
+    condition: 'above' as const,
+  },
   chartType: 'candlestick' as const,
   showVolume: true,
   showPPOChart: true,
   showVolumeComparison: true,
   showTradingValueMA: true,
+  showRiskAdjustedReturnChart: true,
   showFundamentalsPanel: true,
   showFundamentalsHistoryPanel: true,
   showMarginPressurePanel: true,
@@ -74,6 +81,10 @@ vi.mock('@/components/Chart/StockChart', () => ({
 
 vi.mock('@/components/Chart/PPOChart', () => ({
   PPOChart: () => <div>PPO Chart</div>,
+}));
+
+vi.mock('@/components/Chart/RiskAdjustedReturnChart', () => ({
+  RiskAdjustedReturnChart: () => <div>Risk Adjusted Return Chart</div>,
 }));
 
 vi.mock('@/components/Chart/VolumeComparisonChart', () => ({
@@ -178,6 +189,7 @@ describe('ChartsPage', () => {
     mockSettings.showPPOChart = true;
     mockSettings.showVolumeComparison = true;
     mockSettings.showTradingValueMA = true;
+    mockSettings.showRiskAdjustedReturnChart = true;
     mockSettings.showFundamentalsPanel = true;
     mockSettings.showFundamentalsHistoryPanel = true;
     mockSettings.showMarginPressurePanel = true;
@@ -287,6 +299,7 @@ describe('ChartsPage', () => {
 
     expect(screen.getByText('Stock Chart')).toBeInTheDocument();
     expect(screen.getByText('PPO Chart')).toBeInTheDocument();
+    expect(screen.getByText('Risk Adjusted Return Chart')).toBeInTheDocument();
     expect(screen.getByText('Volume Comparison')).toBeInTheDocument();
     expect(screen.getByText('Trading Value MA')).toBeInTheDocument();
     expect(screen.getByText('Fundamentals Panel')).toBeInTheDocument();

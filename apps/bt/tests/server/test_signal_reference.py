@@ -76,6 +76,13 @@ class TestBuildSignalReference:
         assert "risk_adjusted_return" in parsed
         assert "fundamental" not in parsed
 
+    def test_new_fundamental_growth_signals_are_included(self):
+        result = build_signal_reference()
+        keys = {s["key"] for s in result["signals"]}
+        assert "fundamental_dividend_per_share_growth" in keys
+        assert "fundamental_cfo_yield_growth" in keys
+        assert "fundamental_simple_fcf_yield_growth" in keys
+
 
 class TestYAMLSnippets:
     """YAMLスニペットのテスト"""

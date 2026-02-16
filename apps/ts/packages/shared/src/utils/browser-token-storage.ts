@@ -16,6 +16,7 @@ interface LocalStorageInterface {
 export class BrowserTokenStorage implements TokenStorage {
   private keyPrefix: string;
   private logger?: (message: string, level?: 'info' | 'warn' | 'error') => void;
+  private availabilityErrorLogged = false;
 
   constructor(options?: TokenStorageOptions & { keyPrefix?: string }) {
     this.keyPrefix = options?.keyPrefix || 'trading25_';
@@ -82,7 +83,14 @@ export class BrowserTokenStorage implements TokenStorage {
         'localStorage' in globalThis &&
         (globalThis as unknown as { localStorage: LocalStorageInterface }).localStorage !== null
       );
-    } catch {
+    } catch (error) {
+      if (!this.availabilityErrorLogged) {
+        this.availabilityErrorLogged = true;
+        this.logger?.(
+          `localStorage availability check failed: ${error instanceof Error ? error.message : String(error)}`,
+          'warn'
+        );
+      }
       return false;
     }
   }

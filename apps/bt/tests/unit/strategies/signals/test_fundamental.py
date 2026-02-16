@@ -15,6 +15,7 @@ from src.strategies.signals.fundamental import (
     is_growing_eps,
     is_growing_profit,
     is_growing_sales,
+    is_growing_dividend_per_share,
     is_high_roe,
     is_high_roa,
     is_high_dividend_yield,
@@ -24,7 +25,9 @@ from src.strategies.signals.fundamental import (
     is_undervalued_growth_by_peg,
     is_expected_growth_eps,
     cfo_yield_threshold,
+    is_growing_cfo_yield,
     simple_fcf_yield_threshold,
+    is_growing_simple_fcf_yield,
     market_cap_threshold,
 )
 
@@ -688,6 +691,51 @@ class TestIsHighDividendYield:
         assert signal.dtype == bool
         # Close=0の部分はFalse
         assert not signal.iloc[0:10].any()
+
+
+class TestDividendPerShareGrowth:
+    """is_growing_dividend_per_share()のテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=120)
+        # 開示ごとに 10 -> 12 -> 18 へ成長
+        self.dividend_fy = pd.Series([10.0] * 40 + [12.0] * 40 + [18.0] * 40, index=self.dates)
+
+    def test_growth_basic(self):
+        signal = is_growing_dividend_per_share(
+            self.dividend_fy, growth_threshold=0.15, periods=1, condition="above"
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        # 比較対象がない最初のブロックはFalse
+        assert not signal.iloc[:40].any()
+        # 12/10=+20%, 18/12=+50% のため後半はTrue
+        assert signal.iloc[45:].all()
+
+    def test_growth_condition_below(self):
+        signal = is_growing_dividend_per_share(
+            self.dividend_fy, growth_threshold=0.3, periods=1, condition="below"
+        )
+
+        # 2回目開示(+20%)はTrue、3回目開示(+50%)はFalse
+        assert signal.iloc[45]
+        assert not signal.iloc[90]
+
+    def test_growth_insufficient_periods(self):
+        signal = is_growing_dividend_per_share(
+            self.dividend_fy, growth_threshold=0.1, periods=5, condition="above"
+        )
+        assert not signal.any()
+
+    def test_growth_nan_handling(self):
+        dividend_with_nan = self.dividend_fy.copy()
+        dividend_with_nan.iloc[10:20] = np.nan
+
+        signal = is_growing_dividend_per_share(dividend_with_nan, growth_threshold=0.1)
+
+        assert isinstance(signal, pd.Series)
+        assert not signal.iloc[10:20].any()
 
 
 # =====================================================================
@@ -1951,6 +1999,202 @@ class TestSimpleFcfYieldThreshold:
         assert signal.all()
 
 
+class TestCfoYieldGrowth:
+    """is_growing_cfo_yield()のテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.close = pd.Series(np.ones(100) * 1000.0, index=self.dates)
+        # 開示間の価格ノイズ（成長率判定に影響しないことを確認）
+        self.close.iloc[60:80] = 6000.0
+        self.operating_cash_flow = pd.Series([45_000_000.0] * 50 + [67_500_000.0] * 50, index=self.dates)
+        self.shares_outstanding = pd.Series(np.ones(100) * 1_000_000.0, index=self.dates)
+        self.treasury_shares = pd.Series(np.zeros(100), index=self.dates)
+
+    def test_growth_release_based(self):
+        signal = is_growing_cfo_yield(
+            self.close,
+            self.operating_cash_flow,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=0.1,
+            periods=1,
+            condition="above",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert not signal.iloc[:50].any()
+        assert signal.iloc[50:].all()
+        # False -> True の1回だけ遷移
+        transitions = signal.astype(int).diff().fillna(0).ne(0).sum()
+        assert transitions == 1
+
+    def test_growth_condition_below_with_floating_share_effect(self):
+        treasury = pd.Series([200_000.0] * 50 + [0.0] * 50, index=self.dates)
+        operating = pd.Series(np.ones(100) * 50_000_000.0, index=self.dates)
+
+        signal_floating = is_growing_cfo_yield(
+            self.close,
+            operating,
+            self.shares_outstanding,
+            treasury,
+            growth_threshold=0.0,
+            periods=1,
+            condition="below",
+            use_floating_shares=True,
+        )
+        signal_total = is_growing_cfo_yield(
+            self.close,
+            operating,
+            self.shares_outstanding,
+            treasury,
+            growth_threshold=0.0,
+            periods=1,
+            condition="below",
+            use_floating_shares=False,
+        )
+
+        assert signal_floating.iloc[50:].all()
+        assert not signal_total.any()
+
+    def test_growth_insufficient_periods(self):
+        signal = is_growing_cfo_yield(
+            self.close,
+            self.operating_cash_flow,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=0.1,
+            periods=5,
+        )
+        assert not signal.any()
+
+    def test_growth_nan_handling(self):
+        operating_with_nan = self.operating_cash_flow.copy()
+        operating_with_nan.iloc[0:10] = np.nan
+
+        signal = is_growing_cfo_yield(
+            self.close,
+            operating_with_nan,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=0.1,
+            periods=1,
+        )
+        assert not signal.iloc[0:10].any()
+
+    def test_growth_treasury_all_nan_keeps_release_based_behavior(self):
+        close_with_noise = self.close.copy()
+        close_with_noise.iloc[20:30] = 4500.0
+        close_with_noise.iloc[70:80] = 7000.0
+        treasury_all_nan = pd.Series(np.nan, index=self.dates)
+
+        signal = is_growing_cfo_yield(
+            close_with_noise,
+            self.operating_cash_flow,
+            self.shares_outstanding,
+            treasury_all_nan,
+            growth_threshold=0.1,
+            periods=1,
+            condition="above",
+            use_floating_shares=True,
+        )
+
+        assert not signal.iloc[:50].any()
+        assert signal.iloc[50:].all()
+        transitions = signal.astype(int).diff().fillna(0).ne(0).sum()
+        assert transitions == 1
+
+    def test_growth_ignores_treasury_change_when_not_using_floating_shares(self):
+        treasury_changes = pd.Series([300_000.0] * 50 + [0.0] * 50, index=self.dates)
+        operating_constant = pd.Series(np.ones(100) * 50_000_000.0, index=self.dates)
+
+        signal = is_growing_cfo_yield(
+            self.close,
+            operating_constant,
+            self.shares_outstanding,
+            treasury_changes,
+            growth_threshold=0.0,
+            periods=1,
+            condition="above",
+            use_floating_shares=False,
+        )
+
+        assert not signal.any()
+
+
+class TestSimpleFcfYieldGrowth:
+    """is_growing_simple_fcf_yield()のテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.close = pd.Series(np.ones(100) * 1000.0, index=self.dates)
+        self.close.iloc[60:80] = 5000.0
+        self.operating_cash_flow = pd.Series([60_000_000.0] * 50 + [90_000_000.0] * 50, index=self.dates)
+        self.investing_cash_flow = pd.Series([-24_000_000.0] * 50 + [-30_000_000.0] * 50, index=self.dates)
+        self.shares_outstanding = pd.Series(np.ones(100) * 1_000_000.0, index=self.dates)
+        self.treasury_shares = pd.Series(np.zeros(100), index=self.dates)
+
+    def test_growth_release_based(self):
+        signal = is_growing_simple_fcf_yield(
+            self.close,
+            self.operating_cash_flow,
+            self.investing_cash_flow,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=0.2,
+            periods=1,
+            condition="above",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert not signal.iloc[:50].any()
+        assert signal.iloc[50:].all()
+
+    def test_growth_condition_below(self):
+        signal = is_growing_simple_fcf_yield(
+            self.close,
+            self.operating_cash_flow,
+            self.investing_cash_flow,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=1.0,
+            periods=1,
+            condition="below",
+        )
+
+        assert signal.iloc[50:].all()
+
+    def test_growth_insufficient_periods(self):
+        signal = is_growing_simple_fcf_yield(
+            self.close,
+            self.operating_cash_flow,
+            self.investing_cash_flow,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=0.2,
+            periods=5,
+        )
+        assert not signal.any()
+
+    def test_growth_nan_handling(self):
+        investing_with_nan = self.investing_cash_flow.copy()
+        investing_with_nan.iloc[0:10] = np.nan
+
+        signal = is_growing_simple_fcf_yield(
+            self.close,
+            self.operating_cash_flow,
+            investing_with_nan,
+            self.shares_outstanding,
+            self.treasury_shares,
+            growth_threshold=0.2,
+            periods=1,
+        )
+
+        assert not signal.iloc[0:10].any()
+
+
 class TestYieldSignalsEdgeCases:
     """利回りシグナルのエッジケーステスト"""
 
@@ -2095,6 +2339,32 @@ class TestFundamentalSignalParamsConfig:
         assert params.book_to_market.threshold == 1.2
         assert params.book_to_market.condition == "above"
 
+    def test_dividend_per_share_growth_field_exists(self):
+        """dividend_per_share_growthフィールドが正しくパースされること"""
+        from src.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams(
+            dividend_per_share_growth={
+                "enabled": True,
+                "threshold": 0.15,
+                "periods": 2,
+                "condition": "above",
+            }
+        )
+        assert params.dividend_per_share_growth.enabled is True
+        assert params.dividend_per_share_growth.threshold == 0.15
+        assert params.dividend_per_share_growth.periods == 2
+        assert params.dividend_per_share_growth.condition == "above"
+
+    def test_yield_growth_fields_default(self):
+        """yield成長率フィールドのデフォルト値が正しいこと"""
+        from src.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams()
+        assert params.cfo_yield_growth.periods == 1
+        assert params.simple_fcf_yield_growth.periods == 1
+        assert params.cfo_yield_growth.use_floating_shares is True
+        assert params.simple_fcf_yield_growth.use_floating_shares is True
 
 # =====================================================================
 # 時価総額シグナルテスト（2026-02追加）

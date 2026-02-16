@@ -144,6 +144,10 @@ def ranking_top20(mo, pd, optimization_results):
             _row["Sharpe"] = _r["metric_values"].get("sharpe_ratio", 0)
             _row["Calmar"] = _r["metric_values"].get("calmar_ratio", 0)
             _row["Return"] = _r["metric_values"].get("total_return", 0)
+            try:
+                _row["Trades"] = int(float(_r["metric_values"].get("trade_count", 0)))
+            except (TypeError, ValueError):
+                _row["Trades"] = 0
 
             _ranking_data.append(_row)
 
@@ -178,6 +182,10 @@ def ranking_bottom10(mo, pd, optimization_results):
             _row["Sharpe"] = _r["metric_values"].get("sharpe_ratio", 0)
             _row["Calmar"] = _r["metric_values"].get("calmar_ratio", 0)
             _row["Return"] = _r["metric_values"].get("total_return", 0)
+            try:
+                _row["Trades"] = int(float(_r["metric_values"].get("trade_count", 0)))
+            except (TypeError, ValueError):
+                _row["Trades"] = 0
 
             _bottom_ranking_data.append(_row)
 
@@ -200,10 +208,16 @@ def best_parameters(mo, optimization_results):
         ])
 
         _metrics = _best_result["metric_values"]
+        try:
+            _trade_count = int(float(_metrics.get("trade_count", 0)))
+        except (TypeError, ValueError):
+            _trade_count = 0
+
         _metrics_table = f"""
 | Sharpe Ratio | {_metrics.get('sharpe_ratio', 0):.4f} |
 | Calmar Ratio | {_metrics.get('calmar_ratio', 0):.4f} |
 | Total Return | {_metrics.get('total_return', 0):.2%} |
+| Trade Count | {_trade_count} |
 """
 
         _norm_metrics = _best_result.get("normalized_metrics", {})

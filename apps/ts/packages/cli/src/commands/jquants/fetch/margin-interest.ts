@@ -25,7 +25,7 @@ export async function fetchMarginInterest(code: string, options: FetchOptions): 
     if (options.to) params.to = options.to;
     if (options.date) params.date = options.date;
 
-    const response = await apiClient.getMarginInterest(code, params);
+    const response = await apiClient.jquants.getMarginInterest(code, params);
 
     if (response.marginInterest && response.marginInterest.length > 0) {
       spinner.succeed(chalk.green(`Fetched ${response.marginInterest.length} margin records`));

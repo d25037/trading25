@@ -117,7 +117,7 @@ ${CLI_NAME} db stats --json
 
     try {
       const apiClient = new ApiClient();
-      const stats = await apiClient.getMarketStats();
+      const stats = await apiClient.database.getMarketStats();
 
       spinner.stop();
 

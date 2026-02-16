@@ -69,11 +69,14 @@ export class BacktestClient {
       }
       try {
         return JSON.parse(text) as T;
-      } catch {
+      } catch (parseError) {
+        const parseMessage = parseError instanceof Error ? parseError.message : String(parseError);
+        const parseReason = parseMessage.slice(0, 80);
+        const bodyPreview = text.slice(0, 150);
         throw new BacktestApiError(
           response.status,
           response.statusText || 'Unknown',
-          `Invalid JSON response: ${text.slice(0, 200)}`
+          `Invalid JSON response (${parseReason}): ${bodyPreview}`
         );
       }
     } finally {

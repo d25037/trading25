@@ -315,7 +315,7 @@ async function executeMarketRanking(options: RankingOptions): Promise<void> {
   const spinner = ora('Loading market rankings from API...').start();
 
   try {
-    const response = await apiClient.getMarketRanking({
+    const response = await apiClient.analytics.getMarketRanking({
       date: options.date,
       limit: parsed.limit,
       markets: parsed.markets,

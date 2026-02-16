@@ -148,8 +148,10 @@ export function normalizeDatasetPath(input: string): string {
   // Check if parent directory is writable
   try {
     fs.accessSync(parentDir, fs.constants.W_OK);
-  } catch (_error) {
-    throw new Error(`Cannot write to directory: ${parentDir}`);
+  } catch (error) {
+    throw new Error(
+      `Cannot write to directory: ${parentDir}. ${error instanceof Error ? error.message : String(error)}`
+    );
   }
 
   return finalPath;

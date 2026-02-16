@@ -25,7 +25,7 @@ export async function fetchIndices(options: FetchOptions): Promise<void> {
     if (options.to) params.to = options.to;
     if (options.date) params.date = options.date;
 
-    const response = await apiClient.getIndices(params);
+    const response = await apiClient.jquants.getIndices(params);
 
     if (response.indices && response.indices.length > 0) {
       spinner.succeed(chalk.green(`Fetched ${response.indices.length} index records`));

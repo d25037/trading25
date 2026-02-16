@@ -246,7 +246,73 @@ describe('AttributionArtifactBrowser', () => {
 
     expect(screen.getByText('Best Signal Parameters')).toBeInTheDocument();
     expect(screen.getByText('entry.unknown_param')).toBeInTheDocument();
+    expect(
+      screen.getByText('Parameter value could not be resolved from strategy.effective_parameters.')
+    ).toBeInTheDocument();
     expect(screen.getByText((content) => /2\.0\s*MB/.test(content))).toBeInTheDocument();
     expect(screen.getByText('Random Seed')).toBeInTheDocument();
+  });
+
+  it('resolves best signal parameter when effective parameters use dotted keys', async () => {
+    const user = userEvent.setup();
+    mockUseAttributionArtifactFiles.mockReturnValue({
+      data: {
+        files: [
+          {
+            strategy_name: 'production/range_break_v16',
+            filename: 'attribution_20260112_120000_job-3.json',
+            created_at: '2026-01-12T12:00:00Z',
+            size_bytes: 4096,
+            job_id: 'job-3',
+          },
+        ],
+        total: 1,
+      },
+      isLoading: false,
+    });
+    mockUseAttributionArtifactContent.mockImplementation((strategy: string | null, filename: string | null) => {
+      if (!strategy || !filename) {
+        return { data: null, isLoading: false };
+      }
+      return {
+        data: {
+          artifact: {
+            strategy: {
+              name: strategy,
+              effective_parameters: {
+                entry_filter_params: {
+                  'fundamental.per': {
+                    enabled: true,
+                    threshold: 8.5,
+                  },
+                },
+                exit_trigger_params: {},
+              },
+            },
+            result: {
+              top_n_selection: {
+                scores: [{ signal_id: 'entry.fundamental.per', score: 0.91 }],
+              },
+              signals: [
+                {
+                  signal_id: 'entry.fundamental.per',
+                  scope: 'entry',
+                  signal_name: 'PER',
+                },
+              ],
+            },
+          },
+        },
+        isLoading: false,
+      };
+    });
+
+    render(<AttributionArtifactBrowser />);
+    await user.click(screen.getByText('attribution_20260112_120000_job-3.json'));
+
+    expect(screen.getByText('entry.fundamental.per')).toBeInTheDocument();
+    expect(screen.getByText('entry_filter_params.fundamental.per')).toBeInTheDocument();
+    expect(screen.getAllByText((content) => content.includes('fundamental.per')).length).toBeGreaterThan(0);
+    expect(screen.getByText('Effective Parameters')).toBeInTheDocument();
   });
 });

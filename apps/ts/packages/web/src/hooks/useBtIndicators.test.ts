@@ -1,6 +1,7 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { apiPost } from '@/lib/api-client';
+import type { ChartSettings } from '@/stores/chartStore';
 import { createTestWrapper } from '@/test-utils';
 import { btIndicatorKeys, buildIndicatorSpecs, mapBtResponseToChartData, useBtIndicators } from './useBtIndicators';
 
@@ -31,11 +32,13 @@ describe('buildIndicatorSpecs', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
+    riskAdjustedReturn: { lookbackPeriod: 60, ratioType: 'sortino' as const, threshold: 1.0, condition: 'above' as const },
     chartType: 'candlestick' as const,
     showVolume: true,
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
@@ -133,6 +136,19 @@ describe('buildIndicatorSpecs', () => {
     const settings = { ...baseSettings, showTradingValueMA: true, tradingValueMA: { period: 30 } };
     const specs = buildIndicatorSpecs(settings);
     expect(specs).toContainEqual({ type: 'trading_value_ma', params: { period: 30 } });
+  });
+
+  it('should include risk_adjusted_return when showRiskAdjustedReturnChart is true', () => {
+    const settings = {
+      ...baseSettings,
+      showRiskAdjustedReturnChart: true,
+      riskAdjustedReturn: { lookbackPeriod: 80, ratioType: 'sharpe' as const, threshold: 1.2, condition: 'below' as const },
+    };
+    const specs = buildIndicatorSpecs(settings);
+    expect(specs).toContainEqual({
+      type: 'risk_adjusted_return',
+      params: { lookback_period: 80, ratio_type: 'sharpe' },
+    });
   });
 
   it('should build multiple specs when multiple indicators enabled', () => {
@@ -260,6 +276,19 @@ describe('mapBtResponseToChartData', () => {
     expect(result.indicators).toEqual({});
     expect(result.bollingerBands).toBeUndefined();
   });
+
+  it('should transform risk_adjusted_return records', () => {
+    const response = {
+      stock_code: '7203',
+      timeframe: 'daily',
+      meta: { bars: 100 },
+      indicators: {
+        risk_adjusted_return_60_sortino: [{ date: '2024-01-01', value: 1.25 }],
+      },
+    };
+    const result = mapBtResponseToChartData(response);
+    expect(result.indicators.riskAdjustedReturn).toEqual([{ time: '2024-01-01', value: 1.25 }]);
+  });
 });
 
 // ===== btIndicatorKeys Tests =====
@@ -288,11 +317,13 @@ describe('useBtIndicators', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
+    riskAdjustedReturn: { lookbackPeriod: 60, ratioType: 'sortino' as const, threshold: 1.0, condition: 'above' as const },
     chartType: 'candlestick' as const,
     showVolume: true,
     showPPOChart: false,
     showVolumeComparison: false,
     showTradingValueMA: false,
+    showRiskAdjustedReturnChart: false,
     showFundamentalsPanel: true,
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
@@ -385,5 +416,96 @@ describe('useBtIndicators', () => {
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useBtIndicators('7203', 'daily', noIndicatorSettings), { wrapper });
     expect(result.current.data.indicators).toEqual({});
+  });
+
+  it('does not refetch when only threshold/condition changes', async () => {
+    mockApiPost.mockClear();
+    mockApiPost.mockResolvedValue({
+      stock_code: '7203',
+      timeframe: 'daily',
+      meta: { bars: 100 },
+      indicators: {
+        sma_20: [{ date: '2024-01-01', value: 100 }],
+        risk_adjusted_return_60_sortino: [{ date: '2024-01-01', value: 1.1 }],
+      },
+    });
+
+    const settings: ChartSettings = {
+      ...baseSettings,
+      showRiskAdjustedReturnChart: true,
+      riskAdjustedReturn: {
+        lookbackPeriod: 60,
+        ratioType: 'sortino' as const,
+        threshold: 1.0,
+        condition: 'above' as const,
+      },
+    };
+
+    const { wrapper } = createTestWrapper();
+    const { rerender } = renderHook(
+      ({ chartSettings }) => useBtIndicators('7203', 'daily', chartSettings),
+      { wrapper, initialProps: { chartSettings: settings } }
+    );
+
+    await waitFor(() => expect(mockApiPost).toHaveBeenCalledTimes(1));
+
+    rerender({
+      chartSettings: {
+        ...settings,
+        riskAdjustedReturn: {
+          ...settings.riskAdjustedReturn,
+          threshold: 2.0,
+          condition: 'below',
+        },
+      },
+    });
+
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(mockApiPost).toHaveBeenCalledTimes(1);
+  });
+
+  it('refetches when lookback/ratio changes', async () => {
+    mockApiPost.mockClear();
+    mockApiPost.mockResolvedValue({
+      stock_code: '7203',
+      timeframe: 'daily',
+      meta: { bars: 100 },
+      indicators: {
+        sma_20: [{ date: '2024-01-01', value: 100 }],
+        risk_adjusted_return_60_sortino: [{ date: '2024-01-01', value: 1.1 }],
+      },
+    });
+
+    const settings: ChartSettings = {
+      ...baseSettings,
+      showRiskAdjustedReturnChart: true,
+      riskAdjustedReturn: {
+        lookbackPeriod: 60,
+        ratioType: 'sortino' as const,
+        threshold: 1.0,
+        condition: 'above' as const,
+      },
+    };
+
+    const { wrapper } = createTestWrapper();
+    const { rerender } = renderHook(
+      ({ chartSettings }) => useBtIndicators('7203', 'daily', chartSettings),
+      { wrapper, initialProps: { chartSettings: settings } }
+    );
+
+    await waitFor(() => expect(mockApiPost).toHaveBeenCalledTimes(1));
+
+    rerender({
+      chartSettings: {
+        ...settings,
+        riskAdjustedReturn: {
+          ...settings.riskAdjustedReturn,
+          lookbackPeriod: 80,
+          ratioType: 'sharpe',
+        },
+      },
+    });
+
+    await waitFor(() => expect(mockApiPost).toHaveBeenCalledTimes(2));
   });
 });

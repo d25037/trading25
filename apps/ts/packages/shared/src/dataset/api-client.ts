@@ -3,6 +3,11 @@
  * Simplified wrapper around bt JQuants proxy endpoints
  */
 
+import {
+  extractErrorMessage as extractTransportErrorMessage,
+  HttpRequestError,
+  requestJson,
+} from '@trading25/clients-ts/base/http-client';
 import type {
   JQuantsDailyQuote,
   JQuantsDailyQuotesResponse,
@@ -744,31 +749,28 @@ export class ApiClient {
   }
 
   private async request<T>(path: string, query?: Record<string, string | undefined>): Promise<T> {
-    const url = new URL(path, this.baseUrl);
-    if (query) {
-      for (const [key, value] of Object.entries(query)) {
-        if (value && value.trim().length > 0) {
-          url.searchParams.set(key, value);
-        }
+    const sanitizedQuery =
+      query &&
+      Object.fromEntries(
+        Object.entries(query).filter(([, value]) => typeof value === 'string' && value.trim().length > 0)
+      );
+
+    try {
+      return await requestJson<T>(path, {
+        baseUrl: this.baseUrl,
+        query: sanitizedQuery,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    } catch (error) {
+      if (error instanceof HttpRequestError && error.kind === 'http') {
+        const detail = extractTransportErrorMessage(error.body) || error.statusText || error.message;
+        throw new Error(`API ${error.status ?? 'unknown'}: ${detail}`);
       }
-    }
-
-    const response = await fetch(url.toString(), {
-      headers: { 'Content-Type': 'application/json' },
-    });
-
-    if (!response.ok) {
-      let detail = response.statusText;
-      try {
-        const errorBody = (await response.json()) as { message?: string; error?: string };
-        detail = errorBody.message || errorBody.error || detail;
-      } catch {
-        // fallback to status text only
+      if (error instanceof HttpRequestError) {
+        throw new Error(error.message);
       }
-      throw new Error(`API ${response.status}: ${detail}`);
+      throw error;
     }
-
-    return (await response.json()) as T;
   }
 
   /**
