@@ -1,7 +1,7 @@
 """
 財務指標シグナル — バリュエーション系
 
-PER・PBR・B/M・PEGに基づく割安判定シグナルを提供
+PER・PBR・PEGに基づく割安判定シグナルを提供
 """
 
 from __future__ import annotations
@@ -84,46 +84,6 @@ def is_undervalued_by_pbr(
 
     result = pd.Series(False, index=close.index)
     result.loc[common_index] = pbr_signal
-    return result.fillna(False)
-
-
-def is_high_book_to_market(
-    close: pd.Series[float],
-    bps: pd.Series[float],
-    threshold: float = 1.0,
-    condition: Literal["above", "below"] = "above",
-    exclude_negative: bool = True,
-) -> pd.Series[bool]:
-    """
-    B/M（Book-to-Market Ratio）シグナル
-
-    B/M = BPS / Close を計算し、指定した条件で閾値と比較してTrueを返すシグナル
-
-    Args:
-        close: 終値データ
-        bps: BPS（1株当たり純資産）データ
-        threshold: B/M閾値（デフォルト1.0）
-        condition: 条件（above=閾値以上、below=閾値以下）
-        exclude_negative: 負のB/Mを除外するか（デフォルトTrue）
-
-    Returns:
-        pd.Series[bool]: 条件を満たす場合にTrue
-
-    Note:
-        - Closeが0以下またはNaNの場合はFalseを返す
-        - BPSが0以下またはNaNの場合はFalseを返す
-    """
-    common_index = close.index.intersection(bps.index)
-    close_common = close.reindex(common_index)
-    bps_common = bps.reindex(common_index)
-
-    valid_bps = bps_common.where(bps_common > 0, np.nan)
-    valid_close = close_common.where(close_common > 0, np.nan)
-    book_to_market = valid_bps / valid_close
-    bm_signal = _calc_ratio_signal(book_to_market, threshold, condition, exclude_negative)
-
-    result = pd.Series(False, index=close.index)
-    result.loc[common_index] = bm_signal
     return result.fillna(False)
 
 

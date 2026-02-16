@@ -55,22 +55,6 @@ class FundamentalSignalParams(BaseSignalParams):
             description="負のPBR（債務超過企業）を除外するか",
         )
 
-    class BookToMarketParams(BaseModel):
-        """B/M（簿価時価比率）シグナルパラメータ"""
-
-        enabled: bool = Field(default=False, description="B/Mシグナル有効")
-        threshold: float = Field(
-            default=1.0, gt=0, le=20.0, description="B/M閾値（この値以上で割安判定）"
-        )
-        condition: Literal["above", "below"] = Field(
-            default="above",
-            description="条件（above=閾値以上、below=閾値以下）",
-        )
-        exclude_negative: bool = Field(
-            default=True,
-            description="負のB/Mを除外するか",
-        )
-
     class PEGRatioParams(BaseModel):
         """PEG Ratio シグナルパラメータ"""
 
@@ -384,9 +368,6 @@ class FundamentalSignalParams(BaseSignalParams):
     # バリュエーション系
     per: PERParams = Field(default_factory=PERParams, description="PERシグナル")
     pbr: PBRParams = Field(default_factory=PBRParams, description="PBRシグナル")
-    book_to_market: BookToMarketParams = Field(
-        default_factory=BookToMarketParams, description="B/Mシグナル"
-    )
     peg_ratio: PEGRatioParams = Field(
         default_factory=PEGRatioParams, description="PEG Ratioシグナル"
     )
