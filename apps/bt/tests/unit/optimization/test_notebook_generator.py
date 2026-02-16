@@ -28,6 +28,7 @@ def sample_optimization_results():
                 "sharpe_ratio": 1.5,
                 "calmar_ratio": 1.2,
                 "total_return": 0.45,
+                "trade_count": 42,
             },
             "normalized_metrics": {
                 "sharpe_ratio": 0.9,
@@ -45,6 +46,7 @@ def sample_optimization_results():
                 "sharpe_ratio": 1.3,
                 "calmar_ratio": 1.0,
                 "total_return": 0.38,
+                "trade_count": 35,
             },
             "normalized_metrics": {
                 "sharpe_ratio": 0.8,
@@ -62,6 +64,7 @@ def sample_optimization_results():
                 "sharpe_ratio": 1.1,
                 "calmar_ratio": 0.9,
                 "total_return": 0.32,
+                "trade_count": 28,
             },
             "normalized_metrics": {
                 "sharpe_ratio": 0.7,
@@ -111,6 +114,7 @@ class TestSaveResultsAsJson:
         assert (
             loaded_data[0]["params"]["entry_filter_params.period_breakout.period"] == 50
         )
+        assert loaded_data[0]["metric_values"]["trade_count"] == 42
 
     def test_json_serializable_format(self, sample_optimization_results, tmp_path):
         """JSONシリアライズ可能形式の確認"""
@@ -136,6 +140,31 @@ class TestSaveResultsAsJson:
             loaded_data = json.load(f)
 
         assert loaded_data == []
+
+    def test_save_results_without_trade_count_keeps_compatibility(self, tmp_path):
+        """trade_countがない旧データ形式も保存できることを確認"""
+        old_format_results = [
+            {
+                "params": {"entry_filter_params.period_breakout.period": 50},
+                "score": 0.5,
+                "metric_values": {
+                    "sharpe_ratio": 1.0,
+                    "calmar_ratio": 0.8,
+                    "total_return": 0.2,
+                },
+                "normalized_metrics": {
+                    "sharpe_ratio": 0.5,
+                    "calmar_ratio": 0.5,
+                    "total_return": 0.5,
+                },
+            }
+        ]
+
+        json_path = _save_results_as_json(old_format_results, str(tmp_path))
+        with open(json_path, encoding="utf-8") as f:
+            loaded_data = json.load(f)
+
+        assert "trade_count" not in loaded_data[0]["metric_values"]
 
 
 class TestNotebookGeneratorMarimo:
