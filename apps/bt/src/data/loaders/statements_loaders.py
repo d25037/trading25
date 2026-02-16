@@ -34,6 +34,7 @@ _COLUMN_MAPPING = {
     "investingCashFlow": "InvestingCashFlow",
     "dividendFY": "DividendFY",
     "forecastEps": "ForecastEPS",
+    "totalAssets": "TotalAssets",
     "sharesOutstanding": "SharesOutstanding",
     "treasuryShares": "TreasuryShares",
 }
@@ -52,6 +53,7 @@ _NUMERIC_COLUMNS = [
     "InvestingCashFlow",
     "DividendFY",
     "ForecastEPS",
+    "TotalAssets",
     "SharesOutstanding",
     "TreasuryShares",
     # Adjusted fields (computed, but keep in numeric list for safety)
@@ -109,7 +111,7 @@ def _compute_adjusted_series(
 def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
-    カラム名のリネーム、数値型変換、派生指標(ROE/OperatingMargin)計算、
+    カラム名のリネーム、数値型変換、派生指標(ROE/ROA/OperatingMargin)計算、
     EPS/BPS/Forecast系の株式数調整を行う。
     """
     df = df.rename(columns=_COLUMN_MAPPING)
@@ -129,6 +131,7 @@ def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
             )
 
     df["ROE"] = _calc_roe(df)
+    df["ROA"] = _calc_roa(df)
     df["OperatingMargin"] = _calc_operating_margin(df)
     return df
 
@@ -167,7 +170,8 @@ def load_statements_data(
             基本指標: EPS, Profit, Equity, ROE
             拡張指標: BPS, Sales, OperatingProfit, OrdinaryProfit,
                      OperatingCashFlow, InvestingCashFlow, DividendFY, ForecastEPS,
-                     NextYearForecastEPS, OperatingMargin (派生指標)
+                     NextYearForecastEPS, TotalAssets,
+                     ROA, OperatingMargin (派生指標)
             Adjusted指標: AdjustedEPS, AdjustedBPS, AdjustedForecastEPS,
                          AdjustedNextYearForecastEPS
 
@@ -233,5 +237,24 @@ def _calc_operating_margin(df: pd.DataFrame) -> np.ndarray:
     return np.where(
         (df["Sales"].notna()) & (df["Sales"] != 0) & (df["OperatingProfit"].notna()),
         (df["OperatingProfit"] / df["Sales"]) * 100,
+        np.nan,
+    )
+
+
+def _calc_roa(df: pd.DataFrame) -> np.ndarray:
+    """
+    ROA（総資産利益率）を計算
+
+    ROA = (Profit / TotalAssets) * 100
+    TotalAssets=0またはNaNの場合はNaNを返す
+    """
+    if "TotalAssets" not in df.columns or "Profit" not in df.columns:
+        return np.full(len(df), np.nan)
+
+    return np.where(
+        (df["TotalAssets"].notna())
+        & (df["TotalAssets"] != 0)
+        & (df["Profit"].notna()),
+        (df["Profit"] / df["TotalAssets"]) * 100,
         np.nan,
     )
