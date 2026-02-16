@@ -60,6 +60,7 @@ class BacktestResultSummary(BaseModel):
 
     total_return: float = Field(description="トータルリターン (%)")
     sharpe_ratio: float = Field(description="シャープレシオ")
+    sortino_ratio: float | None = Field(default=None, description="ソルティノレシオ")
     calmar_ratio: float = Field(description="カルマーレシオ")
     max_drawdown: float = Field(description="最大ドローダウン (%)")
     win_rate: float = Field(description="勝率 (%)")

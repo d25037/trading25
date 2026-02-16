@@ -14,6 +14,7 @@ export interface BacktestRequest {
 export interface BacktestResultSummary {
   total_return: number;
   sharpe_ratio: number;
+  sortino_ratio?: number | null;
   calmar_ratio: number;
   max_drawdown: number;
   win_rate: number;

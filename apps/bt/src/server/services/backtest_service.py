@@ -12,6 +12,7 @@ from loguru import logger
 
 from src.lib.backtest_core.runner import BacktestResult, BacktestRunner
 from src.server.schemas.backtest import BacktestResultSummary, JobStatus
+from src.server.services.backtest_result_summary import resolve_backtest_result_summary
 from src.server.services.job_manager import JobManager, job_manager
 
 
@@ -177,8 +178,8 @@ class BacktestService:
         """
         BacktestResultからサマリーを抽出
 
-        HTMLファイルが存在する場合は正規表現でメトリクスを抽出し、
-        失敗時はsummary dictのフォールバックを使用する。
+        HTML成果物セット（HTML + *.metrics.json）を優先し、
+        抽出できない場合は summary dict をフォールバックとして使用する。
 
         Args:
             result: バックテスト結果
@@ -186,36 +187,21 @@ class BacktestService:
         Returns:
             結果サマリー
         """
-        from pathlib import Path
-
-        # HTMLファイルからメトリクスを抽出
-        html_path = Path(str(result.html_path)) if result.html_path else None
-        if html_path and html_path.exists():
-            try:
-                from src.data.metrics_extractor import extract_metrics_from_html
-
-                metrics = extract_metrics_from_html(html_path)
-                return BacktestResultSummary(
-                    total_return=metrics.total_return or 0.0,
-                    sharpe_ratio=metrics.sharpe_ratio or 0.0,
-                    calmar_ratio=metrics.calmar_ratio or 0.0,
-                    max_drawdown=metrics.max_drawdown or 0.0,
-                    win_rate=metrics.win_rate or 0.0,
-                    trade_count=metrics.total_trades or 0,
-                    html_path=str(result.html_path),
-                )
-            except Exception as e:
-                logger.warning(f"HTMLメトリクス抽出失敗、フォールバック使用: {e}")
-
-        # フォールバック: summaryから必要な値を抽出
-        summary = result.summary
+        summary = resolve_backtest_result_summary(
+            html_path=result.html_path,
+            fallback=result.summary,
+        )
+        if summary is not None:
+            return summary
+        # 通常は到達しないが、型上の安全性のためにゼロ値で返す
         return BacktestResultSummary(
-            total_return=summary.get("total_return", 0.0),
-            sharpe_ratio=summary.get("sharpe_ratio", 0.0),
-            calmar_ratio=summary.get("calmar_ratio", 0.0),
-            max_drawdown=summary.get("max_drawdown", 0.0),
-            win_rate=summary.get("win_rate", 0.0),
-            trade_count=summary.get("trade_count", 0),
+            total_return=0.0,
+            sharpe_ratio=0.0,
+            sortino_ratio=None,
+            calmar_ratio=0.0,
+            max_drawdown=0.0,
+            win_rate=0.0,
+            trade_count=0,
             html_path=str(result.html_path),
         )
 
