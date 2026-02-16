@@ -32,18 +32,6 @@ async function main(): Promise<void> {
     return;
   }
 
-  if (subCommand === 'portfolio') {
-    const portfolioRunner = (await import('./commands/portfolio/index.js')).default;
-    await portfolioRunner(args.slice(1));
-    return;
-  }
-
-  if (subCommand === 'watchlist') {
-    const watchlistRunner = (await import('./commands/watchlist/index.js')).default;
-    await watchlistRunner(args.slice(1));
-    return;
-  }
-
   if (subCommand === 'dataset') {
     const datasetRunner = (await import('./commands/dataset/index.js')).default;
     await datasetRunner(args.slice(1));
@@ -79,7 +67,7 @@ async function main(): Promise<void> {
     }),
     dataset: lazy(async () => mainCommand, {
       name: 'dataset',
-      description: 'Dataset management - create, validate, info, sample, search',
+      description: 'Dataset management - create, info, sample, search',
     }),
     analysis: lazy(async () => mainCommand, {
       name: 'analysis',
@@ -92,14 +80,6 @@ async function main(): Promise<void> {
     jquants: lazy(async () => mainCommand, {
       name: 'jquants',
       description: 'JQuants API operations - auth, fetch',
-    }),
-    portfolio: lazy(async () => mainCommand, {
-      name: 'portfolio',
-      description: 'Portfolio management - track stock holdings',
-    }),
-    watchlist: lazy(async () => mainCommand, {
-      name: 'watchlist',
-      description: 'Watchlist management - lightweight stock monitoring lists',
     }),
     backtest: lazy(async () => mainCommand, {
       name: 'backtest',

@@ -39,20 +39,11 @@ ${CLI_NAME} jquants auth status
       spinner.stop();
       console.log(chalk.cyan('\n🔐 Authentication Status'));
       console.log(chalk.white('━'.repeat(50)));
-      console.log(chalk.yellow('API Connected:'), authStatus.authenticated ? chalk.green('Yes') : chalk.red('No'));
-      console.log(
-        chalk.yellow('Has Refresh Token:'),
-        authStatus.hasRefreshToken ? chalk.green('Yes') : chalk.red('No')
-      );
-      console.log(chalk.yellow('Has ID Token:'), authStatus.hasIdToken ? chalk.green('Yes') : chalk.red('No'));
-
-      if (authStatus.tokenExpiry) {
-        console.log(chalk.yellow('Token expires:'), new Date(authStatus.tokenExpiry).toLocaleString());
-        console.log(chalk.yellow('Time remaining:'), `${authStatus.hoursRemaining} hours`);
-      }
+      console.log(chalk.yellow('API Authenticated:'), authStatus.authenticated ? chalk.green('Yes') : chalk.red('No'));
+      console.log(chalk.yellow('API Key Configured:'), authStatus.hasApiKey ? chalk.green('Yes') : chalk.red('No'));
 
       if (!authStatus.authenticated) {
-        console.log(chalk.yellow(`\n💡 Run "${CLI_NAME} jquants auth refresh-tokens" to authenticate`));
+        console.log(chalk.yellow('\n💡 Set JQUANTS_API_KEY in your .env file and retry.'));
       }
     } catch (error) {
       spinner.fail();

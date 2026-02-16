@@ -15,7 +15,7 @@ export const mockEngineStatusRunning = {
 
 export const mockAuthStatus = {
   authenticated: true,
-  tokenExpiry: new Date('2025-01-11T10:00:00Z'),
+  hasApiKey: true,
 };
 
 export const mockStockInfo = {

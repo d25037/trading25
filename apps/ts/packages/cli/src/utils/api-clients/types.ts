@@ -151,20 +151,7 @@ export interface PortfolioFactorRegressionResponse {
  */
 export interface AuthStatusResponse {
   authenticated: boolean;
-  hasRefreshToken: boolean;
-  hasIdToken: boolean;
-  tokenExpiry: string | null;
-  hoursRemaining: number | null;
-}
-
-/**
- * JQuants token refresh response
- */
-export interface RefreshTokenResponse {
-  refreshToken: string;
-  idToken: string;
-  expiresAt: string;
-  success: boolean;
+  hasApiKey: boolean;
 }
 
 /**

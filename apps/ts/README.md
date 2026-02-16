@@ -8,7 +8,7 @@
 | Package | Role | Status |
 |---|---|---|
 | `packages/web` | React 19 + Vite フロントエンド | Active |
-| `packages/cli` | Gunshi CLI（dataset/portfolio/analysis/backtest） | Active |
+| `packages/cli` | Gunshi CLI（db/dataset/jquants/backtest/analysis の運用・自動化） | Active |
 | `packages/shared` | 共有ロジック、DBアクセス、型公開、`bt:sync` | Active |
 | `packages/clients-ts` | FastAPI クライアント（backtest/JQuants） | Active |
 
@@ -76,12 +76,14 @@ bun run --filter @trading25/shared bt:sync
 # DB
 bun cli db sync
 bun cli db validate
+bun cli db stats
 bun cli db refresh
 
 # Dataset
 bun cli dataset create prime.db --preset primeMarket
 bun cli dataset info prime.db
-bun cli dataset validate prime.db
+bun cli dataset sample prime.db --size 100
+bun cli dataset search prime.db toyota
 
 # Analytics
 bun cli analysis roe 7203
@@ -90,10 +92,17 @@ bun cli analysis screening
 bun cli analysis factor-regression 7203
 bun cli analysis portfolio-factor-regression 1
 
-# Portfolio / Watchlist
-bun cli portfolio create "My Portfolio"
-bun cli watchlist create "Tech Stocks"
+# JQuants proxy fetch
+bun cli jquants auth status
+bun cli jquants fetch listed-info --date 2026-01-05
+bun cli jquants fetch daily-quotes 7203 --csv
+
+# Backtest headless
+bun cli backtest run production/range_break_v5 --wait
+bun cli backtest results --format json
 ```
+
+`portfolio` / `watchlist` の日常 CRUD は `packages/web` の Portfolio ページに移行済みです。
 
 ## Environment Variables
 

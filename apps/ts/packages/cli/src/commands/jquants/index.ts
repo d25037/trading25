@@ -64,9 +64,7 @@ export function handleApiError(error: unknown, message: string): never {
   if (error instanceof Error) {
     console.error(chalk.gray(error.message));
     if (error.message.includes('authentication') || error.message.includes('token')) {
-      console.log(
-        chalk.yellow(`\n💡 Tip: Run "${CLI_NAME} jquants auth refresh-tokens" to update your authentication`)
-      );
+      console.log(chalk.yellow(`\n💡 Tip: Run "${CLI_NAME} jquants auth status" to check API key configuration`));
     }
   }
   throw new CLIError(message, 1, true, { cause: error });
