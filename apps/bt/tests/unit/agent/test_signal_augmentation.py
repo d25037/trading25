@@ -5,7 +5,18 @@ from __future__ import annotations
 import random
 
 from src.agent.models import StrategyCandidate
-from src.agent.signal_augmentation import apply_random_add_structure
+from src.agent.signal_augmentation import (
+    _apply_random_add_side,
+    _is_enabled_signal_params,
+    _is_fundamental_only,
+    _is_mutually_exclusive,
+    _is_usage_allowed,
+    _list_addable_signals,
+    _list_enabled_fundamental_children,
+    _enable_fundamental_children,
+    apply_random_add_structure,
+)
+from src.agent.signal_catalog import SIGNAL_CONSTRAINTS_MAP
 from src.agent.signal_param_factory import build_signal_params
 from src.agent.signal_search_space import PARAM_RANGES
 
@@ -117,6 +128,172 @@ def test_random_add_injects_missing_base_signal() -> None:
 
     assert "volume" in updated.entry_filter_params
     assert updated.entry_filter_params["volume"]["enabled"] is True
+
+
+def test_random_add_fundamental_only_enables_nested_children() -> None:
+    rng = DeterministicRng()
+    base = _make_candidate(
+        entry={
+            "fundamental": {
+                "enabled": True,
+                "per": {"enabled": True, "threshold": 15.0},
+                "pbr": {"enabled": False, "threshold": 1.0},
+                "forward_eps_growth": {"enabled": False, "threshold": 0.1},
+            }
+        }
+    )
+
+    updated, added = apply_random_add_structure(
+        base,
+        rng=rng,
+        add_entry_signals=2,
+        add_exit_signals=0,
+        base_entry_signals={"fundamental"},
+        base_exit_signals=set(),
+        allowed_categories={"fundamental"},
+    )
+
+    fundamental = updated.entry_filter_params["fundamental"]
+    enabled_children = {
+        child_name
+        for child_name, child_params in fundamental.items()
+        if isinstance(child_params, dict) and child_params.get("enabled")
+    }
+
+    assert enabled_children == {"per", "pbr", "forward_eps_growth"}
+    assert added["entry"] == [
+        "fundamental.pbr",
+        "fundamental.forward_eps_growth",
+    ]
+
+
+def test_random_add_fundamental_only_with_empty_base_adds_parent_and_child() -> None:
+    rng = DeterministicRng()
+    base = _make_candidate(entry={})
+
+    updated, added = apply_random_add_structure(
+        base,
+        rng=rng,
+        add_entry_signals=2,
+        add_exit_signals=0,
+        base_entry_signals=set(),
+        base_exit_signals=set(),
+        allowed_categories={"fundamental"},
+    )
+
+    assert "fundamental" in updated.entry_filter_params
+    assert "fundamental" in added["entry"]
+    assert any(item.startswith("fundamental.") for item in added["entry"])
+
+
+def test_is_enabled_signal_params_variants() -> None:
+    assert _is_enabled_signal_params(True) is True
+    assert _is_enabled_signal_params({"enabled": False}) is False
+    assert _is_enabled_signal_params({"threshold": 1.0}) is True
+
+
+def test_is_fundamental_only_scope() -> None:
+    assert _is_fundamental_only("entry", {"fundamental"}) is True
+    assert _is_fundamental_only("exit", {"fundamental"}) is False
+    assert _is_fundamental_only("entry", set()) is False
+
+
+def test_is_mutually_exclusive_handles_symmetric_constraints() -> None:
+    assert _is_mutually_exclusive("rsi_threshold", {"rsi_spread"}) is True
+    assert _is_mutually_exclusive("volume", {"period_breakout"}) is False
+
+
+def test_list_enabled_fundamental_children_skips_non_toggle_items() -> None:
+    enabled = _list_enabled_fundamental_children(
+        {
+            "per": {"enabled": True},
+            "pbr": {"enabled": False},
+            "period_type": "FY",
+            "metadata": {"threshold": 0.1},
+        }
+    )
+    assert enabled == {"per"}
+
+
+def test_enable_fundamental_children_zero_add_returns_empty() -> None:
+    working = {"fundamental": {"enabled": True, "per": {"enabled": True}}}
+    added = _enable_fundamental_children(working, rng=DeterministicRng(), add_signals=0)
+    assert added == []
+
+
+def test_enable_fundamental_children_merges_missing_defaults() -> None:
+    working = {
+        "fundamental": {
+            "enabled": True,
+            "per": {"enabled": True, "threshold": 12.0},
+            "period_type": "FY",
+        }
+    }
+    added = _enable_fundamental_children(working, rng=DeterministicRng(), add_signals=1)
+
+    assert added and added[0].startswith("fundamental.")
+    merged = working["fundamental"]
+    assert "pbr" in merged
+    assert "use_adjusted" in merged
+    assert merged["per"]["enabled"] is True
+
+
+def test_apply_random_add_side_enables_existing_and_injects_missing_base() -> None:
+    updated, _ = _apply_random_add_side(
+        params_dict={"volume": {"enabled": False}},
+        usage_type="entry",
+        rng=DeterministicRng(),
+        base_signals={"volume", "period_breakout"},
+        add_signals=0,
+        allowed_categories=set(),
+    )
+    assert updated["volume"]["enabled"] is True
+    assert "period_breakout" in updated
+
+
+def test_apply_random_add_side_fundamental_only_adds_nested_child() -> None:
+    updated, added = _apply_random_add_side(
+        params_dict={
+            "fundamental": {"enabled": True, "per": {"enabled": True}},
+            "volume": {"enabled": True},
+        },
+        usage_type="entry",
+        rng=DeterministicRng(),
+        base_signals={"fundamental"},
+        add_signals=1,
+        allowed_categories={"fundamental"},
+    )
+
+    assert "volume" in updated
+    assert "fundamental" not in added
+    assert any(item.startswith("fundamental.") for item in added)
+
+
+def test_list_addable_signals_filters_usage_and_constraints() -> None:
+    enabled = {"rsi_threshold"}
+    addable_entry = _list_addable_signals(
+        usage_type="entry",
+        enabled=enabled,
+        allowed_categories={"oscillator"},
+    )
+    assert "rsi_spread" not in addable_entry
+    assert "rsi_threshold" not in addable_entry
+
+    addable_exit = _list_addable_signals(
+        usage_type="exit",
+        enabled=set(),
+        allowed_categories={"fundamental"},
+    )
+    assert addable_exit == []
+
+
+def test_is_usage_allowed_rules() -> None:
+    both_signal = SIGNAL_CONSTRAINTS_MAP["volume"]
+    entry_only_signal = SIGNAL_CONSTRAINTS_MAP["fundamental"]
+
+    assert _is_usage_allowed(both_signal, "entry") is True
+    assert _is_usage_allowed(entry_only_signal, "entry") is True
+    assert _is_usage_allowed(entry_only_signal, "exit") is False
 
 
 def test_build_signal_params_within_ranges() -> None:
