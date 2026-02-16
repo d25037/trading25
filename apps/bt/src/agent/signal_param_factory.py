@@ -11,9 +11,11 @@ This module keeps the "reasonable defaults per usage (entry/exit)" in one place.
 from __future__ import annotations
 
 import copy
-from typing import Any, Literal, Protocol, Sequence, TypeVar
+from typing import Any, Literal, Protocol, Sequence, TypeVar, cast
 
-from .signal_search_space import PARAM_RANGES
+from src.models.signals import SignalParams
+
+from .signal_search_space import PARAM_RANGES, ParamType
 
 UsageType = Literal["entry", "exit"]
 
@@ -144,7 +146,10 @@ def get_default_params(
         "fundamental": _get_default_fundamental_params(usage_type, rng),
     }
 
-    return signal_defaults.get(signal_name, {})
+    if signal_name in signal_defaults:
+        return signal_defaults[signal_name]
+
+    return _get_signal_model_defaults(signal_name)
 
 
 def randomize_params(
@@ -156,22 +161,63 @@ def randomize_params(
     if signal_name == "fundamental":
         return _randomize_fundamental_params(params, rng)
 
-    randomized = params.copy()
+    randomized = copy.deepcopy(params)
     ranges = PARAM_RANGES.get(signal_name, {})
+    if not ranges:
+        return randomized
 
-    for param_name in list(params.keys()):
-        if param_name == "enabled":
+    _randomize_nested_params(randomized, ranges, rng)
+    return randomized
+
+
+def _randomize_nested_params(
+    params: dict[str, Any],
+    ranges: dict[str, tuple[float, float, ParamType]],
+    rng: RandomLike[Any],
+    prefix: str = "",
+    enabled_gated: bool = False,
+) -> None:
+    for key, value in params.items():
+        if key == "enabled":
             continue
+
+        param_name = f"{prefix}.{key}" if prefix else key
+        if isinstance(value, dict):
+            if enabled_gated and "enabled" in value and not bool(value["enabled"]):
+                continue
+            _randomize_nested_params(
+                value,
+                ranges,
+                rng,
+                prefix=param_name,
+                enabled_gated=enabled_gated,
+            )
+            continue
+
         if param_name not in ranges:
             continue
 
         min_val, max_val, param_type = ranges[param_name]
         if param_type == "int":
-            randomized[param_name] = rng.randint(int(min_val), int(max_val))
+            params[key] = rng.randint(int(min_val), int(max_val))
         else:
-            randomized[param_name] = rng.uniform(min_val, max_val)
+            params[key] = rng.uniform(min_val, max_val)
 
-    return randomized
+
+def _get_signal_model_defaults(signal_name: str) -> dict[str, Any]:
+    """SignalParams からデフォルト値を取得（未知シグナル向けフォールバック）。"""
+    field_info = SignalParams.model_fields.get(signal_name)
+    if field_info is None:
+        return {}
+
+    default_value = field_info.get_default(call_default_factory=True)
+    if default_value is None:
+        return {}
+    if isinstance(default_value, dict):
+        return copy.deepcopy(default_value)
+    if hasattr(default_value, "model_dump"):
+        return cast(dict[str, Any], default_value.model_dump())
+    return {}
 
 
 def _get_default_fundamental_params(
@@ -179,103 +225,23 @@ def _get_default_fundamental_params(
     rng: RandomLike[Any],
 ) -> dict[str, Any]:
     """Build nested params for fundamental."""
-    if usage_type != "entry":
-        return {
-            "use_adjusted": True,
-            "period_type": "FY",
-            "per": {
-                "enabled": False,
-                "threshold": 20.0,
-                "condition": "below",
-                "exclude_negative": True,
-            },
-        }
+    defaults = _get_signal_model_defaults("fundamental")
+    if not defaults:
+        return {}
 
-    options: dict[str, dict[str, Any]] = {
-        "per": {
-            "enabled": False,
-            "threshold": 15.0,
-            "condition": "below",
-            "exclude_negative": True,
-        },
-        "pbr": {
-            "enabled": False,
-            "threshold": 1.2,
-            "condition": "below",
-            "exclude_negative": True,
-        },
-        "peg_ratio": {
-            "enabled": False,
-            "threshold": 1.2,
-            "condition": "below",
-        },
-        "forward_eps_growth": {
-            "enabled": False,
-            "threshold": 0.1,
-            "condition": "above",
-        },
-        "eps_growth": {
-            "enabled": False,
-            "threshold": 0.1,
-            "periods": 1,
-            "condition": "above",
-        },
-        "roe": {
-            "enabled": False,
-            "threshold": 10.0,
-            "condition": "above",
-        },
-        "roa": {
-            "enabled": False,
-            "threshold": 5.0,
-            "condition": "above",
-        },
-        "operating_margin": {
-            "enabled": False,
-            "threshold": 10.0,
-            "condition": "above",
-        },
-        "dividend_yield": {
-            "enabled": False,
-            "threshold": 2.0,
-            "condition": "above",
-        },
-        "dividend_per_share_growth": {
-            "enabled": False,
-            "threshold": 0.1,
-            "periods": 1,
-            "condition": "above",
-        },
-        "cfo_yield_growth": {
-            "enabled": False,
-            "threshold": 0.1,
-            "periods": 1,
-            "condition": "above",
-            "use_floating_shares": True,
-        },
-        "simple_fcf_yield_growth": {
-            "enabled": False,
-            "threshold": 0.1,
-            "periods": 1,
-            "condition": "above",
-            "use_floating_shares": True,
-        },
-        "market_cap": {
-            "enabled": False,
-            "threshold": 300.0,
-            "condition": "above",
-            "use_floating_shares": True,
-        },
-    }
+    child_keys = _list_enable_children(defaults)
+    for key in child_keys:
+        child = defaults.get(key)
+        if isinstance(child, dict):
+            child["enabled"] = False
 
-    selected_key = rng.choice(list(options.keys()))
-    options[selected_key]["enabled"] = True
+    if usage_type == "entry" and child_keys:
+        selected_key = rng.choice(child_keys)
+        selected = defaults.get(selected_key)
+        if isinstance(selected, dict):
+            selected["enabled"] = True
 
-    return {
-        "use_adjusted": True,
-        "period_type": "FY",
-        **options,
-    }
+    return defaults
 
 
 def _randomize_fundamental_params(
@@ -284,41 +250,14 @@ def _randomize_fundamental_params(
 ) -> dict[str, Any]:
     """Randomize thresholds inside nested fundamental params."""
     randomized = copy.deepcopy(params)
-
-    ranges: dict[str, dict[str, tuple[float, float, str]]] = {
-        "per": {"threshold": (5.0, 40.0, "float")},
-        "pbr": {"threshold": (0.3, 5.0, "float")},
-        "peg_ratio": {"threshold": (0.3, 3.0, "float")},
-        "forward_eps_growth": {"threshold": (0.02, 0.5, "float")},
-        "eps_growth": {"threshold": (0.02, 0.5, "float"), "periods": (1, 8, "int")},
-        "roe": {"threshold": (3.0, 25.0, "float")},
-        "roa": {"threshold": (2.0, 15.0, "float")},
-        "operating_margin": {"threshold": (3.0, 30.0, "float")},
-        "dividend_yield": {"threshold": (0.5, 8.0, "float")},
-        "dividend_per_share_growth": {
-            "threshold": (0.02, 0.5, "float"),
-            "periods": (1, 8, "int"),
-        },
-        "cfo_yield_growth": {"threshold": (0.02, 0.5, "float"), "periods": (1, 8, "int")},
-        "simple_fcf_yield_growth": {
-            "threshold": (0.02, 0.5, "float"),
-            "periods": (1, 8, "int"),
-        },
-        "market_cap": {"threshold": (50.0, 5000.0, "float")},
-    }
-
-    for field_name, field_ranges in ranges.items():
-        field_value = randomized.get(field_name)
-        if not isinstance(field_value, dict) or not field_value.get("enabled"):
-            continue
-
-        for param_name, (min_val, max_val, param_type) in field_ranges.items():
-            if param_name not in field_value:
-                continue
-
-            if param_type == "int":
-                field_value[param_name] = rng.randint(int(min_val), int(max_val))
-            else:
-                field_value[param_name] = rng.uniform(min_val, max_val)
-
+    ranges = PARAM_RANGES.get("fundamental", {})
+    _randomize_nested_params(randomized, ranges, rng, enabled_gated=True)
     return randomized
+
+
+def _list_enable_children(params: dict[str, Any]) -> list[str]:
+    children: list[str] = []
+    for key, value in params.items():
+        if isinstance(value, dict) and "enabled" in value:
+            children.append(key)
+    return children
