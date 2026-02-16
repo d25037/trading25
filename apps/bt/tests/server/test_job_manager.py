@@ -58,6 +58,17 @@ class TestJobManager:
         jobs = mgr.list_jobs(limit=3)
         assert len(jobs) == 3
 
+    def test_list_jobs_filter_by_job_types(self):
+        mgr = JobManager()
+        lab_id = mgr.create_job("lab_strat", job_type="lab_generate")
+        mgr.create_job("bt_strat", job_type="backtest")
+
+        jobs = mgr.list_jobs(job_types={"lab_generate"})
+
+        assert len(jobs) == 1
+        assert jobs[0].job_id == lab_id
+        assert jobs[0].job_type == "lab_generate"
+
     @pytest.mark.asyncio
     async def test_update_job_status_running(self):
         mgr = JobManager()
