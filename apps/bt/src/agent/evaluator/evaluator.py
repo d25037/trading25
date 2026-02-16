@@ -9,6 +9,7 @@ from typing import Any
 from loguru import logger
 
 from src.constants import DEFAULT_SCORING_WEIGHTS, EVALUATION_TIMEOUT_SECONDS
+from src.data.access.mode import data_access_mode_context
 from src.data.loaders.cache import DataCache
 
 from ..models import EvaluationResult, StrategyCandidate
@@ -67,9 +68,10 @@ class StrategyEvaluator:
         Returns:
             評価結果
         """
-        return evaluate_single_candidate(
-            candidate, self.shared_config_dict, self.scoring_weights
-        )
+        with data_access_mode_context("direct"):
+            return evaluate_single_candidate(
+                candidate, self.shared_config_dict, self.scoring_weights
+            )
 
     def evaluate_batch(
         self,
@@ -96,22 +98,23 @@ class StrategyEvaluator:
         if not candidates:
             return []
 
-        # キャッシュ有効化（バッチ評価中のAPIコール削減）
-        if enable_cache:
-            DataCache.enable()
-            logger.debug("DataCache enabled for batch evaluation")
-
-        try:
-            results = self._evaluate_batch_internal(candidates, top_k)
-        finally:
-            # キャッシュ無効化・クリア
+        with data_access_mode_context("direct"):
+            # キャッシュ有効化（バッチ評価中のAPIコール削減）
             if enable_cache:
-                stats = DataCache.get_instance().get_stats()
-                DataCache.disable()
-                hits, misses = stats["hits"], stats["misses"]
-                logger.debug(f"DataCache disabled: hits={hits}, misses={misses}")
+                DataCache.enable()
+                logger.debug("DataCache enabled for batch evaluation")
 
-        return results
+            try:
+                results = self._evaluate_batch_internal(candidates, top_k)
+            finally:
+                # キャッシュ無効化・クリア
+                if enable_cache:
+                    stats = DataCache.get_instance().get_stats()
+                    DataCache.disable()
+                    hits, misses = stats["hits"], stats["misses"]
+                    logger.debug(f"DataCache disabled: hits={hits}, misses={misses}")
+
+            return results
 
     def _evaluate_batch_internal(
         self,
