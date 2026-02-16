@@ -140,6 +140,23 @@ describe('ChartControls', () => {
     expect(screen.getByRole('button', { name: /検索/i })).toBeInTheDocument();
   });
 
+  it('uses non-password-search input attributes for symbol search', () => {
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
+    const form = input.closest('form');
+
+    expect(input).toHaveAttribute('type', 'search');
+    expect(input).toHaveAttribute('name', 'symbol-search');
+    expect(input).toHaveAttribute('autocomplete', 'off');
+    expect(input).toHaveAttribute('inputmode', 'search');
+    expect(input).toHaveAttribute('enterkeyhint', 'search');
+    expect(input).toHaveAttribute('data-form-type', 'other');
+    expect(input).toHaveAttribute('data-lpignore', 'true');
+    expect(input).toHaveAttribute('data-1p-ignore', 'true');
+    expect(form).toHaveAttribute('autocomplete', 'off');
+  });
+
   it('submits symbol when form is submitted', async () => {
     const user = userEvent.setup();
     mockChartStore.setSelectedSymbol = vi.fn();
