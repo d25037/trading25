@@ -12,6 +12,7 @@ from datetime import datetime
 from typing import Any
 
 from sqlalchemy import func, insert, select, text
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
 from src.lib.market_db.base import BaseDbAccess
 from src.lib.market_db.tables import (
@@ -105,6 +106,16 @@ class MarketDb(BaseDbAccess):
             if row.code and row.max_date
         }
 
+    def get_index_master_codes(self) -> set[str]:
+        """index_master に存在する指数コード一覧を取得"""
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(index_master.c.code)).fetchall()
+        return {
+            row.code
+            for row in rows
+            if row.code
+        }
+
     # --- Write ---
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
@@ -175,11 +186,20 @@ class MarketDb(BaseDbAccess):
             return 0
         with self.engine.begin() as conn:
             for row in rows:
-                row["updated_at"] = datetime.now().isoformat()  # noqa: DTZ005
+                payload = dict(row)
+                payload["updated_at"] = datetime.now().isoformat()  # noqa: DTZ005
+                stmt = sqlite_insert(index_master).values(payload)
                 conn.execute(
-                    insert(index_master)
-                    .values(row)
-                    .prefix_with("OR REPLACE")
+                    stmt.on_conflict_do_update(
+                        index_elements=[index_master.c.code],
+                        set_={
+                            "name": stmt.excluded.name,
+                            "name_english": stmt.excluded.name_english,
+                            "category": stmt.excluded.category,
+                            "data_start_date": stmt.excluded.data_start_date,
+                            "updated_at": stmt.excluded.updated_at,
+                        },
+                    )
                 )
             return len(rows)
 

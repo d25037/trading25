@@ -319,6 +319,7 @@ class IncrementalSyncStrategy:
                         errors.append(f"Index {code}: {e}")
                         logger.warning(f"Index {code} incremental sync error: {e}")
             else:
+                known_master_codes = ctx.market_db.get_index_master_codes()
                 latest_index_date = _latest_date(list(latest_index_dates.values()))
                 fallback_dates = _extract_dates_after(
                     topix_rows,
@@ -361,6 +362,18 @@ class IncrementalSyncStrategy:
                         total_calls += 1
                         rows = _convert_indices_data_rows(data, None)
                         if rows:
+                            missing_master_rows = _build_fallback_index_master_rows(rows, known_master_codes)
+                            if missing_master_rows:
+                                await asyncio.to_thread(ctx.market_db.upsert_index_master, missing_master_rows)
+                                known_master_codes.update(
+                                    str(row["code"])
+                                    for row in missing_master_rows
+                                    if row.get("code")
+                                )
+                                logger.warning(
+                                    "Index master unavailable. Inserted {} fallback master rows for FK compatibility.",
+                                    len(missing_master_rows),
+                                )
                             await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
                     except Exception as e:
                         errors.append(f"Index date {index_date}: {e}")
@@ -532,6 +545,43 @@ def _convert_indices_data_rows(data: list[dict[str, Any]], code: str | None) -> 
     if skipped_missing_code > 0:
         logger.warning("Skipped {} index rows with missing code", skipped_missing_code)
     return rows
+
+
+def _build_fallback_index_master_rows(
+    rows: list[dict[str, Any]],
+    known_codes: set[str],
+) -> list[dict[str, Any]]:
+    """index_master 欠損コード向けに最小プレースホルダ行を作る。"""
+    created_at = datetime.now(UTC).isoformat()
+    missing_rows_by_code: dict[str, dict[str, Any]] = {}
+
+    for row in rows:
+        code = _normalize_index_code(row.get("code"))
+        if not code or code in known_codes:
+            continue
+
+        row_name = str(row.get("sector_name") or "").strip()
+        placeholder_name = row_name or code
+        row_date = str(row.get("date") or "").strip() or None
+
+        existing = missing_rows_by_code.get(code)
+        if existing is None:
+            missing_rows_by_code[code] = {
+                "code": code,
+                "name": placeholder_name,
+                "name_english": None,
+                "category": "unknown",
+                "data_start_date": row_date,
+                "created_at": created_at,
+            }
+            continue
+
+        if existing["name"] == code and row_name:
+            existing["name"] = row_name
+        if existing["data_start_date"] is None and row_date:
+            existing["data_start_date"] = row_date
+
+    return list(missing_rows_by_code.values())
 
 
 def _normalize_index_code(value: Any) -> str:

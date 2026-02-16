@@ -7,6 +7,7 @@ from __future__ import annotations
 from pathlib import Path
 
 import pytest
+from sqlalchemy import text
 
 from src.lib.market_db.market_db import MarketDb
 from src.lib.market_db.tables import market_meta
@@ -305,3 +306,63 @@ class TestMarketDbReadOnly:
 
         monkeypatch.setattr("src.lib.market_db.market_db.os.path.getsize", _raise_os_error)
         assert market_db.get_db_file_size() == 0
+
+
+class TestMarketDbLegacySchemaCompatibility:
+    def test_upsert_index_master_with_existing_child_rows_under_fk(self, tmp_path: Path) -> None:
+        db_path = str(tmp_path / "market_fk.db")
+        market_db = MarketDb(db_path)
+
+        try:
+            with market_db.engine.begin() as conn:
+                conn.execute(text("PRAGMA foreign_keys=ON"))
+                conn.execute(text("""
+                    CREATE TABLE index_master (
+                        code TEXT PRIMARY KEY,
+                        name TEXT NOT NULL,
+                        name_english TEXT,
+                        category TEXT NOT NULL,
+                        data_start_date TEXT,
+                        created_at TEXT,
+                        updated_at TEXT
+                    )
+                """))
+                conn.execute(text("""
+                    CREATE TABLE indices_data (
+                        code TEXT NOT NULL,
+                        date TEXT NOT NULL,
+                        open REAL,
+                        high REAL,
+                        low REAL,
+                        close REAL,
+                        sector_name TEXT,
+                        created_at TEXT,
+                        PRIMARY KEY (code, date),
+                        FOREIGN KEY(code) REFERENCES index_master(code)
+                    )
+                """))
+                conn.execute(text("""
+                    INSERT INTO index_master (code, name, category)
+                    VALUES ('0000', 'TOPIX', 'topix')
+                """))
+                conn.execute(text("""
+                    INSERT INTO indices_data (code, date, close)
+                    VALUES ('0000', '2026-02-10', 100.0)
+                """))
+
+            market_db.upsert_index_master([
+                {
+                    "code": "0000",
+                    "name": "TOPIX Updated",
+                    "category": "topix",
+                }
+            ])
+
+            with market_db.engine.connect() as conn:
+                updated_name = conn.execute(
+                    text("SELECT name FROM index_master WHERE code = '0000'")
+                ).scalar_one()
+
+            assert updated_name == "TOPIX Updated"
+        finally:
+            market_db.close()
