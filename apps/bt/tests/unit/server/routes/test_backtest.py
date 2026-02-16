@@ -137,6 +137,44 @@ class TestGetResult:
         resp = client.get("/api/backtest/result/job-1")
         assert resp.status_code == 500
 
+    def test_success_uses_artifact_summary_even_when_result_missing(self, client, mock_services, tmp_path):
+        _, mock_jm = mock_services
+        html_path = tmp_path / "report.html"
+        html_path.write_text("<html>ok</html>", encoding="utf-8")
+        mock_jm.get_job.return_value = _make_job(
+            "job-1",
+            JobStatus.COMPLETED,
+            result=None,
+            html_path=str(html_path),
+            raw_result={
+                "total_return": 1.0,
+                "sharpe_ratio": 1.0,
+                "sortino_ratio": 1.0,
+                "calmar_ratio": 1.0,
+                "max_drawdown": -1.0,
+                "win_rate": 50.0,
+                "trade_count": 1,
+            },
+        )
+        metrics = MagicMock(
+            total_return=11.0,
+            sharpe_ratio=1.9,
+            sortino_ratio=2.2,
+            calmar_ratio=2.4,
+            max_drawdown=-4.0,
+            win_rate=61.0,
+            total_trades=17,
+        )
+
+        with patch("src.server.services.backtest_result_summary.extract_metrics_from_html", return_value=metrics):
+            resp = client.get("/api/backtest/result/job-1")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total_return"] == 11.0
+        assert data["summary"]["sortino_ratio"] == 2.2
+        assert data["summary"]["trade_count"] == 17
+
     def test_include_html_returns_base64_content(self, client, mock_services, tmp_path):
         _, mock_jm = mock_services
         html_path = tmp_path / "report.html"
@@ -164,11 +202,60 @@ class TestGetResult:
 class TestBacktestJobEndpoints:
     def test_get_job_status_success(self, client, mock_services):
         _, mock_jm = mock_services
-        mock_jm.get_job.return_value = _make_job("job-1", JobStatus.RUNNING)
+        result = BacktestResultSummary(
+            total_return=10.0,
+            sharpe_ratio=1.5,
+            sortino_ratio=1.8,
+            calmar_ratio=2.0,
+            max_drawdown=-5.0,
+            win_rate=60.0,
+            trade_count=100,
+        )
+        mock_jm.get_job.return_value = _make_job("job-1", JobStatus.COMPLETED, result=result)
 
         resp = client.get("/api/backtest/jobs/job-1")
         assert resp.status_code == 200
         assert resp.json()["job_id"] == "job-1"
+        assert resp.json()["result"]["sortino_ratio"] == 1.8
+
+    def test_get_job_status_prefers_artifact_summary(self, client, mock_services, tmp_path):
+        _, mock_jm = mock_services
+        html_path = tmp_path / "report.html"
+        html_path.write_text("<html>ok</html>", encoding="utf-8")
+        result = BacktestResultSummary(
+            total_return=5.0,
+            sharpe_ratio=1.1,
+            sortino_ratio=1.3,
+            calmar_ratio=1.4,
+            max_drawdown=-3.0,
+            win_rate=54.0,
+            trade_count=9,
+        )
+        mock_jm.get_job.return_value = _make_job(
+            "job-1",
+            JobStatus.COMPLETED,
+            result=result,
+            html_path=str(html_path),
+            raw_result=result.model_dump(),
+        )
+        metrics = MagicMock(
+            total_return=15.0,
+            sharpe_ratio=2.5,
+            sortino_ratio=2.9,
+            calmar_ratio=3.2,
+            max_drawdown=-6.0,
+            win_rate=66.0,
+            total_trades=21,
+        )
+
+        with patch("src.server.services.backtest_result_summary.extract_metrics_from_html", return_value=metrics):
+            resp = client.get("/api/backtest/jobs/job-1")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["result"]["total_return"] == 15.0
+        assert data["result"]["sortino_ratio"] == 2.9
+        assert data["result"]["trade_count"] == 21
 
     def test_list_jobs_success(self, client, mock_services):
         _, mock_jm = mock_services

@@ -3,9 +3,8 @@ BacktestService unit tests
 """
 
 import asyncio
-import sys
-import types
 from pathlib import Path
+from unittest.mock import patch
 
 import pytest
 
@@ -200,7 +199,7 @@ async def test_run_backtest_handles_cancelled_and_failure(monkeypatch):
     assert "failed" in status_values
 
 
-def test_extract_result_summary_prefers_html_metrics(monkeypatch, tmp_path: Path):
+def test_extract_result_summary_prefers_html_metrics(tmp_path: Path):
     service = BacktestService()
     html_path = tmp_path / "result.html"
     html_path.write_text("<html></html>", encoding="utf-8")
@@ -212,24 +211,28 @@ def test_extract_result_summary_prefers_html_metrics(monkeypatch, tmp_path: Path
         dataset_name="sample",
     )
 
-    fake_metrics_module = types.SimpleNamespace(
-        extract_metrics_from_html=lambda _path: types.SimpleNamespace(
-            total_return=1.0,
-            sharpe_ratio=2.0,
-            calmar_ratio=3.0,
-            max_drawdown=4.0,
-            win_rate=5.0,
-            total_trades=6,
-        )
-    )
-    monkeypatch.setitem(sys.modules, "src.data.metrics_extractor", fake_metrics_module)
+    with patch("src.server.services.backtest_result_summary.extract_metrics_from_html") as mock_extract:
+        mock_extract.return_value = type(
+            "Metrics",
+            (),
+            {
+                "total_return": 1.0,
+                "sharpe_ratio": 2.0,
+                "sortino_ratio": 2.5,
+                "calmar_ratio": 3.0,
+                "max_drawdown": 4.0,
+                "win_rate": 5.0,
+                "total_trades": 6,
+            },
+        )()
 
-    summary = service._extract_result_summary(result)
-    assert summary.total_return == 1.0
-    assert summary.trade_count == 6
+        summary = service._extract_result_summary(result)
+        assert summary.total_return == 1.0
+        assert summary.sortino_ratio == 2.5
+        assert summary.trade_count == 6
 
 
-def test_extract_result_summary_fallback_when_metrics_fail(monkeypatch, tmp_path: Path):
+def test_extract_result_summary_fallback_when_metrics_fail(tmp_path: Path):
     service = BacktestService()
     html_path = tmp_path / "result.html"
     html_path.write_text("<html></html>", encoding="utf-8")
@@ -239,6 +242,7 @@ def test_extract_result_summary_fallback_when_metrics_fail(monkeypatch, tmp_path
         summary={
             "total_return": 7.0,
             "sharpe_ratio": 8.0,
+            "sortino_ratio": 8.5,
             "calmar_ratio": 9.0,
             "max_drawdown": 10.0,
             "win_rate": 11.0,
@@ -248,14 +252,11 @@ def test_extract_result_summary_fallback_when_metrics_fail(monkeypatch, tmp_path
         dataset_name="sample",
     )
 
-    fake_metrics_module = types.SimpleNamespace(
-        extract_metrics_from_html=lambda _path: (_ for _ in ()).throw(RuntimeError("bad html"))
-    )
-    monkeypatch.setitem(sys.modules, "src.data.metrics_extractor", fake_metrics_module)
-
-    summary = service._extract_result_summary(result)
-    assert summary.total_return == 7.0
-    assert summary.trade_count == 12
+    with patch("src.server.services.backtest_result_summary.extract_metrics_from_html", side_effect=RuntimeError("bad html")):
+        summary = service._extract_result_summary(result)
+        assert summary.total_return == 7.0
+        assert summary.sortino_ratio == 8.5
+        assert summary.trade_count == 12
 
 
 def test_get_execution_info_delegates_to_runner():

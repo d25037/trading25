@@ -11311,6 +11311,18 @@
             "title": "Sharpe Ratio",
             "description": "シャープレシオ"
           },
+          "sortino_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Sortino Ratio",
+            "description": "ソルティノレシオ"
+          },
           "calmar_ratio": {
             "type": "number",
             "title": "Calmar Ratio",
