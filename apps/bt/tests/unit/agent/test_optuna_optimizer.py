@@ -174,7 +174,11 @@ class TestOptimizeFlow:
             optimizer.optimize("demo_strategy", progress_callback=None)
 
     def test_optimize_applies_random_add_structure_when_enabled(self):
-        optimizer = _make_optimizer(n_trials=10, target_scope="entry_filter_only")
+        optimizer = _make_optimizer(
+            n_trials=10,
+            target_scope="entry_filter_only",
+            allowed_categories=["fundamental"],
+        )
         optimizer.config.structure_mode = "random_add"
         optimizer.config.random_add_entry_signals = 1
         optimizer.config.random_add_exit_signals = 0
@@ -203,6 +207,7 @@ class TestOptimizeFlow:
             optimizer.optimize("demo_strategy", progress_callback=None)
 
         mock_random_add.assert_called_once()
+        assert mock_random_add.call_args.kwargs["allowed_categories"] == {"fundamental"}
         assert "period_breakout" in optimizer.base_entry_params
 
 

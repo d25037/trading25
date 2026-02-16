@@ -11,6 +11,7 @@ Lab固有の制約（相互排他・推奨組み合わせ・カテゴリ互換�
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Literal, cast, get_args, get_origin
 
@@ -306,7 +307,11 @@ def _extract_range(field_info: Any, param_type: ParamType) -> ParamRange | None:
 
         gt = _read_numeric_attr(metadata, "gt")
         if gt is not None:
-            gt_value = float(int(gt) + 1) if param_type == "int" else gt
+            gt_value = (
+                float(int(gt) + 1)
+                if param_type == "int"
+                else math.nextafter(gt, math.inf)
+            )
             lower = gt_value if lower is None else max(lower, gt_value)
 
         le = _read_numeric_attr(metadata, "le")
@@ -315,7 +320,11 @@ def _extract_range(field_info: Any, param_type: ParamType) -> ParamRange | None:
 
         lt = _read_numeric_attr(metadata, "lt")
         if lt is not None:
-            lt_value = float(int(lt) - 1) if param_type == "int" else lt
+            lt_value = (
+                float(int(lt) - 1)
+                if param_type == "int"
+                else math.nextafter(lt, -math.inf)
+            )
             upper = lt_value if upper is None else min(upper, lt_value)
 
     if lower is None or upper is None:
@@ -389,4 +398,3 @@ SIGNAL_CATEGORY_MAP: dict[str, SignalCategory] = {
     signal.name: signal.category for signal in AVAILABLE_SIGNALS
 }
 PARAM_RANGES: dict[str, dict[str, ParamRange]] = _build_param_ranges()
-

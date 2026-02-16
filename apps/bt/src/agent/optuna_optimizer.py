@@ -146,6 +146,7 @@ class OptunaOptimizer:
                 add_exit_signals=add_exit_signals,
                 base_entry_signals=base_entry,
                 base_exit_signals=base_exit,
+                allowed_categories=self.allowed_category_set,
             )
             logger.info(
                 "Optuna random-add applied: "
