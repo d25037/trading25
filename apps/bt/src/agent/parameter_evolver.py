@@ -237,6 +237,7 @@ class ParameterEvolver:
                 add_exit_signals=add_exit_signals,
                 base_entry_signals=self._base_entry_signals,
                 base_exit_signals=self._base_exit_signals,
+                allowed_categories=self.allowed_category_set,
             )
             augmented.strategy_id = "base_augmented"
             population.append(augmented)
@@ -252,6 +253,7 @@ class ParameterEvolver:
                     add_exit_signals=add_exit_signals,
                     base_entry_signals=self._base_entry_signals,
                     base_exit_signals=self._base_exit_signals,
+                    allowed_categories=self.allowed_category_set,
                 )
             mutated.strategy_id = f"init_{i}"
             mutated.metadata["generation"] = 0
@@ -311,6 +313,7 @@ class ParameterEvolver:
                     add_exit_signals=add_exit_signals,
                     base_entry_signals=self._base_entry_signals,
                     base_exit_signals=self._base_exit_signals,
+                    allowed_categories=self.allowed_category_set,
                 )
 
             child.strategy_id = f"gen_{len(next_population)}"
@@ -439,6 +442,7 @@ class ParameterEvolver:
                 add_exit_signals=add_exit_signals,
                 base_entry_signals=self._base_entry_signals,
                 base_exit_signals=self._base_exit_signals,
+                allowed_categories=self.allowed_category_set,
             )
         return mutated
 

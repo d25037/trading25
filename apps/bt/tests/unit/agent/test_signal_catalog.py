@@ -43,3 +43,9 @@ def test_param_ranges_generated_for_new_signals() -> None:
     assert "retracement_level" in PARAM_RANGES["retracement"]
     assert "momentum_period" in PARAM_RANGES["sector_strength_ranking"]
 
+
+def test_param_ranges_respect_exclusive_minimums() -> None:
+    lower, upper, param_type = PARAM_RANGES["fundamental"]["forward_eps_growth.threshold"]
+    assert param_type == "float"
+    assert lower > 0.0
+    assert upper <= 2.0

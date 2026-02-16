@@ -48,6 +48,80 @@ def _pop_random(items: list[str], rng: RandomLike[Any]) -> str:
     return items.pop(idx)
 
 
+def _is_fundamental_only(
+    usage_type: UsageType,
+    allowed_categories: set[SignalCategory],
+) -> bool:
+    return usage_type == "entry" and allowed_categories == {"fundamental"}
+
+
+def _list_enabled_fundamental_children(
+    fundamental_params: dict[str, Any],
+) -> set[str]:
+    enabled_children: set[str] = set()
+    for child_name, child_params in fundamental_params.items():
+        if not isinstance(child_params, dict):
+            continue
+        if "enabled" not in child_params:
+            continue
+        if child_params.get("enabled", False):
+            enabled_children.add(child_name)
+    return enabled_children
+
+
+def _enable_fundamental_children(
+    working: dict[str, Any],
+    *,
+    rng: RandomLike[Any],
+    add_signals: int,
+) -> list[str]:
+    if add_signals <= 0:
+        return []
+
+    fundamental = working.get("fundamental")
+    if not isinstance(fundamental, dict):
+        fundamental = build_signal_params("fundamental", "entry", rng)
+    else:
+        fundamental = copy.deepcopy(fundamental)
+        default_fundamental = build_signal_params("fundamental", "entry", rng)
+        for key, value in default_fundamental.items():
+            if key in fundamental:
+                continue
+            if isinstance(value, dict) and "enabled" in value:
+                copied = value.copy()
+                copied["enabled"] = False
+                fundamental[key] = copied
+                continue
+            fundamental[key] = copy.deepcopy(value)
+
+    fundamental["enabled"] = True
+    enabled_children = _list_enabled_fundamental_children(fundamental)
+    available_children = [
+        child_name
+        for child_name, child_params in fundamental.items()
+        if (
+            isinstance(child_params, dict)
+            and "enabled" in child_params
+            and child_name not in enabled_children
+        )
+    ]
+
+    added_children: list[str] = []
+    while available_children and len(added_children) < add_signals:
+        child_name = _pop_random(available_children, rng)
+        child_params = fundamental.get(child_name)
+        if not isinstance(child_params, dict):
+            child_params = {"enabled": True}
+        else:
+            child_params = child_params.copy()
+            child_params["enabled"] = True
+        fundamental[child_name] = child_params
+        added_children.append(f"fundamental.{child_name}")
+
+    working["fundamental"] = fundamental
+    return added_children
+
+
 def apply_random_add_structure(
     candidate: StrategyCandidate,
     *,
@@ -149,6 +223,17 @@ def _apply_random_add_side(
         working[signal_name] = build_signal_params(signal_name, usage_type, rng)
         enabled.add(signal_name)
         added.append(signal_name)
+
+    if _is_fundamental_only(usage_type, allowed_categories):
+        fundamental_added = sum(1 for signal_name in added if signal_name == "fundamental")
+        nested_add_count = max(0, add_signals - fundamental_added)
+        added.extend(
+            _enable_fundamental_children(
+                working,
+                rng=rng,
+                add_signals=nested_add_count,
+            )
+        )
 
     if added:
         logger.debug(
