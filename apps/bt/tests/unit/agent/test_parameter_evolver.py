@@ -151,6 +151,31 @@ class TestMutation:
             "fundamental", usage_type="entry"
         ) is True
 
+    def test_random_add_mutation_passes_allowed_categories(self):
+        config = EvolutionConfig(
+            structure_mode="random_add",
+            random_add_entry_signals=1,
+            random_add_exit_signals=0,
+            allowed_categories=["fundamental"],
+        )
+        evolver = ParameterEvolver(
+            config=config,
+            shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
+        )
+        evolver._base_entry_signals = {"volume"}
+        evolver._base_exit_signals = set()
+        candidate = _make_candidate()
+
+        with patch(
+            "src.agent.parameter_evolver.apply_random_add_structure",
+            return_value=(candidate, {"entry": [], "exit": []}),
+        ) as mock_random_add:
+            evolver._mutate(candidate, mutation_strength=0.0)
+
+        assert mock_random_add.call_args.kwargs["allowed_categories"] == {
+            "fundamental"
+        }
+
     def test_effective_random_add_counts_by_target_scope(self):
         entry_only = ParameterEvolver(
             config=EvolutionConfig(
