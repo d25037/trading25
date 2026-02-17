@@ -71,6 +71,9 @@ class OptimizationService:
             job = self._manager.get_job(job_id)
             if job is not None:
                 job.best_score = result.get("best_score")
+                job.best_params = result.get("best_params")
+                job.worst_score = result.get("worst_score")
+                job.worst_params = result.get("worst_params")
                 job.total_combinations = result.get("total_combinations")
                 job.notebook_path = result.get("notebook_path")
 
@@ -108,7 +111,7 @@ class OptimizationService:
         同期的にグリッドサーチ最適化を実行
 
         Returns:
-            結果辞書 (best_score, total_combinations, notebook_path)
+            結果辞書
         """
         from src.optimization.engine import ParameterOptimizationEngine
 
@@ -116,11 +119,18 @@ class OptimizationService:
         opt_result = engine.optimize()
 
         best_score = opt_result.best_score
+        best_params = opt_result.best_params
         total_combinations = len(opt_result.all_results) if opt_result.all_results else 0
+        worst_result = opt_result.all_results[-1] if opt_result.all_results else None
+        worst_score = worst_result.get("score") if worst_result else None
+        worst_params = worst_result.get("params") if worst_result else None
         notebook_path = opt_result.notebook_path if opt_result.notebook_path else None
 
         return {
             "best_score": best_score,
+            "best_params": best_params,
+            "worst_score": worst_score,
+            "worst_params": worst_params,
             "total_combinations": total_combinations,
             "notebook_path": notebook_path,
         }

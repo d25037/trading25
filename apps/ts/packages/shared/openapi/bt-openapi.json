@@ -12431,8 +12431,7 @@
           "from",
           "to"
         ],
-        "title": "DateRange",
-        "description": "分析期間"
+        "title": "DateRange"
       },
       "DefaultConfigResponse": {
         "properties": {
@@ -12609,7 +12608,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__factor_regression__DateRange"
           }
         },
         "type": "object",
@@ -16484,6 +16483,44 @@
             "title": "Best Score",
             "description": "最良スコア"
           },
+          "best_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Best Params",
+            "description": "最良スコア時のパラメータ"
+          },
+          "worst_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Score",
+            "description": "最悪スコア"
+          },
+          "worst_params": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Worst Params",
+            "description": "最悪スコア時のパラメータ"
+          },
           "total_combinations": {
             "anyOf": [
               {
@@ -16752,7 +16789,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -21448,7 +21485,7 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
+      "src__server__schemas__factor_regression__DateRange": {
         "properties": {
           "from": {
             "type": "string",
@@ -21464,7 +21501,8 @@
           "from",
           "to"
         ],
-        "title": "DateRange"
+        "title": "DateRange",
+        "description": "分析期間"
       },
       "src__server__schemas__portfolio_factor_regression__IndexMatch": {
         "properties": {

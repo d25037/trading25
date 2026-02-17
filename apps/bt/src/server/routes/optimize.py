@@ -60,6 +60,9 @@ def _build_optimization_job_response(job_id: str) -> OptimizationJobResponse:
         completed_at=job.completed_at,
         error=job.error,
         best_score=job.best_score,
+        best_params=job.best_params,
+        worst_score=job.worst_score,
+        worst_params=job.worst_params,
         total_combinations=job.total_combinations,
         notebook_path=job.notebook_path,
     )
