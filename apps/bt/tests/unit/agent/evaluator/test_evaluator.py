@@ -121,6 +121,12 @@ def test_evaluate_batch_enables_and_disables_cache(monkeypatch) -> None:
 def test_evaluate_batch_internal_uses_prepare_and_execute(monkeypatch) -> None:
     prepared = object()
     expected = [EvaluationResult(candidate=_candidate(), score=0.5)]
+    observed: dict[str, object] = {}
+
+    def _fake_prepare_batch_data(shared_config_dict, candidates):
+        observed["shared_config_dict"] = shared_config_dict
+        observed["candidates"] = candidates
+        return prepared
 
     def _fake_execute_batch_evaluation(
         candidates,
@@ -144,7 +150,7 @@ def test_evaluate_batch_internal_uses_prepare_and_execute(monkeypatch) -> None:
     monkeypatch.setattr(
         evaluator_module,
         "prepare_batch_data",
-        lambda shared_config_dict: prepared,
+        _fake_prepare_batch_data,
     )
     monkeypatch.setattr(
         evaluator_module,
@@ -158,9 +164,12 @@ def test_evaluate_batch_internal_uses_prepare_and_execute(monkeypatch) -> None:
     )
 
     evaluator = StrategyEvaluator(shared_config_dict={"stock_codes": ["7203"]}, n_jobs=4)
-    result = evaluator._evaluate_batch_internal([_candidate()], top_k=3)
+    input_candidates = [_candidate()]
+    result = evaluator._evaluate_batch_internal(input_candidates, top_k=3)
 
     assert result == expected
+    assert observed["shared_config_dict"]["stock_codes"] == ["7203"]
+    assert observed["candidates"] == input_candidates
 
 
 def test_finalize_batch_results_sorts_and_applies_topk(monkeypatch) -> None:
