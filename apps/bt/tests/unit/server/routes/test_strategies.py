@@ -218,3 +218,59 @@ class TestRenameStrategy:
             json={"new_name": "new"},
         )
         assert resp.status_code == 403
+
+
+class TestMoveStrategy:
+    def test_success(self, client, mock_config_loader):
+        mock_config_loader.move_strategy.return_value = (
+            "production/test",
+            Path("/new/path.yaml"),
+        )
+        resp = client.post(
+            "/api/strategies/experimental/test/move",
+            json={"target_category": "production"},
+        )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is True
+        assert data["old_strategy_name"] == "experimental/test"
+        assert data["new_strategy_name"] == "production/test"
+
+    def test_conflict_409(self, client, mock_config_loader):
+        mock_config_loader.move_strategy.side_effect = FileExistsError("exists")
+        resp = client.post(
+            "/api/strategies/experimental/test/move",
+            json={"target_category": "production"},
+        )
+        assert resp.status_code == 409
+
+    def test_not_found_404(self, client, mock_config_loader):
+        mock_config_loader.move_strategy.side_effect = FileNotFoundError("not found")
+        resp = client.post(
+            "/api/strategies/experimental/missing/move",
+            json={"target_category": "production"},
+        )
+        assert resp.status_code == 404
+
+    def test_bad_request_400(self, client, mock_config_loader):
+        mock_config_loader.move_strategy.side_effect = ValueError("invalid request")
+        resp = client.post(
+            "/api/strategies/experimental/test/move",
+            json={"target_category": "production"},
+        )
+        assert resp.status_code == 400
+
+    def test_internal_error_500(self, client, mock_config_loader):
+        mock_config_loader.move_strategy.side_effect = RuntimeError("unexpected")
+        resp = client.post(
+            "/api/strategies/experimental/test/move",
+            json={"target_category": "production"},
+        )
+        assert resp.status_code == 500
+
+    def test_invalid_category_422(self, client, mock_config_loader):  # noqa: ARG002
+        resp = client.post(
+            "/api/strategies/experimental/test/move",
+            json={"target_category": "reference"},
+        )
+        assert resp.status_code == 422

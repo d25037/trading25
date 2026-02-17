@@ -15,6 +15,8 @@ from src.server.schemas.strategy import (
     StrategyDuplicateResponse,
     StrategyListResponse,
     StrategyMetadataResponse,
+    StrategyMoveRequest,
+    StrategyMoveResponse,
     StrategyRenameRequest,
     StrategyRenameResponse,
     StrategyUpdateRequest,
@@ -362,6 +364,50 @@ async def rename_strategy(
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:
         logger.exception(f"戦略リネームエラー: {strategy_name}")
+        raise HTTPException(status_code=500, detail=str(e)) from e
+
+
+@router.post(
+    "/api/strategies/{strategy_name:path}/move",
+    response_model=StrategyMoveResponse,
+)
+async def move_strategy(
+    strategy_name: str,
+    request: StrategyMoveRequest,
+) -> StrategyMoveResponse:
+    """
+    戦略のカテゴリを移動
+
+    Args:
+        strategy_name: 移動元の戦略名
+        request: 移動先カテゴリ
+
+    Note:
+        production / experimental / legacy 間の移動のみサポート
+    """
+    try:
+        new_strategy_name, new_path = _config_loader.move_strategy(
+            strategy_name, request.target_category
+        )
+
+        return StrategyMoveResponse(
+            success=True,
+            old_strategy_name=strategy_name,
+            new_strategy_name=new_strategy_name,
+            target_category=request.target_category,
+            new_path=str(new_path),
+        )
+
+    except HTTPException:
+        raise
+    except FileNotFoundError as e:
+        raise HTTPException(status_code=404, detail=str(e)) from e
+    except FileExistsError as e:
+        raise HTTPException(status_code=409, detail=str(e)) from e
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
+    except Exception as e:
+        logger.exception(f"戦略移動エラー: {strategy_name}")
         raise HTTPException(status_code=500, detail=str(e)) from e
 
 

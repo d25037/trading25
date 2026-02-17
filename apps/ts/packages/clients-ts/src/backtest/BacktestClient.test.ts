@@ -110,6 +110,26 @@ describe('BacktestClient', () => {
     expect(lastCall?.[1]?.method).toBe('POST');
   });
 
+  test('moveStrategy sends POST with target category', async () => {
+    const moved = {
+      success: true,
+      old_strategy_name: 'experimental/sma_cross',
+      new_strategy_name: 'production/sma_cross',
+      target_category: 'production',
+      new_path: '/tmp/production/sma_cross.yaml',
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(moved));
+
+    const result = await client.moveStrategy('experimental/sma_cross', {
+      target_category: 'production',
+    });
+    expect(result).toEqual(moved);
+
+    const lastCall = fetchSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain('/api/strategies/experimental%2Fsma_cross/move');
+    expect(lastCall?.[1]?.method).toBe('POST');
+  });
+
   // Backtest endpoints
   test('runBacktest sends POST with request body', async () => {
     const job = {

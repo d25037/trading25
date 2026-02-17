@@ -238,6 +238,20 @@ export interface StrategyRenameResponse {
   new_path: string;
 }
 
+export type StrategyMoveTargetCategory = 'production' | 'experimental' | 'legacy';
+
+export interface StrategyMoveRequest {
+  target_category: StrategyMoveTargetCategory;
+}
+
+export interface StrategyMoveResponse {
+  success: boolean;
+  old_strategy_name: string;
+  new_strategy_name: string;
+  target_category: StrategyMoveTargetCategory;
+  new_path: string;
+}
+
 // ============================================
 // HTML File Browser Types
 // ============================================

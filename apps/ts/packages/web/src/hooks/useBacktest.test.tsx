@@ -7,6 +7,7 @@ import type {
   DefaultConfigUpdateRequest,
   SignalAttributionRequest,
   StrategyDuplicateRequest,
+  StrategyMoveRequest,
   StrategyRenameRequest,
   StrategyUpdateRequest,
   StrategyValidationRequest,
@@ -27,6 +28,7 @@ import {
   useHtmlFiles,
   useJobStatus,
   useJobs,
+  useMoveStrategy,
   useRenameHtmlFile,
   useRenameStrategy,
   useRunBacktest,
@@ -409,6 +411,31 @@ describe('useRenameStrategy', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/strategies/old.yml/rename', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('old.yml') });
+  });
+});
+
+describe('useMoveStrategy', () => {
+  it('moves strategy and updates cache', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({
+      new_strategy_name: 'production/old.yml',
+      target_category: 'production',
+    });
+
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const removeSpy = vi.spyOn(queryClient, 'removeQueries');
+    const { result } = renderHook(() => useMoveStrategy(), { wrapper });
+
+    const request = { target_category: 'production' } as StrategyMoveRequest;
+
+    await act(async () => {
+      await result.current.mutateAsync({ name: 'experimental/old.yml', request });
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/strategies/experimental%2Fold.yml/move', request);
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
+    expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('experimental/old.yml') });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('production/old.yml') });
   });
 });
 
