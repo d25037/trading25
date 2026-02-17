@@ -1,0 +1,55 @@
+entry_filter_params:
+  bollinger_bands:
+    enabled: true
+    window: 50
+    alpha: 2
+    position: below_upper
+  rsi_threshold:
+    enabled: true
+    period: 10
+    threshold: 40
+    condition: above
+  volume:
+    enabled: true
+    direction: surge
+    threshold: 1.7
+    short_period: 50
+    long_period: 150
+    ma_type: sma
+  risk_adjusted_return:
+    enabled: true
+    lookback_period: 60
+    threshold: 1
+    ratio_type: sharpe
+    condition: above
+  fundamental:
+    forward_eps_growth:
+      condition: above
+      enabled: true
+      threshold: 0.2
+    enabled: true
+    period_type: FY
+    use_adjusted: true
+exit_trigger_params:
+  period_breakout:
+    enabled: true
+    direction: low
+    condition: break
+    period: 60
+    lookback_days: 1
+  atr_support_break:
+    enabled: true
+    direction: break
+    lookback_period: 20
+    atr_multiplier: 5
+    price_column: low
+  volume:
+    enabled: true
+    direction: drop
+    threshold: 0.3
+    short_period: 50
+    long_period: 150
+    ma_type: sma
+shared_config:
+  dataset: primeExTopix500
+  kelly_fraction: 1.7
