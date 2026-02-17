@@ -77,6 +77,26 @@ class TestPrepareData:
         result = prepare_data("testds", "7203", include_statements_data=True)
         assert "statements_daily" in result
 
+    @patch("src.data.loaders.data_preparation.load_statements_data")
+    @patch("src.data.loaders.data_preparation.load_stock_data")
+    def test_with_statements_data_propagates_forecast_revision_flag(self, mock_stock, mock_stmt):
+        from src.data.loaders.data_preparation import prepare_data
+
+        mock_stock.return_value = _ohlcv_df()
+        mock_stmt.return_value = pd.DataFrame(
+            {"EPS": [100.0]},
+            index=pd.date_range("2025-01-01", periods=1, freq="D"),
+        )
+
+        prepare_data(
+            "testds",
+            "7203",
+            include_statements_data=True,
+            include_forecast_revision=True,
+        )
+
+        assert mock_stmt.call_args.kwargs["include_forecast_revision"] is True
+
     @patch("src.data.loaders.data_preparation.prepare_all_stocks_data")
     def test_all_delegates(self, mock_all):
         from src.data.loaders.data_preparation import prepare_data
@@ -158,3 +178,87 @@ class TestPrepareMultiData:
 
         with pytest.raises(NoValidDataError):
             prepare_multi_data("testds", ["7203"])
+
+    @patch("src.data.loaders.data_preparation.extract_dataset_name")
+    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    def test_include_forecast_revision_fetches_all_period_batch(self, mock_client_cls, mock_extract):
+        from src.data.loaders.data_preparation import prepare_multi_data
+
+        mock_extract.return_value = "testds"
+        client = _mock_api_client()
+        client.get_stocks_ohlcv_batch.return_value = {"7203": _ohlcv_df()}
+        client.get_statements_batch.side_effect = [
+            {
+                "7203": pd.DataFrame(
+                    {
+                        "disclosedDate": [pd.Timestamp("2025-01-01")],
+                        "typeOfCurrentPeriod": ["FY"],
+                        "earningsPerShare": [80.0],
+                        "nextYearForecastEarningsPerShare": [100.0],
+                        "profit": [1000.0],
+                        "equity": [5000.0],
+                    }
+                ).set_index("disclosedDate")
+            },
+            {
+                "7203": pd.DataFrame(
+                    {
+                        "disclosedDate": [pd.Timestamp("2025-01-03")],
+                        "typeOfCurrentPeriod": ["1Q"],
+                        "earningsPerShare": [20.0],
+                        "forecastEps": [120.0],
+                        "profit": [300.0],
+                        "equity": [5100.0],
+                    }
+                ).set_index("disclosedDate")
+            },
+        ]
+        mock_client_cls.return_value = client
+
+        result = prepare_multi_data(
+            "testds",
+            ["7203"],
+            include_statements_data=True,
+            period_type="FY",
+            include_forecast_revision=True,
+        )
+
+        assert "statements_daily" in result["7203"]
+        merged = result["7203"]["statements_daily"]
+        assert merged.loc["2025-01-02", "ForwardForecastEPS"] == 100.0
+        assert merged.loc["2025-01-05", "ForwardForecastEPS"] == 120.0
+        assert client.get_statements_batch.call_count == 2
+        assert client.get_statements_batch.call_args_list[0].kwargs["period_type"] == "FY"
+        assert client.get_statements_batch.call_args_list[1].kwargs["period_type"] == "all"
+
+    @patch("src.data.loaders.data_preparation.extract_dataset_name")
+    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    def test_forecast_revision_skipped_when_period_type_not_fy(self, mock_client_cls, mock_extract):
+        from src.data.loaders.data_preparation import prepare_multi_data
+
+        mock_extract.return_value = "testds"
+        client = _mock_api_client()
+        client.get_stocks_ohlcv_batch.return_value = {"7203": _ohlcv_df()}
+        client.get_statements_batch.return_value = {
+            "7203": pd.DataFrame(
+                {
+                    "disclosedDate": [pd.Timestamp("2025-01-03")],
+                    "typeOfCurrentPeriod": ["1Q"],
+                    "earningsPerShare": [20.0],
+                    "forecastEps": [120.0],
+                    "profit": [300.0],
+                    "equity": [5100.0],
+                }
+            ).set_index("disclosedDate")
+        }
+        mock_client_cls.return_value = client
+
+        prepare_multi_data(
+            "testds",
+            ["7203"],
+            include_statements_data=True,
+            period_type="all",
+            include_forecast_revision=True,
+        )
+
+        assert client.get_statements_batch.call_count == 1

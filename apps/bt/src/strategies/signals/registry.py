@@ -134,11 +134,79 @@ def _has_statements_columns(d: dict[str, Any], *columns: str) -> bool:
     )
 
 
+def _has_any_statements_column(d: dict[str, Any], *columns: str) -> bool:
+    """財務諸表データに指定カラムのいずれかが存在し、有効値があるかチェック"""
+    if (
+        "statements_data" not in d
+        or d["statements_data"] is None
+        or d["statements_data"].empty
+    ):
+        return False
+    return any(
+        col in d["statements_data"].columns
+        and d["statements_data"][col].notna().any()
+        for col in columns
+    )
+
+
 def _select_fundamental_column(
     params: SignalParams, adjusted: str, raw: str
 ) -> str:
     """Select adjusted or raw column based on config."""
     return adjusted if params.fundamental.use_adjusted else raw
+
+
+def _select_existing_fundamental_column(
+    params: SignalParams,
+    statements_data: Any,
+    preferred_adjusted: str,
+    preferred_raw: str,
+    fallback_adjusted: str,
+    fallback_raw: str,
+) -> str:
+    """Select preferred column when available and usable, otherwise fallback."""
+    def _has_values(column: str) -> bool:
+        return (
+            column in statements_data.columns
+            and statements_data[column].notna().any()
+        )
+
+    preferred = _select_fundamental_column(params, preferred_adjusted, preferred_raw)
+    if _has_values(preferred):
+        return preferred
+
+    fallback = _select_fundamental_column(params, fallback_adjusted, fallback_raw)
+    if _has_values(fallback):
+        return fallback
+
+    # Keep previous behavior when both are empty: prefer existing preferred column.
+    if preferred in statements_data.columns:
+        return preferred
+    return fallback
+
+
+def _select_forward_base_eps_column(params: SignalParams, data_sources: dict[str, Any]) -> str:
+    return _select_existing_fundamental_column(
+        params=params,
+        statements_data=data_sources["statements_data"],
+        preferred_adjusted="AdjustedForwardBaseEPS",
+        preferred_raw="ForwardBaseEPS",
+        fallback_adjusted="AdjustedEPS",
+        fallback_raw="EPS",
+    )
+
+
+def _select_forward_forecast_eps_column(
+    params: SignalParams, data_sources: dict[str, Any]
+) -> str:
+    return _select_existing_fundamental_column(
+        params=params,
+        statements_data=data_sources["statements_data"],
+        preferred_adjusted="AdjustedForwardForecastEPS",
+        preferred_raw="ForwardForecastEPS",
+        fallback_adjusted="AdjustedNextYearForecastEPS",
+        fallback_raw="NextYearForecastEPS",
+    )
 
 
 def _has_margin_data(d: dict[str, Any]) -> bool:
@@ -658,12 +726,10 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         param_builder=lambda p, d: {
             "close": d["execution_close"],
             "eps": d["statements_data"][
-                _select_fundamental_column(p, "AdjustedEPS", "EPS")
+                _select_forward_base_eps_column(p, d)
             ],
             "next_year_forecast_eps": d["statements_data"][
-                _select_fundamental_column(
-                    p, "AdjustedNextYearForecastEPS", "NextYearForecastEPS"
-                )
+                _select_forward_forecast_eps_column(p, d)
             ],
             "threshold": p.fundamental.peg_ratio.threshold,
             "condition": p.fundamental.peg_ratio.condition,
@@ -673,8 +739,9 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         category="fundamental",
         description="PEG Ratio（PER÷EPS成長率）の閾値判定",
         param_key="fundamental.peg_ratio",
-        data_checker=lambda d: _has_statements_columns(d, "EPS", "NextYearForecastEPS"),
-        data_requirements=["statements:EPS", "statements:NextYearForecastEPS"],
+        data_checker=lambda d: _has_statements_column(d, "EPS")
+        and _has_any_statements_column(d, "ForwardForecastEPS", "NextYearForecastEPS"),
+        data_requirements=["statements:EPS", "statements:ForwardForecastEPS"],
     ),
     # 23. Forward EPS成長率シグナル（来期予想EPSベース）
     SignalDefinition(
@@ -683,12 +750,10 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.forward_eps_growth.enabled,
         param_builder=lambda p, d: {
             "eps": d["statements_data"][
-                _select_fundamental_column(p, "AdjustedEPS", "EPS")
+                _select_forward_base_eps_column(p, d)
             ],
             "next_year_forecast_eps": d["statements_data"][
-                _select_fundamental_column(
-                    p, "AdjustedNextYearForecastEPS", "NextYearForecastEPS"
-                )
+                _select_forward_forecast_eps_column(p, d)
             ],
             "growth_threshold": p.fundamental.forward_eps_growth.threshold,
             "condition": p.fundamental.forward_eps_growth.condition,
@@ -698,8 +763,9 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         category="fundamental",
         description="来期EPS成長率の閾値判定",
         param_key="fundamental.forward_eps_growth",
-        data_checker=lambda d: _has_statements_columns(d, "EPS", "NextYearForecastEPS"),
-        data_requirements=["statements:EPS", "statements:NextYearForecastEPS"],
+        data_checker=lambda d: _has_statements_column(d, "EPS")
+        and _has_any_statements_column(d, "ForwardForecastEPS", "NextYearForecastEPS"),
+        data_requirements=["statements:EPS", "statements:ForwardForecastEPS"],
     ),
     # 23-2. EPS成長率シグナル（実績EPSベース）
     SignalDefinition(

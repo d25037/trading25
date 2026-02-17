@@ -6,6 +6,7 @@ import pandas as pd
 
 from src.optimization.engine import ParameterOptimizationEngine
 from src.optimization.metrics import collect_metrics
+from src.models.signals import SignalParams
 
 
 def _make_scoring_weights() -> dict[str, float]:
@@ -83,3 +84,36 @@ def test_engine_collect_metrics_delegates_to_metrics_module():
     metrics = engine._collect_metrics(portfolio)
 
     assert metrics["trade_count"] == 2
+
+
+def test_engine_should_include_forecast_revision_when_base_signal_enabled():
+    engine = object.__new__(ParameterOptimizationEngine)
+    entry = SignalParams()
+    entry.fundamental.enabled = True
+    entry.fundamental.forward_eps_growth.enabled = True
+    engine.base_entry_params = entry
+    engine.base_exit_params = SignalParams()
+    engine.parameter_ranges = {}
+
+    assert engine._should_include_forecast_revision() is True
+
+
+def test_engine_should_include_forecast_revision_when_grid_can_enable():
+    engine = object.__new__(ParameterOptimizationEngine)
+    entry = SignalParams()
+    exit_params = SignalParams()
+    engine.base_entry_params = entry
+    engine.base_exit_params = exit_params
+    engine.parameter_ranges = {
+        "entry_filter_params": {
+            "fundamental": {
+                "enabled": [False, True],
+                "peg_ratio": {
+                    "enabled": [False, True],
+                    "threshold": [0.8, 1.2],
+                },
+            }
+        }
+    }
+
+    assert engine._should_include_forecast_revision() is True

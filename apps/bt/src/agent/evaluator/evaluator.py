@@ -123,7 +123,7 @@ class StrategyEvaluator:
     ) -> list[EvaluationResult]:
         """バッチ評価の内部実装"""
         max_workers = get_max_workers(self.n_jobs)
-        prepared_data = prepare_batch_data(self.shared_config_dict)
+        prepared_data = prepare_batch_data(self.shared_config_dict, candidates)
         results = execute_batch_evaluation(
             candidates,
             max_workers,
