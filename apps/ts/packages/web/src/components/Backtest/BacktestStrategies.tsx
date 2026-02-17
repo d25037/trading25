@@ -78,7 +78,8 @@ function StrategyDetailPanel({
 
   if (!detail) return null;
 
-  const isEditable = detail.category === 'experimental';
+  const canEditYaml = detail.category === 'experimental' || detail.category === 'production';
+  const canRenameOrDelete = detail.category === 'experimental';
   const isMovable = isManagedStrategyCategory(detail.category);
 
   return (
@@ -93,19 +94,19 @@ function StrategyDetailPanel({
               </CardTitle>
               <CardDescription className="flex items-center gap-2 mt-1">
                 Category: {detail.category}
-                {!isEditable && <Lock className="h-3 w-3 text-muted-foreground" />}
+                {!canEditYaml && <Lock className="h-3 w-3 text-muted-foreground" />}
               </CardDescription>
             </div>
           </div>
           {/* Action Buttons */}
           <div className="flex flex-wrap gap-2 pt-2">
-            {isEditable && (
+            {canEditYaml && (
               <Button variant="outline" size="sm" onClick={() => setShowEditor(true)}>
                 <Edit className="h-4 w-4 mr-1" />
                 Edit
               </Button>
             )}
-            {isEditable && (
+            {canRenameOrDelete && (
               <Button variant="outline" size="sm" onClick={() => setShowRenameDialog(true)}>
                 <Pencil className="h-4 w-4 mr-1" />
                 Rename
@@ -121,7 +122,7 @@ function StrategyDetailPanel({
                 Move Group
               </Button>
             )}
-            {isEditable && (
+            {canRenameOrDelete && (
               <Button
                 variant="outline"
                 size="sm"

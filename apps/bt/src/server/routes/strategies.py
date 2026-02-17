@@ -202,19 +202,29 @@ async def update_strategy(
         request: 更新する設定
 
     Note:
-        experimentalカテゴリのみ更新可能
+        experimental / production カテゴリのみ更新可能
     """
     try:
-        # 編集可能なカテゴリかチェック
-        if not _config_loader.is_editable_category(strategy_name):
+        # 更新可能なカテゴリかチェック
+        if not _config_loader.is_updatable_category(strategy_name):
             raise HTTPException(
                 status_code=403,
-                detail="experimentalカテゴリのみ編集可能です",
+                detail="experimental / production カテゴリのみ更新可能です",
             )
+
+        # production は「編集」のみ許可（新規作成は不可）
+        if strategy_name.startswith("production/"):
+            try:
+                _config_loader.load_strategy_config(strategy_name)
+            except FileNotFoundError as e:
+                raise HTTPException(
+                    status_code=404,
+                    detail=f"戦略が見つかりません: {strategy_name}",
+                ) from e
 
         # 設定を保存
         saved_path = _config_loader.save_strategy_config(
-            strategy_name, request.config, force=True
+            strategy_name, request.config, force=True, allow_production=True
         )
 
         return StrategyUpdateResponse(

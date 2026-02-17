@@ -35,6 +35,7 @@ from src.lib.strategy_runtime.path_resolver import (
 )
 from src.lib.strategy_runtime.validator import (
     is_editable_category,
+    is_updatable_category,
     validate_strategy_config,
     validate_strategy_name,
 )
@@ -209,6 +210,23 @@ class ConfigLoader:
         """デフォルト設定と戦略固有の shared_config をマージ"""
         return merge_shared_config(strategy_config, self.default_config)
 
+    def _resolve_strategy_category_for_permissions(
+        self, strategy_name: str
+    ) -> str | None:
+        """
+        権限判定用に戦略カテゴリを解決する
+
+        Returns:
+            カテゴリ名。戦略が未存在で判定不能な場合は None。
+        """
+        if "/" in strategy_name:
+            return strategy_name.split("/")[0]
+
+        try:
+            return self._infer_strategy_path(strategy_name).parent.name
+        except FileNotFoundError:
+            return None
+
     def is_editable_category(self, strategy_name: str) -> bool:
         """
         戦略が編集可能なカテゴリかチェック
@@ -219,22 +237,35 @@ class ConfigLoader:
         Returns:
             bool: experimental カテゴリの場合のみ True
         """
-        if "/" in strategy_name:
-            category = strategy_name.split("/")[0]
-        else:
-            try:
-                path = self._infer_strategy_path(strategy_name)
-                category = path.parent.name
-            except FileNotFoundError:
-                return True
-
+        category = self._resolve_strategy_category_for_permissions(strategy_name)
+        if category is None:
+            return True
         return is_editable_category(category)
 
+    def is_updatable_category(self, strategy_name: str) -> bool:
+        """
+        戦略が更新（YAML上書き）可能なカテゴリかチェック
+
+        Args:
+            strategy_name: 戦略名（カテゴリ付き or 戦略名のみ）
+
+        Returns:
+            bool: experimental / production カテゴリの場合のみ True
+        """
+        category = self._resolve_strategy_category_for_permissions(strategy_name)
+        if category is None:
+            return True
+        return is_updatable_category(category)
+
     def save_strategy_config(
-        self, strategy_name: str, config: dict[str, Any], force: bool = False
+        self,
+        strategy_name: str,
+        config: dict[str, Any],
+        force: bool = False,
+        allow_production: bool = False,
     ) -> Path:
         """
-        戦略設定を保存（experimental カテゴリのみ）
+        戦略設定を保存（デフォルト: experimental カテゴリのみ）
 
         experimentalカテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
         ただし、config_dirがデフォルト("config")以外の場合はconfig_dir内に保存
@@ -243,12 +274,13 @@ class ConfigLoader:
             strategy_name: 戦略名（カテゴリなしの場合は experimental に保存）
             config: 保存する設定辞書
             force: 強制上書き（既存ファイル上書き時の確認スキップ）
+            allow_production: True の場合は production カテゴリの上書き保存を許可
 
         Returns:
             Path: 保存したファイルパス
 
         Raises:
-            PermissionError: experimental 以外のカテゴリへの保存試行
+            PermissionError: 許可されていないカテゴリへの保存試行
             ValueError: 不正な戦略名
         """
         from src.paths import get_strategies_dir
@@ -259,10 +291,19 @@ class ConfigLoader:
             strategy_name = f"experimental/{strategy_name}"
 
         category = strategy_name.split("/")[0]
-        if not is_editable_category(category):
-            raise PermissionError(
+        if allow_production:
+            category_allowed = is_updatable_category(category)
+            permission_message = (
+                f"カテゴリ '{category}' は更新不可です。experimental / production のみ保存可能です。"
+            )
+        else:
+            category_allowed = is_editable_category(category)
+            permission_message = (
                 f"カテゴリ '{category}' は編集不可です。experimental のみ保存可能です。"
             )
+
+        if not category_allowed:
+            raise PermissionError(permission_message)
 
         is_default_config = str(self.config_dir) == "config"
 

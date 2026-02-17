@@ -11,6 +11,7 @@ from src.lib.strategy_runtime.validator import (
     DANGEROUS_PATH_PATTERNS,
     MAX_STRATEGY_NAME_LENGTH,
     is_editable_category,
+    is_updatable_category,
     validate_strategy_name,
 )
 
@@ -20,6 +21,7 @@ __all__ = [
     "validate_strategy_name",
     "validate_strategy_config",
     "is_editable_category",
+    "is_updatable_category",
     "try_validate_strategy_config_dict",
 ]
 

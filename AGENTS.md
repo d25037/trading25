@@ -26,6 +26,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - `/api/analytics/screening` は production 戦略YAML駆動（SignalProcessor で entry/exit 両方判定）を SoT とし、銘柄集約（`bestStrategyName`/`bestStrategyScore`/`matchStrategyCount`/`matchedStrategies`）で返却する。旧 `rangeBreakFast/Slow` クエリ互換は廃止済み
 - Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）
+- Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定
 - 市場コードフィルタは legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う
 - **ts/web** は `/api` パスを FastAPI (:3002) にプロキシ
 - **Hono サーバー** (:3001) は廃止済み（`apps/ts/packages/api` は削除済み）
@@ -129,6 +130,7 @@ bun run cli backtest attribution run <strategy> --wait
 ```
 
 - Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
+- Backtest `Strategies` 画面の YAML Editor は `production` / `experimental` の編集を許可し、`Rename` / `Delete` は `experimental` のみ許可
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - `analysis screening`（web/cli）は production 戦略を動的選択し、`backtestMetric`（`sharpe_ratio` 等）と `sortBy`（`bestStrategyScore`/`matchedDate`/`stockCode`/`matchStrategyCount`）で結果を制御する。`null` score は並び順に関係なく末尾
 

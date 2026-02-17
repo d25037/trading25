@@ -225,6 +225,33 @@ def test_is_editable_category_legacy():
     assert loader.is_editable_category("legacy/old_strategy") is False
 
 
+# ========== is_updatable_category テスト ==========
+
+
+def test_is_updatable_category_experimental():
+    """experimental カテゴリは更新可能"""
+    loader = ConfigLoader()
+    assert loader.is_updatable_category("experimental/my_strategy") is True
+
+
+def test_is_updatable_category_production():
+    """production カテゴリは更新可能"""
+    loader = ConfigLoader()
+    assert loader.is_updatable_category("production/range_break_v5") is True
+
+
+def test_is_updatable_category_reference():
+    """reference カテゴリは更新不可"""
+    loader = ConfigLoader()
+    assert loader.is_updatable_category("reference/strategy_template") is False
+
+
+def test_is_updatable_category_legacy():
+    """legacy カテゴリは更新不可"""
+    loader = ConfigLoader()
+    assert loader.is_updatable_category("legacy/old_strategy") is False
+
+
 # ========== save_strategy_config テスト ==========
 
 
@@ -257,6 +284,31 @@ def test_save_strategy_config_production_raises():
 
     with pytest.raises(PermissionError, match="experimental のみ保存可能"):
         loader.save_strategy_config("production/my_strategy", config)
+
+
+def test_save_strategy_config_production_allowed(tmp_path):
+    """allow_production=True の場合は production カテゴリ更新を許可する"""
+    config_dir = tmp_path / "config"
+    production_dir = config_dir / "strategies" / "production"
+    production_dir.mkdir(parents=True)
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    config = {
+        "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
+        "exit_trigger_params": {"volume": {"enabled": False}},
+    }
+
+    path = loader.save_strategy_config(
+        "production/my_strategy",
+        config,
+        force=True,
+        allow_production=True,
+    )
+
+    assert path.exists()
+    assert path.name == "my_strategy.yaml"
+    assert "production" in str(path)
 
 
 def test_save_strategy_config_reference_raises():
@@ -650,3 +702,196 @@ def test_cleanup_empty_strategy_dirs_root_immediate_noop(tmp_path):
     loader._cleanup_empty_strategy_dirs(root, root)
 
     assert root.exists()
+
+
+# ========== カバレッジ補強テスト ==========
+
+
+def test_load_strategy_config_file_not_found_branch(monkeypatch):
+    """load_strategy_config の FileNotFoundError 分岐を通す"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+
+    monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: Path("/tmp/sample.yaml"))
+    monkeypatch.setattr("src.lib.strategy_runtime.loader.validate_path_within_strategies", lambda *_args: None)
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.load_yaml_file",
+        lambda _path: (_ for _ in ()).throw(FileNotFoundError("missing")),
+    )
+
+    with pytest.raises(FileNotFoundError, match="missing"):
+        loader.load_strategy_config("experimental/sample")
+
+
+def test_load_strategy_config_generic_error_branch(monkeypatch):
+    """load_strategy_config の汎用例外分岐を通す"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+
+    monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: Path("/tmp/sample.yaml"))
+    monkeypatch.setattr("src.lib.strategy_runtime.loader.validate_path_within_strategies", lambda *_args: None)
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.load_yaml_file",
+        lambda _path: (_ for _ in ()).throw(RuntimeError("boom")),
+    )
+
+    with pytest.raises(RuntimeError, match="boom"):
+        loader.load_strategy_config("experimental/sample")
+
+
+def test_runtime_wrapper_methods_delegate(monkeypatch):
+    """ラッパーメソッドが依存関数へ委譲することを確認"""
+    from datetime import datetime
+
+    loader = ConfigLoader(config_dir="/tmp/config")
+    loader.default_config = {"k": "v"}
+
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.get_execution_config",
+        lambda cfg, default: {"cfg": cfg, "default": default},
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.get_available_strategies",
+        lambda _config_dir: {"experimental": ["demo"]},
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.get_strategy_metadata",
+        lambda _config_dir: [
+            StrategyMetadata(
+                name="experimental/demo",
+                category="experimental",
+                path=Path("/tmp/demo.yaml"),
+                mtime=datetime.now(),
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.validate_strategy_config",
+        lambda _cfg: True,
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.get_template_notebook_path",
+        lambda _execution: Path("/tmp/template.ipynb"),
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.get_output_directory",
+        lambda _execution: Path("/tmp/output"),
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.extract_entry_filter_params",
+        lambda _cfg: {"entry": True},
+    )
+    monkeypatch.setattr(
+        "src.lib.strategy_runtime.loader.extract_exit_trigger_params",
+        lambda _cfg: {"exit": True},
+    )
+
+    strategy_config = {"entry_filter_params": {}}
+    assert loader.get_execution_config(strategy_config) == {"cfg": strategy_config, "default": {"k": "v"}}
+    assert loader.get_available_strategies() == {"experimental": ["demo"]}
+    assert loader.get_strategy_metadata()[0].name == "experimental/demo"
+    assert loader.validate_strategy_config(strategy_config) is True
+    assert loader.get_template_notebook_path(strategy_config) == Path("/tmp/template.ipynb")
+    assert loader.get_output_directory(strategy_config) == Path("/tmp/output")
+    assert loader.extract_entry_filter_params(strategy_config) == {"entry": True}
+    assert loader.extract_exit_trigger_params(strategy_config) == {"exit": True}
+
+
+def test_is_editable_category_without_prefix_uses_inferred_path(monkeypatch):
+    """カテゴリ省略時は推測パスの親ディレクトリ名で判定する"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+    monkeypatch.setattr(
+        loader,
+        "_infer_strategy_path",
+        lambda _name: Path("/tmp/config/strategies/production/sample.yaml"),
+    )
+    assert loader.is_editable_category("sample") is False
+
+
+def test_is_editable_category_without_prefix_not_found_returns_true(monkeypatch):
+    """カテゴリ省略 + 未存在の場合は True を返す（互換仕様）"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+    monkeypatch.setattr(
+        loader,
+        "_infer_strategy_path",
+        lambda _name: (_ for _ in ()).throw(FileNotFoundError("missing")),
+    )
+    assert loader.is_editable_category("sample") is True
+
+
+def test_is_updatable_category_without_prefix_uses_inferred_path(monkeypatch):
+    """更新可否もカテゴリ省略時に推測パスで判定する"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+    monkeypatch.setattr(
+        loader,
+        "_infer_strategy_path",
+        lambda _name: Path("/tmp/config/strategies/production/sample.yaml"),
+    )
+    assert loader.is_updatable_category("sample") is True
+
+
+def test_save_strategy_config_logs_warning_when_force_false(tmp_path):
+    """既存ファイル + force=False では警告分岐を通って保存する"""
+    config_dir = tmp_path / "config"
+    strategies_dir = config_dir / "strategies" / "experimental"
+    strategies_dir.mkdir(parents=True)
+    existing = strategies_dir / "test_strategy.yaml"
+    existing.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    config = {"entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}}}
+
+    path = loader.save_strategy_config("test_strategy", config, force=False)
+    assert path == existing
+
+
+def test_duplicate_strategy_default_config_conflict_branch(tmp_path, monkeypatch):
+    """default config モードの duplicate 競合分岐を通す"""
+    external_experimental = tmp_path / "external" / "experimental"
+    external_experimental.mkdir(parents=True)
+
+    loader = ConfigLoader(config_dir="config")
+    monkeypatch.setattr(loader, "load_strategy_config", lambda _name: {"entry_filter_params": {}})
+    monkeypatch.setattr("src.paths.get_strategies_dir", lambda _category: external_experimental)
+    monkeypatch.setattr(
+        "src.paths.find_strategy_path",
+        lambda _name: external_experimental / "already_exists.yaml",
+    )
+
+    with pytest.raises(FileExistsError, match="既に存在します"):
+        loader.duplicate_strategy("experimental/source", "already_exists")
+
+
+def test_rename_strategy_default_config_success(tmp_path, monkeypatch):
+    """default config モードの rename 成功分岐を通す"""
+    external_experimental = tmp_path / "external" / "experimental"
+    external_experimental.mkdir(parents=True)
+    current_path = external_experimental / "old_name.yaml"
+    current_path.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir="config")
+    monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: current_path)
+    monkeypatch.setattr("src.paths.get_strategies_dir", lambda _category: external_experimental)
+    monkeypatch.setattr("src.paths.find_strategy_path", lambda _name: None)
+
+    new_path = loader.rename_strategy("experimental/old_name", "new_name")
+    assert new_path == external_experimental / "new_name.yaml"
+    assert new_path.exists()
+    assert not current_path.exists()
+
+
+def test_rename_strategy_default_config_conflict(tmp_path, monkeypatch):
+    """default config モードの rename 競合分岐を通す"""
+    external_experimental = tmp_path / "external" / "experimental"
+    external_experimental.mkdir(parents=True)
+    current_path = external_experimental / "old_name.yaml"
+    current_path.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir="config")
+    monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: current_path)
+    monkeypatch.setattr("src.paths.get_strategies_dir", lambda _category: external_experimental)
+    monkeypatch.setattr(
+        "src.paths.find_strategy_path",
+        lambda _name: external_experimental / "new_name.yaml",
+    )
+
+    with pytest.raises(FileExistsError, match="既に存在します"):
+        loader.rename_strategy("experimental/old_name", "new_name")

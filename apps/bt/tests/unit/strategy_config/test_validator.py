@@ -4,8 +4,10 @@
 
 import pytest
 
+from src.lib.strategy_runtime import validator as runtime_validator
 from src.strategy_config.validator import (
     is_editable_category,
+    is_updatable_category,
     validate_strategy_config,
     validate_strategy_name,
 )
@@ -136,3 +138,60 @@ class TestIsEditableCategory:
 
     def test_empty_not_editable(self) -> None:
         assert is_editable_category("") is False
+
+
+class TestIsUpdatableCategory:
+    """is_updatable_category関数のテスト"""
+
+    def test_experimental_is_updatable(self) -> None:
+        assert is_updatable_category("experimental") is True
+
+    def test_production_is_updatable(self) -> None:
+        assert is_updatable_category("production") is True
+
+    def test_reference_not_updatable(self) -> None:
+        assert is_updatable_category("reference") is False
+
+    def test_legacy_not_updatable(self) -> None:
+        assert is_updatable_category("legacy") is False
+
+    def test_empty_not_updatable(self) -> None:
+        assert is_updatable_category("") is False
+
+
+class TestRuntimeValidator:
+    """src.lib.strategy_runtime.validator のカバレッジ補強"""
+
+    def test_validate_strategy_config_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            runtime_validator,
+            "try_validate_strategy_config_dict_strict",
+            lambda _config: (True, None),
+        )
+        config = {
+            "entry_filter_params": {
+                "volume": {},
+                "trend": {},
+                "fundamental": {},
+                "volatility": {},
+                "relative_performance": {},
+                "margin": {},
+            }
+        }
+        assert runtime_validator.validate_strategy_config(config) is True
+
+    def test_validate_strategy_config_failure_with_string_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            runtime_validator,
+            "try_validate_strategy_config_dict_strict",
+            lambda _config: (False, "validation error"),
+        )
+        assert runtime_validator.validate_strategy_config({}) is False
+
+    def test_validate_strategy_config_failure_with_none_error(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            runtime_validator,
+            "try_validate_strategy_config_dict_strict",
+            lambda _config: (False, None),
+        )
+        assert runtime_validator.validate_strategy_config({}) is False
