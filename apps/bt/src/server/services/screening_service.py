@@ -14,6 +14,7 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from src.api.dataset.statements_mixin import APIPeriodType
 from src.data.access.mode import data_access_mode_context
 from src.data.loaders import (
     get_stock_sector_mapping,
@@ -502,13 +503,21 @@ class ScreeningService:
         self,
         entry_params: SignalParams,
         exit_params: SignalParams,
-    ) -> str:
+    ) -> APIPeriodType:
         """fundamental設定から period_type を解決する。"""
         for params in (entry_params, exit_params):
             fundamental = params.fundamental
             period_type = getattr(fundamental, "period_type", None)
-            if isinstance(period_type, str) and period_type:
-                return period_type
+            if period_type == "all":
+                return "all"
+            if period_type == "FY":
+                return "FY"
+            if period_type == "1Q":
+                return "1Q"
+            if period_type == "2Q":
+                return "2Q"
+            if period_type == "3Q":
+                return "3Q"
 
         return "FY"
 
@@ -582,7 +591,13 @@ class ScreeningService:
 
         non_null = [s for s in matched_strategies if s.strategyScore is not None]
         if non_null:
-            return max(non_null, key=lambda s: (float(s.strategyScore), s.strategyName))
+            return max(
+                non_null,
+                key=lambda s: (
+                    s.strategyScore if s.strategyScore is not None else float("-inf"),
+                    s.strategyName,
+                ),
+            )
 
         # 全てnullの場合は最新一致日を優先
         return max(matched_strategies, key=lambda s: (s.matchedDate, s.strategyName))
