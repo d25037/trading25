@@ -9,6 +9,7 @@ from src.agent.evaluator.batch_executor import (
     get_max_workers,
     prepare_batch_data,
 )
+from src.agent.models import StrategyCandidate
 
 
 class TestGetMaxWorkers:
@@ -112,3 +113,28 @@ class TestPrepareBatchData:
         assert result.stock_codes == ["1234"]
         assert result.ohlcv_data is not None
         assert result.benchmark_data is not None
+
+    def test_integration_enables_forecast_revision_for_forecast_signals(self):
+        with (
+            patch("src.agent.evaluator.batch_executor.fetch_stock_codes") as mock_codes,
+            patch("src.agent.evaluator.batch_executor.fetch_ohlcv_data") as mock_ohlcv,
+            patch("src.agent.evaluator.batch_executor.fetch_benchmark_data") as mock_bench,
+        ):
+            mock_codes.return_value = ["1234"]
+            mock_ohlcv.return_value = {"1234": {"data": "test"}}
+            mock_bench.return_value = {"index": [], "columns": [], "data": []}
+
+            candidate = StrategyCandidate(
+                strategy_id="c1",
+                entry_filter_params={
+                    "fundamental": {
+                        "enabled": True,
+                        "forward_eps_growth": {"enabled": True},
+                    }
+                },
+                exit_trigger_params={},
+            )
+
+            prepare_batch_data({"dataset": "test"}, [candidate])
+
+        assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True

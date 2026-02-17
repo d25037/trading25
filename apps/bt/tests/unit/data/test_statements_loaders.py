@@ -225,6 +225,93 @@ class TestLoadStatementsDataPeriodType:
             "7203", None, None, period_type="FY", actual_only=False
         )
 
+    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    def test_include_forecast_revision_merges_quarterly_forecast(
+        self, mock_extract, mock_client_class
+    ):
+        """period_type=FY時に四半期修正forecastがForwardForecastへ反映されること"""
+        mock_extract.return_value = "test_dataset"
+
+        fy_only_df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28")],
+                "typeOfCurrentPeriod": ["FY"],
+                "earningsPerShare": [80.0],
+                "nextYearForecastEarningsPerShare": [100.0],
+                "profit": [2000000],
+                "equity": [5500000],
+            }
+        ).set_index("disclosedDate")
+        all_period_df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-07-30")],
+                "typeOfCurrentPeriod": ["1Q"],
+                "earningsPerShare": [20.0],
+                "forecastEps": [120.0],
+                "profit": [500000],
+                "equity": [5600000],
+            }
+        ).set_index("disclosedDate")
+
+        mock_client = MagicMock()
+        mock_client.get_statements.side_effect = [fy_only_df, all_period_df]
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = load_statements_data(
+            dataset="test.db",
+            stock_code="7203",
+            daily_index=self.daily_index,
+            period_type="FY",
+            include_forecast_revision=True,
+        )
+
+        assert mock_client.get_statements.call_count == 2
+        assert mock_client.get_statements.call_args_list[0].kwargs["period_type"] == "FY"
+        assert mock_client.get_statements.call_args_list[1].kwargs["period_type"] == "all"
+        assert result.loc["2024-07-29", "ForwardForecastEPS"] == 100.0
+        assert result.loc["2024-07-30", "ForwardForecastEPS"] == 120.0
+        # 分母はFY実績EPSを維持
+        assert result.loc["2024-07-30", "ForwardBaseEPS"] == 80.0
+
+    @patch("src.data.loaders.statements_loaders.logger")
+    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    def test_include_forecast_revision_fallback_on_revision_error(
+        self, mock_extract, mock_client_class, mock_logger
+    ):
+        """四半期修正取得失敗時はFYのみで継続すること"""
+        mock_extract.return_value = "test_dataset"
+        fy_only_df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28")],
+                "typeOfCurrentPeriod": ["FY"],
+                "earningsPerShare": [80.0],
+                "nextYearForecastEarningsPerShare": [100.0],
+                "profit": [2000000],
+                "equity": [5500000],
+            }
+        ).set_index("disclosedDate")
+
+        mock_client = MagicMock()
+        mock_client.get_statements.side_effect = [fy_only_df, RuntimeError("boom")]
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = load_statements_data(
+            dataset="test.db",
+            stock_code="7203",
+            daily_index=self.daily_index,
+            period_type="FY",
+            include_forecast_revision=True,
+        )
+
+        assert result.loc["2024-07-30", "ForwardForecastEPS"] == 100.0
+        mock_logger.warning.assert_called_once()
+
 
 class TestTransformStatementsAdjusted:
     def test_adjusted_uses_latest_quarter_shares(self):
@@ -343,6 +430,29 @@ class TestTransformStatementsAdjusted:
         assert result.loc["2024-04-28", "AdjustedEPS"] == 50.0
         assert result.loc["2024-04-28", "AdjustedBPS"] == 900.0
         assert result.loc["2024-04-28", "AdjustedForecastEPS"] == 60.0
+
+    def test_transform_builds_forward_columns_with_fy_base_and_quarter_revision(self):
+        df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-04-28"), pd.Timestamp("2024-07-30")],
+                "typeOfCurrentPeriod": ["FY", "1Q"],
+                "earningsPerShare": [200.0, 50.0],
+                "forecastEps": [210.0, 60.0],
+                "nextYearForecastEarningsPerShare": [220.0, 70.0],
+                "sharesOutstanding": [1000.0, 1000.0],
+                "profit": [2000000, 500000],
+                "equity": [5500000, 5600000],
+            }
+        ).set_index("disclosedDate")
+
+        result = transform_statements_df(df)
+
+        # FY実績EPSを分母に固定
+        assert result.loc["2024-04-28", "ForwardBaseEPS"] == 200.0
+        assert result.loc["2024-07-30", "ForwardBaseEPS"] == 200.0
+        # FYはNxFEPS、QはFEPS
+        assert result.loc["2024-04-28", "ForwardForecastEPS"] == 220.0
+        assert result.loc["2024-07-30", "ForwardForecastEPS"] == 60.0
 
 
 class TestTransformStatementsRoa:

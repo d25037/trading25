@@ -42,7 +42,43 @@ def get_max_workers(n_jobs: int) -> int | None:
     return n_jobs
 
 
-def prepare_batch_data(shared_config_dict: dict[str, Any]) -> BatchPreparedData:
+def _is_forecast_signal_enabled(side_params: dict[str, Any]) -> bool:
+    """候補パラメータ内で予想系シグナルが有効か判定する。"""
+    if not isinstance(side_params, dict):
+        return False
+    fundamental = side_params.get("fundamental")
+    if not isinstance(fundamental, dict):
+        return False
+    if not bool(fundamental.get("enabled", False)):
+        return False
+
+    forward = fundamental.get("forward_eps_growth")
+    if isinstance(forward, dict) and bool(forward.get("enabled", False)):
+        return True
+
+    peg = fundamental.get("peg_ratio")
+    if isinstance(peg, dict) and bool(peg.get("enabled", False)):
+        return True
+
+    return False
+
+
+def _should_include_forecast_revision(
+    candidates: list[StrategyCandidate] | None,
+) -> bool:
+    if not candidates:
+        return False
+    return any(
+        _is_forecast_signal_enabled(candidate.entry_filter_params)
+        or _is_forecast_signal_enabled(candidate.exit_trigger_params)
+        for candidate in candidates
+    )
+
+
+def prepare_batch_data(
+    shared_config_dict: dict[str, Any],
+    candidates: list[StrategyCandidate] | None = None,
+) -> BatchPreparedData:
     """
     バッチ評価用データを事前取得
 
@@ -51,12 +87,18 @@ def prepare_batch_data(shared_config_dict: dict[str, Any]) -> BatchPreparedData:
 
     Args:
         shared_config_dict: 共有設定辞書
+        candidates: 評価対象候補（予想系シグナル有効時の追加データ取得判定に使用）
 
     Returns:
         BatchPreparedData: 事前取得データ（銘柄リスト、OHLCVデータ、ベンチマークデータ）
     """
+    include_forecast_revision = _should_include_forecast_revision(candidates)
     stock_codes = fetch_stock_codes(shared_config_dict)
-    ohlcv_data = fetch_ohlcv_data(shared_config_dict, stock_codes)
+    ohlcv_data = fetch_ohlcv_data(
+        shared_config_dict,
+        stock_codes,
+        include_forecast_revision=include_forecast_revision,
+    )
     benchmark_data = fetch_benchmark_data(shared_config_dict)
 
     return BatchPreparedData(
@@ -86,6 +128,7 @@ def fetch_stock_codes(shared_config_dict: dict[str, Any]) -> list[str] | None:
 def fetch_ohlcv_data(
     shared_config_dict: dict[str, Any],
     stock_codes: list[str] | None,
+    include_forecast_revision: bool = False,
 ) -> dict[str, dict[str, Any]] | None:
     """OHLCVデータを事前取得してシリアライズ"""
     dataset = shared_config_dict.get("dataset")
@@ -108,6 +151,7 @@ def fetch_ohlcv_data(
             include_margin_data=include_margin,
             include_statements_data=include_statements,
             timeframe=timeframe,
+            include_forecast_revision=include_forecast_revision,
         )
 
         ohlcv_data = convert_dataframes_to_dict(raw_data)

@@ -19,6 +19,7 @@ from src.exceptions import (
     NoValidDataError,
     StatementsDataLoadError,
 )
+from src.models.types import normalize_period_type
 
 from .margin_loaders import load_margin_data, transform_margin_df
 from .multi_asset_loaders import (
@@ -26,7 +27,11 @@ from .multi_asset_loaders import (
     load_multiple_statements_data,
     load_multiple_stocks,
 )
-from .statements_loaders import load_statements_data, transform_statements_df
+from .statements_loaders import (
+    load_statements_data,
+    merge_forward_forecast_revision,
+    transform_statements_df,
+)
 from .stock_loaders import get_available_stocks, load_stock_data
 from .utils import extract_dataset_name
 
@@ -43,6 +48,7 @@ def prepare_all_stocks_data(
     min_records: int = 100,
     timeframe: Literal["daily", "weekly"] = "daily",
     period_type: APIPeriodType = "FY",
+    include_forecast_revision: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """
     全銘柄のデータを準備する関数
@@ -102,6 +108,7 @@ def prepare_all_stocks_data(
                 statements_data = load_multiple_statements_data(
                     dataset, stock_codes, daily_index, start_date, end_date, "eps",
                     period_type=period_type,
+                    include_forecast_revision=include_forecast_revision,
                 )
                 result["statements_daily"] = statements_data
                 logger.info(
@@ -128,6 +135,7 @@ def prepare_data(
     include_statements_data: bool = False,
     timeframe: Literal["daily", "weekly"] = "daily",
     period_type: APIPeriodType = "FY",
+    include_forecast_revision: bool = False,
 ) -> Dict[str, pd.DataFrame]:
     """
     VectorBT用のデータを準備する統合関数
@@ -158,6 +166,7 @@ def prepare_data(
             include_statements_data,
             timeframe=timeframe,
             period_type=period_type,
+            include_forecast_revision=include_forecast_revision,
         )
 
     # 基本データの読み込み（API側でtimeframe変換を実行）
@@ -193,6 +202,7 @@ def prepare_data(
                 start_date=start_date,
                 end_date=end_date,
                 period_type=period_type,
+                include_forecast_revision=include_forecast_revision,
             )
             result["statements_daily"] = statements_data
             logger.info(f"財務諸表データ追加完了: {len(statements_data)}レコード")
@@ -212,6 +222,7 @@ def prepare_multi_data(
     include_statements_data: bool = False,
     timeframe: Literal["daily", "weekly"] = "daily",
     period_type: APIPeriodType = "FY",
+    include_forecast_revision: bool = False,
 ) -> Dict[str, Dict[str, pd.DataFrame]]:
     """
     複数銘柄のデータを一括でバッチ取得する関数
@@ -304,18 +315,47 @@ def prepare_multi_data(
     if include_statements_data:
         logger.debug("財務諸表データ読み込み開始（バッチAPI）")
         statements_codes = list(result.keys())
+        should_merge_forecast_revision = (
+            include_forecast_revision and normalize_period_type(period_type) == "FY"
+        )
         try:
+            revision_batch: dict[str, pd.DataFrame] = {}
             with DatasetAPIClient(dataset_name) as client:
                 statements_batch = client.get_statements_batch(
                     statements_codes, start_date, end_date,
                     period_type=period_type, actual_only=True,
                 )
+                if should_merge_forecast_revision:
+                    try:
+                        revision_batch = client.get_statements_batch(
+                            statements_codes,
+                            start_date,
+                            end_date,
+                            period_type="all",
+                            actual_only=True,
+                        )
+                    except (ConnectionError, RuntimeError, BatchAPIError, APIError) as e:
+                        logger.warning(
+                            f"財務諸表四半期修正バッチ取得失敗、FYのみで続行: {e}"
+                        )
             for stock_code, stmt_df in statements_batch.items():
                 if stock_code in result and not stmt_df.empty:
                     stmt_df = transform_statements_df(stmt_df)
                     stock_data = result[stock_code]["daily"]
                     daily_index = pd.DatetimeIndex(stock_data.index)
                     stmt_reindexed = stmt_df.reindex(daily_index, method="ffill")
+                    if (
+                        should_merge_forecast_revision
+                        and stock_code in revision_batch
+                        and not revision_batch[stock_code].empty
+                    ):
+                        revision_df = transform_statements_df(revision_batch[stock_code])
+                        revision_reindexed = revision_df.reindex(
+                            daily_index, method="ffill"
+                        )
+                        stmt_reindexed = merge_forward_forecast_revision(
+                            stmt_reindexed, revision_reindexed
+                        )
                     result[stock_code]["statements_daily"] = stmt_reindexed
             logger.debug(f"バッチAPI使用: {len(statements_batch)}銘柄の財務諸表データ取得")
         except (ConnectionError, RuntimeError, BatchAPIError, APIError) as e:
@@ -330,6 +370,7 @@ def prepare_multi_data(
                         start_date=start_date,
                         end_date=end_date,
                         period_type=period_type,
+                        include_forecast_revision=should_merge_forecast_revision,
                     )
                     result[stock_code]["statements_daily"] = statements_data
                 except (ValueError, KeyError, StatementsDataLoadError, APIError) as e2:
