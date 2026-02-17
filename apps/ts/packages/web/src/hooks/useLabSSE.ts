@@ -11,6 +11,17 @@ interface LabSSEState {
 
 const MAX_RETRIES = 3;
 const TERMINAL_STATUSES: JobStatus[] = ['completed', 'failed', 'cancelled'];
+const STATUS_EVENTS: JobStatus[] = ['pending', 'running', 'completed', 'failed', 'cancelled'];
+
+interface LabSSEPayload {
+  status?: unknown;
+  progress?: number | null;
+  message?: string | null;
+}
+
+function isJobStatus(value: unknown): value is JobStatus {
+  return typeof value === 'string' && STATUS_EVENTS.includes(value as JobStatus);
+}
 
 export function useLabSSE(jobId: string | null): LabSSEState {
   const [state, setState] = useState<LabSSEState>({
@@ -55,10 +66,12 @@ export function useLabSSE(jobId: string | null): LabSSEState {
         setState((prev) => ({ ...prev, isConnected: true }));
       };
 
-      es.onmessage = (event) => {
+      const handleStatusEvent = (rawData: string) => {
         try {
-          const data = JSON.parse(event.data);
-          const status = data.status as JobStatus;
+          const data = JSON.parse(rawData) as LabSSEPayload;
+          if (!isJobStatus(data.status)) return;
+
+          const status = data.status;
           setState({
             progress: data.progress ?? null,
             message: data.message ?? null,
@@ -74,6 +87,14 @@ export function useLabSSE(jobId: string | null): LabSSEState {
           logger.error('Lab SSE parse error', { error: String(e) });
         }
       };
+      es.onmessage = (event) => {
+        handleStatusEvent(event.data);
+      };
+      for (const eventName of STATUS_EVENTS) {
+        es.addEventListener(eventName, (event) => {
+          handleStatusEvent((event as MessageEvent<string>).data);
+        });
+      }
 
       es.onerror = () => {
         cleanup();

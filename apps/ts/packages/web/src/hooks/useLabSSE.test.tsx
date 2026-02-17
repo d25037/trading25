@@ -18,6 +18,7 @@ class MockEventSource {
   onerror: (() => void) | null = null;
   readyState = 0;
   closed = false;
+  listeners: Record<string, Array<(event: { data: string }) => void>> = {};
 
   constructor(url: string) {
     this.url = url;
@@ -36,6 +37,24 @@ class MockEventSource {
 
   simulateMessage(data: Record<string, unknown>) {
     this.onmessage?.({ data: JSON.stringify(data) });
+  }
+
+  addEventListener(type: string, listener: (event: { data: string }) => void) {
+    if (!this.listeners[type]) this.listeners[type] = [];
+    this.listeners[type].push(listener);
+  }
+
+  removeEventListener(type: string, listener: (event: { data: string }) => void) {
+    const list = this.listeners[type];
+    if (!list) return;
+    this.listeners[type] = list.filter((item) => item !== listener);
+  }
+
+  simulateNamedMessage(type: string, data: Record<string, unknown>) {
+    const event = { data: JSON.stringify(data) };
+    for (const listener of this.listeners[type] ?? []) {
+      listener(event);
+    }
   }
 
   simulateError() {
@@ -99,6 +118,29 @@ describe('useLabSSE', () => {
     expect(result.current).toEqual({
       progress: 0.5,
       message: 'Processing...',
+      status: 'running',
+      isConnected: true,
+    });
+  });
+
+  it('updates state on named SSE status event', () => {
+    const { result } = renderHook(() => useLabSSE('job-123'));
+
+    act(() => {
+      MockEventSource.instances[0]?.simulateOpen();
+    });
+
+    act(() => {
+      MockEventSource.instances[0]?.simulateNamedMessage('running', {
+        status: 'running',
+        progress: 0.25,
+        message: 'Named event',
+      });
+    });
+
+    expect(result.current).toEqual({
+      progress: 0.25,
+      message: 'Named event',
       status: 'running',
       isConnected: true,
     });
@@ -323,6 +365,26 @@ describe('useLabSSE', () => {
       progress: null,
       message: null,
       status: 'running',
+      isConnected: true,
+    });
+  });
+
+  it('ignores invalid status payload without changing state', () => {
+    const { result } = renderHook(() => useLabSSE('job-123'));
+
+    act(() => {
+      MockEventSource.instances[0]?.simulateOpen();
+      MockEventSource.instances[0]?.simulateMessage({
+        status: 'unknown',
+        progress: 0.4,
+        message: 'ignored',
+      });
+    });
+
+    expect(result.current).toEqual({
+      progress: null,
+      message: null,
+      status: null,
       isConnected: true,
     });
   });
