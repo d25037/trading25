@@ -3007,10 +3007,7 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
-        /**
-         * DateRange
-         * @description 分析期間
-         */
+        /** DateRange */
         DateRange: {
             /** From */
             from: string;
@@ -3121,7 +3118,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__factor_regression__DateRange"];
         };
         /**
          * FieldConstraints
@@ -5162,6 +5159,25 @@ export interface components {
              */
             best_score?: number | null;
             /**
+             * Best Params
+             * @description 最良スコア時のパラメータ
+             */
+            best_params?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Worst Score
+             * @description 最悪スコア
+             */
+            worst_score?: number | null;
+            /**
+             * Worst Params
+             * @description 最悪スコア時のパラメータ
+             */
+            worst_params?: {
+                [key: string]: unknown;
+            } | null;
+            /**
              * Total Combinations
              * @description パラメータ組み合わせ総数
              */
@@ -5280,7 +5296,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -7243,8 +7259,11 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
+        /**
+         * DateRange
+         * @description 分析期間
+         */
+        src__server__schemas__factor_regression__DateRange: {
             /** From */
             from: string;
             /** To */

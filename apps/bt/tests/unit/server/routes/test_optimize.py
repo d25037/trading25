@@ -29,6 +29,9 @@ class TestBuildOptimizationJobResponse:
         mock_job.completed_at = datetime(2025, 1, 1)
         mock_job.error = None
         mock_job.best_score = 0.85
+        mock_job.best_params = {"period": 20, "threshold": 0.3}
+        mock_job.worst_score = 0.12
+        mock_job.worst_params = {"period": 5, "threshold": 0.9}
         mock_job.total_combinations = 100
         mock_job.notebook_path = "/path/to/notebook"
         mock_job_manager.get_job.return_value = mock_job
@@ -36,6 +39,9 @@ class TestBuildOptimizationJobResponse:
         response = _build_optimization_job_response("test-123")
         assert response.job_id == "test-123"
         assert response.best_score == 0.85
+        assert response.best_params == {"period": 20, "threshold": 0.3}
+        assert response.worst_score == 0.12
+        assert response.worst_params == {"period": 5, "threshold": 0.9}
 
     def test_not_found(self, mock_job_manager):
         mock_job_manager.get_job.return_value = None
