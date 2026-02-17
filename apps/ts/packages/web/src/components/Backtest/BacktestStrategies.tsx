@@ -1,4 +1,4 @@
-import { Code, Copy, Edit, FileText, Loader2, Lock, Pencil, Settings2, Trash2 } from 'lucide-react';
+import { ArrowLeftRight, Code, Copy, Edit, FileText, Loader2, Lock, Pencil, Settings2, Trash2 } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -7,9 +7,11 @@ import { cn } from '@/lib/utils';
 import type { StrategyMetadata } from '@/types/backtest';
 import { DeleteConfirmDialog } from './DeleteConfirmDialog';
 import { DuplicateDialog } from './DuplicateDialog';
+import { MoveGroupDialog } from './MoveGroupDialog';
 import { OptimizationGridEditor } from './OptimizationGridEditor';
 import { RenameDialog } from './RenameDialog';
 import { StrategyEditor } from './StrategyEditor';
+import { compareManagedStrategyCategory, isManagedStrategyCategory } from './strategyCategoryOrder';
 
 function StrategyCard({
   strategy,
@@ -51,15 +53,18 @@ function StrategyDetailPanel({
   strategyName,
   onDeleted,
   onRenamed,
+  onMoved,
 }: {
   strategyName: string;
   onDeleted?: () => void;
   onRenamed?: (newName: string) => void;
+  onMoved?: (newName: string) => void;
 }) {
   const { data: detail, isLoading } = useStrategy(strategyName);
   const [showEditor, setShowEditor] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showDuplicateDialog, setShowDuplicateDialog] = useState(false);
+  const [showMoveDialog, setShowMoveDialog] = useState(false);
   const [showRenameDialog, setShowRenameDialog] = useState(false);
   const [activeDetailTab, setActiveDetailTab] = useState<DetailTab>('detail');
 
@@ -74,6 +79,7 @@ function StrategyDetailPanel({
   if (!detail) return null;
 
   const isEditable = detail.category === 'experimental';
+  const isMovable = isManagedStrategyCategory(detail.category);
 
   return (
     <>
@@ -109,6 +115,12 @@ function StrategyDetailPanel({
               <Copy className="h-4 w-4 mr-1" />
               Duplicate
             </Button>
+            {isMovable && (
+              <Button variant="outline" size="sm" onClick={() => setShowMoveDialog(true)}>
+                <ArrowLeftRight className="h-4 w-4 mr-1" />
+                Move Group
+              </Button>
+            )}
             {isEditable && (
               <Button
                 variant="outline"
@@ -197,6 +209,13 @@ function StrategyDetailPanel({
         strategyName={strategyName}
         onSuccess={onRenamed}
       />
+      <MoveGroupDialog
+        open={showMoveDialog}
+        onOpenChange={setShowMoveDialog}
+        strategyName={strategyName}
+        currentCategory={detail.category}
+        onSuccess={onMoved}
+      />
     </>
   );
 }
@@ -239,11 +258,7 @@ export function BacktestStrategies() {
     });
   }
 
-  const sortedCategories = Object.keys(grouped).sort((a, b) => {
-    if (a === 'production') return -1;
-    if (b === 'production') return 1;
-    return a.localeCompare(b);
-  });
+  const sortedCategories = Object.keys(grouped).sort(compareManagedStrategyCategory);
 
   return (
     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -278,6 +293,7 @@ export function BacktestStrategies() {
             strategyName={selectedName}
             onDeleted={() => setSelectedName(null)}
             onRenamed={(newName) => setSelectedName(newName)}
+            onMoved={(newName) => setSelectedName(newName)}
           />
         ) : (
           <Card className="flex items-center justify-center h-48 text-muted-foreground">

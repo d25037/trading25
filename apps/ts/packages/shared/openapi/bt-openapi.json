@@ -656,6 +656,89 @@
         }
       }
     },
+    "/api/strategies/{strategy_name}/move": {
+      "post": {
+        "tags": [
+          "Strategies"
+        ],
+        "summary": "Move Strategy",
+        "description": "戦略のカテゴリを移動\n\nArgs:\n    strategy_name: 移動元の戦略名\n    request: 移動先カテゴリ\n\nNote:\n    production / experimental / legacy 間の移動のみサポート",
+        "operationId": "move_strategy_api_strategies__strategy_name__move_post",
+        "parameters": [
+          {
+            "name": "strategy_name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Strategy Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/StrategyMoveRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/StrategyMoveResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/config/default": {
       "get": {
         "tags": [
@@ -12497,21 +12580,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -13932,26 +14015,37 @@
       },
       "IndexMatch": {
         "properties": {
-          "code": {
+          "indexCode": {
             "type": "string",
-            "title": "Code"
+            "title": "Indexcode"
           },
-          "name": {
+          "indexName": {
             "type": "string",
-            "title": "Name"
+            "title": "Indexname"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
+          },
+          "beta": {
+            "type": "number",
+            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "code",
-          "name",
-          "rSquared"
+          "indexCode",
+          "indexName",
+          "category",
+          "rSquared",
+          "beta"
         ],
-        "title": "IndexMatch"
+        "title": "IndexMatch",
+        "description": "指数マッチ結果"
       },
       "IndexOHLCRecord": {
         "properties": {
@@ -16667,21 +16761,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -16695,7 +16789,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -16994,7 +17088,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
               },
               {
                 "type": "null"
@@ -20403,6 +20497,65 @@
         "title": "StrategyMetadataResponse",
         "description": "戦略メタデータ"
       },
+      "StrategyMoveRequest": {
+        "properties": {
+          "target_category": {
+            "type": "string",
+            "enum": [
+              "production",
+              "experimental",
+              "legacy"
+            ],
+            "title": "Target Category",
+            "description": "移動先カテゴリ"
+          }
+        },
+        "type": "object",
+        "required": [
+          "target_category"
+        ],
+        "title": "StrategyMoveRequest",
+        "description": "戦略カテゴリ移動リクエスト"
+      },
+      "StrategyMoveResponse": {
+        "properties": {
+          "success": {
+            "type": "boolean",
+            "title": "Success",
+            "description": "移動成功フラグ"
+          },
+          "old_strategy_name": {
+            "type": "string",
+            "title": "Old Strategy Name",
+            "description": "移動前の戦略名"
+          },
+          "new_strategy_name": {
+            "type": "string",
+            "title": "New Strategy Name",
+            "description": "移動後の戦略名"
+          },
+          "target_category": {
+            "type": "string",
+            "title": "Target Category",
+            "description": "移動先カテゴリ"
+          },
+          "new_path": {
+            "type": "string",
+            "title": "New Path",
+            "description": "新しいファイルパス"
+          }
+        },
+        "type": "object",
+        "required": [
+          "success",
+          "old_strategy_name",
+          "new_strategy_name",
+          "target_category",
+          "new_path"
+        ],
+        "title": "StrategyMoveResponse",
+        "description": "戦略カテゴリ移動レスポンス"
+      },
       "StrategyRenameRequest": {
         "properties": {
           "new_name": {
@@ -21351,41 +21504,30 @@
         "title": "DateRange",
         "description": "分析期間"
       },
-      "src__server__schemas__factor_regression__IndexMatch": {
+      "src__server__schemas__portfolio_factor_regression__IndexMatch": {
         "properties": {
-          "indexCode": {
+          "code": {
             "type": "string",
-            "title": "Indexcode"
+            "title": "Code"
           },
-          "indexName": {
+          "name": {
             "type": "string",
-            "title": "Indexname"
-          },
-          "category": {
-            "type": "string",
-            "title": "Category"
+            "title": "Name"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
-          },
-          "beta": {
-            "type": "number",
-            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "indexCode",
-          "indexName",
-          "category",
-          "rSquared",
-          "beta"
+          "code",
+          "name",
+          "rSquared"
         ],
-        "title": "IndexMatch",
-        "description": "指数マッチ結果"
+        "title": "IndexMatch"
       },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
+      "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {
           "from": {
             "type": "string",

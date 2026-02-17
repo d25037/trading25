@@ -38,6 +38,10 @@ from src.lib.strategy_runtime.validator import (
     validate_strategy_config,
     validate_strategy_name,
 )
+from src.paths.constants import STRATEGY_CATEGORIES
+
+
+MOVABLE_STRATEGY_CATEGORIES = {"production", "experimental", "legacy"}
 
 
 class ConfigLoader:
@@ -84,6 +88,58 @@ class ConfigLoader:
     def _infer_strategy_path(self, strategy_name: str) -> Path:
         """戦略名から設定ファイルパスを推測"""
         return infer_strategy_path(self.config_dir, strategy_name)
+
+    def _is_default_config(self) -> bool:
+        """config_dir がデフォルト("config")かどうか"""
+        return str(self.config_dir) == "config"
+
+    def _get_category_roots(self, category: str) -> list[Path]:
+        """カテゴリに対応する探索ルートを取得"""
+        from src.paths import get_strategies_dir
+
+        if self._is_default_config():
+            roots = [get_strategies_dir(category)]
+            # experimental は外部ディレクトリ優先、プロジェクト内をフォールバックで許可
+            if category == "experimental":
+                fallback = self.config_dir / "strategies" / category
+                if fallback not in roots:
+                    roots.append(fallback)
+            return roots
+
+        return [self.config_dir / "strategies" / category]
+
+    def _resolve_category_root_and_relative_path(
+        self, strategy_path: Path
+    ) -> tuple[str, Path, Path]:
+        """
+        strategy_path からカテゴリ・カテゴリルート・相対パスを解決
+        """
+        resolved_path = strategy_path.resolve()
+
+        for category in STRATEGY_CATEGORIES:
+            for category_root in self._get_category_roots(category):
+                resolved_root = category_root.resolve()
+                try:
+                    relative_path = resolved_path.relative_to(resolved_root)
+                except ValueError:
+                    continue
+                return category, category_root, relative_path
+
+        raise ValueError(f"許可された戦略ディレクトリ外です: {strategy_path}")
+
+    def _cleanup_empty_strategy_dirs(self, start_dir: Path, root_dir: Path) -> None:
+        """戦略移動後に空ディレクトリをルート直下まで掃除する"""
+        current = start_dir
+        resolved_root = root_dir.resolve()
+
+        while True:
+            resolved_current = current.resolve()
+            if resolved_current == resolved_root:
+                break
+            if any(current.iterdir()):
+                break
+            current.rmdir()
+            current = current.parent
 
     def load_strategy_config(self, strategy_name: str) -> dict[str, Any]:
         """
@@ -357,6 +413,71 @@ class ConfigLoader:
         except OSError as e:
             logger.error(f"戦略リネームエラー: {e}")
             raise
+
+    def move_strategy(
+        self, strategy_name: str, target_category: str
+    ) -> tuple[str, Path]:
+        """
+        戦略をカテゴリ間で移動
+
+        Args:
+            strategy_name: 移動元の戦略名（カテゴリ付き推奨）
+            target_category: 移動先カテゴリ（production/experimental/legacy）
+
+        Returns:
+            tuple[str, Path]: 移動後の戦略名, 移動後のファイルパス
+
+        Raises:
+            ValueError: カテゴリ不正または移動対象外カテゴリ
+            FileExistsError: 移動先に同名戦略が存在
+            FileNotFoundError: 移動元が存在しない
+        """
+        if target_category not in MOVABLE_STRATEGY_CATEGORIES:
+            raise ValueError(
+                "移動先カテゴリは production / experimental / legacy のみ指定できます"
+            )
+
+        self._validate_strategy_name(strategy_name)
+        current_path = self._infer_strategy_path(strategy_name)
+        validate_path_within_strategies(current_path, self.config_dir)
+
+        source_category, source_root, relative_path = (
+            self._resolve_category_root_and_relative_path(current_path)
+        )
+
+        if source_category not in MOVABLE_STRATEGY_CATEGORIES:
+            raise ValueError(
+                f"カテゴリ '{source_category}' からの移動はサポートされていません"
+            )
+
+        relative_strategy_name = relative_path.with_suffix("").as_posix()
+        if source_category == target_category:
+            return (
+                f"{target_category}/{relative_strategy_name}",
+                current_path,
+            )
+
+        target_root = self._get_category_roots(target_category)[0]
+        target_path = target_root / relative_path
+        validate_path_within_strategies(target_path, self.config_dir)
+
+        if target_path.exists():
+            raise FileExistsError(
+                f"戦略 '{target_category}/{relative_strategy_name}' は既に存在します"
+            )
+
+        target_path.parent.mkdir(parents=True, exist_ok=True)
+
+        try:
+            current_path.rename(target_path)
+            self._cleanup_empty_strategy_dirs(current_path.parent, source_root)
+        except OSError as e:
+            logger.error(f"戦略移動エラー: {e}")
+            raise
+
+        new_strategy_name = f"{target_category}/{relative_strategy_name}"
+        logger.info(f"戦略移動成功: {strategy_name} -> {new_strategy_name}")
+        return new_strategy_name, target_path
 
 
 __all__ = ["ConfigLoader", "StrategyMetadata"]

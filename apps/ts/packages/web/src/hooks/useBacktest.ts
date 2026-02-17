@@ -27,6 +27,8 @@ import type {
   StrategyDuplicateRequest,
   StrategyDuplicateResponse,
   StrategyListResponse,
+  StrategyMoveRequest,
+  StrategyMoveResponse,
   StrategyRenameRequest,
   StrategyRenameResponse,
   StrategyUpdateRequest,
@@ -415,6 +417,10 @@ function renameStrategy(name: string, request: StrategyRenameRequest): Promise<S
   return apiPost<StrategyRenameResponse>(`/api/strategies/${encodeURIComponent(name)}/rename`, request);
 }
 
+function moveStrategy(name: string, request: StrategyMoveRequest): Promise<StrategyMoveResponse> {
+  return apiPost<StrategyMoveResponse>(`/api/strategies/${encodeURIComponent(name)}/move`, request);
+}
+
 function validateStrategy(name: string, request: StrategyValidationRequest): Promise<StrategyValidationResponse> {
   return apiPost<StrategyValidationResponse>(`/api/strategies/${encodeURIComponent(name)}/validate`, request);
 }
@@ -491,6 +497,26 @@ export function useRenameStrategy() {
     },
     onError: (error) => {
       logger.error('Failed to rename strategy', { error: error.message });
+    },
+  });
+}
+
+/**
+ * Move strategy across managed categories
+ */
+export function useMoveStrategy() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ name, request }: { name: string; request: StrategyMoveRequest }) => moveStrategy(name, request),
+    onSuccess: (data, { name }) => {
+      logger.debug('Strategy moved', { oldName: name, newName: data.new_strategy_name, to: data.target_category });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.strategies() });
+      queryClient.removeQueries({ queryKey: backtestKeys.strategy(name) });
+      queryClient.invalidateQueries({ queryKey: backtestKeys.strategy(data.new_strategy_name) });
+    },
+    onError: (error) => {
+      logger.error('Failed to move strategy', { error: error.message });
     },
   });
 }
