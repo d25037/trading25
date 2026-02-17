@@ -8,6 +8,75 @@ interface OptimizationJobProgressCardProps {
   isLoading?: boolean;
 }
 
+function formatScore(score: number | null | undefined): string {
+  return score != null ? score.toFixed(4) : '-';
+}
+
+function stringifyParams(params: Record<string, unknown> | null | undefined): string | null {
+  if (!params || Object.keys(params).length === 0) {
+    return null;
+  }
+  return JSON.stringify(params, null, 2);
+}
+
+function CompletedSummary({
+  job,
+  bestParamsText,
+  worstParamsText,
+}: {
+  job: OptimizationJobResponse;
+  bestParamsText: string | null;
+  worstParamsText: string | null;
+}) {
+  return (
+    <div className="space-y-3 text-sm">
+      {job.total_combinations != null && (
+        <div>
+          <span className="text-muted-foreground">Combinations:</span>
+          <span className="ml-2 font-medium">{job.total_combinations}</span>
+        </div>
+      )}
+
+      {bestParamsText && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Best Params</span>
+            <span className="font-medium">score: {formatScore(job.best_score)}</span>
+          </div>
+          <pre className="max-h-40 overflow-auto rounded-md bg-muted/50 p-2 text-xs whitespace-pre-wrap break-all">
+            {bestParamsText}
+          </pre>
+        </div>
+      )}
+
+      {worstParamsText && (
+        <div className="space-y-1">
+          <div className="flex items-center gap-2">
+            <span className="text-muted-foreground">Worst Params</span>
+            <span className="font-medium">score: {formatScore(job.worst_score)}</span>
+          </div>
+          <pre className="max-h-40 overflow-auto rounded-md bg-muted/50 p-2 text-xs whitespace-pre-wrap break-all">
+            {worstParamsText}
+          </pre>
+        </div>
+      )}
+
+      {!bestParamsText && job.best_score != null && (
+        <div>
+          <span className="text-muted-foreground">Best Score:</span>
+          <span className="ml-2 font-medium">{formatScore(job.best_score)}</span>
+        </div>
+      )}
+      {!worstParamsText && job.worst_score != null && (
+        <div>
+          <span className="text-muted-foreground">Worst Score:</span>
+          <span className="ml-2 font-medium">{formatScore(job.worst_score)}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function StatusIcon({ status }: { status: JobStatus }) {
   switch (status) {
     case 'pending':
@@ -73,6 +142,9 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
     return `${m}:${String(sec).padStart(2, '0')}`;
   };
 
+  const bestParamsText = stringifyParams(job.best_params);
+  const worstParamsText = stringifyParams(job.worst_params);
+
   return (
     <Card className="mt-2">
       <CardHeader className="pb-3">
@@ -99,22 +171,7 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
 
         {/* Completed result summary */}
         {job.status === 'completed' && (
-          <div className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              {job.best_score != null && (
-                <div>
-                  <span className="text-muted-foreground">Best Score:</span>
-                  <span className="ml-2 font-medium">{job.best_score.toFixed(4)}</span>
-                </div>
-              )}
-              {job.total_combinations != null && (
-                <div>
-                  <span className="text-muted-foreground">Combinations:</span>
-                  <span className="ml-2 font-medium">{job.total_combinations}</span>
-                </div>
-              )}
-            </div>
-          </div>
+          <CompletedSummary job={job} bestParamsText={bestParamsText} worstParamsText={worstParamsText} />
         )}
 
         {/* Failed error */}
