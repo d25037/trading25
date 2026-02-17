@@ -1,6 +1,8 @@
 """server/routes/strategies.py のテスト"""
 
+from datetime import datetime
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -118,7 +120,7 @@ class TestValidateStrategy:
 
 class TestUpdateStrategy:
     def test_success(self, client, mock_config_loader):
-        mock_config_loader.is_editable_category.return_value = True
+        mock_config_loader.is_updatable_category.return_value = True
         mock_config_loader.save_strategy_config.return_value = Path("/saved/path.yaml")
         resp = client.put(
             "/api/strategies/test",
@@ -126,9 +128,47 @@ class TestUpdateStrategy:
         )
         assert resp.status_code == 200
         assert resp.json()["success"] is True
+        mock_config_loader.save_strategy_config.assert_called_once_with(
+            "test",
+            {"entry_filter_params": {}},
+            force=True,
+            allow_production=True,
+        )
+
+    def test_production_success(self, client, mock_config_loader):
+        mock_config_loader.is_updatable_category.return_value = True
+        mock_config_loader.load_strategy_config.return_value = {
+            "entry_filter_params": {}
+        }
+        mock_config_loader.save_strategy_config.return_value = Path(
+            "/saved/production/path.yaml"
+        )
+        resp = client.put(
+            "/api/strategies/production/range_break_v16",
+            json={"config": {"entry_filter_params": {}}},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        mock_config_loader.save_strategy_config.assert_called_once_with(
+            "production/range_break_v16",
+            {"entry_filter_params": {}},
+            force=True,
+            allow_production=True,
+        )
+
+    def test_production_not_found_404(self, client, mock_config_loader):
+        mock_config_loader.is_updatable_category.return_value = True
+        mock_config_loader.load_strategy_config.side_effect = FileNotFoundError(
+            "not found"
+        )
+        resp = client.put(
+            "/api/strategies/production/missing_strategy",
+            json={"config": {"entry_filter_params": {}}},
+        )
+        assert resp.status_code == 404
 
     def test_non_editable_403(self, client, mock_config_loader):
-        mock_config_loader.is_editable_category.return_value = False
+        mock_config_loader.is_updatable_category.return_value = False
         resp = client.put(
             "/api/strategies/production_test",
             json={"config": {}},
@@ -274,3 +314,113 @@ class TestMoveStrategy:
             json={"target_category": "reference"},
         )
         assert resp.status_code == 422
+
+
+class TestListStrategies:
+    def test_success(self, client, mock_config_loader):
+        mock_config_loader.get_strategy_metadata.return_value = [
+            SimpleNamespace(
+                name="production/range_break_v16",
+                category="production",
+                mtime=datetime(2026, 2, 17),
+            ),
+            SimpleNamespace(
+                name="experimental/demo",
+                category="experimental",
+                mtime=datetime(2026, 2, 16),
+            ),
+        ]
+
+        resp = client.get("/api/strategies")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["total"] == 2
+        assert data["strategies"][0]["name"] == "production/range_break_v16"
+
+    def test_error_500(self, client, mock_config_loader):
+        mock_config_loader.get_strategy_metadata.side_effect = RuntimeError("boom")
+
+        resp = client.get("/api/strategies")
+        assert resp.status_code == 500
+
+
+class TestDefaultConfig:
+    def test_get_success(self, client, mock_config_loader, tmp_path):
+        default_path = tmp_path / "default.yaml"
+        default_path.write_text("default:\n  dataset: test\n", encoding="utf-8")
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.get("/api/config/default")
+        assert resp.status_code == 200
+        assert "default:" in resp.json()["content"]
+
+    def test_get_not_found(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.get("/api/config/default")
+        assert resp.status_code == 404
+
+    def test_get_error_500(self, client, mock_config_loader):  # noqa: ARG002
+        mock_config_loader.config_dir = None
+
+        resp = client.get("/api/config/default")
+        assert resp.status_code == 500
+
+    def test_update_success(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.put(
+            "/api/config/default",
+            json={"content": "default:\n  dataset: test\n"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["success"] is True
+        assert (tmp_path / "default.yaml").exists()
+        mock_config_loader.reload_default_config.assert_called_once()
+
+    def test_update_yaml_syntax_error_400(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.put(
+            "/api/config/default",
+            json={"content": "default:\n  - [invalid"},
+        )
+        assert resp.status_code == 400
+
+    def test_update_non_object_400(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.put(
+            "/api/config/default",
+            json={"content": "- one\n- two\n"},
+        )
+        assert resp.status_code == 400
+        assert "オブジェクト" in resp.json()["detail"]
+
+    def test_update_missing_default_key_400(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.put(
+            "/api/config/default",
+            json={"content": "foo:\n  bar: 1\n"},
+        )
+        assert resp.status_code == 400
+        assert "default" in resp.json()["detail"]
+
+    def test_update_default_not_object_400(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path
+
+        resp = client.put(
+            "/api/config/default",
+            json={"content": "default: 1\n"},
+        )
+        assert resp.status_code == 400
+
+    def test_update_write_error_500(self, client, mock_config_loader, tmp_path):
+        mock_config_loader.config_dir = tmp_path / "missing_parent"
+
+        resp = client.put(
+            "/api/config/default",
+            json={"content": "default:\n  dataset: test\n"},
+        )
+        assert resp.status_code == 500

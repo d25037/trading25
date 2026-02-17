@@ -97,3 +97,16 @@ def is_editable_category(category: str) -> bool:
         bool: experimental カテゴリの場合のみ True
     """
     return category == "experimental"
+
+
+def is_updatable_category(category: str) -> bool:
+    """
+    カテゴリが更新（YAML上書き）可能かチェック
+
+    Args:
+        category: カテゴリ名
+
+    Returns:
+        bool: experimental または production の場合のみ True
+    """
+    return category in {"experimental", "production"}

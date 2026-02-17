@@ -147,7 +147,7 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
             Edit Strategy: {strategyName}
           </DialogTitle>
           <DialogDescription>
-            Edit the YAML configuration for this strategy. Only experimental strategies can be modified.
+            Edit the YAML configuration for this strategy. Production and experimental strategies can be modified.
           </DialogDescription>
         </DialogHeader>
 
