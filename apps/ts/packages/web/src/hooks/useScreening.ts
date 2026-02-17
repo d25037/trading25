@@ -6,12 +6,10 @@ import { logger } from '@/utils/logger';
 function fetchScreening(params: ScreeningParams): Promise<MarketScreeningResponse> {
   return apiGet<MarketScreeningResponse>('/api/analytics/screening', {
     markets: params.markets,
-    rangeBreakFast: params.rangeBreakFast,
-    rangeBreakSlow: params.rangeBreakSlow,
+    strategies: params.strategies,
     recentDays: params.recentDays,
     date: params.date,
-    minBreakPercentage: params.minBreakPercentage,
-    minVolumeRatio: params.minVolumeRatio,
+    backtestMetric: params.backtestMetric,
     sortBy: params.sortBy,
     order: params.order,
     limit: params.limit,

@@ -1,59 +1,51 @@
 """
 Market Screening Schemas
 
-Hono MarketScreeningResponse 互換のレスポンススキーマ。
+Backtest連動の動的YAMLスクリーニング向けレスポンススキーマ。
 """
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
-
-class RangeBreakDetails(BaseModel):
-    """レンジブレイク詳細"""
-
-    breakDate: str
-    currentHigh: float
-    maxHighInLookback: float
-    breakPercentage: float
-    volumeRatio: float
-    avgVolume20Days: float
-    avgVolume100Days: float
-
-
-class ScreeningDetails(BaseModel):
-    """スクリーニング詳細"""
-
-    rangeBreak: RangeBreakDetails | None = None
+BacktestMetric = Literal[
+    "sharpe_ratio",
+    "calmar_ratio",
+    "total_return",
+    "win_rate",
+    "profit_factor",
+]
+ScreeningSortBy = Literal[
+    "bestStrategyScore",
+    "matchedDate",
+    "stockCode",
+    "matchStrategyCount",
+]
+SortOrder = Literal["asc", "desc"]
 
 
-class FutureReturnPoint(BaseModel):
-    """将来リターンの1データポイント"""
+class MatchedStrategyItem(BaseModel):
+    """同一銘柄でヒットした戦略情報"""
 
-    date: str
-    price: float
-    changePercent: float
-
-
-class FutureReturns(BaseModel):
-    """将来リターン（履歴モード用）"""
-
-    day5: FutureReturnPoint | None = None
-    day20: FutureReturnPoint | None = None
-    day60: FutureReturnPoint | None = None
+    strategyName: str
+    matchedDate: str
+    strategyScore: float | None = None
 
 
 class ScreeningResultItem(BaseModel):
-    """スクリーニング結果項目"""
+    """銘柄集約済みスクリーニング結果項目"""
 
     stockCode: str
     companyName: str
     scaleCategory: str | None = None
     sector33Name: str | None = None
-    screeningType: str  # "rangeBreakFast" | "rangeBreakSlow"
     matchedDate: str
-    details: ScreeningDetails
-    futureReturns: FutureReturns | None = None
+    bestStrategyName: str
+    bestStrategyScore: float | None = None
+    matchStrategyCount: int
+    matchedStrategies: list[MatchedStrategyItem] = Field(default_factory=list)
 
 
 class ScreeningSummary(BaseModel):
@@ -62,7 +54,10 @@ class ScreeningSummary(BaseModel):
     totalStocksScreened: int
     matchCount: int
     skippedCount: int = 0
-    byScreeningType: dict[str, int] = Field(default_factory=dict)
+    byStrategy: dict[str, int] = Field(default_factory=dict)
+    strategiesEvaluated: list[str] = Field(default_factory=list)
+    strategiesWithoutBacktestMetrics: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
 
 
 class MarketScreeningResponse(BaseModel):
@@ -73,4 +68,7 @@ class MarketScreeningResponse(BaseModel):
     markets: list[str]
     recentDays: int
     referenceDate: str | None = None
+    backtestMetric: BacktestMetric
+    sortBy: ScreeningSortBy
+    order: SortOrder
     lastUpdated: str
