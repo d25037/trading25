@@ -21,6 +21,10 @@ from src.server.schemas.lab import (
 )
 from src.server.services.job_manager import JobManager, job_manager
 
+_INTERNAL_JOB_MESSAGE_KEY = "_job_message"
+_EVOLVE_COMPLETE_MESSAGE = "GA進化完了"
+_EVOLVE_BASE_BEST_MESSAGE = "GA進化完了（ベース戦略が最良のためパラメータ変更なし）"
+
 
 def _resolve_target_scope(
     target_scope: LabTargetScope,
@@ -76,13 +80,21 @@ class LabService:
             result = await loop.run_in_executor(
                 self._executor, sync_fn, *sync_args
             )
+            complete_message_for_job = complete_message
+            if isinstance(result, dict):
+                raw_message = result.pop(_INTERNAL_JOB_MESSAGE_KEY, None)
+                if isinstance(raw_message, str) and raw_message.strip():
+                    complete_message_for_job = raw_message
 
             job = self._manager.get_job(job_id)
             if job is not None:
                 job.raw_result = result
 
             await self._manager.update_job_status(
-                job_id, JobStatus.COMPLETED, message=complete_message, progress=1.0
+                job_id,
+                JobStatus.COMPLETED,
+                message=complete_message_for_job,
+                progress=1.0,
             )
 
             logger.info(f"Lab {lab_type} 完了: {job_id}")
@@ -330,6 +342,14 @@ class LabService:
         evolver = ParameterEvolver(config=config)
         best_candidate, _ = evolver.evolve(strategy_name)
         history = evolver.get_evolution_history()
+        best_is_base_strategy = (
+            best_candidate.strategy_id == f"base_{strategy_name}"
+        )
+        if best_is_base_strategy:
+            logger.info(
+                "Lab evolve selected base strategy as best candidate: "
+                f"strategy={strategy_name}"
+            )
 
         history_items = [
             EvolutionHistoryItem(
@@ -356,6 +376,11 @@ class LabService:
             "history": history_items,
             "saved_strategy_path": saved_strategy_path,
             "saved_history_path": saved_history_path,
+            _INTERNAL_JOB_MESSAGE_KEY: (
+                _EVOLVE_BASE_BEST_MESSAGE
+                if best_is_base_strategy
+                else _EVOLVE_COMPLETE_MESSAGE
+            ),
         }
 
     # ============================================
