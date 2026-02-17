@@ -1,10 +1,9 @@
 import { DateInput, MarketsSelect, NumberSelect } from '@/components/shared/filters';
+import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import type { ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
+import type { BacktestMetric, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
   { value: 5, label: '5 days' },
@@ -24,11 +23,47 @@ const LIMIT_OPTIONS = [
 interface ScreeningFiltersProps {
   params: ScreeningParams;
   onChange: (params: ScreeningParams) => void;
+  strategyOptions: string[];
+  strategiesLoading?: boolean;
 }
 
-export function ScreeningFilters({ params, onChange }: ScreeningFiltersProps) {
+function parseSelectedStrategies(strategies: string | undefined): string[] {
+  if (!strategies) {
+    return [];
+  }
+  return strategies
+    .split(',')
+    .map((value) => value.trim())
+    .filter(Boolean);
+}
+
+function stringifyStrategies(strategies: string[]): string | undefined {
+  if (strategies.length === 0) {
+    return undefined;
+  }
+  return strategies.join(',');
+}
+
+export function ScreeningFilters({
+  params,
+  onChange,
+  strategyOptions,
+  strategiesLoading = false,
+}: ScreeningFiltersProps) {
   const updateParam = <K extends keyof ScreeningParams>(key: K, value: ScreeningParams[K]) => {
     onChange({ ...params, [key]: value });
+  };
+
+  const selectedStrategies = parseSelectedStrategies(params.strategies);
+
+  const toggleStrategy = (strategyName: string) => {
+    const selected = new Set(selectedStrategies);
+    if (selected.has(strategyName)) {
+      selected.delete(strategyName);
+    } else {
+      selected.add(strategyName);
+    }
+    updateParam('strategies', stringifyStrategies([...selected]));
   };
 
   return (
@@ -43,25 +78,47 @@ export function ScreeningFilters({ params, onChange }: ScreeningFiltersProps) {
           id="screening-markets"
         />
 
-        {/* Screening Types */}
-        <div className="space-y-3">
-          <Label htmlFor="screeningTypes" className="text-xs">
-            Screening Types
-          </Label>
+        <div className="space-y-2">
           <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Range Break Fast</span>
-            <Switch
-              checked={params.rangeBreakFast !== false}
-              onCheckedChange={(checked) => updateParam('rangeBreakFast', checked)}
-            />
+            <Label className="text-xs">Strategies</Label>
+            <Button
+              type="button"
+              size="sm"
+              variant="ghost"
+              className="h-6 px-2 text-[11px]"
+              onClick={() => updateParam('strategies', undefined)}
+            >
+              All production
+            </Button>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">Range Break Slow</span>
-            <Switch
-              checked={params.rangeBreakSlow !== false}
-              onCheckedChange={(checked) => updateParam('rangeBreakSlow', checked)}
-            />
-          </div>
+          {strategiesLoading ? (
+            <p className="text-xs text-muted-foreground">Loading production strategies...</p>
+          ) : strategyOptions.length === 0 ? (
+            <p className="text-xs text-muted-foreground">No production strategies available</p>
+          ) : (
+            <div className="flex flex-wrap gap-1.5">
+              {strategyOptions.map((strategyName) => {
+                const isSelected = selectedStrategies.includes(strategyName);
+                return (
+                  <Button
+                    key={strategyName}
+                    type="button"
+                    size="sm"
+                    variant={isSelected ? 'default' : 'outline'}
+                    className="h-7 px-2 text-[11px]"
+                    onClick={() => toggleStrategy(strategyName)}
+                  >
+                    {strategyName}
+                  </Button>
+                );
+              })}
+            </div>
+          )}
+          <p className="text-[11px] text-muted-foreground">
+            {selectedStrategies.length === 0
+              ? 'No explicit selection: all production strategies are evaluated.'
+              : `${selectedStrategies.length} strategies selected`}
+          </p>
         </div>
 
         <NumberSelect
@@ -79,59 +136,47 @@ export function ScreeningFilters({ params, onChange }: ScreeningFiltersProps) {
           label="Reference Date (optional)"
         />
 
-        {/* Min Break Percentage */}
         <div className="space-y-2">
-          <Label htmlFor="minBreakPct" className="text-xs">
-            Min Break %
+          <Label htmlFor="backtestMetric" className="text-xs">
+            Backtest Metric
           </Label>
-          <Input
-            id="minBreakPct"
-            type="number"
-            step="0.5"
-            min="0"
-            placeholder="e.g. 5.0"
-            className="h-8 text-xs"
-            value={params.minBreakPercentage ?? ''}
-            onChange={(e) => updateParam('minBreakPercentage', e.target.value ? Number(e.target.value) : undefined)}
-          />
-        </div>
-
-        {/* Min Volume Ratio */}
-        <div className="space-y-2">
-          <Label htmlFor="minVolRatio" className="text-xs">
-            Min Volume Ratio
-          </Label>
-          <Input
-            id="minVolRatio"
-            type="number"
-            step="0.1"
-            min="0"
-            placeholder="e.g. 1.5"
-            className="h-8 text-xs"
-            value={params.minVolumeRatio ?? ''}
-            onChange={(e) => updateParam('minVolumeRatio', e.target.value ? Number(e.target.value) : undefined)}
-          />
-        </div>
-
-        {/* Sort */}
-        <div className="space-y-2">
-          <Label htmlFor="sortBy" className="text-xs">
-            Sort By
-          </Label>
-          <Select value={params.sortBy || 'date'} onValueChange={(v) => updateParam('sortBy', v as ScreeningSortBy)}>
-            <SelectTrigger id="sortBy" className="h-8 text-xs">
+          <Select
+            value={params.backtestMetric || 'sharpe_ratio'}
+            onValueChange={(v) => updateParam('backtestMetric', v as BacktestMetric)}
+          >
+            <SelectTrigger id="backtestMetric" className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="date">Date</SelectItem>
-              <SelectItem value="stockCode">Stock Code</SelectItem>
-              <SelectItem value="volumeRatio">Volume Ratio</SelectItem>
-              <SelectItem value="breakPercentage">Break %</SelectItem>
+              <SelectItem value="sharpe_ratio">Sharpe Ratio</SelectItem>
+              <SelectItem value="calmar_ratio">Calmar Ratio</SelectItem>
+              <SelectItem value="total_return">Total Return</SelectItem>
+              <SelectItem value="win_rate">Win Rate</SelectItem>
+              <SelectItem value="profit_factor">Profit Factor</SelectItem>
             </SelectContent>
           </Select>
         </div>
 
-        {/* Order */}
+        <div className="space-y-2">
+          <Label htmlFor="sortBy" className="text-xs">
+            Sort By
+          </Label>
+          <Select
+            value={params.sortBy || 'bestStrategyScore'}
+            onValueChange={(v) => updateParam('sortBy', v as ScreeningSortBy)}
+          >
+            <SelectTrigger id="sortBy" className="h-8 text-xs">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bestStrategyScore">Best Strategy Score</SelectItem>
+              <SelectItem value="matchedDate">Matched Date</SelectItem>
+              <SelectItem value="stockCode">Stock Code</SelectItem>
+              <SelectItem value="matchStrategyCount">Match Strategy Count</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
         <div className="space-y-2">
           <Label htmlFor="order" className="text-xs">
             Order

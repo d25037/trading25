@@ -1,6 +1,6 @@
 /**
  * Market Screening Command
- * Run stock screening on market.db data via API
+ * Run production strategy-driven screening via API
  */
 
 import chalk from 'chalk';
@@ -12,16 +12,14 @@ import { CLIError } from '../../utils/error-handling.js';
 import { formatResults } from '../screening/output-formatter.js';
 
 interface ScreeningOptions {
-  rangeBreakFast?: boolean;
-  rangeBreakSlow?: boolean;
+  strategies?: string;
   recentDays?: string;
   date?: string;
   markets?: string;
+  backtestMetric?: string;
   format?: string;
   sortBy?: string;
   order?: string;
-  minBreakPercentage?: string;
-  minVolumeRatio?: string;
   limit?: string;
   debug?: boolean;
   verbose?: boolean;
@@ -33,10 +31,10 @@ interface ScreeningOptions {
 function printDebugConfig(options: ScreeningOptions): void {
   console.log(chalk.gray('Using API endpoint for screening'));
   console.log(chalk.gray('Screening configuration:'));
-  console.log(chalk.gray(`  Range Break Fast: ${options.rangeBreakFast !== false}`));
-  console.log(chalk.gray(`  Range Break Slow: ${options.rangeBreakSlow !== false}`));
-  console.log(chalk.gray(`  Recent Days: ${options.recentDays || '10'}`));
   console.log(chalk.gray(`  Markets: ${options.markets || 'prime'}`));
+  console.log(chalk.gray(`  Recent Days: ${options.recentDays || '10'}`));
+  console.log(chalk.gray(`  Backtest Metric: ${options.backtestMetric || 'sharpe_ratio'}`));
+  console.log(chalk.gray(`  Strategies: ${options.strategies || '(all production)'}`));
   if (options.date) {
     console.log(chalk.gray(`  Reference Date: ${options.date}`));
   }
@@ -49,38 +47,58 @@ function printVerboseSummary(response: {
   markets: string[];
   recentDays: number;
   referenceDate?: string;
+  backtestMetric: string;
   summary: {
     totalStocksScreened: number;
     skippedCount: number;
-    byScreeningType: { rangeBreakFast: number; rangeBreakSlow: number };
+    byStrategy: Record<string, number>;
+    strategiesEvaluated: string[];
+    strategiesWithoutBacktestMetrics: string[];
+    warnings: string[];
   };
 }): void {
   console.log(chalk.cyan('\n📊 Screening Summary:'));
   console.log(chalk.white('━'.repeat(40)));
   console.log(chalk.yellow('Markets:'), response.markets.join(', '));
   console.log(chalk.yellow('Recent Days:'), response.recentDays);
+  console.log(chalk.yellow('Backtest Metric:'), response.backtestMetric);
   if (response.referenceDate) {
     console.log(chalk.yellow('Reference Date:'), response.referenceDate);
   }
   console.log(chalk.yellow('Total Screened:'), response.summary.totalStocksScreened.toLocaleString());
   console.log(chalk.yellow('Skipped:'), response.summary.skippedCount.toLocaleString());
-  console.log(chalk.yellow('Range Break Fast:'), response.summary.byScreeningType.rangeBreakFast);
-  console.log(chalk.yellow('Range Break Slow:'), response.summary.byScreeningType.rangeBreakSlow);
+  console.log(chalk.yellow('Strategies Evaluated:'), response.summary.strategiesEvaluated.length);
+  console.log(chalk.yellow('Without Metrics:'), response.summary.strategiesWithoutBacktestMetrics.length);
+
+  const topStrategies = Object.entries(response.summary.byStrategy)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 5);
+  if (topStrategies.length > 0) {
+    console.log(chalk.yellow('Top Strategy Hits:'), topStrategies.map(([name, count]) => `${name}(${count})`).join(', '));
+  }
+
+  if (response.summary.warnings.length > 0) {
+    console.log(chalk.yellow('Warnings:'), response.summary.warnings.length);
+  }
 }
 
 /**
  * Build API request parameters
  */
-function buildApiParams(options: ScreeningOptions) {
+export function buildApiParams(options: ScreeningOptions) {
   return {
     markets: options.markets,
-    rangeBreakFast: options.rangeBreakFast,
-    rangeBreakSlow: options.rangeBreakSlow,
+    strategies: options.strategies,
     recentDays: options.recentDays ? Number.parseInt(options.recentDays, 10) : undefined,
     date: options.date,
-    minBreakPercentage: options.minBreakPercentage ? Number.parseFloat(options.minBreakPercentage) : undefined,
-    minVolumeRatio: options.minVolumeRatio ? Number.parseFloat(options.minVolumeRatio) : undefined,
-    sortBy: options.sortBy as 'date' | 'stockCode' | 'volumeRatio' | 'breakPercentage' | undefined,
+    backtestMetric: options.backtestMetric as
+      | 'sharpe_ratio'
+      | 'calmar_ratio'
+      | 'total_return'
+      | 'win_rate'
+      | 'profit_factor'
+      | undefined,
+    sortBy: options.sortBy as 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount' | undefined,
     order: options.order as 'asc' | 'desc' | undefined,
     limit: options.limit ? Number.parseInt(options.limit, 10) : undefined,
   };
@@ -115,7 +133,7 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
       return;
     }
 
-    console.log(chalk.cyan(`\n📈 Market Screening Results: ${response.results.length} stocks matched`));
+    console.log(chalk.cyan(`\n📈 Market Screening Results: ${response.results.length} stocks returned`));
     console.log(chalk.white('━'.repeat(80)));
 
     await formatResults(response.results, {
@@ -158,22 +176,16 @@ function handleScreeningError(error: unknown): void {
  */
 export const screeningCommand = define({
   name: 'screening',
-  description: 'Run stock screening analysis on market-wide data',
+  description: 'Run strategy-driven stock screening analysis on market-wide data',
   args: {
     markets: {
       type: 'string',
-      description: 'Market filter (prime|standard|prime,standard)',
+      description: 'Market filter (prime|standard|growth|0111|0112|0113, comma-separated)',
       default: 'prime',
     },
-    rangeBreakFast: {
-      type: 'boolean',
-      description: 'Enable range break Fast screening (EMA30/120, 1.7)',
-      default: true,
-    },
-    rangeBreakSlow: {
-      type: 'boolean',
-      description: 'Enable range break Slow screening (SMA50/150, 1.7)',
-      default: true,
+    strategies: {
+      type: 'string',
+      description: 'Production strategies (comma-separated, optional; empty means all production)',
     },
     recentDays: {
       type: 'string',
@@ -184,6 +196,11 @@ export const screeningCommand = define({
       type: 'string',
       description: 'Reference date for historical screening (YYYY-MM-DD)',
     },
+    backtestMetric: {
+      type: 'string',
+      description: 'Backtest metric (sharpe_ratio|calmar_ratio|total_return|win_rate|profit_factor)',
+      default: 'sharpe_ratio',
+    },
     format: {
       type: 'string',
       description: 'Output format (table|json|csv)',
@@ -191,21 +208,13 @@ export const screeningCommand = define({
     },
     sortBy: {
       type: 'string',
-      description: 'Sort results by field (date|stockCode|volumeRatio|breakPercentage)',
-      default: 'date',
+      description: 'Sort results by field (bestStrategyScore|matchedDate|stockCode|matchStrategyCount)',
+      default: 'bestStrategyScore',
     },
     order: {
       type: 'string',
       description: 'Sort order (asc|desc)',
       default: 'desc',
-    },
-    minBreakPercentage: {
-      type: 'string',
-      description: 'Minimum break percentage for range break filtering',
-    },
-    minVolumeRatio: {
-      type: 'string',
-      description: 'Minimum volume ratio for filtering',
     },
     limit: {
       type: 'string',
@@ -221,45 +230,31 @@ export const screeningCommand = define({
     },
   },
   examples: `
-# Basic screening (Prime market only, default)
+# Basic screening (Prime market, all production strategies)
 ${CLI_NAME} analysis screening
 
-# Screen Standard market only
-${CLI_NAME} analysis screening --markets standard
+# Restrict to selected production strategies
+${CLI_NAME} analysis screening --strategies range_break_v15,forward_eps_driven
 
-# Screen both Prime and Standard markets
-${CLI_NAME} analysis screening --markets prime,standard
+# Use different backtest metric and sorting
+${CLI_NAME} analysis screening --backtest-metric calmar_ratio --sort-by matchedDate --order asc
 
-# Run only Range Break Fast screening
-${CLI_NAME} analysis screening --no-range-break-slow
+# Historical screening for multiple markets
+${CLI_NAME} analysis screening --date 2025-12-30 --markets prime,standard
 
-# Run only Range Break Slow screening
-${CLI_NAME} analysis screening --no-range-break-fast
-
-# Custom filtering and output
-${CLI_NAME} analysis screening --min-break-percentage 5 --format json
-
-# Sort by volume ratio
-${CLI_NAME} analysis screening --sort-by volumeRatio --order desc
-
-# Historical screening with future returns
-${CLI_NAME} analysis screening --date 2024-06-01
-
-# Historical screening for specific market
-${CLI_NAME} analysis screening --date 2024-06-01 --markets prime,standard
+# JSON output with limit
+${CLI_NAME} analysis screening --format json --limit 100
   `.trim(),
   run: async (ctx) => {
     const {
       markets,
-      rangeBreakFast,
-      rangeBreakSlow,
+      strategies,
       recentDays,
       date,
+      backtestMetric,
       format,
       sortBy,
       order,
-      minBreakPercentage,
-      minVolumeRatio,
       limit,
       debug,
       verbose,
@@ -267,16 +262,14 @@ ${CLI_NAME} analysis screening --date 2024-06-01 --markets prime,standard
 
     try {
       await executeMarketScreening({
-        rangeBreakFast,
-        rangeBreakSlow,
+        strategies,
         recentDays,
         date,
         markets,
+        backtestMetric,
         format,
         sortBy,
         order,
-        minBreakPercentage,
-        minVolumeRatio,
         limit,
         debug,
         verbose,

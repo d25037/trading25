@@ -9,6 +9,8 @@ const mockChartStore = {
   setSelectedSymbol: vi.fn(),
 };
 
+const mockScreeningFilters = vi.fn((_props: unknown) => <div>Screening Filters</div>);
+
 vi.mock('@/stores/chartStore', () => ({
   useChartStore: () => mockChartStore,
 }));
@@ -33,8 +35,21 @@ vi.mock('@/hooks/useRanking', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useBacktest', () => ({
+  useStrategies: () => ({
+    data: {
+      strategies: [
+        { name: 'production/range_break_v15', category: 'production' },
+        { name: 'production/forward_eps_driven', category: 'production' },
+      ],
+    },
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 vi.mock('@/components/Screening/ScreeningFilters', () => ({
-  ScreeningFilters: () => <div>Screening Filters</div>,
+  ScreeningFilters: (props: unknown) => mockScreeningFilters(props),
 }));
 
 vi.mock('@/components/Screening/ScreeningSummary', () => ({
@@ -60,6 +75,16 @@ vi.mock('@/components/Ranking', () => ({
 }));
 
 describe('AnalysisPage', () => {
+  it('passes full production strategy names to screening filters', () => {
+    render(<AnalysisPage />);
+
+    expect(mockScreeningFilters).toHaveBeenCalledWith(
+      expect.objectContaining({
+        strategyOptions: ['production/forward_eps_driven', 'production/range_break_v15'],
+      })
+    );
+  });
+
   it('renders screening view by default and switches to ranking', async () => {
     const user = userEvent.setup();
     render(<AnalysisPage />);

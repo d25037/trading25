@@ -32,24 +32,20 @@ export class AnalyticsClient extends BaseApiClient {
    */
   async runMarketScreening(params: {
     markets?: string;
-    rangeBreakFast?: boolean;
-    rangeBreakSlow?: boolean;
+    strategies?: string;
     recentDays?: number;
     date?: string;
-    minBreakPercentage?: number;
-    minVolumeRatio?: number;
-    sortBy?: 'date' | 'stockCode' | 'volumeRatio' | 'breakPercentage';
+    backtestMetric?: 'sharpe_ratio' | 'calmar_ratio' | 'total_return' | 'win_rate' | 'profit_factor';
+    sortBy?: 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
     order?: 'asc' | 'desc';
     limit?: number;
   }): Promise<MarketScreeningResponse> {
     const query = toQueryString({
       markets: params.markets,
-      rangeBreakFast: params.rangeBreakFast,
-      rangeBreakSlow: params.rangeBreakSlow,
+      strategies: params.strategies,
       recentDays: params.recentDays,
       date: params.date,
-      minBreakPercentage: params.minBreakPercentage,
-      minVolumeRatio: params.minVolumeRatio,
+      backtestMetric: params.backtestMetric,
       sortBy: params.sortBy,
       order: params.order,
       limit: params.limit,

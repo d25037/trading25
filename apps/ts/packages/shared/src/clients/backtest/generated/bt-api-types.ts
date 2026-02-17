@@ -1629,7 +1629,7 @@ export interface paths {
         };
         /**
          * Run stock screening
-         * @description Run stock screening analysis with Range Break Fast and Slow strategies.
+         * @description Run strategy-driven stock screening based on production strategy YAML configs.
          */
         get: operations["get_screening_api_analytics_screening_get"];
         put?: never;
@@ -2995,7 +2995,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -3009,10 +3009,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * DefaultConfigResponse
@@ -3430,27 +3430,6 @@ export interface components {
              * @description Last updated timestamp (ISO 8601)
              */
             lastUpdated: string;
-        };
-        /**
-         * FutureReturnPoint
-         * @description 将来リターンの1データポイント
-         */
-        FutureReturnPoint: {
-            /** Date */
-            date: string;
-            /** Price */
-            price: number;
-            /** Changepercent */
-            changePercent: number;
-        };
-        /**
-         * FutureReturns
-         * @description 将来リターン（履歴モード用）
-         */
-        FutureReturns: {
-            day5?: components["schemas"]["FutureReturnPoint"] | null;
-            day20?: components["schemas"]["FutureReturnPoint"] | null;
-            day60?: components["schemas"]["FutureReturnPoint"] | null;
         };
         /**
          * GenerateResultItem
@@ -4732,6 +4711,21 @@ export interface components {
             recentDays: number;
             /** Referencedate */
             referenceDate?: string | null;
+            /**
+             * Backtestmetric
+             * @enum {string}
+             */
+            backtestMetric: "sharpe_ratio" | "calmar_ratio" | "total_return" | "win_rate" | "profit_factor";
+            /**
+             * Sortby
+             * @enum {string}
+             */
+            sortBy: "bestStrategyScore" | "matchedDate" | "stockCode" | "matchStrategyCount";
+            /**
+             * Order
+             * @enum {string}
+             */
+            order: "asc" | "desc";
             /** Lastupdated */
             lastUpdated: string;
         };
@@ -4820,6 +4814,18 @@ export interface components {
             /** Lastupdated */
             lastUpdated: string;
         };
+        /**
+         * MatchedStrategyItem
+         * @description 同一銘柄でヒットした戦略情報
+         */
+        MatchedStrategyItem: {
+            /** Strategyname */
+            strategyName: string;
+            /** Matcheddate */
+            matchedDate: string;
+            /** Strategyscore */
+            strategyScore?: number | null;
+        };
         /** OHLCRecord */
         OHLCRecord: {
             /** Date */
@@ -4833,40 +4839,19 @@ export interface components {
             /** Close */
             close: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
+        /** OHLCVRecord */
         OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+            /** Volume */
             volume: number;
         };
         /**
@@ -4945,7 +4930,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -5296,7 +5281,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5492,26 +5477,6 @@ export interface components {
             minROE: number;
             /** Totalcompanies */
             totalCompanies: number;
-        };
-        /**
-         * RangeBreakDetails
-         * @description レンジブレイク詳細
-         */
-        RangeBreakDetails: {
-            /** Breakdate */
-            breakDate: string;
-            /** Currenthigh */
-            currentHigh: number;
-            /** Maxhighinlookback */
-            maxHighInLookback: number;
-            /** Breakpercentage */
-            breakPercentage: number;
-            /** Volumeratio */
-            volumeRatio: number;
-            /** Avgvolume20Days */
-            avgVolume20Days: number;
-            /** Avgvolume100Days */
-            avgVolume100Days: number;
         };
         /**
          * RankingItem
@@ -5718,15 +5683,8 @@ export interface components {
             handle_zero_division: "skip" | "zero" | "null";
         };
         /**
-         * ScreeningDetails
-         * @description スクリーニング詳細
-         */
-        ScreeningDetails: {
-            rangeBreak?: components["schemas"]["RangeBreakDetails"] | null;
-        };
-        /**
          * ScreeningResultItem
-         * @description スクリーニング結果項目
+         * @description 銘柄集約済みスクリーニング結果項目
          */
         ScreeningResultItem: {
             /** Stockcode */
@@ -5737,12 +5695,16 @@ export interface components {
             scaleCategory?: string | null;
             /** Sector33Name */
             sector33Name?: string | null;
-            /** Screeningtype */
-            screeningType: string;
             /** Matcheddate */
             matchedDate: string;
-            details: components["schemas"]["ScreeningDetails"];
-            futureReturns?: components["schemas"]["FutureReturns"] | null;
+            /** Beststrategyname */
+            bestStrategyName: string;
+            /** Beststrategyscore */
+            bestStrategyScore?: number | null;
+            /** Matchstrategycount */
+            matchStrategyCount: number;
+            /** Matchedstrategies */
+            matchedStrategies?: components["schemas"]["MatchedStrategyItem"][];
         };
         /**
          * ScreeningSummary
@@ -5758,10 +5720,16 @@ export interface components {
              * @default 0
              */
             skippedCount: number;
-            /** Byscreeningtype */
-            byScreeningType?: {
+            /** Bystrategy */
+            byStrategy?: {
                 [key: string]: number;
             };
+            /** Strategiesevaluated */
+            strategiesEvaluated?: string[];
+            /** Strategieswithoutbacktestmetrics */
+            strategiesWithoutBacktestMetrics?: string[];
+            /** Warnings */
+            warnings?: string[];
         };
         /** SearchResultItem */
         SearchResultItem: {
@@ -7231,28 +7199,6 @@ export interface components {
             description?: string | null;
         };
         /** DateRange */
-        src__server__schemas__dataset__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
-        /** OHLCVRecord */
-        src__server__schemas__dataset_data__OHLCVRecord: {
-            /** Date */
-            date: string;
-            /** Open */
-            open: number;
-            /** High */
-            high: number;
-            /** Low */
-            low: number;
-            /** Close */
-            close: number;
-            /** Volume */
-            volume: number;
-        };
-        /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
             min: string;
@@ -7264,6 +7210,49 @@ export interface components {
          * @description 分析期間
          */
         src__server__schemas__factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
             /** From */
             from: string;
             /** To */
@@ -12001,14 +11990,12 @@ export interface operations {
         parameters: {
             query?: {
                 markets?: string;
-                rangeBreakFast?: boolean;
-                rangeBreakSlow?: boolean;
+                strategies?: string | null;
                 recentDays?: number;
                 date?: string | null;
-                minBreakPercentage?: number | null;
-                minVolumeRatio?: number | null;
-                sortBy?: string;
-                order?: string;
+                backtestMetric?: "sharpe_ratio" | "calmar_ratio" | "total_return" | "win_rate" | "profit_factor";
+                sortBy?: "bestStrategyScore" | "matchedDate" | "stockCode" | "matchStrategyCount";
+                order?: "asc" | "desc";
                 limit?: number | null;
             };
             header?: never;
@@ -12535,7 +12522,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
                     };
                 };
             };
@@ -12598,7 +12585,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                    "application/json": components["schemas"]["OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

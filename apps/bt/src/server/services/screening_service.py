@@ -1,349 +1,665 @@
 """
 Screening Service
 
-レンジブレイク検出サービス。
-Hono ScreeningEngine / MarketScreeningService 互換。
+production戦略YAML駆動の動的スクリーニングサービス。
 """
 
 from __future__ import annotations
 
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
-from src.lib.market_db.market_reader import MarketDbReader
-from src.server.services.market_code_alias import resolve_market_codes
-from src.server.schemas.screening import (
-    MarketScreeningResponse,
-    RangeBreakDetails,
-    ScreeningDetails,
-    ScreeningResultItem,
-    ScreeningSummary,
+import pandas as pd
+from loguru import logger
+
+from src.api.dataset.statements_mixin import APIPeriodType
+from src.data.access.mode import data_access_mode_context
+from src.data.loaders import (
+    get_stock_sector_mapping,
+    load_all_sector_indices,
+    load_topix_data,
+    prepare_multi_data,
 )
+from src.lib.market_db.market_reader import MarketDbReader
+from src.lib.market_db.query_helpers import normalize_stock_code
+from src.lib.strategy_runtime.loader import ConfigLoader
+from src.models.config import SharedConfig
+from src.models.signals import SignalParams, Signals
+from src.paths import get_backtest_results_dir
+from src.server.schemas.screening import (
+    BacktestMetric,
+    MarketScreeningResponse,
+    MatchedStrategyItem,
+    ScreeningResultItem,
+    ScreeningSortBy,
+    ScreeningSummary,
+    SortOrder,
+)
+from src.server.services.market_code_alias import resolve_market_codes
+from src.strategies.signals.processor import SignalProcessor
+from src.strategies.signals.registry import SIGNAL_REGISTRY
 
 
 def _now_iso() -> str:
     return datetime.now(UTC).isoformat()
 
 
-@dataclass
-class StockDataPoint:
-    """OHLCV データポイント"""
-
-    date: str
-    open: float
-    high: float
-    low: float
-    close: float
-    volume: float
+def _format_date(value: Any) -> str:
+    """Datetime/文字列をYYYY-MM-DDへ正規化する。"""
+    if hasattr(value, "strftime"):
+        return value.strftime("%Y-%m-%d")
+    text = str(value)
+    return text.split("T", 1)[0]
 
 
-@dataclass
-class RangeBreakParams:
-    """レンジブレイクパラメータ"""
-
-    period: int = 200
-    lookback_days: int = 10
-    volume_ratio_threshold: float = 1.7
-    volume_short_period: int = 30
-    volume_long_period: int = 120
-    volume_type: str = "ema"  # "sma" or "ema"
+@dataclass(frozen=True)
+class StockUniverseItem:
+    code: str
+    company_name: str
+    scale_category: str | None
+    sector_33_name: str | None
 
 
-# デフォルト設定
-DEFAULT_FAST_PARAMS = RangeBreakParams(
-    period=200, lookback_days=10,
-    volume_ratio_threshold=1.7, volume_short_period=30, volume_long_period=120,
-    volume_type="ema",
-)
-
-DEFAULT_SLOW_PARAMS = RangeBreakParams(
-    period=200, lookback_days=10,
-    volume_ratio_threshold=1.7, volume_short_period=50, volume_long_period=150,
-    volume_type="sma",
-)
-
-
-# --- Volume utilities ---
-
-
-def _sma(values: list[float], period: int) -> list[float]:
-    """Simple Moving Average"""
-    if period <= 0 or len(values) < period:
-        return []
-    result: list[float] = []
-    s = sum(values[:period])
-    result.append(s / period)
-    for i in range(1, len(values) - period + 1):
-        s = s - values[i - 1] + values[i + period - 1]
-        result.append(s / period)
-    return result
-
-
-def _ema(values: list[float], period: int) -> list[float]:
-    """Exponential Moving Average"""
-    if period <= 0 or len(values) < period:
-        return []
-    multiplier = 2.0 / (period + 1)
-    s = sum(values[:period]) / period
-    result = [s]
-    for i in range(period, len(values)):
-        s = (values[i] - s) * multiplier + s
-        result.append(s)
-    return result
-
-
-def _get_volume_avg(
-    data: list[StockDataPoint], period: int, end_index: int, vol_type: str
-) -> float | None:
-    """指定インデックスにおけるボリュームMA値を取得"""
-    if end_index < period - 1 or end_index >= len(data):
-        return None
-
-    volumes = [d.volume for d in data]
-    ma = _ema(volumes, period) if vol_type == "ema" else _sma(volumes, period)
-
-    # ma のインデックス = end_index - period + 1
-    ma_index = end_index - period + 1
-    if ma_index < 0 or ma_index >= len(ma):
-        return None
-    return ma[ma_index]
-
-
-def _check_volume_condition(
-    data: list[StockDataPoint],
-    params: RangeBreakParams,
-    index: int,
-) -> tuple[bool, float, float, float]:
-    """ボリューム条件チェック。(matched, ratio, short_avg, long_avg) を返す"""
-    short_avg = _get_volume_avg(data, params.volume_short_period, index, params.volume_type)
-    long_avg = _get_volume_avg(data, params.volume_long_period, index, params.volume_type)
-
-    if short_avg is None or long_avg is None or long_avg <= 0:
-        return False, 0.0, 0.0, 0.0
-
-    matched = short_avg > long_avg * params.volume_ratio_threshold
-    ratio = short_avg / long_avg if long_avg > 0 else 0.0
-    return matched, ratio, short_avg, long_avg
-
-
-# --- Range break detection ---
-
-
-def _find_max_high(data: list[StockDataPoint], start: int, end: int) -> float:
-    """範囲内の最大高値"""
-    if start < 0 or end >= len(data) or start > end:
-        return 0.0
-    return max(data[i].high for i in range(start, end + 1))
-
-
-def _detect_range_break(
-    data: list[StockDataPoint],
-    params: RangeBreakParams,
-    recent_days: int,
-) -> RangeBreakDetails | None:
-    """レンジブレイクを検出"""
-    if len(data) < params.period + recent_days:
-        return None
-
-    end_index = len(data) - 1
-    start_index = max(params.period, end_index - recent_days + 1)
-
-    for i in range(end_index, start_index - 1, -1):
-        if i < params.period:
-            continue
-
-        # Recent max high
-        recent_start = i - params.lookback_days + 1
-        recent_max = _find_max_high(data, recent_start, i)
-
-        # Period max high (before lookback)
-        period_start = i - params.period
-        period_end = i - params.lookback_days
-        period_max = _find_max_high(data, period_start, period_end)
-
-        if period_max <= 0 or recent_max <= 0:
-            continue
-
-        if recent_max >= period_max:
-            # ボリューム条件チェック
-            matched, ratio, short_avg, long_avg = _check_volume_condition(data, params, i)
-            if matched:
-                break_pct = ((recent_max - period_max) / period_max) * 100
-                return RangeBreakDetails(
-                    breakDate=data[i].date,
-                    currentHigh=recent_max,
-                    maxHighInLookback=period_max,
-                    breakPercentage=break_pct,
-                    volumeRatio=ratio,
-                    avgVolume20Days=short_avg,
-                    avgVolume100Days=long_avg,
-                )
-
-    return None
+@dataclass(frozen=True)
+class StrategyRuntime:
+    name: str
+    response_name: str
+    basename: str
+    entry_params: SignalParams
+    exit_params: SignalParams
+    shared_config: SharedConfig
 
 
 class ScreeningService:
-    """スクリーニングサービス"""
+    """戦略YAML駆動のスクリーニングサービス"""
+
+    _WARNING_LIMIT = 50
 
     def __init__(self, reader: MarketDbReader) -> None:
         self._reader = reader
+        self._config_loader = ConfigLoader()
+        self._signal_processor = SignalProcessor()
 
     def run_screening(
         self,
         markets: str = "prime",
-        range_break_fast: bool = True,
-        range_break_slow: bool = True,
+        strategies: str | None = None,
         recent_days: int = 10,
         reference_date: str | None = None,
-        min_break_percentage: float | None = None,
-        min_volume_ratio: float | None = None,
-        sort_by: str = "date",
-        order: str = "desc",
+        backtest_metric: BacktestMetric = "sharpe_ratio",
+        sort_by: ScreeningSortBy = "bestStrategyScore",
+        order: SortOrder = "desc",
         limit: int | None = None,
     ) -> MarketScreeningResponse:
         """スクリーニングを実行"""
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
-        # 銘柄データをロード
-        stocks = self._load_stocks(query_market_codes)
+        stock_universe = self._load_stock_universe(query_market_codes)
+        strategy_runtimes = self._resolve_strategies(strategies)
+        strategy_scores, missing_metric_strategies, metric_warnings = self._load_strategy_scores(
+            strategy_runtimes,
+            backtest_metric,
+        )
 
-        results: list[ScreeningResultItem] = []
-        skipped = 0
-        type_counts: dict[str, int] = {"rangeBreakFast": 0, "rangeBreakSlow": 0}
+        warnings: list[str] = list(metric_warnings)
+        by_strategy = {s.response_name: 0 for s in strategy_runtimes}
+        processed_codes: set[str] = set()
 
-        for stock_info, data in stocks:
-            # reference_date でデータを切り詰め
-            if reference_date:
-                data = [d for d in data if d.date <= reference_date]
+        aggregated: dict[str, dict[str, Any]] = {}
 
-            if len(data) < 220:  # period(200) + some margin
-                skipped += 1
+        for strategy in strategy_runtimes:
+            try:
+                matched_rows, processed, strategy_warnings = self._evaluate_strategy(
+                    strategy,
+                    stock_universe,
+                    recent_days,
+                    reference_date,
+                )
+            except Exception as exc:
+                logger.exception(f"Strategy screening failed: {strategy.name}")
+                warnings.append(f"{strategy.response_name}: evaluation failed ({exc})")
                 continue
 
-            # Range Break Fast
-            if range_break_fast:
-                details = _detect_range_break(data, DEFAULT_FAST_PARAMS, recent_days)
-                if details:
-                    self._maybe_add_result(
-                        results, stock_info, "rangeBreakFast", details,
-                        min_break_percentage, min_volume_ratio,
+            processed_codes |= processed
+            warnings.extend(strategy_warnings)
+
+            strategy_score = strategy_scores.get(strategy.response_name)
+            for stock, matched_date in matched_rows:
+                by_strategy[strategy.response_name] += 1
+
+                existing = aggregated.get(stock.code)
+                if existing is None:
+                    existing = {
+                        "stock": stock,
+                        "matchedDate": matched_date,
+                        "matchedStrategies": [],
+                    }
+                    aggregated[stock.code] = existing
+                elif matched_date > existing["matchedDate"]:
+                    existing["matchedDate"] = matched_date
+
+                existing["matchedStrategies"].append(
+                    MatchedStrategyItem(
+                        strategyName=strategy.response_name,
+                        matchedDate=matched_date,
+                        strategyScore=strategy_score,
                     )
-                    type_counts["rangeBreakFast"] += 1
+                )
 
-            # Range Break Slow
-            if range_break_slow:
-                details = _detect_range_break(data, DEFAULT_SLOW_PARAMS, recent_days)
-                if details:
-                    self._maybe_add_result(
-                        results, stock_info, "rangeBreakSlow", details,
-                        min_break_percentage, min_volume_ratio,
-                    )
-                    type_counts["rangeBreakSlow"] += 1
+        all_results = [self._build_result_item(item) for item in aggregated.values()]
+        sorted_results = self._sort_results(all_results, sort_by=sort_by, order=order)
 
-        # ソート
-        results = self._sort_results(results, sort_by, order)
-
-        # リミット
+        match_count = len(sorted_results)
         if limit is not None and limit > 0:
-            results = results[:limit]
+            sorted_results = sorted_results[:limit]
 
-        total_screened = len(stocks)
-        match_count = len(results)
+        summary = ScreeningSummary(
+            totalStocksScreened=len(stock_universe),
+            matchCount=match_count,
+            skippedCount=max(0, len(stock_universe) - len(processed_codes)),
+            byStrategy=by_strategy,
+            strategiesEvaluated=[s.response_name for s in strategy_runtimes],
+            strategiesWithoutBacktestMetrics=missing_metric_strategies,
+            warnings=self._dedupe_warnings(warnings),
+        )
 
         return MarketScreeningResponse(
-            results=results,
-            summary=ScreeningSummary(
-                totalStocksScreened=total_screened,
-                matchCount=match_count,
-                skippedCount=skipped,
-                byScreeningType=type_counts,
-            ),
+            results=sorted_results,
+            summary=summary,
             markets=requested_market_codes,
             recentDays=recent_days,
             referenceDate=reference_date,
+            backtestMetric=backtest_metric,
+            sortBy=sort_by,
+            order=order,
             lastUpdated=_now_iso(),
         )
 
-    def _load_stocks(
-        self, market_codes: list[str]
-    ) -> list[tuple[dict, list[StockDataPoint]]]:
-        """銘柄とOHLCVデータをロード"""
+    def _load_stock_universe(self, market_codes: list[str]) -> list[StockUniverseItem]:
+        """市場フィルタ済み銘柄母集団を読み込む。"""
         if not market_codes:
             return []
 
-        # マーケットフィルタ
         placeholders = ",".join("?" for _ in market_codes)
-        stocks_rows = self._reader.query(
-            f"""SELECT code, company_name, scale_category, sector_33_name
-            FROM stocks WHERE market_code IN ({placeholders})""",
+        rows = self._reader.query(
+            f"""
+            SELECT code, company_name, scale_category, sector_33_name
+            FROM stocks
+            WHERE market_code IN ({placeholders})
+            ORDER BY code
+            """,
             tuple(market_codes),
         )
 
-        result: list[tuple[dict, list[StockDataPoint]]] = []
-        for stock in stocks_rows:
-            ohlcv_rows = self._reader.query(
-                "SELECT date, open, high, low, close, volume FROM stock_data WHERE code = ? ORDER BY date",
-                (stock["code"],),
+        deduped: dict[str, StockUniverseItem] = {}
+        for row in rows:
+            code = normalize_stock_code(str(row["code"]))
+            if code in deduped:
+                continue
+            deduped[code] = StockUniverseItem(
+                code=code,
+                company_name=row["company_name"],
+                scale_category=row["scale_category"],
+                sector_33_name=row["sector_33_name"],
             )
-            data = [
-                StockDataPoint(
-                    date=r["date"],
-                    open=r["open"],
-                    high=r["high"],
-                    low=r["low"],
-                    close=r["close"],
-                    volume=r["volume"],
+
+        return list(deduped.values())
+
+    def _resolve_strategies(self, strategies: str | None) -> list[StrategyRuntime]:
+        """対象戦略をproductionカテゴリから解決する。"""
+        metadata = [m for m in self._config_loader.get_strategy_metadata() if m.category == "production"]
+        if not metadata:
+            raise ValueError("No production strategies found")
+
+        metadata_by_name = {m.name: m for m in metadata}
+        basename_map: dict[str, list[str]] = {}
+        for m in metadata:
+            basename_map.setdefault(m.path.stem, []).append(m.name)
+
+        selected_names: list[str]
+        if strategies is None or not strategies.strip():
+            selected_names = sorted(metadata_by_name.keys())
+        else:
+            requested = [s.strip() for s in strategies.split(",") if s.strip()]
+            selected_names = []
+            invalid: list[str] = []
+
+            for token in requested:
+                resolved = self._resolve_strategy_token(token, metadata_by_name, basename_map)
+                if resolved is None:
+                    invalid.append(token)
+                    continue
+                if resolved not in selected_names:
+                    selected_names.append(resolved)
+
+            if invalid:
+                raise ValueError(
+                    "Invalid strategies (production only): " + ", ".join(sorted(set(invalid)))
                 )
-                for r in ohlcv_rows
-            ]
-            result.append((dict(stock), data))
 
-        return result
+        if not selected_names:
+            raise ValueError("No valid production strategies selected")
 
-    def _maybe_add_result(
+        selected_metadata = [metadata_by_name[name] for name in selected_names]
+
+        # basename重複時はフルネームをレスポンス名に使用
+        basename_counts: dict[str, int] = {}
+        for m in selected_metadata:
+            basename_counts[m.path.stem] = basename_counts.get(m.path.stem, 0) + 1
+
+        runtimes: list[StrategyRuntime] = []
+        for m in selected_metadata:
+            config = self._config_loader.load_strategy_config(m.name)
+            shared_config_dict = self._config_loader.merge_shared_config(config)
+
+            response_name = m.path.stem
+            if basename_counts[response_name] > 1:
+                response_name = m.name
+
+            runtimes.append(
+                StrategyRuntime(
+                    name=m.name,
+                    response_name=response_name,
+                    basename=m.path.stem,
+                    entry_params=SignalParams(**config.get("entry_filter_params", {})),
+                    exit_params=SignalParams(**config.get("exit_trigger_params", {})),
+                    shared_config=SharedConfig.model_validate(
+                        shared_config_dict,
+                        context={"resolve_stock_codes": False},
+                    ),
+                )
+            )
+
+        return runtimes
+
+    def _resolve_strategy_token(
         self,
-        results: list[ScreeningResultItem],
-        stock_info: dict,
-        screening_type: str,
-        details: RangeBreakDetails,
-        min_break_pct: float | None,
-        min_vol_ratio: float | None,
-    ) -> None:
-        """フィルタ適用してresultsに追加"""
-        if min_break_pct is not None and details.breakPercentage < min_break_pct:
-            return
-        if min_vol_ratio is not None and details.volumeRatio < min_vol_ratio:
-            return
+        token: str,
+        metadata_by_name: dict[str, Any],
+        basename_map: dict[str, list[str]],
+    ) -> str | None:
+        """クエリ指定戦略名をproduction戦略へ解決する。"""
+        if token in metadata_by_name:
+            return token
 
-        results.append(
-            ScreeningResultItem(
-                stockCode=stock_info["code"][:4],
-                companyName=stock_info["company_name"],
-                scaleCategory=stock_info.get("scale_category"),
-                sector33Name=stock_info.get("sector_33_name"),
-                screeningType=screening_type,
-                matchedDate=details.breakDate,
-                details=ScreeningDetails(rangeBreak=details),
+        if token.startswith("production/"):
+            return token if token in metadata_by_name else None
+
+        production_prefixed = f"production/{token}"
+        if production_prefixed in metadata_by_name:
+            return production_prefixed
+
+        candidates = basename_map.get(token, [])
+        if len(candidates) == 1:
+            return candidates[0]
+
+        return None
+
+    def _load_strategy_scores(
+        self,
+        strategies: list[StrategyRuntime],
+        metric: BacktestMetric,
+    ) -> tuple[dict[str, float | None], list[str], list[str]]:
+        """各戦略の最新バックテスト指標を取得する。"""
+        scores: dict[str, float | None] = {}
+        missing: list[str] = []
+        warnings: list[str] = []
+
+        for strategy in strategies:
+            score, warning = self._load_latest_metric(strategy.basename, metric)
+            scores[strategy.response_name] = score
+            if score is None:
+                missing.append(strategy.response_name)
+            if warning:
+                warnings.append(f"{strategy.response_name}: {warning}")
+
+        return scores, missing, warnings
+
+    def _load_latest_metric(
+        self,
+        strategy_basename: str,
+        metric: BacktestMetric,
+    ) -> tuple[float | None, str | None]:
+        """戦略ディレクトリ内の最新*.metrics.jsonから指標を取得する。"""
+        strategy_dir = get_backtest_results_dir(strategy_basename)
+        if not strategy_dir.exists():
+            return None, None
+
+        metric_files = sorted(
+            strategy_dir.glob("*.metrics.json"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
+        if not metric_files:
+            return None, None
+
+        latest = metric_files[0]
+        try:
+            payload = json.loads(latest.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError) as exc:
+            return None, f"failed to read metrics ({latest.name}: {exc})"
+
+        value = payload.get(metric)
+        if value is None:
+            return None, None
+
+        if isinstance(value, (int, float)):
+            return float(value), None
+
+        try:
+            return float(value), None
+        except (TypeError, ValueError):
+            return None, f"metric {metric} is not numeric in {latest.name}"
+
+    def _evaluate_strategy(
+        self,
+        strategy: StrategyRuntime,
+        stock_universe: list[StockUniverseItem],
+        recent_days: int,
+        reference_date: str | None,
+    ) -> tuple[list[tuple[StockUniverseItem, str]], set[str], list[str]]:
+        """1戦略分のスクリーニング評価を実行する。"""
+        if not stock_universe:
+            return [], set(), []
+
+        stock_codes = [s.code for s in stock_universe]
+        start_date, end_date = self._resolve_date_range(strategy.shared_config, reference_date)
+
+        include_margin = (
+            strategy.shared_config.include_margin_data
+            and self._needs_data_requirement(strategy.entry_params, strategy.exit_params, "margin")
+        )
+        include_statements = (
+            strategy.shared_config.include_statements_data
+            and self._needs_data_requirement(strategy.entry_params, strategy.exit_params, "statements")
+        )
+        include_forecast_revision = self._should_include_forecast_revision(
+            strategy.entry_params,
+            strategy.exit_params,
+        )
+        needs_benchmark = self._needs_data_requirement(strategy.entry_params, strategy.exit_params, "benchmark")
+        needs_sector = self._needs_data_requirement(strategy.entry_params, strategy.exit_params, "sector")
+
+        warnings: list[str] = []
+
+        with data_access_mode_context("direct"):
+            multi_data = prepare_multi_data(
+                dataset=strategy.shared_config.dataset,
+                stock_codes=stock_codes,
+                start_date=start_date,
+                end_date=end_date,
+                include_margin_data=include_margin,
+                include_statements_data=include_statements,
+                timeframe=strategy.shared_config.timeframe,
+                period_type=self._resolve_period_type(strategy.entry_params, strategy.exit_params),
+                include_forecast_revision=include_forecast_revision,
+            )
+
+            benchmark_data = None
+            if needs_benchmark:
+                try:
+                    benchmark_data = load_topix_data(
+                        strategy.shared_config.dataset,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                except Exception as exc:
+                    warnings.append(f"benchmark load failed ({exc})")
+
+            sector_data = None
+            stock_sector_mapping: dict[str, str] = {}
+            if needs_sector:
+                try:
+                    sector_data = load_all_sector_indices(
+                        strategy.shared_config.dataset,
+                        start_date=start_date,
+                        end_date=end_date,
+                    )
+                    stock_sector_mapping = get_stock_sector_mapping(strategy.shared_config.dataset)
+                except Exception as exc:
+                    warnings.append(f"sector data load failed ({exc})")
+
+        matches: list[tuple[StockUniverseItem, str]] = []
+        processed: set[str] = set()
+
+        for stock in stock_universe:
+            stock_data = multi_data.get(stock.code)
+            if not stock_data:
+                continue
+
+            daily = stock_data.get("daily")
+            if not isinstance(daily, pd.DataFrame) or daily.empty:
+                continue
+
+            processed.add(stock.code)
+
+            margin_data = stock_data.get("margin_daily") if include_margin else None
+            statements_data = stock_data.get("statements_daily") if include_statements else None
+
+            try:
+                signals = self._signal_processor.generate_signals(
+                    strategy_entries=pd.Series(True, index=daily.index),
+                    strategy_exits=pd.Series(False, index=daily.index),
+                    ohlc_data=daily,
+                    entry_signal_params=strategy.entry_params,
+                    exit_signal_params=strategy.exit_params,
+                    margin_data=margin_data,
+                    statements_data=statements_data,
+                    benchmark_data=benchmark_data,
+                    sector_data=sector_data,
+                    stock_sector_name=stock_sector_mapping.get(stock.code),
+                )
+            except Exception as exc:
+                warnings.append(f"{stock.code} signal generation failed ({exc})")
+                continue
+
+            matched_date = self._find_recent_match_date(signals, recent_days)
+            if matched_date is None:
+                continue
+
+            matches.append((stock, matched_date))
+
+        return matches, processed, warnings
+
+    def _resolve_date_range(
+        self,
+        shared_config: SharedConfig,
+        reference_date: str | None,
+    ) -> tuple[str | None, str | None]:
+        """shared_config とクエリ日付からロード対象期間を解決する。"""
+        start_date = shared_config.start_date or None
+        end_date = shared_config.end_date or None
+
+        if reference_date:
+            if end_date is None or reference_date < end_date:
+                end_date = reference_date
+
+        return start_date, end_date
+
+    def _needs_data_requirement(
+        self,
+        entry_params: SignalParams,
+        exit_params: SignalParams,
+        requirement: str,
+    ) -> bool:
+        """指定データ要件に依存する有効シグナルがあるか判定する。"""
+        for signal_def in SIGNAL_REGISTRY:
+            if not any(
+                req == requirement or req.startswith(f"{requirement}:")
+                for req in signal_def.data_requirements
+            ):
+                continue
+
+            if signal_def.enabled_checker(entry_params):
+                return True
+            if signal_def.enabled_checker(exit_params):
+                return True
+
+        return False
+
+    def _resolve_period_type(
+        self,
+        entry_params: SignalParams,
+        exit_params: SignalParams,
+    ) -> APIPeriodType:
+        """fundamental設定から period_type を解決する。"""
+        for params in (entry_params, exit_params):
+            fundamental = params.fundamental
+            period_type = getattr(fundamental, "period_type", None)
+            if period_type == "all":
+                return "all"
+            if period_type == "FY":
+                return "FY"
+            if period_type == "1Q":
+                return "1Q"
+            if period_type == "2Q":
+                return "2Q"
+            if period_type == "3Q":
+                return "3Q"
+
+        return "FY"
+
+    def _should_include_forecast_revision(
+        self,
+        entry_params: SignalParams,
+        exit_params: SignalParams,
+    ) -> bool:
+        """forward_eps_growth/peg_ratio 有効時に四半期修正取得を有効化。"""
+
+        def _enabled(params: SignalParams) -> bool:
+            fundamental = params.fundamental
+            if not fundamental.enabled:
+                return False
+            return bool(
+                fundamental.forward_eps_growth.enabled
+                or fundamental.peg_ratio.enabled
+            )
+
+        return _enabled(entry_params) or _enabled(exit_params)
+
+    def _find_recent_match_date(self, signals: Signals, recent_days: int) -> str | None:
+        """entries=True かつ exits=False の直近一致日を返す。"""
+        entries = signals.entries.fillna(False).astype(bool)
+        exits = signals.exits.fillna(False).astype(bool)
+        candidates = entries & (~exits)
+
+        recent = candidates.tail(recent_days)
+        if not recent.any():
+            return None
+
+        matched_index = recent[recent].index[-1]
+        return _format_date(matched_index)
+
+    def _build_result_item(self, aggregated_item: dict[str, Any]) -> ScreeningResultItem:
+        """銘柄集約データをレスポンス項目へ変換する。"""
+        stock: StockUniverseItem = aggregated_item["stock"]
+        matched_date: str = aggregated_item["matchedDate"]
+        matched_strategies: list[MatchedStrategyItem] = aggregated_item["matchedStrategies"]
+
+        # 戦略一覧はスコア優先（nullは常に最後）で整列
+        matched_strategies.sort(
+            key=lambda s: (
+                s.strategyScore is None,
+                -(s.strategyScore or 0.0),
+                s.strategyName,
             )
         )
 
+        best = self._pick_best_strategy(matched_strategies)
+
+        return ScreeningResultItem(
+            stockCode=stock.code,
+            companyName=stock.company_name,
+            scaleCategory=stock.scale_category,
+            sector33Name=stock.sector_33_name,
+            matchedDate=matched_date,
+            bestStrategyName=best.strategyName,
+            bestStrategyScore=best.strategyScore,
+            matchStrategyCount=len(matched_strategies),
+            matchedStrategies=matched_strategies,
+        )
+
+    def _pick_best_strategy(
+        self,
+        matched_strategies: list[MatchedStrategyItem],
+    ) -> MatchedStrategyItem:
+        """最適戦略を決定する（score優先、nullは最後）。"""
+        if not matched_strategies:
+            raise ValueError("matched_strategies is empty")
+
+        non_null = [s for s in matched_strategies if s.strategyScore is not None]
+        if non_null:
+            return max(
+                non_null,
+                key=lambda s: (
+                    s.strategyScore if s.strategyScore is not None else float("-inf"),
+                    s.strategyName,
+                ),
+            )
+
+        # 全てnullの場合は最新一致日を優先
+        return max(matched_strategies, key=lambda s: (s.matchedDate, s.strategyName))
+
     def _sort_results(
-        self, results: list[ScreeningResultItem], sort_by: str, order: str
+        self,
+        results: list[ScreeningResultItem],
+        sort_by: ScreeningSortBy,
+        order: SortOrder,
     ) -> list[ScreeningResultItem]:
-        """ソート"""
+        """結果ソート。bestStrategyScoreではnullを常に末尾へ配置。"""
+        if sort_by == "bestStrategyScore":
+            if order == "asc":
+                return sorted(
+                    results,
+                    key=lambda r: (
+                        r.bestStrategyScore is None,
+                        r.bestStrategyScore if r.bestStrategyScore is not None else float("inf"),
+                        r.stockCode,
+                    ),
+                )
+
+            return sorted(
+                results,
+                key=lambda r: (
+                    r.bestStrategyScore is None,
+                    -(r.bestStrategyScore or 0.0),
+                    r.stockCode,
+                ),
+            )
+
         reverse = order == "desc"
-        if sort_by == "date":
-            results.sort(key=lambda r: r.matchedDate, reverse=reverse)
-        elif sort_by == "stockCode":
-            results.sort(key=lambda r: r.stockCode, reverse=reverse)
-        elif sort_by == "volumeRatio":
-            results.sort(
-                key=lambda r: r.details.rangeBreak.volumeRatio if r.details.rangeBreak else 0,
+
+        if sort_by == "matchedDate":
+            return sorted(results, key=lambda r: (r.matchedDate, r.stockCode), reverse=reverse)
+
+        if sort_by == "stockCode":
+            return sorted(results, key=lambda r: r.stockCode, reverse=reverse)
+
+        if sort_by == "matchStrategyCount":
+            return sorted(
+                results,
+                key=lambda r: (r.matchStrategyCount, r.stockCode),
                 reverse=reverse,
             )
-        elif sort_by == "breakPercentage":
-            results.sort(
-                key=lambda r: r.details.rangeBreak.breakPercentage if r.details.rangeBreak else 0,
-                reverse=reverse,
-            )
+
         return results
+
+    def _dedupe_warnings(self, warnings: list[str]) -> list[str]:
+        """警告を順序保持で重複排除し、件数を制限する。"""
+        deduped: list[str] = []
+        seen: set[str] = set()
+
+        for warning in warnings:
+            if warning in seen:
+                continue
+            seen.add(warning)
+            deduped.append(warning)
+            if len(deduped) >= self._WARNING_LIMIT:
+                break
+
+        if len(warnings) > len(deduped):
+            deduped.append("additional warnings were truncated")
+
+        return deduped

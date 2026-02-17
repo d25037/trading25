@@ -3,29 +3,25 @@
  * Re-exports from @trading25/shared and adds frontend-specific types
  */
 
-import type { ScreeningSortBy, SortOrder } from '@trading25/shared/types/api-response-types';
+import type { BacktestMetric, ScreeningSortBy, SortOrder } from '@trading25/shared/types/api-response-types';
 
 export type {
-  FuturePricePoint,
-  FutureReturns,
+  BacktestMetric,
+  MatchedStrategyItem,
   MarketScreeningResponse,
-  RangeBreakDetails,
   ScreeningResultItem,
   ScreeningSortBy,
   ScreeningSummary,
-  ScreeningType,
   SortOrder,
 } from '@trading25/shared/types/api-response-types';
 
 // Frontend-specific types
 export interface ScreeningParams {
   markets?: string;
-  rangeBreakFast?: boolean;
-  rangeBreakSlow?: boolean;
+  strategies?: string;
   recentDays?: number;
   date?: string;
-  minBreakPercentage?: number;
-  minVolumeRatio?: number;
+  backtestMetric?: BacktestMetric;
   sortBy?: ScreeningSortBy;
   order?: SortOrder;
   limit?: number;
