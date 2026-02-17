@@ -39,6 +39,9 @@ class JobInfo:
         self.task: asyncio.Task[None] | None = None
         # Optimization-specific fields
         self.best_score: float | None = None
+        self.best_params: dict[str, Any] | None = None
+        self.worst_score: float | None = None
+        self.worst_params: dict[str, Any] | None = None
         self.total_combinations: int | None = None
         self.notebook_path: str | None = None
 

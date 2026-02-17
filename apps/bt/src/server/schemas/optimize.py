@@ -3,6 +3,7 @@ Optimization API Schemas
 """
 
 from datetime import datetime
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -23,6 +24,9 @@ class OptimizationJobResponse(BaseJobResponse):
     """最適化ジョブレスポンス"""
 
     best_score: float | None = Field(default=None, description="最良スコア")
+    best_params: dict[str, Any] | None = Field(default=None, description="最良スコア時のパラメータ")
+    worst_score: float | None = Field(default=None, description="最悪スコア")
+    worst_params: dict[str, Any] | None = Field(default=None, description="最悪スコア時のパラメータ")
     total_combinations: int | None = Field(default=None, description="パラメータ組み合わせ総数")
     notebook_path: str | None = Field(default=None, description="結果Notebookパス")
 
