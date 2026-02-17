@@ -9,6 +9,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import type { StrategyMetadata } from '@/types/backtest';
+import { compareManagedStrategyCategory } from './strategyCategoryOrder';
 
 interface StrategySelectorProps {
   strategies: StrategyMetadata[] | undefined;
@@ -56,12 +57,8 @@ export function StrategySelector({ strategies, isLoading, value, onChange, disab
     });
   }
 
-  // Sort categories: production first, then alphabetical
-  const sortedCategories = Object.keys(grouped).sort((a, b) => {
-    if (a === 'production') return -1;
-    if (b === 'production') return 1;
-    return a.localeCompare(b);
-  });
+  // Sort managed categories first: production, experimental, legacy
+  const sortedCategories = Object.keys(grouped).sort(compareManagedStrategyCategory);
 
   return (
     <Select value={value ?? undefined} onValueChange={onChange} disabled={disabled}>

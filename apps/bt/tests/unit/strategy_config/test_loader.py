@@ -4,6 +4,8 @@ ConfigLoader のテスト
 shared_config マージ機能のテスト
 """
 
+from pathlib import Path
+
 import pytest
 from src.strategy_config.loader import ConfigLoader, StrategyMetadata
 
@@ -475,3 +477,176 @@ def test_get_strategy_metadata_no_strategies_directory(tmp_path):
     metadata_list = loader.get_strategy_metadata()
 
     assert metadata_list == []
+
+
+# ========== move_strategy テスト ==========
+
+
+def test_move_strategy_success(tmp_path):
+    """experimental から production への移動が成功する"""
+    config_dir = tmp_path / "config"
+    source_dir = config_dir / "strategies" / "experimental" / "auto"
+    source_dir.mkdir(parents=True)
+    source_file = source_dir / "sample.yaml"
+    source_file.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    new_name, new_path = loader.move_strategy("experimental/auto/sample", "production")
+
+    assert new_name == "production/auto/sample"
+    assert new_path == config_dir / "strategies" / "production" / "auto" / "sample.yaml"
+    assert new_path.exists()
+    assert not source_file.exists()
+
+
+def test_move_strategy_same_category_noop(tmp_path):
+    """同一カテゴリ指定時は no-op として同一パスを返す"""
+    config_dir = tmp_path / "config"
+    source_dir = config_dir / "strategies" / "legacy"
+    source_dir.mkdir(parents=True)
+    source_file = source_dir / "sample.yaml"
+    source_file.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    new_name, new_path = loader.move_strategy("legacy/sample", "legacy")
+
+    assert new_name == "legacy/sample"
+    assert new_path == source_file
+    assert source_file.exists()
+
+
+def test_move_strategy_conflict_raises(tmp_path):
+    """移動先に同名が存在する場合は FileExistsError"""
+    config_dir = tmp_path / "config"
+    experimental_dir = config_dir / "strategies" / "experimental"
+    production_dir = config_dir / "strategies" / "production"
+    experimental_dir.mkdir(parents=True)
+    production_dir.mkdir(parents=True)
+
+    (experimental_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
+    (production_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    with pytest.raises(FileExistsError, match="既に存在します"):
+        loader.move_strategy("experimental/sample", "production")
+
+
+def test_move_strategy_from_reference_raises(tmp_path):
+    """reference からの移動はサポート外"""
+    config_dir = tmp_path / "config"
+    reference_dir = config_dir / "strategies" / "reference"
+    reference_dir.mkdir(parents=True)
+    (reference_dir / "template.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    with pytest.raises(ValueError, match="サポートされていません"):
+        loader.move_strategy("reference/template", "production")
+
+
+def test_move_strategy_invalid_target_category_raises(tmp_path):
+    """移動先カテゴリが不正な場合は ValueError"""
+    config_dir = tmp_path / "config"
+    experimental_dir = config_dir / "strategies" / "experimental"
+    experimental_dir.mkdir(parents=True)
+    (experimental_dir / "sample.yaml").write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    with pytest.raises(ValueError, match="移動先カテゴリ"):
+        loader.move_strategy("experimental/sample", "reference")
+
+
+def test_move_strategy_rename_oserror_raises(tmp_path, monkeypatch):
+    """ファイル移動時の OS エラーを伝播する"""
+    config_dir = tmp_path / "config"
+    experimental_dir = config_dir / "strategies" / "experimental"
+    production_dir = config_dir / "strategies" / "production"
+    experimental_dir.mkdir(parents=True)
+    production_dir.mkdir(parents=True)
+
+    source_path = experimental_dir / "sample.yaml"
+    source_path.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    original_rename = Path.rename
+
+    def _raise_oserror(self: Path, target: Path):  # type: ignore[override]
+        if self == source_path:
+            raise OSError("disk full")
+        return original_rename(self, target)
+
+    monkeypatch.setattr(Path, "rename", _raise_oserror)
+
+    with pytest.raises(OSError, match="disk full"):
+        loader.move_strategy("experimental/sample", "production")
+
+
+def test_get_category_roots_default_experimental_includes_fallback(monkeypatch):
+    """デフォルト設定時の experimental は外部 + プロジェクト内フォールバック"""
+    loader = ConfigLoader()
+    monkeypatch.setattr(loader, "_is_default_config", lambda: True)
+    monkeypatch.setattr(
+        "src.paths.get_strategies_dir",
+        lambda category: Path(f"/tmp/external/{category}"),
+    )
+
+    roots = loader._get_category_roots("experimental")
+
+    assert roots[0] == Path("/tmp/external/experimental")
+    assert roots[1] == Path("config/strategies/experimental")
+
+
+def test_get_category_roots_default_non_experimental(monkeypatch):
+    """デフォルト設定時の non-experimental は外部ルートのみ"""
+    loader = ConfigLoader()
+    monkeypatch.setattr(loader, "_is_default_config", lambda: True)
+    monkeypatch.setattr(
+        "src.paths.get_strategies_dir",
+        lambda category: Path(f"/tmp/external/{category}"),
+    )
+
+    roots = loader._get_category_roots("production")
+
+    assert roots == [Path("/tmp/external/production")]
+
+
+def test_resolve_category_root_and_relative_path_raises_for_outside_path(tmp_path):
+    """許可ディレクトリ外のパスは ValueError"""
+    config_dir = tmp_path / "config"
+    (config_dir / "strategies").mkdir(parents=True)
+    outside = tmp_path / "outside.yaml"
+    outside.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+
+    with pytest.raises(ValueError, match="許可された戦略ディレクトリ外"):
+        loader._resolve_category_root_and_relative_path(outside)
+
+
+def test_cleanup_empty_strategy_dirs_stops_on_non_empty(tmp_path):
+    """掃除処理は非空ディレクトリで停止する"""
+    root = tmp_path / "root"
+    start = root / "level1"
+    start.mkdir(parents=True)
+    keep = start / "keep.txt"
+    keep.write_text("x", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(tmp_path / "config"))
+    loader._cleanup_empty_strategy_dirs(start, root)
+
+    assert start.exists()
+    assert keep.exists()
+
+
+def test_cleanup_empty_strategy_dirs_root_immediate_noop(tmp_path):
+    """開始ディレクトリがルートと同じ場合は no-op"""
+    root = tmp_path / "root"
+    root.mkdir(parents=True)
+
+    loader = ConfigLoader(config_dir=str(tmp_path / "config"))
+    loader._cleanup_empty_strategy_dirs(root, root)
+
+    assert root.exists()

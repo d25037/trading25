@@ -19,6 +19,8 @@ import type {
   SignalAttributionResultResponse,
   StrategyDetailResponse,
   StrategyListResponse,
+  StrategyMoveRequest,
+  StrategyMoveResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
 } from './types.js';
@@ -105,6 +107,13 @@ export class BacktestClient {
     return this.request<StrategyValidationResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/validate`, {
       method: 'POST',
       body: config ? JSON.stringify(config) : undefined,
+    });
+  }
+
+  async moveStrategy(strategyName: string, request: StrategyMoveRequest): Promise<StrategyMoveResponse> {
+    return this.request<StrategyMoveResponse>(`/api/strategies/${encodeURIComponent(strategyName)}/move`, {
+      method: 'POST',
+      body: JSON.stringify(request),
     });
   }
 

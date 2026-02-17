@@ -3,7 +3,7 @@ Strategy API Schemas
 """
 
 from datetime import datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -106,6 +106,24 @@ class StrategyRenameResponse(BaseModel):
     success: bool = Field(description="リネーム成功フラグ")
     old_name: str = Field(description="変更前の戦略名")
     new_name: str = Field(description="変更後の戦略名")
+    new_path: str = Field(description="新しいファイルパス")
+
+
+class StrategyMoveRequest(BaseModel):
+    """戦略カテゴリ移動リクエスト"""
+
+    target_category: Literal["production", "experimental", "legacy"] = Field(
+        description="移動先カテゴリ"
+    )
+
+
+class StrategyMoveResponse(BaseModel):
+    """戦略カテゴリ移動レスポンス"""
+
+    success: bool = Field(description="移動成功フラグ")
+    old_strategy_name: str = Field(description="移動前の戦略名")
+    new_strategy_name: str = Field(description="移動後の戦略名")
+    target_category: str = Field(description="移動先カテゴリ")
     new_path: str = Field(description="新しいファイルパス")
 
 
