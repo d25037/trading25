@@ -32,6 +32,23 @@ class DataManagerMixin:
                     return fundamental.period_type
         return "FY"
 
+    def _should_include_forecast_revision(self: "StrategyProtocol") -> bool:
+        """四半期修正（FEPS）の追加取得が必要か判定する。"""
+        for params in (self.entry_filter_params, self.exit_trigger_params):
+            if params is None:
+                continue
+            fundamental = params.fundamental
+            if not isinstance(fundamental, FundamentalSignalParams):
+                continue
+            if not fundamental.enabled:
+                continue
+            if (
+                fundamental.forward_eps_growth.enabled
+                or fundamental.peg_ratio.enabled
+            ):
+                return True
+        return False
+
     def load_multi_data(self: "StrategyProtocol") -> dict[str, dict[str, pd.DataFrame]]:
         """
         複数銘柄のデータを読み込み
@@ -47,6 +64,7 @@ class DataManagerMixin:
 
             # period_type をシグナルパラメータから解決
             period_type = self._resolve_period_type()
+            include_forecast_revision = self._should_include_forecast_revision()
 
             include_margin_data = self.include_margin_data
             include_statements_data = self.include_statements_data
@@ -96,6 +114,7 @@ class DataManagerMixin:
                 ),
                 timeframe=self.timeframe,
                 period_type=period_type,
+                include_forecast_revision=include_forecast_revision,
             )
 
             self._log(

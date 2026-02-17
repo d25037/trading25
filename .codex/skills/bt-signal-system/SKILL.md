@@ -21,3 +21,4 @@ description: bt の統一シグナルシステムを扱うスキル。`entry_fil
 1. パラメータモデルと YAML の整合性。
 2. エントリー/エグジット結合ロジックの不変条件。
 3. 追加シグナルの registry 反映漏れ。
+4. `forward_eps_growth` / `peg_ratio` は FY実績EPS固定 + 四半期 FEPS 修正反映（必要時のみ追加取得）を維持。
