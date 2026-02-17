@@ -273,6 +273,9 @@ class TestScreening:
         assert "summary" in data
         assert "markets" in data
         assert "recentDays" in data
+        assert "backtestMetric" in data
+        assert "sortBy" in data
+        assert "order" in data
         assert "lastUpdated" in data
 
     def test_summary_shape(self, analytics_client):
@@ -281,20 +284,34 @@ class TestScreening:
         summary = data["summary"]
         assert "totalStocksScreened" in summary
         assert "matchCount" in summary
-        assert "byScreeningType" in summary
-        assert isinstance(summary["byScreeningType"], dict)
+        assert "byStrategy" in summary
+        assert "strategiesEvaluated" in summary
+        assert "strategiesWithoutBacktestMetrics" in summary
+        assert "warnings" in summary
 
     def test_with_params(self, analytics_client):
         resp = analytics_client.get(
-            "/api/analytics/screening?rangeBreakFast=true&rangeBreakSlow=false&recentDays=5"
+            "/api/analytics/screening"
+            "?strategies=range_break_v15"
+            "&recentDays=5"
+            "&backtestMetric=calmar_ratio"
+            "&sortBy=matchedDate"
+            "&order=asc"
         )
         assert resp.status_code == 200
         data = resp.json()
         assert data["recentDays"] == 5
+        assert data["backtestMetric"] == "calmar_ratio"
+        assert data["sortBy"] == "matchedDate"
+        assert data["order"] == "asc"
 
-    def test_sort_by(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/screening?sortBy=breakPercentage&order=desc")
-        assert resp.status_code == 200
+    def test_old_query_params_are_rejected(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/screening?rangeBreakFast=true")
+        assert resp.status_code == 422
+
+    def test_old_sort_value_is_rejected(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/screening?sortBy=breakPercentage")
+        assert resp.status_code == 422
 
     def test_422_no_db(self):
         app = create_app()
@@ -311,7 +328,149 @@ class TestScreening:
             item = data["results"][0]
             assert "stockCode" in item
             assert "companyName" in item
-            assert "screeningType" in item
-            assert item["screeningType"] in ("rangeBreakFast", "rangeBreakSlow")
             assert "matchedDate" in item
-            assert "details" in item
+            assert "bestStrategyName" in item
+            assert "bestStrategyScore" in item
+            assert "matchStrategyCount" in item
+            assert "matchedStrategies" in item
+
+
+class TestAnalyticsRouteErrorMapping:
+    def test_ranking_maps_value_error_to_422(self, analytics_client, monkeypatch):
+        from src.server.services.ranking_service import RankingService
+
+        def _raise_value_error(self, **_kwargs):  # noqa: ANN001
+            raise ValueError("invalid ranking params")
+
+        monkeypatch.setattr(RankingService, "get_rankings", _raise_value_error)
+        resp = analytics_client.get("/api/analytics/ranking")
+        assert resp.status_code == 422
+        assert "invalid ranking params" in str(resp.json())
+
+    def test_ranking_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+        from src.server.services.ranking_service import RankingService
+
+        def _raise_runtime_error(self, **_kwargs):  # noqa: ANN001
+            raise RuntimeError("ranking boom")
+
+        monkeypatch.setattr(RankingService, "get_rankings", _raise_runtime_error)
+        resp = analytics_client.get("/api/analytics/ranking")
+        assert resp.status_code == 500
+        assert "Failed to get rankings" in str(resp.json())
+
+    def test_factor_regression_maps_insufficient_to_422(self, analytics_client, monkeypatch):
+        from src.server.services.factor_regression_service import FactorRegressionService
+
+        def _raise_value_error(self, symbol, lookback_days):  # noqa: ANN001
+            raise ValueError("insufficient history")
+
+        monkeypatch.setattr(FactorRegressionService, "analyze_stock", _raise_value_error)
+        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        assert resp.status_code == 422
+
+    def test_factor_regression_maps_other_value_error_to_400(self, analytics_client, monkeypatch):
+        from src.server.services.factor_regression_service import FactorRegressionService
+
+        def _raise_value_error(self, symbol, lookback_days):  # noqa: ANN001
+            raise ValueError("bad input")
+
+        monkeypatch.setattr(FactorRegressionService, "analyze_stock", _raise_value_error)
+        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        assert resp.status_code == 400
+
+    def test_factor_regression_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+        from src.server.services.factor_regression_service import FactorRegressionService
+
+        def _raise_runtime_error(self, symbol, lookback_days):  # noqa: ANN001
+            raise RuntimeError("factor boom")
+
+        monkeypatch.setattr(FactorRegressionService, "analyze_stock", _raise_runtime_error)
+        resp = analytics_client.get("/api/analytics/factor-regression/7203?lookbackDays=100")
+        assert resp.status_code == 500
+        assert "Failed to analyze" in str(resp.json())
+
+    def test_screening_maps_value_error_to_422(self, analytics_client, monkeypatch):
+        from src.server.services.screening_service import ScreeningService
+
+        def _raise_value_error(self, **_kwargs):  # noqa: ANN001
+            raise ValueError("invalid strategy")
+
+        monkeypatch.setattr(ScreeningService, "run_screening", _raise_value_error)
+        resp = analytics_client.get("/api/analytics/screening")
+        assert resp.status_code == 422
+        assert "invalid strategy" in str(resp.json())
+
+    def test_screening_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+        from src.server.services.screening_service import ScreeningService
+
+        def _raise_runtime_error(self, **_kwargs):  # noqa: ANN001
+            raise RuntimeError("screening boom")
+
+        monkeypatch.setattr(ScreeningService, "run_screening", _raise_runtime_error)
+        resp = analytics_client.get("/api/analytics/screening")
+        assert resp.status_code == 500
+        assert "Failed to run screening" in str(resp.json())
+
+    def test_portfolio_factor_regression_maps_missing_reader_to_422(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            app.state.portfolio_db = object()
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 422
+
+    def test_portfolio_factor_regression_maps_missing_portfolio_db_to_422(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = object()
+            app.state.portfolio_db = None
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 422
+
+    def test_portfolio_factor_regression_maps_value_error_variants(
+        self,
+        analytics_db_path,
+        monkeypatch,
+    ):
+        from src.config.settings import reload_settings
+        from src.server.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
+
+        monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
+        monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
+        monkeypatch.setenv("JQUANTS_PLAN", "free")
+        reload_settings()
+
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = object()
+            app.state.portfolio_db = object()
+
+            def _raise_not_found(self, portfolio_id, lookback_days):  # noqa: ANN001
+                raise ValueError("portfolio not found")
+
+            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_not_found)
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 404
+
+            def _raise_insufficient(self, portfolio_id, lookback_days):  # noqa: ANN001
+                raise ValueError("insufficient samples")
+
+            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_insufficient)
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 422
+
+            def _raise_other(self, portfolio_id, lookback_days):  # noqa: ANN001
+                raise ValueError("unexpected input")
+
+            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_other)
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 400
+
+            def _raise_runtime(self, portfolio_id, lookback_days):  # noqa: ANN001
+                raise RuntimeError("portfolio boom")
+
+            monkeypatch.setattr(PortfolioFactorRegressionService, "analyze", _raise_runtime)
+            resp = client.get("/api/analytics/portfolio-factor-regression/1")
+            assert resp.status_code == 500
+
+        reload_settings()

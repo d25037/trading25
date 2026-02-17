@@ -6,6 +6,7 @@ import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
 import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
+import { useStrategies } from '@/hooks/useBacktest';
 import { useRanking } from '@/hooks/useRanking';
 import { useScreening } from '@/hooks/useScreening';
 import { cn } from '@/lib/utils';
@@ -17,10 +18,9 @@ type AnalysisSubTab = 'screening' | 'ranking';
 
 const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
   markets: 'prime',
-  rangeBreakFast: true,
-  rangeBreakSlow: true,
   recentDays: 10,
-  sortBy: 'date',
+  backtestMetric: 'sharpe_ratio',
+  sortBy: 'bestStrategyScore',
   order: 'desc',
   limit: 50,
 };
@@ -44,10 +44,16 @@ export function AnalysisPage() {
 
   const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
+  const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
 
   // Fetch data based on active sub-tab
   const screeningQuery = useScreening(screeningParams, activeSubTab === 'screening');
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
+
+  const productionStrategies = (strategiesData?.strategies ?? [])
+    .filter((strategy) => strategy.category === 'production')
+    .map((strategy) => strategy.name)
+    .sort((a, b) => a.localeCompare(b));
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -84,7 +90,12 @@ export function AnalysisPage() {
         {/* Sidebar */}
         <div className="w-64 flex-shrink-0">
           {activeSubTab === 'screening' ? (
-            <ScreeningFilters params={screeningParams} onChange={setScreeningParams} />
+            <ScreeningFilters
+              params={screeningParams}
+              onChange={setScreeningParams}
+              strategyOptions={productionStrategies}
+              strategiesLoading={isLoadingStrategies}
+            />
           ) : (
             <RankingFilters params={rankingParams} onChange={setRankingParams} />
           )}

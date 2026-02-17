@@ -167,6 +167,7 @@ export { cleanNaNValues } from './ta';
 // ===== API RESPONSE TYPE EXPORTS =====
 export type {
   AdjustmentEvent as ApiAdjustmentEvent,
+  BacktestMetric,
   CancelDatasetJobResponse,
   CancelJobResponse,
   CreateSyncJobResponse,
@@ -188,6 +189,7 @@ export type {
   MarketRankingResponse,
   MarketScreeningResponse,
   MarketValidationResponse,
+  MatchedStrategyItem,
   PresetInfo,
   RankingItem as ApiRankingItem,
   Rankings,
@@ -195,7 +197,6 @@ export type {
   ScreeningResultItem,
   ScreeningSortBy,
   ScreeningSummary,
-  ScreeningType as ApiScreeningType,
   SortOrder,
   SyncJobResponse,
   SyncJobResult,

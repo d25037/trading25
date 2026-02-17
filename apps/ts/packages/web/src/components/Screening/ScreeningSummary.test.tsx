@@ -7,10 +7,13 @@ const mockSummary: Summary = {
   totalStocksScreened: 1500,
   matchCount: 42,
   skippedCount: 0,
-  byScreeningType: {
-    rangeBreakFast: 28,
-    rangeBreakSlow: 14,
+  byStrategy: {
+    range_break_v15: 28,
+    forward_eps_driven: 14,
   },
+  strategiesEvaluated: ['range_break_v15', 'forward_eps_driven'],
+  strategiesWithoutBacktestMetrics: ['forward_eps_driven'],
+  warnings: ['benchmark load failed'],
 };
 
 describe('ScreeningSummary', () => {
@@ -19,26 +22,21 @@ describe('ScreeningSummary', () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it('renders total screened count', () => {
+  it('renders total screened count and match hit rate', () => {
     render(<ScreeningSummary summary={mockSummary} markets={['prime']} recentDays={10} />);
 
     expect(screen.getByText('1,500')).toBeInTheDocument();
-  });
-
-  it('renders match count and hit rate', () => {
-    render(<ScreeningSummary summary={mockSummary} markets={['prime']} recentDays={10} />);
-
     expect(screen.getByText('42')).toBeInTheDocument();
     expect(screen.getByText('2.8% hit rate')).toBeInTheDocument();
   });
 
-  it('renders screening type breakdown', () => {
+  it('renders strategy and warning metrics', () => {
     render(<ScreeningSummary summary={mockSummary} markets={['prime']} recentDays={10} />);
 
-    expect(screen.getByText('28')).toBeInTheDocument();
-    expect(screen.getByText('14')).toBeInTheDocument();
-    expect(screen.getByText('EMA 30/120')).toBeInTheDocument();
-    expect(screen.getByText('SMA 50/150')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('1')).toBeInTheDocument();
+    expect(screen.getByText('range_break_v15 (28)')).toBeInTheDocument();
+    expect(screen.getByText('1 warnings')).toBeInTheDocument();
   });
 
   it('shows market info with reference date when provided', () => {
@@ -52,11 +50,5 @@ describe('ScreeningSummary', () => {
     );
 
     expect(screen.getByText('prime, standard / 20d / 2025-01-30')).toBeInTheDocument();
-  });
-
-  it('shows market info without reference date when not provided', () => {
-    render(<ScreeningSummary summary={mockSummary} markets={['prime']} recentDays={10} />);
-
-    expect(screen.getByText('prime / 10d')).toBeInTheDocument();
   });
 });

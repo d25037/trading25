@@ -44,30 +44,19 @@ export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' |
 
 // ===== SCREENING TYPES =====
 
-export type ScreeningType = 'rangeBreakFast' | 'rangeBreakSlow';
-export type ScreeningSortBy = 'date' | 'stockCode' | 'volumeRatio' | 'breakPercentage';
+export type BacktestMetric =
+  | 'sharpe_ratio'
+  | 'calmar_ratio'
+  | 'total_return'
+  | 'win_rate'
+  | 'profit_factor';
+export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
 export type SortOrder = 'asc' | 'desc';
 
-export interface RangeBreakDetails {
-  breakDate: string;
-  currentHigh: number;
-  maxHighInLookback: number;
-  breakPercentage: number;
-  volumeRatio: number;
-  avgVolume20Days: number;
-  avgVolume100Days: number;
-}
-
-export interface FuturePricePoint {
-  date: string;
-  price: number;
-  changePercent: number;
-}
-
-export interface FutureReturns {
-  day5: FuturePricePoint | null;
-  day20: FuturePricePoint | null;
-  day60: FuturePricePoint | null;
+export interface MatchedStrategyItem {
+  strategyName: string;
+  matchedDate: string;
+  strategyScore: number | null;
 }
 
 export interface ScreeningResultItem {
@@ -75,22 +64,21 @@ export interface ScreeningResultItem {
   companyName: string;
   scaleCategory?: string;
   sector33Name?: string;
-  screeningType: ScreeningType;
   matchedDate: string;
-  details: {
-    rangeBreak?: RangeBreakDetails;
-  };
-  futureReturns?: FutureReturns;
+  bestStrategyName: string;
+  bestStrategyScore: number | null;
+  matchStrategyCount: number;
+  matchedStrategies: MatchedStrategyItem[];
 }
 
 export interface ScreeningSummary {
   totalStocksScreened: number;
   matchCount: number;
   skippedCount: number;
-  byScreeningType: {
-    rangeBreakFast: number;
-    rangeBreakSlow: number;
-  };
+  byStrategy: Record<string, number>;
+  strategiesEvaluated: string[];
+  strategiesWithoutBacktestMetrics: string[];
+  warnings: string[];
 }
 
 export interface MarketScreeningResponse {
@@ -99,6 +87,9 @@ export interface MarketScreeningResponse {
   markets: string[];
   recentDays: number;
   referenceDate?: string;
+  backtestMetric: BacktestMetric;
+  sortBy: ScreeningSortBy;
+  order: SortOrder;
   lastUpdated: string;
 }
 
