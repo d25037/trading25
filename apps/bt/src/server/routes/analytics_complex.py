@@ -13,7 +13,12 @@ from src.lib.market_db.query_helpers import is_valid_stock_code
 from src.server.schemas.factor_regression import FactorRegressionResponse
 from src.server.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
 from src.server.schemas.ranking import MarketRankingResponse
-from src.server.schemas.screening import MarketScreeningResponse
+from src.server.schemas.screening import (
+    BacktestMetric,
+    MarketScreeningResponse,
+    ScreeningSortBy,
+    SortOrder,
+)
 
 router = APIRouter(tags=["Analytics"])
 
@@ -113,23 +118,37 @@ async def get_factor_regression(
     "/api/analytics/screening",
     response_model=MarketScreeningResponse,
     summary="Run stock screening",
-    description="Run stock screening analysis with Range Break Fast and Slow strategies.",
+    description="Run strategy-driven stock screening based on production strategy YAML configs.",
 )
 async def get_screening(
     request: Request,
     markets: str = Query("prime"),
-    rangeBreakFast: bool = Query(True),
-    rangeBreakSlow: bool = Query(True),
+    strategies: str | None = Query(None),
     recentDays: int = Query(10, ge=1, le=90),
     date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    minBreakPercentage: float | None = Query(None),
-    minVolumeRatio: float | None = Query(None),
-    sortBy: str = Query("date", pattern=r"^(date|stockCode|volumeRatio|breakPercentage)$"),
-    order: str = Query("desc", pattern=r"^(asc|desc)$"),
+    backtestMetric: BacktestMetric = Query("sharpe_ratio"),
+    sortBy: ScreeningSortBy = Query("bestStrategyScore"),
+    order: SortOrder = Query("desc"),
     limit: int | None = Query(None, ge=1),
 ) -> MarketScreeningResponse:
     """スクリーニングを実行"""
     from src.server.services.screening_service import ScreeningService
+
+    legacy_params = {
+        "rangeBreakFast",
+        "rangeBreakSlow",
+        "minBreakPercentage",
+        "minVolumeRatio",
+    }
+    used_legacy = sorted(set(request.query_params.keys()) & legacy_params)
+    if used_legacy:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Legacy screening query parameters were removed: "
+                + ", ".join(used_legacy)
+            ),
+        )
 
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
@@ -139,12 +158,10 @@ async def get_screening(
     try:
         return service.run_screening(
             markets=markets,
-            range_break_fast=rangeBreakFast,
-            range_break_slow=rangeBreakSlow,
+            strategies=strategies,
             recent_days=recentDays,
             reference_date=date,
-            min_break_percentage=minBreakPercentage,
-            min_volume_ratio=minVolumeRatio,
+            backtest_metric=backtestMetric,
             sort_by=sortBy,
             order=order,
             limit=limit,

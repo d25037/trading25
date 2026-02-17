@@ -6,43 +6,67 @@ import { ScreeningFilters } from './ScreeningFilters';
 describe('ScreeningFilters', () => {
   const defaultParams: ScreeningParams = {
     markets: 'prime',
-    rangeBreakFast: true,
-    rangeBreakSlow: true,
     recentDays: 10,
-    sortBy: 'date',
+    backtestMetric: 'sharpe_ratio',
+    sortBy: 'bestStrategyScore',
     order: 'desc',
     limit: 50,
   };
 
+  const strategyOptions = ['range_break_v15', 'forward_eps_driven'];
+
   it('renders filter card with title', () => {
-    render(<ScreeningFilters params={defaultParams} onChange={vi.fn()} />);
+    render(
+      <ScreeningFilters
+        params={defaultParams}
+        onChange={vi.fn()}
+        strategyOptions={strategyOptions}
+        strategiesLoading={false}
+      />
+    );
 
     expect(screen.getByText('Filters')).toBeInTheDocument();
   });
 
-  it('renders screening type toggles', () => {
-    render(<ScreeningFilters params={defaultParams} onChange={vi.fn()} />);
+  it('renders dynamic strategy options', () => {
+    render(
+      <ScreeningFilters
+        params={defaultParams}
+        onChange={vi.fn()}
+        strategyOptions={strategyOptions}
+        strategiesLoading={false}
+      />
+    );
 
-    expect(screen.getByText('Range Break Fast')).toBeInTheDocument();
-    expect(screen.getByText('Range Break Slow')).toBeInTheDocument();
+    expect(screen.getByText('Strategies')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'range_break_v15' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'forward_eps_driven' })).toBeInTheDocument();
   });
 
-  it('renders number inputs', () => {
-    render(<ScreeningFilters params={defaultParams} onChange={vi.fn()} />);
+  it('renders backtest metric and sort controls', () => {
+    render(
+      <ScreeningFilters
+        params={defaultParams}
+        onChange={vi.fn()}
+        strategyOptions={strategyOptions}
+        strategiesLoading={false}
+      />
+    );
 
-    expect(screen.getByText('Min Break %')).toBeInTheDocument();
-    expect(screen.getByText('Min Volume Ratio')).toBeInTheDocument();
-  });
-
-  it('renders sort and order selects', () => {
-    render(<ScreeningFilters params={defaultParams} onChange={vi.fn()} />);
-
+    expect(screen.getByText('Backtest Metric')).toBeInTheDocument();
     expect(screen.getByText('Sort By')).toBeInTheDocument();
     expect(screen.getByText('Order')).toBeInTheDocument();
   });
 
   it('renders recent days and limit selects', () => {
-    render(<ScreeningFilters params={defaultParams} onChange={vi.fn()} />);
+    render(
+      <ScreeningFilters
+        params={defaultParams}
+        onChange={vi.fn()}
+        strategyOptions={strategyOptions}
+        strategiesLoading={false}
+      />
+    );
 
     expect(screen.getByText('Recent Days')).toBeInTheDocument();
     expect(screen.getByText('Limit')).toBeInTheDocument();

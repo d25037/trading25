@@ -6558,7 +6558,7 @@
           "Analytics"
         ],
         "summary": "Run stock screening",
-        "description": "Run stock screening analysis with Range Break Fast and Slow strategies.",
+        "description": "Run strategy-driven stock screening based on production strategy YAML configs.",
         "operationId": "get_screening_api_analytics_screening_get",
         "parameters": [
           {
@@ -6572,23 +6572,19 @@
             }
           },
           {
-            "name": "rangeBreakFast",
+            "name": "strategies",
             "in": "query",
             "required": false,
             "schema": {
-              "type": "boolean",
-              "default": true,
-              "title": "Rangebreakfast"
-            }
-          },
-          {
-            "name": "rangeBreakSlow",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "boolean",
-              "default": true,
-              "title": "Rangebreakslow"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Strategies"
             }
           },
           {
@@ -6621,35 +6617,20 @@
             }
           },
           {
-            "name": "minBreakPercentage",
+            "name": "backtestMetric",
             "in": "query",
             "required": false,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
+              "enum": [
+                "sharpe_ratio",
+                "calmar_ratio",
+                "total_return",
+                "win_rate",
+                "profit_factor"
               ],
-              "title": "Minbreakpercentage"
-            }
-          },
-          {
-            "name": "minVolumeRatio",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "number"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "title": "Minvolumeratio"
+              "type": "string",
+              "default": "sharpe_ratio",
+              "title": "Backtestmetric"
             }
           },
           {
@@ -6657,9 +6638,14 @@
             "in": "query",
             "required": false,
             "schema": {
+              "enum": [
+                "bestStrategyScore",
+                "matchedDate",
+                "stockCode",
+                "matchStrategyCount"
+              ],
               "type": "string",
-              "pattern": "^(date|stockCode|volumeRatio|breakPercentage)$",
-              "default": "date",
+              "default": "bestStrategyScore",
               "title": "Sortby"
             }
           },
@@ -6668,8 +6654,11 @@
             "in": "query",
             "required": false,
             "schema": {
+              "enum": [
+                "asc",
+                "desc"
+              ],
               "type": "string",
-              "pattern": "^(asc|desc)$",
               "default": "desc",
               "title": "Order"
             }
@@ -7343,7 +7332,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                      "$ref": "#/components/schemas/OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -7463,7 +7452,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                    "$ref": "#/components/schemas/OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -12369,7 +12358,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -12417,19 +12406,19 @@
       },
       "DateRange": {
         "properties": {
-          "from": {
+          "min": {
             "type": "string",
-            "title": "From"
+            "title": "Min"
           },
-          "to": {
+          "max": {
             "type": "string",
-            "title": "To"
+            "title": "Max"
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "min",
+          "max"
         ],
         "title": "DateRange"
       },
@@ -13308,67 +13297,6 @@
         ],
         "title": "FundamentalsComputeResponse",
         "description": "Response for fundamentals computation."
-      },
-      "FutureReturnPoint": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date"
-          },
-          "price": {
-            "type": "number",
-            "title": "Price"
-          },
-          "changePercent": {
-            "type": "number",
-            "title": "Changepercent"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "price",
-          "changePercent"
-        ],
-        "title": "FutureReturnPoint",
-        "description": "将来リターンの1データポイント"
-      },
-      "FutureReturns": {
-        "properties": {
-          "day5": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/FutureReturnPoint"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "day20": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/FutureReturnPoint"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          },
-          "day60": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/FutureReturnPoint"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "title": "FutureReturns",
-        "description": "将来リターン（履歴モード用）"
       },
       "GenerateResultItem": {
         "properties": {
@@ -15750,6 +15678,35 @@
             ],
             "title": "Referencedate"
           },
+          "backtestMetric": {
+            "type": "string",
+            "enum": [
+              "sharpe_ratio",
+              "calmar_ratio",
+              "total_return",
+              "win_rate",
+              "profit_factor"
+            ],
+            "title": "Backtestmetric"
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": [
+              "bestStrategyScore",
+              "matchedDate",
+              "stockCode",
+              "matchStrategyCount"
+            ],
+            "title": "Sortby"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Order"
+          },
           "lastUpdated": {
             "type": "string",
             "title": "Lastupdated"
@@ -15761,6 +15718,9 @@
           "summary",
           "markets",
           "recentDays",
+          "backtestMetric",
+          "sortBy",
+          "order",
           "lastUpdated"
         ],
         "title": "MarketScreeningResponse",
@@ -15963,6 +15923,36 @@
         ],
         "title": "MarketValidationResponse"
       },
+      "MatchedStrategyItem": {
+        "properties": {
+          "strategyName": {
+            "type": "string",
+            "title": "Strategyname"
+          },
+          "matchedDate": {
+            "type": "string",
+            "title": "Matcheddate"
+          },
+          "strategyScore": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategyscore"
+          }
+        },
+        "type": "object",
+        "required": [
+          "strategyName",
+          "matchedDate"
+        ],
+        "title": "MatchedStrategyItem",
+        "description": "同一銘柄でヒットした戦略情報"
+      },
       "OHLCRecord": {
         "properties": {
           "date": {
@@ -16000,33 +15990,27 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -16038,8 +16022,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -16160,7 +16143,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -16789,7 +16772,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -17376,50 +17359,6 @@
         ],
         "title": "ROESummary",
         "description": "ROE 集計統計"
-      },
-      "RangeBreakDetails": {
-        "properties": {
-          "breakDate": {
-            "type": "string",
-            "title": "Breakdate"
-          },
-          "currentHigh": {
-            "type": "number",
-            "title": "Currenthigh"
-          },
-          "maxHighInLookback": {
-            "type": "number",
-            "title": "Maxhighinlookback"
-          },
-          "breakPercentage": {
-            "type": "number",
-            "title": "Breakpercentage"
-          },
-          "volumeRatio": {
-            "type": "number",
-            "title": "Volumeratio"
-          },
-          "avgVolume20Days": {
-            "type": "number",
-            "title": "Avgvolume20Days"
-          },
-          "avgVolume100Days": {
-            "type": "number",
-            "title": "Avgvolume100Days"
-          }
-        },
-        "type": "object",
-        "required": [
-          "breakDate",
-          "currentHigh",
-          "maxHighInLookback",
-          "breakPercentage",
-          "volumeRatio",
-          "avgVolume20Days",
-          "avgVolume100Days"
-        ],
-        "title": "RangeBreakDetails",
-        "description": "レンジブレイク詳細"
       },
       "RankingItem": {
         "properties": {
@@ -18170,23 +18109,6 @@
         "title": "RelativeOHLCOptions",
         "description": "相対OHLCオプション"
       },
-      "ScreeningDetails": {
-        "properties": {
-          "rangeBreak": {
-            "anyOf": [
-              {
-                "$ref": "#/components/schemas/RangeBreakDetails"
-              },
-              {
-                "type": "null"
-              }
-            ]
-          }
-        },
-        "type": "object",
-        "title": "ScreeningDetails",
-        "description": "スクリーニング詳細"
-      },
       "ScreeningResultItem": {
         "properties": {
           "stockCode": {
@@ -18219,38 +18141,47 @@
             ],
             "title": "Sector33Name"
           },
-          "screeningType": {
-            "type": "string",
-            "title": "Screeningtype"
-          },
           "matchedDate": {
             "type": "string",
             "title": "Matcheddate"
           },
-          "details": {
-            "$ref": "#/components/schemas/ScreeningDetails"
+          "bestStrategyName": {
+            "type": "string",
+            "title": "Beststrategyname"
           },
-          "futureReturns": {
+          "bestStrategyScore": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/FutureReturns"
+                "type": "number"
               },
               {
                 "type": "null"
               }
-            ]
+            ],
+            "title": "Beststrategyscore"
+          },
+          "matchStrategyCount": {
+            "type": "integer",
+            "title": "Matchstrategycount"
+          },
+          "matchedStrategies": {
+            "items": {
+              "$ref": "#/components/schemas/MatchedStrategyItem"
+            },
+            "type": "array",
+            "title": "Matchedstrategies"
           }
         },
         "type": "object",
         "required": [
           "stockCode",
           "companyName",
-          "screeningType",
           "matchedDate",
-          "details"
+          "bestStrategyName",
+          "matchStrategyCount"
         ],
         "title": "ScreeningResultItem",
-        "description": "スクリーニング結果項目"
+        "description": "銘柄集約済みスクリーニング結果項目"
       },
       "ScreeningSummary": {
         "properties": {
@@ -18267,12 +18198,33 @@
             "title": "Skippedcount",
             "default": 0
           },
-          "byScreeningType": {
+          "byStrategy": {
             "additionalProperties": {
               "type": "integer"
             },
             "type": "object",
-            "title": "Byscreeningtype"
+            "title": "Bystrategy"
+          },
+          "strategiesEvaluated": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Strategiesevaluated"
+          },
+          "strategiesWithoutBacktestMetrics": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Strategieswithoutbacktestmetrics"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
           }
         },
         "type": "object",
@@ -21411,62 +21363,6 @@
         "type": "object",
         "title": "WatchlistUpdateRequest"
       },
-      "src__server__schemas__dataset__DateRange": {
-        "properties": {
-          "min": {
-            "type": "string",
-            "title": "Min"
-          },
-          "max": {
-            "type": "string",
-            "title": "Max"
-          }
-        },
-        "type": "object",
-        "required": [
-          "min",
-          "max"
-        ],
-        "title": "DateRange"
-      },
-      "src__server__schemas__dataset_data__OHLCVRecord": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date"
-          },
-          "open": {
-            "type": "number",
-            "title": "Open"
-          },
-          "high": {
-            "type": "number",
-            "title": "High"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "volume": {
-            "type": "integer",
-            "title": "Volume"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord"
-      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -21503,6 +21399,69 @@
         ],
         "title": "DateRange",
         "description": "分析期間"
+      },
+      "src__server__schemas__indicators__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
+      },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
       },
       "src__server__schemas__portfolio_factor_regression__IndexMatch": {
         "properties": {
