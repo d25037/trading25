@@ -1,6 +1,6 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Play, Settings, Settings2 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -22,6 +22,7 @@ import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
 import { StrategySelector } from './StrategySelector';
+import { extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
 
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: UI component with conditional rendering
 export function BacktestRunner() {
@@ -46,6 +47,10 @@ export function BacktestRunner() {
   const runOptimization = useRunOptimization();
   const { data: gridConfig } = useOptimizationGridConfig(
     selectedStrategy ? (selectedStrategy.split('/').pop() ?? selectedStrategy) : null
+  );
+  const gridParameterEntries = useMemo(
+    () => (gridConfig ? extractGridParameterEntries(gridConfig.content) : []),
+    [gridConfig]
   );
 
   useEffect(() => {
@@ -150,9 +155,22 @@ export function BacktestRunner() {
         </div>
 
         {gridConfig ? (
-          <p className="text-xs text-muted-foreground">
-            Grid config: {gridConfig.param_count} params, {gridConfig.combinations} combinations
-          </p>
+          <div className="space-y-1">
+            <p className="text-xs text-muted-foreground">
+              Grid config: {gridConfig.param_count} params, {gridConfig.combinations} combinations
+            </p>
+            {gridParameterEntries.length > 0 && (
+              <div className="max-h-32 overflow-auto rounded-md border border-border/50 bg-muted/20 p-2">
+                <ul className="space-y-1">
+                  {gridParameterEntries.map((entry) => (
+                    <li key={entry.path} className="text-xs font-mono text-muted-foreground break-all">
+                      {entry.path}: [{entry.values.map((value) => formatGridParameterValue(value)).join(', ')}]
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+          </div>
         ) : (
           <p className="text-xs text-muted-foreground">
             No grid config found. Configure in Strategies &gt; Optimize tab.

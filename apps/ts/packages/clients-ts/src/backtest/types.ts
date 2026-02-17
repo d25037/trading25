@@ -308,6 +308,9 @@ export interface OptimizationJobResponse {
   completed_at: string | null;
   error: string | null;
   best_score: number | null;
+  best_params: Record<string, unknown> | null;
+  worst_score: number | null;
+  worst_params: Record<string, unknown> | null;
   total_combinations: number | null;
   notebook_path: string | null;
 }
