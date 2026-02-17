@@ -4,7 +4,9 @@ Unified CLI Interface for Backtesting Tool
 バックテスト戦略管理の統一CLIインターフェース
 """
 
+from copy import deepcopy
 import sys
+from typing import Any
 
 import typer
 from loguru import logger
@@ -169,6 +171,24 @@ def _kill_process_on_port(port: int) -> bool:
     return False
 
 
+def _build_uvicorn_log_config() -> dict[str, Any]:
+    """Uvicorn ログ設定に時刻表示を追加する"""
+    import uvicorn
+
+    log_config: dict[str, Any] = deepcopy(uvicorn.config.LOGGING_CONFIG)
+    timestamp_prefix = "%(asctime)s.%(msecs)03d | "
+
+    log_config["formatters"]["default"]["fmt"] = (
+        f"{timestamp_prefix}%(levelprefix)s %(message)s"
+    )
+    log_config["formatters"]["default"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    log_config["formatters"]["access"]["fmt"] = (
+        f'{timestamp_prefix}%(levelprefix)s %(client_addr)s - "%(request_line)s" %(status_code)s'
+    )
+    log_config["formatters"]["access"]["datefmt"] = "%Y-%m-%d %H:%M:%S"
+    return log_config
+
+
 # API サーバー起動
 @app.command(name="server")
 def server_command(
@@ -205,6 +225,7 @@ def server_command(
         port=port,
         reload=reload,
         log_level="info",
+        log_config=_build_uvicorn_log_config(),
     )
 
 
