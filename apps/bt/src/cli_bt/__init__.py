@@ -31,6 +31,7 @@ def configure_logging(verbose: bool) -> None:
     logger.remove()
     if verbose:
         log_format = (
+            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
             "<level>{level: <8}</level> | "
             "<cyan>{name}</cyan>:<cyan>{function}</cyan> - "
             "<level>{message}</level>"
@@ -40,7 +41,11 @@ def configure_logging(verbose: bool) -> None:
         logger.add(
             sys.stderr,
             level="WARNING",
-            format="<level>{level: <8}</level> | <level>{message}</level>",
+            format=(
+                "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> | "
+                "<level>{level: <8}</level> | "
+                "<level>{message}</level>"
+            ),
         )
 
 
