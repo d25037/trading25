@@ -1102,6 +1102,50 @@ class TestLabServiceAsync:
         assert job.status == JobStatus.COMPLETED
         service._executor.shutdown(wait=False)
 
+    async def test_run_job_uses_result_message_override(self) -> None:
+        """_run_jobは結果の内部メッセージで完了メッセージを上書きできる"""
+        from src.server.services.lab_service import LabService
+
+        manager = JobManager()
+        service = LabService(manager=manager, max_workers=1)
+        job_id = manager.create_job("test", job_type="lab_evolve")
+
+        mock_result: dict[str, object] = {
+            "lab_type": "evolve",
+            "best_strategy_id": "base_test",
+            "best_score": 0.99,
+            "history": [],
+            "saved_strategy_path": None,
+            "saved_history_path": None,
+            "_job_message": "GA進化完了（ベース戦略が最良のためパラメータ変更なし）",
+        }
+
+        with patch.object(service, "_execute_evolve_sync", return_value=mock_result):
+            await service._run_job(
+                job_id=job_id,
+                lab_type="evolve",
+                start_message="開始...",
+                complete_message="完了",
+                cancel_message="キャンセル",
+                fail_message="失敗",
+                log_detail="test",
+                sync_fn=service._execute_evolve_sync,
+                sync_args=(),
+            )
+
+        job = manager.get_job(job_id)
+        assert job is not None
+        from src.server.schemas.backtest import JobStatus
+
+        assert job.status == JobStatus.COMPLETED
+        assert (
+            job.message
+            == "GA進化完了（ベース戦略が最良のためパラメータ変更なし）"
+        )
+        assert job.raw_result is not None
+        assert "_job_message" not in job.raw_result
+        service._executor.shutdown(wait=False)
+
     async def test_run_generate_success_without_job_record_for_raw_result(self) -> None:
         """_run_jobでget_jobがNoneでも完了できる"""
         from unittest.mock import MagicMock
@@ -1554,11 +1598,51 @@ class TestLabServiceSyncMethods:
         assert result["best_score"] == 2.0
         assert len(result["history"]) == 2
         assert result["saved_strategy_path"] == "/tmp/evo.yaml"
+        assert result["_job_message"] == "GA進化完了"
         config = MockEvolver.call_args.kwargs["config"]
         assert config.n_jobs == -1
         assert config.entry_filter_only is True
         assert config.target_scope == "entry_filter_only"
         assert config.allowed_categories == ["fundamental"]
+        service._executor.shutdown(wait=False)
+
+    def test_execute_evolve_sync_base_best_message(self) -> None:
+        """_execute_evolve_syncでベース戦略が最良なら専用メッセージを返す"""
+        from unittest.mock import MagicMock
+
+        from src.server.services.lab_service import LabService
+
+        service = LabService(max_workers=1)
+
+        mock_candidate = MagicMock()
+        mock_candidate.strategy_id = "base_test_strat"
+
+        with patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver:
+            MockEvolver.return_value.evolve.return_value = (mock_candidate, [])
+            MockEvolver.return_value.get_evolution_history.return_value = [
+                {
+                    "generation": 1,
+                    "best_score": 0.9,
+                    "avg_score": 0.5,
+                    "worst_score": 0.2,
+                }
+            ]
+
+            result = service._execute_evolve_sync(
+                "test_strat",
+                5,
+                20,
+                "params_only",
+                1,
+                1,
+                None,
+                False,
+            )
+
+        assert (
+            result["_job_message"]
+            == "GA進化完了（ベース戦略が最良のためパラメータ変更なし）"
+        )
         service._executor.shutdown(wait=False)
 
     def test_execute_evolve_sync_no_save(self) -> None:
