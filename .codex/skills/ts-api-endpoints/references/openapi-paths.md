@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **112**
+Total paths: **113**
 
 ## /api/analytics
 
@@ -192,6 +192,7 @@ Total paths: **112**
 | `/api/strategies` | `GET` |
 | `/api/strategies/{strategy_name}` | `GET, PUT, DELETE` |
 | `/api/strategies/{strategy_name}/duplicate` | `POST` |
+| `/api/strategies/{strategy_name}/move` | `POST` |
 | `/api/strategies/{strategy_name}/rename` | `POST` |
 | `/api/strategies/{strategy_name}/validate` | `POST` |
 
