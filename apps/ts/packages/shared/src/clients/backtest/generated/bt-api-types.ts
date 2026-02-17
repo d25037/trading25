@@ -192,6 +192,33 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/strategies/{strategy_name}/move": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Move Strategy
+         * @description 戦略のカテゴリを移動
+         *
+         *     Args:
+         *         strategy_name: 移動元の戦略名
+         *         request: 移動先カテゴリ
+         *
+         *     Note:
+         *         production / experimental / legacy 間の移動のみサポート
+         */
+        post: operations["move_strategy_api_strategies__strategy_name__move_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/config/default": {
         parameters: {
             query?: never;
@@ -3082,11 +3109,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            sector17Matches: components["schemas"]["IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            sector33Matches: components["schemas"]["IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -3796,14 +3823,21 @@ export interface components {
              */
             end_date?: string | null;
         };
-        /** IndexMatch */
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
         IndexMatch: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
             /** Rsquared */
             rSquared: number;
+            /** Beta */
+            beta: number;
         };
         /**
          * IndexOHLCRecord
@@ -5253,16 +5287,16 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["IndexMatch"][];
+            sector17Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["IndexMatch"][];
+            sector33Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            topixStyleMatches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5342,7 +5376,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -6790,6 +6824,49 @@ export interface components {
             last_modified?: string | null;
         };
         /**
+         * StrategyMoveRequest
+         * @description 戦略カテゴリ移動リクエスト
+         */
+        StrategyMoveRequest: {
+            /**
+             * Target Category
+             * @description 移動先カテゴリ
+             * @enum {string}
+             */
+            target_category: "production" | "experimental" | "legacy";
+        };
+        /**
+         * StrategyMoveResponse
+         * @description 戦略カテゴリ移動レスポンス
+         */
+        StrategyMoveResponse: {
+            /**
+             * Success
+             * @description 移動成功フラグ
+             */
+            success: boolean;
+            /**
+             * Old Strategy Name
+             * @description 移動前の戦略名
+             */
+            old_strategy_name: string;
+            /**
+             * New Strategy Name
+             * @description 移動後の戦略名
+             */
+            new_strategy_name: string;
+            /**
+             * Target Category
+             * @description 移動先カテゴリ
+             */
+            target_category: string;
+            /**
+             * New Path
+             * @description 新しいファイルパス
+             */
+            new_path: string;
+        };
+        /**
          * StrategyRenameRequest
          * @description 戦略リネームリクエスト
          */
@@ -7192,24 +7269,17 @@ export interface components {
             /** To */
             to: string;
         };
-        /**
-         * IndexMatch
-         * @description 指数マッチ結果
-         */
-        src__server__schemas__factor_regression__IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
+        /** IndexMatch */
+        src__server__schemas__portfolio_factor_regression__IndexMatch: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
             /** Rsquared */
             rSquared: number;
-            /** Beta */
-            beta: number;
         };
         /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
+        src__server__schemas__portfolio_performance__DateRange: {
             /** From */
             from: string;
             /** To */
@@ -7744,6 +7814,68 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["StrategyRenameResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    move_strategy_api_strategies__strategy_name__move_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                strategy_name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["StrategyMoveRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["StrategyMoveResponse"];
                 };
             };
             /** @description Bad Request */

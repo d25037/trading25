@@ -8,6 +8,7 @@ export { DeleteConfirmDialog } from './DeleteConfirmDialog';
 export { DuplicateDialog } from './DuplicateDialog';
 export { JobProgressCard } from './JobProgressCard';
 export { JobsTable } from './JobsTable';
+export { MoveGroupDialog } from './MoveGroupDialog';
 export { OptimizationGridEditor } from './OptimizationGridEditor';
 export { OptimizationHtmlFileBrowser } from './OptimizationHtmlFileBrowser';
 export { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
