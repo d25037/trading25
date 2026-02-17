@@ -61,6 +61,11 @@ _NUMERIC_COLUMNS = [
     "AdjustedBPS",
     "AdjustedForecastEPS",
     "AdjustedNextYearForecastEPS",
+    # Forward forecast columns (used by forecast-based signals)
+    "ForwardBaseEPS",
+    "AdjustedForwardBaseEPS",
+    "ForwardForecastEPS",
+    "AdjustedForwardForecastEPS",
 ]
 
 # Raw -> Adjusted カラム名マッピング（株式数調整対象）
@@ -70,6 +75,8 @@ _ADJUSTED_COLUMN_MAP = {
     "ForecastEPS": "AdjustedForecastEPS",
     "NextYearForecastEPS": "AdjustedNextYearForecastEPS",
 }
+
+_FORWARD_FORECAST_COLUMNS = ["ForwardForecastEPS", "AdjustedForwardForecastEPS"]
 
 
 def _resolve_baseline_shares(df: pd.DataFrame) -> float | None:
@@ -108,6 +115,71 @@ def _compute_adjusted_series(
     return adjusted
 
 
+def _build_forward_eps_columns(df: pd.DataFrame) -> None:
+    """Build forward-signal helper columns.
+
+    Forward signal policy:
+    - Base EPS denominator: latest disclosed FY EPS only
+    - Forecast EPS numerator: FY uses NextYearForecastEPS, quarterly uses ForecastEPS
+    """
+    if df.empty:
+        return
+
+    if "TypeOfCurrentPeriod" in df.columns:
+        period_types = df["TypeOfCurrentPeriod"].map(normalize_period_type)
+    else:
+        period_types = pd.Series("FY", index=df.index)
+
+    is_fy = period_types == "FY"
+    is_quarter = period_types.isin(["1Q", "2Q", "3Q"])
+
+    if "EPS" in df.columns:
+        df["ForwardBaseEPS"] = df["EPS"].where(is_fy).ffill()
+    if "AdjustedEPS" in df.columns:
+        df["AdjustedForwardBaseEPS"] = df["AdjustedEPS"].where(is_fy).ffill()
+
+    if "NextYearForecastEPS" in df.columns:
+        fy_forecast = df["NextYearForecastEPS"].where(is_fy)
+    else:
+        fy_forecast = pd.Series(np.nan, index=df.index)
+
+    if "ForecastEPS" in df.columns:
+        q_forecast = df["ForecastEPS"].where(is_quarter)
+    else:
+        q_forecast = pd.Series(np.nan, index=df.index)
+
+    df["ForwardForecastEPS"] = fy_forecast.combine_first(q_forecast)
+
+    if "AdjustedNextYearForecastEPS" in df.columns:
+        adjusted_fy_forecast = df["AdjustedNextYearForecastEPS"].where(is_fy)
+    else:
+        adjusted_fy_forecast = pd.Series(np.nan, index=df.index)
+
+    if "AdjustedForecastEPS" in df.columns:
+        adjusted_q_forecast = df["AdjustedForecastEPS"].where(is_quarter)
+    else:
+        adjusted_q_forecast = pd.Series(np.nan, index=df.index)
+
+    df["AdjustedForwardForecastEPS"] = adjusted_fy_forecast.combine_first(
+        adjusted_q_forecast
+    )
+
+
+def merge_forward_forecast_revision(
+    base_daily_df: pd.DataFrame, revision_daily_df: pd.DataFrame
+) -> pd.DataFrame:
+    """Merge forward forecast columns, preferring revision values when available."""
+    merged = base_daily_df.copy()
+    for column in _FORWARD_FORECAST_COLUMNS:
+        if column not in revision_daily_df.columns:
+            continue
+        if column in merged.columns:
+            merged[column] = revision_daily_df[column].combine_first(merged[column])
+        else:
+            merged[column] = revision_daily_df[column]
+    return merged
+
+
 def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
@@ -130,6 +202,8 @@ def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
                 else df[raw_col]
             )
 
+    _build_forward_eps_columns(df)
+
     df["ROE"] = _calc_roe(df)
     df["ROA"] = _calc_roa(df)
     df["OperatingMargin"] = _calc_operating_margin(df)
@@ -144,6 +218,7 @@ def load_statements_data(
     end_date: Optional[str] = None,
     period_type: APIPeriodType = "FY",
     actual_only: bool = True,
+    include_forecast_revision: bool = False,
 ) -> pd.DataFrame:
     """
     決算データを日次株価データに同期変換（VectorBTフィルター用）
@@ -164,6 +239,9 @@ def load_statements_data(
         actual_only: 実績データのみ取得（デフォルト: True）
             - True: 予想データ（EPS/Profit/Equityが全てnull）を除外
             - False: 予想データも含む
+        include_forecast_revision: Trueの場合、period_type="FY"時に
+            追加でperiod_type="all"を取得し、ForwardForecast系カラムへ
+            四半期修正（FEPS）を反映する
 
     Returns:
         pandas.DataFrame: 日次同期された財務諸表データ
@@ -184,6 +262,7 @@ def load_statements_data(
         - "all": 最新情報を素早く反映したい場合（四半期ごとに更新）
     """
     dataset_name = extract_dataset_name(dataset)
+    revision_df: pd.DataFrame | None = None
 
     with DatasetAPIClient(dataset_name) as client:
         df = client.get_statements(
@@ -193,6 +272,20 @@ def load_statements_data(
             period_type=period_type,
             actual_only=actual_only,
         )
+        if include_forecast_revision and normalize_period_type(period_type) == "FY":
+            try:
+                revision_df = client.get_statements(
+                    stock_code,
+                    start_date,
+                    end_date,
+                    period_type="all",
+                    actual_only=actual_only,
+                )
+            except Exception as e:  # noqa: BLE001 - continue with FY-only baseline
+                logger.warning(
+                    "四半期修正データ取得に失敗（FYのみで続行）: "
+                    f"{stock_code}, error={e}"
+                )
 
     if df.empty:
         raise ValueError(
@@ -205,6 +298,9 @@ def load_statements_data(
 
     # 決算データを日次インデックスに前方補完（次の決算発表まで値を継続）
     df = df.reindex(daily_index).ffill()
+    if revision_df is not None and not revision_df.empty:
+        revision_daily = transform_statements_df(revision_df).reindex(daily_index).ffill()
+        df = merge_forward_forecast_revision(df, revision_daily)
 
     logger.debug(f"財務諸表データ読み込み成功: {stock_code} (period_type={period_type})")
     return df

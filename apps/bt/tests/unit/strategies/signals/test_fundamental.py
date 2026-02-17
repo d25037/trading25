@@ -295,6 +295,23 @@ class TestIsUndervaluedGrowthByPeg:
         # 高い閾値の方がTrue数が多い
         assert signal_high.sum() >= signal_low.sum()
 
+    def test_peg_ratio_reacts_to_quarterly_forecast_revision_with_fixed_fy_base(self):
+        """FY実績EPSを分母に固定しつつ、forecast修正でPEG判定が変わること"""
+        dates = pd.date_range("2024-04-28", periods=3, freq="D")
+        close = pd.Series([100.0, 100.0, 100.0], index=dates)
+        fy_base_eps = pd.Series([80.0, 80.0, 80.0], index=dates)
+        revised_forecast = pd.Series([100.0, 100.0, 120.0], index=dates)
+
+        # 1日目/2日目: 成長率25% → PEG=5、3日目: 成長率50% → PEG=2.5
+        signal = is_undervalued_growth_by_peg(
+            close,
+            fy_base_eps,
+            revised_forecast,
+            threshold=3.0,
+        )
+
+        assert signal.tolist() == [False, False, True]
+
 
 class TestIsExpectedGrowthEps:
     """is_expected_growth_eps()のテスト"""
@@ -332,6 +349,20 @@ class TestIsExpectedGrowthEps:
         assert isinstance(signal_high, pd.Series)
         # 低い閾値の方がTrue数が多い
         assert signal_low.sum() >= signal_high.sum()
+
+    def test_forward_growth_reacts_to_quarterly_forecast_revision_with_fixed_fy_base(self):
+        """FY実績EPS固定でQ予想修正のみ変化したケースを再現する"""
+        dates = pd.date_range("2024-04-28", periods=3, freq="D")
+        fy_base_eps = pd.Series([80.0, 80.0, 80.0], index=dates)
+        revised_forecast = pd.Series([100.0, 100.0, 120.0], index=dates)
+
+        signal = is_expected_growth_eps(
+            fy_base_eps,
+            revised_forecast,
+            growth_threshold=0.4,
+        )
+
+        assert signal.tolist() == [False, False, True]
 
 
 # =====================================================================

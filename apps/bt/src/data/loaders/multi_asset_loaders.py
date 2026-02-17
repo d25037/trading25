@@ -13,11 +13,16 @@ from src.data.access.clients import get_dataset_client
 from src.exceptions import BatchAPIError, NoValidDataError
 
 from src.api.dataset.statements_mixin import APIPeriodType
+from src.models.types import normalize_period_type
 
 from .cache import DataCache
 from .index_loaders import load_index_data
 from .margin_loaders import load_margin_data, transform_margin_df
-from .statements_loaders import load_statements_data, transform_statements_df
+from .statements_loaders import (
+    load_statements_data,
+    merge_forward_forecast_revision,
+    transform_statements_df,
+)
 from .stock_loaders import load_stock_data
 from .utils import extract_dataset_name
 
@@ -204,6 +209,7 @@ def load_multiple_statements_data(
     end_date: Optional[str] = None,
     statements_column: str = "eps",
     period_type: APIPeriodType = "FY",
+    include_forecast_revision: bool = False,
 ) -> pd.DataFrame:
     """
     複数銘柄の財務諸表データを同時に読み込み（VectorBT用）
@@ -219,25 +225,61 @@ def load_multiple_statements_data(
         end_date: 終了日 (YYYY-MM-DD)
         statements_column: 使用する財務指標カラム（'eps', 'profit', 'equity', 'roe'）
         period_type: 決算期間タイプ ('FY'=本決算のみ, 'all'=全四半期, '1Q'/'2Q'/'3Q'=特定四半期)
+        include_forecast_revision: Trueの場合、period_type="FY"時に四半期修正を反映
 
     Returns:
         pandas.DataFrame: 銘柄をカラムとした財務諸表データ（DatetimeIndex）
     """
     data_dict: dict[str, pd.Series[float]] = {}
     dataset_name = extract_dataset_name(dataset)
+    normalized_column = {
+        "eps": "EPS",
+        "profit": "Profit",
+        "equity": "Equity",
+        "roe": "ROE",
+    }.get(statements_column, statements_column)
+
+    should_merge_forecast_revision = (
+        include_forecast_revision
+        and normalize_period_type(period_type) == "FY"
+        and normalized_column in {"ForwardForecastEPS", "AdjustedForwardForecastEPS"}
+    )
 
     # バッチAPIを試行
     try:
+        revision_batch: dict[str, pd.DataFrame] = {}
         with get_dataset_client(dataset_name) as client:
             batch_data = client.get_statements_batch(
                 stock_codes, start_date, end_date,
                 period_type=period_type, actual_only=True,
             )
+            if should_merge_forecast_revision:
+                try:
+                    revision_batch = client.get_statements_batch(
+                        stock_codes,
+                        start_date,
+                        end_date,
+                        period_type="all",
+                        actual_only=True,
+                    )
+                except (ConnectionError, RuntimeError, BatchAPIError) as e:
+                    logger.warning(f"財務諸表四半期修正バッチ取得失敗、FYのみで続行: {e}")
         for code, df in batch_data.items():
             df = transform_statements_df(df)
             reindexed = df.reindex(daily_index, method="ffill")
-            if statements_column in reindexed.columns:
-                data_dict[code] = reindexed[statements_column]
+            if (
+                should_merge_forecast_revision
+                and code in revision_batch
+                and not revision_batch[code].empty
+            ):
+                revision_df = transform_statements_df(revision_batch[code])
+                revision_reindexed = revision_df.reindex(daily_index, method="ffill")
+                reindexed = merge_forward_forecast_revision(
+                    reindexed,
+                    revision_reindexed,
+                )
+            if normalized_column in reindexed.columns:
+                data_dict[code] = reindexed[normalized_column]
         logger.debug(f"バッチAPI使用: {len(data_dict)}銘柄の財務諸表データ取得")
     except (ConnectionError, RuntimeError, BatchAPIError) as e:
         logger.debug(f"財務諸表バッチAPI失敗、個別取得にフォールバック: {e}")
@@ -249,12 +291,13 @@ def load_multiple_statements_data(
                 df = load_statements_data(
                     dataset, stock_code, daily_index, start_date, end_date,
                     period_type=period_type,
+                    include_forecast_revision=include_forecast_revision,
                 )
-                if statements_column in df.columns:
-                    data_dict[stock_code] = df[statements_column]
+                if normalized_column in df.columns:
+                    data_dict[stock_code] = df[normalized_column]
                 else:
                     logger.warning(
-                        f"{statements_column}カラムが見つかりません: {stock_code}"
+                        f"{normalized_column}カラムが見つかりません: {stock_code}"
                     )
                     continue
             except ValueError as e:
@@ -263,7 +306,7 @@ def load_multiple_statements_data(
 
     if not data_dict:
         raise ValueError(
-            f"No valid statements data found for any stock codes with column: {statements_column}"
+            f"No valid statements data found for any stock codes with column: {normalized_column}"
         )
 
     # すべてのデータを結合

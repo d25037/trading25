@@ -172,7 +172,7 @@ class TestSignalRegistry:
         sig = matches[0]
         assert sig.name == "Forward EPS成長率"
         assert "statements:EPS" in sig.data_requirements
-        assert "statements:NextYearForecastEPS" in sig.data_requirements
+        assert "statements:ForwardForecastEPS" in sig.data_requirements
 
     def test_eps_growth_registered(self) -> None:
         """eps_growth（実績ベース）がレジストリに登録されていること"""
@@ -305,6 +305,96 @@ class TestFundamentalAdjustedSelection:
 
         sig = self._get_signal("fundamental.forward_eps_growth")
         built = sig.param_builder(params, {"statements_data": df})
+        assert built["eps"].equals(df["AdjustedEPS"])
+        assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
+
+    def test_forward_eps_growth_prefers_forward_columns_when_available(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_eps_growth.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0],
+                "AdjustedEPS": [0.8],
+                "ForwardBaseEPS": [1.1],
+                "AdjustedForwardBaseEPS": [0.9],
+                "NextYearForecastEPS": [2.0],
+                "AdjustedNextYearForecastEPS": [1.6],
+                "ForwardForecastEPS": [1.7],
+                "AdjustedForwardForecastEPS": [1.4],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forward_eps_growth")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["eps"].equals(df["AdjustedForwardBaseEPS"])
+        assert built["next_year_forecast_eps"].equals(df["AdjustedForwardForecastEPS"])
+
+    def test_peg_ratio_prefers_forward_columns_when_available(self) -> None:
+        params = SignalParams()
+        params.fundamental.peg_ratio.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0],
+                "AdjustedEPS": [0.8],
+                "ForwardBaseEPS": [1.1],
+                "AdjustedForwardBaseEPS": [0.9],
+                "NextYearForecastEPS": [2.0],
+                "AdjustedNextYearForecastEPS": [1.6],
+                "ForwardForecastEPS": [1.7],
+                "AdjustedForwardForecastEPS": [1.4],
+            }
+        )
+        close = pd.Series([100.0])
+
+        sig = self._get_signal("fundamental.peg_ratio")
+        built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
+        assert built["eps"].equals(df["AdjustedForwardBaseEPS"])
+        assert built["next_year_forecast_eps"].equals(df["AdjustedForwardForecastEPS"])
+
+    def test_forward_eps_growth_fallbacks_when_forward_columns_are_all_nan(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_eps_growth.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0, 1.2],
+                "AdjustedEPS": [0.8, 1.0],
+                "NextYearForecastEPS": [2.0, 2.4],
+                "AdjustedNextYearForecastEPS": [1.6, 2.0],
+                "ForwardBaseEPS": [float("nan"), float("nan")],
+                "AdjustedForwardBaseEPS": [float("nan"), float("nan")],
+                "ForwardForecastEPS": [float("nan"), float("nan")],
+                "AdjustedForwardForecastEPS": [float("nan"), float("nan")],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forward_eps_growth")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["eps"].equals(df["AdjustedEPS"])
+        assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
+
+    def test_peg_ratio_fallbacks_when_forward_columns_are_all_nan(self) -> None:
+        params = SignalParams()
+        params.fundamental.peg_ratio.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0, 1.2],
+                "AdjustedEPS": [0.8, 1.0],
+                "NextYearForecastEPS": [2.0, 2.4],
+                "AdjustedNextYearForecastEPS": [1.6, 2.0],
+                "ForwardBaseEPS": [float("nan"), float("nan")],
+                "AdjustedForwardBaseEPS": [float("nan"), float("nan")],
+                "ForwardForecastEPS": [float("nan"), float("nan")],
+                "AdjustedForwardForecastEPS": [float("nan"), float("nan")],
+            }
+        )
+        close = pd.Series([100.0, 101.0])
+
+        sig = self._get_signal("fundamental.peg_ratio")
+        built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
         assert built["eps"].equals(df["AdjustedEPS"])
         assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
 

@@ -118,6 +118,38 @@ class TestResolvePeriodType:
         result = DataManagerMixin._resolve_period_type(mock_self)
         assert result == "3Q"
 
+    def test_should_include_forecast_revision_detects_forward_or_peg(self):
+        from unittest.mock import MagicMock
+        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+
+        mock_self = MagicMock()
+        mock_self.entry_filter_params = MagicMock()
+        mock_self.entry_filter_params.fundamental = FundamentalSignalParams(
+            enabled=True,
+            forward_eps_growth={"enabled": False},
+            peg_ratio={"enabled": True},
+        )
+        mock_self.exit_trigger_params = None
+
+        result = DataManagerMixin._should_include_forecast_revision(mock_self)
+        assert result is True
+
+    def test_should_include_forecast_revision_false_when_fundamental_disabled(self):
+        from unittest.mock import MagicMock
+        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+
+        mock_self = MagicMock()
+        mock_self.entry_filter_params = MagicMock()
+        mock_self.entry_filter_params.fundamental = FundamentalSignalParams(
+            enabled=False,
+            forward_eps_growth={"enabled": True},
+            peg_ratio={"enabled": True},
+        )
+        mock_self.exit_trigger_params = None
+
+        result = DataManagerMixin._should_include_forecast_revision(mock_self)
+        assert result is False
+
     def test_load_multi_data_disables_optional_sources_when_signals_unused(
         self, monkeypatch
     ):
@@ -146,6 +178,7 @@ class TestResolvePeriodType:
         mock_self.include_margin_data = True
         mock_self.include_statements_data = True
         mock_self._resolve_period_type.return_value = "FY"
+        mock_self._should_include_forecast_revision.return_value = False
         mock_self._should_load_margin_data.return_value = False
         mock_self._should_load_statements_data.return_value = False
 
@@ -153,6 +186,7 @@ class TestResolvePeriodType:
 
         assert captured["include_margin_data"] is False
         assert captured["include_statements_data"] is False
+        assert captured["include_forecast_revision"] is False
 
     def test_load_multi_data_keeps_optional_sources_when_required(self, monkeypatch):
         """依存シグナルが有効な場合、margin/statementsロードを維持すること"""
@@ -180,6 +214,7 @@ class TestResolvePeriodType:
         mock_self.include_margin_data = True
         mock_self.include_statements_data = True
         mock_self._resolve_period_type.return_value = "FY"
+        mock_self._should_include_forecast_revision.return_value = False
         mock_self._should_load_margin_data.return_value = True
         mock_self._should_load_statements_data.return_value = True
 
@@ -187,3 +222,40 @@ class TestResolvePeriodType:
 
         assert captured["include_margin_data"] is True
         assert captured["include_statements_data"] is True
+        assert captured["include_forecast_revision"] is False
+
+    def test_load_multi_data_enables_forecast_revision_when_forecast_signals_used(
+        self, monkeypatch
+    ):
+        """forward/PEGシグナル利用時にinclude_forecast_revisionを有効化すること"""
+        from unittest.mock import MagicMock
+        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+
+        captured: dict[str, object] = {}
+
+        def fake_prepare_multi_data(**kwargs):
+            captured.update(kwargs)
+            return {"7203": {"daily": MagicMock()}}
+
+        monkeypatch.setattr(
+            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            fake_prepare_multi_data,
+        )
+
+        mock_self = MagicMock()
+        mock_self.multi_data_dict = None
+        mock_self.dataset = "primeExTopix500"
+        mock_self.stock_codes = ["7203"]
+        mock_self.start_date = None
+        mock_self.end_date = None
+        mock_self.timeframe = "daily"
+        mock_self.include_margin_data = False
+        mock_self.include_statements_data = True
+        mock_self._resolve_period_type.return_value = "FY"
+        mock_self._should_include_forecast_revision.return_value = True
+        mock_self._should_load_margin_data.return_value = False
+        mock_self._should_load_statements_data.return_value = True
+
+        DataManagerMixin.load_multi_data(mock_self)
+
+        assert captured["include_forecast_revision"] is True

@@ -273,6 +273,7 @@ class ParameterOptimizationEngine:
         from src.data.loaders import prepare_multi_data
 
         shared_config = SharedConfig(**self.shared_config_dict)
+        include_forecast_revision = self._should_include_forecast_revision()
 
         logger.info("最適化用データ事前取得開始")
         multi_data_dict = prepare_multi_data(
@@ -283,6 +284,7 @@ class ParameterOptimizationEngine:
             include_margin_data=shared_config.include_margin_data,
             include_statements_data=shared_config.include_statements_data,
             timeframe=shared_config.timeframe,
+            include_forecast_revision=include_forecast_revision,
         )
         logger.info(f"最適化用データ事前取得完了: {len(multi_data_dict)}銘柄")
 
@@ -302,6 +304,72 @@ class ParameterOptimizationEngine:
                 logger.warning(f"ベンチマークデータ事前取得失敗（続行）: {e}")
 
         return multi_data_dict, benchmark_data
+
+    @staticmethod
+    def _is_forecast_signal_enabled(signal_params: SignalParams) -> bool:
+        fundamental = signal_params.fundamental
+        return bool(
+            fundamental.enabled
+            and (
+                fundamental.forward_eps_growth.enabled
+                or fundamental.peg_ratio.enabled
+            )
+        )
+
+    def _grid_may_enable_forecast_signals(self) -> bool:
+        """Grid定義で予想系シグナルが有効化されうるか判定する。"""
+        if not isinstance(self.parameter_ranges, dict):
+            return False
+
+        section_to_base = (
+            ("entry_filter_params", self.base_entry_params),
+            ("exit_trigger_params", self.base_exit_params),
+        )
+
+        for section_name, base_params in section_to_base:
+            section_cfg = self.parameter_ranges.get(section_name)
+            if not isinstance(section_cfg, dict):
+                continue
+            fundamental_cfg = section_cfg.get("fundamental")
+            if not isinstance(fundamental_cfg, dict):
+                continue
+
+            base_fundamental = base_params.fundamental
+            fundamental_enabled = bool(base_fundamental.enabled)
+            if not fundamental_enabled:
+                fundamental_enabled_values = fundamental_cfg.get("enabled")
+                if isinstance(fundamental_enabled_values, list):
+                    fundamental_enabled = any(bool(v) for v in fundamental_enabled_values)
+                elif fundamental_enabled_values is not None:
+                    fundamental_enabled = bool(fundamental_enabled_values)
+
+            if not fundamental_enabled:
+                continue
+
+            for signal_name in ("forward_eps_growth", "peg_ratio"):
+                signal_cfg = fundamental_cfg.get(signal_name)
+                if not isinstance(signal_cfg, dict):
+                    continue
+
+                signal_enabled = bool(getattr(base_fundamental, signal_name).enabled)
+                if not signal_enabled:
+                    signal_enabled_values = signal_cfg.get("enabled")
+                    if isinstance(signal_enabled_values, list):
+                        signal_enabled = any(bool(v) for v in signal_enabled_values)
+                    elif signal_enabled_values is not None:
+                        signal_enabled = bool(signal_enabled_values)
+
+                if signal_enabled:
+                    return True
+
+        return False
+
+    def _should_include_forecast_revision(self) -> bool:
+        return (
+            self._is_forecast_signal_enabled(self.base_entry_params)
+            or self._is_forecast_signal_enabled(self.base_exit_params)
+            or self._grid_may_enable_forecast_signals()
+        )
 
     def _run_custom_optimization(
         self, strategy_kwargs_list: List[Dict], combinations: List[Dict]
