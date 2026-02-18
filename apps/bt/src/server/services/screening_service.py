@@ -19,13 +19,6 @@ import pandas as pd
 from loguru import logger
 
 from src.api.dataset.statements_mixin import APIPeriodType
-from src.data.access.mode import data_access_mode_context
-from src.data.loaders import (
-    get_stock_sector_mapping,
-    load_all_sector_indices,
-    load_topix_data,
-    prepare_multi_data,
-)
 from src.lib.market_db.market_reader import MarketDbReader
 from src.lib.market_db.query_helpers import normalize_stock_code
 from src.lib.strategy_runtime.loader import ConfigLoader
@@ -41,6 +34,12 @@ from src.server.schemas.screening import (
     SortOrder,
 )
 from src.server.services.market_code_alias import resolve_market_codes
+from src.server.services.screening_market_loader import (
+    load_market_multi_data,
+    load_market_sector_indices,
+    load_market_stock_sector_mapping,
+    load_market_topix_data,
+)
 from src.strategies.signals.processor import SignalProcessor
 from src.strategies.signals.registry import SIGNAL_REGISTRY
 
@@ -77,7 +76,6 @@ class StrategyRuntime:
 
 @dataclass(frozen=True)
 class MultiDataRequirementKey:
-    dataset: str
     stock_codes: tuple[str, ...]
     start_date: str | None
     end_date: str | None
@@ -90,14 +88,12 @@ class MultiDataRequirementKey:
 
 @dataclass(frozen=True)
 class TopixDataRequirementKey:
-    dataset: str
     start_date: str | None
     end_date: str | None
 
 
 @dataclass(frozen=True)
 class SectorDataRequirementKey:
-    dataset: str
     start_date: str | None
     end_date: str | None
 
@@ -233,10 +229,10 @@ class ScreeningRequestCache:
 
     def get_sector_mapping(
         self,
-        dataset: str,
+        key: str,
         loader: Callable[[], dict[str, str]],
     ) -> OptionalLoadResult:
-        cached = self._sector_mapping.get(dataset)
+        cached = self._sector_mapping.get(key)
         if cached is not None:
             self._record_hit()
             return cached
@@ -247,7 +243,7 @@ class ScreeningRequestCache:
             result = OptionalLoadResult(data=value)
         except Exception as exc:
             result = OptionalLoadResult(data=None, warning=str(exc))
-        self._sector_mapping[dataset] = result
+        self._sector_mapping[key] = result
         return result
 
 
@@ -256,6 +252,7 @@ class ScreeningService:
 
     _WARNING_LIMIT = 50
     _DEFAULT_BACKTEST_METRIC = "sharpe_ratio"
+    _DEFAULT_HISTORY_TRADING_DAYS = 520
 
     def __init__(self, reader: MarketDbReader) -> None:
         self._reader = reader
@@ -276,6 +273,7 @@ class ScreeningService:
         """スクリーニングを実行"""
         run_started = perf_counter()
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
+        effective_reference_date = reference_date or self._get_latest_market_date()
 
         load_stage_started = perf_counter()
         stock_universe = self._load_stock_universe(query_market_codes)
@@ -286,7 +284,8 @@ class ScreeningService:
         strategy_inputs, cache_stats = self._prepare_strategy_inputs(
             strategy_runtimes=strategy_runtimes,
             stock_universe=stock_universe,
-            reference_date=reference_date,
+            reference_date=effective_reference_date,
+            recent_days=recent_days,
         )
         self._log_stage_timing(
             stage="load",
@@ -382,7 +381,7 @@ class ScreeningService:
             summary=summary,
             markets=requested_market_codes,
             recentDays=recent_days,
-            referenceDate=reference_date,
+            referenceDate=effective_reference_date,
             sortBy=sort_by,
             order=order,
             lastUpdated=_now_iso(),
@@ -582,6 +581,7 @@ class ScreeningService:
         strategy_runtimes: list[StrategyRuntime],
         stock_universe: list[StockUniverseItem],
         reference_date: str | None,
+        recent_days: int,
     ) -> tuple[list[StrategyExecutionInput], RequestCacheStats]:
         """戦略評価に必要なデータをロードし、戦略ごとの入力を構築する。"""
         if not strategy_runtimes:
@@ -592,7 +592,12 @@ class ScreeningService:
         inputs: list[StrategyExecutionInput] = []
 
         for strategy in strategy_runtimes:
-            requirements = self._build_data_requirements(strategy, stock_codes, reference_date)
+            requirements = self._build_data_requirements(
+                strategy=strategy,
+                stock_codes=stock_codes,
+                reference_date=reference_date,
+                recent_days=recent_days,
+            )
             warnings: list[str] = []
 
             try:
@@ -628,9 +633,7 @@ class ScreeningService:
                 if requirements.sector_mapping_key is not None:
                     mapping_result = cache.get_sector_mapping(
                         requirements.sector_mapping_key,
-                        loader=lambda dataset=requirements.sector_mapping_key: self._load_sector_mapping(
-                            dataset
-                        ),
+                        loader=self._load_sector_mapping,
                     )
                     if isinstance(mapping_result.data, dict):
                         stock_sector_mapping = mapping_result.data
@@ -657,8 +660,13 @@ class ScreeningService:
         strategy: StrategyRuntime,
         stock_codes: tuple[str, ...],
         reference_date: str | None,
+        recent_days: int,
     ) -> StrategyDataRequirements:
-        start_date, end_date = self._resolve_date_range(strategy.shared_config, reference_date)
+        start_date, end_date = self._resolve_date_range(
+            shared_config=strategy.shared_config,
+            reference_date=reference_date,
+            recent_days=recent_days,
+        )
 
         include_margin = (
             strategy.shared_config.include_margin_data
@@ -684,7 +692,6 @@ class ScreeningService:
         )
 
         multi_data_key = MultiDataRequirementKey(
-            dataset=strategy.shared_config.dataset,
             stock_codes=stock_codes,
             start_date=start_date,
             end_date=end_date,
@@ -697,7 +704,6 @@ class ScreeningService:
 
         benchmark_data_key = (
             TopixDataRequirementKey(
-                dataset=strategy.shared_config.dataset,
                 start_date=start_date,
                 end_date=end_date,
             )
@@ -707,7 +713,6 @@ class ScreeningService:
 
         sector_data_key = (
             SectorDataRequirementKey(
-                dataset=strategy.shared_config.dataset,
                 start_date=start_date,
                 end_date=end_date,
             )
@@ -723,45 +728,53 @@ class ScreeningService:
             multi_data_key=multi_data_key,
             benchmark_data_key=benchmark_data_key,
             sector_data_key=sector_data_key,
-            sector_mapping_key=strategy.shared_config.dataset if needs_sector else None,
+            sector_mapping_key="market_stocks" if needs_sector else None,
         )
 
     def _load_multi_data(
         self,
         key: MultiDataRequirementKey,
     ) -> dict[str, dict[str, Any]]:
-        with data_access_mode_context("direct"):
-            return prepare_multi_data(
-                dataset=key.dataset,
-                stock_codes=list(key.stock_codes),
-                start_date=key.start_date,
-                end_date=key.end_date,
-                include_margin_data=key.include_margin_data,
-                include_statements_data=key.include_statements_data,
-                timeframe=key.timeframe,
-                period_type=key.period_type,
-                include_forecast_revision=key.include_forecast_revision,
+        if key.timeframe != "daily":
+            logger.warning(
+                "screening market loader supports daily timeframe only; weekly data is unavailable",
             )
+            return {}
+
+        if key.include_margin_data:
+            logger.warning(
+                "screening market loader does not provide margin data; margin signals may be skipped",
+            )
+
+        multi_data, warnings = load_market_multi_data(
+            self._reader,
+            list(key.stock_codes),
+            start_date=key.start_date,
+            end_date=key.end_date,
+            include_statements_data=key.include_statements_data,
+            period_type=key.period_type,
+            include_forecast_revision=key.include_forecast_revision,
+        )
+        for warning in warnings:
+            logger.warning("screening market loader warning: {}", warning)
+        return multi_data
 
     def _load_benchmark_data(self, key: TopixDataRequirementKey) -> pd.DataFrame:
-        with data_access_mode_context("direct"):
-            return load_topix_data(
-                key.dataset,
-                start_date=key.start_date,
-                end_date=key.end_date,
-            )
+        return load_market_topix_data(
+            self._reader,
+            start_date=key.start_date,
+            end_date=key.end_date,
+        )
 
     def _load_sector_data(self, key: SectorDataRequirementKey) -> dict[str, pd.DataFrame]:
-        with data_access_mode_context("direct"):
-            return load_all_sector_indices(
-                key.dataset,
-                start_date=key.start_date,
-                end_date=key.end_date,
-            )
+        return load_market_sector_indices(
+            self._reader,
+            start_date=key.start_date,
+            end_date=key.end_date,
+        )
 
-    def _load_sector_mapping(self, dataset: str) -> dict[str, str]:
-        with data_access_mode_context("direct"):
-            return get_stock_sector_mapping(dataset)
+    def _load_sector_mapping(self) -> dict[str, str]:
+        return load_market_stock_sector_mapping(self._reader)
 
     def _evaluate_strategies(
         self,
@@ -967,16 +980,74 @@ class ScreeningService:
         self,
         shared_config: SharedConfig,
         reference_date: str | None,
+        recent_days: int,
     ) -> tuple[str | None, str | None]:
         """shared_config とクエリ日付からロード対象期間を解決する。"""
         start_date = shared_config.start_date or None
         end_date = shared_config.end_date or None
 
         if reference_date:
-            if end_date is None or reference_date < end_date:
-                end_date = reference_date
+            end_date = reference_date
+        elif end_date is None:
+            end_date = self._get_latest_market_date()
+
+        if start_date is None and end_date is not None:
+            history_days = self._resolve_history_trading_days(recent_days)
+            if history_days > 1:
+                start_date = self._get_trading_date_before(end_date, history_days - 1)
 
         return start_date, end_date
+
+    def _resolve_history_trading_days(self, recent_days: int) -> int:
+        """screening 読み込み対象の営業日本数を決定する。"""
+        default_days = self._DEFAULT_HISTORY_TRADING_DAYS
+        configured = os.getenv("BT_SCREENING_HISTORY_TRADING_DAYS")
+        if configured is not None:
+            try:
+                value = int(configured)
+                if value > 0:
+                    default_days = value
+                else:
+                    raise ValueError("must be > 0")
+            except ValueError:
+                logger.warning(
+                    "Invalid BT_SCREENING_HISTORY_TRADING_DAYS. Fallback to default.",
+                    value=configured,
+                )
+
+        return max(recent_days, default_days)
+
+    def _get_latest_market_date(self) -> str | None:
+        try:
+            row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
+        except Exception:
+            return None
+        if row is None:
+            return None
+        return row["max_date"]
+
+    def _get_trading_date_before(self, date: str, offset: int) -> str | None:
+        if offset < 0:
+            return date
+        try:
+            row = self._reader.query_one(
+                "SELECT DISTINCT date FROM stock_data WHERE date <= ? ORDER BY date DESC LIMIT 1 OFFSET ?",
+                (date, offset),
+            )
+        except Exception:
+            return None
+        if row is None:
+            try:
+                oldest = self._reader.query_one(
+                    "SELECT MIN(date) AS min_date FROM stock_data WHERE date <= ?",
+                    (date,),
+                )
+            except Exception:
+                return None
+            if oldest is None:
+                return None
+            return oldest["min_date"]
+        return row["date"]
 
     def _needs_data_requirement(
         self,

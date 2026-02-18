@@ -15,10 +15,15 @@ from src.models.config import SharedConfig
 from src.models.signals import SignalParams, Signals
 from src.server.schemas.screening import MatchedStrategyItem, ScreeningResultItem
 from src.server.services.screening_service import (
+    MultiDataRequirementKey,
     ScreeningService,
+    ScreeningRequestCache,
+    SectorDataRequirementKey,
     StockUniverseItem,
+    TopixDataRequirementKey,
     StrategyDataBundle,
     StrategyRuntime,
+    _format_date,
 )
 
 
@@ -75,6 +80,9 @@ class TestSignalMatchingHelpers:
 
         matched = service._find_recent_match_date(signals, recent_days=2)  # noqa: SLF001
         assert matched is None
+
+    def test_format_date_accepts_string_values(self):
+        assert _format_date("2026-02-17T15:30:00") == "2026-02-17"
 
 
 class TestSortHelpers:
@@ -323,7 +331,7 @@ class TestStrategyResolutionHelpers:
 
 
 class TestRuntimeEvaluationHelpers:
-    def test_resolve_date_range_prefers_reference_date_when_earlier(self):
+    def test_resolve_date_range_uses_reference_date_as_end(self):
         service = ScreeningService(DummyReader())
         shared = SharedConfig.model_validate(
             {
@@ -334,13 +342,220 @@ class TestRuntimeEvaluationHelpers:
             context={"resolve_stock_codes": False},
         )
 
-        start, end = service._resolve_date_range(shared, "2024-06-30")  # noqa: SLF001
+        start, end = service._resolve_date_range(shared, "2024-06-30", 10)  # noqa: SLF001
         assert start == "2024-01-01"
         assert end == "2024-06-30"
 
-        start, end = service._resolve_date_range(shared, "2025-01-01")  # noqa: SLF001
+        start, end = service._resolve_date_range(shared, "2025-01-01", 10)  # noqa: SLF001
         assert start == "2024-01-01"
-        assert end == "2024-12-31"
+        assert end == "2025-01-01"
+
+    def test_resolve_date_range_defaults_to_latest_market_date_with_history_window(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        shared = SharedConfig.model_validate(
+            {"dataset": "primeExTopix500"},
+            context={"resolve_stock_codes": False},
+        )
+
+        monkeypatch.setattr(service, "_get_latest_market_date", lambda: "2026-02-17")
+        monkeypatch.setattr(service, "_resolve_history_trading_days", lambda _recent_days: 20)
+        monkeypatch.setattr(service, "_get_trading_date_before", lambda _date, _offset: "2026-01-20")
+
+        start, end = service._resolve_date_range(shared, None, 10)  # noqa: SLF001
+
+        assert start == "2026-01-20"
+        assert end == "2026-02-17"
+
+    def test_load_multi_data_uses_market_loader(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        key = MultiDataRequirementKey(
+            stock_codes=("7203",),
+            start_date="2026-01-01",
+            end_date="2026-02-17",
+            include_margin_data=False,
+            include_statements_data=True,
+            timeframe="daily",
+            period_type="FY",
+            include_forecast_revision=True,
+        )
+
+        index = pd.to_datetime(["2026-02-17"])
+        market_data = {
+            "7203": {
+                "daily": pd.DataFrame(
+                    {"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0], "Volume": [10]},
+                    index=index,
+                )
+            }
+        }
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            lambda *_args, **_kwargs: (market_data, []),
+        )
+
+        loaded = service._load_multi_data(key)  # noqa: SLF001
+        assert loaded == market_data
+
+    def test_load_multi_data_returns_empty_for_weekly_timeframe(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        key = MultiDataRequirementKey(
+            stock_codes=("7203",),
+            start_date="2026-01-01",
+            end_date="2026-02-17",
+            include_margin_data=False,
+            include_statements_data=False,
+            timeframe="weekly",
+            period_type="FY",
+            include_forecast_revision=False,
+        )
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not be called")),
+        )
+
+        assert service._load_multi_data(key) == {}  # noqa: SLF001
+
+    def test_load_multi_data_margin_and_loader_warnings_are_logged(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        key = MultiDataRequirementKey(
+            stock_codes=("7203",),
+            start_date="2026-01-01",
+            end_date="2026-02-17",
+            include_margin_data=True,
+            include_statements_data=False,
+            timeframe="daily",
+            period_type="FY",
+            include_forecast_revision=False,
+        )
+        logged: list[str] = []
+
+        def _warn(message: str, *args, **_kwargs):  # noqa: ANN001
+            text = message.format(*args) if args else message
+            logged.append(text)
+
+        monkeypatch.setattr("src.server.services.screening_service.logger.warning", _warn)
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            lambda *_args, **_kwargs: ({}, ["loader warning"]),
+        )
+
+        assert service._load_multi_data(key) == {}  # noqa: SLF001
+        assert any("does not provide margin data" in message for message in logged)
+        assert any("screening market loader warning: loader warning" in message for message in logged)
+
+    def test_market_loader_wrappers_for_benchmark_sector_and_mapping(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        benchmark = pd.DataFrame({"Close": [1.0]}, index=pd.to_datetime(["2026-02-17"]))
+        sector = {"情報・通信業": benchmark}
+        mapping = {"7203": "輸送用機器"}
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_topix_data",
+            lambda *_args, **_kwargs: benchmark,
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_sector_indices",
+            lambda *_args, **_kwargs: sector,
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_stock_sector_mapping",
+            lambda *_args, **_kwargs: mapping,
+        )
+
+        assert (
+            service._load_benchmark_data(  # noqa: SLF001
+                key=SimpleNamespace(start_date="2026-01-01", end_date="2026-02-17")
+            )
+            is benchmark
+        )
+        assert (
+            service._load_sector_data(  # noqa: SLF001
+                key=SimpleNamespace(start_date="2026-01-01", end_date="2026-02-17")
+            )
+            is sector
+        )
+        assert service._load_sector_mapping() is mapping  # noqa: SLF001
+
+    def test_resolve_history_trading_days_respects_env_and_recent_days(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+
+        monkeypatch.delenv("BT_SCREENING_HISTORY_TRADING_DAYS", raising=False)
+        assert service._resolve_history_trading_days(10) == 520  # noqa: SLF001
+
+        monkeypatch.setenv("BT_SCREENING_HISTORY_TRADING_DAYS", "30")
+        assert service._resolve_history_trading_days(10) == 30  # noqa: SLF001
+
+        monkeypatch.setenv("BT_SCREENING_HISTORY_TRADING_DAYS", "3")
+        assert service._resolve_history_trading_days(10) == 10  # noqa: SLF001
+
+        monkeypatch.setenv("BT_SCREENING_HISTORY_TRADING_DAYS", "invalid")
+        assert service._resolve_history_trading_days(10) == 520  # noqa: SLF001
+
+    def test_get_latest_market_date_handles_none_and_error(self):
+        class _ReaderWithDate(DummyReader):
+            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+                return {"max_date": "2026-02-17"}
+
+        class _ReaderWithNone(DummyReader):
+            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+                return None
+
+        class _ReaderWithError(DummyReader):
+            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+                raise RuntimeError("db error")
+
+        assert ScreeningService(_ReaderWithDate())._get_latest_market_date() == "2026-02-17"  # noqa: SLF001
+        assert ScreeningService(_ReaderWithNone())._get_latest_market_date() is None  # noqa: SLF001
+        assert ScreeningService(_ReaderWithError())._get_latest_market_date() is None  # noqa: SLF001
+
+    def test_get_trading_date_before_handles_branches(self):
+        class _Reader(DummyReader):
+            def __init__(self, responses):  # noqa: ANN001
+                self._responses = iter(responses)
+
+            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+                result = next(self._responses)
+                if isinstance(result, Exception):
+                    raise result
+                return result
+
+        service = ScreeningService(_Reader([]))
+        assert service._get_trading_date_before("2026-02-17", -1) == "2026-02-17"  # noqa: SLF001
+
+        direct = ScreeningService(_Reader([{"date": "2026-02-10"}]))
+        assert direct._get_trading_date_before("2026-02-17", 2) == "2026-02-10"  # noqa: SLF001
+
+        fallback = ScreeningService(_Reader([None, {"min_date": "2020-01-01"}]))
+        assert fallback._get_trading_date_before("2026-02-17", 2000) == "2020-01-01"  # noqa: SLF001
+
+        no_oldest = ScreeningService(_Reader([None, None]))
+        assert no_oldest._get_trading_date_before("2026-02-17", 2000) is None  # noqa: SLF001
+
+        query_error = ScreeningService(_Reader([RuntimeError("boom")]))
+        assert query_error._get_trading_date_before("2026-02-17", 2) is None  # noqa: SLF001
+
+        oldest_error = ScreeningService(_Reader([None, RuntimeError("boom")]))
+        assert oldest_error._get_trading_date_before("2026-02-17", 2000) is None  # noqa: SLF001
 
     def test_needs_data_requirement_with_custom_registry(self, monkeypatch: pytest.MonkeyPatch):
         service = ScreeningService(DummyReader())
@@ -486,3 +701,91 @@ class TestRuntimeEvaluationHelpers:
         assert matches == []
         assert processed == set()
         assert warnings == []
+
+
+class TestRequestCacheHelpers:
+    def test_multi_data_cache_caches_success_and_error(self):
+        cache = ScreeningRequestCache()
+        success_key = MultiDataRequirementKey(
+            stock_codes=("7203",),
+            start_date="2026-01-01",
+            end_date="2026-02-17",
+            include_margin_data=False,
+            include_statements_data=False,
+            timeframe="daily",
+            period_type="FY",
+            include_forecast_revision=False,
+        )
+
+        success_calls = {"count": 0}
+
+        def _load_success():
+            success_calls["count"] += 1
+            return {"7203": {"daily": pd.DataFrame()}}
+
+        first = cache.get_multi_data(success_key, _load_success)
+        second = cache.get_multi_data(success_key, _load_success)
+        assert first == second
+        assert success_calls["count"] == 1
+
+        error_key = MultiDataRequirementKey(
+            stock_codes=("6758",),
+            start_date="2026-01-01",
+            end_date="2026-02-17",
+            include_margin_data=False,
+            include_statements_data=False,
+            timeframe="daily",
+            period_type="FY",
+            include_forecast_revision=False,
+        )
+
+        error_calls = {"count": 0}
+
+        def _load_error():
+            error_calls["count"] += 1
+            raise RuntimeError("boom")
+
+        with pytest.raises(RuntimeError, match="boom"):
+            cache.get_multi_data(error_key, _load_error)
+        with pytest.raises(RuntimeError, match="boom"):
+            cache.get_multi_data(error_key, _load_error)
+        assert error_calls["count"] == 1
+
+    def test_optional_data_cache_records_hits_and_warnings(self):
+        cache = ScreeningRequestCache()
+
+        benchmark_key = TopixDataRequirementKey(start_date="2026-01-01", end_date="2026-02-17")
+        benchmark_first = cache.get_benchmark_data(
+            benchmark_key,
+            loader=lambda: (_ for _ in ()).throw(RuntimeError("benchmark failed")),
+        )
+        benchmark_second = cache.get_benchmark_data(
+            benchmark_key,
+            loader=lambda: pd.DataFrame({"Close": [1.0]}),
+        )
+        assert benchmark_first.warning == "benchmark failed"
+        assert benchmark_second.warning == "benchmark failed"
+
+        sector_key = SectorDataRequirementKey(start_date="2026-01-01", end_date="2026-02-17")
+        sector_first = cache.get_sector_data(
+            sector_key,
+            loader=lambda: (_ for _ in ()).throw(RuntimeError("sector failed")),
+        )
+        sector_second = cache.get_sector_data(
+            sector_key,
+            loader=lambda: {"情報・通信業": pd.DataFrame({"Close": [1.0]})},
+        )
+        assert sector_first.warning == "sector failed"
+        assert sector_second.warning == "sector failed"
+
+        mapping_first = cache.get_sector_mapping(
+            "market_stocks",
+            loader=lambda: (_ for _ in ()).throw(RuntimeError("mapping failed")),
+        )
+        mapping_second = cache.get_sector_mapping(
+            "market_stocks",
+            loader=lambda: {"7203": "輸送用機器"},
+        )
+        assert mapping_first.warning == "mapping failed"
+        assert mapping_second.warning == "mapping failed"
+        assert cache.stats.hits >= 3

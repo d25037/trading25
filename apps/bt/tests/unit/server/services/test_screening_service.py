@@ -101,7 +101,7 @@ class TestMarketCodeCompatibility:
             lambda strategies: ({runtime.response_name: 1.0}, [], []),
         )
 
-        def _prepare(*, strategy_runtimes, stock_universe, reference_date):
+        def _prepare(*, strategy_runtimes, stock_universe, reference_date, recent_days):
             return (
                 [
                     StrategyExecutionInput(
@@ -136,6 +136,57 @@ class TestMarketCodeCompatibility:
 
         assert prime_result.summary.totalStocksScreened == 2
         assert numeric_result.summary.totalStocksScreened == 2
+
+    def test_run_screening_uses_latest_market_date_when_reference_date_is_omitted(
+        self,
+        service,
+        monkeypatch,
+    ):
+        runtime = _runtime("range_break_v15")
+        captured: dict[str, str | None] = {}
+
+        monkeypatch.setattr(service, "_get_latest_market_date", lambda: "2026-02-17")
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _: [runtime])
+        monkeypatch.setattr(
+            service,
+            "_load_strategy_scores",
+            lambda strategies: ({runtime.response_name: 1.0}, [], []),
+        )
+
+        def _prepare(*, strategy_runtimes, stock_universe, reference_date, recent_days):
+            captured["reference_date"] = reference_date
+            return (
+                [
+                    StrategyExecutionInput(
+                        strategy=runtime,
+                        data_bundle=StrategyDataBundle(multi_data={}),
+                        load_warnings=[],
+                    )
+                ],
+                RequestCacheStats(hits=0, misses=0),
+            )
+
+        monkeypatch.setattr(service, "_prepare_strategy_inputs", _prepare)
+        monkeypatch.setattr(
+            service,
+            "_evaluate_strategies",
+            lambda strategy_inputs, stock_universe, recent_days, progress_callback: (
+                [
+                    StrategyEvaluationResult(
+                        strategy=runtime,
+                        matched_rows=[],
+                        processed_codes={s.code for s in stock_universe},
+                        warnings=[],
+                    )
+                ],
+                [],
+                1,
+            ),
+        )
+
+        result = service.run_screening(markets="prime")
+        assert captured["reference_date"] == "2026-02-17"
+        assert result.referenceDate == "2026-02-17"
 
 
 class TestStrategyResolution:
@@ -217,7 +268,7 @@ class TestAggregationAndSorting:
             ),
         )
 
-        def _prepare(*, strategy_runtimes, stock_universe, reference_date):
+        def _prepare(*, strategy_runtimes, stock_universe, reference_date, recent_days):
             inputs = [
                 StrategyExecutionInput(
                     strategy=s1,
@@ -281,7 +332,7 @@ class TestAggregationAndSorting:
             ),
         )
 
-        def _prepare(*, strategy_runtimes, stock_universe, reference_date):
+        def _prepare(*, strategy_runtimes, stock_universe, reference_date, recent_days):
             inputs = [
                 StrategyExecutionInput(
                     strategy=s1,
@@ -354,6 +405,7 @@ class TestRequestMemoizationAndParallelization:
             strategy_runtimes=[s1, s2],
             stock_universe=stock_universe,
             reference_date=None,
+            recent_days=10,
         )
 
         assert len(inputs) == 2
@@ -361,7 +413,11 @@ class TestRequestMemoizationAndParallelization:
         assert stats.hits == 1
         assert stats.misses == 1
 
-    def test_prepare_strategy_inputs_separates_different_requirements(self, service, monkeypatch):
+    def test_prepare_strategy_inputs_reuses_market_requirements_even_if_dataset_differs(
+        self,
+        service,
+        monkeypatch,
+    ):
         s1 = _runtime("s1", shared_overrides={"dataset": "primeExTopix500"})
         s2 = _runtime("s2", shared_overrides={"dataset": "topix100"})
         stock_universe = [
@@ -385,12 +441,13 @@ class TestRequestMemoizationAndParallelization:
             strategy_runtimes=[s1, s2],
             stock_universe=stock_universe,
             reference_date=None,
+            recent_days=10,
         )
 
         assert len(inputs) == 2
-        assert call_count["multi"] == 2
-        assert stats.hits == 0
-        assert stats.misses == 2
+        assert call_count["multi"] == 1
+        assert stats.hits == 1
+        assert stats.misses == 1
 
     def test_evaluate_strategies_parallel_returns_all_results(self, service, monkeypatch):
         s1 = _runtime("s1")
