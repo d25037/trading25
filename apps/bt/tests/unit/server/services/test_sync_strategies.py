@@ -2,7 +2,9 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timedelta
 from typing import Any
+from zoneinfo import ZoneInfo
 
 import pytest
 
@@ -13,12 +15,20 @@ from src.server.services.sync_strategies import (
     InitialSyncStrategy,
     SyncContext,
     _build_fallback_index_master_rows,
+    _build_incremental_date_targets,
+    _collect_unique_codes,
     _convert_index_master_rows,
     _convert_indices_data_rows,
     _convert_stock_rows,
     _date_sort_key,
+    _dedupe_preserve_order,
+    _extract_dates_after,
     _extract_list_items,
+    _fetch_fins_summary_by_code,
     _is_date_after,
+    _latest_date,
+    _load_metadata_json_list,
+    _normalize_date_list,
     _parse_date,
     _to_jquants_date_param,
     get_strategy,
@@ -923,6 +933,46 @@ async def test_initial_sync_fundamentals_fetches_prime_only_and_handles_paginati
 
 
 @pytest.mark.asyncio
+async def test_initial_sync_fundamentals_retries_with_4digit_code_when_5digit_fails() -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            }
+        ],
+        fins_by_code={
+            "7203": [{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+        },
+        fins_error_codes={"72030"},
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsUpdated == 1
+    assert {row["code"] for row in market_db.statements_rows} == {"7203"}
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert any((params or {}).get("code") == "72030" for _, params in fins_calls)
+    assert any((params or {}).get("code") == "7203" for _, params in fins_calls)
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -988,6 +1038,56 @@ async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
     fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
     assert any((params or {}).get("date") == "20260210" for _, params in fins_calls)
     assert any((params or {}).get("code") == "67580" for _, params in fins_calls)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"]] = json.dumps(["7203"])
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"]] = "[]"
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            }
+        ],
+        fins_by_code={
+            "72030": [{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+        },
+        fins_error_codes={"7203"},
+    )
+
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsUpdated == 1
+    assert {row["code"] for row in market_db.statements_rows} == {"7203"}
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert any((params or {}).get("code") == "72030" for _, params in fins_calls)
+    assert not any((params or {}).get("code") == "7203" for _, params in fins_calls)
 
 
 @pytest.mark.asyncio
@@ -1139,3 +1239,66 @@ def test_date_helpers_cover_parse_and_fallback_paths() -> None:
 
     assert _date_sort_key("invalid") == (1, "invalid")
     assert _date_sort_key("2026-02-10") == (0, "2026-02-10")
+
+
+def test_metadata_and_dedupe_helpers_cover_invalid_and_duplicate_paths() -> None:
+    market_db = DummyMarketDb()
+    market_db.metadata["missing"] = ""
+    market_db.metadata["invalid"] = "{not-json"
+    market_db.metadata["not-list"] = json.dumps({"a": 1})
+    market_db.metadata["mixed-list"] = json.dumps(["7203", 6758, None, {"x": 1}])
+
+    assert _load_metadata_json_list(market_db, "missing") == []
+    assert _load_metadata_json_list(market_db, "invalid") == []
+    assert _load_metadata_json_list(market_db, "not-list") == []
+    assert _load_metadata_json_list(market_db, "mixed-list") == ["7203", "6758"]
+
+    assert _collect_unique_codes(["72030", "7203", " 7203 ", "", "bad"]) == ["7203", "bad"]
+    assert _dedupe_preserve_order(["a", " a ", "b", "", "b"]) == ["a", "b"]
+    assert _normalize_date_list(["2026-02-10", "20260210", "bad", "", "2026-02-09"]) == [
+        "2026-02-09",
+        "2026-02-10",
+    ]
+
+
+def test_incremental_date_and_extract_date_helpers_cover_anchor_paths() -> None:
+    today_jst = datetime.now(ZoneInfo("Asia/Tokyo")).date()
+    yesterday = (today_jst - timedelta(days=1)).isoformat()
+    retry_date = (today_jst - timedelta(days=2)).isoformat()
+
+    targets = _build_incremental_date_targets(yesterday, [retry_date, retry_date])
+    assert retry_date in targets
+    assert today_jst.isoformat() in targets
+    assert _build_incremental_date_targets(None, ["2026-02-10"]) == ["2026-02-10"]
+
+    rows = [
+        {"date": retry_date},
+        {"date": today_jst.isoformat()},
+        {"date": ""},
+    ]
+    assert _extract_dates_after(rows, retry_date, include_anchor=False) == [today_jst.isoformat()]
+    assert _extract_dates_after(rows, retry_date, include_anchor=True) == [retry_date, today_jst.isoformat()]
+
+    assert _latest_date(["", retry_date, today_jst.isoformat()]) == today_jst.isoformat()
+    assert _latest_date(["", ""]) is None
+
+
+def test_convert_indices_data_rows_skips_missing_code_when_no_fallback() -> None:
+    rows = _convert_indices_data_rows(
+        [
+            {"Date": "2026-02-10", "O": 1, "H": 2, "L": 1, "C": 2},
+        ],
+        code=None,
+    )
+    assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_fins_summary_by_code_returns_empty_when_all_candidates_empty() -> None:
+    client = DummyClient()
+    rows, calls = await _fetch_fins_summary_by_code(client, "7203")
+
+    assert rows == []
+    assert calls == 2
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert [str((params or {}).get("code")) for _, params in fins_calls] == ["72030", "7203"]

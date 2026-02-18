@@ -1,6 +1,6 @@
-import { BarChart3, Filter } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
-import { useCallback, useEffect, useState } from 'react';
+import { BarChart3, Filter } from 'lucide-react';
+import { useCallback, useEffect } from 'react';
 import { RankingFilters, RankingSummary, RankingTable } from '@/components/Ranking';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
 import { ScreeningJobProgress } from '@/components/Screening/ScreeningJobProgress';
@@ -16,26 +16,9 @@ import {
   useScreeningResult,
 } from '@/hooks/useScreening';
 import { cn } from '@/lib/utils';
+import type { AnalysisSubTab } from '@/stores/analysisStore';
+import { useAnalysisStore } from '@/stores/analysisStore';
 import { useChartStore } from '@/stores/chartStore';
-import type { RankingParams } from '@/types/ranking';
-import type { MarketScreeningResponse, ScreeningParams } from '@/types/screening';
-
-type AnalysisSubTab = 'screening' | 'ranking';
-
-const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
-  markets: 'prime',
-  recentDays: 10,
-  sortBy: 'matchedDate',
-  order: 'desc',
-  limit: 50,
-};
-
-const DEFAULT_RANKING_PARAMS: RankingParams = {
-  markets: 'prime',
-  limit: 20,
-  lookbackDays: 1,
-  periodDays: 250,
-};
 
 const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
   { id: 'screening', label: 'Screening', icon: Filter },
@@ -43,11 +26,16 @@ const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] =
 ];
 
 export function AnalysisPage() {
-  const [activeSubTab, setActiveSubTab] = useState<AnalysisSubTab>('screening');
-  const [screeningParams, setScreeningParams] = useState<ScreeningParams>(DEFAULT_SCREENING_PARAMS);
-  const [rankingParams, setRankingParams] = useState<RankingParams>(DEFAULT_RANKING_PARAMS);
-  const [activeScreeningJobId, setActiveScreeningJobId] = useState<string | null>(null);
-  const [screeningResult, setScreeningResult] = useState<MarketScreeningResponse | null>(null);
+  const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
+  const screeningParams = useAnalysisStore((state) => state.screeningParams);
+  const rankingParams = useAnalysisStore((state) => state.rankingParams);
+  const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
+  const screeningResult = useAnalysisStore((state) => state.screeningResult);
+  const setActiveSubTab = useAnalysisStore((state) => state.setActiveSubTab);
+  const setScreeningParams = useAnalysisStore((state) => state.setScreeningParams);
+  const setRankingParams = useAnalysisStore((state) => state.setRankingParams);
+  const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
+  const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
 
   const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
@@ -70,12 +58,12 @@ export function AnalysisPage() {
   useEffect(() => {
     if (!screeningResultQuery.data) return;
     setScreeningResult(screeningResultQuery.data);
-  }, [screeningResultQuery.data]);
+  }, [screeningResultQuery.data, setScreeningResult]);
 
   const handleRunScreening = useCallback(async () => {
     const job = await runScreeningJob.mutateAsync(screeningParams);
     setActiveScreeningJobId(job.job_id);
-  }, [runScreeningJob, screeningParams]);
+  }, [runScreeningJob, screeningParams, setActiveScreeningJobId]);
 
   const handleCancelScreening = useCallback(() => {
     if (!activeScreeningJobId) return;
@@ -94,8 +82,9 @@ export function AnalysisPage() {
   const screeningStatus = screeningJob?.status ?? null;
   const screeningIsRunning =
     runScreeningJob.isPending || screeningStatus === 'pending' || screeningStatus === 'running';
-  const screeningError =
-    (runScreeningJob.error ?? screeningJobStatus.error ?? screeningResultQuery.error) as Error | null;
+  const screeningError = (runScreeningJob.error ??
+    screeningJobStatus.error ??
+    screeningResultQuery.error) as Error | null;
 
   return (
     <div className="flex h-full flex-col p-4">

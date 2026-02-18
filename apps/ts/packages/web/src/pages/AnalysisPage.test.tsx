@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { createInitialAnalysisState, useAnalysisStore } from '@/stores/analysisStore';
 import { AnalysisPage } from './AnalysisPage';
 
 const mockNavigate = vi.fn();
@@ -10,6 +11,11 @@ const mockChartStore = {
 };
 
 const mockScreeningFilters = vi.fn((_props: unknown) => <div>Screening Filters</div>);
+const mockScreeningTable = vi.fn(({ onStockClick }: { onStockClick: (code: string) => void }) => (
+  <button type="button" onClick={() => onStockClick('7203')}>
+    Screening Row
+  </button>
+));
 const mockRunScreeningJob = vi.fn().mockResolvedValue({
   job_id: 'job-1',
   status: 'pending',
@@ -78,11 +84,7 @@ vi.mock('@/components/Screening/ScreeningSummary', () => ({
 }));
 
 vi.mock('@/components/Screening/ScreeningTable', () => ({
-  ScreeningTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
-    <button type="button" onClick={() => onStockClick('7203')}>
-      Screening Row
-    </button>
-  ),
+  ScreeningTable: (props: { onStockClick: (code: string) => void }) => mockScreeningTable(props),
 }));
 
 vi.mock('@/components/Ranking', () => ({
@@ -96,6 +98,11 @@ vi.mock('@/components/Ranking', () => ({
 }));
 
 describe('AnalysisPage', () => {
+  beforeEach(() => {
+    useAnalysisStore.persist?.clearStorage?.();
+    useAnalysisStore.setState(createInitialAnalysisState());
+  });
+
   it('passes full production strategy names to screening filters', () => {
     render(<AnalysisPage />);
 
@@ -137,5 +144,56 @@ describe('AnalysisPage', () => {
     await user.click(screen.getByText('Screening Row'));
     expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
     expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
+  });
+
+  it('restores cached screening result after remount', () => {
+    useAnalysisStore.setState({
+      screeningResult: {
+        summary: {
+          totalStocksScreened: 1,
+          matchCount: 1,
+          skippedCount: 0,
+          byStrategy: { 'production/range_break_v15': 1 },
+          strategiesEvaluated: ['production/range_break_v15'],
+          strategiesWithoutBacktestMetrics: [],
+          warnings: [],
+        },
+        markets: ['prime'],
+        recentDays: 10,
+        referenceDate: '2026-02-18',
+        sortBy: 'matchedDate',
+        order: 'desc',
+        lastUpdated: '2026-02-18T00:00:00Z',
+        results: [
+          {
+            stockCode: '7203',
+            companyName: 'トヨタ自動車',
+            matchedDate: '2026-02-18',
+            bestStrategyName: 'production/range_break_v15',
+            bestStrategyScore: 1.1,
+            matchStrategyCount: 1,
+            matchedStrategies: [
+              {
+                strategyName: 'production/range_break_v15',
+                matchedDate: '2026-02-18',
+                strategyScore: 1.1,
+              },
+            ],
+          },
+        ],
+      },
+    });
+
+    render(<AnalysisPage />);
+
+    expect(mockScreeningTable).toHaveBeenCalledWith(
+      expect.objectContaining({
+        results: expect.arrayContaining([
+          expect.objectContaining({
+            stockCode: '7203',
+          }),
+        ]),
+      })
+    );
   });
 });

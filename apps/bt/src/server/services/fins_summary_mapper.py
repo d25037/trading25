@@ -11,6 +11,33 @@ from typing import Any
 from src.lib.market_db.query_helpers import normalize_stock_code
 
 
+def _to_nullable_float(value: Any) -> float | None:
+    """Convert J-Quants numeric payload values to float or None.
+
+    J-Quants can return empty string for optional numeric fields.
+    SQLAlchemy REAL columns reject empty string, so normalize here.
+    """
+    if value is None:
+        return None
+
+    if isinstance(value, str):
+        stripped = value.strip()
+        if stripped == "":
+            return None
+        try:
+            return float(stripped)
+        except ValueError:
+            return None
+
+    if isinstance(value, bool):
+        return float(value)
+
+    if isinstance(value, (int, float)):
+        return float(value)
+
+    return None
+
+
 def convert_fins_summary_rows(
     data: list[dict[str, Any]],
     *,
@@ -32,26 +59,25 @@ def convert_fins_summary_rows(
         rows.append({
             "code": code,
             "disclosed_date": disclosed_date,
-            "earnings_per_share": item.get("EPS"),
-            "profit": item.get("NP"),
-            "equity": item.get("Eq"),
+            "earnings_per_share": _to_nullable_float(item.get("EPS")),
+            "profit": _to_nullable_float(item.get("NP")),
+            "equity": _to_nullable_float(item.get("Eq")),
             "type_of_current_period": item.get("CurPerType"),
             "type_of_document": item.get("DocType"),
-            "next_year_forecast_earnings_per_share": item.get("NxFEPS"),
-            "bps": item.get("BPS"),
-            "sales": item.get("Sales"),
-            "operating_profit": item.get("OP"),
-            "ordinary_profit": item.get("OdP"),
-            "operating_cash_flow": item.get("CFO"),
-            "dividend_fy": item.get("DivAnn"),
-            "forecast_eps": item.get("FEPS"),
-            "investing_cash_flow": item.get("CFI"),
-            "financing_cash_flow": item.get("CFF"),
-            "cash_and_equivalents": item.get("CashEq"),
-            "total_assets": item.get("TA"),
-            "shares_outstanding": item.get("ShOutFY"),
-            "treasury_shares": item.get("TrShFY"),
+            "next_year_forecast_earnings_per_share": _to_nullable_float(item.get("NxFEPS")),
+            "bps": _to_nullable_float(item.get("BPS")),
+            "sales": _to_nullable_float(item.get("Sales")),
+            "operating_profit": _to_nullable_float(item.get("OP")),
+            "ordinary_profit": _to_nullable_float(item.get("OdP")),
+            "operating_cash_flow": _to_nullable_float(item.get("CFO")),
+            "dividend_fy": _to_nullable_float(item.get("DivAnn")),
+            "forecast_eps": _to_nullable_float(item.get("FEPS")),
+            "investing_cash_flow": _to_nullable_float(item.get("CFI")),
+            "financing_cash_flow": _to_nullable_float(item.get("CFF")),
+            "cash_and_equivalents": _to_nullable_float(item.get("CashEq")),
+            "total_assets": _to_nullable_float(item.get("TA")),
+            "shares_outstanding": _to_nullable_float(item.get("ShOutFY")),
+            "treasury_shares": _to_nullable_float(item.get("TrShFY")),
         })
 
     return rows
-
