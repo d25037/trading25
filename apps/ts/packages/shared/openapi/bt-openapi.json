@@ -6557,127 +6557,285 @@
         "tags": [
           "Analytics"
         ],
-        "summary": "Run stock screening",
-        "description": "Run strategy-driven stock screening based on production strategy YAML configs.",
-        "operationId": "get_screening_api_analytics_screening_get",
+        "summary": "Legacy screening endpoint (removed)",
+        "description": "Legacy synchronous screening endpoint is removed. Use screening job endpoints.",
+        "operationId": "get_screening_legacy_api_analytics_screening_get",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/screening/jobs": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Create screening job",
+        "description": "Submit an async screening job.",
+        "operationId": "create_screening_job_api_analytics_screening_jobs_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ScreeningJobRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "202": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreeningJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/screening/jobs/{job_id}": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get screening job status",
+        "description": "Screening ジョブ状態を取得",
+        "operationId": "get_screening_job_api_analytics_screening_jobs__job_id__get",
         "parameters": [
           {
-            "name": "markets",
-            "in": "query",
-            "required": false,
+            "name": "job_id",
+            "in": "path",
+            "required": true,
             "schema": {
               "type": "string",
-              "default": "prime",
-              "title": "Markets"
+              "title": "Job Id"
             }
-          },
-          {
-            "name": "strategies",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreeningJobResponse"
                 }
-              ],
-              "title": "Strategies"
+              }
             }
           },
-          {
-            "name": "recentDays",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "type": "integer",
-              "maximum": 90,
-              "minimum": 1,
-              "default": 10,
-              "title": "Recentdays"
-            }
-          },
-          {
-            "name": "date",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "string",
-                  "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
-                },
-                {
-                  "type": "null"
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
-              ],
-              "title": "Date"
+              }
             }
           },
-          {
-            "name": "backtestMetric",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "enum": [
-                "sharpe_ratio",
-                "calmar_ratio",
-                "total_return",
-                "win_rate",
-                "profit_factor"
-              ],
-              "type": "string",
-              "default": "sharpe_ratio",
-              "title": "Backtestmetric"
-            }
-          },
-          {
-            "name": "sortBy",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "enum": [
-                "bestStrategyScore",
-                "matchedDate",
-                "stockCode",
-                "matchStrategyCount"
-              ],
-              "type": "string",
-              "default": "bestStrategyScore",
-              "title": "Sortby"
-            }
-          },
-          {
-            "name": "order",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "enum": [
-                "asc",
-                "desc"
-              ],
-              "type": "string",
-              "default": "desc",
-              "title": "Order"
-            }
-          },
-          {
-            "name": "limit",
-            "in": "query",
-            "required": false,
-            "schema": {
-              "anyOf": [
-                {
-                  "type": "integer",
-                  "minimum": 1
-                },
-                {
-                  "type": "null"
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
                 }
-              ],
-              "title": "Limit"
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/screening/jobs/{job_id}/cancel": {
+      "post": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Cancel screening job",
+        "description": "Screening ジョブをキャンセル",
+        "operationId": "cancel_screening_job_api_analytics_screening_jobs__job_id__cancel_post",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ScreeningJobResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/analytics/screening/result/{job_id}": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get screening result",
+        "description": "完了済み screening ジョブの結果を取得",
+        "operationId": "get_screening_result_api_analytics_screening_result__job_id__get",
+        "parameters": [
+          {
+            "name": "job_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Job Id"
             }
           }
         ],
@@ -12358,7 +12516,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
               },
               {
                 "type": "null"
@@ -12406,19 +12564,19 @@
       },
       "DateRange": {
         "properties": {
-          "min": {
+          "from": {
             "type": "string",
-            "title": "Min"
+            "title": "From"
           },
-          "max": {
+          "to": {
             "type": "string",
-            "title": "Max"
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "min",
-          "max"
+          "from",
+          "to"
         ],
         "title": "DateRange"
       },
@@ -15667,17 +15825,6 @@
             ],
             "title": "Referencedate"
           },
-          "backtestMetric": {
-            "type": "string",
-            "enum": [
-              "sharpe_ratio",
-              "calmar_ratio",
-              "total_return",
-              "win_rate",
-              "profit_factor"
-            ],
-            "title": "Backtestmetric"
-          },
           "sortBy": {
             "type": "string",
             "enum": [
@@ -15707,7 +15854,6 @@
           "summary",
           "markets",
           "recentDays",
-          "backtestMetric",
           "sortBy",
           "order",
           "lastUpdated"
@@ -17067,7 +17213,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -18104,6 +18250,239 @@
         "type": "object",
         "title": "RelativeOHLCOptions",
         "description": "相対OHLCオプション"
+      },
+      "ScreeningJobRequest": {
+        "properties": {
+          "markets": {
+            "type": "string",
+            "title": "Markets",
+            "default": "prime"
+          },
+          "strategies": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategies"
+          },
+          "recentDays": {
+            "type": "integer",
+            "maximum": 90,
+            "minimum": 1,
+            "title": "Recentdays",
+            "default": 10
+          },
+          "date": {
+            "anyOf": [
+              {
+                "type": "string",
+                "pattern": "^\\d{4}-\\d{2}-\\d{2}$"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Date"
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": [
+              "bestStrategyScore",
+              "matchedDate",
+              "stockCode",
+              "matchStrategyCount"
+            ],
+            "title": "Sortby",
+            "default": "matchedDate"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Order",
+            "default": "desc"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "minimum": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ScreeningJobRequest",
+        "description": "Screening ジョブ作成リクエスト"
+      },
+      "ScreeningJobResponse": {
+        "properties": {
+          "job_id": {
+            "type": "string",
+            "title": "Job Id",
+            "description": "ジョブID"
+          },
+          "status": {
+            "$ref": "#/components/schemas/JobStatus"
+          },
+          "progress": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Progress",
+            "description": "進捗（0.0 - 1.0）"
+          },
+          "message": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Message",
+            "description": "ステータスメッセージ"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At",
+            "description": "作成日時"
+          },
+          "started_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Started At",
+            "description": "開始日時"
+          },
+          "completed_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Completed At",
+            "description": "完了日時"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "エラーメッセージ"
+          },
+          "markets": {
+            "type": "string",
+            "title": "Markets",
+            "description": "市場コードフィルタ"
+          },
+          "strategies": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategies",
+            "description": "対象戦略"
+          },
+          "recentDays": {
+            "type": "integer",
+            "title": "Recentdays",
+            "description": "判定対象の直近日数"
+          },
+          "referenceDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Referencedate",
+            "description": "基準日（任意）"
+          },
+          "sortBy": {
+            "type": "string",
+            "enum": [
+              "bestStrategyScore",
+              "matchedDate",
+              "stockCode",
+              "matchStrategyCount"
+            ],
+            "title": "Sortby",
+            "description": "並び順の基準"
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "title": "Order",
+            "description": "並び順"
+          },
+          "limit": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Limit",
+            "description": "結果件数上限"
+          }
+        },
+        "type": "object",
+        "required": [
+          "job_id",
+          "status",
+          "created_at",
+          "markets",
+          "recentDays",
+          "sortBy",
+          "order"
+        ],
+        "title": "ScreeningJobResponse",
+        "description": "Screening ジョブレスポンス"
       },
       "ScreeningResultItem": {
         "properties": {
@@ -21359,6 +21738,24 @@
         "type": "object",
         "title": "WatchlistUpdateRequest"
       },
+      "src__server__schemas__dataset__DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
+      },
       "src__server__schemas__dataset_data__OHLCVRecord": {
         "properties": {
           "date": {
@@ -21469,24 +21866,6 @@
         "description": "指数マッチ結果"
       },
       "src__server__schemas__portfolio_factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange"
-      },
-      "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {
           "from": {
             "type": "string",

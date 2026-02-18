@@ -4,7 +4,6 @@ Screening service helper tests.
 
 from __future__ import annotations
 
-from contextlib import nullcontext
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
@@ -15,7 +14,12 @@ import pytest
 from src.models.config import SharedConfig
 from src.models.signals import SignalParams, Signals
 from src.server.schemas.screening import MatchedStrategyItem, ScreeningResultItem
-from src.server.services.screening_service import ScreeningService, StockUniverseItem, StrategyRuntime
+from src.server.services.screening_service import (
+    ScreeningService,
+    StockUniverseItem,
+    StrategyDataBundle,
+    StrategyRuntime,
+)
 
 
 class DummyReader:
@@ -186,13 +190,13 @@ class TestDataLoadingHelpers:
         )
 
         # missing dir
-        score, warning = service._load_latest_metric("missing", "sharpe_ratio")  # noqa: SLF001
+        score, warning = service._load_latest_metric("missing")  # noqa: SLF001
         assert score is None
         assert warning is None
 
         # empty dir
         (tmp_path / "empty").mkdir(parents=True)
-        score, warning = service._load_latest_metric("empty", "sharpe_ratio")  # noqa: SLF001
+        score, warning = service._load_latest_metric("empty")  # noqa: SLF001
         assert score is None
         assert warning is None
 
@@ -200,7 +204,7 @@ class TestDataLoadingHelpers:
         invalid_dir = tmp_path / "invalid"
         invalid_dir.mkdir(parents=True)
         (invalid_dir / "x.metrics.json").write_text("{invalid", encoding="utf-8")
-        score, warning = service._load_latest_metric("invalid", "sharpe_ratio")  # noqa: SLF001
+        score, warning = service._load_latest_metric("invalid")  # noqa: SLF001
         assert score is None
         assert warning and "failed to read metrics" in warning
 
@@ -208,7 +212,7 @@ class TestDataLoadingHelpers:
         missing_key_dir = tmp_path / "missing-key"
         missing_key_dir.mkdir(parents=True)
         (missing_key_dir / "x.metrics.json").write_text('{"total_return": 1.2}', encoding="utf-8")
-        score, warning = service._load_latest_metric("missing-key", "sharpe_ratio")  # noqa: SLF001
+        score, warning = service._load_latest_metric("missing-key")  # noqa: SLF001
         assert score is None
         assert warning is None
 
@@ -219,7 +223,7 @@ class TestDataLoadingHelpers:
             '{"sharpe_ratio": "1.23"}',
             encoding="utf-8",
         )
-        score, warning = service._load_latest_metric("string-metric", "sharpe_ratio")  # noqa: SLF001
+        score, warning = service._load_latest_metric("string-metric")  # noqa: SLF001
         assert score == pytest.approx(1.23)
         assert warning is None
 
@@ -230,7 +234,7 @@ class TestDataLoadingHelpers:
             '{"sharpe_ratio": "NaN-value"}',
             encoding="utf-8",
         )
-        score, warning = service._load_latest_metric("bad-metric", "sharpe_ratio")  # noqa: SLF001
+        score, warning = service._load_latest_metric("bad-metric")  # noqa: SLF001
         assert score is None
         assert warning and "is not numeric" in warning
 
@@ -242,13 +246,13 @@ class TestDataLoadingHelpers:
         r1 = _runtime("r1")
         r2 = _runtime("r2")
 
-        def _fake_load_latest_metric(basename: str, _metric: str):
+        def _fake_load_latest_metric(basename: str):
             if basename == "r1":
                 return 1.5, None
             return None, "broken"
 
         monkeypatch.setattr(service, "_load_latest_metric", _fake_load_latest_metric)
-        scores, missing, warnings = service._load_strategy_scores([r1, r2], "sharpe_ratio")  # noqa: SLF001
+        scores, missing, warnings = service._load_strategy_scores([r1, r2])  # noqa: SLF001
 
         assert scores == {"r1": 1.5, "r2": None}
         assert missing == ["r2"]
@@ -414,7 +418,7 @@ class TestRuntimeEvaluationHelpers:
         deduped = service._dedupe_warnings(warnings)  # noqa: SLF001
         assert deduped == ["a", "b", "c", "additional warnings were truncated"]
 
-    def test_evaluate_strategy_handles_load_and_signal_failures(
+    def test_evaluate_strategy_handles_signal_failures(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ):
@@ -432,27 +436,15 @@ class TestRuntimeEvaluationHelpers:
         index = pd.to_datetime(["2026-01-01", "2026-01-02"])
         daily = pd.DataFrame({"close": [1.0, 1.1]}, index=index)
 
-        monkeypatch.setattr("src.server.services.screening_service.data_access_mode_context", lambda _mode: nullcontext())
-        monkeypatch.setattr(
-            "src.server.services.screening_service.prepare_multi_data",
-            lambda **_kwargs: {
+        data_bundle = StrategyDataBundle(
+            multi_data={
                 "1001": {"daily": daily, "margin_daily": "m1", "statements_daily": "s1"},
                 "1002": {},
                 "1003": {"daily": daily, "margin_daily": "m3", "statements_daily": "s3"},
             },
-        )
-        monkeypatch.setattr(
-            service,
-            "_needs_data_requirement",
-            lambda _entry, _exit, requirement: requirement in {"margin", "statements", "benchmark", "sector"},
-        )
-        monkeypatch.setattr(
-            "src.server.services.screening_service.load_topix_data",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("topix down")),
-        )
-        monkeypatch.setattr(
-            "src.server.services.screening_service.load_all_sector_indices",
-            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("sector down")),
+            benchmark_data=None,
+            sector_data=None,
+            stock_sector_mapping={},
         )
 
         calls: list[dict[str, object]] = []
@@ -472,14 +464,12 @@ class TestRuntimeEvaluationHelpers:
             strategy=strategy,
             stock_universe=universe,
             recent_days=2,
-            reference_date=None,
+            data_bundle=data_bundle,
         )
 
         assert len(matches) == 1
         assert matches[0][0].code == "1001"
         assert processed == {"1001", "1003"}
-        assert any("benchmark load failed" in warning for warning in warnings)
-        assert any("sector data load failed" in warning for warning in warnings)
         assert any("signal generation failed" in warning for warning in warnings)
         assert calls[0]["margin_data"] == "m1"
         assert calls[0]["statements_data"] == "s1"
@@ -491,7 +481,7 @@ class TestRuntimeEvaluationHelpers:
             strategy=strategy,
             stock_universe=[],
             recent_days=10,
-            reference_date=None,
+            data_bundle=StrategyDataBundle(multi_data={}),
         )
         assert matches == []
         assert processed == set()

@@ -10,13 +10,6 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-BacktestMetric = Literal[
-    "sharpe_ratio",
-    "calmar_ratio",
-    "total_return",
-    "win_rate",
-    "profit_factor",
-]
 ScreeningSortBy = Literal[
     "bestStrategyScore",
     "matchedDate",
@@ -68,7 +61,6 @@ class MarketScreeningResponse(BaseModel):
     markets: list[str]
     recentDays: int
     referenceDate: str | None = None
-    backtestMetric: BacktestMetric
     sortBy: ScreeningSortBy
     order: SortOrder
     lastUpdated: str

@@ -44,12 +44,6 @@ export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' |
 
 // ===== SCREENING TYPES =====
 
-export type BacktestMetric =
-  | 'sharpe_ratio'
-  | 'calmar_ratio'
-  | 'total_return'
-  | 'win_rate'
-  | 'profit_factor';
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
 export type SortOrder = 'asc' | 'desc';
 
@@ -87,10 +81,37 @@ export interface MarketScreeningResponse {
   markets: string[];
   recentDays: number;
   referenceDate?: string;
-  backtestMetric: BacktestMetric;
   sortBy: ScreeningSortBy;
   order: SortOrder;
   lastUpdated: string;
+}
+
+export interface ScreeningJobRequest {
+  markets?: string;
+  strategies?: string;
+  recentDays?: number;
+  date?: string;
+  sortBy?: ScreeningSortBy;
+  order?: SortOrder;
+  limit?: number;
+}
+
+export interface ScreeningJobResponse {
+  job_id: string;
+  status: JobStatus;
+  progress?: number | null;
+  message?: string | null;
+  created_at: string;
+  started_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+  markets: string;
+  strategies?: string | null;
+  recentDays: number;
+  referenceDate?: string | null;
+  sortBy: ScreeningSortBy;
+  order: SortOrder;
+  limit?: number | null;
 }
 
 // ===== INDICES TYPES =====

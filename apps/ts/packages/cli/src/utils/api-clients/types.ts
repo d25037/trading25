@@ -8,6 +8,7 @@ export type {
   MarketScreeningResponse,
   MarketValidationResponse,
   ScreeningResultItem,
+  ScreeningJobResponse,
   RankingItem as MarketRankingItem,
   Rankings as MarketRankings,
 } from '@trading25/shared/types/api-response-types';

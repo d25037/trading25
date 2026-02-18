@@ -198,6 +198,14 @@ class JobManager:
             job.dataset_name = dataset_name
             job.execution_time = execution_time
 
+    async def set_job_raw_result(self, job_id: str, raw_result: dict[str, Any]) -> None:
+        """ジョブに任意の raw_result payload を保存する。"""
+        async with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return
+            job.raw_result = raw_result
+
     async def set_job_task(self, job_id: str, task: asyncio.Task[None]) -> None:
         """
         ジョブにasyncioタスクを関連付け

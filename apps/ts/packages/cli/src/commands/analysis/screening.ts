@@ -1,6 +1,6 @@
 /**
  * Market Screening Command
- * Run production strategy-driven screening via API
+ * Run production strategy-driven screening via async job API
  */
 
 import chalk from 'chalk';
@@ -16,28 +16,37 @@ interface ScreeningOptions {
   recentDays?: string;
   date?: string;
   markets?: string;
-  backtestMetric?: string;
   format?: string;
   sortBy?: string;
   order?: string;
   limit?: string;
+  noWait?: boolean;
   debug?: boolean;
   verbose?: boolean;
+}
+
+const POLL_INTERVAL_MS = 2000;
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 /**
  * Print debug configuration
  */
 function printDebugConfig(options: ScreeningOptions): void {
-  console.log(chalk.gray('Using API endpoint for screening'));
+  console.log(chalk.gray('Using async API endpoint for screening'));
   console.log(chalk.gray('Screening configuration:'));
   console.log(chalk.gray(`  Markets: ${options.markets || 'prime'}`));
   console.log(chalk.gray(`  Recent Days: ${options.recentDays || '10'}`));
-  console.log(chalk.gray(`  Backtest Metric: ${options.backtestMetric || 'sharpe_ratio'}`));
   console.log(chalk.gray(`  Strategies: ${options.strategies || '(all production)'}`));
+  console.log(chalk.gray(`  Sort: ${(options.sortBy || 'matchedDate')} ${(options.order || 'desc')}`));
   if (options.date) {
     console.log(chalk.gray(`  Reference Date: ${options.date}`));
   }
+  console.log(chalk.gray(`  Wait for completion: ${options.noWait ? 'no' : 'yes'}`));
 }
 
 /**
@@ -47,7 +56,6 @@ function printVerboseSummary(response: {
   markets: string[];
   recentDays: number;
   referenceDate?: string;
-  backtestMetric: string;
   summary: {
     totalStocksScreened: number;
     skippedCount: number;
@@ -61,7 +69,6 @@ function printVerboseSummary(response: {
   console.log(chalk.white('━'.repeat(40)));
   console.log(chalk.yellow('Markets:'), response.markets.join(', '));
   console.log(chalk.yellow('Recent Days:'), response.recentDays);
-  console.log(chalk.yellow('Backtest Metric:'), response.backtestMetric);
   if (response.referenceDate) {
     console.log(chalk.yellow('Reference Date:'), response.referenceDate);
   }
@@ -91,21 +98,39 @@ export function buildApiParams(options: ScreeningOptions) {
     strategies: options.strategies,
     recentDays: options.recentDays ? Number.parseInt(options.recentDays, 10) : undefined,
     date: options.date,
-    backtestMetric: options.backtestMetric as
-      | 'sharpe_ratio'
-      | 'calmar_ratio'
-      | 'total_return'
-      | 'win_rate'
-      | 'profit_factor'
-      | undefined,
-    sortBy: options.sortBy as 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount' | undefined,
-    order: options.order as 'asc' | 'desc' | undefined,
+    sortBy: (options.sortBy as 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount' | undefined) ??
+      'matchedDate',
+    order: (options.order as 'asc' | 'desc' | undefined) ?? 'desc',
     limit: options.limit ? Number.parseInt(options.limit, 10) : undefined,
   };
 }
 
+async function waitForJobCompletion(
+  apiClient: ApiClient,
+  jobId: string,
+  spinner: ReturnType<typeof ora>
+): Promise<'completed' | 'failed' | 'cancelled'> {
+  while (true) {
+    const job = await apiClient.analytics.getScreeningJobStatus(jobId);
+    const progress = job.progress == null ? null : Math.round(job.progress * 100);
+
+    if (job.status === 'pending' || job.status === 'running') {
+      const progressText = progress == null ? '--' : `${progress}%`;
+      spinner.text = `Screening in progress (${progressText}) ${job.message ?? ''}`.trim();
+      await sleep(POLL_INTERVAL_MS);
+      continue;
+    }
+
+    if (job.status === 'completed' || job.status === 'failed' || job.status === 'cancelled') {
+      return job.status;
+    }
+
+    throw new Error(`Unexpected job status: ${job.status}`);
+  }
+}
+
 /**
- * Execute market screening analysis via API
+ * Execute market screening analysis via async job API
  */
 async function executeMarketScreening(options: ScreeningOptions): Promise<void> {
   const apiClient = new ApiClient();
@@ -115,13 +140,33 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
   }
 
   const spinnerText = options.date
-    ? `Running historical screening (${options.date}) via API...`
-    : 'Running screening analysis via API...';
+    ? `Submitting historical screening job (${options.date})...`
+    : 'Submitting screening job...';
   const spinner = ora(spinnerText).start();
 
   try {
-    const response = await apiClient.analytics.runMarketScreening(buildApiParams(options));
+    const job = await apiClient.analytics.createScreeningJob(buildApiParams(options));
 
+    if (options.noWait) {
+      spinner.succeed(chalk.green(`Screening job submitted: ${job.job_id}`));
+      console.log(chalk.cyan(`Job ID: ${job.job_id}`));
+      return;
+    }
+
+    const status = await waitForJobCompletion(apiClient, job.job_id, spinner);
+
+    if (status === 'failed') {
+      const failedJob = await apiClient.analytics.getScreeningJobStatus(job.job_id);
+      throw new Error(failedJob.error || failedJob.message || 'Screening job failed');
+    }
+
+    if (status === 'cancelled') {
+      spinner.fail(chalk.yellow('Screening job cancelled'));
+      return;
+    }
+
+    spinner.text = 'Fetching screening result...';
+    const response = await apiClient.analytics.getScreeningResult(job.job_id);
     spinner.succeed(chalk.green(`Screening completed: ${response.summary.matchCount} matches found`));
 
     if (options.verbose) {
@@ -168,6 +213,7 @@ function handleScreeningError(error: unknown): void {
   console.error(chalk.gray('\n💡 Troubleshooting tips:'));
   console.error(chalk.gray('   • Ensure the API server is running: uv run bt server --port 3002'));
   console.error(chalk.gray(`   • Ensure market.db exists: ${CLI_NAME} db sync`));
+  console.error(chalk.gray('   • Use --no-wait to submit only and poll later'));
   console.error(chalk.gray('   • Try with --debug flag for more information'));
 }
 
@@ -196,11 +242,6 @@ export const screeningCommand = define({
       type: 'string',
       description: 'Reference date for historical screening (YYYY-MM-DD)',
     },
-    backtestMetric: {
-      type: 'string',
-      description: 'Backtest metric (sharpe_ratio|calmar_ratio|total_return|win_rate|profit_factor)',
-      default: 'sharpe_ratio',
-    },
     format: {
       type: 'string',
       description: 'Output format (table|json|csv)',
@@ -209,7 +250,7 @@ export const screeningCommand = define({
     sortBy: {
       type: 'string',
       description: 'Sort results by field (bestStrategyScore|matchedDate|stockCode|matchStrategyCount)',
-      default: 'bestStrategyScore',
+      default: 'matchedDate',
     },
     order: {
       type: 'string',
@@ -219,6 +260,11 @@ export const screeningCommand = define({
     limit: {
       type: 'string',
       description: 'Limit number of results',
+    },
+    noWait: {
+      type: 'boolean',
+      description: 'Submit screening job and exit without waiting',
+      default: false,
     },
     debug: {
       type: 'boolean',
@@ -236,11 +282,14 @@ ${CLI_NAME} analysis screening
 # Restrict to selected production strategies
 ${CLI_NAME} analysis screening --strategies range_break_v15,forward_eps_driven
 
-# Use different backtest metric and sorting
-${CLI_NAME} analysis screening --backtest-metric calmar_ratio --sort-by matchedDate --order asc
+# Sort by matched date ascending
+${CLI_NAME} analysis screening --sort-by matchedDate --order asc
 
 # Historical screening for multiple markets
 ${CLI_NAME} analysis screening --date 2025-12-30 --markets prime,standard
+
+# Submit only and return job_id immediately
+${CLI_NAME} analysis screening --no-wait
 
 # JSON output with limit
 ${CLI_NAME} analysis screening --format json --limit 100
@@ -251,11 +300,11 @@ ${CLI_NAME} analysis screening --format json --limit 100
       strategies,
       recentDays,
       date,
-      backtestMetric,
       format,
       sortBy,
       order,
       limit,
+      noWait,
       debug,
       verbose,
     } = ctx.values;
@@ -266,11 +315,11 @@ ${CLI_NAME} analysis screening --format json --limit 100
         recentDays,
         date,
         markets,
-        backtestMetric,
         format,
         sortBy,
         order,
         limit,
+        noWait,
         debug,
         verbose,
       });
