@@ -3189,11 +3189,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            sector17Matches: components["schemas"]["IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            sector33Matches: components["schemas"]["IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -3510,6 +3510,54 @@ export interface components {
              * @description Last updated timestamp (ISO 8601)
              */
             lastUpdated: string;
+        };
+        /** FundamentalsStats */
+        FundamentalsStats: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Uniquestockcount
+             * @default 0
+             */
+            uniqueStockCount: number;
+            /** Latestdiscloseddate */
+            latestDisclosedDate?: string | null;
+            primeCoverage?: components["schemas"]["PrimeCoverage"];
+        };
+        /** FundamentalsValidation */
+        FundamentalsValidation: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Uniquestockcount
+             * @default 0
+             */
+            uniqueStockCount: number;
+            /** Latestdiscloseddate */
+            latestDisclosedDate?: string | null;
+            /**
+             * Missingprimestockscount
+             * @default 0
+             */
+            missingPrimeStocksCount: number;
+            /** Missingprimestocks */
+            missingPrimeStocks?: string[];
+            /**
+             * Faileddatescount
+             * @default 0
+             */
+            failedDatesCount: number;
+            /**
+             * Failedcodescount
+             * @default 0
+             */
+            failedCodesCount: number;
         };
         /**
          * GenerateResultItem
@@ -3882,14 +3930,21 @@ export interface components {
              */
             end_date?: string | null;
         };
-        /** IndexMatch */
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
         IndexMatch: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
             /** Rsquared */
             rSquared: number;
+            /** Beta */
+            beta: number;
         };
         /**
          * IndexOHLCRecord
@@ -4809,6 +4864,7 @@ export interface components {
             stocks: components["schemas"]["StockStats"];
             stockData: components["schemas"]["StockDataStats"];
             indices: components["schemas"]["IndicesStats"];
+            fundamentals?: components["schemas"]["FundamentalsStats"];
             /** Lastupdated */
             lastUpdated: string;
         };
@@ -4849,6 +4905,7 @@ export interface components {
             topix: components["schemas"]["TopixStats"];
             stocks: components["schemas"]["StockStats"];
             stockData: components["schemas"]["StockDataValidation"];
+            fundamentals?: components["schemas"]["FundamentalsValidation"];
             /** Faileddates */
             failedDates?: string[];
             /**
@@ -4907,40 +4964,19 @@ export interface components {
             /** Close */
             close: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
+        /** OHLCVRecord */
         OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+            /** Volume */
             volume: number;
         };
         /**
@@ -5019,7 +5055,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -5361,16 +5397,16 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["IndexMatch"][];
+            sector17Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["IndexMatch"][];
+            sector33Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            topixStyleMatches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5450,7 +5486,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -5498,6 +5534,29 @@ export interface components {
             name?: string | null;
             /** Description */
             description?: string | null;
+        };
+        /** PrimeCoverage */
+        PrimeCoverage: {
+            /**
+             * Primestocks
+             * @default 0
+             */
+            primeStocks: number;
+            /**
+             * Coveredstocks
+             * @default 0
+             */
+            coveredStocks: number;
+            /**
+             * Missingstocks
+             * @default 0
+             */
+            missingStocks: number;
+            /**
+             * Coverageratio
+             * @default 0
+             */
+            coverageRatio: number;
         };
         /**
          * ROEMetadata
@@ -7201,6 +7260,16 @@ export interface components {
              * @default 0
              */
             datesProcessed: number;
+            /**
+             * Fundamentalsupdated
+             * @default 0
+             */
+            fundamentalsUpdated: number;
+            /**
+             * Fundamentalsdatesprocessed
+             * @default 0
+             */
+            fundamentalsDatesProcessed: number;
             /** Faileddates */
             failedDates?: string[];
             /** Errors */
@@ -7408,21 +7477,6 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** OHLCVRecord */
-        src__server__schemas__dataset_data__OHLCVRecord: {
-            /** Date */
-            date: string;
-            /** Open */
-            open: number;
-            /** High */
-            high: number;
-            /** Low */
-            low: number;
-            /** Close */
-            close: number;
-            /** Volume */
-            volume: number;
-        };
         /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
@@ -7441,23 +7495,52 @@ export interface components {
             to: string;
         };
         /**
-         * IndexMatch
-         * @description 指数マッチ結果
+         * OHLCVRecord
+         * @description OHLCVレコード
          */
-        src__server__schemas__factor_regression__IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
+        };
+        /** IndexMatch */
+        src__server__schemas__portfolio_factor_regression__IndexMatch: {
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
             /** Rsquared */
             rSquared: number;
-            /** Beta */
-            beta: number;
         };
         /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
+        src__server__schemas__portfolio_performance__DateRange: {
             /** From */
             from: string;
             /** To */
@@ -12927,7 +13010,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
                     };
                 };
             };
@@ -12990,7 +13073,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                    "application/json": components["schemas"]["OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

@@ -141,10 +141,24 @@ class TestMarketDbUpsert:
         ])
         assert count == 1
 
+    def test_upsert_statements(self, market_db: MarketDb) -> None:
+        count = market_db.upsert_statements([
+            {
+                "code": "7203",
+                "disclosed_date": "2024-05-10",
+                "earnings_per_share": 100.0,
+                "profit": 1000.0,
+                "equity": 2000.0,
+                "type_of_current_period": "FY",
+            }
+        ])
+        assert count == 1
+
     def test_upsert_empty_for_all_tables(self, market_db: MarketDb) -> None:
         assert market_db.upsert_stock_data([]) == 0
         assert market_db.upsert_topix_data([]) == 0
         assert market_db.upsert_indices_data([]) == 0
+        assert market_db.upsert_statements([]) == 0
         assert market_db.upsert_index_master([]) == 0
 
 
@@ -275,6 +289,71 @@ class TestMarketDbAnalyticsAndValidation:
         assert market_db.get_stock_data_unique_date_count() == 1
         assert market_db.get_db_file_size() > 0
 
+    def test_fundamentals_helpers(self, market_db: MarketDb) -> None:
+        market_db.upsert_stocks([
+            {
+                "code": "7203",
+                "company_name": "トヨタ",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "6",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "listed_date": "1949-05-16",
+            },
+            {
+                "code": "6758",
+                "company_name": "ソニー",
+                "market_code": "0111",
+                "market_name": "プライム",
+                "sector_17_code": "8",
+                "sector_17_name": "電気機器",
+                "sector_33_code": "3600",
+                "sector_33_name": "電気機器",
+                "listed_date": "1958-12-01",
+            },
+            {
+                "code": "9999",
+                "company_name": "NonPrime",
+                "market_code": "0112",
+                "market_name": "スタンダード",
+                "sector_17_code": "8",
+                "sector_17_name": "電気機器",
+                "sector_33_code": "3600",
+                "sector_33_name": "電気機器",
+                "listed_date": "1958-12-01",
+            },
+        ])
+        market_db.upsert_statements([
+            {
+                "code": "7203",
+                "disclosed_date": "2024-05-10",
+                "earnings_per_share": 100.0,
+                "profit": 1000.0,
+                "equity": 2000.0,
+                "type_of_current_period": "FY",
+            },
+            {
+                "code": "9999",
+                "disclosed_date": "2024-05-09",
+                "earnings_per_share": 10.0,
+                "profit": 100.0,
+                "equity": 200.0,
+                "type_of_current_period": "FY",
+            },
+        ])
+
+        assert market_db.get_latest_statement_disclosed_date() == "2024-05-10"
+        assert market_db.get_statement_codes() == {"7203", "9999"}
+        assert market_db.get_prime_codes() == {"6758", "7203"}
+
+        coverage = market_db.get_prime_statement_coverage()
+        assert coverage["primeCount"] == 2
+        assert coverage["coveredCount"] == 1
+        assert coverage["missingCount"] == 1
+        assert coverage["missingCodes"] == ["6758"]
+
 
 class TestMarketDbReadOnly:
     def test_read_only_prevents_write(self, tmp_path: Path) -> None:
@@ -317,7 +396,7 @@ class TestMarketDbLegacySchemaCompatibility:
             with market_db.engine.begin() as conn:
                 conn.execute(text("PRAGMA foreign_keys=ON"))
                 conn.execute(text("""
-                    CREATE TABLE index_master (
+                    CREATE TABLE IF NOT EXISTS index_master (
                         code TEXT PRIMARY KEY,
                         name TEXT NOT NULL,
                         name_english TEXT,
@@ -328,7 +407,7 @@ class TestMarketDbLegacySchemaCompatibility:
                     )
                 """))
                 conn.execute(text("""
-                    CREATE TABLE indices_data (
+                    CREATE TABLE IF NOT EXISTS indices_data (
                         code TEXT NOT NULL,
                         date TEXT NOT NULL,
                         open REAL,

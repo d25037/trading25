@@ -32,6 +32,7 @@ class DummyMarketDb:
         latest_stock_data_date: str | None = None,
         latest_indices_data_dates: dict[str, str] | None = None,
     ) -> None:
+        self._default_last_sync = "2026-02-06T00:00:00+00:00"
         self.latest_trading_date = latest_trading_date
         self.latest_stock_data_date = latest_stock_data_date or latest_trading_date
         if latest_indices_data_dates is not None:
@@ -45,11 +46,15 @@ class DummyMarketDb:
         self.topix_rows: list[dict[str, Any]] = []
         self.index_master_rows: list[dict[str, Any]] = []
         self.indices_rows: list[dict[str, Any]] = []
+        self.statements_rows: list[dict[str, Any]] = []
         self.metadata: dict[str, str] = {}
+        self._prime_codes: set[str] = set()
 
     def get_sync_metadata(self, key: str) -> str | None:
+        if key in self.metadata:
+            return self.metadata[key]
         if key == METADATA_KEYS["LAST_SYNC_DATE"]:
-            return "2026-02-06T00:00:00+00:00"
+            return self._default_last_sync
         return None
 
     def get_latest_trading_date(self) -> str | None:
@@ -68,12 +73,36 @@ class DummyMarketDb:
             if row.get("code")
         }
 
+    def get_latest_statement_disclosed_date(self) -> str | None:
+        if not self.statements_rows:
+            return None
+        return max(str(row["disclosed_date"]) for row in self.statements_rows if row.get("disclosed_date"))
+
+    def get_statement_codes(self) -> set[str]:
+        return {
+            str(row["code"])
+            for row in self.statements_rows
+            if row.get("code")
+        }
+
+    def get_prime_codes(self) -> set[str]:
+        if self._prime_codes:
+            return set(self._prime_codes)
+        return {
+            str(row["code"])
+            for row in self.stocks_rows
+            if str(row.get("market_code", "")).lower() in {"0111", "prime"}
+        }
+
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
         self.topix_rows.extend(rows)
         return len(rows)
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
         self.stocks_rows.extend(rows)
+        for row in rows:
+            if str(row.get("market_code", "")).lower() in {"0111", "prime"} and row.get("code"):
+                self._prime_codes.add(str(row["code"]))
         return len(rows)
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
@@ -88,8 +117,15 @@ class DummyMarketDb:
         self.indices_rows.extend(rows)
         return len(rows)
 
+    def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
+        self.statements_rows.extend(rows)
+        return len(rows)
+
     def set_sync_metadata(self, key: str, value: str) -> None:
         self.metadata[key] = value
+
+    def ensure_schema(self) -> None:
+        return None
 
 
 class DummyClient:
@@ -99,12 +135,22 @@ class DummyClient:
         indices_quotes: list[dict[str, Any]] | None = None,
         master_quotes: list[dict[str, Any]] | None = None,
         daily_error_dates: set[str] | None = None,
+        fins_by_code: dict[str, list[dict[str, Any]]] | None = None,
+        fins_by_date: dict[str, list[dict[str, Any]]] | None = None,
+        fins_paginated_codes: dict[str, list[list[dict[str, Any]]]] | None = None,
+        fins_error_codes: set[str] | None = None,
+        fins_error_dates: set[str] | None = None,
     ) -> None:
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
         self.daily_quotes = daily_quotes
         self.indices_quotes = indices_quotes
         self.master_quotes = master_quotes
         self.daily_error_dates = daily_error_dates or set()
+        self.fins_by_code = fins_by_code or {}
+        self.fins_by_date = fins_by_date or {}
+        self.fins_paginated_codes = fins_paginated_codes or {}
+        self.fins_error_codes = fins_error_codes or set()
+        self.fins_error_dates = fins_error_dates or set()
 
     async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         self.calls.append((path, params))
@@ -120,6 +166,30 @@ class DummyClient:
                     }
                 ]
             }
+        if path == "/fins/summary":
+            params = params or {}
+            code = str(params.get("code", ""))
+            date = str(params.get("date", ""))
+            pagination = str(params.get("pagination_key", ""))
+
+            if code in self.fins_error_codes:
+                raise RuntimeError("fins code failed")
+            if date in self.fins_error_dates:
+                raise RuntimeError("fins date failed")
+
+            if code in self.fins_paginated_codes:
+                pages = self.fins_paginated_codes[code]
+                index = int(pagination) if pagination else 0
+                body: dict[str, Any] = {"data": pages[index] if index < len(pages) else []}
+                if index + 1 < len(pages):
+                    body["pagination_key"] = str(index + 1)
+                return body
+
+            if code and code in self.fins_by_code:
+                return {"data": self.fins_by_code[code]}
+            if date and date in self.fins_by_date:
+                return {"data": self.fins_by_date[date]}
+            return {"data": []}
         return {"data": []}
 
     async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
@@ -681,7 +751,7 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
     assert result.success
     assert result.failedDates == []
     assert result.stocksUpdated == len(topix_dates)
-    assert METADATA_KEYS["FAILED_DATES"] not in market_db.metadata
+    assert market_db.metadata[METADATA_KEYS["FAILED_DATES"]] == "[]"
 
 
 @pytest.mark.asyncio
@@ -799,6 +869,172 @@ async def test_incremental_sync_collects_stock_daily_fetch_errors() -> None:
     assert any(err.startswith("Date 2026-02-") for err in result.errors)
 
 
+@pytest.mark.asyncio
+async def test_initial_sync_fundamentals_fetches_prime_only_and_handles_pagination() -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+            {
+                "Code": "99990",
+                "CoName": "NonPrime",
+                "Mkt": "0112",
+                "MktNm": "スタンダード",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+        ],
+        fins_paginated_codes={
+            "72030": [
+                [{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+                [{"Code": "72030", "DiscDate": "2026-02-11", "EPS": 120.0}],
+            ]
+        },
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsUpdated == 2
+    assert {row["code"] for row in market_db.statements_rows} == {"7203"}
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert any((params or {}).get("code") == "72030" for _, params in fins_calls)
+    assert not any((params or {}).get("code") == "99990" for _, params in fins_calls)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-02-09"
+    market_db.statements_rows = [{"code": "7203", "disclosed_date": "2026-02-09"}]
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+            {
+                "Code": "67580",
+                "CoName": "ソニーグループ",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1958-12-01",
+            },
+        ],
+        fins_by_date={
+            "20260210": [
+                {"Code": "72030", "DiscDate": "2026-02-10", "EPS": 110.0},
+                {"Code": "99990", "DiscDate": "2026-02-10", "EPS": 90.0},
+            ]
+        },
+        fins_by_code={
+            "67580": [{"Code": "67580", "DiscDate": "2026-02-10", "EPS": 80.0}],
+        },
+    )
+
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: ["2026-02-10"],
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsDatesProcessed == 1
+    assert result.fundamentalsUpdated >= 2
+    assert "6758" in {row["code"] for row in market_db.statements_rows}
+    assert "9999" not in {row["code"] for row in market_db.statements_rows}
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert any((params or {}).get("date") == "20260210" for _, params in fins_calls)
+    assert any((params or {}).get("code") == "67580" for _, params in fins_calls)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata_missing(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    market_db.statements_rows = [{"code": "7203", "disclosed_date": "2026-02-08"}]
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            }
+        ]
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _capture(anchor: str | None, retry_dates: list[str]) -> list[str]:
+        captured["anchor"] = anchor
+        captured["retry"] = retry_dates
+        return []
+
+    monkeypatch.setattr("src.server.services.sync_strategies._build_incremental_date_targets", _capture)
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert captured["anchor"] == "2026-02-08"
+    assert captured["retry"] == []
+
+
 def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("initial"), InitialSyncStrategy)
     assert isinstance(get_strategy("incremental"), IncrementalSyncStrategy)
@@ -806,8 +1042,8 @@ def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("unknown"), InitialSyncStrategy)
 
     assert IndicesOnlySyncStrategy().estimate_api_calls() == 52
-    assert InitialSyncStrategy().estimate_api_calls() == 552
-    assert IncrementalSyncStrategy().estimate_api_calls() == 60
+    assert InitialSyncStrategy().estimate_api_calls() == 2500
+    assert IncrementalSyncStrategy().estimate_api_calls() == 120
 
 
 def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:

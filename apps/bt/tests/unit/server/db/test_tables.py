@@ -23,6 +23,7 @@ from src.lib.market_db.tables import (
     ds_topix_data,
     index_master,
     indices_data,
+    market_statements,
     margin_data,
     market_meta,
     portfolio_items,
@@ -134,8 +135,8 @@ class TestMarketDbContract:
         pk_cols = [c.name for c in indices_data.primary_key.columns]
         assert pk_cols == self.tables["indices_data"]["properties"]["primary_key"]["const"]
 
-    def test_market_meta_has_6_tables(self) -> None:
-        assert len(market_meta.tables) == 6
+    def test_market_meta_has_7_tables(self) -> None:
+        assert len(market_meta.tables) == 7
 
     def test_sync_metadata_structure(self) -> None:
         assert sync_metadata.c.key.primary_key
@@ -145,6 +146,38 @@ class TestMarketDbContract:
         assert index_master.c.code.primary_key
         assert not index_master.c.name.nullable
         assert not index_master.c.category.nullable
+
+
+# ===========================================================================
+# market-db-schema-v2.json 契約テスト
+# ===========================================================================
+
+class TestMarketDbContractV2:
+    """market.db statements 追加契約（v2）"""
+
+    @pytest.fixture(autouse=True)
+    def _load(self) -> None:
+        self.contract = _load_contract("market-db-schema-v2.json")
+        self.tables = self.contract["properties"]["tables"]["properties"]
+
+    def test_statements_columns(self) -> None:
+        spec = self.tables["statements"]["properties"]["columns"]["properties"]
+        for col_name, col_spec in spec.items():
+            col = market_statements.c[col_name]
+            expected = col_spec["const"]
+            assert _sa_type_name(col.type) == expected["type"], f"market.statements.{col_name} type mismatch"
+            assert col.nullable == expected["nullable"], f"market.statements.{col_name} nullable mismatch"
+
+    def test_statements_primary_key(self) -> None:
+        pk_cols = [c.name for c in market_statements.primary_key.columns]
+        assert pk_cols == self.tables["statements"]["properties"]["primary_key"]["const"]
+
+    def test_statements_indexes(self) -> None:
+        expected_indexes = self.tables["statements"]["properties"]["indexes"]["const"]
+        actual_indexes = {idx.name: [c.name for c in idx.columns] for idx in market_statements.indexes}
+        for idx in expected_indexes:
+            assert idx["name"] in actual_indexes
+            assert actual_indexes[idx["name"]] == idx["columns"]
 
 
 # ===========================================================================

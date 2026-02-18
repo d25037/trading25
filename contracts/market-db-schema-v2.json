@@ -1,0 +1,209 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Trading25 Market DB Schema v2",
+  "description": "market.db スキーマ契約。Prime fundamentals 同期向け statements テーブルを追加した v2。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tables"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["2.0.0"]
+    },
+    "tables": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stocks",
+        "stock_data",
+        "topix_data",
+        "indices_data",
+        "statements"
+      ],
+      "properties": {
+        "stocks": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "company_name",
+                "company_name_english",
+                "market_code",
+                "market_name",
+                "sector_17_code",
+                "sector_17_name",
+                "sector_33_code",
+                "sector_33_name",
+                "scale_category",
+                "listed_date"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "company_name": { "const": { "type": "text", "nullable": false } },
+                "company_name_english": { "const": { "type": "text", "nullable": true } },
+                "market_code": { "const": { "type": "text", "nullable": false } },
+                "market_name": { "const": { "type": "text", "nullable": false } },
+                "sector_17_code": { "const": { "type": "text", "nullable": false } },
+                "sector_17_name": { "const": { "type": "text", "nullable": false } },
+                "sector_33_code": { "const": { "type": "text", "nullable": false } },
+                "sector_33_name": { "const": { "type": "text", "nullable": false } },
+                "scale_category": { "const": { "type": "text", "nullable": true } },
+                "listed_date": { "const": { "type": "text", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code"] }
+          }
+        },
+        "stock_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "volume"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": false } },
+                "high": { "const": { "type": "real", "nullable": false } },
+                "low": { "const": { "type": "real", "nullable": false } },
+                "close": { "const": { "type": "real", "nullable": false } },
+                "volume": { "const": { "type": "integer", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "topix_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["date", "open", "high", "low", "close"],
+              "properties": {
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": false } },
+                "high": { "const": { "type": "real", "nullable": false } },
+                "low": { "const": { "type": "real", "nullable": false } },
+                "close": { "const": { "type": "real", "nullable": false } }
+              }
+            },
+            "primary_key": { "const": ["date"] }
+          }
+        },
+        "indices_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "open",
+                "high",
+                "low",
+                "close",
+                "sector_name"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "date": { "const": { "type": "text", "nullable": false } },
+                "open": { "const": { "type": "real", "nullable": true } },
+                "high": { "const": { "type": "real", "nullable": true } },
+                "low": { "const": { "type": "real", "nullable": true } },
+                "close": { "const": { "type": "real", "nullable": true } },
+                "sector_name": { "const": { "type": "text", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "statements": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "disclosed_date",
+                "earnings_per_share",
+                "profit",
+                "equity",
+                "type_of_current_period",
+                "type_of_document",
+                "next_year_forecast_earnings_per_share",
+                "bps",
+                "sales",
+                "operating_profit",
+                "ordinary_profit",
+                "operating_cash_flow",
+                "dividend_fy",
+                "forecast_eps",
+                "investing_cash_flow",
+                "financing_cash_flow",
+                "cash_and_equivalents",
+                "total_assets",
+                "shares_outstanding",
+                "treasury_shares"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "disclosed_date": { "const": { "type": "text", "nullable": false } },
+                "earnings_per_share": { "const": { "type": "real", "nullable": true } },
+                "profit": { "const": { "type": "real", "nullable": true } },
+                "equity": { "const": { "type": "real", "nullable": true } },
+                "type_of_current_period": { "const": { "type": "text", "nullable": true } },
+                "type_of_document": { "const": { "type": "text", "nullable": true } },
+                "next_year_forecast_earnings_per_share": { "const": { "type": "real", "nullable": true } },
+                "bps": { "const": { "type": "real", "nullable": true } },
+                "sales": { "const": { "type": "real", "nullable": true } },
+                "operating_profit": { "const": { "type": "real", "nullable": true } },
+                "ordinary_profit": { "const": { "type": "real", "nullable": true } },
+                "operating_cash_flow": { "const": { "type": "real", "nullable": true } },
+                "dividend_fy": { "const": { "type": "real", "nullable": true } },
+                "forecast_eps": { "const": { "type": "real", "nullable": true } },
+                "investing_cash_flow": { "const": { "type": "real", "nullable": true } },
+                "financing_cash_flow": { "const": { "type": "real", "nullable": true } },
+                "cash_and_equivalents": { "const": { "type": "real", "nullable": true } },
+                "total_assets": { "const": { "type": "real", "nullable": true } },
+                "shares_outstanding": { "const": { "type": "real", "nullable": true } },
+                "treasury_shares": { "const": { "type": "real", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code", "disclosed_date"] },
+            "indexes": {
+              "const": [
+                { "name": "idx_market_statements_date", "columns": ["disclosed_date"] },
+                { "name": "idx_market_statements_code", "columns": ["code"] }
+              ]
+            }
+          }
+        }
+      }
+    }
+  }
+}

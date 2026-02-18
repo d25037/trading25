@@ -54,6 +54,7 @@ bun run --filter @trading25/shared bt:sync
 |---|---|---|
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
 | `dataset-db-schema-v2.json` | **Active** | Dataset DB schema contract aligned with `apps/ts` Drizzle tables (395 lines). Use this for all new development. |
+| `market-db-schema-v2.json` | **Active** | Market DB schema contract with `statements` table for Prime fundamentals sync and screening (v2). |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
 | `strategy-config-v1.schema.json` | **Active** | Strategy YAML schema validated by `apps/bt`. |
 | `fundamentals-metrics-v1.schema.json` | **Deprecated** | Legacy fundamentals API response contract（`bookToMarket` を含む旧版）。 |

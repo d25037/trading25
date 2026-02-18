@@ -97,6 +97,8 @@ class TestDbStatsRoute:
         assert data["stockData"]["dateCount"] == 2
         assert data["indices"]["masterCount"] == 1
         assert data["indices"]["dataCount"] == 1
+        assert data["fundamentals"]["count"] == 0
+        assert data["fundamentals"]["primeCoverage"]["primeStocks"] >= 1
         assert data["databaseSize"] >= 0
 
     def test_stats_no_db(self) -> None:
@@ -126,6 +128,7 @@ class TestDbValidateRoute:
         assert data["adjustmentEvents"][0]["adjustmentFactor"] == 0.5
         assert data["stocksNeedingRefreshCount"] >= 1
         assert data["failedDatesCount"] == 1
+        assert "fundamentals" in data
         assert len(data["recommendations"]) > 0
 
     def test_validate_not_initialized(self, tmp_path) -> None:
