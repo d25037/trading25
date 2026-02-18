@@ -391,6 +391,73 @@ class SignalProcessor:
     # 相対価格モードで使用不可のシグナル（実価格が必須）
     _REQUIRES_EXECUTION_DATA = {"β値", "売買代金", "売買代金範囲"}
 
+    @staticmethod
+    def _has_non_empty_dataframe(value: object) -> bool:
+        return isinstance(value, pd.DataFrame) and (not value.empty)
+
+    def _is_requirement_satisfied(self, requirement: str, data_sources: dict) -> bool:
+        base, _, detail = requirement.partition(":")
+
+        if base == "benchmark":
+            benchmark = data_sources.get("benchmark_data")
+            if not isinstance(benchmark, pd.DataFrame) or benchmark.empty:
+                return False
+            if "Close" not in benchmark.columns:
+                return False
+            return bool(benchmark["Close"].notna().any())
+
+        if base == "statements":
+            statements = data_sources.get("statements_data")
+            if not isinstance(statements, pd.DataFrame) or statements.empty:
+                return False
+            if not detail:
+                return True
+            if detail not in statements.columns:
+                return False
+            return bool(statements[detail].notna().any())
+
+        if base == "margin":
+            margin = data_sources.get("margin_data")
+            return self._has_non_empty_dataframe(margin)
+
+        if base == "sector":
+            sector_data = data_sources.get("sector_data")
+            stock_sector_name = data_sources.get("stock_sector_name")
+            if not isinstance(sector_data, dict) or not stock_sector_name:
+                return False
+            sector_df = sector_data.get(stock_sector_name)
+            return self._has_non_empty_dataframe(sector_df)
+
+        if base == "ohlc":
+            ohlc_data = data_sources.get("ohlc_data")
+            return (
+                self._has_non_empty_dataframe(ohlc_data)
+                and {"Open", "High", "Low", "Close"}.issubset(ohlc_data.columns)
+            )
+
+        if base == "volume":
+            volume = data_sources.get("volume")
+            return isinstance(volume, pd.Series) and bool(volume.notna().any())
+
+        return True
+
+    def _describe_missing_requirements(
+        self,
+        signal_def: SignalDefinition,
+        data_sources: dict,
+    ) -> str:
+        if not signal_def.data_requirements:
+            return "data checker returned False"
+
+        missing = [
+            requirement
+            for requirement in signal_def.data_requirements
+            if not self._is_requirement_satisfied(requirement, data_sources)
+        ]
+        if missing:
+            return ", ".join(missing)
+        return "data checker returned False"
+
     def _apply_unified_signal(
         self,
         signal_def: SignalDefinition,
@@ -425,9 +492,10 @@ class SignalProcessor:
             # 2. 必須データチェック
             if signal_def.data_checker and not signal_def.data_checker(data_sources):
                 # データ不足でスキップ - デバッグログ出力
+                missing = self._describe_missing_requirements(signal_def, data_sources)
                 logger.warning(
                     f"⚠️  {signal_def.name}シグナル: 必須データ不足によりスキップ "
-                    f"(ベンチマークデータ: {'有' if data_sources.get('benchmark_data') is not None else '無'})"
+                    f"(不足: {missing})"
                 )
                 return
 

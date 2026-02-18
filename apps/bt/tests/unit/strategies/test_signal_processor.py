@@ -6,6 +6,7 @@ SignalProcessorクラスの基本機能・エラーハンドリング・統合�
 
 import pytest
 import pandas as pd
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.strategies.signals.processor import SignalProcessor
@@ -238,6 +239,250 @@ class TestSignalProcessor:
             relative_mode=True,
         )
         assert result_relative.equals(base_signal)
+
+    def test_missing_data_warning_reports_requirement_name(self):
+        """必須データ不足ログが実際の要件を示すことを確認"""
+        dummy_signal = SimpleNamespace(
+            name="Forward EPS成長率",
+            signal_func=lambda **_kwargs: self.base_signal,
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="",
+            exit_purpose="",
+            category="test",
+            description="",
+            param_key="test.forward",
+            data_checker=lambda _data: False,
+            exit_disabled=False,
+            data_requirements=["statements:ForwardForecastEPS"],
+        )
+
+        with (
+            patch("src.strategies.signals.processor.SIGNAL_REGISTRY", [dummy_signal]),
+            patch("src.strategies.signals.processor.logger") as mock_logger,
+        ):
+            self.processor.apply_signals(
+                base_signal=self.base_signal,
+                signal_type="entry",
+                ohlc_data=self.test_data,
+                signal_params=self.signal_params,
+            )
+
+        warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
+        assert any("statements:ForwardForecastEPS" in message for message in warning_messages)
+        assert all("ベンチマークデータ" not in message for message in warning_messages)
+
+    def test_apply_signals_raises_when_close_all_nan(self):
+        data = self.test_data.copy()
+        data["Close"] = [float("nan")] * len(data)
+        with pytest.raises(ValueError, match="Close価格データが全てNaN"):
+            self.processor.apply_signals(
+                base_signal=self.base_signal,
+                signal_type="entry",
+                ohlc_data=data,
+                signal_params=self.signal_params,
+            )
+
+    def test_apply_signals_warns_when_volume_all_nan(self):
+        data = self.test_data.copy()
+        data["Volume"] = [float("nan")] * len(data)
+        with patch("src.strategies.signals.processor.logger") as mock_logger:
+            result = self.processor.apply_signals(
+                base_signal=self.base_signal,
+                signal_type="entry",
+                ohlc_data=data,
+                signal_params=self.signal_params,
+            )
+
+        assert result.dtype == bool
+        assert any("Volumeデータが全てNaN" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
+
+    def test_requirement_satisfied_covers_supported_requirements(self):
+        benchmark = pd.DataFrame({"Close": [1.0, 2.0]}, index=self.test_data.index[:2])
+        statements = pd.DataFrame({"EPS": [1.0, 2.0]}, index=self.test_data.index[:2])
+        margin = pd.DataFrame({"x": [1.0]}, index=self.test_data.index[:1])
+        sector_data = {"情報・通信業": pd.DataFrame({"Close": [1.0]}, index=self.test_data.index[:1])}
+        ohlc = self.test_data.copy()
+        ohlc["Open"] = ohlc["Close"]
+        sources = {
+            "benchmark_data": benchmark,
+            "statements_data": statements,
+            "margin_data": margin,
+            "sector_data": sector_data,
+            "stock_sector_name": "情報・通信業",
+            "ohlc_data": ohlc[["Open", "High", "Low", "Close"]],
+            "volume": self.test_data["Volume"],
+        }
+
+        assert self.processor._is_requirement_satisfied("benchmark", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("statements", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("statements:EPS", sources)  # noqa: SLF001
+        assert not self.processor._is_requirement_satisfied("statements:ForwardForecastEPS", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("margin", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("sector", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("ohlc", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("volume", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("unknown", sources)  # noqa: SLF001
+
+    def test_describe_missing_requirements_fallback_message(self):
+        no_requirements = SimpleNamespace(data_requirements=[])
+        assert (
+            self.processor._describe_missing_requirements(no_requirements, {"volume": self.test_data["Volume"]})  # noqa: SLF001
+            == "data checker returned False"
+        )
+
+        satisfied = SimpleNamespace(data_requirements=["volume"])
+        assert (
+            self.processor._describe_missing_requirements(  # noqa: SLF001
+                satisfied,
+                {"volume": self.test_data["Volume"]},
+            )
+            == "data checker returned False"
+        )
+
+    def test_apply_unified_signal_exit_disabled_is_skipped(self):
+        dummy_signal = SimpleNamespace(
+            name="BuyAndHold",
+            signal_func=lambda **_kwargs: self.base_signal,
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test",
+            data_checker=None,
+            exit_disabled=True,
+            data_requirements=[],
+        )
+
+        signal_conditions = [self.base_signal]
+        with patch("src.strategies.signals.processor.logger") as mock_logger:
+            self.processor._apply_unified_signal(  # noqa: SLF001
+                signal_def=dummy_signal,
+                signal_conditions=signal_conditions,
+                signal_type="exit",
+                signal_params=self.signal_params,
+                base_signal=self.base_signal,
+                data_sources={"is_relative_mode": False},
+            )
+
+        assert len(signal_conditions) == 1
+        assert any("Exit用途では使用不可" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
+
+    def test_apply_unified_signal_reindexes_when_index_mismatch(self):
+        result_index = self.base_signal.index[2:]
+        dummy_signal = SimpleNamespace(
+            name="MismatchSignal",
+            signal_func=lambda **_kwargs: pd.Series([True, False, True], index=result_index),
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        signal_conditions = [self.base_signal]
+        with patch("src.strategies.signals.processor.logger") as mock_logger:
+            self.processor._apply_unified_signal(  # noqa: SLF001
+                signal_def=dummy_signal,
+                signal_conditions=signal_conditions,
+                signal_type="entry",
+                signal_params=self.signal_params,
+                base_signal=self.base_signal,
+                data_sources={"is_relative_mode": False},
+            )
+
+        assert len(signal_conditions) == 2
+        aligned = signal_conditions[1]
+        assert aligned.index.equals(self.base_signal.index)
+        assert aligned.isna().sum() == 2
+        assert any("日付不一致" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
+
+    def test_apply_unified_signal_keyerror_is_reraised(self):
+        dummy_signal = SimpleNamespace(
+            name="KeyErrorSignal",
+            signal_func=lambda **_kwargs: (_ for _ in ()).throw(KeyError("missing key")),
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        with pytest.raises(KeyError):
+            self.processor._apply_unified_signal(  # noqa: SLF001
+                signal_def=dummy_signal,
+                signal_conditions=[self.base_signal],
+                signal_type="entry",
+                signal_params=self.signal_params,
+                base_signal=self.base_signal,
+                data_sources={"is_relative_mode": False},
+            )
+
+    def test_apply_unified_signal_value_and_unknown_errors_are_swallowed(self):
+        value_error_signal = SimpleNamespace(
+            name="ValueErrorSignal",
+            signal_func=lambda **_kwargs: (_ for _ in ()).throw(ValueError("invalid")),
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+        unexpected_error_signal = SimpleNamespace(
+            name="UnexpectedSignal",
+            signal_func=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        signal_conditions = [self.base_signal]
+        with patch("src.strategies.signals.processor.logger") as mock_logger:
+            self.processor._apply_unified_signal(  # noqa: SLF001
+                signal_def=value_error_signal,
+                signal_conditions=signal_conditions,
+                signal_type="entry",
+                signal_params=self.signal_params,
+                base_signal=self.base_signal,
+                data_sources={"is_relative_mode": False},
+            )
+            self.processor._apply_unified_signal(  # noqa: SLF001
+                signal_def=unexpected_error_signal,
+                signal_conditions=signal_conditions,
+                signal_type="entry",
+                signal_params=self.signal_params,
+                base_signal=self.base_signal,
+                data_sources={"is_relative_mode": False},
+            )
+
+        assert len(signal_conditions) == 1
+        warning_messages = [str(call.args[0]) for call in mock_logger.warning.call_args_list]
+        assert any("ValueError" in message for message in warning_messages)
+        assert any("予期しないエラー" in message for message in warning_messages)
 
 
 if __name__ == "__main__":
