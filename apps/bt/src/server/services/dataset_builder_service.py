@@ -18,6 +18,7 @@ from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.lib.dataset_io.dataset_writer import DatasetWriter
 from src.lib.market_db.query_helpers import normalize_stock_code
 from src.server.schemas.job import JobProgress
+from src.server.services.fins_summary_mapper import convert_fins_summary_rows
 from src.server.services.dataset_presets import PresetConfig, get_preset
 from src.server.services.dataset_resolver import DatasetResolver
 from src.server.services.generic_job_manager import GenericJobManager, JobInfo
@@ -187,7 +188,7 @@ async def _build_dataset(
                 code4 = normalize_stock_code(code5)
                 try:
                     data = await jquants_client.get_paginated("/fins/summary", params={"code": code5})
-                    rows = _convert_statements(data, code4)
+                    rows = convert_fins_summary_rows(data, default_code=code4)
                     if rows:
                         await asyncio.to_thread(writer.upsert_statements, rows)
                 except Exception as e:
@@ -274,32 +275,3 @@ def _convert_stocks(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for d in data
     ]
 
-
-def _convert_statements(data: list[dict[str, Any]], code: str) -> list[dict[str, Any]]:
-    """JQuants 財務諸表 → statements 行"""
-    return [
-        {
-            "code": code,
-            "disclosed_date": d.get("DiscDate", ""),
-            "earnings_per_share": d.get("EPS"),
-            "profit": d.get("NP"),
-            "equity": d.get("Eq"),
-            "type_of_current_period": d.get("CurPerType"),
-            "type_of_document": d.get("DocType"),
-            "next_year_forecast_earnings_per_share": d.get("NxFEPS"),
-            "bps": d.get("BPS"),
-            "sales": d.get("Sales"),
-            "operating_profit": d.get("OP"),
-            "ordinary_profit": d.get("OdP"),
-            "operating_cash_flow": d.get("CFO"),
-            "dividend_fy": d.get("DivAnn"),
-            "forecast_eps": d.get("FEPS"),
-            "investing_cash_flow": d.get("CFI"),
-            "financing_cash_flow": d.get("CFF"),
-            "cash_and_equivalents": d.get("CashEq"),
-            "total_assets": d.get("TA"),
-            "shares_outstanding": d.get("ShOutFY"),
-            "treasury_shares": d.get("TrShFY"),
-        }
-        for d in data
-    ]

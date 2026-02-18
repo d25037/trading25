@@ -7490,7 +7490,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                      "$ref": "#/components/schemas/OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -7610,7 +7610,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                    "$ref": "#/components/schemas/OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -12727,21 +12727,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -13456,6 +13456,85 @@
         "title": "FundamentalsComputeResponse",
         "description": "Response for fundamentals computation."
       },
+      "FundamentalsStats": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 0
+          },
+          "uniqueStockCount": {
+            "type": "integer",
+            "title": "Uniquestockcount",
+            "default": 0
+          },
+          "latestDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestdiscloseddate"
+          },
+          "primeCoverage": {
+            "$ref": "#/components/schemas/PrimeCoverage"
+          }
+        },
+        "type": "object",
+        "title": "FundamentalsStats"
+      },
+      "FundamentalsValidation": {
+        "properties": {
+          "count": {
+            "type": "integer",
+            "title": "Count",
+            "default": 0
+          },
+          "uniqueStockCount": {
+            "type": "integer",
+            "title": "Uniquestockcount",
+            "default": 0
+          },
+          "latestDisclosedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Latestdiscloseddate"
+          },
+          "missingPrimeStocksCount": {
+            "type": "integer",
+            "title": "Missingprimestockscount",
+            "default": 0
+          },
+          "missingPrimeStocks": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Missingprimestocks"
+          },
+          "failedDatesCount": {
+            "type": "integer",
+            "title": "Faileddatescount",
+            "default": 0
+          },
+          "failedCodesCount": {
+            "type": "integer",
+            "title": "Failedcodescount",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "FundamentalsValidation"
+      },
       "GenerateResultItem": {
         "properties": {
           "strategy_id": {
@@ -14101,26 +14180,37 @@
       },
       "IndexMatch": {
         "properties": {
-          "code": {
+          "indexCode": {
             "type": "string",
-            "title": "Code"
+            "title": "Indexcode"
           },
-          "name": {
+          "indexName": {
             "type": "string",
-            "title": "Name"
+            "title": "Indexname"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
+          },
+          "beta": {
+            "type": "number",
+            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "code",
-          "name",
-          "rSquared"
+          "indexCode",
+          "indexName",
+          "category",
+          "rSquared",
+          "beta"
         ],
-        "title": "IndexMatch"
+        "title": "IndexMatch",
+        "description": "指数マッチ結果"
       },
       "IndexOHLCRecord": {
         "properties": {
@@ -15894,6 +15984,9 @@
           "indices": {
             "$ref": "#/components/schemas/IndicesStats"
           },
+          "fundamentals": {
+            "$ref": "#/components/schemas/FundamentalsStats"
+          },
           "lastUpdated": {
             "type": "string",
             "title": "Lastupdated"
@@ -15986,6 +16079,9 @@
           },
           "stockData": {
             "$ref": "#/components/schemas/StockDataValidation"
+          },
+          "fundamentals": {
+            "$ref": "#/components/schemas/FundamentalsValidation"
           },
           "failedDates": {
             "items": {
@@ -16125,33 +16221,27 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -16163,8 +16253,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -16285,7 +16374,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -16886,21 +16975,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -16914,7 +17003,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -17213,7 +17302,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
               },
               {
                 "type": "null"
@@ -17363,6 +17452,32 @@
         },
         "type": "object",
         "title": "PortfolioUpdateRequest"
+      },
+      "PrimeCoverage": {
+        "properties": {
+          "primeStocks": {
+            "type": "integer",
+            "title": "Primestocks",
+            "default": 0
+          },
+          "coveredStocks": {
+            "type": "integer",
+            "title": "Coveredstocks",
+            "default": 0
+          },
+          "missingStocks": {
+            "type": "integer",
+            "title": "Missingstocks",
+            "default": 0
+          },
+          "coverageRatio": {
+            "type": "number",
+            "title": "Coverageratio",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "PrimeCoverage"
       },
       "ROEMetadata": {
         "properties": {
@@ -21167,6 +21282,16 @@
             "title": "Datesprocessed",
             "default": 0
           },
+          "fundamentalsUpdated": {
+            "type": "integer",
+            "title": "Fundamentalsupdated",
+            "default": 0
+          },
+          "fundamentalsDatesProcessed": {
+            "type": "integer",
+            "title": "Fundamentalsdatesprocessed",
+            "default": 0
+          },
           "failedDates": {
             "items": {
               "type": "string"
@@ -21756,44 +21881,6 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__dataset_data__OHLCVRecord": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date"
-          },
-          "open": {
-            "type": "number",
-            "title": "Open"
-          },
-          "high": {
-            "type": "number",
-            "title": "High"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "volume": {
-            "type": "integer",
-            "title": "Volume"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord"
-      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -21831,41 +21918,75 @@
         "title": "DateRange",
         "description": "分析期間"
       },
-      "src__server__schemas__factor_regression__IndexMatch": {
+      "src__server__schemas__indicators__OHLCVRecord": {
         "properties": {
-          "indexCode": {
+          "date": {
             "type": "string",
-            "title": "Indexcode"
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
           },
-          "indexName": {
-            "type": "string",
-            "title": "Indexname"
-          },
-          "category": {
-            "type": "string",
-            "title": "Category"
-          },
-          "rSquared": {
+          "open": {
             "type": "number",
-            "title": "Rsquared"
+            "title": "Open",
+            "description": "始値"
           },
-          "beta": {
+          "high": {
             "type": "number",
-            "title": "Beta"
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
           }
         },
         "type": "object",
         "required": [
-          "indexCode",
-          "indexName",
-          "category",
-          "rSquared",
-          "beta"
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
         ],
-        "title": "IndexMatch",
-        "description": "指数マッチ結果"
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
+      "src__server__schemas__portfolio_factor_regression__IndexMatch": {
+        "properties": {
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "rSquared": {
+            "type": "number",
+            "title": "Rsquared"
+          }
+        },
+        "type": "object",
+        "required": [
+          "code",
+          "name",
+          "rSquared"
+        ],
+        "title": "IndexMatch"
+      },
+      "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {
           "from": {
             "type": "string",

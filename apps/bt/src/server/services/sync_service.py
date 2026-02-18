@@ -54,6 +54,7 @@ async def start_sync(
     jquants_client: JQuantsAsyncClient,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
+    market_db.ensure_schema()
     resolved_mode = _resolve_mode(mode, market_db)
     data = SyncJobData(mode=mode, resolved_mode=resolved_mode)
     job = await sync_job_manager.create_job(data)

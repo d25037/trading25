@@ -47,6 +47,20 @@ class IndicesStats(BaseModel):
     byCategory: dict[str, int] = Field(default_factory=dict)
 
 
+class PrimeCoverage(BaseModel):
+    primeStocks: int = 0
+    coveredStocks: int = 0
+    missingStocks: int = 0
+    coverageRatio: float = 0
+
+
+class FundamentalsStats(BaseModel):
+    count: int = 0
+    uniqueStockCount: int = 0
+    latestDisclosedDate: str | None = None
+    primeCoverage: PrimeCoverage = Field(default_factory=PrimeCoverage)
+
+
 class MarketStatsResponse(BaseModel):
     initialized: bool
     lastSync: str | None = None
@@ -55,6 +69,7 @@ class MarketStatsResponse(BaseModel):
     stocks: StockStats
     stockData: StockDataStats
     indices: IndicesStats
+    fundamentals: FundamentalsStats = Field(default_factory=FundamentalsStats)
     lastUpdated: str
 
 
@@ -81,6 +96,16 @@ class StockDataValidation(BaseModel):
     missingDatesCount: int = 0
 
 
+class FundamentalsValidation(BaseModel):
+    count: int = 0
+    uniqueStockCount: int = 0
+    latestDisclosedDate: str | None = None
+    missingPrimeStocksCount: int = 0
+    missingPrimeStocks: list[str] = Field(default_factory=list)
+    failedDatesCount: int = 0
+    failedCodesCount: int = 0
+
+
 class MarketValidationResponse(BaseModel):
     status: Literal["healthy", "warning", "error"]
     initialized: bool
@@ -89,6 +114,7 @@ class MarketValidationResponse(BaseModel):
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
+    fundamentals: FundamentalsValidation = Field(default_factory=FundamentalsValidation)
     failedDates: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0
     adjustmentEvents: list[AdjustmentEvent] = Field(default_factory=list)
@@ -117,6 +143,8 @@ class SyncResult(BaseModel):
     totalApiCalls: int = 0
     stocksUpdated: int = 0
     datesProcessed: int = 0
+    fundamentalsUpdated: int = 0
+    fundamentalsDatesProcessed: int = 0
     failedDates: list[str] = Field(default_factory=list)
     errors: list[str] = Field(default_factory=list)
 

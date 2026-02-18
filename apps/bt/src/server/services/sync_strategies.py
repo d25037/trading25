@@ -8,16 +8,19 @@ Hono sync-strategies.ts からの移植。
 from __future__ import annotations
 
 import asyncio
+import json
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from typing import Any, Callable, Protocol
+from zoneinfo import ZoneInfo
 
 from loguru import logger
 
 from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
-from src.lib.market_db.query_helpers import normalize_stock_code
+from src.lib.market_db.query_helpers import expand_stock_code, normalize_stock_code
 from src.server.schemas.db import SyncResult
+from src.server.services.fins_summary_mapper import convert_fins_summary_rows
 from src.server.services.stock_data_row_builder import build_stock_data_row
 
 
@@ -32,6 +35,11 @@ class SyncContext:
 class SyncStrategy(Protocol):
     async def execute(self, ctx: SyncContext) -> SyncResult: ...
     def estimate_api_calls(self) -> int: ...
+
+
+_JST = ZoneInfo("Asia/Tokyo")
+_PRIME_MARKET_CODES = {"0111", "prime"}
+_MAX_FINS_SUMMARY_PAGES = 2000
 
 
 class IndicesOnlySyncStrategy:
@@ -90,18 +98,22 @@ class InitialSyncStrategy:
     """初回同期: TOPIX + 全銘柄 + 株価データ + 指数データ"""
 
     def estimate_api_calls(self) -> int:
-        return 552
+        # TOPIX/株価/指数に加えて Prime 全銘柄の /fins/summary(code=...) を含む。
+        return 2500
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         stocks_updated = 0
         dates_processed = 0
+        fundamentals_updated = 0
+        fundamentals_dates_processed = 0
         failed_dates: list[str] = []
         errors: list[str] = []
+        stock_rows: list[dict[str, Any]] = []
 
         try:
             # Step 1: TOPIX
-            ctx.on_progress("topix", 0, 5, "Fetching TOPIX data...")
+            ctx.on_progress("topix", 0, 6, "Fetching TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -123,7 +135,7 @@ class InitialSyncStrategy:
             dates_processed = len(topix_rows)
 
             # Step 2: 銘柄マスタ
-            ctx.on_progress("stocks", 1, 5, "Fetching stock master data...")
+            ctx.on_progress("stocks", 1, 6, "Fetching stock master data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -133,15 +145,32 @@ class InitialSyncStrategy:
             if stock_rows:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
-            # Step 3: 株価データ（日付ベース、TOPIX 日付を使用）
-            ctx.on_progress("stock_data", 2, 5, "Fetching daily stock prices...")
+            # Step 3: Prime fundamentals（初回: code指定フル取得）
+            ctx.on_progress("fundamentals", 2, 6, "Fetching Prime fundamentals (full)...")
+            if ctx.cancelled.is_set():
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            prime_codes = _extract_prime_codes_from_stock_rows(stock_rows)
+            if not prime_codes:
+                prime_codes = await asyncio.to_thread(ctx.market_db.get_prime_codes)
+
+            fundamentals_sync = await _sync_fundamentals_initial(ctx, sorted(prime_codes))
+            total_calls += fundamentals_sync["api_calls"]
+            fundamentals_updated += fundamentals_sync["updated"]
+            fundamentals_dates_processed += fundamentals_sync["dates_processed"]
+            errors.extend(fundamentals_sync["errors"])
+            if fundamentals_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            # Step 4: 株価データ（日付ベース、TOPIX 日付を使用）
+            ctx.on_progress("stock_data", 3, 6, "Fetching daily stock prices...")
             trading_dates = sorted({r["date"] for r in topix_rows})
             consecutive_failures = 0
             for i, date in enumerate(trading_dates):
                 if ctx.cancelled.is_set():
                     return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
                 if i % 50 == 0:
-                    ctx.on_progress("stock_data", 2, 5, f"Fetching stock data: {i}/{len(trading_dates)} dates...")
+                    ctx.on_progress("stock_data", 3, 6, f"Fetching stock data: {i}/{len(trading_dates)} dates...")
                 try:
                     data = await ctx.client.get_paginated("/equities/bars/daily", params={"date": date})
                     total_calls += 1
@@ -157,28 +186,31 @@ class InitialSyncStrategy:
                         errors.append(f"Too many consecutive failures at {date}")
                         break
 
-            # Step 4: 指数データ
-            ctx.on_progress("indices", 3, 5, "Fetching index data...")
+            # Step 5: 指数データ
+            ctx.on_progress("indices", 4, 6, "Fetching index data...")
             indices_strategy = IndicesOnlySyncStrategy()
             indices_result = await indices_strategy.execute(ctx)
             total_calls += indices_result.totalApiCalls
             errors.extend(indices_result.errors)
 
-            # Step 5: メタデータ更新
-            ctx.on_progress("finalize", 4, 5, "Finalizing sync...")
+            # Step 6: メタデータ更新
+            ctx.on_progress("finalize", 5, 6, "Finalizing sync...")
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["INIT_COMPLETED"], "true")
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
             if failed_dates:
-                import json
                 await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["FAILED_DATES"], json.dumps(failed_dates))
+            else:
+                await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["FAILED_DATES"], "[]")
 
-            ctx.on_progress("complete", 5, 5, "Sync complete!")
+            ctx.on_progress("complete", 6, 6, "Sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
                 datesProcessed=dates_processed,
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
                 failedDates=failed_dates,
                 errors=errors,
             )
@@ -190,12 +222,15 @@ class IncrementalSyncStrategy:
     """増分同期: 最終同期日以降のデータのみ取得"""
 
     def estimate_api_calls(self) -> int:
-        return 60
+        return 120
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         stocks_updated = 0
+        fundamentals_updated = 0
+        fundamentals_dates_processed = 0
         errors: list[str] = []
+        stock_rows: list[dict[str, Any]] = []
 
         try:
             last_sync = ctx.market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
@@ -203,7 +238,7 @@ class IncrementalSyncStrategy:
                 return SyncResult(success=False, errors=["No last_sync_date found. Run initial sync first."])
 
             # Step 1: TOPIX（増分）
-            ctx.on_progress("topix", 0, 4, "Fetching incremental TOPIX data...")
+            ctx.on_progress("topix", 0, 5, "Fetching incremental TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -235,7 +270,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_topix_data, topix_rows)
 
             # Step 2: 銘柄マスタ更新
-            ctx.on_progress("stocks", 1, 4, "Updating stock master...")
+            ctx.on_progress("stocks", 1, 5, "Updating stock master...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -246,7 +281,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
             # Step 3: 新しい日付の株価データ
-            ctx.on_progress("stock_data", 2, 4, "Fetching new stock data...")
+            ctx.on_progress("stock_data", 2, 5, "Fetching new stock data...")
             if last_date:
                 new_dates = sorted(
                     {
@@ -272,7 +307,7 @@ class IncrementalSyncStrategy:
                     errors.append(f"Date {date}: {e}")
 
             # Step 4: 指数データ（増分）
-            ctx.on_progress("indices", 3, 4, "Fetching incremental index data...")
+            ctx.on_progress("indices", 3, 5, "Fetching incremental index data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -379,20 +414,356 @@ class IncrementalSyncStrategy:
                         errors.append(f"Index date {index_date}: {e}")
                         logger.warning("Index date {} incremental sync error: {}", index_date, e)
 
+            # Step 5: Prime fundamentals（増分: date 指定 + 欠損補完）
+            ctx.on_progress("fundamentals", 4, 5, "Fetching incremental Prime fundamentals...")
+            if ctx.cancelled.is_set():
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            prime_codes = _extract_prime_codes_from_stock_rows(stock_rows)
+            if not prime_codes:
+                prime_codes = await asyncio.to_thread(ctx.market_db.get_prime_codes)
+
+            fundamentals_sync = await _sync_fundamentals_incremental(ctx, sorted(prime_codes))
+            total_calls += fundamentals_sync["api_calls"]
+            fundamentals_updated += fundamentals_sync["updated"]
+            fundamentals_dates_processed += fundamentals_sync["dates_processed"]
+            errors.extend(fundamentals_sync["errors"])
+            if fundamentals_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 4, 4, "Incremental sync complete!")
+            ctx.on_progress("complete", 5, 5, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
                 stocksUpdated=stocks_updated,
                 datesProcessed=len(new_dates),
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
                 errors=errors,
             )
         except Exception as e:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
+
+
+async def _sync_fundamentals_initial(
+    ctx: SyncContext,
+    prime_codes: list[str],
+) -> dict[str, Any]:
+    """Prime 銘柄を code 指定でフル同期"""
+    api_calls = 0
+    updated = 0
+    failed_codes: list[str] = []
+    errors: list[str] = []
+
+    for idx, code in enumerate(prime_codes):
+        if ctx.cancelled.is_set():
+            return {
+                "api_calls": api_calls,
+                "updated": updated,
+                "dates_processed": 0,
+                "errors": errors,
+                "cancelled": True,
+            }
+
+        if idx > 0 and idx % 100 == 0:
+            ctx.on_progress("fundamentals", 2, 6, f"Fetching fundamentals: {idx}/{len(prime_codes)} codes...")
+
+        code5 = expand_stock_code(code)
+        try:
+            data, page_calls = await _fetch_fins_summary_paginated(ctx.client, {"code": code5})
+            api_calls += page_calls
+            rows = convert_fins_summary_rows(data, default_code=code)
+            if rows:
+                await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
+                updated += len(rows)
+        except Exception as e:
+            failed_codes.append(code)
+            errors.append(f"Fundamentals code {code}: {e}")
+
+    latest_disclosed = await asyncio.to_thread(ctx.market_db.get_latest_statement_disclosed_date)
+    now_iso = datetime.now(UTC).isoformat()
+
+    await asyncio.to_thread(
+        ctx.market_db.set_sync_metadata,
+        METADATA_KEYS["FUNDAMENTALS_LAST_SYNC_DATE"],
+        now_iso,
+    )
+    if latest_disclosed:
+        await asyncio.to_thread(
+            ctx.market_db.set_sync_metadata,
+            METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
+            latest_disclosed,
+        )
+    await asyncio.to_thread(
+        ctx.market_db.set_sync_metadata,
+        METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
+        "[]",
+    )
+    await _save_metadata_json_list(
+        ctx,
+        METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
+        failed_codes,
+    )
+
+    return {
+        "api_calls": api_calls,
+        "updated": updated,
+        "dates_processed": 0,
+        "errors": errors,
+        "cancelled": False,
+    }
+
+
+async def _sync_fundamentals_incremental(
+    ctx: SyncContext,
+    prime_codes: list[str],
+) -> dict[str, Any]:
+    """date 指定増分 + 欠損 Prime 補完"""
+    api_calls = 0
+    updated = 0
+    errors: list[str] = []
+    failed_dates: list[str] = []
+    failed_codes: list[str] = []
+    prime_code_set = set(prime_codes)
+
+    previous_failed_dates = _normalize_date_list(
+        _load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"])
+    )
+    previous_failed_codes = _collect_unique_codes(
+        _load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"])
+    )
+
+    anchor = (
+        ctx.market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
+        or ctx.market_db.get_latest_statement_disclosed_date()
+    )
+    date_targets = _build_incremental_date_targets(anchor, previous_failed_dates)
+
+    for idx, disclosed_date in enumerate(date_targets):
+        if ctx.cancelled.is_set():
+            return {
+                "api_calls": api_calls,
+                "updated": updated,
+                "dates_processed": idx,
+                "errors": errors,
+                "cancelled": True,
+            }
+
+        if idx > 0 and idx % 30 == 0:
+            ctx.on_progress("fundamentals", 4, 5, f"Fetching fundamentals dates: {idx}/{len(date_targets)}...")
+
+        try:
+            data, page_calls = await _fetch_fins_summary_paginated(
+                ctx.client,
+                {"date": _to_jquants_date_param(disclosed_date)},
+            )
+            api_calls += page_calls
+            rows = convert_fins_summary_rows(data)
+            rows = [row for row in rows if row.get("code") in prime_code_set]
+            if rows:
+                await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
+                updated += len(rows)
+        except Exception as e:
+            failed_dates.append(disclosed_date)
+            errors.append(f"Fundamentals date {disclosed_date}: {e}")
+
+    statement_codes = await asyncio.to_thread(ctx.market_db.get_statement_codes)
+    missing_prime_codes = sorted(set(prime_codes) - set(statement_codes))
+    code_targets = _collect_unique_codes(previous_failed_codes + missing_prime_codes)
+
+    for idx, code in enumerate(code_targets):
+        if ctx.cancelled.is_set():
+            return {
+                "api_calls": api_calls,
+                "updated": updated,
+                "dates_processed": len(date_targets),
+                "errors": errors,
+                "cancelled": True,
+            }
+
+        if idx > 0 and idx % 100 == 0:
+            ctx.on_progress("fundamentals", 4, 5, f"Backfilling fundamentals: {idx}/{len(code_targets)} codes...")
+
+        code5 = expand_stock_code(code)
+        try:
+            data, page_calls = await _fetch_fins_summary_paginated(ctx.client, {"code": code5})
+            api_calls += page_calls
+            rows = convert_fins_summary_rows(data, default_code=code)
+            rows = [row for row in rows if row.get("code") in prime_code_set]
+            if rows:
+                await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
+                updated += len(rows)
+        except Exception as e:
+            failed_codes.append(code)
+            errors.append(f"Fundamentals code {code}: {e}")
+
+    latest_disclosed = await asyncio.to_thread(ctx.market_db.get_latest_statement_disclosed_date)
+    now_iso = datetime.now(UTC).isoformat()
+    await asyncio.to_thread(
+        ctx.market_db.set_sync_metadata,
+        METADATA_KEYS["FUNDAMENTALS_LAST_SYNC_DATE"],
+        now_iso,
+    )
+    if latest_disclosed:
+        await asyncio.to_thread(
+            ctx.market_db.set_sync_metadata,
+            METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
+            latest_disclosed,
+        )
+
+    await _save_metadata_json_list(
+        ctx,
+        METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
+        failed_dates,
+    )
+    await _save_metadata_json_list(
+        ctx,
+        METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
+        failed_codes,
+    )
+
+    return {
+        "api_calls": api_calls,
+        "updated": updated,
+        "dates_processed": len(date_targets),
+        "errors": errors,
+        "cancelled": False,
+    }
+
+
+async def _fetch_fins_summary_paginated(
+    client: JQuantsAsyncClient,
+    params: dict[str, Any],
+) -> tuple[list[dict[str, Any]], int]:
+    """`/fins/summary` を pagination_key が尽きるまで取得する。"""
+    current_params = dict(params)
+    all_rows: list[dict[str, Any]] = []
+    api_calls = 0
+
+    while True:
+        body = await client.get("/fins/summary", params=current_params)
+        api_calls += 1
+
+        page_rows = _extract_list_items(body, preferred_keys=("data",))
+        all_rows.extend(page_rows)
+
+        pagination_key = body.get("pagination_key")
+        if not pagination_key:
+            break
+
+        if api_calls >= _MAX_FINS_SUMMARY_PAGES:
+            raise RuntimeError("fins/summary pagination exceeded safety limit")
+
+        current_params = {**current_params, "pagination_key": pagination_key}
+
+    return all_rows, api_calls
+
+
+def _extract_prime_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> set[str]:
+    codes: set[str] = set()
+    for row in stock_rows:
+        market_code = row.get("market_code")
+        if not _is_prime_market_code(market_code):
+            continue
+        code = normalize_stock_code(str(row.get("code", "")))
+        if code:
+            codes.add(code)
+    return codes
+
+
+def _is_prime_market_code(value: Any) -> bool:
+    if value is None:
+        return False
+    normalized = str(value).strip().lower()
+    return normalized in _PRIME_MARKET_CODES
+
+
+def _load_metadata_json_list(market_db: MarketDb, key: str) -> list[str]:
+    raw = market_db.get_sync_metadata(key)
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [str(v) for v in loaded if isinstance(v, str) or isinstance(v, int)]
+
+
+async def _save_metadata_json_list(
+    ctx: SyncContext,
+    key: str,
+    values: list[str],
+) -> None:
+    deduped = _dedupe_preserve_order(values)
+    await asyncio.to_thread(
+        ctx.market_db.set_sync_metadata,
+        key,
+        json.dumps(deduped, ensure_ascii=False),
+    )
+
+
+def _collect_unique_codes(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        code = normalize_stock_code(str(value).strip())
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        deduped.append(code)
+    return deduped
+
+
+def _dedupe_preserve_order(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        normalized = str(value).strip()
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return deduped
+
+
+def _normalize_date_list(values: list[str]) -> list[str]:
+    deduped: list[str] = []
+    seen: set[str] = set()
+    for value in values:
+        parsed = _parse_date(value)
+        if parsed is None:
+            continue
+        normalized = parsed.isoformat()
+        if normalized in seen:
+            continue
+        seen.add(normalized)
+        deduped.append(normalized)
+    return sorted(deduped, key=_date_sort_key)
+
+
+def _build_incremental_date_targets(anchor: str | None, retry_dates: list[str]) -> list[str]:
+    targets: list[str] = list(retry_dates)
+    seen = set(targets)
+
+    anchor_date = _parse_date(anchor) if anchor else None
+    today_jst = datetime.now(_JST).date()
+
+    if anchor_date is not None:
+        current = anchor_date + timedelta(days=1)
+        while current <= today_jst:
+            value = current.isoformat()
+            if value not in seen:
+                seen.add(value)
+                targets.append(value)
+            current += timedelta(days=1)
+
+    return targets
 
 
 def get_strategy(resolved_mode: str) -> SyncStrategy:

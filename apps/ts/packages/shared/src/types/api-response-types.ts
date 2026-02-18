@@ -46,6 +46,7 @@ export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' |
 
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
 export type SortOrder = 'asc' | 'desc';
+export type ScreeningDataSource = 'market' | 'dataset';
 
 export interface MatchedStrategyItem {
   strategyName: string;
@@ -162,6 +163,8 @@ export interface SyncJobResult {
   totalApiCalls: number;
   stocksUpdated: number;
   datesProcessed: number;
+  fundamentalsUpdated: number;
+  fundamentalsDatesProcessed: number;
   failedDates: string[];
   errors: string[];
 }

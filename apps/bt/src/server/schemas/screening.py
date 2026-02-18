@@ -17,6 +17,7 @@ ScreeningSortBy = Literal[
     "matchStrategyCount",
 ]
 SortOrder = Literal["asc", "desc"]
+ScreeningDataSource = Literal["market", "dataset"]
 
 
 class MatchedStrategyItem(BaseModel):

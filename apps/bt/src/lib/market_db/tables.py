@@ -2,9 +2,9 @@
 SQLAlchemy Core Table Definitions
 
 Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
-17 テーブルを 3 つの MetaData に分離定義する。
+19 テーブルを 3 つの MetaData に分離定義する。
 
-- market_meta: market.db（6 テーブル）
+- market_meta: market.db（7 テーブル）
 - dataset_meta: dataset.db（7 テーブル — stocks 等は market と共通定義を再利用）
 - portfolio_meta: portfolio.db（5 テーブル）
 
@@ -35,7 +35,7 @@ dataset_meta = MetaData()
 portfolio_meta = MetaData()
 
 # ===========================================================================
-# market.db (6 tables)
+# market.db (7 tables)
 # ===========================================================================
 
 # --- stocks ---
@@ -106,6 +106,36 @@ indices_data = Table(
 )
 Index("idx_indices_data_date", indices_data.c.date)
 Index("idx_indices_data_code", indices_data.c.code)
+
+# --- statements ---
+market_statements = Table(
+    "statements",
+    market_meta,
+    Column("code", Text, nullable=False),
+    Column("disclosed_date", Text, nullable=False),
+    Column("earnings_per_share", REAL),
+    Column("profit", REAL),
+    Column("equity", REAL),
+    Column("type_of_current_period", Text),
+    Column("type_of_document", Text),
+    Column("next_year_forecast_earnings_per_share", REAL),
+    Column("bps", REAL),
+    Column("sales", REAL),
+    Column("operating_profit", REAL),
+    Column("ordinary_profit", REAL),
+    Column("operating_cash_flow", REAL),
+    Column("dividend_fy", REAL),
+    Column("forecast_eps", REAL),
+    Column("investing_cash_flow", REAL),
+    Column("financing_cash_flow", REAL),
+    Column("cash_and_equivalents", REAL),
+    Column("total_assets", REAL),
+    Column("shares_outstanding", REAL),
+    Column("treasury_shares", REAL),
+    PrimaryKeyConstraint("code", "disclosed_date"),
+)
+Index("idx_market_statements_date", market_statements.c.disclosed_date)
+Index("idx_market_statements_code", market_statements.c.code)
 
 # --- sync_metadata ---
 sync_metadata = Table(
