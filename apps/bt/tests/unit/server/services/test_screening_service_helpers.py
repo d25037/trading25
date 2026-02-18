@@ -321,8 +321,159 @@ class TestStrategyResolutionHelpers:
         with pytest.raises(ValueError, match="No valid production strategies selected"):
             service._resolve_strategies(",")  # noqa: SLF001
 
+    def test_resolve_strategies_success_with_duplicate_basename_uses_full_name(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        from src.paths.resolver import StrategyMetadata
+
+        service = ScreeningService(DummyReader())
+        meta_a = StrategyMetadata(
+            name="production/group_a/same",
+            category="production",
+            path=tmp_path / "production/group_a/same.yaml",
+            mtime=datetime.now(),
+        )
+        meta_b = StrategyMetadata(
+            name="production/group_b/same",
+            category="production",
+            path=tmp_path / "production/group_b/same.yaml",
+            mtime=datetime.now(),
+        )
+
+        monkeypatch.setattr(service._config_loader, "get_strategy_metadata", lambda: [meta_a, meta_b])
+        monkeypatch.setattr(
+            service._config_loader,
+            "load_strategy_config",
+            lambda _name: {"entry_filter_params": {}, "exit_trigger_params": {}},
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "merge_shared_config",
+            lambda _config: {"dataset": "primeExTopix500"},
+        )
+
+        runtimes = service._resolve_strategies(None)  # noqa: SLF001
+
+        assert {runtime.name for runtime in runtimes} == {
+            "production/group_a/same",
+            "production/group_b/same",
+        }
+        assert {runtime.response_name for runtime in runtimes} == {
+            "production/group_a/same",
+            "production/group_b/same",
+        }
+
+    def test_resolve_strategies_rejects_invalid_requested_name(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path: Path,
+    ):
+        from src.paths.resolver import StrategyMetadata
+
+        service = ScreeningService(DummyReader())
+        meta = StrategyMetadata(
+            name="production/range_break_v15",
+            category="production",
+            path=tmp_path / "production/range_break_v15.yaml",
+            mtime=datetime.now(),
+        )
+
+        monkeypatch.setattr(service._config_loader, "get_strategy_metadata", lambda: [meta])
+        monkeypatch.setattr(
+            service._config_loader,
+            "load_strategy_config",
+            lambda _name: {"entry_filter_params": {}, "exit_trigger_params": {}},
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "merge_shared_config",
+            lambda _config: {"dataset": "primeExTopix500"},
+        )
+
+        with pytest.raises(ValueError, match="Invalid strategies"):
+            service._resolve_strategies("range_break_v15,unknown")  # noqa: SLF001
+
 
 class TestRuntimeEvaluationHelpers:
+    def test_run_screening_aggregates_results_and_handles_strategy_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        s1 = _runtime("s1")
+        s2 = _runtime("s2")
+        stock_a = StockUniverseItem(code="1001", company_name="A", scale_category=None, sector_33_name=None)
+        stock_b = StockUniverseItem(code="1002", company_name="B", scale_category=None, sector_33_name=None)
+
+        monkeypatch.setattr(service, "_load_stock_universe", lambda _codes: [stock_a, stock_b])
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies: [s1, s2])
+        monkeypatch.setattr(
+            service,
+            "_load_strategy_scores",
+            lambda _strategies, _metric: (
+                {"s1": 1.5, "s2": None},
+                ["s2"],
+                ["metrics warning"],
+            ),
+        )
+
+        def _evaluate(strategy, _stock_universe, _recent_days, _reference_date, data_source="dataset"):
+            assert data_source == "market"
+            if strategy.response_name == "s1":
+                return [(stock_a, "2026-01-10"), (stock_b, "2026-01-09")], {"1001", "1002"}, ["strategy warning"]
+            raise RuntimeError("strategy boom")
+
+        monkeypatch.setattr(service, "_evaluate_strategy", _evaluate)
+
+        response = service.run_screening(
+            markets="prime,standard",
+            data_source="market",
+            limit=1,
+        )
+
+        assert response.summary.matchCount == 2
+        assert len(response.results) == 1
+        assert response.summary.byStrategy == {"s1": 2, "s2": 0}
+        assert "dataSource=market" in response.summary.warnings
+        assert "metrics warning" in response.summary.warnings
+        assert any("evaluation failed" in warning for warning in response.summary.warnings)
+
+    def test_run_screening_updates_matched_date_when_same_stock_matches_multiple_strategies(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        s1 = _runtime("s1")
+        s2 = _runtime("s2")
+        stock = StockUniverseItem(code="1001", company_name="A", scale_category=None, sector_33_name=None)
+
+        monkeypatch.setattr(service, "_load_stock_universe", lambda _codes: [stock])
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies: [s1, s2])
+        monkeypatch.setattr(
+            service,
+            "_load_strategy_scores",
+            lambda _strategies, _metric: ({"s1": 2.0, "s2": 1.0}, [], []),
+        )
+        monkeypatch.setattr(
+            service,
+            "_evaluate_strategy",
+            lambda strategy, _stock_universe, _recent_days, _reference_date, data_source="dataset": (
+                [(stock, "2026-01-05")],
+                {"1001"},
+                [],
+            ) if strategy.response_name == "s1" else ([(stock, "2026-01-10")], {"1001"}, []),
+        )
+
+        response = service.run_screening(data_source="dataset")
+
+        assert response.summary.matchCount == 1
+        assert response.results[0].stockCode == "1001"
+        assert response.results[0].matchedDate == "2026-01-10"
+        assert response.results[0].matchStrategyCount == 2
+        assert response.results[0].bestStrategyName == "s1"
+
     def test_resolve_date_range_prefers_reference_date_when_earlier(self):
         service = ScreeningService(DummyReader())
         shared = SharedConfig.model_validate(
@@ -382,6 +533,61 @@ class TestRuntimeEvaluationHelpers:
         entry.fundamental.enabled = False
         entry.fundamental.peg_ratio.enabled = False
         assert not service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
+
+    @pytest.mark.parametrize("period_type", ["all", "1Q", "2Q", "3Q", "FY"])
+    def test_resolve_period_type_variants(self, period_type: str):
+        service = ScreeningService(DummyReader())
+        entry = SignalParams()
+        exit_ = SignalParams()
+        entry.fundamental.period_type = period_type  # type: ignore[assignment]
+        assert service._resolve_period_type(entry, exit_) == period_type  # noqa: SLF001
+
+    def test_load_multi_data_market_collects_benchmark_and_sector_warnings(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        index = pd.to_datetime(["2026-01-01"])
+        daily = pd.DataFrame(
+            {
+                "Close": [1.0],
+                "Open": [1.0],
+                "High": [1.1],
+                "Low": [0.9],
+                "Volume": [100],
+            },
+            index=index,
+        )
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            lambda *_args, **_kwargs: ({"1001": {"daily": daily}}, ["base warning"]),
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_topix_data",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("topix unavailable")),
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_sector_indices",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("sector unavailable")),
+        )
+
+        _multi_data, benchmark_data, sector_data, _mapping, warnings = service._load_multi_data_market(  # noqa: SLF001
+            stock_codes=["1001"],
+            start_date="2026-01-01",
+            end_date="2026-01-31",
+            include_statements=False,
+            period_type="FY",
+            include_forecast_revision=False,
+            needs_benchmark=True,
+            needs_sector=True,
+        )
+
+        assert benchmark_data is None
+        assert sector_data is None
+        assert "base warning" in warnings
+        assert any("benchmark load failed" in warning for warning in warnings)
+        assert any("sector data load failed" in warning for warning in warnings)
 
     def test_build_result_item_and_best_strategy_helpers(self):
         service = ScreeningService(DummyReader())
@@ -486,3 +692,160 @@ class TestRuntimeEvaluationHelpers:
         assert matches == []
         assert processed == set()
         assert warnings == []
+
+    def test_evaluate_strategy_market_mode_uses_market_loader(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        strategy = _runtime("forward_eps_driven", shared_overrides={"include_statements_data": True})
+        universe = [StockUniverseItem(code="1001", company_name="A", scale_category=None, sector_33_name=None)]
+
+        index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+        daily = pd.DataFrame({"Close": [1.0, 1.1], "Open": [1.0, 1.0], "High": [1.1, 1.2], "Low": [0.9, 1.0], "Volume": [100, 200]}, index=index)
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            lambda *_args, **_kwargs: (
+                {"1001": {"daily": daily, "statements_daily": "stmt"}},
+                ["market loader warning"],
+            ),
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_topix_data",
+            lambda *_args, **_kwargs: pd.DataFrame(),
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_sector_indices",
+            lambda *_args, **_kwargs: {},
+        )
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_stock_sector_mapping",
+            lambda *_args, **_kwargs: {},
+        )
+        monkeypatch.setattr(service, "_needs_data_requirement", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(
+            service._signal_processor,
+            "generate_signals",
+            lambda **_kwargs: Signals(
+                entries=pd.Series([True, True], index=index),
+                exits=pd.Series([False, False], index=index),
+            ),
+        )
+
+        matches, processed, warnings = service._evaluate_strategy(  # noqa: SLF001
+            strategy=strategy,
+            stock_universe=universe,
+            recent_days=2,
+            reference_date=None,
+            data_source="market",
+        )
+
+        assert len(matches) == 1
+        assert processed == {"1001"}
+        assert any("market loader warning" in warning for warning in warnings)
+
+    def test_evaluate_strategy_market_mode_fallbacks_to_dataset(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        strategy = _runtime("range_break_v15")
+        universe = [StockUniverseItem(code="1001", company_name="A", scale_category=None, sector_33_name=None)]
+
+        index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+        daily = pd.DataFrame({"Close": [1.0, 1.1], "Open": [1.0, 1.0], "High": [1.1, 1.2], "Low": [0.9, 1.0], "Volume": [100, 200]}, index=index)
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("market down")),
+        )
+        monkeypatch.setattr("src.server.services.screening_service.data_access_mode_context", lambda _mode: nullcontext())
+        monkeypatch.setattr(
+            "src.server.services.screening_service.prepare_multi_data",
+            lambda **_kwargs: {"1001": {"daily": daily}},
+        )
+        monkeypatch.setattr(service, "_needs_data_requirement", lambda *_args, **_kwargs: False)
+        monkeypatch.setattr(
+            service._signal_processor,
+            "generate_signals",
+            lambda **_kwargs: Signals(
+                entries=pd.Series([True, True], index=index),
+                exits=pd.Series([False, False], index=index),
+            ),
+        )
+
+        matches, _processed, warnings = service._evaluate_strategy(  # noqa: SLF001
+            strategy=strategy,
+            stock_universe=universe,
+            recent_days=2,
+            reference_date=None,
+            data_source="market",
+        )
+
+        assert len(matches) == 1
+        assert any("fallback=dataset" in warning for warning in warnings)
+
+    def test_evaluate_strategy_market_mode_fallbacks_to_dataset_when_margin_required(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        strategy = _runtime(
+            "margin_based",
+            shared_overrides={"include_margin_data": True},
+        )
+        universe = [StockUniverseItem(code="1001", company_name="A", scale_category=None, sector_33_name=None)]
+
+        index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+        daily = pd.DataFrame({
+            "Close": [1.0, 1.1],
+            "Open": [1.0, 1.0],
+            "High": [1.1, 1.2],
+            "Low": [0.9, 1.0],
+            "Volume": [100, 200],
+        }, index=index)
+        margin_daily = pd.DataFrame({"margin_balance": [10.0, 11.0]}, index=index)
+
+        monkeypatch.setattr("src.server.services.screening_service.data_access_mode_context", lambda _mode: nullcontext())
+        monkeypatch.setattr(
+            "src.server.services.screening_service.prepare_multi_data",
+            lambda **_kwargs: {"1001": {"daily": daily, "margin_daily": margin_daily}},
+        )
+
+        def _market_loader_should_not_be_called(*_args, **_kwargs):
+            raise AssertionError("market loader should not be used when margin is required")
+
+        monkeypatch.setattr(
+            "src.server.services.screening_service.load_market_multi_data",
+            _market_loader_should_not_be_called,
+        )
+        monkeypatch.setattr(
+            service,
+            "_needs_data_requirement",
+            lambda _entry, _exit, requirement: requirement == "margin",
+        )
+
+        captured: dict[str, object] = {}
+
+        def _generate_signals(**kwargs):
+            captured["margin_data"] = kwargs.get("margin_data")
+            return Signals(
+                entries=pd.Series([True, True], index=index),
+                exits=pd.Series([False, False], index=index),
+            )
+
+        monkeypatch.setattr(service._signal_processor, "generate_signals", _generate_signals)
+
+        matches, processed, warnings = service._evaluate_strategy(  # noqa: SLF001
+            strategy=strategy,
+            stock_universe=universe,
+            recent_days=2,
+            reference_date=None,
+            data_source="market",
+        )
+
+        assert len(matches) == 1
+        assert processed == {"1001"}
+        assert any("fallback=dataset" in warning for warning in warnings)
+        assert captured["margin_data"] is margin_daily

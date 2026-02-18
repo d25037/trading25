@@ -11,8 +11,10 @@ from datetime import UTC, datetime
 from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.server.schemas.db import (
     DateRange,
+    FundamentalsStats,
     IndicesStats,
     MarketStatsResponse,
+    PrimeCoverage,
     StockDataStats,
     StockStats,
     TopixStats,
@@ -30,6 +32,9 @@ def get_market_stats(market_db: MarketDb) -> MarketStatsResponse:
     stock_data_range = market_db.get_stock_data_date_range()
     by_market = market_db.get_stock_count_by_market()
     indices_info = market_db.get_indices_data_range()
+    statement_codes = market_db.get_statement_codes()
+    latest_disclosed_date = market_db.get_latest_statement_disclosed_date()
+    prime_coverage_info = market_db.get_prime_statement_coverage(limit_missing=0)
     db_size = market_db.get_db_file_size()
 
     # Topix
@@ -61,6 +66,18 @@ def get_market_stats(market_db: MarketDb) -> MarketStatsResponse:
         byCategory=indices_info["byCategory"] if indices_info else {},
     )
 
+    fundamentals = FundamentalsStats(
+        count=basic.get("statements", 0),
+        uniqueStockCount=len(statement_codes),
+        latestDisclosedDate=latest_disclosed_date,
+        primeCoverage=PrimeCoverage(
+            primeStocks=prime_coverage_info.get("primeCount", 0),
+            coveredStocks=prime_coverage_info.get("coveredCount", 0),
+            missingStocks=prime_coverage_info.get("missingCount", 0),
+            coverageRatio=prime_coverage_info.get("coverageRatio", 0),
+        ),
+    )
+
     return MarketStatsResponse(
         initialized=initialized,
         lastSync=last_sync,
@@ -69,5 +86,6 @@ def get_market_stats(market_db: MarketDb) -> MarketStatsResponse:
         stocks=stocks_stats,
         stockData=stock_data,
         indices=indices,
+        fundamentals=fundamentals,
         lastUpdated=datetime.now(UTC).isoformat(),
     )

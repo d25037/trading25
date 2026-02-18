@@ -19,6 +19,7 @@ from src.lib.market_db.tables import (
     index_master,
     indices_data,
     market_meta,
+    market_statements,
     stock_data,
     stocks,
     sync_metadata,
@@ -32,6 +33,10 @@ METADATA_KEYS = {
     "LAST_STOCKS_REFRESH": "last_stocks_refresh",
     "FAILED_DATES": "failed_dates",
     "REFETCHED_STOCKS": "refetched_stocks",
+    "FUNDAMENTALS_LAST_SYNC_DATE": "fundamentals_last_sync_date",
+    "FUNDAMENTALS_LAST_DISCLOSED_DATE": "fundamentals_last_disclosed_date",
+    "FUNDAMENTALS_FAILED_DATES": "fundamentals_failed_dates",
+    "FUNDAMENTALS_FAILED_CODES": "fundamentals_failed_codes",
 }
 
 
@@ -40,6 +45,12 @@ class MarketDb(BaseDbAccess):
 
     def __init__(self, db_path: str, *, read_only: bool = False) -> None:
         super().__init__(db_path, read_only=read_only)
+        if not read_only:
+            self.ensure_schema()
+
+    def ensure_schema(self) -> None:
+        """不足テーブルを補完する（既存DB互換）"""
+        market_meta.create_all(self.engine, checkfirst=True)
 
     # --- Read ---
 
@@ -47,7 +58,15 @@ class MarketDb(BaseDbAccess):
         """DB 統計情報を取得"""
         with self.engine.connect() as conn:
             result: dict[str, Any] = {}
-            for table in [stocks, stock_data, topix_data, indices_data, sync_metadata, index_master]:
+            for table in [
+                stocks,
+                stock_data,
+                topix_data,
+                indices_data,
+                market_statements,
+                sync_metadata,
+                index_master,
+            ]:
                 count = conn.execute(select(func.count()).select_from(table)).scalar() or 0
                 result[table.name] = count
             return result
@@ -116,6 +135,100 @@ class MarketDb(BaseDbAccess):
             if row.code
         }
 
+    def get_latest_statement_disclosed_date(self) -> str | None:
+        """statements の最新開示日を取得"""
+        with self.engine.connect() as conn:
+            row = conn.execute(select(func.max(market_statements.c.disclosed_date))).fetchone()
+            return row[0] if row else None
+
+    def get_statement_codes(self) -> set[str]:
+        """statements に存在する銘柄コード一覧を取得"""
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(func.distinct(market_statements.c.code))).fetchall()
+        return {
+            str(row[0])
+            for row in rows
+            if row[0]
+        }
+
+    def get_prime_codes(self) -> set[str]:
+        """stocks から Prime 銘柄コードを取得（legacy 表記も吸収）"""
+        with self.engine.connect() as conn:
+            rows = conn.execute(
+                select(stocks.c.code).where(
+                    func.lower(func.trim(stocks.c.market_code)).in_(["0111", "prime"])
+                )
+            ).fetchall()
+        return {
+            str(row[0])
+            for row in rows
+            if row[0]
+        }
+
+    def get_prime_statement_coverage(
+        self,
+        *,
+        limit_missing: int | None = 20,
+    ) -> dict[str, Any]:
+        """Prime 銘柄に対する statements カバレッジを集計"""
+        prime_filter = func.lower(func.trim(stocks.c.market_code)).in_(["0111", "prime"])
+
+        with self.engine.connect() as conn:
+            prime_count = conn.execute(
+                select(func.count(func.distinct(stocks.c.code))).where(prime_filter)
+            ).scalar() or 0
+
+            covered_count = conn.execute(
+                select(func.count(func.distinct(stocks.c.code)))
+                .select_from(
+                    stocks.join(
+                        market_statements,
+                        market_statements.c.code == stocks.c.code,
+                    )
+                )
+                .where(prime_filter)
+            ).scalar() or 0
+
+            missing_count = conn.execute(
+                select(func.count(func.distinct(stocks.c.code)))
+                .select_from(
+                    stocks.outerjoin(
+                        market_statements,
+                        market_statements.c.code == stocks.c.code,
+                    )
+                )
+                .where(prime_filter)
+                .where(market_statements.c.code.is_(None))
+            ).scalar() or 0
+
+            missing_stmt = (
+                select(stocks.c.code)
+                .select_from(
+                    stocks.outerjoin(
+                        market_statements,
+                        market_statements.c.code == stocks.c.code,
+                    )
+                )
+                .where(prime_filter)
+                .where(market_statements.c.code.is_(None))
+                .order_by(stocks.c.code)
+            )
+            if limit_missing is not None and limit_missing >= 0:
+                missing_stmt = missing_stmt.limit(limit_missing)
+            missing_rows = conn.execute(missing_stmt).fetchall()
+
+        coverage_ratio = 0.0
+        if prime_count > 0:
+            coverage_ratio = covered_count / prime_count
+
+        return {
+            "primeCount": int(prime_count),
+            "coveredCount": int(covered_count),
+            "missingCount": int(missing_count),
+            "coverageRatio": round(coverage_ratio, 4),
+            "missingCodes": [str(row[0]) for row in missing_rows if row[0]],
+        }
+
     # --- Write ---
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
@@ -166,6 +279,19 @@ class MarketDb(BaseDbAccess):
             for row in rows:
                 conn.execute(
                     insert(indices_data)
+                    .values(row)
+                    .prefix_with("OR REPLACE")
+                )
+            return len(rows)
+
+    def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
+        """statements テーブルに upsert"""
+        if not rows:
+            return 0
+        with self.engine.begin() as conn:
+            for row in rows:
+                conn.execute(
+                    insert(market_statements)
                     .values(row)
                     .prefix_with("OR REPLACE")
                 )

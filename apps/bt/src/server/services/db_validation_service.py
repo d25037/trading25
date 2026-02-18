@@ -14,6 +14,7 @@ from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
 from src.server.schemas.db import (
     AdjustmentEvent,
     DateRange,
+    FundamentalsValidation,
     MarketValidationResponse,
     StockDataValidation,
     StockStats,
@@ -30,6 +31,9 @@ def validate_market_db(market_db: MarketDb) -> MarketValidationResponse:
     basic = market_db.get_stats()
     topix_range = market_db.get_topix_date_range()
     by_market = market_db.get_stock_count_by_market()
+    statement_codes = market_db.get_statement_codes()
+    latest_disclosed = market_db.get_latest_statement_disclosed_date()
+    prime_coverage = market_db.get_prime_statement_coverage(limit_missing=20)
 
     # Missing dates
     missing_dates = market_db.get_missing_stock_data_dates()
@@ -51,6 +55,15 @@ def validate_market_db(market_db: MarketDb) -> MarketValidationResponse:
         except json.JSONDecodeError:
             pass
 
+    fundamentals_failed_dates = _load_metadata_list(
+        market_db,
+        METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
+    )
+    fundamentals_failed_codes = _load_metadata_list(
+        market_db,
+        METADATA_KEYS["FUNDAMENTALS_FAILED_CODES"],
+    )
+
     # Recommendations
     recommendations: list[str] = []
     if not initialized:
@@ -61,12 +74,31 @@ def validate_market_db(market_db: MarketDb) -> MarketValidationResponse:
         recommendations.append(f"Run stock refresh for {len(all_needing)} stocks with adjustment events")
     if failed_dates:
         recommendations.append(f"Retry {len(failed_dates)} failed sync dates")
+    if prime_coverage.get("missingCount", 0) > 0:
+        recommendations.append(
+            f"Backfill fundamentals for {prime_coverage['missingCount']} Prime stocks"
+        )
+    if fundamentals_failed_dates:
+        recommendations.append(
+            f"Retry {len(fundamentals_failed_dates)} failed fundamentals dates"
+        )
+    if fundamentals_failed_codes:
+        recommendations.append(
+            f"Retry {len(fundamentals_failed_codes)} failed fundamentals codes"
+        )
 
     # Status determination
     status: Literal["healthy", "warning", "error"] = "healthy"
     if not initialized:
         status = "error"
-    elif missing_dates or failed_dates or all_needing:
+    elif (
+        missing_dates
+        or failed_dates
+        or all_needing
+        or prime_coverage.get("missingCount", 0) > 0
+        or fundamentals_failed_dates
+        or fundamentals_failed_codes
+    ):
         status = "warning"
 
     topix = TopixStats(
@@ -86,6 +118,16 @@ def validate_market_db(market_db: MarketDb) -> MarketValidationResponse:
         missingDatesCount=len(missing_dates),
     )
 
+    fundamentals_val = FundamentalsValidation(
+        count=basic.get("statements", 0),
+        uniqueStockCount=len(statement_codes),
+        latestDisclosedDate=latest_disclosed,
+        missingPrimeStocksCount=prime_coverage.get("missingCount", 0),
+        missingPrimeStocks=prime_coverage.get("missingCodes", []),
+        failedDatesCount=len(fundamentals_failed_dates),
+        failedCodesCount=len(fundamentals_failed_codes),
+    )
+
     return MarketValidationResponse(
         status=status,
         initialized=initialized,
@@ -94,6 +136,7 @@ def validate_market_db(market_db: MarketDb) -> MarketValidationResponse:
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data_val,
+        fundamentals=fundamentals_val,
         failedDates=failed_dates[:10],
         failedDatesCount=len(failed_dates),
         adjustmentEvents=[
@@ -105,3 +148,16 @@ def validate_market_db(market_db: MarketDb) -> MarketValidationResponse:
         recommendations=recommendations,
         lastUpdated=datetime.now(UTC).isoformat(),
     )
+
+
+def _load_metadata_list(market_db: MarketDb, key: str) -> list[str]:
+    raw = market_db.get_sync_metadata(key)
+    if not raw:
+        return []
+    try:
+        loaded = json.loads(raw)
+    except json.JSONDecodeError:
+        return []
+    if not isinstance(loaded, list):
+        return []
+    return [str(v) for v in loaded if isinstance(v, str)]
