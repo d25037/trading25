@@ -12516,7 +12516,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -12564,19 +12564,19 @@
       },
       "DateRange": {
         "properties": {
-          "from": {
+          "min": {
             "type": "string",
-            "title": "From"
+            "title": "Min"
           },
-          "to": {
+          "max": {
             "type": "string",
-            "title": "To"
+            "title": "Max"
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "min",
+          "max"
         ],
         "title": "DateRange"
       },
@@ -17003,7 +17003,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -21863,24 +21863,6 @@
         "type": "object",
         "title": "WatchlistUpdateRequest"
       },
-      "src__server__schemas__dataset__DateRange": {
-        "properties": {
-          "min": {
-            "type": "string",
-            "title": "Min"
-          },
-          "max": {
-            "type": "string",
-            "title": "Max"
-          }
-        },
-        "type": "object",
-        "required": [
-          "min",
-          "max"
-        ],
-        "title": "DateRange"
-      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -21962,6 +21944,24 @@
         ],
         "title": "OHLCVRecord",
         "description": "OHLCVレコード"
+      },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
       },
       "src__server__schemas__portfolio_factor_regression__IndexMatch": {
         "properties": {

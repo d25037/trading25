@@ -3075,7 +3075,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -3089,10 +3089,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
         /**
          * DefaultConfigResponse
@@ -5406,7 +5406,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -7471,13 +7471,6 @@ export interface components {
             description?: string | null;
         };
         /** DateRange */
-        src__server__schemas__dataset__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
-        /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
             min: string;
@@ -7529,6 +7522,13 @@ export interface components {
              * @description 出来高
              */
             volume: number;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /** IndexMatch */
         src__server__schemas__portfolio_factor_regression__IndexMatch: {

@@ -18,7 +18,11 @@ from loguru import logger
 
 from src.server.clients.jquants_client import JQuantsAsyncClient
 from src.lib.market_db.market_db import METADATA_KEYS, MarketDb
-from src.lib.market_db.query_helpers import expand_stock_code, normalize_stock_code
+from src.lib.market_db.query_helpers import (
+    expand_stock_code,
+    normalize_stock_code,
+    stock_code_candidates,
+)
 from src.server.schemas.db import SyncResult
 from src.server.services.fins_summary_mapper import convert_fins_summary_rows
 from src.server.services.stock_data_row_builder import build_stock_data_row
@@ -472,9 +476,8 @@ async def _sync_fundamentals_initial(
         if idx > 0 and idx % 100 == 0:
             ctx.on_progress("fundamentals", 2, 6, f"Fetching fundamentals: {idx}/{len(prime_codes)} codes...")
 
-        code5 = expand_stock_code(code)
         try:
-            data, page_calls = await _fetch_fins_summary_paginated(ctx.client, {"code": code5})
+            data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
             api_calls += page_calls
             rows = convert_fins_summary_rows(data, default_code=code)
             if rows:
@@ -588,9 +591,8 @@ async def _sync_fundamentals_incremental(
         if idx > 0 and idx % 100 == 0:
             ctx.on_progress("fundamentals", 4, 5, f"Backfilling fundamentals: {idx}/{len(code_targets)} codes...")
 
-        code5 = expand_stock_code(code)
         try:
-            data, page_calls = await _fetch_fins_summary_paginated(ctx.client, {"code": code5})
+            data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
             api_calls += page_calls
             rows = convert_fins_summary_rows(data, default_code=code)
             rows = [row for row in rows if row.get("code") in prime_code_set]
@@ -661,6 +663,52 @@ async def _fetch_fins_summary_paginated(
         current_params = {**current_params, "pagination_key": pagination_key}
 
     return all_rows, api_calls
+
+
+async def _fetch_fins_summary_by_code(
+    client: JQuantsAsyncClient,
+    code: str,
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch /fins/summary by trying both 5-digit and 4-digit code formats.
+
+    dataset builder は 5桁コードで fetch しているため、
+    market sync も 5桁優先で試行し、空結果やエラー時のみ 4桁へフォールバックする。
+    """
+    normalized_code = normalize_stock_code(code)
+    candidates = list(
+        dict.fromkeys(
+            (
+                expand_stock_code(normalized_code),
+                *stock_code_candidates(normalized_code),
+            )
+        )
+    )
+
+    total_calls = 0
+    last_error: Exception | None = None
+    saw_empty_payload = False
+
+    for candidate in candidates:
+        try:
+            data, page_calls = await _fetch_fins_summary_paginated(
+                client,
+                {"code": candidate},
+            )
+            total_calls += page_calls
+            if data:
+                return data, total_calls
+            saw_empty_payload = True
+            continue
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    if saw_empty_payload:
+        return [], total_calls
+
+    if last_error is None:
+        raise RuntimeError(f"fins/summary code fetch failed for {code}")
+    raise last_error
 
 
 def _extract_prime_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> set[str]:
