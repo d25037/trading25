@@ -4,6 +4,7 @@ Screening Service Unit Tests
 
 from __future__ import annotations
 
+import os
 import sqlite3
 import time
 from datetime import datetime
@@ -421,9 +422,10 @@ class TestRequestMemoizationAndParallelization:
             recent_days=10,
             progress_callback=lambda completed, total: progresses.append((completed, total)),
         )
+        expected_workers = min(3, os.cpu_count() or 1)
 
         assert len(results) == 3
         assert warnings == []
-        assert worker_count == 3
+        assert worker_count == expected_workers
         assert progresses[0] == (0, 3)
         assert progresses[-1] == (3, 3)
