@@ -20,19 +20,23 @@ const mockResults: ScreeningResultItem[] = [
 ];
 
 describe('ScreeningTable', () => {
-  it('renders strategy-centric columns', () => {
+  it('renders simplified columns without best strategy/score', () => {
     render(<ScreeningTable results={mockResults} isLoading={false} error={null} onStockClick={vi.fn()} />);
 
-    expect(screen.getByText('Best Strategy')).toBeInTheDocument();
-    expect(screen.getByText('Score')).toBeInTheDocument();
+    expect(screen.queryByText('Best Strategy')).not.toBeInTheDocument();
+    expect(screen.queryByText('Score')).not.toBeInTheDocument();
     expect(screen.getByText('Matches')).toBeInTheDocument();
   });
 
-  it('renders best strategy and score values', () => {
+  it('renders matched strategy list and count', () => {
     render(<ScreeningTable results={mockResults} isLoading={false} error={null} onStockClick={vi.fn()} />);
 
-    expect(screen.getByText('range_break_v15')).toBeInTheDocument();
-    expect(screen.getByText('1.234')).toBeInTheDocument();
     expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText('range_break_v15, forward_eps_driven')).toBeInTheDocument();
+  });
+
+  it('shows updating indicator while refetching', () => {
+    render(<ScreeningTable results={mockResults} isLoading={false} isFetching error={null} onStockClick={vi.fn()} />);
+    expect(screen.getByText('Updating...')).toBeInTheDocument();
   });
 });

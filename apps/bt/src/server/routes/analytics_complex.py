@@ -10,17 +10,32 @@ from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
 
 from src.lib.market_db.query_helpers import is_valid_stock_code
+from src.server.schemas.backtest import JobStatus
 from src.server.schemas.factor_regression import FactorRegressionResponse
 from src.server.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
 from src.server.schemas.ranking import MarketRankingResponse
 from src.server.schemas.screening import (
-    BacktestMetric,
     MarketScreeningResponse,
-    ScreeningSortBy,
-    SortOrder,
+)
+from src.server.schemas.screening_job import (
+    ScreeningJobPayload,
+    ScreeningJobRequest,
+    ScreeningJobResponse,
+)
+from src.server.services.job_manager import JobInfo
+from src.server.services.screening_job_service import (
+    screening_job_manager,
+    screening_job_service,
 )
 
 router = APIRouter(tags=["Analytics"])
+_SCREENING_JOB_TYPE = "screening"
+_SCREENING_DEPRECATED_MESSAGE = (
+    "GET /api/analytics/screening is removed. "
+    "Use POST /api/analytics/screening/jobs to start a job, "
+    "GET /api/analytics/screening/jobs/{job_id} to poll status, "
+    "and GET /api/analytics/screening/result/{job_id} to fetch result."
+)
 
 
 def _normalize_factor_regression_symbol(symbol: str) -> str:
@@ -116,61 +131,136 @@ async def get_factor_regression(
 
 @router.get(
     "/api/analytics/screening",
-    response_model=MarketScreeningResponse,
-    summary="Run stock screening",
-    description="Run strategy-driven stock screening based on production strategy YAML configs.",
+    summary="Legacy screening endpoint (removed)",
+    description="Legacy synchronous screening endpoint is removed. Use screening job endpoints.",
 )
-async def get_screening(
+async def get_screening_legacy() -> None:
+    """削除済み同期エンドポイント。移行ガイドを返す。"""
+    raise HTTPException(status_code=410, detail=_SCREENING_DEPRECATED_MESSAGE)
+
+
+def _get_screening_job_or_404(job_id: str) -> JobInfo:
+    """Screeningジョブを取得、存在しなければ404。"""
+    job = screening_job_manager.get_job(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
+    if job.job_type != _SCREENING_JOB_TYPE:
+        raise HTTPException(status_code=400, detail=f"Screeningジョブではありません: {job.job_type}")
+    return job
+
+
+def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
+    """JobInfo から ScreeningJobResponse を構築。"""
+    params = screening_job_service.get_job_request(job.job_id) or ScreeningJobRequest()
+
+    return ScreeningJobResponse(
+        job_id=job.job_id,
+        status=job.status,
+        progress=job.progress,
+        message=job.message,
+        created_at=job.created_at,
+        started_at=job.started_at,
+        completed_at=job.completed_at,
+        error=job.error,
+        markets=params.markets,
+        strategies=params.strategies,
+        recentDays=params.recentDays,
+        referenceDate=params.date,
+        sortBy=params.sortBy,
+        order=params.order,
+        limit=params.limit,
+    )
+
+
+@router.post(
+    "/api/analytics/screening/jobs",
+    response_model=ScreeningJobResponse,
+    status_code=202,
+    summary="Create screening job",
+    description="Submit an async screening job.",
+)
+async def create_screening_job(
     request: Request,
-    markets: str = Query("prime"),
-    strategies: str | None = Query(None),
-    recentDays: int = Query(10, ge=1, le=90),
-    date: str | None = Query(None, pattern=r"^\d{4}-\d{2}-\d{2}$"),
-    backtestMetric: BacktestMetric = Query("sharpe_ratio"),
-    sortBy: ScreeningSortBy = Query("bestStrategyScore"),
-    order: SortOrder = Query("desc"),
-    limit: int | None = Query(None, ge=1),
-) -> MarketScreeningResponse:
-    """スクリーニングを実行"""
-    from src.server.services.screening_service import ScreeningService
-
-    legacy_params = {
-        "rangeBreakFast",
-        "rangeBreakSlow",
-        "minBreakPercentage",
-        "minVolumeRatio",
-    }
-    used_legacy = sorted(set(request.query_params.keys()) & legacy_params)
-    if used_legacy:
-        raise HTTPException(
-            status_code=422,
-            detail=(
-                "Legacy screening query parameters were removed: "
-                + ", ".join(used_legacy)
-            ),
-        )
-
+    payload: ScreeningJobRequest,
+) -> ScreeningJobResponse:
+    """非同期 screening ジョブを開始"""
     reader = getattr(request.app.state, "market_reader", None)
     if reader is None:
         raise HTTPException(status_code=422, detail="Database not initialized")
 
-    service = ScreeningService(reader)
     try:
-        return service.run_screening(
-            markets=markets,
-            strategies=strategies,
-            recent_days=recentDays,
-            reference_date=date,
-            backtest_metric=backtestMetric,
-            sort_by=sortBy,
-            order=order,
-            limit=limit,
+        job_id = await screening_job_service.submit_screening(
+            reader=reader,
+            request=payload,
         )
+        return _build_screening_job_response(_get_screening_job_or_404(job_id))
     except ValueError as e:
-        raise HTTPException(status_code=422, detail=str(e))
+        raise HTTPException(status_code=422, detail=str(e)) from e
     except Exception as e:
-        logger.exception(f"Screening error: {e}")
-        raise HTTPException(status_code=500, detail=f"Failed to run screening: {e}")
+        logger.exception(f"Screening job submit error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to start screening job: {e}",
+        ) from e
+
+
+@router.get(
+    "/api/analytics/screening/jobs/{job_id}",
+    response_model=ScreeningJobResponse,
+    summary="Get screening job status",
+)
+async def get_screening_job(job_id: str) -> ScreeningJobResponse:
+    """Screening ジョブ状態を取得"""
+    return _build_screening_job_response(_get_screening_job_or_404(job_id))
+
+
+@router.post(
+    "/api/analytics/screening/jobs/{job_id}/cancel",
+    response_model=ScreeningJobResponse,
+    summary="Cancel screening job",
+)
+async def cancel_screening_job(job_id: str) -> ScreeningJobResponse:
+    """Screening ジョブをキャンセル"""
+    _get_screening_job_or_404(job_id)
+
+    cancelled_job = await screening_job_manager.cancel_job(job_id)
+    if cancelled_job is None:
+        job = screening_job_manager.get_job(job_id)
+        status = job.status if job else "unknown"
+        raise HTTPException(
+            status_code=409,
+            detail=f"ジョブは既に終了しています（状態: {status}）",
+        )
+
+    return _build_screening_job_response(cancelled_job)
+
+
+@router.get(
+    "/api/analytics/screening/result/{job_id}",
+    response_model=MarketScreeningResponse,
+    summary="Get screening result",
+)
+async def get_screening_result(job_id: str) -> MarketScreeningResponse:
+    """完了済み screening ジョブの結果を取得"""
+    job = _get_screening_job_or_404(job_id)
+
+    if job.status != JobStatus.COMPLETED:
+        raise HTTPException(
+            status_code=400,
+            detail=f"ジョブが完了していません（状態: {job.status}）",
+        )
+
+    if not isinstance(job.raw_result, dict):
+        raise HTTPException(status_code=500, detail="結果がありません")
+
+    try:
+        payload = ScreeningJobPayload.model_validate(job.raw_result)
+        return MarketScreeningResponse.model_validate(payload.response)
+    except Exception as e:
+        raise HTTPException(
+            status_code=500,
+            detail=f"結果の復元に失敗しました: {e}",
+        ) from e
 
 
 # --- Portfolio Factor Regression (Phase 3E-2) ---

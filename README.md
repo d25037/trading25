@@ -78,16 +78,26 @@ uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mod
 - Web の Backtest > Lab ページでも `evolve` / `optimize` に同じ `structure_mode` 設定を反映済み
 
 ### 5) Analysis Screening（戦略YAML駆動）
-`/api/analytics/screening` は production 戦略YAMLに基づく動的スクリーニングへ移行済みです。
+Analysis Screening は非同期ジョブ方式です。
 
 - Web: Analysis > Screening で production 戦略を動的選択（未選択=全production）
 - CLI:
 ```bash
 cd apps/ts
-bun run cli analysis screening --strategies production/forward_eps_driven --backtest-metric sharpe_ratio --sort-by bestStrategyScore
+bun run cli analysis screening --strategies production/forward_eps_driven --sort-by matchedDate
 ```
-- クエリは `markets`, `strategies`, `recentDays`, `date`, `backtestMetric`, `sortBy`, `order`, `limit`
+- API:
+```bash
+POST /api/analytics/screening/jobs
+GET /api/analytics/screening/jobs/{job_id}
+POST /api/analytics/screening/jobs/{job_id}/cancel
+GET /api/analytics/screening/result/{job_id}
+```
+- リクエストは `markets`, `strategies`, `recentDays`, `date`, `sortBy`, `order`, `limit`
+- 既定ソートは `matchedDate desc`
+- CLI は完了待機が既定（`--no-wait` で job_id を返して終了）
 - 旧 `rangeBreakFast/Slow`, `minBreakPercentage`, `minVolumeRatio` は廃止（後方互換なし）
+- 旧 `GET /api/analytics/screening` は 410（移行メッセージ返却）
 
 ## Monorepo Commands (root)
 

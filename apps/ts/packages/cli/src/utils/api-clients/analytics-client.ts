@@ -5,6 +5,7 @@ import type {
   MarketScreeningResponse,
   PortfolioFactorRegressionResponse,
   ROEResponse,
+  ScreeningJobResponse,
 } from './types.js';
 
 export class AnalyticsClient extends BaseApiClient {
@@ -28,30 +29,44 @@ export class AnalyticsClient extends BaseApiClient {
   }
 
   /**
-   * Run stock screening
+   * Create screening job
    */
-  async runMarketScreening(params: {
+  async createScreeningJob(params: {
     markets?: string;
     strategies?: string;
     recentDays?: number;
     date?: string;
-    backtestMetric?: 'sharpe_ratio' | 'calmar_ratio' | 'total_return' | 'win_rate' | 'profit_factor';
     sortBy?: 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
     order?: 'asc' | 'desc';
     limit?: number;
-  }): Promise<MarketScreeningResponse> {
-    const query = toQueryString({
-      markets: params.markets,
-      strategies: params.strategies,
-      recentDays: params.recentDays,
-      date: params.date,
-      backtestMetric: params.backtestMetric,
-      sortBy: params.sortBy,
-      order: params.order,
-      limit: params.limit,
+  }): Promise<ScreeningJobResponse> {
+    return this.request<ScreeningJobResponse>('/api/analytics/screening/jobs', {
+      method: 'POST',
+      body: JSON.stringify(params),
     });
-    const url = `/api/analytics/screening${query ? `?${query}` : ''}`;
-    return this.request<MarketScreeningResponse>(url);
+  }
+
+  /**
+   * Get screening job status
+   */
+  async getScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
+    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
+  }
+
+  /**
+   * Cancel screening job
+   */
+  async cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
+    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    });
+  }
+
+  /**
+   * Get completed screening result
+   */
+  async getScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
+    return this.request<MarketScreeningResponse>(`/api/analytics/screening/result/${encodeURIComponent(jobId)}`);
   }
 
   /**

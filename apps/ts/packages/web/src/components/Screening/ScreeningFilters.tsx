@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { BacktestMetric, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
+import type { ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
   { value: 5, label: '5 days' },
@@ -137,39 +137,17 @@ export function ScreeningFilters({
         />
 
         <div className="space-y-2">
-          <Label htmlFor="backtestMetric" className="text-xs">
-            Backtest Metric
-          </Label>
-          <Select
-            value={params.backtestMetric || 'sharpe_ratio'}
-            onValueChange={(v) => updateParam('backtestMetric', v as BacktestMetric)}
-          >
-            <SelectTrigger id="backtestMetric" className="h-8 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="sharpe_ratio">Sharpe Ratio</SelectItem>
-              <SelectItem value="calmar_ratio">Calmar Ratio</SelectItem>
-              <SelectItem value="total_return">Total Return</SelectItem>
-              <SelectItem value="win_rate">Win Rate</SelectItem>
-              <SelectItem value="profit_factor">Profit Factor</SelectItem>
-            </SelectContent>
-          </Select>
-        </div>
-
-        <div className="space-y-2">
           <Label htmlFor="sortBy" className="text-xs">
             Sort By
           </Label>
           <Select
-            value={params.sortBy || 'bestStrategyScore'}
+            value={params.sortBy || 'matchedDate'}
             onValueChange={(v) => updateParam('sortBy', v as ScreeningSortBy)}
           >
             <SelectTrigger id="sortBy" className="h-8 text-xs">
               <SelectValue />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="bestStrategyScore">Best Strategy Score</SelectItem>
               <SelectItem value="matchedDate">Matched Date</SelectItem>
               <SelectItem value="stockCode">Stock Code</SelectItem>
               <SelectItem value="matchStrategyCount">Match Strategy Count</SelectItem>

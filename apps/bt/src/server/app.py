@@ -40,6 +40,10 @@ from src.server.services.market_data_service import MarketDataService
 from src.server.services.optimization_service import optimization_service
 from src.server.services.dataset_resolver import DatasetResolver
 from src.server.services.roe_service import ROEService
+from src.server.services.screening_job_service import (
+    screening_job_manager,
+    screening_job_service,
+)
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -62,9 +66,11 @@ async def _periodic_cleanup(interval_seconds: int = 3600) -> None:
     while True:
         await asyncio.sleep(interval_seconds)
         try:
-            deleted = job_manager.cleanup_old_jobs(max_age_hours=24)
-            if deleted > 0:
-                logger.info(f"定期クリーンアップ: {deleted}件のジョブを削除")
+            deleted_backtest = job_manager.cleanup_old_jobs(max_age_hours=24)
+            deleted_screening = screening_job_manager.cleanup_old_jobs(max_age_hours=24)
+            deleted_total = deleted_backtest + deleted_screening
+            if deleted_total > 0:
+                logger.info(f"定期クリーンアップ: {deleted_total}件のジョブを削除")
         except Exception as e:
             logger.warning(f"定期クリーンアップエラー: {e}")
 
@@ -161,6 +167,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from src.server.services.dataset_builder_service import dataset_job_manager
     await sync_job_manager.shutdown()
     await dataset_job_manager.shutdown()
+    await screening_job_service.shutdown()
 
     # クリーンアップタスクを停止
     cleanup_task.cancel()
@@ -176,6 +183,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         backtest_attribution_service._executor,
         optimization_service._executor,
         lab_service._executor,
+        screening_job_service._executor,
         indicators._executor,
         ohlcv._executor,
         fundamentals._executor,

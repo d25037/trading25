@@ -7,9 +7,13 @@ production戦略YAML駆動の動的スクリーニングサービス。
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+import os
+from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from typing import Any
+from time import perf_counter
+from typing import Any, Literal
 
 import pandas as pd
 from loguru import logger
@@ -29,7 +33,6 @@ from src.models.config import SharedConfig
 from src.models.signals import SignalParams, Signals
 from src.paths import get_backtest_results_dir
 from src.server.schemas.screening import (
-    BacktestMetric,
     MarketScreeningResponse,
     MatchedStrategyItem,
     ScreeningResultItem,
@@ -72,10 +75,187 @@ class StrategyRuntime:
     shared_config: SharedConfig
 
 
+@dataclass(frozen=True)
+class MultiDataRequirementKey:
+    dataset: str
+    stock_codes: tuple[str, ...]
+    start_date: str | None
+    end_date: str | None
+    include_margin_data: bool
+    include_statements_data: bool
+    timeframe: Literal["daily", "weekly"]
+    period_type: APIPeriodType
+    include_forecast_revision: bool
+
+
+@dataclass(frozen=True)
+class TopixDataRequirementKey:
+    dataset: str
+    start_date: str | None
+    end_date: str | None
+
+
+@dataclass(frozen=True)
+class SectorDataRequirementKey:
+    dataset: str
+    start_date: str | None
+    end_date: str | None
+
+
+@dataclass(frozen=True)
+class StrategyDataRequirements:
+    include_margin_data: bool
+    include_statements_data: bool
+    needs_benchmark: bool
+    needs_sector: bool
+    multi_data_key: MultiDataRequirementKey
+    benchmark_data_key: TopixDataRequirementKey | None
+    sector_data_key: SectorDataRequirementKey | None
+    sector_mapping_key: str | None
+
+
+@dataclass
+class StrategyDataBundle:
+    multi_data: dict[str, dict[str, Any]]
+    benchmark_data: pd.DataFrame | None = None
+    sector_data: dict[str, pd.DataFrame] | None = None
+    stock_sector_mapping: dict[str, str] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class StrategyExecutionInput:
+    strategy: StrategyRuntime
+    data_bundle: StrategyDataBundle
+    load_warnings: list[str]
+
+
+@dataclass(frozen=True)
+class StrategyEvaluationResult:
+    strategy: StrategyRuntime
+    matched_rows: list[tuple[StockUniverseItem, str]]
+    processed_codes: set[str]
+    warnings: list[str]
+
+
+@dataclass(frozen=True)
+class RequestCacheStats:
+    hits: int
+    misses: int
+
+
+@dataclass(frozen=True)
+class OptionalLoadResult:
+    data: Any | None
+    warning: str | None = None
+
+
+class ScreeningRequestCache:
+    """同一リクエスト内で data loader の結果を再利用するメモ化キャッシュ。"""
+
+    def __init__(self) -> None:
+        self._multi_data: dict[MultiDataRequirementKey, dict[str, dict[str, Any]]] = {}
+        self._multi_data_errors: dict[MultiDataRequirementKey, str] = {}
+        self._benchmark_data: dict[TopixDataRequirementKey, OptionalLoadResult] = {}
+        self._sector_data: dict[SectorDataRequirementKey, OptionalLoadResult] = {}
+        self._sector_mapping: dict[str, OptionalLoadResult] = {}
+        self._hits = 0
+        self._misses = 0
+
+    @property
+    def stats(self) -> RequestCacheStats:
+        return RequestCacheStats(hits=self._hits, misses=self._misses)
+
+    def _record_hit(self) -> None:
+        self._hits += 1
+
+    def _record_miss(self) -> None:
+        self._misses += 1
+
+    def get_multi_data(
+        self,
+        key: MultiDataRequirementKey,
+        loader: Callable[[], dict[str, dict[str, Any]]],
+    ) -> dict[str, dict[str, Any]]:
+        if key in self._multi_data:
+            self._record_hit()
+            return self._multi_data[key]
+        if key in self._multi_data_errors:
+            self._record_hit()
+            raise RuntimeError(self._multi_data_errors[key])
+
+        self._record_miss()
+        try:
+            value = loader()
+        except Exception as exc:
+            self._multi_data_errors[key] = str(exc)
+            raise
+
+        self._multi_data[key] = value
+        return value
+
+    def get_benchmark_data(
+        self,
+        key: TopixDataRequirementKey,
+        loader: Callable[[], pd.DataFrame],
+    ) -> OptionalLoadResult:
+        cached = self._benchmark_data.get(key)
+        if cached is not None:
+            self._record_hit()
+            return cached
+
+        self._record_miss()
+        try:
+            value = loader()
+            result = OptionalLoadResult(data=value)
+        except Exception as exc:
+            result = OptionalLoadResult(data=None, warning=str(exc))
+        self._benchmark_data[key] = result
+        return result
+
+    def get_sector_data(
+        self,
+        key: SectorDataRequirementKey,
+        loader: Callable[[], dict[str, pd.DataFrame]],
+    ) -> OptionalLoadResult:
+        cached = self._sector_data.get(key)
+        if cached is not None:
+            self._record_hit()
+            return cached
+
+        self._record_miss()
+        try:
+            value = loader()
+            result = OptionalLoadResult(data=value)
+        except Exception as exc:
+            result = OptionalLoadResult(data=None, warning=str(exc))
+        self._sector_data[key] = result
+        return result
+
+    def get_sector_mapping(
+        self,
+        dataset: str,
+        loader: Callable[[], dict[str, str]],
+    ) -> OptionalLoadResult:
+        cached = self._sector_mapping.get(dataset)
+        if cached is not None:
+            self._record_hit()
+            return cached
+
+        self._record_miss()
+        try:
+            value = loader()
+            result = OptionalLoadResult(data=value)
+        except Exception as exc:
+            result = OptionalLoadResult(data=None, warning=str(exc))
+        self._sector_mapping[dataset] = result
+        return result
+
+
 class ScreeningService:
     """戦略YAML駆動のスクリーニングサービス"""
 
     _WARNING_LIMIT = 50
+    _DEFAULT_BACKTEST_METRIC = "sharpe_ratio"
 
     def __init__(self, reader: MarketDbReader) -> None:
         self._reader = reader
@@ -88,46 +268,66 @@ class ScreeningService:
         strategies: str | None = None,
         recent_days: int = 10,
         reference_date: str | None = None,
-        backtest_metric: BacktestMetric = "sharpe_ratio",
-        sort_by: ScreeningSortBy = "bestStrategyScore",
+        sort_by: ScreeningSortBy = "matchedDate",
         order: SortOrder = "desc",
         limit: int | None = None,
+        progress_callback: Callable[[int, int], None] | None = None,
     ) -> MarketScreeningResponse:
         """スクリーニングを実行"""
+        run_started = perf_counter()
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
 
+        load_stage_started = perf_counter()
         stock_universe = self._load_stock_universe(query_market_codes)
         strategy_runtimes = self._resolve_strategies(strategies)
         strategy_scores, missing_metric_strategies, metric_warnings = self._load_strategy_scores(
-            strategy_runtimes,
-            backtest_metric,
+            strategy_runtimes
+        )
+        strategy_inputs, cache_stats = self._prepare_strategy_inputs(
+            strategy_runtimes=strategy_runtimes,
+            stock_universe=stock_universe,
+            reference_date=reference_date,
+        )
+        self._log_stage_timing(
+            stage="load",
+            started_at=load_stage_started,
+            stock_count=len(stock_universe),
+            strategy_count=len(strategy_runtimes),
+            cache_hits=cache_stats.hits,
+            cache_misses=cache_stats.misses,
         )
 
+        evaluate_stage_started = perf_counter()
+        strategy_results, strategy_fail_warnings, worker_count = self._evaluate_strategies(
+            strategy_inputs=strategy_inputs,
+            stock_universe=stock_universe,
+            recent_days=recent_days,
+            progress_callback=progress_callback,
+        )
+        self._log_stage_timing(
+            stage="evaluate",
+            started_at=evaluate_stage_started,
+            stock_count=len(stock_universe),
+            strategy_count=len(strategy_runtimes),
+            workers=worker_count,
+        )
+
+        aggregate_stage_started = perf_counter()
         warnings: list[str] = list(metric_warnings)
+        warnings.extend(strategy_fail_warnings)
+
         by_strategy = {s.response_name: 0 for s in strategy_runtimes}
         processed_codes: set[str] = set()
-
         aggregated: dict[str, dict[str, Any]] = {}
 
-        for strategy in strategy_runtimes:
-            try:
-                matched_rows, processed, strategy_warnings = self._evaluate_strategy(
-                    strategy,
-                    stock_universe,
-                    recent_days,
-                    reference_date,
-                )
-            except Exception as exc:
-                logger.exception(f"Strategy screening failed: {strategy.name}")
-                warnings.append(f"{strategy.response_name}: evaluation failed ({exc})")
-                continue
+        for strategy_result in strategy_results:
+            strategy_name = strategy_result.strategy.response_name
+            processed_codes |= strategy_result.processed_codes
+            warnings.extend(strategy_result.warnings)
 
-            processed_codes |= processed
-            warnings.extend(strategy_warnings)
-
-            strategy_score = strategy_scores.get(strategy.response_name)
-            for stock, matched_date in matched_rows:
-                by_strategy[strategy.response_name] += 1
+            strategy_score = strategy_scores.get(strategy_name)
+            for stock, matched_date in strategy_result.matched_rows:
+                by_strategy[strategy_name] += 1
 
                 existing = aggregated.get(stock.code)
                 if existing is None:
@@ -142,18 +342,30 @@ class ScreeningService:
 
                 existing["matchedStrategies"].append(
                     MatchedStrategyItem(
-                        strategyName=strategy.response_name,
+                        strategyName=strategy_name,
                         matchedDate=matched_date,
                         strategyScore=strategy_score,
                     )
                 )
 
         all_results = [self._build_result_item(item) for item in aggregated.values()]
-        sorted_results = self._sort_results(all_results, sort_by=sort_by, order=order)
+        self._log_stage_timing(
+            stage="aggregate",
+            started_at=aggregate_stage_started,
+            match_count=len(all_results),
+        )
 
+        sort_stage_started = perf_counter()
+        sorted_results = self._sort_results(all_results, sort_by=sort_by, order=order)
         match_count = len(sorted_results)
         if limit is not None and limit > 0:
             sorted_results = sorted_results[:limit]
+        self._log_stage_timing(
+            stage="sort",
+            started_at=sort_stage_started,
+            match_count=match_count,
+            result_count=len(sorted_results),
+        )
 
         summary = ScreeningSummary(
             totalStocksScreened=len(stock_universe),
@@ -165,17 +377,29 @@ class ScreeningService:
             warnings=self._dedupe_warnings(warnings),
         )
 
-        return MarketScreeningResponse(
+        response = MarketScreeningResponse(
             results=sorted_results,
             summary=summary,
             markets=requested_market_codes,
             recentDays=recent_days,
             referenceDate=reference_date,
-            backtestMetric=backtest_metric,
             sortBy=sort_by,
             order=order,
             lastUpdated=_now_iso(),
         )
+
+        total_duration_ms = round((perf_counter() - run_started) * 1000, 2)
+        logger.bind(
+            event="screening_job_summary",
+            duration_ms=total_duration_ms,
+            stock_count=len(stock_universe),
+            strategy_count=len(strategy_runtimes),
+            worker_count=worker_count,
+            cache_hit_count=cache_stats.hits,
+            cache_miss_count=cache_stats.misses,
+        ).info("screening execution summary")
+
+        return response
 
     def _load_stock_universe(self, market_codes: list[str]) -> list[StockUniverseItem]:
         """市場フィルタ済み銘柄母集団を読み込む。"""
@@ -300,15 +524,14 @@ class ScreeningService:
     def _load_strategy_scores(
         self,
         strategies: list[StrategyRuntime],
-        metric: BacktestMetric,
     ) -> tuple[dict[str, float | None], list[str], list[str]]:
-        """各戦略の最新バックテスト指標を取得する。"""
+        """各戦略の最新バックテスト指標（固定: sharpe_ratio）を取得する。"""
         scores: dict[str, float | None] = {}
         missing: list[str] = []
         warnings: list[str] = []
 
         for strategy in strategies:
-            score, warning = self._load_latest_metric(strategy.basename, metric)
+            score, warning = self._load_latest_metric(strategy.basename)
             scores[strategy.response_name] = score
             if score is None:
                 missing.append(strategy.response_name)
@@ -320,9 +543,8 @@ class ScreeningService:
     def _load_latest_metric(
         self,
         strategy_basename: str,
-        metric: BacktestMetric,
     ) -> tuple[float | None, str | None]:
-        """戦略ディレクトリ内の最新*.metrics.jsonから指標を取得する。"""
+        """戦略ディレクトリ内の最新*.metrics.jsonから sharpe_ratio を取得する。"""
         strategy_dir = get_backtest_results_dir(strategy_basename)
         if not strategy_dir.exists():
             return None, None
@@ -336,12 +558,14 @@ class ScreeningService:
             return None, None
 
         latest = metric_files[0]
+        metric_name = self._DEFAULT_BACKTEST_METRIC
+
         try:
             payload = json.loads(latest.read_text(encoding="utf-8"))
         except (OSError, json.JSONDecodeError) as exc:
             return None, f"failed to read metrics ({latest.name}: {exc})"
 
-        value = payload.get(metric)
+        value = payload.get(metric_name)
         if value is None:
             return None, None
 
@@ -351,20 +575,89 @@ class ScreeningService:
         try:
             return float(value), None
         except (TypeError, ValueError):
-            return None, f"metric {metric} is not numeric in {latest.name}"
+            return None, f"metric {metric_name} is not numeric in {latest.name}"
 
-    def _evaluate_strategy(
+    def _prepare_strategy_inputs(
+        self,
+        strategy_runtimes: list[StrategyRuntime],
+        stock_universe: list[StockUniverseItem],
+        reference_date: str | None,
+    ) -> tuple[list[StrategyExecutionInput], RequestCacheStats]:
+        """戦略評価に必要なデータをロードし、戦略ごとの入力を構築する。"""
+        if not strategy_runtimes:
+            return [], RequestCacheStats(hits=0, misses=0)
+
+        stock_codes = tuple(stock.code for stock in stock_universe)
+        cache = ScreeningRequestCache()
+        inputs: list[StrategyExecutionInput] = []
+
+        for strategy in strategy_runtimes:
+            requirements = self._build_data_requirements(strategy, stock_codes, reference_date)
+            warnings: list[str] = []
+
+            try:
+                multi_data = cache.get_multi_data(
+                    requirements.multi_data_key,
+                    loader=lambda key=requirements.multi_data_key: self._load_multi_data(key),
+                )
+            except Exception as exc:
+                warnings.append(f"multi data load failed ({exc})")
+                multi_data = {}
+
+            benchmark_data = None
+            if requirements.needs_benchmark and requirements.benchmark_data_key is not None:
+                benchmark_result = cache.get_benchmark_data(
+                    requirements.benchmark_data_key,
+                    loader=lambda key=requirements.benchmark_data_key: self._load_benchmark_data(key),
+                )
+                benchmark_data = benchmark_result.data
+                if benchmark_result.warning:
+                    warnings.append(f"benchmark load failed ({benchmark_result.warning})")
+
+            sector_data = None
+            stock_sector_mapping: dict[str, str] = {}
+            if requirements.needs_sector and requirements.sector_data_key is not None:
+                sector_result = cache.get_sector_data(
+                    requirements.sector_data_key,
+                    loader=lambda key=requirements.sector_data_key: self._load_sector_data(key),
+                )
+                sector_data = sector_result.data
+                if sector_result.warning:
+                    warnings.append(f"sector data load failed ({sector_result.warning})")
+
+                if requirements.sector_mapping_key is not None:
+                    mapping_result = cache.get_sector_mapping(
+                        requirements.sector_mapping_key,
+                        loader=lambda dataset=requirements.sector_mapping_key: self._load_sector_mapping(
+                            dataset
+                        ),
+                    )
+                    if isinstance(mapping_result.data, dict):
+                        stock_sector_mapping = mapping_result.data
+                    if mapping_result.warning:
+                        warnings.append(f"sector mapping load failed ({mapping_result.warning})")
+
+            inputs.append(
+                StrategyExecutionInput(
+                    strategy=strategy,
+                    data_bundle=StrategyDataBundle(
+                        multi_data=multi_data,
+                        benchmark_data=benchmark_data,
+                        sector_data=sector_data,
+                        stock_sector_mapping=stock_sector_mapping,
+                    ),
+                    load_warnings=warnings,
+                )
+            )
+
+        return inputs, cache.stats
+
+    def _build_data_requirements(
         self,
         strategy: StrategyRuntime,
-        stock_universe: list[StockUniverseItem],
-        recent_days: int,
+        stock_codes: tuple[str, ...],
         reference_date: str | None,
-    ) -> tuple[list[tuple[StockUniverseItem, str]], set[str], list[str]]:
-        """1戦略分のスクリーニング評価を実行する。"""
-        if not stock_universe:
-            return [], set(), []
-
-        stock_codes = [s.code for s in stock_universe]
+    ) -> StrategyDataRequirements:
         start_date, end_date = self._resolve_date_range(strategy.shared_config, reference_date)
 
         include_margin = (
@@ -379,53 +672,211 @@ class ScreeningService:
             strategy.entry_params,
             strategy.exit_params,
         )
-        needs_benchmark = self._needs_data_requirement(strategy.entry_params, strategy.exit_params, "benchmark")
-        needs_sector = self._needs_data_requirement(strategy.entry_params, strategy.exit_params, "sector")
+        needs_benchmark = self._needs_data_requirement(
+            strategy.entry_params,
+            strategy.exit_params,
+            "benchmark",
+        )
+        needs_sector = self._needs_data_requirement(
+            strategy.entry_params,
+            strategy.exit_params,
+            "sector",
+        )
 
-        warnings: list[str] = []
+        multi_data_key = MultiDataRequirementKey(
+            dataset=strategy.shared_config.dataset,
+            stock_codes=stock_codes,
+            start_date=start_date,
+            end_date=end_date,
+            include_margin_data=include_margin,
+            include_statements_data=include_statements,
+            timeframe=strategy.shared_config.timeframe,
+            period_type=self._resolve_period_type(strategy.entry_params, strategy.exit_params),
+            include_forecast_revision=include_forecast_revision,
+        )
 
-        with data_access_mode_context("direct"):
-            multi_data = prepare_multi_data(
+        benchmark_data_key = (
+            TopixDataRequirementKey(
                 dataset=strategy.shared_config.dataset,
-                stock_codes=stock_codes,
                 start_date=start_date,
                 end_date=end_date,
-                include_margin_data=include_margin,
-                include_statements_data=include_statements,
-                timeframe=strategy.shared_config.timeframe,
-                period_type=self._resolve_period_type(strategy.entry_params, strategy.exit_params),
-                include_forecast_revision=include_forecast_revision,
+            )
+            if needs_benchmark
+            else None
+        )
+
+        sector_data_key = (
+            SectorDataRequirementKey(
+                dataset=strategy.shared_config.dataset,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            if needs_sector
+            else None
+        )
+
+        return StrategyDataRequirements(
+            include_margin_data=include_margin,
+            include_statements_data=include_statements,
+            needs_benchmark=needs_benchmark,
+            needs_sector=needs_sector,
+            multi_data_key=multi_data_key,
+            benchmark_data_key=benchmark_data_key,
+            sector_data_key=sector_data_key,
+            sector_mapping_key=strategy.shared_config.dataset if needs_sector else None,
+        )
+
+    def _load_multi_data(
+        self,
+        key: MultiDataRequirementKey,
+    ) -> dict[str, dict[str, Any]]:
+        with data_access_mode_context("direct"):
+            return prepare_multi_data(
+                dataset=key.dataset,
+                stock_codes=list(key.stock_codes),
+                start_date=key.start_date,
+                end_date=key.end_date,
+                include_margin_data=key.include_margin_data,
+                include_statements_data=key.include_statements_data,
+                timeframe=key.timeframe,
+                period_type=key.period_type,
+                include_forecast_revision=key.include_forecast_revision,
             )
 
-            benchmark_data = None
-            if needs_benchmark:
-                try:
-                    benchmark_data = load_topix_data(
-                        strategy.shared_config.dataset,
-                        start_date=start_date,
-                        end_date=end_date,
-                    )
-                except Exception as exc:
-                    warnings.append(f"benchmark load failed ({exc})")
+    def _load_benchmark_data(self, key: TopixDataRequirementKey) -> pd.DataFrame:
+        with data_access_mode_context("direct"):
+            return load_topix_data(
+                key.dataset,
+                start_date=key.start_date,
+                end_date=key.end_date,
+            )
 
-            sector_data = None
-            stock_sector_mapping: dict[str, str] = {}
-            if needs_sector:
+    def _load_sector_data(self, key: SectorDataRequirementKey) -> dict[str, pd.DataFrame]:
+        with data_access_mode_context("direct"):
+            return load_all_sector_indices(
+                key.dataset,
+                start_date=key.start_date,
+                end_date=key.end_date,
+            )
+
+    def _load_sector_mapping(self, dataset: str) -> dict[str, str]:
+        with data_access_mode_context("direct"):
+            return get_stock_sector_mapping(dataset)
+
+    def _evaluate_strategies(
+        self,
+        strategy_inputs: list[StrategyExecutionInput],
+        stock_universe: list[StockUniverseItem],
+        recent_days: int,
+        progress_callback: Callable[[int, int], None] | None,
+    ) -> tuple[list[StrategyEvaluationResult], list[str], int]:
+        """戦略評価を自動並列で実行。例外は戦略単位で吸収して継続する。"""
+        total = len(strategy_inputs)
+        if total == 0:
+            self._emit_progress(progress_callback, completed=0, total=0)
+            return [], [], 1
+
+        self._emit_progress(progress_callback, completed=0, total=total)
+
+        worker_count = self._resolve_strategy_workers(total)
+        completed = 0
+        warnings: list[str] = []
+        result_by_strategy: dict[str, StrategyEvaluationResult] = {}
+
+        if worker_count == 1:
+            for strategy_input in strategy_inputs:
                 try:
-                    sector_data = load_all_sector_indices(
-                        strategy.shared_config.dataset,
-                        start_date=start_date,
-                        end_date=end_date,
+                    result = self._evaluate_strategy_input(
+                        strategy_input,
+                        stock_universe=stock_universe,
+                        recent_days=recent_days,
                     )
-                    stock_sector_mapping = get_stock_sector_mapping(strategy.shared_config.dataset)
+                    result_by_strategy[strategy_input.strategy.response_name] = result
                 except Exception as exc:
-                    warnings.append(f"sector data load failed ({exc})")
+                    logger.exception(
+                        "Strategy screening failed",
+                        strategy=strategy_input.strategy.name,
+                    )
+                    warnings.append(
+                        f"{strategy_input.strategy.response_name}: evaluation failed ({exc})"
+                    )
+                finally:
+                    completed += 1
+                    self._emit_progress(progress_callback, completed=completed, total=total)
+        else:
+            with ThreadPoolExecutor(max_workers=worker_count) as executor:
+                future_to_input = {
+                    executor.submit(
+                        self._evaluate_strategy_input,
+                        strategy_input,
+                        stock_universe,
+                        recent_days,
+                    ): strategy_input
+                    for strategy_input in strategy_inputs
+                }
+
+                for future in as_completed(future_to_input):
+                    strategy_input = future_to_input[future]
+                    try:
+                        result = future.result()
+                        result_by_strategy[strategy_input.strategy.response_name] = result
+                    except Exception as exc:
+                        logger.exception(
+                            "Strategy screening failed",
+                            strategy=strategy_input.strategy.name,
+                        )
+                        warnings.append(
+                            f"{strategy_input.strategy.response_name}: evaluation failed ({exc})"
+                        )
+                    finally:
+                        completed += 1
+                        self._emit_progress(progress_callback, completed=completed, total=total)
+
+        ordered_results: list[StrategyEvaluationResult] = []
+        for strategy_input in strategy_inputs:
+            result = result_by_strategy.get(strategy_input.strategy.response_name)
+            if result is not None:
+                ordered_results.append(result)
+
+        return ordered_results, warnings, worker_count
+
+    def _evaluate_strategy_input(
+        self,
+        strategy_input: StrategyExecutionInput,
+        stock_universe: list[StockUniverseItem],
+        recent_days: int,
+    ) -> StrategyEvaluationResult:
+        matches, processed, eval_warnings = self._evaluate_strategy(
+            strategy=strategy_input.strategy,
+            stock_universe=stock_universe,
+            recent_days=recent_days,
+            data_bundle=strategy_input.data_bundle,
+        )
+
+        return StrategyEvaluationResult(
+            strategy=strategy_input.strategy,
+            matched_rows=matches,
+            processed_codes=processed,
+            warnings=[*strategy_input.load_warnings, *eval_warnings],
+        )
+
+    def _evaluate_strategy(
+        self,
+        strategy: StrategyRuntime,
+        stock_universe: list[StockUniverseItem],
+        recent_days: int,
+        data_bundle: StrategyDataBundle,
+    ) -> tuple[list[tuple[StockUniverseItem, str]], set[str], list[str]]:
+        """1戦略分のスクリーニング評価を実行する。"""
+        if not stock_universe:
+            return [], set(), []
 
         matches: list[tuple[StockUniverseItem, str]] = []
         processed: set[str] = set()
+        warnings: list[str] = []
 
         for stock in stock_universe:
-            stock_data = multi_data.get(stock.code)
+            stock_data = data_bundle.multi_data.get(stock.code)
             if not stock_data:
                 continue
 
@@ -435,8 +886,8 @@ class ScreeningService:
 
             processed.add(stock.code)
 
-            margin_data = stock_data.get("margin_daily") if include_margin else None
-            statements_data = stock_data.get("statements_daily") if include_statements else None
+            margin_data = stock_data.get("margin_daily")
+            statements_data = stock_data.get("statements_daily")
 
             try:
                 signals = self._signal_processor.generate_signals(
@@ -447,9 +898,9 @@ class ScreeningService:
                     exit_signal_params=strategy.exit_params,
                     margin_data=margin_data,
                     statements_data=statements_data,
-                    benchmark_data=benchmark_data,
-                    sector_data=sector_data,
-                    stock_sector_name=stock_sector_mapping.get(stock.code),
+                    benchmark_data=data_bundle.benchmark_data,
+                    sector_data=data_bundle.sector_data,
+                    stock_sector_name=data_bundle.stock_sector_mapping.get(stock.code),
                 )
             except Exception as exc:
                 warnings.append(f"{stock.code} signal generation failed ({exc})")
@@ -462,6 +913,55 @@ class ScreeningService:
             matches.append((stock, matched_date))
 
         return matches, processed, warnings
+
+    def _resolve_strategy_workers(self, strategy_count: int) -> int:
+        """戦略並列数を自動決定する。"""
+        if strategy_count <= 1:
+            return 1
+
+        auto_workers = min(strategy_count, os.cpu_count() or 1)
+        configured = os.getenv("BT_SCREENING_MAX_STRATEGY_WORKERS")
+        if configured is None:
+            return max(1, auto_workers)
+
+        try:
+            configured_workers = int(configured)
+            if configured_workers <= 0:
+                raise ValueError("must be > 0")
+            return max(1, min(auto_workers, configured_workers))
+        except ValueError:
+            logger.warning(
+                "Invalid BT_SCREENING_MAX_STRATEGY_WORKERS. Fallback to auto workers.",
+                value=configured,
+            )
+            return max(1, auto_workers)
+
+    def _emit_progress(
+        self,
+        progress_callback: Callable[[int, int], None] | None,
+        completed: int,
+        total: int,
+    ) -> None:
+        if progress_callback is None:
+            return
+        try:
+            progress_callback(completed, total)
+        except Exception as exc:
+            logger.warning(f"screening progress callback failed: {exc}")
+
+    def _log_stage_timing(
+        self,
+        stage: str,
+        started_at: float,
+        **extra: Any,
+    ) -> None:
+        duration_ms = round((perf_counter() - started_at) * 1000, 2)
+        logger.bind(
+            event="screening_stage_timing",
+            stage=stage,
+            duration_ms=duration_ms,
+            **extra,
+        ).info("screening stage completed")
 
     def _resolve_date_range(
         self,
