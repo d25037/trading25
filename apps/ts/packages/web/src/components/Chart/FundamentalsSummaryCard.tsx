@@ -8,7 +8,7 @@ interface MetricCardProps {
   value: number | null;
   format: 'percent' | 'times' | 'yen' | 'millions';
   colorScheme?: FundamentalColorScheme;
-  /** Previous period value to show in parentheses */
+  /** Secondary value to show in parentheses */
   prevValue?: number | null;
   decimals?: number;
 }
@@ -89,6 +89,12 @@ interface FundamentalsSummaryCardProps {
   tradingValuePeriod?: number;
 }
 
+function resolveForecastPer(stockPrice: number | null, forecastEps: number | null): number | null {
+  if (stockPrice == null || forecastEps == null || forecastEps === 0) return null;
+  const forecastPer = stockPrice / forecastEps;
+  return Number.isFinite(forecastPer) ? forecastPer : null;
+}
+
 export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: FundamentalsSummaryCardProps) {
   if (!metrics) {
     return (
@@ -100,6 +106,7 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
 
   const displayEps = metrics.adjustedEps ?? metrics.eps;
   const displayForecastEps = metrics.adjustedForecastEps ?? metrics.forecastEps;
+  const displayForecastPer = resolveForecastPer(metrics.stockPrice, displayForecastEps ?? null);
   const displayBps = metrics.adjustedBps ?? metrics.bps;
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
 
@@ -107,7 +114,7 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
     <div className="h-full min-h-0 flex flex-col">
       <div className="flex-1 min-h-0 overflow-y-auto">
         <div className="grid grid-cols-8 gap-1.5 p-2">
-          <MetricCard label="PER" value={metrics.per} format="times" colorScheme="per" />
+          <MetricCard label="PER" value={metrics.per} format="times" colorScheme="per" prevValue={displayForecastPer} />
           <MetricCard label="PBR" value={metrics.pbr} format="times" colorScheme="pbr" />
           <MetricCard label="ROE" value={metrics.roe} format="percent" colorScheme="roe" />
           <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />
