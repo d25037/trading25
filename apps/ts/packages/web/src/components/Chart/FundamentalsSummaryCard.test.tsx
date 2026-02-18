@@ -58,6 +58,7 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.getByText('時価総額/20日売買代金')).toBeInTheDocument();
     expect(screen.getByText('1.50x')).toBeInTheDocument();
     expect(screen.getByText('8.33x')).toBeInTheDocument();
+    expect(screen.getByText('(17.43x)')).toBeInTheDocument();
   });
 
   it('uses 15-day label by default', () => {
@@ -84,6 +85,7 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.getByText('予: 280')).toBeInTheDocument();
     expect(screen.getByText('(-12.5%)')).toBeInTheDocument();
     expect(screen.getByText('(2億)')).toBeInTheDocument();
+    expect(screen.queryByText('(22.86x)')).not.toBeInTheDocument();
     expect(screen.getByText(/単体 \/ JGAAP/)).toBeInTheDocument();
     expect(screen.queryByText(/株価 @ 開示日/)).not.toBeInTheDocument();
   });
@@ -98,5 +100,6 @@ describe('FundamentalsSummaryCard', () => {
 
     render(<FundamentalsSummaryCard metrics={metrics} />);
     expect(screen.queryByText(/予:/)).not.toBeInTheDocument();
+    expect(screen.queryByText('(17.43x)')).not.toBeInTheDocument();
   });
 });
