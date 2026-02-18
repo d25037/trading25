@@ -16,7 +16,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 | bt/server | 3002 | FastAPI + uvicorn |
 | ts/web | 5173 | Vite + React 19 |
 
-- **FastAPI** が唯一のバックエンド（117 EP: Hono 移行 90 + bt 固有 27）
+- **FastAPI** が唯一のバックエンド
 - **bt** は SQLite に直接アクセス（`contracts/` スキーマ準拠、SQLAlchemy Core 使用）
   - **market.db**: 読み書き（SQLAlchemy Core）
   - **portfolio.db**: CRUD（SQLAlchemy Core）
@@ -24,7 +24,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新し、`/indices` 取得失敗時は日付指定フォールバックで継続する（`indices-only` は指数再同期専用モード）。フォールバック時は不足 `index_master` をプレースホルダ補完して、FK 制約付きの既存DBでも継続可能にする
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
-- `/api/analytics/screening` は production 戦略YAML駆動（SignalProcessor で entry/exit 両方判定）を SoT とし、銘柄集約（`bestStrategyName`/`bestStrategyScore`/`matchStrategyCount`/`matchedStrategies`）で返却する。旧 `rangeBreakFast/Slow` クエリ互換は廃止済み
+- Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
 - Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定
 - 市場コードフィルタは legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う
@@ -132,7 +132,7 @@ bun run cli backtest attribution run <strategy> --wait
 - Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
 - Backtest `Strategies` 画面の YAML Editor は `production` / `experimental` の編集を許可し、`Rename` / `Delete` は `experimental` のみ許可
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
-- `analysis screening`（web/cli）は production 戦略を動的選択し、`backtestMetric`（`sharpe_ratio` 等）と `sortBy`（`bestStrategyScore`/`matchedDate`/`stockCode`/`matchStrategyCount`）で結果を制御する。`null` score は並び順に関係なく末尾
+- `analysis screening`（web/cli）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
 
 主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 

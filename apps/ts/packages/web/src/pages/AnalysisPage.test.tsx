@@ -10,6 +10,10 @@ const mockChartStore = {
 };
 
 const mockScreeningFilters = vi.fn((_props: unknown) => <div>Screening Filters</div>);
+const mockRunScreeningJob = vi.fn().mockResolvedValue({
+  job_id: 'job-1',
+  status: 'pending',
+});
 
 vi.mock('@/stores/chartStore', () => ({
   useChartStore: () => mockChartStore,
@@ -20,10 +24,23 @@ vi.mock('@tanstack/react-router', () => ({
 }));
 
 vi.mock('@/hooks/useScreening', () => ({
-  useScreening: () => ({
-    data: { summary: {}, markets: [], recentDays: 0, referenceDate: '2024-01-01', results: [] },
-    isLoading: false,
+  useRunScreeningJob: () => ({
+    mutateAsync: (...args: unknown[]) => mockRunScreeningJob(...args),
+    isPending: false,
+    data: null,
     error: null,
+  }),
+  useScreeningJobStatus: () => ({
+    data: null,
+    error: null,
+  }),
+  useScreeningResult: () => ({
+    data: null,
+    error: null,
+  }),
+  useCancelScreeningJob: () => ({
+    mutate: vi.fn(),
+    isPending: false,
   }),
 }));
 
@@ -50,6 +67,10 @@ vi.mock('@/hooks/useBacktest', () => ({
 
 vi.mock('@/components/Screening/ScreeningFilters', () => ({
   ScreeningFilters: (props: unknown) => mockScreeningFilters(props),
+}));
+
+vi.mock('@/components/Screening/ScreeningJobProgress', () => ({
+  ScreeningJobProgress: () => <div>Screening Job Progress</div>,
 }));
 
 vi.mock('@/components/Screening/ScreeningSummary', () => ({
@@ -81,6 +102,20 @@ describe('AnalysisPage', () => {
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
         strategyOptions: ['production/forward_eps_driven', 'production/range_break_v15'],
+      })
+    );
+  });
+
+  it('uses matchedDate descending as default screening sort when running', async () => {
+    const user = userEvent.setup();
+    render(<AnalysisPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Run Screening' }));
+
+    expect(mockRunScreeningJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sortBy: 'matchedDate',
+        order: 'desc',
       })
     );
   });

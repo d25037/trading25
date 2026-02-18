@@ -7,8 +7,7 @@ describe('ScreeningFilters', () => {
   const defaultParams: ScreeningParams = {
     markets: 'prime',
     recentDays: 10,
-    backtestMetric: 'sharpe_ratio',
-    sortBy: 'bestStrategyScore',
+    sortBy: 'matchedDate',
     order: 'desc',
     limit: 50,
   };
@@ -43,7 +42,7 @@ describe('ScreeningFilters', () => {
     expect(screen.getByRole('button', { name: 'forward_eps_driven' })).toBeInTheDocument();
   });
 
-  it('renders backtest metric and sort controls', () => {
+  it('renders sort controls without backtest metric selector', () => {
     render(
       <ScreeningFilters
         params={defaultParams}
@@ -53,7 +52,7 @@ describe('ScreeningFilters', () => {
       />
     );
 
-    expect(screen.getByText('Backtest Metric')).toBeInTheDocument();
+    expect(screen.queryByText('Backtest Metric')).not.toBeInTheDocument();
     expect(screen.getByText('Sort By')).toBeInTheDocument();
     expect(screen.getByText('Order')).toBeInTheDocument();
   });

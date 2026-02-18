@@ -1,8 +1,13 @@
-import { renderHook, waitFor } from '@testing-library/react';
+import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiGet } from '@/lib/api-client';
+import { apiGet, apiPost } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
-import { useScreening } from './useScreening';
+import {
+  useCancelScreeningJob,
+  useRunScreeningJob,
+  useScreeningJobStatus,
+  useScreeningResult,
+} from './useScreening';
 
 vi.mock('@/lib/api-client', () => ({
   apiGet: vi.fn(),
@@ -19,8 +24,70 @@ afterEach(() => {
   vi.clearAllMocks();
 });
 
-describe('useScreening', () => {
-  it('fetches screening data when enabled', async () => {
+describe('useRunScreeningJob', () => {
+  it('starts screening job and maps request params', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({
+      job_id: 'job-1',
+      status: 'pending',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useRunScreeningJob(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        markets: 'prime',
+        strategies: 'production/range_break_v15',
+        recentDays: 10,
+        sortBy: 'matchedDate',
+        order: 'desc',
+      });
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/analytics/screening/jobs', {
+      markets: 'prime',
+      strategies: 'production/range_break_v15',
+      recentDays: 10,
+      date: undefined,
+      sortBy: 'matchedDate',
+      order: 'desc',
+      limit: undefined,
+    });
+  });
+});
+
+describe('useScreeningJobStatus', () => {
+  it('fetches screening job status', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      job_id: 'job-1',
+      status: 'running',
+      progress: 0.5,
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useScreeningJobStatus('job-1'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/analytics/screening/jobs/job-1');
+  });
+
+  it('is disabled when jobId is null', () => {
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useScreeningJobStatus(null), { wrapper });
+    expect(result.current.fetchStatus).toBe('idle');
+  });
+});
+
+describe('useScreeningResult', () => {
+  it('fetches completed screening result', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({
       results: [],
       summary: {
@@ -34,24 +101,37 @@ describe('useScreening', () => {
       },
       markets: ['prime'],
       recentDays: 10,
-      backtestMetric: 'sharpe_ratio',
-      sortBy: 'bestStrategyScore',
+      sortBy: 'matchedDate',
       order: 'desc',
       lastUpdated: '2026-01-01T00:00:00Z',
     });
-    const { wrapper } = createTestWrapper();
-    const params = { limit: 50, backtestMetric: 'calmar_ratio' as const, strategies: 'range_break_v15' };
-    const { result } = renderHook(() => useScreening(params, true), { wrapper });
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/screening',
-      expect.objectContaining({ limit: 50, backtestMetric: 'calmar_ratio', strategies: 'range_break_v15' })
-    );
-  });
 
-  it('is disabled when enabled is false', () => {
     const { wrapper } = createTestWrapper();
-    const { result } = renderHook(() => useScreening({}, false), { wrapper });
-    expect(result.current.fetchStatus).toBe('idle');
+    const { result } = renderHook(() => useScreeningResult('job-2', true), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/analytics/screening/result/job-2');
+  });
+});
+
+describe('useCancelScreeningJob', () => {
+  it('cancels screening job', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({
+      job_id: 'job-3',
+      status: 'cancelled',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useCancelScreeningJob(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync('job-3');
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/analytics/screening/jobs/job-3/cancel');
   });
 });

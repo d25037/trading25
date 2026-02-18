@@ -5,11 +5,15 @@ Ranking, Factor Regression, Screening のルートテスト。
 """
 
 import sqlite3
+from datetime import datetime
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
 
 from src.server.app import create_app
+from src.server.schemas.backtest import JobStatus
+from src.server.schemas.screening_job import ScreeningJobRequest
 
 
 def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
@@ -265,74 +269,123 @@ class TestFactorRegression:
 
 
 class TestScreening:
-    def test_200_default(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/screening")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert "results" in data
-        assert "summary" in data
-        assert "markets" in data
-        assert "recentDays" in data
-        assert "backtestMetric" in data
-        assert "sortBy" in data
-        assert "order" in data
-        assert "lastUpdated" in data
+    @staticmethod
+    def _make_job(job_id: str, status: JobStatus, raw_result: dict | None = None):
+        job = MagicMock()
+        job.job_id = job_id
+        job.job_type = "screening"
+        job.status = status
+        job.progress = 1.0 if status == JobStatus.COMPLETED else 0.0
+        job.message = None
+        job.created_at = datetime(2026, 1, 1)
+        job.started_at = datetime(2026, 1, 1)
+        job.completed_at = datetime(2026, 1, 1) if status in {JobStatus.COMPLETED, JobStatus.CANCELLED} else None
+        job.error = None
+        job.raw_result = raw_result
+        return job
 
-    def test_summary_shape(self, analytics_client):
+    def test_legacy_get_returns_410(self, analytics_client):
         resp = analytics_client.get("/api/analytics/screening")
-        data = resp.json()
-        summary = data["summary"]
-        assert "totalStocksScreened" in summary
-        assert "matchCount" in summary
-        assert "byStrategy" in summary
-        assert "strategiesEvaluated" in summary
-        assert "strategiesWithoutBacktestMetrics" in summary
-        assert "warnings" in summary
+        assert resp.status_code == 410
 
-    def test_with_params(self, analytics_client):
-        resp = analytics_client.get(
-            "/api/analytics/screening"
-            "?strategies=range_break_v15"
-            "&recentDays=5"
-            "&backtestMetric=calmar_ratio"
-            "&sortBy=matchedDate"
-            "&order=asc"
-        )
-        assert resp.status_code == 200
+    def test_create_job_202(self, analytics_client):
+        with (
+            patch("src.server.routes.analytics_complex.screening_job_service") as mock_service,
+            patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager,
+        ):
+            mock_service.submit_screening = AsyncMock(return_value="job-1")
+            mock_service.get_job_request.return_value = ScreeningJobRequest()
+            mock_manager.get_job.return_value = self._make_job("job-1", JobStatus.PENDING)
+
+            resp = analytics_client.post("/api/analytics/screening/jobs", json={})
+
+        assert resp.status_code == 202
         data = resp.json()
-        assert data["recentDays"] == 5
-        assert data["backtestMetric"] == "calmar_ratio"
+        assert data["job_id"] == "job-1"
+        assert data["status"] == "pending"
         assert data["sortBy"] == "matchedDate"
-        assert data["order"] == "asc"
+        assert data["order"] == "desc"
 
-    def test_old_query_params_are_rejected(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/screening?rangeBreakFast=true")
+    def test_rejects_removed_backtest_metric_query(self, analytics_client):
+        resp = analytics_client.post(
+            "/api/analytics/screening/jobs",
+            json={"backtestMetric": "sharpe_ratio"},
+        )
         assert resp.status_code == 422
 
-    def test_old_sort_value_is_rejected(self, analytics_client):
-        resp = analytics_client.get("/api/analytics/screening?sortBy=breakPercentage")
-        assert resp.status_code == 422
+    def test_get_job_status(self, analytics_client):
+        with (
+            patch("src.server.routes.analytics_complex.screening_job_service") as mock_service,
+            patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager,
+        ):
+            mock_service.get_job_request.return_value = ScreeningJobRequest(
+                markets="prime,standard",
+                recentDays=5,
+                sortBy="matchedDate",
+                order="asc",
+            )
+            mock_manager.get_job.return_value = self._make_job("job-2", JobStatus.RUNNING)
+
+            resp = analytics_client.get("/api/analytics/screening/jobs/job-2")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["job_id"] == "job-2"
+        assert data["status"] == "running"
+        assert data["recentDays"] == 5
+        assert data["markets"] == "prime,standard"
+
+    def test_cancel_job_conflict_for_completed(self, analytics_client):
+        with patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager:
+            mock_manager.get_job.return_value = self._make_job("job-3", JobStatus.COMPLETED)
+            mock_manager.cancel_job = AsyncMock(return_value=None)
+
+            resp = analytics_client.post("/api/analytics/screening/jobs/job-3/cancel")
+
+        assert resp.status_code == 409
+
+    def test_get_result(self, analytics_client):
+        raw_result = {
+            "response": {
+                "results": [],
+                "summary": {
+                    "totalStocksScreened": 2,
+                    "matchCount": 0,
+                    "skippedCount": 0,
+                    "byStrategy": {"range_break_v15": 0},
+                    "strategiesEvaluated": ["range_break_v15"],
+                    "strategiesWithoutBacktestMetrics": [],
+                    "warnings": [],
+                },
+                "markets": ["prime"],
+                "recentDays": 10,
+                "referenceDate": None,
+                "sortBy": "matchedDate",
+                "order": "desc",
+                "lastUpdated": "2026-01-01T00:00:00Z",
+            }
+        }
+
+        with patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager:
+            mock_manager.get_job.return_value = self._make_job(
+                "job-4",
+                JobStatus.COMPLETED,
+                raw_result=raw_result,
+            )
+
+            resp = analytics_client.get("/api/analytics/screening/result/job-4")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["sortBy"] == "matchedDate"
+        assert "backtestMetric" not in data
 
     def test_422_no_db(self):
         app = create_app()
         with TestClient(app) as client:
             app.state.market_reader = None
-            resp = client.get("/api/analytics/screening")
+            resp = client.post("/api/analytics/screening/jobs", json={})
             assert resp.status_code == 422
-
-    def test_result_item_shape(self, analytics_client):
-        """結果がある場合のレスポンス形状"""
-        resp = analytics_client.get("/api/analytics/screening")
-        data = resp.json()
-        if data["results"]:
-            item = data["results"][0]
-            assert "stockCode" in item
-            assert "companyName" in item
-            assert "matchedDate" in item
-            assert "bestStrategyName" in item
-            assert "bestStrategyScore" in item
-            assert "matchStrategyCount" in item
-            assert "matchedStrategies" in item
 
 
 class TestAnalyticsRouteErrorMapping:
@@ -389,27 +442,27 @@ class TestAnalyticsRouteErrorMapping:
         assert resp.status_code == 500
         assert "Failed to analyze" in str(resp.json())
 
-    def test_screening_maps_value_error_to_422(self, analytics_client, monkeypatch):
-        from src.server.services.screening_service import ScreeningService
+    def test_screening_job_submit_maps_value_error_to_422(self, analytics_client, monkeypatch):
+        from src.server.services.screening_job_service import ScreeningJobService
 
-        def _raise_value_error(self, **_kwargs):  # noqa: ANN001
+        async def _raise_value_error(self, reader, request):  # noqa: ANN001
             raise ValueError("invalid strategy")
 
-        monkeypatch.setattr(ScreeningService, "run_screening", _raise_value_error)
-        resp = analytics_client.get("/api/analytics/screening")
+        monkeypatch.setattr(ScreeningJobService, "submit_screening", _raise_value_error)
+        resp = analytics_client.post("/api/analytics/screening/jobs", json={})
         assert resp.status_code == 422
         assert "invalid strategy" in str(resp.json())
 
-    def test_screening_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
-        from src.server.services.screening_service import ScreeningService
+    def test_screening_job_submit_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+        from src.server.services.screening_job_service import ScreeningJobService
 
-        def _raise_runtime_error(self, **_kwargs):  # noqa: ANN001
+        async def _raise_runtime_error(self, reader, request):  # noqa: ANN001
             raise RuntimeError("screening boom")
 
-        monkeypatch.setattr(ScreeningService, "run_screening", _raise_runtime_error)
-        resp = analytics_client.get("/api/analytics/screening")
+        monkeypatch.setattr(ScreeningJobService, "submit_screening", _raise_runtime_error)
+        resp = analytics_client.post("/api/analytics/screening/jobs", json={})
         assert resp.status_code == 500
-        assert "Failed to run screening" in str(resp.json())
+        assert "Failed to start screening job" in str(resp.json())
 
     def test_portfolio_factor_regression_maps_missing_reader_to_422(self):
         app = create_app()

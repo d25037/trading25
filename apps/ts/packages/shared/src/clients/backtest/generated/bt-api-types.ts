@@ -1628,10 +1628,90 @@ export interface paths {
             cookie?: never;
         };
         /**
-         * Run stock screening
-         * @description Run strategy-driven stock screening based on production strategy YAML configs.
+         * Legacy screening endpoint (removed)
+         * @description Legacy synchronous screening endpoint is removed. Use screening job endpoints.
          */
-        get: operations["get_screening_api_analytics_screening_get"];
+        get: operations["get_screening_legacy_api_analytics_screening_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/screening/jobs": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create screening job
+         * @description Submit an async screening job.
+         */
+        post: operations["create_screening_job_api_analytics_screening_jobs_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/screening/jobs/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get screening job status
+         * @description Screening ジョブ状態を取得
+         */
+        get: operations["get_screening_job_api_analytics_screening_jobs__job_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/screening/jobs/{job_id}/cancel": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Cancel screening job
+         * @description Screening ジョブをキャンセル
+         */
+        post: operations["cancel_screening_job_api_analytics_screening_jobs__job_id__cancel_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/analytics/screening/result/{job_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get screening result
+         * @description 完了済み screening ジョブの結果を取得
+         */
+        get: operations["get_screening_result_api_analytics_screening_result__job_id__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -2995,7 +3075,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -3009,10 +3089,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * DefaultConfigResponse
@@ -4705,11 +4785,6 @@ export interface components {
             /** Referencedate */
             referenceDate?: string | null;
             /**
-             * Backtestmetric
-             * @enum {string}
-             */
-            backtestMetric: "sharpe_ratio" | "calmar_ratio" | "total_return" | "win_rate" | "profit_factor";
-            /**
              * Sortby
              * @enum {string}
              */
@@ -5375,7 +5450,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -5695,6 +5770,120 @@ export interface components {
              * @enum {string}
              */
             handle_zero_division: "skip" | "zero" | "null";
+        };
+        /**
+         * ScreeningJobRequest
+         * @description Screening ジョブ作成リクエスト
+         */
+        ScreeningJobRequest: {
+            /**
+             * Markets
+             * @default prime
+             */
+            markets: string;
+            /** Strategies */
+            strategies?: string | null;
+            /**
+             * Recentdays
+             * @default 10
+             */
+            recentDays: number;
+            /** Date */
+            date?: string | null;
+            /**
+             * Sortby
+             * @default matchedDate
+             * @enum {string}
+             */
+            sortBy: "bestStrategyScore" | "matchedDate" | "stockCode" | "matchStrategyCount";
+            /**
+             * Order
+             * @default desc
+             * @enum {string}
+             */
+            order: "asc" | "desc";
+            /** Limit */
+            limit?: number | null;
+        };
+        /**
+         * ScreeningJobResponse
+         * @description Screening ジョブレスポンス
+         */
+        ScreeningJobResponse: {
+            /**
+             * Job Id
+             * @description ジョブID
+             */
+            job_id: string;
+            status: components["schemas"]["JobStatus"];
+            /**
+             * Progress
+             * @description 進捗（0.0 - 1.0）
+             */
+            progress?: number | null;
+            /**
+             * Message
+             * @description ステータスメッセージ
+             */
+            message?: string | null;
+            /**
+             * Created At
+             * Format: date-time
+             * @description 作成日時
+             */
+            created_at: string;
+            /**
+             * Started At
+             * @description 開始日時
+             */
+            started_at?: string | null;
+            /**
+             * Completed At
+             * @description 完了日時
+             */
+            completed_at?: string | null;
+            /**
+             * Error
+             * @description エラーメッセージ
+             */
+            error?: string | null;
+            /**
+             * Markets
+             * @description 市場コードフィルタ
+             */
+            markets: string;
+            /**
+             * Strategies
+             * @description 対象戦略
+             */
+            strategies?: string | null;
+            /**
+             * Recentdays
+             * @description 判定対象の直近日数
+             */
+            recentDays: number;
+            /**
+             * Referencedate
+             * @description 基準日（任意）
+             */
+            referenceDate?: string | null;
+            /**
+             * Sortby
+             * @description 並び順の基準
+             * @enum {string}
+             */
+            sortBy: "bestStrategyScore" | "matchedDate" | "stockCode" | "matchStrategyCount";
+            /**
+             * Order
+             * @description 並び順
+             * @enum {string}
+             */
+            order: "asc" | "desc";
+            /**
+             * Limit
+             * @description 結果件数上限
+             */
+            limit?: number | null;
         };
         /**
          * ScreeningResultItem
@@ -7212,6 +7401,13 @@ export interface components {
             /** Description */
             description?: string | null;
         };
+        /** DateRange */
+        src__server__schemas__dataset__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
         /** OHLCVRecord */
         src__server__schemas__dataset_data__OHLCVRecord: {
             /** Date */
@@ -7262,13 +7458,6 @@ export interface components {
         };
         /** DateRange */
         src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_performance__DateRange: {
             /** From */
             from: string;
             /** To */
@@ -11986,20 +12175,236 @@ export interface operations {
             };
         };
     };
-    get_screening_api_analytics_screening_get: {
+    get_screening_legacy_api_analytics_screening_get: {
         parameters: {
-            query?: {
-                markets?: string;
-                strategies?: string | null;
-                recentDays?: number;
-                date?: string | null;
-                backtestMetric?: "sharpe_ratio" | "calmar_ratio" | "total_return" | "win_rate" | "profit_factor";
-                sortBy?: "bestStrategyScore" | "matchedDate" | "stockCode" | "matchStrategyCount";
-                order?: "asc" | "desc";
-                limit?: number | null;
-            };
+            query?: never;
             header?: never;
             path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": unknown;
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    create_screening_job_api_analytics_screening_jobs_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ScreeningJobRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            202: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreeningJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_screening_job_api_analytics_screening_jobs__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreeningJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    cancel_screening_job_api_analytics_screening_jobs__job_id__cancel_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ScreeningJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_screening_result_api_analytics_screening_result__job_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                job_id: string;
+            };
             cookie?: never;
         };
         requestBody?: never;

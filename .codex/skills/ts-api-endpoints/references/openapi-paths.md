@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **113**
+Total paths: **117**
 
 ## /api/analytics
 
@@ -14,6 +14,10 @@ Total paths: **113**
 | `/api/analytics/ranking` | `GET` |
 | `/api/analytics/roe` | `GET` |
 | `/api/analytics/screening` | `GET` |
+| `/api/analytics/screening/jobs` | `POST` |
+| `/api/analytics/screening/jobs/{job_id}` | `GET` |
+| `/api/analytics/screening/jobs/{job_id}/cancel` | `POST` |
+| `/api/analytics/screening/result/{job_id}` | `GET` |
 | `/api/analytics/sector-stocks` | `GET` |
 | `/api/analytics/stocks/{symbol}/margin-pressure` | `GET` |
 | `/api/analytics/stocks/{symbol}/margin-ratio` | `GET` |
