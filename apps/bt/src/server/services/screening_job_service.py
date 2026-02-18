@@ -73,6 +73,7 @@ class ScreeningJobService:
         """バックグラウンドで Screening を実行"""
         started_at = perf_counter()
         loop = asyncio.get_running_loop()
+        acquired_slot = False
 
         def progress_callback(completed: int, total: int) -> None:
             if total <= 0:
@@ -93,6 +94,7 @@ class ScreeningJobService:
 
         try:
             await self._manager.acquire_slot()
+            acquired_slot = True
             await self._manager.update_job_status(
                 job_id,
                 JobStatus.RUNNING,
@@ -147,7 +149,8 @@ class ScreeningJobService:
             )
 
         finally:
-            self._manager.release_slot()
+            if acquired_slot:
+                self._manager.release_slot()
 
     async def shutdown(self) -> None:
         """アクティブジョブを停止し executor を終了"""
