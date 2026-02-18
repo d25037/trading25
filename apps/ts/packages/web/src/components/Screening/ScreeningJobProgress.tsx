@@ -33,15 +33,15 @@ function formatElapsedSeconds(seconds: number): string {
 }
 
 export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: ScreeningJobProgressProps) {
-  if (!job) return null;
-
-  const isActive = job.status === 'pending' || job.status === 'running';
+  const startTime = job?.started_at ?? job?.created_at ?? null;
+  const isActive = job?.status === 'pending' || job?.status === 'running';
 
   const [elapsed, setElapsed] = useState(0);
   useEffect(() => {
-    if (!isActive) return;
-    const startTime = job.started_at ?? job.created_at;
-    if (!startTime) return;
+    if (!isActive || !startTime) {
+      setElapsed(0);
+      return;
+    }
 
     const start = new Date(startTime).getTime();
     const update = () => setElapsed(Math.floor((Date.now() - start) / 1000));
@@ -49,7 +49,9 @@ export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: Sc
     update();
     const timerId = setInterval(update, 1000);
     return () => clearInterval(timerId);
-  }, [isActive, job.started_at, job.created_at]);
+  }, [isActive, startTime]);
+
+  if (!job) return null;
 
   const progress = job.progress == null ? null : Math.round(job.progress * 100);
 
