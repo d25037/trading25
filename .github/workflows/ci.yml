@@ -5,10 +5,14 @@ on:
     branches: [main]
   pull_request:
 
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
-  test:
+  quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
         with:
@@ -34,16 +38,96 @@ jobs:
         run: ./scripts/lint.sh
       - name: Typecheck
         run: ./scripts/typecheck.sh
+
+  package-unit-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/ts)
+        run: bun install --frozen-lockfile
+        working-directory: apps/ts
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
       - name: Run package unit tests
         run: ./scripts/test-packages.sh
         env:
           CI_DEPS_READY: "1"
+
+  app-integration-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/ts)
+        run: bun install --frozen-lockfile
+        working-directory: apps/ts
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
       - name: Run app integration tests
         run: ./scripts/test-apps.sh
         env:
           CI_DEPS_READY: "1"
+
+  web-e2e:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    needs:
+      - quality
+      - package-unit-tests
+      - app-integration-tests
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/ts)
+        run: bun install --frozen-lockfile
+        working-directory: apps/ts
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Cache Playwright browsers
+        id: playwright-cache
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/ms-playwright
+          key: ${{ runner.os }}-playwright-${{ hashFiles('apps/ts/packages/web/package.json', 'apps/ts/bun.lock') }}
       - name: Install Playwright browser (Chromium)
-        run: bunx --bun playwright install --with-deps chromium
+        if: steps.playwright-cache.outputs.cache-hit != 'true'
+        run: bunx --bun playwright install chromium
         working-directory: apps/ts/packages/web
       - name: Start bt server for web e2e
         run: |

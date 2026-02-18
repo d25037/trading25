@@ -118,6 +118,11 @@ class TestListAttributionFilesInDir:
             list_attribution_files_in_dir(tmp_path, strategy="..\\etc")
         assert exc_info.value.status_code == 400
 
+    def test_invalid_strategy_filter_raises_even_when_results_dir_missing(self, tmp_path):
+        with pytest.raises(HTTPException) as exc_info:
+            list_attribution_files_in_dir(tmp_path / "does-not-exist", strategy="../../etc")
+        assert exc_info.value.status_code == 400
+
     def test_strategy_filter_nonexistent_target_returns_empty(self, tmp_path):
         files, total = list_attribution_files_in_dir(tmp_path, strategy="experimental/missing")
         assert files == []

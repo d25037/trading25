@@ -105,11 +105,17 @@ def list_attribution_files_in_dir(
     """
     files: list[dict[str, Any]] = []
 
+    normalized_strategy: str | None = None
+    if strategy:
+        # Validate user input even when the base directory is absent.
+        normalized_strategy = validate_attribution_strategy_param(strategy)
+
     if not results_dir.exists():
         return [], 0
 
-    if strategy:
-        target_dir = _resolve_strategy_dir(results_dir, strategy)
+    if normalized_strategy:
+        target_dir = (results_dir / normalized_strategy).resolve()
+        _ensure_within(results_dir, target_dir, "戦略名")
         if not target_dir.exists():
             return [], 0
         candidates = target_dir.rglob("*.json")
