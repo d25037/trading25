@@ -1,4 +1,10 @@
 import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
+import { Fragment } from 'react';
+import {
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+  type FundamentalMetricId,
+} from '@/constants/fundamentalMetrics';
 import { cn } from '@/lib/utils';
 import { type FundamentalColorScheme, getFundamentalColor } from '@/utils/color-schemes';
 import { formatFundamentalValue } from '@/utils/formatters';
@@ -87,6 +93,8 @@ function EpsMetricCard({ actualEps, forecastEps, changeRate }: EpsMetricCardProp
 interface FundamentalsSummaryCardProps {
   metrics: ApiFundamentalDataPoint | undefined;
   tradingValuePeriod?: number;
+  metricOrder?: FundamentalMetricId[];
+  metricVisibility?: Record<FundamentalMetricId, boolean>;
 }
 
 function resolveForecastPer(stockPrice: number | null, forecastEps: number | null): number | null {
@@ -95,7 +103,12 @@ function resolveForecastPer(stockPrice: number | null, forecastEps: number | nul
   return Number.isFinite(forecastPer) ? forecastPer : null;
 }
 
-export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: FundamentalsSummaryCardProps) {
+export function FundamentalsSummaryCard({
+  metrics,
+  tradingValuePeriod = 15,
+  metricOrder = DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  metricVisibility = DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+}: FundamentalsSummaryCardProps) {
   if (!metrics) {
     return (
       <div className="h-full flex items-center justify-center">
@@ -109,26 +122,38 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
   const displayForecastPer = resolveForecastPer(metrics.stockPrice, displayForecastEps ?? null);
   const displayBps = metrics.adjustedBps ?? metrics.bps;
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
+  const visibleMetricOrder = metricOrder.filter((metricId) => metricVisibility[metricId]);
 
-  return (
-    <div className="h-full min-h-0 flex flex-col">
-      <div className="flex-1 min-h-0 overflow-y-auto">
-        <div className="grid grid-cols-8 gap-1.5 p-2">
+  const renderMetric = (metricId: FundamentalMetricId) => {
+    switch (metricId) {
+      case 'per':
+        return (
           <MetricCard label="PER" value={metrics.per} format="times" colorScheme="per" prevValue={displayForecastPer} />
-          <MetricCard label="PBR" value={metrics.pbr} format="times" colorScheme="pbr" />
-          <MetricCard label="ROE" value={metrics.roe} format="percent" colorScheme="roe" />
-          <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />
-
+        );
+      case 'pbr':
+        return <MetricCard label="PBR" value={metrics.pbr} format="times" colorScheme="pbr" />;
+      case 'roe':
+        return <MetricCard label="ROE" value={metrics.roe} format="percent" colorScheme="roe" />;
+      case 'roa':
+        return <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />;
+      case 'eps':
+        return (
           <EpsMetricCard
             actualEps={displayEps}
             forecastEps={displayForecastEps}
             changeRate={metrics.forecastEpsChangeRate}
           />
-          <MetricCard label="BPS" value={displayBps} format="yen" />
-          <MetricCard label="1株配当" value={displayDividendFy} format="yen" />
-          <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />
-          <MetricCard label="純利益率" value={metrics.netMargin} format="percent" />
-
+        );
+      case 'bps':
+        return <MetricCard label="BPS" value={displayBps} format="yen" />;
+      case 'dividendPerShare':
+        return <MetricCard label="1株配当" value={displayDividendFy} format="yen" />;
+      case 'operatingMargin':
+        return <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />;
+      case 'netMargin':
+        return <MetricCard label="純利益率" value={metrics.netMargin} format="percent" />;
+      case 'cashFlowOperating':
+        return (
           <MetricCard
             label="営業CF"
             value={metrics.cashFlowOperating}
@@ -136,36 +161,65 @@ export function FundamentalsSummaryCard({ metrics, tradingValuePeriod = 15 }: Fu
             colorScheme="cashFlow"
             prevValue={metrics.prevCashFlowOperating}
           />
+        );
+      case 'cashFlowInvesting':
+        return (
           <MetricCard
             label="投資CF"
             value={metrics.cashFlowInvesting}
             format="millions"
             prevValue={metrics.prevCashFlowInvesting}
           />
+        );
+      case 'cashFlowFinancing':
+        return (
           <MetricCard
             label="財務CF"
             value={metrics.cashFlowFinancing}
             format="millions"
             prevValue={metrics.prevCashFlowFinancing}
           />
+        );
+      case 'cashAndEquivalents':
+        return (
           <MetricCard
             label="現金"
             value={metrics.cashAndEquivalents}
             format="millions"
             prevValue={metrics.prevCashAndEquivalents}
           />
-
-          <MetricCard label="FCF" value={metrics.fcf} format="millions" colorScheme="cashFlow" />
-          <MetricCard label="FCF利回り" value={metrics.fcfYield} format="percent" colorScheme="fcfYield" />
-          <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />
-
-          <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />
+        );
+      case 'fcf':
+        return <MetricCard label="FCF" value={metrics.fcf} format="millions" colorScheme="cashFlow" />;
+      case 'fcfYield':
+        return <MetricCard label="FCF利回り" value={metrics.fcfYield} format="percent" colorScheme="fcfYield" />;
+      case 'fcfMargin':
+        return <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />;
+      case 'cfoToNetProfitRatio':
+        return <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />;
+      case 'tradingValueToMarketCapRatio':
+        return (
           <MetricCard
             label={`時価総額/${tradingValuePeriod}日売買代金`}
             value={metrics.tradingValueToMarketCapRatio ?? null}
             format="times"
             decimals={3}
           />
+        );
+    }
+  };
+
+  return (
+    <div className="h-full min-h-0 flex flex-col">
+      <div className="flex-1 min-h-0 overflow-y-auto">
+        <div className="grid grid-cols-8 gap-1.5 p-2">
+          {visibleMetricOrder.length > 0 ? (
+            visibleMetricOrder.map((metricId) => <Fragment key={metricId}>{renderMetric(metricId)}</Fragment>)
+          ) : (
+            <div className="col-span-full py-8 text-center text-sm text-muted-foreground">
+              表示する指標をサイドバーで選択してください
+            </div>
+          )}
         </div>
       </div>
 

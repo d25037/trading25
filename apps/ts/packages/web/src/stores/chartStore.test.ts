@@ -247,6 +247,8 @@ describe('chartStore', () => {
     expect(state.settings.showFundamentalsHistoryPanel).toBe(defaultSettings.showFundamentalsHistoryPanel);
     expect(state.settings.showMarginPressurePanel).toBe(defaultSettings.showMarginPressurePanel);
     expect(state.settings.showFactorRegressionPanel).toBe(defaultSettings.showFactorRegressionPanel);
+    expect(state.settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
+    expect(state.settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
     expect(state.settings.signalOverlay.enabled).toBe(false);
     expect(state.settings.signalOverlay.signals).toEqual([]);
     expect(state.presets[0]?.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
@@ -292,6 +294,8 @@ describe('chartStore', () => {
     expect(state.settings.visibleBars).toBe(defaultSettings.visibleBars);
     expect(state.settings.indicators.ppo.enabled).toBe(defaultSettings.indicators.ppo.enabled);
     expect(state.settings.indicators.ppo.fast).toBe(defaultSettings.indicators.ppo.fast);
+    expect(state.settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
+    expect(state.settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
     expect(state.settings.signalOverlay.enabled).toBe(defaultSettings.signalOverlay.enabled);
     expect(state.settings.signalOverlay.signals).toHaveLength(1);
     expect(state.settings.signalOverlay.signals[0]?.enabled).toBe(true);
@@ -313,6 +317,8 @@ describe('chartStore', () => {
       'marginPressure',
       'factorRegression',
     ]);
+    expect(settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
+    expect(settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
   });
 
   it('defaults risk adjusted return chart settings', () => {
@@ -359,6 +365,11 @@ describe('chartStore', () => {
         state: {
           settings: {
             fundamentalsPanelOrder: ['marginPressure', 'invalid', 'marginPressure'],
+            fundamentalsMetricOrder: ['eps', 'invalid', 'eps'],
+            fundamentalsMetricVisibility: {
+              eps: false,
+              per: 'yes',
+            },
           },
         },
         version: 0,
@@ -374,5 +385,11 @@ describe('chartStore', () => {
       'fundamentalsHistory',
       'factorRegression',
     ]);
+    expect(settings.fundamentalsMetricOrder).toEqual([
+      'eps',
+      ...defaultSettings.fundamentalsMetricOrder.filter((metricId) => metricId !== 'eps'),
+    ]);
+    expect(settings.fundamentalsMetricVisibility.eps).toBe(false);
+    expect(settings.fundamentalsMetricVisibility.per).toBe(defaultSettings.fundamentalsMetricVisibility.per);
   });
 });

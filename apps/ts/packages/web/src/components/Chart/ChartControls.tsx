@@ -3,6 +3,7 @@ import {
   ArrowDown,
   ArrowUp,
   BarChart3,
+  BookOpen,
   Eye,
   Search,
   Settings as SettingsIcon,
@@ -15,6 +16,11 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
+import {
+  countVisibleFundamentalMetrics,
+  FUNDAMENTAL_METRIC_DEFINITIONS,
+  type FundamentalMetricId,
+} from '@/constants/fundamentalMetrics';
 import { useSignalReference } from '@/hooks/useBacktest';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import type { ChartSettings, FundamentalsPanelId } from '@/stores/chartStore';
@@ -82,8 +88,17 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
 const PANEL_TOGGLE_BY_ID = Object.fromEntries(
   PANEL_VISIBILITY_TOGGLES.map((toggle) => [toggle.panelId, toggle])
 ) as Record<FundamentalsPanelId, PanelVisibilityToggle>;
+const FUNDAMENTAL_METRIC_LABEL_BY_ID = Object.fromEntries(
+  FUNDAMENTAL_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
+) as Record<FundamentalMetricId, string>;
 
-type SettingDialogId = 'chartSettings' | 'panelLayout' | 'overlayIndicators' | 'subChartIndicators' | 'signalOverlay';
+type SettingDialogId =
+  | 'chartSettings'
+  | 'panelLayout'
+  | 'fundamentalMetrics'
+  | 'overlayIndicators'
+  | 'subChartIndicators'
+  | 'signalOverlay';
 
 interface SettingDialogDefinition {
   id: SettingDialogId;
@@ -104,6 +119,12 @@ const SETTING_DIALOGS: SettingDialogDefinition[] = [
     title: 'Panel Layout',
     description: 'Choose visible panels and their display order.',
     icon: Eye,
+  },
+  {
+    id: 'fundamentalMetrics',
+    title: 'Fundamental Metrics',
+    description: 'Toggle and reorder metrics shown inside the fundamentals panel.',
+    icon: BookOpen,
   },
   {
     id: 'overlayIndicators',
@@ -214,6 +235,44 @@ export function ChartControls() {
       updateSettings({ fundamentalsPanelOrder: nextOrder });
     },
     [settings.fundamentalsPanelOrder, updateSettings]
+  );
+
+  const updateFundamentalMetricVisibility = useCallback(
+    (metricId: FundamentalMetricId, checked: boolean) => {
+      updateSettings({
+        fundamentalsMetricVisibility: {
+          ...settings.fundamentalsMetricVisibility,
+          [metricId]: checked,
+        },
+      });
+    },
+    [settings.fundamentalsMetricVisibility, updateSettings]
+  );
+
+  const moveFundamentalMetricOrder = useCallback(
+    (metricId: FundamentalMetricId, direction: 'up' | 'down') => {
+      const currentOrder = settings.fundamentalsMetricOrder;
+      const currentIndex = currentOrder.indexOf(metricId);
+      if (currentIndex < 0) return;
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= currentOrder.length) return;
+
+      const nextOrder = [...currentOrder];
+      const currentMetric = nextOrder[currentIndex];
+      const targetMetric = nextOrder[targetIndex];
+      if (!currentMetric || !targetMetric) return;
+
+      nextOrder[currentIndex] = targetMetric;
+      nextOrder[targetIndex] = currentMetric;
+      updateSettings({ fundamentalsMetricOrder: nextOrder });
+    },
+    [settings.fundamentalsMetricOrder, updateSettings]
+  );
+
+  const visibleFundamentalMetricCount = useMemo(
+    () => countVisibleFundamentalMetrics(settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility),
+    [settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility]
   );
 
   const updateRiskAdjustedReturn = useCallback(
@@ -331,6 +390,63 @@ export function ChartControls() {
                       className="h-7 px-2"
                       onClick={() => movePanelOrder(panelId, 'down')}
                       disabled={index === settings.fundamentalsPanelOrder.length - 1}
+                    >
+                      <ArrowDown className="h-3.5 w-3.5 mr-1" />
+                      Down
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'fundamentalMetrics':
+        return (
+          <div className="space-y-2">
+            <div className="rounded glass-panel p-2">
+              <p className="text-xs text-muted-foreground">
+                Visible: {visibleFundamentalMetricCount} / {settings.fundamentalsMetricOrder.length}
+              </p>
+            </div>
+            {settings.fundamentalsMetricOrder.map((metricId, index) => {
+              const metricLabel = FUNDAMENTAL_METRIC_LABEL_BY_ID[metricId];
+              const isVisible = settings.fundamentalsMetricVisibility[metricId];
+              const switchId = `fundamental-metric-${metricId}`;
+              return (
+                <div key={metricId} className="rounded glass-panel p-2 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Order {index + 1}</p>
+                      <Label htmlFor={switchId} className="text-sm font-medium cursor-pointer">
+                        {metricLabel}
+                      </Label>
+                    </div>
+                    <Switch
+                      id={switchId}
+                      checked={isVisible}
+                      onCheckedChange={(checked) => updateFundamentalMetricVisibility(metricId, checked)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => moveFundamentalMetricOrder(metricId, 'up')}
+                      disabled={index === 0}
+                    >
+                      <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => moveFundamentalMetricOrder(metricId, 'down')}
+                      disabled={index === settings.fundamentalsMetricOrder.length - 1}
                     >
                       <ArrowDown className="h-3.5 w-3.5 mr-1" />
                       Down
