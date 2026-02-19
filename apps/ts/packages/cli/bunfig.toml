@@ -1,4 +1,4 @@
 [test]
 coverageSkipTestFiles = true
-coveragePathIgnorePatterns = ["../shared/**"]
+coveragePathIgnorePatterns = ["../shared/**", "../clients-ts/**"]
 coverageReporter = ["text", "lcov"]
