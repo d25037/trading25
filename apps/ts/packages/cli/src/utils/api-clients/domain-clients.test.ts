@@ -42,11 +42,10 @@ describe('ApiClient composition', () => {
 
     try {
       const fromEnv = new ApiClient();
-      expect((fromEnv.analytics as unknown as { baseUrl: string }).baseUrl).toBe('http://env-api:9999');
-      expect((fromEnv.dataset as unknown as { baseUrl: string }).baseUrl).toBe('http://env-api:9999');
+      expect(fromEnv.baseUrl).toBe('http://env-api:9999');
 
       const explicit = new ApiClient('http://explicit-api:3002');
-      expect((explicit.watchlist as unknown as { baseUrl: string }).baseUrl).toBe('http://explicit-api:3002');
+      expect(explicit.baseUrl).toBe('http://explicit-api:3002');
     } finally {
       if (previousApiBaseUrl === undefined) {
         process.env.API_BASE_URL = undefined;

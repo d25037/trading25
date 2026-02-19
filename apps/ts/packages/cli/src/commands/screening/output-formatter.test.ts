@@ -1,5 +1,23 @@
 import { afterEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import type { ScreeningResultItem } from '@trading25/shared/types/api-response-types';
+
+mock.module('chalk', () => {
+  const identity = (text: string) => text;
+  const bold = Object.assign((text: string) => text, { white: identity });
+
+  return {
+    default: {
+      gray: identity,
+      cyan: identity,
+      white: identity,
+      magenta: identity,
+      yellow: identity,
+      green: identity,
+      bold,
+    },
+  };
+});
+
 import { formatResults } from './output-formatter.js';
 
 const sampleResults: ScreeningResultItem[] = [

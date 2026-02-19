@@ -12,6 +12,16 @@ class MockBacktestApiError extends Error {
   }
 }
 
+mock.module('chalk', () => {
+  const identity = (text: string) => text;
+  return {
+    default: {
+      red: identity,
+      dim: identity,
+    },
+  };
+});
+
 mock.module('@trading25/clients-ts/backtest', () => ({
   BacktestApiError: MockBacktestApiError,
 }));

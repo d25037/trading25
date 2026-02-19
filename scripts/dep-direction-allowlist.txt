@@ -53,6 +53,10 @@ apps/ts/packages/cli/src/commands/backtest/attribution/status.ts
 apps/ts/packages/cli/src/commands/backtest/attribution/results.ts
 apps/ts/packages/cli/src/commands/backtest/attribution/cancel.ts
 apps/ts/packages/cli/src/commands/backtest/attribution/commands.test.ts
+# PR #85: CLI coverage tests that intentionally reference bt endpoint/client strings
+apps/ts/packages/cli/src/commands/backtest/error-handler.test.ts
+apps/ts/packages/cli/src/utils/api-clients/base-client.test.ts
+apps/ts/packages/cli/src/utils/api-clients/domain-clients.test.ts
 
 # Canonical client package (Phase 4A)
 apps/ts/packages/clients-ts/src/backtest/BacktestClient.ts
