@@ -25,6 +25,10 @@ from src.lib.market_db.query_helpers import (
 )
 from src.server.schemas.db import SyncResult
 from src.server.services.fins_summary_mapper import convert_fins_summary_rows
+from src.server.services.index_master_catalog import (
+    build_index_master_seed_rows,
+    get_index_catalog_codes,
+)
 from src.server.services.stock_data_row_builder import build_stock_data_row
 
 
@@ -57,34 +61,29 @@ class IndicesOnlySyncStrategy:
         errors: list[str] = []
 
         try:
-            # 1. 指数マスタ取得
-            ctx.on_progress("indices_master", 0, 2, "Fetching index master data...")
+            # 1. 指数マスタ（ローカルカタログ）を補完
+            ctx.on_progress("indices_master", 0, 2, "Syncing index master catalog...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            body = await ctx.client.get("/indices")
-            total_calls += 1
-            indices_list = _extract_list_items(body, preferred_keys=("data", "indices"))
-
-            # index_master に保存
-            master_rows = _convert_index_master_rows(indices_list)
-            if master_rows:
-                await asyncio.to_thread(ctx.market_db.upsert_index_master, master_rows)
+            known_master_codes = await _seed_index_master_from_catalog(ctx)
+            target_codes = sorted(get_index_catalog_codes() | known_master_codes)
 
             # 2. 各指数のデータ取得
-            ctx.on_progress("indices_data", 1, 2, f"Fetching data for {len(indices_list)} indices...")
-            for idx in indices_list:
+            ctx.on_progress("indices_data", 1, 2, f"Fetching data for {len(target_codes)} indices...")
+            for code in target_codes:
                 if ctx.cancelled.is_set():
                     return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-                code = _extract_index_code(idx)
-                if not code:
-                    continue
                 try:
                     data = await ctx.client.get_paginated("/indices/bars/daily", params={"code": code})
                     total_calls += 1
                     rows = _convert_indices_data_rows(data, code)
                     if rows:
-                        await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+                        await _upsert_indices_rows_with_master_backfill(
+                            ctx,
+                            rows,
+                            known_master_codes,
+                        )
                 except Exception as e:
                     errors.append(f"Index {code}: {e}")
                     logger.warning(f"Index {code} sync error: {e}")
@@ -315,108 +314,94 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            indices_list: list[dict[str, Any]] = []
-            try:
-                indices_body = await ctx.client.get("/indices")
-                total_calls += 1
-                indices_list = _extract_list_items(indices_body, preferred_keys=("data", "indices"))
-            except Exception as e:
-                # /indices が取得できない環境でも、日付指定で indices_data の増分だけは継続する。
-                logger.warning("Index master fetch failed. Falling back to date-based index sync: {}", e)
-
-            if indices_list:
-                master_rows = _convert_index_master_rows(indices_list)
-                if master_rows:
-                    await asyncio.to_thread(ctx.market_db.upsert_index_master, master_rows)
-
+            known_master_codes = await _seed_index_master_from_catalog(ctx)
             latest_index_dates = ctx.market_db.get_latest_indices_data_dates()
-            if indices_list:
-                for idx in indices_list:
-                    if ctx.cancelled.is_set():
-                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+            target_codes = sorted(
+                get_index_catalog_codes()
+                | set(latest_index_dates.keys())
+                | known_master_codes
+            )
 
-                    code = _extract_index_code(idx)
-                    if not code:
-                        continue
+            for code in target_codes:
+                if ctx.cancelled.is_set():
+                    return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-                    params: dict[str, Any] = {"code": code}
-                    last_index_date = latest_index_dates.get(code)
+                params: dict[str, Any] = {"code": code}
+                last_index_date = latest_index_dates.get(code)
+                if last_index_date:
+                    params["from"] = _to_jquants_date_param(last_index_date)
+
+                try:
+                    data = await ctx.client.get_paginated("/indices/bars/daily", params=params)
+                    total_calls += 1
+
+                    rows = _convert_indices_data_rows(data, code)
                     if last_index_date:
-                        params["from"] = _to_jquants_date_param(last_index_date)
+                        rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
 
-                    try:
-                        data = await ctx.client.get_paginated("/indices/bars/daily", params=params)
-                        total_calls += 1
+                    if rows:
+                        await _upsert_indices_rows_with_master_backfill(
+                            ctx,
+                            rows,
+                            known_master_codes,
+                            discovery_log="Inserted {} discovered index master rows while syncing by code.",
+                        )
+                except Exception as e:
+                    errors.append(f"Index {code}: {e}")
+                    logger.warning(f"Index {code} incremental sync error: {e}")
 
-                        rows = _convert_indices_data_rows(data, code)
-                        if last_index_date:
-                            rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
+            # code 指定同期の補完として、日付指定で新規コードを探索する。
+            latest_index_date = _latest_date(list(latest_index_dates.values()))
+            fallback_dates = _extract_dates_after(
+                topix_rows,
+                latest_index_date,
+                include_anchor=True,
+            )
 
-                        if rows:
-                            await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
-                    except Exception as e:
-                        errors.append(f"Index {code}: {e}")
-                        logger.warning(f"Index {code} incremental sync error: {e}")
-            else:
-                known_master_codes = ctx.market_db.get_index_master_codes()
-                latest_index_date = _latest_date(list(latest_index_dates.values()))
-                fallback_dates = _extract_dates_after(
-                    topix_rows,
-                    latest_index_date,
-                    include_anchor=True,
+            # indices_data が遅れている場合、topix を indices 側アンカーで再取得して候補日を補完する。
+            if (
+                latest_index_date
+                and last_date
+                and _is_date_after(last_date, latest_index_date)
+            ):
+                topix_for_indices = await ctx.client.get_paginated(
+                    "/indices/bars/daily/topix",
+                    params={"from": _to_jquants_date_param(latest_index_date)},
+                )
+                total_calls += 1
+                topix_dates = [
+                    {"date": d.get("Date", "")}
+                    for d in topix_for_indices
+                    if d.get("Date")
+                ]
+                fallback_dates = sorted(
+                    set(fallback_dates) | set(
+                        _extract_dates_after(topix_dates, latest_index_date, include_anchor=True)
+                    ),
+                    key=_date_sort_key,
                 )
 
-                # indices_data が遅れている場合、topix を indices 側アンカーで再取得して候補日を補完する。
-                if (
-                    latest_index_date
-                    and last_date
-                    and _is_date_after(last_date, latest_index_date)
-                ):
-                    topix_for_indices = await ctx.client.get_paginated(
-                        "/indices/bars/daily/topix",
-                        params={"from": _to_jquants_date_param(latest_index_date)},
+            for index_date in fallback_dates:
+                if ctx.cancelled.is_set():
+                    return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+                try:
+                    data = await ctx.client.get_paginated(
+                        "/indices/bars/daily",
+                        params={"date": _to_jquants_date_param(index_date)},
                     )
                     total_calls += 1
-                    topix_dates = [
-                        {"date": d.get("Date", "")}
-                        for d in topix_for_indices
-                        if d.get("Date")
-                    ]
-                    fallback_dates = sorted(
-                        set(fallback_dates) | set(
-                            _extract_dates_after(topix_dates, latest_index_date, include_anchor=True)
-                        ),
-                        key=_date_sort_key,
-                    )
-
-                for index_date in fallback_dates:
-                    if ctx.cancelled.is_set():
-                        return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
-
-                    try:
-                        data = await ctx.client.get_paginated(
-                            "/indices/bars/daily",
-                            params={"date": _to_jquants_date_param(index_date)},
+                    rows = _convert_indices_data_rows(data, None)
+                    if rows:
+                        await _upsert_indices_rows_with_master_backfill(
+                            ctx,
+                            rows,
+                            known_master_codes,
+                            discovery_log="Inserted {} discovered index master rows while syncing by date.",
                         )
-                        total_calls += 1
-                        rows = _convert_indices_data_rows(data, None)
-                        if rows:
-                            missing_master_rows = _build_fallback_index_master_rows(rows, known_master_codes)
-                            if missing_master_rows:
-                                await asyncio.to_thread(ctx.market_db.upsert_index_master, missing_master_rows)
-                                known_master_codes.update(
-                                    str(row["code"])
-                                    for row in missing_master_rows
-                                    if row.get("code")
-                                )
-                                logger.warning(
-                                    "Index master unavailable. Inserted {} fallback master rows for FK compatibility.",
-                                    len(missing_master_rows),
-                                )
-                            await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
-                    except Exception as e:
-                        errors.append(f"Index date {index_date}: {e}")
-                        logger.warning("Index date {} incremental sync error: {}", index_date, e)
+                except Exception as e:
+                    errors.append(f"Index date {index_date}: {e}")
+                    logger.warning("Index date {} incremental sync error: {}", index_date, e)
 
             # Step 5: Prime fundamentals（増分: date 指定 + 欠損補完）
             ctx.on_progress("fundamentals", 4, 5, "Fetching incremental Prime fundamentals...")
@@ -825,6 +810,34 @@ def get_strategy(resolved_mode: str) -> SyncStrategy:
     return InitialSyncStrategy()
 
 
+async def _seed_index_master_from_catalog(ctx: SyncContext) -> set[str]:
+    seed_rows = build_index_master_seed_rows()
+    if seed_rows:
+        await asyncio.to_thread(ctx.market_db.upsert_index_master, seed_rows)
+    return ctx.market_db.get_index_master_codes()
+
+
+async def _upsert_indices_rows_with_master_backfill(
+    ctx: SyncContext,
+    rows: list[dict[str, Any]],
+    known_master_codes: set[str],
+    *,
+    discovery_log: str | None = None,
+) -> None:
+    missing_master_rows = _build_fallback_index_master_rows(rows, known_master_codes)
+    if missing_master_rows:
+        await asyncio.to_thread(ctx.market_db.upsert_index_master, missing_master_rows)
+        known_master_codes.update(
+            str(row["code"])
+            for row in missing_master_rows
+            if row.get("code")
+        )
+        if discovery_log:
+            logger.warning(discovery_log, len(missing_master_rows))
+
+    await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+
+
 def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
     """JQuants 銘柄マスタ → DB 行"""
     rows = []
@@ -971,8 +984,7 @@ def _build_fallback_index_master_rows(
     known_codes: set[str],
 ) -> list[dict[str, Any]]:
     """index_master 欠損コード向けに最小プレースホルダ行を作る。"""
-    created_at = datetime.now(UTC).isoformat()
-    missing_rows_by_code: dict[str, dict[str, Any]] = {}
+    missing_master_items_by_code: dict[str, dict[str, Any]] = {}
 
     for row in rows:
         code = _normalize_index_code(row.get("code"))
@@ -983,15 +995,13 @@ def _build_fallback_index_master_rows(
         placeholder_name = row_name or code
         row_date = str(row.get("date") or "").strip() or None
 
-        existing = missing_rows_by_code.get(code)
+        existing = missing_master_items_by_code.get(code)
         if existing is None:
-            missing_rows_by_code[code] = {
+            missing_master_items_by_code[code] = {
                 "code": code,
                 "name": placeholder_name,
-                "name_english": None,
                 "category": "unknown",
                 "data_start_date": row_date,
-                "created_at": created_at,
             }
             continue
 
@@ -1000,7 +1010,7 @@ def _build_fallback_index_master_rows(
         if existing["data_start_date"] is None and row_date:
             existing["data_start_date"] = row_date
 
-    return list(missing_rows_by_code.values())
+    return _convert_index_master_rows(list(missing_master_items_by_code.values()))
 
 
 def _normalize_index_code(value: Any) -> str:
@@ -1010,7 +1020,7 @@ def _normalize_index_code(value: Any) -> str:
         return ""
     if text.isdigit() and len(text) < 4:
         return text.zfill(4)
-    return text
+    return text.upper()
 
 
 def _latest_date(values: list[str]) -> str | None:
