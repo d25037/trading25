@@ -18,6 +18,7 @@ const mockChartStore = {
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
+    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     visibleBars: 30,
     relativeMode: false,
     indicators: {
