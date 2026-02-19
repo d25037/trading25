@@ -984,8 +984,7 @@ def _build_fallback_index_master_rows(
     known_codes: set[str],
 ) -> list[dict[str, Any]]:
     """index_master 欠損コード向けに最小プレースホルダ行を作る。"""
-    created_at = datetime.now(UTC).isoformat()
-    missing_rows_by_code: dict[str, dict[str, Any]] = {}
+    missing_master_items_by_code: dict[str, dict[str, Any]] = {}
 
     for row in rows:
         code = _normalize_index_code(row.get("code"))
@@ -996,15 +995,13 @@ def _build_fallback_index_master_rows(
         placeholder_name = row_name or code
         row_date = str(row.get("date") or "").strip() or None
 
-        existing = missing_rows_by_code.get(code)
+        existing = missing_master_items_by_code.get(code)
         if existing is None:
-            missing_rows_by_code[code] = {
+            missing_master_items_by_code[code] = {
                 "code": code,
                 "name": placeholder_name,
-                "name_english": None,
                 "category": "unknown",
                 "data_start_date": row_date,
-                "created_at": created_at,
             }
             continue
 
@@ -1013,7 +1010,7 @@ def _build_fallback_index_master_rows(
         if existing["data_start_date"] is None and row_date:
             existing["data_start_date"] = row_date
 
-    return list(missing_rows_by_code.values())
+    return _convert_index_master_rows(list(missing_master_items_by_code.values()))
 
 
 def _normalize_index_code(value: Any) -> str:
