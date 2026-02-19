@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
+import { analyzeGridParameters, extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
 
 describe('optimizationGridParams', () => {
   it('extracts nested parameter ranges from grid yaml', () => {
@@ -27,6 +27,31 @@ parameter_ranges:
 
   it('returns empty array for invalid yaml', () => {
     expect(extractGridParameterEntries('invalid: [yaml')).toEqual([]);
+  });
+
+  it('returns parse error details for invalid yaml', () => {
+    const analysis = analyzeGridParameters('invalid: [yaml');
+    expect(analysis.parseError).toContain('YAML parse error:');
+    expect(analysis.hasParameterRanges).toBe(false);
+    expect(analysis.paramCount).toBe(0);
+    expect(analysis.combinations).toBe(0);
+  });
+
+  it('returns warning-shaped analysis when parameter_ranges is missing', () => {
+    const analysis = analyzeGridParameters('foo: 1');
+    expect(analysis.parseError).toBeNull();
+    expect(analysis.hasParameterRanges).toBe(false);
+    expect(analysis.entries).toEqual([]);
+    expect(analysis.paramCount).toBe(0);
+    expect(analysis.combinations).toBe(0);
+  });
+
+  it('does not treat non-object root as parse error', () => {
+    const analysis = analyzeGridParameters('- 1\n- 2');
+    expect(analysis.parseError).toBeNull();
+    expect(analysis.hasParameterRanges).toBe(false);
+    expect(analysis.paramCount).toBe(0);
+    expect(analysis.combinations).toBe(0);
   });
 
   it('formats parameter values for display', () => {
