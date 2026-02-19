@@ -5,29 +5,21 @@ export interface GridParameterEntry {
   values: unknown[];
 }
 
+export interface GridParameterAnalysis {
+  parseError: string | null;
+  hasParameterRanges: boolean;
+  entries: GridParameterEntry[];
+  paramCount: number;
+  combinations: number;
+}
+
 type RecordLike = Record<string, unknown>;
 
 function isRecordLike(value: unknown): value is RecordLike {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-export function extractGridParameterEntries(content: string): GridParameterEntry[] {
-  let parsed: unknown;
-  try {
-    parsed = yaml.load(content);
-  } catch {
-    return [];
-  }
-
-  if (!isRecordLike(parsed)) {
-    return [];
-  }
-
-  const parameterRanges = parsed.parameter_ranges;
-  if (!isRecordLike(parameterRanges)) {
-    return [];
-  }
-
+function extractEntriesFromRanges(parameterRanges: RecordLike): GridParameterEntry[] {
   const entries: GridParameterEntry[] = [];
   const walk = (node: RecordLike, prefix: string[]) => {
     for (const [key, value] of Object.entries(node)) {
@@ -49,6 +41,57 @@ export function extractGridParameterEntries(content: string): GridParameterEntry
 
   walk(parameterRanges, []);
   return entries;
+}
+
+export function analyzeGridParameters(content: string): GridParameterAnalysis {
+  let parsed: unknown;
+  try {
+    parsed = yaml.load(content);
+  } catch (error) {
+    return {
+      parseError: `YAML parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      hasParameterRanges: false,
+      entries: [],
+      paramCount: 0,
+      combinations: 0,
+    };
+  }
+
+  if (!isRecordLike(parsed)) {
+    return {
+      parseError: null,
+      hasParameterRanges: false,
+      entries: [],
+      paramCount: 0,
+      combinations: 0,
+    };
+  }
+
+  const parameterRanges = parsed.parameter_ranges;
+  if (!isRecordLike(parameterRanges)) {
+    return {
+      parseError: null,
+      hasParameterRanges: false,
+      entries: [],
+      paramCount: 0,
+      combinations: 0,
+    };
+  }
+
+  const entries = extractEntriesFromRanges(parameterRanges);
+  const combinations = entries.length > 0 ? entries.reduce((acc, entry) => acc * entry.values.length, 1) : 0;
+
+  return {
+    parseError: null,
+    hasParameterRanges: true,
+    entries,
+    paramCount: entries.length,
+    combinations,
+  };
+}
+
+export function extractGridParameterEntries(content: string): GridParameterEntry[] {
+  return analyzeGridParameters(content).entries;
 }
 
 export function formatGridParameterValue(value: unknown): string {
