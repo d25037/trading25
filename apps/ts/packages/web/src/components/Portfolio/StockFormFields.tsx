@@ -1,5 +1,6 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 
 export interface StockFormData {
   code?: string;
@@ -28,16 +29,18 @@ export function StockFormFields({ data, onChange, showCodeField = true, idPrefix
         {showCodeField && (
           <div className="grid gap-2">
             <Label htmlFor={`${idPrefix}-code`}>Stock Code</Label>
-            <Input
+            <StockSearchInput
               id={`${idPrefix}-code`}
               value={data.code || ''}
-              onChange={(e) => updateField('code', e.target.value)}
-              placeholder="7203"
-              maxLength={4}
+              onValueChange={(value) => updateField('code', value)}
+              onSelect={(stock) => updateField('code', stock.code)}
+              placeholder="銘柄コードまたは会社名で検索..."
               required
               autoFocus
+              className="border-input bg-transparent"
+              searchLimit={50}
             />
-            <p className="text-xs text-muted-foreground">4-digit code (e.g., 7203)</p>
+            <p className="text-xs text-muted-foreground">Search by code or company name, then select a symbol.</p>
           </div>
         )}
         <div className="grid gap-2">

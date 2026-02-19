@@ -11,6 +11,7 @@ const mockUseWatchlistPrices = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
 const mockUseDeleteWatchlist = vi.fn();
 const mockUseRemoveWatchlistItem = vi.fn();
+const mockUseStockSearch = vi.fn();
 const mockAddItemMutate = vi.fn();
 const mockDeleteWatchlistMutate = vi.fn();
 const mockRemoveItemMutate = vi.fn();
@@ -30,6 +31,10 @@ vi.mock('@/hooks/useWatchlist', () => ({
   useAddWatchlistItem: (...args: unknown[]) => mockUseAddWatchlistItem(...args),
   useDeleteWatchlist: (...args: unknown[]) => mockUseDeleteWatchlist(...args),
   useRemoveWatchlistItem: (...args: unknown[]) => mockUseRemoveWatchlistItem(...args),
+}));
+
+vi.mock('@/hooks/useStockSearch', () => ({
+  useStockSearch: (...args: unknown[]) => mockUseStockSearch(...args),
 }));
 
 const sampleWatchlist: WatchlistWithItems = {
@@ -69,6 +74,10 @@ describe('WatchlistDetail', () => {
       mutate: mockRemoveItemMutate,
       isPending: false,
     });
+    mockUseStockSearch.mockReturnValue({
+      data: { results: [] },
+      isLoading: false,
+    });
   });
 
   it('shows empty selection state when watchlist is not selected', () => {
@@ -102,6 +111,52 @@ describe('WatchlistDetail', () => {
       { watchlistId: 1, data: { code: '6501', memo: 'watch' } },
       expect.any(Object)
     );
+  });
+
+  it('supports company name search and selects stock code from suggestion', async () => {
+    const user = userEvent.setup();
+    mockUseStockSearch.mockImplementation((query: string) => ({
+      data: query
+        ? {
+            results: [
+              {
+                code: '6501',
+                companyName: 'Hitachi',
+                marketName: 'Prime',
+                sector33Name: '電気機器',
+              },
+            ],
+          }
+        : { results: [] },
+      isLoading: false,
+    }));
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Add Stock' }));
+    await user.type(screen.getByLabelText('Stock Code'), 'hita');
+    await user.click(await screen.findByRole('button', { name: /6501 Hitachi/i }));
+    await user.click(screen.getByRole('button', { name: 'Add' }));
+
+    expect(mockAddItemMutate).toHaveBeenCalledWith(
+      { watchlistId: 1, data: { code: '6501', memo: undefined } },
+      expect.any(Object)
+    );
+  });
+
+  it('does not submit when stock code is not 4 digits', async () => {
+    const user = userEvent.setup();
+
+    render(<WatchlistDetail watchlist={sampleWatchlist} isLoading={false} error={null} />);
+
+    await user.click(screen.getByRole('button', { name: 'Add Stock' }));
+    await user.type(screen.getByLabelText('Stock Code'), 'hitachi');
+
+    const addButton = screen.getByRole('button', { name: 'Add' });
+    expect(addButton).toBeDisabled();
+    await user.click(addButton);
+
+    expect(mockAddItemMutate).not.toHaveBeenCalled();
   });
 
   it('removes stock from watchlist row action', async () => {
