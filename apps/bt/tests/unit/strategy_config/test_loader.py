@@ -442,6 +442,43 @@ def test_delete_strategy_experimental(tmp_path):
     assert not target_file.exists()
 
 
+def test_delete_strategy_experimental_subdirectory(tmp_path):
+    """experimental 配下サブディレクトリの戦略も削除できる"""
+    config_dir = tmp_path / "config"
+    nested_dir = config_dir / "strategies" / "experimental" / "optuna"
+    nested_dir.mkdir(parents=True)
+
+    target_file = nested_dir / "to_delete.yaml"
+    target_file.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    result = loader.delete_strategy("experimental/optuna/to_delete")
+
+    assert result is True
+    assert not target_file.exists()
+    assert not nested_dir.exists()
+
+
+def test_delete_strategy_experimental_subdirectory_with_sibling_keeps_dir(tmp_path):
+    """同階層に別ファイルがある場合は親ディレクトリを削除しない"""
+    config_dir = tmp_path / "config"
+    nested_dir = config_dir / "strategies" / "experimental" / "optuna"
+    nested_dir.mkdir(parents=True)
+
+    target_file = nested_dir / "to_delete.yaml"
+    target_file.write_text("entry_filter_params: {}", encoding="utf-8")
+    sibling_file = nested_dir / "keep.yaml"
+    sibling_file.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    result = loader.delete_strategy("experimental/optuna/to_delete")
+
+    assert result is True
+    assert not target_file.exists()
+    assert sibling_file.exists()
+    assert nested_dir.exists()
+
+
 def test_delete_strategy_production_raises(tmp_path):
     """production カテゴリの戦略は削除できない"""
     # テスト用の config ディレクトリを作成
@@ -796,7 +833,7 @@ def test_runtime_wrapper_methods_delegate(monkeypatch):
 
 
 def test_is_editable_category_without_prefix_uses_inferred_path(monkeypatch):
-    """カテゴリ省略時は推測パスの親ディレクトリ名で判定する"""
+    """カテゴリ省略時は推測パスのカテゴリルートで判定する"""
     loader = ConfigLoader(config_dir="/tmp/config")
     monkeypatch.setattr(
         loader,
@@ -804,6 +841,17 @@ def test_is_editable_category_without_prefix_uses_inferred_path(monkeypatch):
         lambda _name: Path("/tmp/config/strategies/production/sample.yaml"),
     )
     assert loader.is_editable_category("sample") is False
+
+
+def test_is_editable_category_without_prefix_nested_experimental(monkeypatch):
+    """カテゴリ省略 + experimental サブディレクトリでも編集可能と判定する"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+    monkeypatch.setattr(
+        loader,
+        "_infer_strategy_path",
+        lambda _name: Path("/tmp/config/strategies/experimental/optuna/sample.yaml"),
+    )
+    assert loader.is_editable_category("sample") is True
 
 
 def test_is_editable_category_without_prefix_not_found_returns_true(monkeypatch):
@@ -824,6 +872,17 @@ def test_is_updatable_category_without_prefix_uses_inferred_path(monkeypatch):
         loader,
         "_infer_strategy_path",
         lambda _name: Path("/tmp/config/strategies/production/sample.yaml"),
+    )
+    assert loader.is_updatable_category("sample") is True
+
+
+def test_is_updatable_category_without_prefix_nested_experimental(monkeypatch):
+    """更新可否判定もカテゴリルート基準で nested experimental を許可する"""
+    loader = ConfigLoader(config_dir="/tmp/config")
+    monkeypatch.setattr(
+        loader,
+        "_infer_strategy_path",
+        lambda _name: Path("/tmp/config/strategies/experimental/optuna/sample.yaml"),
     )
     assert loader.is_updatable_category("sample") is True
 
@@ -876,6 +935,23 @@ def test_rename_strategy_default_config_success(tmp_path, monkeypatch):
     assert new_path == external_experimental / "new_name.yaml"
     assert new_path.exists()
     assert not current_path.exists()
+
+
+def test_rename_strategy_subdirectory_success(tmp_path):
+    """experimental 配下サブディレクトリの戦略もリネームできる"""
+    config_dir = tmp_path / "config"
+    nested_dir = config_dir / "strategies" / "experimental" / "optuna"
+    nested_dir.mkdir(parents=True)
+    current_path = nested_dir / "old_name.yaml"
+    current_path.write_text("entry_filter_params: {}", encoding="utf-8")
+
+    loader = ConfigLoader(config_dir=str(config_dir))
+    new_path = loader.rename_strategy("experimental/optuna/old_name", "new_name")
+
+    assert new_path == config_dir / "strategies" / "experimental" / "new_name.yaml"
+    assert new_path.exists()
+    assert not current_path.exists()
+    assert not nested_dir.exists()
 
 
 def test_rename_strategy_default_config_conflict(tmp_path, monkeypatch):
