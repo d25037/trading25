@@ -117,7 +117,8 @@ class YamlUpdater:
         # 出力パス決定
         if output_path is None:
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{strategy_name}_improved_{timestamp}.yaml"
+            strategy_basename = self._resolve_strategy_basename(strategy_name)
+            filename = f"{strategy_basename}_improved_{timestamp}.yaml"
 
             # experimentalは外部ディレクトリに保存
             if self.use_external:
@@ -238,6 +239,18 @@ class YamlUpdater:
 
         return "\n".join(lines)
 
+    def _resolve_strategy_basename(self, strategy_name: str) -> str:
+        """
+        戦略名からファイル名用のベース名を解決
+
+        category付き戦略名（例: production/range_break_v15）でも
+        不要なディレクトリを作らないよう basename のみを返す。
+        """
+        normalized = strategy_name.replace("\\", "/").strip("/")
+        if not normalized:
+            return "strategy"
+        return normalized.rsplit("/", 1)[-1]
+
     def save_evolution_result(
         self,
         best_candidate: StrategyCandidate,
@@ -258,6 +271,7 @@ class YamlUpdater:
             (戦略YAMLパス, 履歴YAMLパス)
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        strategy_basename = self._resolve_strategy_basename(base_strategy_name)
 
         if output_dir is None:
             # experimentalは外部ディレクトリに保存
@@ -270,11 +284,13 @@ class YamlUpdater:
         os.makedirs(output_dir, exist_ok=True)
 
         # 戦略YAML保存
-        strategy_path = os.path.join(output_dir, f"{base_strategy_name}_{timestamp}.yaml")
+        strategy_path = os.path.join(output_dir, f"{strategy_basename}_{timestamp}.yaml")
         self.save_candidate(best_candidate, strategy_path)
 
         # 履歴YAML保存
-        history_path = os.path.join(output_dir, f"{base_strategy_name}_{timestamp}_history.yaml")
+        history_path = os.path.join(
+            output_dir, f"{strategy_basename}_{timestamp}_history.yaml"
+        )
         ruamel_yaml = YAML()
         ruamel_yaml.default_flow_style = False
         ruamel_yaml.allow_unicode = True
@@ -313,6 +329,7 @@ class YamlUpdater:
             (戦略YAMLパス, 履歴YAMLパス)
         """
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+        strategy_basename = self._resolve_strategy_basename(base_strategy_name)
 
         if output_dir is None:
             # experimentalは外部ディレクトリに保存
@@ -325,11 +342,13 @@ class YamlUpdater:
         os.makedirs(output_dir, exist_ok=True)
 
         # 戦略YAML保存
-        strategy_path = os.path.join(output_dir, f"{base_strategy_name}_{timestamp}.yaml")
+        strategy_path = os.path.join(output_dir, f"{strategy_basename}_{timestamp}.yaml")
         self.save_candidate(best_candidate, strategy_path)
 
         # 履歴YAML保存
-        history_path = os.path.join(output_dir, f"{base_strategy_name}_{timestamp}_history.yaml")
+        history_path = os.path.join(
+            output_dir, f"{strategy_basename}_{timestamp}_history.yaml"
+        )
         ruamel_yaml = YAML()
         ruamel_yaml.default_flow_style = False
         ruamel_yaml.allow_unicode = True

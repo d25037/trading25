@@ -40,6 +40,23 @@ class TestYamlUpdaterInit:
         assert updater.use_external is False
 
 
+class TestResolveStrategyBasename:
+    def test_returns_last_path_segment(self):
+        updater = YamlUpdater()
+        assert (
+            updater._resolve_strategy_basename("production/range_break_v15")
+            == "range_break_v15"
+        )
+        assert (
+            updater._resolve_strategy_basename(r"production\range_break_v15")
+            == "range_break_v15"
+        )
+
+    def test_empty_name_falls_back_to_default(self):
+        updater = YamlUpdater()
+        assert updater._resolve_strategy_basename("///") == "strategy"
+
+
 class TestBuildYamlContent:
     def test_basic_structure(self):
         updater = YamlUpdater()
@@ -90,6 +107,16 @@ class TestSaveCandidate:
         result_path = updater.save_candidate(candidate, category="production")
         assert os.path.exists(result_path)
         assert "production" in result_path
+
+    def test_auto_generate_path_external_experimental(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=True)
+        candidate = _make_candidate()
+
+        with patch("src.paths.get_strategies_dir", return_value=tmp_path):
+            result_path = updater.save_candidate(candidate, category="experimental")
+
+        assert os.path.exists(result_path)
+        assert os.path.dirname(result_path) == str(tmp_path / "auto")
 
 
 class TestFormatSignalParams:
@@ -169,6 +196,50 @@ class TestSaveEvolutionResult:
             loaded = yaml.load(f)
         assert loaded["metadata"]["method"] == "evolution"
 
+    def test_category_prefixed_name_does_not_create_subdir(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=False)
+        candidate = _make_candidate()
+        history = [{"generation": 1, "best_score": 0.5}]
+
+        strategy_path, history_path = updater.save_evolution_result(
+            candidate,
+            history,
+            "production/range_break_v15",
+            output_dir=str(tmp_path),
+        )
+
+        assert os.path.dirname(strategy_path) == str(tmp_path)
+        assert os.path.dirname(history_path) == str(tmp_path)
+        assert os.path.basename(strategy_path).startswith("range_break_v15_")
+        assert os.path.basename(history_path).startswith("range_break_v15_")
+
+    def test_default_output_dir_non_external(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=False)
+        candidate = _make_candidate()
+        history = [{"generation": 1, "best_score": 0.5}]
+
+        strategy_path, history_path = updater.save_evolution_result(
+            candidate, history, "production/range_break_v15"
+        )
+
+        expected_dir = tmp_path / "experimental" / "evolved"
+        assert os.path.dirname(strategy_path) == str(expected_dir)
+        assert os.path.dirname(history_path) == str(expected_dir)
+
+    def test_default_output_dir_external(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=True)
+        candidate = _make_candidate()
+        history = [{"generation": 1, "best_score": 0.5}]
+
+        with patch("src.paths.get_strategies_dir", return_value=tmp_path):
+            strategy_path, history_path = updater.save_evolution_result(
+                candidate, history, "production/range_break_v15"
+            )
+
+        expected_dir = tmp_path / "evolved"
+        assert os.path.dirname(strategy_path) == str(expected_dir)
+        assert os.path.dirname(history_path) == str(expected_dir)
+
 
 class TestSaveOptunaResult:
     def test_saves_two_files(self, tmp_path):
@@ -197,6 +268,50 @@ class TestSaveOptunaResult:
         with open(history_path) as f:
             loaded = yaml.load(f)
         assert len(loaded["optuna_history"]) == 2
+
+    def test_category_prefixed_name_does_not_create_subdir(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=False)
+        candidate = _make_candidate()
+        study_history = [{"trial": 1, "value": 0.8}]
+
+        strategy_path, history_path = updater.save_optuna_result(
+            candidate,
+            study_history,
+            "production/range_break_v15",
+            output_dir=str(tmp_path),
+        )
+
+        assert os.path.dirname(strategy_path) == str(tmp_path)
+        assert os.path.dirname(history_path) == str(tmp_path)
+        assert os.path.basename(strategy_path).startswith("range_break_v15_")
+        assert os.path.basename(history_path).startswith("range_break_v15_")
+
+    def test_default_output_dir_non_external(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=False)
+        candidate = _make_candidate()
+        study_history = [{"trial": 1, "value": 0.8}]
+
+        strategy_path, history_path = updater.save_optuna_result(
+            candidate, study_history, "production/range_break_v15"
+        )
+
+        expected_dir = tmp_path / "experimental" / "optuna"
+        assert os.path.dirname(strategy_path) == str(expected_dir)
+        assert os.path.dirname(history_path) == str(expected_dir)
+
+    def test_default_output_dir_external(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=True)
+        candidate = _make_candidate()
+        study_history = [{"trial": 1, "value": 0.8}]
+
+        with patch("src.paths.get_strategies_dir", return_value=tmp_path):
+            strategy_path, history_path = updater.save_optuna_result(
+                candidate, study_history, "production/range_break_v15"
+            )
+
+        expected_dir = tmp_path / "optuna"
+        assert os.path.dirname(strategy_path) == str(expected_dir)
+        assert os.path.dirname(history_path) == str(expected_dir)
 
 
 class TestApplyImprovements:
@@ -237,3 +352,78 @@ class TestApplyImprovements:
         assert os.path.exists(result_path)
         content = open(result_path).read()
         assert "volume" in content
+
+    def test_apply_improvements_default_path_non_external(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=False)
+        improvements = [
+            Improvement(
+                improvement_type="add_signal",
+                target="entry",
+                signal_name="volume",
+                changes={"enabled": True, "threshold": 1.5},
+                reason="test",
+                expected_impact="test",
+            )
+        ]
+        original_config = {"entry_filter_params": {}, "exit_trigger_params": {}}
+
+        with (
+            patch("src.lib.strategy_runtime.loader.ConfigLoader") as mock_loader_cls,
+            patch("src.agent.strategy_improver.StrategyImprover") as mock_improver_cls,
+        ):
+            mock_loader = MagicMock()
+            mock_loader.load_strategy_config.return_value = original_config
+            mock_loader_cls.return_value = mock_loader
+
+            mock_improver = MagicMock()
+            improved_config = {
+                "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
+                "exit_trigger_params": {},
+            }
+            mock_improver.apply_improvements.return_value = improved_config
+            mock_improver_cls.return_value = mock_improver
+
+            result_path = updater.apply_improvements(
+                "production/test_strategy", improvements, output_path=None
+            )
+
+        assert os.path.dirname(result_path) == str(tmp_path / "experimental")
+        assert os.path.basename(result_path).startswith("test_strategy_improved_")
+
+    def test_apply_improvements_default_path_external(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=True)
+        improvements = [
+            Improvement(
+                improvement_type="add_signal",
+                target="entry",
+                signal_name="volume",
+                changes={"enabled": True, "threshold": 1.5},
+                reason="test",
+                expected_impact="test",
+            )
+        ]
+        original_config = {"entry_filter_params": {}, "exit_trigger_params": {}}
+
+        with (
+            patch("src.paths.get_strategies_dir", return_value=tmp_path),
+            patch("src.lib.strategy_runtime.loader.ConfigLoader") as mock_loader_cls,
+            patch("src.agent.strategy_improver.StrategyImprover") as mock_improver_cls,
+        ):
+            mock_loader = MagicMock()
+            mock_loader.load_strategy_config.return_value = original_config
+            mock_loader_cls.return_value = mock_loader
+
+            mock_improver = MagicMock()
+            improved_config = {
+                "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
+                "exit_trigger_params": {},
+            }
+            mock_improver.apply_improvements.return_value = improved_config
+            mock_improver_cls.return_value = mock_improver
+
+            result_path = updater.apply_improvements(
+                "production/test_strategy", improvements, output_path=None
+            )
+
+        assert os.path.dirname(result_path) == str(tmp_path)
+        assert os.path.basename(result_path).startswith("test_strategy_improved_")
