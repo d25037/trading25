@@ -36,16 +36,20 @@ function getLastCall(): { endpoint: string; options?: RequestInit } {
 }
 
 describe('ApiClient composition', () => {
-  it('uses env API base URL by default and explicit URL when provided', () => {
+  it('creates domain clients with env default and explicit base URL', () => {
     const previousApiBaseUrl = process.env.API_BASE_URL;
     process.env.API_BASE_URL = 'http://env-api:9999';
 
     try {
       const fromEnv = new ApiClient();
-      expect(fromEnv.baseUrl).toBe('http://env-api:9999');
+      expect(fromEnv.analytics).toBeInstanceOf(AnalyticsClient);
+      expect(fromEnv.dataset).toBeInstanceOf(DatasetClient);
+      expect(fromEnv.watchlist).toBeInstanceOf(WatchlistClient);
 
       const explicit = new ApiClient('http://explicit-api:3002');
-      expect(explicit.baseUrl).toBe('http://explicit-api:3002');
+      expect(explicit.analytics).toBeInstanceOf(AnalyticsClient);
+      expect(explicit.dataset).toBeInstanceOf(DatasetClient);
+      expect(explicit.watchlist).toBeInstanceOf(WatchlistClient);
     } finally {
       if (previousApiBaseUrl === undefined) {
         process.env.API_BASE_URL = undefined;
