@@ -1,19 +1,28 @@
-import { hasActualFinancialData, isFiscalYear } from '@/utils/fundamental-analysis';
 import { useMemo } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
+import {
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+  type FundamentalMetricId,
+} from '@/constants/fundamentalMetrics';
 import { useFundamentals } from '@/hooks/useFundamentals';
+import { hasActualFinancialData, isFiscalYear } from '@/utils/fundamental-analysis';
 import { FundamentalsSummaryCard } from './FundamentalsSummaryCard';
 
 interface FundamentalsPanelProps {
   symbol: string | null;
   enabled?: boolean;
   tradingValuePeriod?: number;
+  metricOrder?: FundamentalMetricId[];
+  metricVisibility?: Record<FundamentalMetricId, boolean>;
 }
 
 export function FundamentalsPanel({
   symbol,
   enabled = true,
   tradingValuePeriod = 15,
+  metricOrder = DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  metricVisibility = DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
 }: FundamentalsPanelProps) {
   const { data, isLoading, error } = useFundamentals(symbol, { enabled, tradingValuePeriod });
 
@@ -104,6 +113,8 @@ export function FundamentalsPanel({
           <FundamentalsSummaryCard
             metrics={latestFyMetrics}
             tradingValuePeriod={data.tradingValuePeriod ?? tradingValuePeriod}
+            metricOrder={metricOrder}
+            metricVisibility={metricVisibility}
           />
         </div>
       )}
