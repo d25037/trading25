@@ -22,6 +22,7 @@ from src.server.services.screening_service import (
     StockUniverseItem,
     TopixDataRequirementKey,
     StrategyDataBundle,
+    StrategyExecutionInput,
     StrategyRuntime,
     _format_date,
 )
@@ -688,6 +689,8 @@ class TestRuntimeEvaluationHelpers:
         assert any("signal generation failed" in warning for warning in warnings)
         assert calls[0]["margin_data"] == "m1"
         assert calls[0]["statements_data"] == "s1"
+        assert calls[0]["screening_recent_days"] == 2
+        assert calls[0]["skip_exit_when_no_recent_entry"] is True
 
     def test_evaluate_strategy_short_circuit_when_universe_empty(self):
         service = ScreeningService(DummyReader())
@@ -701,6 +704,152 @@ class TestRuntimeEvaluationHelpers:
         assert matches == []
         assert processed == set()
         assert warnings == []
+
+    def test_evaluate_stock_reuses_per_stock_signal_cache(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        s1 = _runtime("s1")
+        s2 = _runtime("s2")
+        stock = StockUniverseItem(
+            code="1001",
+            company_name="A",
+            scale_category=None,
+            sector_33_name=None,
+        )
+        index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+        daily = pd.DataFrame(
+            {"Close": [1.0, 1.1], "Volume": [100.0, 120.0]},
+            index=index,
+        )
+        shared_bundle = StrategyDataBundle(
+            multi_data={
+                "1001": {
+                    "daily": daily,
+                    "margin_daily": None,
+                    "statements_daily": None,
+                }
+            }
+        )
+        strategy_inputs = [
+            StrategyExecutionInput(strategy=s1, data_bundle=shared_bundle, load_warnings=[]),
+            StrategyExecutionInput(strategy=s2, data_bundle=shared_bundle, load_warnings=[]),
+        ]
+
+        call_count = {"count": 0}
+
+        def _generate_signals(**_kwargs):
+            call_count["count"] += 1
+            return Signals(
+                entries=pd.Series([True, True], index=index),
+                exits=pd.Series([False, False], index=index),
+            )
+
+        monkeypatch.setattr(service._signal_processor, "generate_signals", _generate_signals)
+
+        strategy_cache_tokens = {
+            s1.response_name: service._build_strategy_signal_cache_token(s1),  # noqa: SLF001
+            s2.response_name: service._build_strategy_signal_cache_token(s2),  # noqa: SLF001
+        }
+        outcome = service._evaluate_stock(  # noqa: SLF001
+            stock=stock,
+            strategy_inputs=strategy_inputs,
+            recent_days=2,
+            strategy_cache_tokens=strategy_cache_tokens,
+        )
+
+        assert call_count["count"] == 1
+        assert outcome.processed_strategy_names == {s1.response_name, s2.response_name}
+        assert outcome.matched_dates_by_strategy == {
+            s1.response_name: "2026-01-02",
+            s2.response_name: "2026-01-02",
+        }
+
+    def test_evaluate_stock_continues_when_single_strategy_hits_unexpected_error(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        service = ScreeningService(DummyReader())
+        s1 = _runtime("s1")
+        s2 = _runtime("s2")
+        stock = StockUniverseItem(
+            code="1001",
+            company_name="A",
+            scale_category=None,
+            sector_33_name=None,
+        )
+        index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+        daily = pd.DataFrame(
+            {"Close": [1.0, 1.1], "Volume": [100.0, 120.0]},
+            index=index,
+        )
+        shared_bundle = StrategyDataBundle(
+            multi_data={"1001": {"daily": daily}},
+        )
+        strategy_inputs = [
+            StrategyExecutionInput(strategy=s1, data_bundle=shared_bundle, load_warnings=[]),
+            StrategyExecutionInput(strategy=s2, data_bundle=shared_bundle, load_warnings=[]),
+        ]
+
+        monkeypatch.setattr(
+            service._signal_processor,  # noqa: SLF001
+            "generate_signals",
+            lambda **_kwargs: Signals(
+                entries=pd.Series([True, True], index=index),
+                exits=pd.Series([False, False], index=index),
+            ),
+        )
+
+        calls = {"count": 0}
+
+        def _find_recent_match_date(_signals, _recent_days):  # noqa: ANN001
+            calls["count"] += 1
+            if calls["count"] == 1:
+                raise RuntimeError("unexpected matcher error")
+            return "2026-01-02"
+
+        monkeypatch.setattr(service, "_find_recent_match_date", _find_recent_match_date)
+
+        strategy_cache_tokens = {
+            s1.response_name: service._build_strategy_signal_cache_token(s1),  # noqa: SLF001
+            s2.response_name: service._build_strategy_signal_cache_token(s2),  # noqa: SLF001
+        }
+        outcome = service._evaluate_stock(  # noqa: SLF001
+            stock=stock,
+            strategy_inputs=strategy_inputs,
+            recent_days=2,
+            strategy_cache_tokens=strategy_cache_tokens,
+        )
+
+        assert outcome.processed_strategy_names == {s1.response_name, s2.response_name}
+        assert outcome.matched_dates_by_strategy == {s2.response_name: "2026-01-02"}
+        assert outcome.warning_by_strategy == [
+            (s1.response_name, "1001 evaluation failed (unexpected matcher error)")
+        ]
+
+    def test_evaluate_strategies_keeps_load_warnings_when_universe_empty(self):
+        service = ScreeningService(DummyReader())
+        strategy = _runtime("s1")
+        strategy_inputs = [
+            StrategyExecutionInput(
+                strategy=strategy,
+                data_bundle=StrategyDataBundle(multi_data={}),
+                load_warnings=["multi data load failed (boom)"],
+            )
+        ]
+
+        results, warnings, worker_count = service._evaluate_strategies(  # noqa: SLF001
+            strategy_inputs=strategy_inputs,
+            stock_universe=[],
+            recent_days=10,
+            progress_callback=None,
+        )
+
+        assert warnings == []
+        assert worker_count == 1
+        assert len(results) == 1
+        assert results[0].warnings == ["multi data load failed (boom)"]
 
 
 class TestRequestCacheHelpers:
