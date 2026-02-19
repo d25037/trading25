@@ -120,11 +120,32 @@ class DummyMarketDb:
         return len(rows)
 
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> int:
-        self.index_master_rows.extend(rows)
+        upserted = {
+            str(row["code"]): dict(row)
+            for row in self.index_master_rows
+            if row.get("code")
+        }
+        for row in rows:
+            code = str(row.get("code", "")).strip()
+            if not code:
+                continue
+            upserted[code] = dict(row)
+        self.index_master_rows = list(upserted.values())
         return len(rows)
 
     def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        self.indices_rows.extend(rows)
+        upserted = {
+            (str(row["code"]), str(row["date"])): dict(row)
+            for row in self.indices_rows
+            if row.get("code") and row.get("date")
+        }
+        for row in rows:
+            code = str(row.get("code", "")).strip()
+            row_date = str(row.get("date", "")).strip()
+            if not code or not row_date:
+                continue
+            upserted[(code, row_date)] = dict(row)
+        self.indices_rows = list(upserted.values())
         return len(rows)
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
@@ -213,13 +234,54 @@ class DummyClient:
             ]
         if path == "/indices/bars/daily":
             if self.indices_quotes is not None:
-                return [dict(row) for row in self.indices_quotes]
-            if params and params.get("from") == "20260210":
-                return [{"Date": "2026-02-10", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"}]
-            return [
-                {"Date": "2026-02-06", "O": 100, "H": 101, "L": 99, "C": 100, "SectorName": "TOPIX"},
-                {"Date": "2026-02-10", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"},
-            ]
+                return self._filter_indices_quotes(params)
+
+            requested_code = self._normalize_index_code((params or {}).get("code"))
+            if requested_code:
+                if (params or {}).get("from") == "20260210":
+                    return [{
+                        "Date": "2026-02-10",
+                        "Code": requested_code,
+                        "O": 102,
+                        "H": 103,
+                        "L": 101,
+                        "C": 102,
+                        "SectorName": "TOPIX",
+                    }]
+                return [
+                    {
+                        "Date": "2026-02-06",
+                        "Code": requested_code,
+                        "O": 100,
+                        "H": 101,
+                        "L": 99,
+                        "C": 100,
+                        "SectorName": "TOPIX",
+                    },
+                    {
+                        "Date": "2026-02-10",
+                        "Code": requested_code,
+                        "O": 102,
+                        "H": 103,
+                        "L": 101,
+                        "C": 102,
+                        "SectorName": "TOPIX",
+                    },
+                ]
+
+            requested_date = self._normalize_date((params or {}).get("date"))
+            if requested_date:
+                return [{
+                    "Date": requested_date,
+                    "Code": "0000",
+                    "O": 102,
+                    "H": 103,
+                    "L": 101,
+                    "C": 102,
+                    "SectorName": "TOPIX",
+                }]
+
+            return []
         if path == "/equities/master":
             return self.master_quotes or []
         if path == "/equities/bars/daily":
@@ -236,6 +298,46 @@ class DummyClient:
                 raise RuntimeError("daily fetch failed")
             return [{"Code": "72030", "Date": date_value, "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 1000}]
         return []
+
+    @staticmethod
+    def _normalize_index_code(value: Any) -> str:
+        code = str(value).strip() if value is not None else ""
+        if not code:
+            return ""
+        if code.isdigit() and len(code) < 4:
+            return code.zfill(4)
+        return code.upper()
+
+    @staticmethod
+    def _normalize_date(value: Any) -> str:
+        text = str(value).strip() if value is not None else ""
+        if len(text) == 8 and text.isdigit():
+            return f"{text[0:4]}-{text[4:6]}-{text[6:8]}"
+        return text
+
+    def _filter_indices_quotes(self, params: dict[str, Any] | None) -> list[dict[str, Any]]:
+        requested_code = self._normalize_index_code((params or {}).get("code"))
+        requested_date = self._normalize_date((params or {}).get("date"))
+        rows: list[dict[str, Any]] = []
+
+        for source in self.indices_quotes or []:
+            row = dict(source)
+            row_code = self._normalize_index_code(row.get("Code") or row.get("code"))
+            row_date = self._normalize_date(row.get("Date") or row.get("date"))
+
+            if requested_code:
+                if row_code:
+                    if row_code != requested_code:
+                        continue
+                elif requested_code != "0000":
+                    continue
+
+            if requested_date and row_date and row_date != requested_date:
+                continue
+
+            rows.append(row)
+
+        return rows
 
 
 class InitialSyncClient:
@@ -302,18 +404,6 @@ class IndicesOnlyClient:
     def __init__(self) -> None:
         self.calls: list[tuple[str, dict[str, Any] | None]] = []
 
-    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        self.calls.append((path, params))
-        if path == "/indices":
-            return {
-                "data": [
-                    {"code": "0000", "name": "TOPIX", "category": "topix"},
-                    {"Code": "", "Name": "invalid", "Category": "other"},
-                    {"code": "9999", "name": "BROKEN", "category": "other"},
-                ]
-            }
-        raise RuntimeError(f"unexpected path: {path}")
-
     async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.calls.append((path, params))
         if path != "/indices/bars/daily":
@@ -324,6 +414,41 @@ class IndicesOnlyClient:
             {"Date": "", "O": 1, "H": 2, "L": 1, "C": 2, "SectorName": "TOPIX"},
             {"Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "SectorName": "TOPIX"},
         ]
+
+
+@pytest.fixture(autouse=True)
+def patch_small_index_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
+    def _seed_rows(*, existing_codes: set[str] | None = None) -> list[dict[str, str | None]]:
+        existing = existing_codes or set()
+        rows: list[dict[str, str | None]] = []
+        if "0000" not in existing:
+            rows.append({
+                "code": "0000",
+                "name": "TOPIX",
+                "name_english": None,
+                "category": "topix",
+                "data_start_date": "2008-05-07",
+                "created_at": "2026-02-10T00:00:00+00:00",
+            })
+        if "0040" not in existing:
+            rows.append({
+                "code": "0040",
+                "name": "東証業種別 水産・農林業",
+                "name_english": None,
+                "category": "sector33",
+                "data_start_date": "2010-01-04",
+                "created_at": "2026-02-10T00:00:00+00:00",
+            })
+        return rows
+
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies.get_index_catalog_codes",
+        lambda: {"0000", "0040"},
+    )
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies.build_index_master_seed_rows",
+        _seed_rows,
+    )
 
 
 @pytest.mark.asyncio
@@ -355,9 +480,8 @@ async def test_incremental_sync_handles_mixed_date_formats() -> None:
     assert topix_calls[0][1] == {"from": "20260206"}
     indices_calls = [c for c in client.calls if c[0] == "/indices/bars/daily"]
     assert indices_calls
-    assert indices_calls[0][1] == {"code": "0000", "from": "20260206"}
-    assert len(market_db.indices_rows) == 1
-    assert market_db.indices_rows[0]["date"] == "2026-02-10"
+    assert any(params == {"code": "0000", "from": "20260206"} for _, params in indices_calls)
+    assert any(row["code"] == "0000" and row["date"] == "2026-02-10" for row in market_db.indices_rows)
 
     assert market_db.metadata.get(METADATA_KEYS["LAST_SYNC_DATE"])
     assert progresses[-1][0] == "complete"
@@ -439,21 +563,13 @@ async def test_incremental_sync_skips_index_rows_with_missing_date() -> None:
 
 
 @pytest.mark.asyncio
-async def test_incremental_sync_falls_back_to_date_based_indices_when_master_unavailable() -> None:
+async def test_incremental_sync_supplements_indices_with_date_based_discovery() -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206")
     client = DummyClient(
         indices_quotes=[
             {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"},
         ]
     )
-
-    async def _raise_on_indices(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        client.calls.append((path, params))
-        if path == "/indices":
-            raise RuntimeError("indices master unavailable")
-        return {"data": []}
-
-    client.get = _raise_on_indices  # type: ignore[method-assign]
 
     ctx = SyncContext(
         client=client,  # type: ignore[arg-type]
@@ -467,8 +583,7 @@ async def test_incremental_sync_falls_back_to_date_based_indices_when_master_una
     assert result.success
     assert result.errors == []
     assert any(path == "/indices/bars/daily" and params == {"date": "20260210"} for path, params in client.calls)
-    assert len(market_db.indices_rows) >= 1
-    assert all(row["code"] == "0040" for row in market_db.indices_rows)
+    assert any(row["code"] == "0040" for row in market_db.indices_rows)
     assert any(row["date"] == "2026-02-10" for row in market_db.indices_rows)
 
 
@@ -491,17 +606,9 @@ async def test_incremental_sync_fallback_inserts_missing_master_for_fk_compatibi
     market_db = FkAwareMarketDb(latest_trading_date="20260206")
     client = DummyClient(
         indices_quotes=[
-            {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102},
+            {"Date": "2026-02-10", "Code": "0999", "O": 102, "H": 103, "L": 101, "C": 102},
         ]
     )
-
-    async def _raise_on_indices(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        client.calls.append((path, params))
-        if path == "/indices":
-            raise RuntimeError("indices master unavailable")
-        return {"data": []}
-
-    client.get = _raise_on_indices  # type: ignore[method-assign]
 
     ctx = SyncContext(
         client=client,  # type: ignore[arg-type]
@@ -514,16 +621,15 @@ async def test_incremental_sync_fallback_inserts_missing_master_for_fk_compatibi
 
     assert result.success
     assert result.errors == []
-    assert any(row["code"] == "0040" for row in market_db.index_master_rows)
-    fallback_master = next(row for row in market_db.index_master_rows if row["code"] == "0040")
+    assert any(row["code"] == "0999" for row in market_db.index_master_rows)
+    fallback_master = next(row for row in market_db.index_master_rows if row["code"] == "0999")
     assert fallback_master["category"] == "unknown"
-    assert fallback_master["name"] == "0040"
-    assert len(market_db.indices_rows) >= 1
-    assert all(row["code"] == "0040" for row in market_db.indices_rows)
+    assert fallback_master["name"] == "0999"
+    assert any(row["code"] == "0999" for row in market_db.indices_rows)
 
 
 @pytest.mark.asyncio
-async def test_incremental_sync_fallback_rechecks_anchor_date_when_master_unavailable() -> None:
+async def test_incremental_sync_rechecks_anchor_date_for_index_discovery() -> None:
     market_db = DummyMarketDb(
         latest_trading_date="20260210",
         latest_stock_data_date="20260210",
@@ -534,14 +640,6 @@ async def test_incremental_sync_fallback_rechecks_anchor_date_when_master_unavai
             {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"},
         ]
     )
-
-    async def _raise_on_indices(path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
-        client.calls.append((path, params))
-        if path == "/indices":
-            raise RuntimeError("indices master unavailable")
-        return {"data": []}
-
-    client.get = _raise_on_indices  # type: ignore[method-assign]
 
     ctx = SyncContext(
         client=client,  # type: ignore[arg-type]
@@ -626,7 +724,34 @@ async def test_incremental_sync_handles_unexpected_topix_exception() -> None:
 
 
 @pytest.mark.asyncio
-async def test_indices_only_sync_collects_errors_and_skips_invalid_code() -> None:
+async def test_indices_only_sync_collects_errors_and_continues_other_codes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    def _seed_rows(*, existing_codes: set[str] | None = None) -> list[dict[str, str | None]]:
+        existing = existing_codes or set()
+        rows: list[dict[str, str | None]] = []
+        for code, category in (("0000", "topix"), ("9999", "unknown")):
+            if code in existing:
+                continue
+            rows.append({
+                "code": code,
+                "name": code,
+                "name_english": None,
+                "category": category,
+                "data_start_date": None,
+                "created_at": "2026-02-10T00:00:00+00:00",
+            })
+        return rows
+
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies.get_index_catalog_codes",
+        lambda: {"0000", "9999"},
+    )
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies.build_index_master_seed_rows",
+        _seed_rows,
+    )
+
     market_db = DummyMarketDb()
     client = IndicesOnlyClient()
     progresses: list[tuple[str, int, int, str]] = []
@@ -694,16 +819,22 @@ async def test_indices_only_sync_cancelled_during_loop() -> None:
 
     assert not result.success
     assert result.errors == ["Cancelled"]
-    assert result.totalApiCalls == 2
+    assert result.totalApiCalls == 1
 
 
 @pytest.mark.asyncio
-async def test_indices_only_sync_handles_outer_exception() -> None:
+async def test_indices_only_sync_handles_seed_exception(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     market_db = DummyMarketDb()
+    monkeypatch.setattr(
+        "src.server.services.sync_strategies._seed_index_master_from_catalog",
+        lambda _ctx: (_ for _ in ()).throw(RuntimeError("seed failed")),
+    )
 
     class _Client:
-        async def get(self, _path: str, _params: dict[str, Any] | None = None) -> dict[str, Any]:
-            raise RuntimeError("indices master failed")
+        async def get_paginated(self, _path: str, _params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            return []
 
     ctx = SyncContext(
         client=_Client(),  # type: ignore[arg-type]
@@ -715,7 +846,7 @@ async def test_indices_only_sync_handles_outer_exception() -> None:
     result = await IndicesOnlySyncStrategy().execute(ctx)
 
     assert not result.success
-    assert result.errors == ["indices master failed"]
+    assert result.errors == ["seed failed"]
 
 
 @pytest.mark.asyncio
@@ -1195,6 +1326,15 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
     )
     assert len(index_rows_from_payload_code) == 1
     assert index_rows_from_payload_code[0]["code"] == "0040"
+
+    index_rows_from_lower_hex_code = _convert_indices_data_rows(
+        [
+            {"Date": "2026-02-10", "Code": "004a", "O": 1, "H": 2, "L": 1, "C": 2, "SectorName": "Glass"},
+        ],
+        code=None,
+    )
+    assert len(index_rows_from_lower_hex_code) == 1
+    assert index_rows_from_lower_hex_code[0]["code"] == "004A"
 
 
 def test_build_fallback_index_master_rows_deduplicates_and_keeps_inputs_immutable() -> None:

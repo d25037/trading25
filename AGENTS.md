@@ -21,7 +21,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
   - **market.db**: 読み書き（SQLAlchemy Core）
   - **portfolio.db**: CRUD（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
-- `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新し、`/indices` 取得失敗時は日付指定フォールバックで継続する（`indices-only` は指数再同期専用モード）。フォールバック時は不足 `index_master` をプレースホルダ補完して、FK 制約付きの既存DBでも継続可能にする
+- `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
