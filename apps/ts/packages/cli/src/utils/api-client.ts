@@ -14,6 +14,7 @@ import { WatchlistClient } from './api-clients/watchlist-client.js';
 export type * from './api-clients/types.js';
 
 export class ApiClient {
+  readonly baseUrl: string;
   readonly analytics: AnalyticsClient;
   readonly auth: AuthClient;
   readonly database: DatabaseClient;
@@ -23,12 +24,13 @@ export class ApiClient {
   readonly watchlist: WatchlistClient;
 
   constructor(baseUrl: string = process.env.API_BASE_URL || 'http://localhost:3002') {
-    this.analytics = new AnalyticsClient(baseUrl);
-    this.auth = new AuthClient(baseUrl);
-    this.database = new DatabaseClient(baseUrl);
-    this.dataset = new DatasetClient(baseUrl);
-    this.jquants = new JQuantsClient(baseUrl);
-    this.portfolio = new PortfolioClient(baseUrl);
-    this.watchlist = new WatchlistClient(baseUrl);
+    this.baseUrl = baseUrl;
+    this.analytics = new AnalyticsClient(this.baseUrl);
+    this.auth = new AuthClient(this.baseUrl);
+    this.database = new DatabaseClient(this.baseUrl);
+    this.dataset = new DatasetClient(this.baseUrl);
+    this.jquants = new JQuantsClient(this.baseUrl);
+    this.portfolio = new PortfolioClient(this.baseUrl);
+    this.watchlist = new WatchlistClient(this.baseUrl);
   }
 }
