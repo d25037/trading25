@@ -244,7 +244,7 @@ describe('HtmlFileBrowser', () => {
     const openSpy = vi.spyOn(window, 'open').mockImplementation(() => null);
     const setTimeoutSpy = vi.spyOn(window, 'setTimeout').mockImplementation((handler) => {
       if (typeof handler === 'function') handler();
-      return 0 as unknown as number;
+      return 0 as unknown as ReturnType<typeof setTimeout>;
     });
 
     render(<HtmlFileBrowser />);

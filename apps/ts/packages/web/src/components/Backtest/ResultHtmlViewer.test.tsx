@@ -25,7 +25,7 @@ describe('ResultHtmlViewer', () => {
       if (typeof handler === 'function') {
         handler();
       }
-      return 0 as unknown as number;
+      return 0 as unknown as ReturnType<typeof setTimeout>;
     });
 
     render(<ResultHtmlViewer htmlContent="<html><body>report</body></html>" isLoading={false} />);
