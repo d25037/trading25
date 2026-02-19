@@ -3,6 +3,10 @@ import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+} from '@/constants/fundamentalMetrics';
 import { ChartControls } from './ChartControls';
 
 const queryClient = new QueryClient({
@@ -43,6 +47,8 @@ const mockChartStore = {
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
     fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
+    fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
+    fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     visibleBars: 30,
     relativeMode: false,
     indicators: {
@@ -128,6 +134,8 @@ describe('ChartControls', () => {
       'marginPressure',
       'factorRegression',
     ];
+    mockChartStore.settings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
+    mockChartStore.settings.fundamentalsMetricVisibility = { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY };
     mockChartStore.settings.signalOverlay.signals = [];
     mockChartStore.setSelectedSymbol = vi.fn();
     mockChartStore.updateSettings = vi.fn();
@@ -243,6 +251,40 @@ describe('ChartControls', () => {
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
       fundamentalsPanelOrder: ['fundamentalsHistory', 'fundamentals', 'marginPressure', 'factorRegression'],
+    });
+  });
+
+  it('opens fundamental metrics dialog and toggles metric visibility', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'Fundamental Metrics' }));
+    await user.click(screen.getByRole('switch', { name: /^PER$/i }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      fundamentalsMetricVisibility: {
+        ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+        per: false,
+      },
+    });
+  });
+
+  it('moves fundamental metric order down from fundamental metrics dialog', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'Fundamental Metrics' }));
+    const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
+    expect(firstDownButton).toBeDefined();
+    if (!firstDownButton) return;
+    await user.click(firstDownButton);
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      fundamentalsMetricOrder: ['pbr', 'per', ...DEFAULT_FUNDAMENTAL_METRIC_ORDER.slice(2)],
     });
   });
 

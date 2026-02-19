@@ -1,5 +1,9 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+} from '@/constants/fundamentalMetrics';
 import { apiPost } from '@/lib/api-client';
 import type { ChartSettings } from '@/stores/chartStore';
 import { createTestWrapper } from '@/test-utils';
@@ -32,7 +36,12 @@ describe('buildIndicatorSpecs', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
-    riskAdjustedReturn: { lookbackPeriod: 60, ratioType: 'sortino' as const, threshold: 1.0, condition: 'above' as const },
+    riskAdjustedReturn: {
+      lookbackPeriod: 60,
+      ratioType: 'sortino' as const,
+      threshold: 1.0,
+      condition: 'above' as const,
+    },
     chartType: 'candlestick' as const,
     showVolume: true,
     showPPOChart: false,
@@ -43,7 +52,14 @@ describe('buildIndicatorSpecs', () => {
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
-    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'] as ChartSettings['fundamentalsPanelOrder'],
+    fundamentalsPanelOrder: [
+      'fundamentals',
+      'fundamentalsHistory',
+      'marginPressure',
+      'factorRegression',
+    ] as ChartSettings['fundamentalsPanelOrder'],
+    fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
+    fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     visibleBars: 200,
     relativeMode: false,
     signalOverlay: { enabled: false, signals: [] },
@@ -143,7 +159,12 @@ describe('buildIndicatorSpecs', () => {
     const settings = {
       ...baseSettings,
       showRiskAdjustedReturnChart: true,
-      riskAdjustedReturn: { lookbackPeriod: 80, ratioType: 'sharpe' as const, threshold: 1.2, condition: 'below' as const },
+      riskAdjustedReturn: {
+        lookbackPeriod: 80,
+        ratioType: 'sharpe' as const,
+        threshold: 1.2,
+        condition: 'below' as const,
+      },
     };
     const specs = buildIndicatorSpecs(settings);
     expect(specs).toContainEqual({
@@ -318,7 +339,12 @@ describe('useBtIndicators', () => {
     },
     volumeComparison: { shortPeriod: 20, longPeriod: 100, lowerMultiplier: 1.0, higherMultiplier: 1.5 },
     tradingValueMA: { period: 20 },
-    riskAdjustedReturn: { lookbackPeriod: 60, ratioType: 'sortino' as const, threshold: 1.0, condition: 'above' as const },
+    riskAdjustedReturn: {
+      lookbackPeriod: 60,
+      ratioType: 'sortino' as const,
+      threshold: 1.0,
+      condition: 'above' as const,
+    },
     chartType: 'candlestick' as const,
     showVolume: true,
     showPPOChart: false,
@@ -329,7 +355,14 @@ describe('useBtIndicators', () => {
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
-    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'] as ChartSettings['fundamentalsPanelOrder'],
+    fundamentalsPanelOrder: [
+      'fundamentals',
+      'fundamentalsHistory',
+      'marginPressure',
+      'factorRegression',
+    ] as ChartSettings['fundamentalsPanelOrder'],
+    fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
+    fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     visibleBars: 200,
     relativeMode: false,
     signalOverlay: { enabled: false, signals: [] },
@@ -352,10 +385,13 @@ describe('useBtIndicators', () => {
     const relativeModeSettings = { ...baseSettings, relativeMode: true };
     renderHook(() => useBtIndicators('7203', 'daily', relativeModeSettings), { wrapper });
     await waitFor(() => {
-      expect(mockApiPost).toHaveBeenCalledWith('/api/indicators/compute', expect.objectContaining({
-        benchmark_code: 'topix',
-        relative_options: { align_dates: true, handle_zero_division: 'skip' },
-      }));
+      expect(mockApiPost).toHaveBeenCalledWith(
+        '/api/indicators/compute',
+        expect.objectContaining({
+          benchmark_code: 'topix',
+          relative_options: { align_dates: true, handle_zero_division: 'skip' },
+        })
+      );
     });
   });
 
@@ -444,10 +480,10 @@ describe('useBtIndicators', () => {
     };
 
     const { wrapper } = createTestWrapper();
-    const { rerender } = renderHook(
-      ({ chartSettings }) => useBtIndicators('7203', 'daily', chartSettings),
-      { wrapper, initialProps: { chartSettings: settings } }
-    );
+    const { rerender } = renderHook(({ chartSettings }) => useBtIndicators('7203', 'daily', chartSettings), {
+      wrapper,
+      initialProps: { chartSettings: settings },
+    });
 
     await waitFor(() => expect(mockApiPost).toHaveBeenCalledTimes(1));
 
@@ -490,10 +526,10 @@ describe('useBtIndicators', () => {
     };
 
     const { wrapper } = createTestWrapper();
-    const { rerender } = renderHook(
-      ({ chartSettings }) => useBtIndicators('7203', 'daily', chartSettings),
-      { wrapper, initialProps: { chartSettings: settings } }
-    );
+    const { rerender } = renderHook(({ chartSettings }) => useBtIndicators('7203', 'daily', chartSettings), {
+      wrapper,
+      initialProps: { chartSettings: settings },
+    });
 
     await waitFor(() => expect(mockApiPost).toHaveBeenCalledTimes(1));
 

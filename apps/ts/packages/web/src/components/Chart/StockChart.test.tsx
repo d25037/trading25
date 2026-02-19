@@ -1,5 +1,9 @@
 import { act, render, screen } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+} from '@/constants/fundamentalMetrics';
 import type { StockDataPoint } from '@/types/chart';
 import { calculateChangePct, formatPrice, StockChart, timeToDateString } from './StockChart';
 
@@ -19,6 +23,8 @@ const mockChartStore = {
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
     fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
+    fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
+    fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
     visibleBars: 30,
     relativeMode: false,
     indicators: {
