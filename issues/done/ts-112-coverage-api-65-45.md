@@ -1,12 +1,12 @@
 ---
 id: ts-112
 title: "Coverage Gate: api 65/45"
-status: closed
+status: done
 priority: medium
 labels: [test]
 project: ts
 created: 2026-02-01
-updated: 2026-02-01
+updated: 2026-02-19
 depends_on: []
 blocks: []
 ---

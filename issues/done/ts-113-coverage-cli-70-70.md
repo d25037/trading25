@@ -45,4 +45,4 @@ parent: ts-129
 - `bun run --cwd apps/ts test:coverage` と `bun run --cwd apps/ts check:coverage` で全 package の gate 通過を確認
 
 ## 整理メモ
-- `ts-014c`（CLI 90/90）は本Issue（70/70）達成後のストレッチ目標として扱う。
+- `ts-014c`（CLI 80/80）は本Issue（70/70）達成後のストレッチ目標として扱う。
