@@ -16,6 +16,17 @@ const mockHookState = {
   cancelIsPending: false,
 };
 
+function createDatasetJob(overrides: Partial<DatasetJobResponse>): DatasetJobResponse {
+  return {
+    jobId: 'job-default',
+    status: 'running',
+    preset: 'quickTesting',
+    name: 'quickTesting.db',
+    startedAt: '2026-02-10T00:00:00Z',
+    ...overrides,
+  };
+}
+
 vi.mock('@tanstack/react-query', async () => {
   const actual = await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
   return {
@@ -76,12 +87,10 @@ describe('DatasetJobProgress', () => {
     vi.setSystemTime(new Date('2026-02-10T00:01:05Z'));
 
     mockStoreState.activeDatasetJobId = 'job-running';
-    mockHookState.job = {
+    mockHookState.job = createDatasetJob({
       jobId: 'job-running',
       status: 'running',
-      startedAt: '2026-02-10T00:00:00Z',
-      progress: null,
-    } as DatasetJobResponse;
+    });
 
     render(<DatasetJobProgress />);
 
@@ -102,16 +111,17 @@ describe('DatasetJobProgress', () => {
 
   it('renders progress content and caps progress bar width at 100%', () => {
     mockStoreState.activeDatasetJobId = 'job-progress';
-    mockHookState.job = {
+    mockHookState.job = createDatasetJob({
       jobId: 'job-progress',
       status: 'running',
-      startedAt: '2026-02-10T00:00:00Z',
       progress: {
         stage: 'sync',
+        current: 1,
+        total: 1,
         percentage: 132.5,
         message: 'processing...',
       },
-    } as DatasetJobResponse;
+    });
 
     const { container } = render(<DatasetJobProgress />);
 
@@ -124,16 +134,18 @@ describe('DatasetJobProgress', () => {
   it('invalidates dataset list and auto-clears active id after completion', () => {
     vi.useFakeTimers();
     mockStoreState.activeDatasetJobId = 'job-completed';
-    mockHookState.job = {
+    mockHookState.job = createDatasetJob({
       jobId: 'job-completed',
       status: 'completed',
-      startedAt: '2026-02-10T00:00:00Z',
       result: {
+        success: true,
         processedStocks: 8,
         totalStocks: 10,
         warnings: ['warn-1'],
+        errors: [],
+        outputPath: '/tmp/quickTesting.db',
       },
-    } as DatasetJobResponse;
+    });
 
     render(<DatasetJobProgress />);
 
@@ -151,11 +163,10 @@ describe('DatasetJobProgress', () => {
   it('does not clear active id when a different job became active before timeout', () => {
     vi.useFakeTimers();
     mockStoreState.activeDatasetJobId = 'job-a';
-    mockHookState.job = {
+    mockHookState.job = createDatasetJob({
       jobId: 'job-a',
       status: 'cancelled',
-      startedAt: '2026-02-10T00:00:00Z',
-    } as DatasetJobResponse;
+    });
 
     render(<DatasetJobProgress />);
 
@@ -170,12 +181,11 @@ describe('DatasetJobProgress', () => {
 
   it('renders failed state error message', () => {
     mockStoreState.activeDatasetJobId = 'job-failed';
-    mockHookState.job = {
+    mockHookState.job = createDatasetJob({
       jobId: 'job-failed',
       status: 'failed',
-      startedAt: '2026-02-10T00:00:00Z',
       error: 'dataset creation failed',
-    } as DatasetJobResponse;
+    });
 
     render(<DatasetJobProgress />);
 
