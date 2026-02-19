@@ -322,7 +322,10 @@ class MarketDb(BaseDbAccess):
                             "name": stmt.excluded.name,
                             "name_english": stmt.excluded.name_english,
                             "category": stmt.excluded.category,
-                            "data_start_date": stmt.excluded.data_start_date,
+                            "data_start_date": func.coalesce(
+                                stmt.excluded.data_start_date,
+                                index_master.c.data_start_date,
+                            ),
                             "updated_at": stmt.excluded.updated_at,
                         },
                     )
