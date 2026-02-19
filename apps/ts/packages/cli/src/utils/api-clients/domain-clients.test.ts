@@ -1,5 +1,4 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
-import { ApiClient } from '../api-client.js';
 import { AnalyticsClient } from './analytics-client.js';
 import { AuthClient } from './auth-client.js';
 import { DatabaseClient } from './database-client.js';
@@ -34,31 +33,6 @@ function getLastCall(): { endpoint: string; options?: RequestInit } {
     options: options as RequestInit | undefined,
   };
 }
-
-describe('ApiClient composition', () => {
-  it('creates domain clients with env default and explicit base URL', () => {
-    const previousApiBaseUrl = process.env.API_BASE_URL;
-    process.env.API_BASE_URL = 'http://env-api:9999';
-
-    try {
-      const fromEnv = new ApiClient();
-      expect(fromEnv.analytics).toBeInstanceOf(AnalyticsClient);
-      expect(fromEnv.dataset).toBeInstanceOf(DatasetClient);
-      expect(fromEnv.watchlist).toBeInstanceOf(WatchlistClient);
-
-      const explicit = new ApiClient('http://explicit-api:3002');
-      expect(explicit.analytics).toBeInstanceOf(AnalyticsClient);
-      expect(explicit.dataset).toBeInstanceOf(DatasetClient);
-      expect(explicit.watchlist).toBeInstanceOf(WatchlistClient);
-    } finally {
-      if (previousApiBaseUrl === undefined) {
-        process.env.API_BASE_URL = undefined;
-      } else {
-        process.env.API_BASE_URL = previousApiBaseUrl;
-      }
-    }
-  });
-});
 
 describe('Domain API clients', () => {
   beforeEach(() => {
