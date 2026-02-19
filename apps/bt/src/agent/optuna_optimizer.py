@@ -7,7 +7,7 @@ TPE（Tree-structured Parzen Estimator）を使用した効率的なパラメー
 from __future__ import annotations
 
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import copy
 import numpy as np
@@ -18,11 +18,13 @@ import random
 # 型チェック時のみoptunaをインポート
 if TYPE_CHECKING:
     import optuna
+    from optuna.pruners import BasePruner
     from optuna.samplers import BaseSampler
 
 # ランタイムではtry-exceptでインポート
 try:
     import optuna as optuna_runtime
+    from optuna.pruners import MedianPruner, NopPruner
     from optuna.samplers import CmaEsSampler, RandomSampler, TPESampler
 
     OPTUNA_AVAILABLE = True
@@ -31,6 +33,8 @@ except ImportError:
     optuna_runtime = None  # type: ignore
 
 from src.data.access.mode import data_access_mode_context
+from src.data.loaders.data_preparation import prepare_multi_data
+from src.data.loaders.index_loaders import load_topix_data
 from src.models.config import SharedConfig
 from src.models.signals import SignalParams
 from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
@@ -84,6 +88,9 @@ class OptunaOptimizer:
         self.base_entry_params: dict[str, Any] = {}
         self.base_exit_params: dict[str, Any] = {}
         self.base_shared_config: dict[str, Any] = {}
+        self._shared_config: SharedConfig | None = None
+        self._prefetched_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None
+        self._prefetched_benchmark_data: pd.DataFrame | None = None
 
     def _is_usage_targeted(self, usage_type: str) -> bool:
         """target_scope に基づき対象サイドか判定する。"""
@@ -156,6 +163,9 @@ class OptunaOptimizer:
         self.base_entry_params = base_candidate.entry_filter_params
         self.base_exit_params = base_candidate.exit_trigger_params
         self.base_shared_config = base_candidate.shared_config or {}
+        if self.shared_config_dict is None:
+            self.shared_config_dict = {}
+        self._prepare_prefetched_data()
 
         logger.info(
             f"Starting Optuna optimization: n_trials={self.config.n_trials}, "
@@ -164,15 +174,17 @@ class OptunaOptimizer:
 
         # サンプラー選択
         sampler = self._create_sampler()
+        optuna_rt = cast(Any, optuna_runtime)
 
         # Study作成
-        study = optuna_runtime.create_study(
+        study = optuna_rt.create_study(
             study_name=self.config.study_name,
             storage=f"sqlite:///{self.config.storage_path}"
             if self.config.storage_path
             else None,
             direction="maximize",
             sampler=sampler,
+            pruner=self._create_pruner(),
             load_if_exists=True,
         )
 
@@ -186,7 +198,7 @@ class OptunaOptimizer:
             ) -> None:
                 completed = len([
                     t for t in study.trials
-                    if t.state == optuna_runtime.trial.TrialState.COMPLETE
+                    if t.state == optuna_rt.trial.TrialState.COMPLETE
                 ])
                 best_score = study.best_value if study.best_trial else 0.0
                 progress_callback(completed, n_trials, best_score)
@@ -262,6 +274,175 @@ class OptunaOptimizer:
         else:
             return TPESampler()  # type: ignore[possibly-unbound]
 
+    def _create_pruner(self) -> BasePruner:
+        """Pruner を作成する。"""
+        if not OPTUNA_AVAILABLE:
+            raise ImportError("Optuna is not available")
+        if not self.config.pruning:
+            return NopPruner()  # type: ignore[possibly-unbound]
+
+        startup_trials = max(5, min(20, self.config.n_trials // 10))
+        return MedianPruner(  # type: ignore[possibly-unbound]
+            n_startup_trials=startup_trials,
+            n_warmup_steps=0,
+            interval_steps=1,
+        )
+
+    def _prepare_prefetched_data(self) -> None:
+        """Trial 間で再利用する OHLCV / benchmark データを先読みする。"""
+        self._prefetched_multi_data = None
+        self._prefetched_benchmark_data = None
+
+        if self.shared_config_dict is None:
+            return
+
+        try:
+            with data_access_mode_context("direct"):
+                shared_config = SharedConfig(**self.shared_config_dict)
+                self._shared_config = shared_config
+
+                probe_strategy = YamlConfigurableStrategy(
+                    shared_config=shared_config,
+                    entry_filter_params=SignalParams(**self.base_entry_params),
+                    exit_trigger_params=SignalParams(**self.base_exit_params),
+                )
+
+                should_load_margin = bool(
+                    cast(Any, probe_strategy)._should_load_margin_data()
+                )
+                should_load_statements = bool(
+                    cast(Any, probe_strategy)._should_load_statements_data()
+                )
+                include_forecast_revision = bool(
+                    cast(Any, probe_strategy)._should_include_forecast_revision()
+                )
+                period_type = cast(Any, probe_strategy)._resolve_period_type()
+
+                self._prefetched_multi_data = prepare_multi_data(
+                    dataset=shared_config.dataset,
+                    stock_codes=shared_config.stock_codes,
+                    start_date=shared_config.start_date,
+                    end_date=shared_config.end_date,
+                    include_margin_data=(
+                        shared_config.include_margin_data and should_load_margin
+                    ),
+                    include_statements_data=(
+                        shared_config.include_statements_data and should_load_statements
+                    ),
+                    timeframe=shared_config.timeframe,
+                    period_type=period_type,
+                    include_forecast_revision=include_forecast_revision,
+                )
+
+                if bool(cast(Any, probe_strategy)._should_load_benchmark()):
+                    self._prefetched_benchmark_data = load_topix_data(
+                        shared_config.dataset,
+                        shared_config.start_date,
+                        shared_config.end_date,
+                    )
+
+                logger.info(
+                    "Optuna prefetch completed: "
+                    f"stocks={len(self._prefetched_multi_data or {})}, "
+                    f"benchmark={'yes' if self._prefetched_benchmark_data is not None else 'no'}"
+                )
+        except Exception as e:
+            logger.warning(f"Optuna prefetch skipped due to error: {e}")
+
+    @staticmethod
+    def _safe_metric(value: Any) -> float:
+        """NaN/Inf を安全に 0.0 へフォールバックする。"""
+        return float(value) if pd.notna(value) and np.isfinite(value) else 0.0
+
+    def _extract_metrics(self, portfolio: Any) -> tuple[float, float, float]:
+        """ポートフォリオから評価メトリクスを抽出する。"""
+        sharpe = self._safe_metric(portfolio.sharpe_ratio())
+        calmar = self._safe_metric(portfolio.calmar_ratio())
+        total_return = self._safe_metric(portfolio.total_return())
+        return sharpe, calmar, total_return
+
+    def _calculate_weighted_score(
+        self,
+        sharpe: float,
+        calmar: float,
+        total_return: float,
+    ) -> float:
+        """重み付きスコアを計算する。"""
+        score = 0.0
+        if "sharpe_ratio" in self.scoring_weights:
+            score += self.scoring_weights["sharpe_ratio"] * sharpe
+        if "calmar_ratio" in self.scoring_weights:
+            score += self.scoring_weights["calmar_ratio"] * calmar
+        if "total_return" in self.scoring_weights:
+            score += self.scoring_weights["total_return"] * total_return
+        return score
+
+    def _run_backtest_for_trial(
+        self,
+        strategy: YamlConfigurableStrategy,
+        shared_config: SharedConfig,
+        trial: optuna.Trial,
+    ) -> Any:
+        """1 trial 分のバックテストを実行し、最終ポートフォリオを返す。"""
+        if not self.config.pruning:
+            _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
+                kelly_fraction=shared_config.kelly_fraction,
+                min_allocation=shared_config.min_allocation,
+                max_allocation=shared_config.max_allocation,
+            )
+            return portfolio
+
+        # pruning 有効時は第1段階の暫定スコアで枝刈り判定
+        run_multi_backtest = cast(Any, strategy).run_multi_backtest
+        initial_portfolio, _ = run_multi_backtest()
+        if strategy.group_by:
+            strategy.combined_portfolio = initial_portfolio
+        else:
+            strategy.portfolio = initial_portfolio
+
+        provisional_sharpe, provisional_calmar, provisional_return = self._extract_metrics(
+            initial_portfolio
+        )
+        provisional_score = self._calculate_weighted_score(
+            provisional_sharpe,
+            provisional_calmar,
+            provisional_return,
+        )
+        trial.report(provisional_score, step=0)
+        trial.set_user_attr("provisional_score", provisional_score)
+
+        should_prune = trial.should_prune()
+        if isinstance(should_prune, bool) and should_prune:
+            logger.info(
+                f"Trial {trial.number} pruned at stage-1: "
+                f"provisional_score={provisional_score:.4f}"
+            )
+            optuna_rt = cast(Any, optuna_runtime)
+            raise optuna_rt.TrialPruned()
+
+        optimize_allocation_kelly = cast(Any, strategy).optimize_allocation_kelly
+        optimized_allocation, _ = optimize_allocation_kelly(
+            initial_portfolio,
+            kelly_fraction=shared_config.kelly_fraction,
+            min_allocation=shared_config.min_allocation,
+            max_allocation=shared_config.max_allocation,
+        )
+
+        if strategy.group_by and hasattr(strategy, "run_multi_backtest_from_cached_signals"):
+            try:
+                run_cached = cast(Any, strategy).run_multi_backtest_from_cached_signals
+                return run_cached(
+                    optimized_allocation
+                )
+            except Exception as e:
+                logger.debug(
+                    "Failed to reuse cached grouped signals; fallback to regular run: "
+                    f"{e}"
+                )
+
+        portfolio, _ = run_multi_backtest(allocation_pct=optimized_allocation)
+        return portfolio
+
     def _objective(self, trial: optuna.Trial) -> float:
         """
         Optuna目的関数
@@ -282,8 +463,12 @@ class OptunaOptimizer:
             exit_signal_params = SignalParams(**exit_params)
 
             with data_access_mode_context("direct"):
-                # SharedConfig構築
-                shared_config = SharedConfig(**self.shared_config_dict)
+                # SharedConfig構築（optimize 開始時のコンテキストを再利用）
+                if self._shared_config is not None:
+                    shared_config = self._shared_config
+                else:
+                    shared_config = SharedConfig(**(self.shared_config_dict or {}))
+                    self._shared_config = shared_config
 
                 # 戦略インスタンス作成
                 strategy = YamlConfigurableStrategy(
@@ -292,35 +477,16 @@ class OptunaOptimizer:
                     exit_trigger_params=exit_signal_params,
                 )
 
-                # Kelly基準バックテスト実行
-                _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
-                    kelly_fraction=shared_config.kelly_fraction,
-                    min_allocation=shared_config.min_allocation,
-                    max_allocation=shared_config.max_allocation,
-                )
+                if self._prefetched_multi_data is not None:
+                    strategy.multi_data_dict = self._prefetched_multi_data
+                if self._prefetched_benchmark_data is not None:
+                    strategy.benchmark_data = self._prefetched_benchmark_data
+
+                portfolio = self._run_backtest_for_trial(strategy, shared_config, trial)
 
             # メトリクス抽出
-            sharpe = portfolio.sharpe_ratio()
-            calmar = portfolio.calmar_ratio()
-            total_return = portfolio.total_return()
-
-            # NaN/Infチェック
-            sharpe = float(sharpe) if pd.notna(sharpe) and np.isfinite(sharpe) else 0.0
-            calmar = float(calmar) if pd.notna(calmar) and np.isfinite(calmar) else 0.0
-            total_return = (
-                float(total_return)
-                if pd.notna(total_return) and np.isfinite(total_return)
-                else 0.0
-            )
-
-            # 複合スコア計算
-            score = 0.0
-            if "sharpe_ratio" in self.scoring_weights:
-                score += self.scoring_weights["sharpe_ratio"] * sharpe
-            if "calmar_ratio" in self.scoring_weights:
-                score += self.scoring_weights["calmar_ratio"] * calmar
-            if "total_return" in self.scoring_weights:
-                score += self.scoring_weights["total_return"] * total_return
+            sharpe, calmar, total_return = self._extract_metrics(portfolio)
+            score = self._calculate_weighted_score(sharpe, calmar, total_return)
 
             # 中間結果をログ
             trial.set_user_attr("sharpe_ratio", sharpe)
@@ -330,6 +496,9 @@ class OptunaOptimizer:
             return score
 
         except Exception as e:
+            optuna_rt = cast(Any, optuna_runtime)
+            if OPTUNA_AVAILABLE and isinstance(e, optuna_rt.TrialPruned):
+                raise
             logger.warning(f"Trial {trial.number} failed: {e}")
             return -999.0
 
@@ -508,8 +677,9 @@ class OptunaOptimizer:
             トライアルごとの結果リスト
         """
         history = []
+        optuna_rt = cast(Any, optuna_runtime)
         for trial in study.trials:
-            if trial.state == optuna_runtime.trial.TrialState.COMPLETE:
+            if trial.state == optuna_rt.trial.TrialState.COMPLETE:
                 history.append(
                     {
                         "trial": trial.number,
