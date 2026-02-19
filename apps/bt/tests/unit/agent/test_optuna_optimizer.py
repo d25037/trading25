@@ -1,7 +1,9 @@
 """optuna_optimizer.py のテスト"""
 
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import pandas as pd
 import pytest
 
 from src.agent.models import OptunaConfig, StrategyCandidate
@@ -22,6 +24,7 @@ def _make_optimizer(
     n_trials=10,
     timeout=60,
     sampler="tpe",
+    pruning=False,
     entry_filter_only=False,
     target_scope="both",
     allowed_categories=None,
@@ -30,6 +33,7 @@ def _make_optimizer(
         n_trials=n_trials,
         timeout_seconds=timeout,
         sampler=sampler,
+        pruning=pruning,
         entry_filter_only=entry_filter_only,
         target_scope=target_scope,
         allowed_categories=allowed_categories or [],
@@ -112,6 +116,22 @@ class TestCreateSampler:
                 optimizer._create_sampler()
 
 
+class TestCreatePruner:
+    def test_returns_nop_pruner_when_disabled(self):
+        from optuna.pruners import NopPruner
+
+        optimizer = _make_optimizer(pruning=False)
+        pruner = optimizer._create_pruner()
+        assert isinstance(pruner, NopPruner)
+
+    def test_returns_median_pruner_when_enabled(self):
+        from optuna.pruners import MedianPruner
+
+        optimizer = _make_optimizer(n_trials=100, pruning=True)
+        pruner = optimizer._create_pruner()
+        assert isinstance(pruner, MedianPruner)
+
+
 class TestOptimizeFlow:
     def test_optimize_calls_progress_callback(self):
         import optuna
@@ -138,6 +158,7 @@ class TestOptimizeFlow:
         with (
             patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
             patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(
                 optimizer,
                 "_build_candidate_from_params",
@@ -168,6 +189,7 @@ class TestOptimizeFlow:
         with (
             patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
             patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate()),
             patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
@@ -197,6 +219,7 @@ class TestOptimizeFlow:
         with (
             patch.object(optimizer, "_load_base_strategy", return_value=base),
             patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
             patch(
                 "src.agent.optuna_optimizer.apply_random_add_structure",
@@ -209,6 +232,27 @@ class TestOptimizeFlow:
         mock_random_add.assert_called_once()
         assert mock_random_add.call_args.kwargs["allowed_categories"] == {"fundamental"}
         assert "period_breakout" in optimizer.base_entry_params
+
+    def test_optimize_passes_pruner_to_study(self):
+        optimizer = _make_optimizer(n_trials=10, pruning=True)
+        study = MagicMock()
+        study.optimize.side_effect = lambda *args, **kwargs: None
+        study.best_trial = MagicMock()
+        study.best_value = 0.0
+        study.best_params = {}
+        study.trials = []
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_create_pruner", return_value=MagicMock()) as mock_pruner,
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate()),
+            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study) as mock_create_study,
+        ):
+            optimizer.optimize("demo_strategy", progress_callback=None)
+
+        assert mock_create_study.call_args.kwargs["pruner"] is mock_pruner.return_value
 
 
 class TestSampleParams:
@@ -465,6 +509,229 @@ class TestObjective:
             score = optimizer._objective(trial)
 
         assert score == 1.2
+
+    def test_objective_applies_prefetched_data_to_strategy(self):
+        optimizer = _make_optimizer()
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {}
+        optimizer._shared_config = SimpleNamespace(
+            kelly_fraction=1.0,
+            min_allocation=0.01,
+            max_allocation=0.5,
+        )
+        optimizer._prefetched_multi_data = {"7203": {"daily": pd.DataFrame()}}
+        optimizer._prefetched_benchmark_data = pd.DataFrame({"Close": [1.0]})
+
+        trial = MagicMock()
+        trial.number = 5
+
+        portfolio = MagicMock()
+        portfolio.sharpe_ratio.return_value = 1.5
+        portfolio.calmar_ratio.return_value = 0.8
+        portfolio.total_return.return_value = 0.2
+
+        strategy_instance = MagicMock()
+        strategy_instance.run_optimized_backtest_kelly.return_value = (
+            None,
+            portfolio,
+            None,
+            None,
+            None,
+        )
+
+        with (
+            patch.object(
+                optimizer,
+                "_sample_params",
+                side_effect=[{"volume": {"enabled": True}}, {}],
+            ),
+            patch(
+                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                return_value=strategy_instance,
+            ),
+        ):
+            score = optimizer._objective(trial)
+
+        assert score == 1.03
+        assert strategy_instance.multi_data_dict is optimizer._prefetched_multi_data
+        assert strategy_instance.benchmark_data is optimizer._prefetched_benchmark_data
+
+    def test_objective_prunes_on_stage1_score(self):
+        import optuna
+
+        optimizer = _make_optimizer(pruning=True)
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {}
+
+        trial = MagicMock()
+        trial.number = 3
+        trial.should_prune.return_value = True
+
+        initial_portfolio = MagicMock()
+        initial_portfolio.sharpe_ratio.return_value = 0.1
+        initial_portfolio.calmar_ratio.return_value = 0.1
+        initial_portfolio.total_return.return_value = 0.01
+
+        strategy_instance = MagicMock()
+        strategy_instance.group_by = True
+        strategy_instance.run_multi_backtest.return_value = (initial_portfolio, None)
+
+        with (
+            patch.object(
+                optimizer,
+                "_sample_params",
+                side_effect=[{"volume": {"enabled": True}}, {}],
+            ),
+            patch(
+                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                return_value=strategy_instance,
+            ),
+        ):
+            with pytest.raises(optuna.TrialPruned):
+                optimizer._objective(trial)
+
+        trial.report.assert_called_once()
+        strategy_instance.optimize_allocation_kelly.assert_not_called()
+
+    def test_objective_runs_stage2_when_not_pruned(self):
+        optimizer = _make_optimizer(pruning=True)
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {}
+
+        trial = MagicMock()
+        trial.number = 4
+        trial.should_prune.return_value = False
+
+        initial_portfolio = MagicMock()
+        initial_portfolio.sharpe_ratio.return_value = 0.1
+        initial_portfolio.calmar_ratio.return_value = 0.1
+        initial_portfolio.total_return.return_value = 0.01
+
+        final_portfolio = MagicMock()
+        final_portfolio.sharpe_ratio.return_value = 1.5
+        final_portfolio.calmar_ratio.return_value = 0.8
+        final_portfolio.total_return.return_value = 0.2
+
+        strategy_instance = MagicMock()
+        strategy_instance.group_by = True
+        strategy_instance.run_multi_backtest.return_value = (initial_portfolio, None)
+        strategy_instance.optimize_allocation_kelly.return_value = (0.2, {})
+        strategy_instance.run_multi_backtest_from_cached_signals.return_value = (
+            final_portfolio
+        )
+
+        with (
+            patch.object(
+                optimizer,
+                "_sample_params",
+                side_effect=[{"volume": {"enabled": True}}, {}],
+            ),
+            patch(
+                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                return_value=strategy_instance,
+            ),
+        ):
+            score = optimizer._objective(trial)
+
+        assert score == 1.03
+        trial.report.assert_called_once()
+        strategy_instance.run_multi_backtest_from_cached_signals.assert_called_once_with(
+            0.2
+        )
+
+
+class TestPrefetchAndBacktestHelpers:
+    def test_prepare_prefetched_data_success(self):
+        optimizer = _make_optimizer()
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {}
+
+        shared_config = SimpleNamespace(
+            dataset="demo",
+            stock_codes=["7203"],
+            start_date="2024-01-01",
+            end_date="2024-12-31",
+            include_margin_data=True,
+            include_statements_data=True,
+            timeframe="daily",
+        )
+        probe = MagicMock()
+        probe._should_load_margin_data.return_value = True
+        probe._should_load_statements_data.return_value = False
+        probe._should_include_forecast_revision.return_value = True
+        probe._resolve_period_type.return_value = "FY"
+        probe._should_load_benchmark.return_value = True
+
+        prefetched = {"7203": {"daily": pd.DataFrame({"Close": [1.0]})}}
+        benchmark = pd.DataFrame({"Close": [1.0]})
+
+        with (
+            patch("src.agent.optuna_optimizer.SharedConfig", return_value=shared_config),
+            patch(
+                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                return_value=probe,
+            ),
+            patch(
+                "src.agent.optuna_optimizer.prepare_multi_data",
+                return_value=prefetched,
+            ) as mock_prepare,
+            patch("src.agent.optuna_optimizer.load_topix_data", return_value=benchmark),
+        ):
+            optimizer._prepare_prefetched_data()
+
+        assert optimizer._shared_config is shared_config
+        assert optimizer._prefetched_multi_data == prefetched
+        assert optimizer._prefetched_benchmark_data is benchmark
+        assert mock_prepare.call_args.kwargs["include_margin_data"] is True
+        assert mock_prepare.call_args.kwargs["include_statements_data"] is False
+        assert mock_prepare.call_args.kwargs["include_forecast_revision"] is True
+
+    def test_prepare_prefetched_data_handles_error(self):
+        optimizer = _make_optimizer()
+        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_exit_params = {}
+        optimizer._prefetched_multi_data = {"cached": {"daily": pd.DataFrame()}}
+        optimizer._prefetched_benchmark_data = pd.DataFrame({"Close": [1.0]})
+
+        with patch("src.agent.optuna_optimizer.SharedConfig", side_effect=RuntimeError("boom")):
+            optimizer._prepare_prefetched_data()
+
+        assert optimizer._prefetched_multi_data is None
+        assert optimizer._prefetched_benchmark_data is None
+
+    def test_run_backtest_for_trial_fallback_when_cached_reuse_fails(self):
+        optimizer = _make_optimizer(pruning=True)
+        shared_config = SimpleNamespace(
+            kelly_fraction=1.0,
+            min_allocation=0.01,
+            max_allocation=0.5,
+        )
+        trial = MagicMock()
+        trial.number = 6
+        trial.should_prune.return_value = False
+
+        initial_portfolio = MagicMock()
+        initial_portfolio.sharpe_ratio.return_value = 0.1
+        initial_portfolio.calmar_ratio.return_value = 0.1
+        initial_portfolio.total_return.return_value = 0.01
+
+        fallback_portfolio = MagicMock()
+        strategy = MagicMock()
+        strategy.group_by = True
+        strategy.run_multi_backtest.side_effect = [
+            (initial_portfolio, None),
+            (fallback_portfolio, None),
+        ]
+        strategy.optimize_allocation_kelly.return_value = (0.3, {})
+        strategy.run_multi_backtest_from_cached_signals.side_effect = RuntimeError(
+            "cache-error"
+        )
+
+        portfolio = optimizer._run_backtest_for_trial(strategy, shared_config, trial)
+
+        assert portfolio is fallback_portfolio
+        strategy.run_multi_backtest_from_cached_signals.assert_called_once_with(0.3)
+        strategy.run_multi_backtest.assert_any_call(allocation_pct=0.3)
 
 
 class TestGetOptimizationHistory:
