@@ -4,6 +4,14 @@ import { persist } from 'zustand/middleware';
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
 export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
 export type RiskAdjustedReturnCondition = 'above' | 'below';
+export type FundamentalsPanelId = 'fundamentals' | 'fundamentalsHistory' | 'marginPressure' | 'factorRegression';
+
+export const DEFAULT_FUNDAMENTALS_PANEL_ORDER: FundamentalsPanelId[] = [
+  'fundamentals',
+  'fundamentalsHistory',
+  'marginPressure',
+  'factorRegression',
+];
 
 // Signal Overlay Types
 export interface SignalConfig {
@@ -55,6 +63,7 @@ export interface ChartSettings {
   showFundamentalsHistoryPanel: boolean;
   showMarginPressurePanel: boolean;
   showFactorRegressionPanel: boolean;
+  fundamentalsPanelOrder: FundamentalsPanelId[];
   visibleBars: number;
   relativeMode: boolean;
   signalOverlay: SignalOverlaySettings;
@@ -150,6 +159,7 @@ export const defaultSettings: ChartSettings = {
   showFundamentalsHistoryPanel: true,
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
+  fundamentalsPanelOrder: [...DEFAULT_FUNDAMENTALS_PANEL_ORDER],
   visibleBars: 120,
   relativeMode: false,
   signalOverlay: {
@@ -184,8 +194,8 @@ function normalizeSignal(signal: unknown): SignalConfig | null {
 
   const params = isRecord(signal.params)
     ? (Object.fromEntries(
-        Object.entries(signal.params).filter(([, value]) =>
-          typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean'
+        Object.entries(signal.params).filter(
+          ([, value]) => typeof value === 'number' || typeof value === 'string' || typeof value === 'boolean'
         )
       ) as Record<string, number | string | boolean>)
     : {};
@@ -229,6 +239,35 @@ function isValidRiskAdjustedReturnRatioType(value: unknown): value is RiskAdjust
 
 function isValidRiskAdjustedReturnCondition(value: unknown): value is RiskAdjustedReturnCondition {
   return value === 'above' || value === 'below';
+}
+
+function isValidFundamentalsPanelId(value: unknown): value is FundamentalsPanelId {
+  return (
+    value === 'fundamentals' ||
+    value === 'fundamentalsHistory' ||
+    value === 'marginPressure' ||
+    value === 'factorRegression'
+  );
+}
+
+function normalizeFundamentalsPanelOrder(value: unknown): FundamentalsPanelId[] {
+  const normalizedOrder: FundamentalsPanelId[] = [];
+  const seen = new Set<FundamentalsPanelId>();
+
+  if (Array.isArray(value)) {
+    for (const panelId of value) {
+      if (!isValidFundamentalsPanelId(panelId) || seen.has(panelId)) continue;
+      seen.add(panelId);
+      normalizedOrder.push(panelId);
+    }
+  }
+
+  for (const panelId of DEFAULT_FUNDAMENTALS_PANEL_ORDER) {
+    if (seen.has(panelId)) continue;
+    normalizedOrder.push(panelId);
+  }
+
+  return normalizedOrder;
 }
 
 function normalizeSettings(settings: unknown): ChartSettings {
@@ -321,7 +360,10 @@ function normalizeSettings(settings: unknown): ChartSettings {
       ratioType: isValidRiskAdjustedReturnRatioType(partialRiskAdjustedReturn.ratioType)
         ? partialRiskAdjustedReturn.ratioType
         : defaultSettings.riskAdjustedReturn.ratioType,
-      threshold: normalizeFiniteNumber(partialRiskAdjustedReturn.threshold, defaultSettings.riskAdjustedReturn.threshold),
+      threshold: normalizeFiniteNumber(
+        partialRiskAdjustedReturn.threshold,
+        defaultSettings.riskAdjustedReturn.threshold
+      ),
       condition: isValidRiskAdjustedReturnCondition(partialRiskAdjustedReturn.condition)
         ? partialRiskAdjustedReturn.condition
         : defaultSettings.riskAdjustedReturn.condition,
@@ -335,30 +377,23 @@ function normalizeSettings(settings: unknown): ChartSettings {
       partial.showRiskAdjustedReturnChart,
       defaultSettings.showRiskAdjustedReturnChart
     ),
-    showFundamentalsPanel: normalizeBoolean(
-      partial.showFundamentalsPanel,
-      defaultSettings.showFundamentalsPanel
-    ),
+    showFundamentalsPanel: normalizeBoolean(partial.showFundamentalsPanel, defaultSettings.showFundamentalsPanel),
     showFundamentalsHistoryPanel: normalizeBoolean(
       partial.showFundamentalsHistoryPanel,
       defaultSettings.showFundamentalsHistoryPanel
     ),
-    showMarginPressurePanel: normalizeBoolean(
-      partial.showMarginPressurePanel,
-      defaultSettings.showMarginPressurePanel
-    ),
+    showMarginPressurePanel: normalizeBoolean(partial.showMarginPressurePanel, defaultSettings.showMarginPressurePanel),
     showFactorRegressionPanel: normalizeBoolean(
       partial.showFactorRegressionPanel,
       defaultSettings.showFactorRegressionPanel
     ),
+    fundamentalsPanelOrder: normalizeFundamentalsPanelOrder(partial.fundamentalsPanelOrder),
     visibleBars: normalizePositiveInt(partial.visibleBars, defaultSettings.visibleBars),
     relativeMode: normalizeBoolean(partial.relativeMode, defaultSettings.relativeMode),
     signalOverlay: {
       enabled: normalizeBoolean(partialSignalOverlay.enabled, defaultSignalOverlay.enabled),
       signals: Array.isArray(partialSignalOverlay.signals)
-        ? partialSignalOverlay.signals
-            .map(normalizeSignal)
-            .filter((signal): signal is SignalConfig => signal !== null)
+        ? partialSignalOverlay.signals.map(normalizeSignal).filter((signal): signal is SignalConfig => signal !== null)
         : defaultSignalOverlay.signals,
     },
   };
@@ -383,10 +418,7 @@ function normalizePresets(presets: unknown): ChartPreset[] {
     .filter((preset): preset is ChartPreset => preset !== null);
 }
 
-function mergePersistedChartStoreState(
-  persistedState: unknown,
-  currentState: ChartState
-): ChartState {
+function mergePersistedChartStoreState(persistedState: unknown, currentState: ChartState): ChartState {
   const persisted = (isRecord(persistedState) ? persistedState : {}) as PersistedChartStoreState;
   const presets = normalizePresets(persisted.presets);
   const activePresetId =
@@ -506,10 +538,7 @@ export const useChartStore = create<ChartState>()(
               ...state.settings,
               signalOverlay: {
                 ...state.settings.signalOverlay,
-                signals: [
-                  ...state.settings.signalOverlay.signals,
-                  { ...signal, enabled: signal.enabled ?? true },
-                ],
+                signals: [...state.settings.signalOverlay.signals, { ...signal, enabled: signal.enabled ?? true }],
               },
             },
           };
@@ -532,9 +561,7 @@ export const useChartStore = create<ChartState>()(
             ...state.settings,
             signalOverlay: {
               ...state.settings.signalOverlay,
-              signals: state.settings.signalOverlay.signals.map((s) =>
-                s.type === type ? { ...s, ...updates } : s
-              ),
+              signals: state.settings.signalOverlay.signals.map((s) => (s.type === type ? { ...s, ...updates } : s)),
             },
           },
         })),

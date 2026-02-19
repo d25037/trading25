@@ -305,6 +305,16 @@ describe('chartStore', () => {
     expect(settings.showFactorRegressionPanel).toBe(true);
   });
 
+  it('defaults fundamentals panel order', () => {
+    const settings = useChartStore.getState().settings;
+    expect(settings.fundamentalsPanelOrder).toEqual([
+      'fundamentals',
+      'fundamentalsHistory',
+      'marginPressure',
+      'factorRegression',
+    ]);
+  });
+
   it('defaults risk adjusted return chart settings', () => {
     const settings = useChartStore.getState().settings;
     expect(settings.showRiskAdjustedReturnChart).toBe(false);
@@ -340,5 +350,29 @@ describe('chartStore', () => {
     const settings = useChartStore.getState().settings;
     expect(settings.showRiskAdjustedReturnChart).toBe(defaultSettings.showRiskAdjustedReturnChart);
     expect(settings.riskAdjustedReturn).toEqual(defaultSettings.riskAdjustedReturn);
+  });
+
+  it('sanitizes persisted fundamentals panel order during rehydrate', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          settings: {
+            fundamentalsPanelOrder: ['marginPressure', 'invalid', 'marginPressure'],
+          },
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const settings = useChartStore.getState().settings;
+    expect(settings.fundamentalsPanelOrder).toEqual([
+      'marginPressure',
+      'fundamentals',
+      'fundamentalsHistory',
+      'factorRegression',
+    ]);
   });
 });

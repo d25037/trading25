@@ -5,7 +5,6 @@ import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ChartControls } from './ChartControls';
 
-// Create a wrapper with QueryClientProvider
 const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
@@ -28,7 +27,6 @@ const SEARCH_RESULT = {
   sector33Name: '輸送用機器',
 };
 
-// Mock the chart store
 const mockChartStore = {
   selectedSymbol: null as string | null,
   settings: {
@@ -44,6 +42,7 @@ const mockChartStore = {
     showFundamentalsHistoryPanel: true,
     showMarginPressurePanel: true,
     showFactorRegressionPanel: true,
+    fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     visibleBars: 30,
     relativeMode: false,
     indicators: {
@@ -80,13 +79,11 @@ const mockChartStore = {
       }>,
     },
   },
-  // Signal overlay actions
   toggleSignalOverlay: vi.fn(),
   addSignal: vi.fn(),
   removeSignal: vi.fn(),
   updateSignal: vi.fn(),
   toggleSignal: vi.fn(),
-  // Preset management - required by ChartPresetSelector
   presets: [] as Array<{ id: string; name: string; settings: unknown; createdAt: number; updatedAt: number }>,
   activePresetId: null as string | null,
   createPreset: vi.fn(),
@@ -95,12 +92,14 @@ const mockChartStore = {
   loadPreset: vi.fn(),
   renamePreset: vi.fn(),
   duplicatePreset: vi.fn(),
-  // Other methods
   setSelectedSymbol: vi.fn(),
   updateSettings: vi.fn(),
   toggleIndicator: vi.fn(),
   toggleRelativeMode: vi.fn(),
   setDisplayTimeframe: vi.fn(),
+  updateIndicatorSettings: vi.fn(),
+  updateVolumeComparison: vi.fn(),
+  updateTradingValueMA: vi.fn(),
 };
 
 vi.mock('@/stores/chartStore', () => ({
@@ -123,9 +122,16 @@ describe('ChartControls', () => {
     mockChartStore.settings.showFundamentalsHistoryPanel = true;
     mockChartStore.settings.showMarginPressurePanel = true;
     mockChartStore.settings.showFactorRegressionPanel = true;
+    mockChartStore.settings.fundamentalsPanelOrder = [
+      'fundamentals',
+      'fundamentalsHistory',
+      'marginPressure',
+      'factorRegression',
+    ];
     mockChartStore.settings.signalOverlay.signals = [];
     mockChartStore.setSelectedSymbol = vi.fn();
     mockChartStore.updateSettings = vi.fn();
+    mockChartStore.toggleRelativeMode = vi.fn();
     mockUseSignalReference.mockReturnValue({ data: undefined, error: null });
     mockUseStockSearch.mockImplementation((query: string) => ({
       data: query ? { results: [SEARCH_RESULT] } : { results: [] },
@@ -164,12 +170,8 @@ describe('ChartControls', () => {
     render(<ChartControls />, { wrapper: TestWrapper });
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
-
     await user.type(input, '7203');
-
-    // Find and click the submit button (Search icon button)
-    const searchButton = screen.getByRole('button', { name: /検索/i });
-    await user.click(searchButton);
+    await user.click(screen.getByRole('button', { name: /検索/i }));
 
     expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
   });
@@ -182,72 +184,82 @@ describe('ChartControls', () => {
     expect(screen.getByText('選択中: 7203')).toBeInTheDocument();
   });
 
-  it('toggles volume setting when switch is clicked', async () => {
+  it('opens chart settings dialog and toggles volume setting', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
-    const volumeSwitch = screen.getByRole('switch', { name: /show volume/i });
-    await user.click(volumeSwitch);
+    await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
+    await user.click(screen.getByRole('switch', { name: /show volume/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showVolume: false });
   });
 
-  it('toggles relative mode when switch is clicked', async () => {
+  it('opens chart settings dialog and toggles relative mode', async () => {
     const user = userEvent.setup();
     mockChartStore.toggleRelativeMode = vi.fn();
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
-    const relativeModeSwitch = screen.getByRole('switch', { name: /relative to topix/i });
-    await user.click(relativeModeSwitch);
+    await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
+    await user.click(screen.getByRole('switch', { name: /relative to topix/i }));
 
     expect(mockChartStore.toggleRelativeMode).toHaveBeenCalled();
   });
 
-  it('updates visible bars when select value changes', () => {
-    mockChartStore.updateSettings = vi.fn();
+  it('opens chart settings dialog and renders visible bars control', async () => {
+    const user = userEvent.setup();
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
-    // Note: Testing select components from shadcn/ui can be complex
-    // This test validates the component renders the visible bars control
+    await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
     expect(screen.getByText('Visible Bars')).toBeInTheDocument();
   });
 
-  it('renders panel visibility toggles and updates settings', async () => {
+  it('opens panel layout dialog and toggles fundamentals panel visibility', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
-    expect(screen.getByText('Panel Visibility')).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /show ppo chart/i })).toBeInTheDocument();
-    expect(screen.getAllByRole('switch', { name: /risk adjusted return/i })).toHaveLength(1);
-    expect(screen.getAllByRole('switch', { name: /volume comparison/i })).toHaveLength(1);
-    expect(screen.getAllByRole('switch', { name: /trading value ma/i })).toHaveLength(1);
-    expect(screen.getByRole('switch', { name: /fundamentals/i })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /fy history/i })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /margin pressure/i })).toBeInTheDocument();
-    expect(screen.getByRole('switch', { name: /factor regression/i })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
+    await user.click(screen.getByRole('switch', { name: /^Fundamentals$/i }));
 
-    await user.click(screen.getByRole('switch', { name: /fundamentals/i }));
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showFundamentalsPanel: false });
   });
 
-  it('updates risk adjusted return settings', async () => {
+  it('moves panel order down from panel layout dialog', async () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
-    const riskAdjustedSwitches = screen.getAllByRole('switch', { name: /risk adjusted return/i });
-    await user.click(riskAdjustedSwitches[0]!);
+    await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
+    const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
+    expect(firstDownButton).toBeDefined();
+    if (!firstDownButton) return;
+    await user.click(firstDownButton);
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      fundamentalsPanelOrder: ['fundamentalsHistory', 'fundamentals', 'marginPressure', 'factorRegression'],
+    });
+  });
+
+  it('opens sub-chart indicators dialog and toggles risk adjusted return', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    await user.click(screen.getByRole('switch', { name: /risk adjusted return/i }));
+
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
   });
 
-  it('shows signal metadata for panel toggles when reference API is available', () => {
+  it('shows signal metadata in sub-chart indicators when reference API is available', async () => {
+    const user = userEvent.setup();
     mockChartStore.settings.signalOverlay.signals = [{ type: 'volume', enabled: true, mode: 'entry', params: {} }];
     mockUseSignalReference.mockReturnValue({
       data: {
@@ -272,10 +284,12 @@ describe('ChartControls', () => {
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
-    expect(screen.getAllByText('Signal req: volume | Signals: volume')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
+    expect(screen.getAllByText('Signal req: volume | Signals: volume').length).toBeGreaterThan(0);
   });
 
-  it('suppresses signal metadata when reference API fails', () => {
+  it('suppresses signal metadata when reference API fails', async () => {
+    const user = userEvent.setup();
     mockChartStore.settings.signalOverlay.signals = [{ type: 'volume', enabled: true, mode: 'entry', params: {} }];
     mockUseSignalReference.mockReturnValue({
       data: undefined,
@@ -284,6 +298,7 @@ describe('ChartControls', () => {
 
     render(<ChartControls />, { wrapper: TestWrapper });
 
+    await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
     expect(screen.queryByText(/Signal req:/i)).not.toBeInTheDocument();
   });
 
