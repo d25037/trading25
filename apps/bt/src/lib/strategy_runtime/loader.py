@@ -223,7 +223,9 @@ class ConfigLoader:
             return strategy_name.split("/")[0]
 
         try:
-            return self._infer_strategy_path(strategy_name).parent.name
+            strategy_path = self._infer_strategy_path(strategy_name)
+            category, _, _ = self._resolve_category_root_and_relative_path(strategy_path)
+            return category
         except FileNotFoundError:
             return None
 
@@ -394,8 +396,13 @@ class ConfigLoader:
         """
         self._validate_strategy_name(strategy_name)
         strategy_path = self._infer_strategy_path(strategy_name)
-        category = strategy_path.parent.name
-        return delete_strategy_file(strategy_path, category)
+        category, category_root, _ = self._resolve_category_root_and_relative_path(
+            strategy_path
+        )
+        deleted = delete_strategy_file(strategy_path, category)
+        if deleted:
+            self._cleanup_empty_strategy_dirs(strategy_path.parent, category_root)
+        return deleted
 
     def rename_strategy(self, strategy_name: str, new_name: str) -> Path:
         """
@@ -423,8 +430,9 @@ class ConfigLoader:
             raise ValueError("新しい戦略名にカテゴリを含めないでください")
 
         current_path = self._infer_strategy_path(strategy_name)
-
-        category = current_path.parent.name
+        category, source_root, _ = self._resolve_category_root_and_relative_path(
+            current_path
+        )
         if not is_editable_category(category):
             raise PermissionError(
                 f"カテゴリ '{category}' は編集不可です。experimental のみリネーム可能です。"
@@ -449,6 +457,7 @@ class ConfigLoader:
 
         try:
             current_path.rename(new_path)
+            self._cleanup_empty_strategy_dirs(current_path.parent, source_root)
             logger.info(f"戦略リネーム成功: {strategy_name} -> experimental/{new_name}")
             return new_path
         except OSError as e:
