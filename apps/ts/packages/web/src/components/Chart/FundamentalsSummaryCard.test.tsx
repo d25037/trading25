@@ -1,8 +1,9 @@
 /* @vitest-environment jsdom */
 
-import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
 import { render, screen } from '@testing-library/react';
+import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
 import { describe, expect, it } from 'vitest';
+import { DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY } from '@/constants/fundamentalMetrics';
 import { FundamentalsSummaryCard } from './FundamentalsSummaryCard';
 
 const baseMetrics: ApiFundamentalDataPoint = {
@@ -101,5 +102,22 @@ describe('FundamentalsSummaryCard', () => {
     render(<FundamentalsSummaryCard metrics={metrics} />);
     expect(screen.queryByText(/予:/)).not.toBeInTheDocument();
     expect(screen.queryByText('(17.43x)')).not.toBeInTheDocument();
+  });
+
+  it('supports metric visibility and ordering', () => {
+    render(
+      <FundamentalsSummaryCard
+        metrics={baseMetrics}
+        metricOrder={['eps', 'per', 'pbr']}
+        metricVisibility={{
+          ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+          pbr: false,
+        }}
+      />
+    );
+
+    expect(screen.getByText('EPS')).toBeInTheDocument();
+    expect(screen.getByText('PER')).toBeInTheDocument();
+    expect(screen.queryByText('PBR')).not.toBeInTheDocument();
   });
 });

@@ -14,6 +14,7 @@ import { TradingValueMAChart } from '@/components/Chart/TradingValueMAChart';
 import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart';
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/button';
+import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { useStockData } from '@/hooks/useStockData';
@@ -200,6 +201,14 @@ export function ChartsPage() {
     if (!daily || daily.length === 0) return null;
     return daily[daily.length - 1]?.marketCap ?? null;
   }, [fundamentalsData, settings.showFundamentalsHistoryPanel, settings.showFundamentalsPanel]);
+  const visibleFundamentalMetricCount = useMemo(
+    () => countVisibleFundamentalMetrics(settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility),
+    [settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility]
+  );
+  const fundamentalsPanelHeight = useMemo(
+    () => resolveFundamentalsPanelHeightPx(visibleFundamentalMetricCount),
+    [visibleFundamentalMetricCount]
+  );
 
   const renderErrorState = () => (
     <div className="flex h-full items-center justify-center">
@@ -286,7 +295,12 @@ export function ChartsPage() {
     switch (panelId) {
       case 'fundamentals':
         return (
-          <div key={panelId} ref={fundamentalsPanelSection.sectionRef} className="h-[440px]">
+          <div
+            key={panelId}
+            ref={fundamentalsPanelSection.sectionRef}
+            data-testid="fundamentals-panel-section"
+            style={{ height: `${fundamentalsPanelHeight}px` }}
+          >
             <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
               <div className="absolute inset-0 gradient-glass opacity-50" />
               <div className="relative z-10 h-full">
@@ -299,6 +313,8 @@ export function ChartsPage() {
                       symbol={selectedSymbol}
                       enabled={fundamentalsPanelSection.isVisible}
                       tradingValuePeriod={tradingValuePeriod}
+                      metricOrder={settings.fundamentalsMetricOrder}
+                      metricVisibility={settings.fundamentalsMetricVisibility}
                     />
                   </ErrorBoundary>
                 </div>

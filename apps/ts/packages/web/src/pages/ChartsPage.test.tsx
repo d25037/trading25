@@ -1,6 +1,12 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import {
+  countVisibleFundamentalMetrics,
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+  resolveFundamentalsPanelHeightPx,
+} from '@/constants/fundamentalMetrics';
 import { ChartsPage } from './ChartsPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
@@ -64,6 +70,8 @@ const mockSettings = {
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
   fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
+  fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
+  fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
   visibleBars: 120,
   relativeMode: true,
 };
@@ -196,6 +204,8 @@ describe('ChartsPage', () => {
     mockSettings.showMarginPressurePanel = true;
     mockSettings.showFactorRegressionPanel = true;
     mockSettings.fundamentalsPanelOrder = ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'];
+    mockSettings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
+    mockSettings.fundamentalsMetricVisibility = { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY };
     mockSettings.tradingValueMA.period = 15;
     mockSettings.relativeMode = true;
 
@@ -456,6 +466,58 @@ describe('ChartsPage', () => {
       symbol: '7203',
       tradingValuePeriod: 1,
     });
+  });
+
+  it('adjusts fundamentals panel height based on visible metric count', () => {
+    mockSettings.fundamentalsMetricVisibility = {
+      ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+      pbr: false,
+      roe: false,
+      roa: false,
+      eps: false,
+      bps: false,
+      dividendPerShare: false,
+      operatingMargin: false,
+      netMargin: false,
+      cashFlowOperating: false,
+      cashFlowInvesting: false,
+      cashFlowFinancing: false,
+      cashAndEquivalents: false,
+      fcf: false,
+      fcfYield: false,
+      fcfMargin: false,
+      cfoToNetProfitRatio: false,
+      tradingValueToMarketCapRatio: false,
+    };
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: { longPressure: [], flowPressure: [], turnoverDays: [], averagePeriod: 20 },
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    render(<ChartsPage />);
+
+    const section = screen.getByTestId('fundamentals-panel-section');
+    const visibleCount = countVisibleFundamentalMetrics(
+      mockSettings.fundamentalsMetricOrder,
+      mockSettings.fundamentalsMetricVisibility
+    );
+    expect(section).toHaveStyle(`height: ${resolveFundamentalsPanelHeightPx(visibleCount)}px`);
   });
 
   it('renders margin loading and error states in indicator section', () => {

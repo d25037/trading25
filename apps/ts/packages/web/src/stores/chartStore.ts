@@ -1,5 +1,12 @@
 import { create } from 'zustand';
 import { persist } from 'zustand/middleware';
+import {
+  DEFAULT_FUNDAMENTAL_METRIC_ORDER,
+  DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
+  type FundamentalMetricId,
+  normalizeFundamentalMetricOrder,
+  normalizeFundamentalMetricVisibility,
+} from '@/constants/fundamentalMetrics';
 
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
 export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
@@ -64,6 +71,8 @@ export interface ChartSettings {
   showMarginPressurePanel: boolean;
   showFactorRegressionPanel: boolean;
   fundamentalsPanelOrder: FundamentalsPanelId[];
+  fundamentalsMetricOrder: FundamentalMetricId[];
+  fundamentalsMetricVisibility: Record<FundamentalMetricId, boolean>;
   visibleBars: number;
   relativeMode: boolean;
   signalOverlay: SignalOverlaySettings;
@@ -160,6 +169,8 @@ export const defaultSettings: ChartSettings = {
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
   fundamentalsPanelOrder: [...DEFAULT_FUNDAMENTALS_PANEL_ORDER],
+  fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
+  fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
   visibleBars: 120,
   relativeMode: false,
   signalOverlay: {
@@ -388,6 +399,8 @@ function normalizeSettings(settings: unknown): ChartSettings {
       defaultSettings.showFactorRegressionPanel
     ),
     fundamentalsPanelOrder: normalizeFundamentalsPanelOrder(partial.fundamentalsPanelOrder),
+    fundamentalsMetricOrder: normalizeFundamentalMetricOrder(partial.fundamentalsMetricOrder),
+    fundamentalsMetricVisibility: normalizeFundamentalMetricVisibility(partial.fundamentalsMetricVisibility),
     visibleBars: normalizePositiveInt(partial.visibleBars, defaultSettings.visibleBars),
     relativeMode: normalizeBoolean(partial.relativeMode, defaultSettings.relativeMode),
     signalOverlay: {
