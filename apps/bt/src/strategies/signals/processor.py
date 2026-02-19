@@ -49,6 +49,7 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        screening_recent_days: int | None = None,
     ) -> pd.Series:
         """
         エントリーシグナル適用（統一シグナル処理システム使用）
@@ -62,6 +63,8 @@ class SignalProcessor:
             benchmark_data: ベンチマークデータ（オプション）
             execution_data: 実行用OHLCVデータ（相対価格モードでの実価格データ、通常モードではNone）
             load_benchmark_data: ベンチマークデータローダー関数（オプション）
+            screening_recent_days: screening 用の直近判定営業日。
+                指定時は entry 条件で直近窓が全滅した時点で早期終了する。
 
         Returns:
             pd.Series: シグナル適用後のエントリーシグナル（boolean）
@@ -79,6 +82,7 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            entry_recent_days_for_early_stop=screening_recent_days,
         )
 
     def apply_exit_signals(
@@ -129,6 +133,8 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        screening_recent_days: int | None = None,
+        skip_exit_when_no_recent_entry: bool = False,
         **optional_data,
     ) -> Signals:
         """
@@ -145,6 +151,8 @@ class SignalProcessor:
             entry_signal_params: エントリー専用シグナルパラメータ
             exit_signal_params: エグジット専用シグナルパラメータ
             execution_data: 実行用OHLCVデータ（相対価格モードでの実価格データ、通常モードではNone）
+            screening_recent_days: screening 用の直近判定営業日（entry早期終了の基準）
+            skip_exit_when_no_recent_entry: 直近窓にentry候補がなければexit計算を省略する
             **optional_data: その他のデータ（margin_data, statements_data, benchmark_data等）
 
         Returns:
@@ -159,8 +167,32 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            screening_recent_days=screening_recent_days,
             **optional_data,
         )
+
+        if (
+            skip_exit_when_no_recent_entry
+            and screening_recent_days is not None
+            and screening_recent_days > 0
+        ):
+            recent_entries = filtered_entries.tail(screening_recent_days).fillna(False).astype(bool)
+            if not recent_entries.any():
+                logger.debug(
+                    "Entry candidate vanished in recent window; skipping exit signal evaluation "
+                    f"(recent_days={screening_recent_days})"
+                )
+                result = Signals(
+                    entries=filtered_entries,
+                    exits=pd.Series(False, index=filtered_entries.index, dtype=bool),
+                )
+
+                logger.info(
+                    f"統合シグナル生成完了: "
+                    f"エントリー {result.entries.sum()}/{len(result.entries)}, "
+                    f"エグジット {result.exits.sum()}/{len(result.exits)}"
+                )
+                return result
 
         # エグジットシグナル適用（OR条件・柔軟な発火）
         expanded_exits = self.apply_exit_signals(
@@ -225,6 +257,7 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
+        entry_recent_days_for_early_stop: int | None = None,
     ) -> pd.Series:
         """
         統一シグナル処理システム
@@ -242,6 +275,8 @@ class SignalProcessor:
             statements_data: 財務諸表データ（オプション）
             benchmark_data: ベンチマークデータ（オプション）
             execution_data: 実行用OHLCVデータ（相対価格モードでの実価格データ、通常モードではNone）
+            entry_recent_days_for_early_stop: entry 条件で直近窓が全滅した場合に
+                残りシグナル計算を省略するための営業日窓（signal_type='entry' のみ有効）
 
         Returns:
             pd.Series: シグナル適用後のboolean Series
@@ -285,7 +320,7 @@ class SignalProcessor:
         logger.debug(f"{signal_type.capitalize()} signal処理開始")
 
         # 統一シグナル適用（Entry/Exit両対応）
-        self._apply_signal_set(
+        early_stopped = self._apply_signal_set(
             signal_conditions=signal_conditions,
             signal_type=signal_type,
             signal_params=signal_params,
@@ -300,7 +335,12 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            entry_recent_days_for_early_stop=entry_recent_days_for_early_stop,
         )
+        if early_stopped:
+            logger.debug(
+                "Entry signal evaluation stopped early: recent window candidates are exhausted"
+            )
 
         # Entry: AND結合 / Exit: OR結合
         # NaN処理: シグナルがデータ不足（初期lookback期間等）でNaNの場合の安全な処理
@@ -353,7 +393,8 @@ class SignalProcessor:
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
-    ):
+        entry_recent_days_for_early_stop: int | None = None,
+    ) -> bool:
         """
         データ駆動型シグナル適用処理（統一レジストリベース）
 
@@ -377,8 +418,19 @@ class SignalProcessor:
             "stock_sector_name": stock_sector_name,  # 当該銘柄のセクター名
         }
 
+        running_entry_signal: Optional[pd.Series] = None
+        recent_window_size: int | None = None
+        if (
+            signal_type == "entry"
+            and entry_recent_days_for_early_stop is not None
+            and entry_recent_days_for_early_stop > 0
+        ):
+            recent_window_size = min(entry_recent_days_for_early_stop, len(base_signal))
+            running_entry_signal = base_signal.fillna(False).infer_objects(copy=False).astype(bool)
+
         # 統一シグナル処理（SIGNAL_REGISTRY）
         for signal_def in SIGNAL_REGISTRY:
+            before_count = len(signal_conditions)
             self._apply_unified_signal(
                 signal_def=signal_def,
                 signal_conditions=signal_conditions,
@@ -387,6 +439,25 @@ class SignalProcessor:
                 base_signal=base_signal,
                 data_sources=data_sources,
             )
+            if (
+                running_entry_signal is None
+                or recent_window_size is None
+                or len(signal_conditions) == before_count
+            ):
+                continue
+
+            latest_condition = signal_conditions[-1]
+            filled = latest_condition.fillna(False).infer_objects(copy=False).astype(bool)
+            running_entry_signal = running_entry_signal & filled
+
+            if not running_entry_signal.tail(recent_window_size).any():
+                logger.debug(
+                    "Entry early stop triggered: no candidate remained in recent window "
+                    f"after '{signal_def.name}'"
+                )
+                return True
+
+        return False
 
     # 相対価格モードで使用不可のシグナル（実価格が必須）
     _REQUIRES_EXECUTION_DATA = {"β値", "売買代金", "売買代金範囲"}
