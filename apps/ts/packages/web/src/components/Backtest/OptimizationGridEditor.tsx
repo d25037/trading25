@@ -1,10 +1,19 @@
-import { AlertCircle, CheckCircle2, Info, Loader2, RotateCcw, Save, Trash2 } from 'lucide-react';
+import { AlertCircle, CheckCircle2, Edit, Info, Loader2, RotateCcw, Save, Trash2 } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { MonacoYamlEditor } from '@/components/Editor/MonacoYamlEditor';
 import { Button } from '@/components/ui/button';
-import { cn } from '@/lib/utils';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useDeleteOptimizationGrid, useOptimizationGridConfig, useSaveOptimizationGrid } from '@/hooks/useOptimization';
-import { analyzeGridParameters, formatGridParameterValue, type GridParameterAnalysis } from './optimizationGridParams';
+import { cn } from '@/lib/utils';
+import { analyzeGridParameters, type GridParameterAnalysis } from './optimizationGridParams';
+import { SignalReferencePanel } from './SignalReferencePanel';
 
 const TEMPLATE_YAML = `# Parameter ranges for optimization grid search
 # Each parameter should be a list of values to try
@@ -16,49 +25,6 @@ parameter_ranges:
     atr_stop:
       atr_multiplier: [1.5, 2.0, 2.5, 3.0]
 `;
-
-const PRESET_TEMPLATES = [
-  {
-    id: 'starter',
-    label: 'Starter',
-    description: 'Minimal entry + exit ranges',
-    content: TEMPLATE_YAML,
-  },
-  {
-    id: 'breakout-heavy',
-    label: 'Breakout Focus',
-    description: 'Period/volume breakout combinations',
-    content: `parameter_ranges:
-  entry_filter_params:
-    period_breakout:
-      period: [10, 15, 20, 30]
-    volume_breakout:
-      period: [10, 20]
-      ratio: [1.1, 1.3, 1.5]
-  exit_trigger_params:
-    atr_stop:
-      atr_multiplier: [1.8, 2.2, 2.8]
-`,
-  },
-  {
-    id: 'balanced',
-    label: 'Balanced',
-    description: 'Momentum + fundamental + risk control',
-    content: `parameter_ranges:
-  entry_filter_params:
-    rsi:
-      period: [10, 14]
-      lower: [25, 30, 35]
-    forward_eps_growth:
-      threshold: [0.05, 0.1, 0.15]
-  exit_trigger_params:
-    take_profit:
-      pct: [0.08, 0.12, 0.16]
-    atr_stop:
-      atr_multiplier: [1.5, 2.0, 2.5]
-`,
-  },
-] as const;
 
 interface OptimizationGridEditorProps {
   strategyName: string;
@@ -89,24 +55,9 @@ interface SummaryCardsProps {
   isDirty: boolean;
 }
 
-interface GridHelperPanelProps {
-  analysis: GridParameterAnalysis;
-  isBusy: boolean;
-  onApplyPreset: (presetContent: string) => void;
-}
-
-interface EditorWorkspaceProps {
-  content: string;
-  analysis: GridParameterAnalysis;
-  validationState: ValidationState;
-  isBusy: boolean;
-  saveErrorMessage: string | null;
-  deleteErrorMessage: string | null;
-  onContentChange: (value: string) => void;
-  onApplyPreset: (presetContent: string) => void;
-}
-
-interface OptimizationGridEditorViewProps {
+interface EditorDialogProps {
+  open: boolean;
+  onOpenChange: (open: boolean) => void;
   basename: string;
   content: string;
   analysis: GridParameterAnalysis;
@@ -119,10 +70,10 @@ interface OptimizationGridEditorViewProps {
   saveErrorMessage: string | null;
   deleteErrorMessage: string | null;
   onContentChange: (value: string) => void;
+  onCopySnippet: (snippet: string) => void;
   onReset: () => void;
   onDelete: () => void;
   onSave: () => void;
-  onApplyPreset: (presetContent: string) => void;
 }
 
 const VALIDATION_TONE_CLASS: Record<ValidationTone, string> = {
@@ -203,7 +154,7 @@ function EditorActions({
   const isBusy = isSavePending || isDeletePending;
 
   return (
-    <div className="flex flex-wrap gap-2">
+    <div className="flex flex-wrap gap-2 justify-end">
       <Button variant="outline" size="sm" onClick={onReset} disabled={!isDirty || isBusy}>
         <RotateCcw className="h-4 w-4 mr-1" />
         Reset
@@ -251,84 +202,9 @@ function SummaryCards({ paramCount, combinations, savedInfo, isDirty }: SummaryC
   );
 }
 
-function GridHelperPanel({ analysis, isBusy, onApplyPreset }: GridHelperPanelProps) {
-  return (
-    <div className="border rounded-md overflow-hidden min-h-0 flex flex-col">
-      <div className="border-b p-3">
-        <h5 className="text-sm font-medium">Grid Helper</h5>
-        <p className="text-xs text-muted-foreground mt-1">Apply presets and inspect detected parameter paths.</p>
-      </div>
-      <div className="flex-1 overflow-y-auto p-3 space-y-4">
-        <section className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Presets</p>
-          {PRESET_TEMPLATES.map((preset) => (
-            <button
-              key={preset.id}
-              type="button"
-              className="w-full rounded-md border p-2 text-left hover:bg-muted/30 transition-colors"
-              onClick={() => onApplyPreset(preset.content)}
-              disabled={isBusy}
-            >
-              <p className="text-sm font-medium">{preset.label}</p>
-              <p className="text-xs text-muted-foreground">{preset.description}</p>
-            </button>
-          ))}
-        </section>
-
-        <section className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">Detected Parameters ({analysis.paramCount})</p>
-          {analysis.entries.length > 0 ? (
-            <ul className="space-y-1">
-              {analysis.entries.map((entry) => (
-                <li key={entry.path} className="rounded bg-muted/30 px-2 py-1 text-xs">
-                  <p className="font-mono break-all">{entry.path}</p>
-                  <p className="text-muted-foreground break-all">
-                    [{entry.values.map((value) => formatGridParameterValue(value)).join(', ')}]
-                  </p>
-                </li>
-              ))}
-            </ul>
-          ) : (
-            <p className="text-xs text-muted-foreground">
-              Parameter lists are not detected yet. Add arrays under <code>parameter_ranges</code>.
-            </p>
-          )}
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function EditorWorkspace({
-  content,
-  analysis,
-  validationState,
-  isBusy,
-  saveErrorMessage,
-  deleteErrorMessage,
-  onContentChange,
-  onApplyPreset,
-}: EditorWorkspaceProps) {
-  return (
-    <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 min-h-[460px]">
-      <div className="xl:col-span-2 flex flex-col min-h-0">
-        <div className="flex-1 min-h-0">
-          <MonacoYamlEditor value={content} onChange={onContentChange} height="380px" />
-        </div>
-
-        <div className="mt-3 space-y-2">
-          <ValidationBanner validationState={validationState} />
-          {saveErrorMessage && <ErrorBanner message={saveErrorMessage} />}
-          {deleteErrorMessage && <ErrorBanner message={deleteErrorMessage} />}
-        </div>
-      </div>
-
-      <GridHelperPanel analysis={analysis} isBusy={isBusy} onApplyPreset={onApplyPreset} />
-    </div>
-  );
-}
-
-function OptimizationGridEditorView({
+function EditorDialog({
+  open,
+  onOpenChange,
   basename,
   content,
   analysis,
@@ -341,51 +217,65 @@ function OptimizationGridEditorView({
   saveErrorMessage,
   deleteErrorMessage,
   onContentChange,
+  onCopySnippet,
   onReset,
   onDelete,
   onSave,
-  onApplyPreset,
-}: OptimizationGridEditorViewProps) {
+}: EditorDialogProps) {
   return (
-    <div className="space-y-4">
-      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-        <div className="space-y-1">
-          <h4 className="text-sm font-semibold">Optimization Grid Editor</h4>
-          <p className="text-xs text-muted-foreground">
-            Edit optimization parameter ranges and validate combinations before running jobs.
-          </p>
-          <p className="text-xs font-mono text-muted-foreground">strategy: {basename}</p>
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-7xl max-h-[92vh] flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Optimization Grid Editor: {basename}</DialogTitle>
+          <DialogDescription>
+            Edit optimization ranges and use the signal reference panel for available signal definitions.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="flex-1 min-h-0 overflow-hidden space-y-3">
+          <SummaryCards
+            paramCount={analysis.paramCount}
+            combinations={analysis.combinations}
+            savedInfo={savedInfo}
+            isDirty={isDirty}
+          />
+
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[560px]">
+            <div className="lg:col-span-2 flex flex-col min-h-0">
+              <div className="flex-1 min-h-0">
+                <MonacoYamlEditor value={content} onChange={onContentChange} height="460px" />
+              </div>
+
+              <div className="mt-3 space-y-2">
+                <ValidationBanner validationState={validationState} />
+                {saveErrorMessage && <ErrorBanner message={saveErrorMessage} />}
+                {deleteErrorMessage && <ErrorBanner message={deleteErrorMessage} />}
+              </div>
+            </div>
+
+            <div className="lg:col-span-1 border rounded-md overflow-hidden min-h-0">
+              <SignalReferencePanel onCopySnippet={onCopySnippet} />
+            </div>
+          </div>
         </div>
-        <EditorActions
-          canDelete={canDelete}
-          isDirty={isDirty}
-          isSavePending={isSavePending}
-          isDeletePending={isDeletePending}
-          hasParseError={Boolean(analysis.parseError)}
-          onReset={onReset}
-          onDelete={onDelete}
-          onSave={onSave}
-        />
-      </div>
 
-      <SummaryCards
-        paramCount={analysis.paramCount}
-        combinations={analysis.combinations}
-        savedInfo={savedInfo}
-        isDirty={isDirty}
-      />
-
-      <EditorWorkspace
-        content={content}
-        analysis={analysis}
-        validationState={validationState}
-        isBusy={isSavePending || isDeletePending}
-        saveErrorMessage={saveErrorMessage}
-        deleteErrorMessage={deleteErrorMessage}
-        onContentChange={onContentChange}
-        onApplyPreset={onApplyPreset}
-      />
-    </div>
+        <DialogFooter className="gap-2 sm:justify-between">
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Close
+          </Button>
+          <EditorActions
+            canDelete={canDelete}
+            isDirty={isDirty}
+            isSavePending={isSavePending}
+            isDeletePending={isDeletePending}
+            hasParseError={Boolean(analysis.parseError)}
+            onReset={onReset}
+            onDelete={onDelete}
+            onSave={onSave}
+          />
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   );
 }
 
@@ -400,6 +290,7 @@ export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorP
   const [baselineContent, setBaselineContent] = useState('');
   const [hasPersistedConfig, setHasPersistedConfig] = useState(false);
   const [isDirty, setIsDirty] = useState(false);
+  const [isEditorOpen, setIsEditorOpen] = useState(false);
 
   useEffect(() => {
     if (gridConfig) {
@@ -418,16 +309,24 @@ export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorP
     }
   }, [gridConfig, isError]);
 
-  const handleContentChange = useCallback(
-    (value: string) => {
-      setContent(value);
-      setIsDirty(value !== baselineContent);
+  const analysis = useMemo(() => analyzeGridParameters(content), [content]);
+  const validationState = useMemo(() => buildValidationState(analysis), [analysis]);
+
+  const applyContent = useCallback(
+    (nextContent: string) => {
+      setContent(nextContent);
+      setIsDirty(nextContent !== baselineContent);
     },
     [baselineContent]
   );
 
-  const analysis = useMemo(() => analyzeGridParameters(content), [content]);
-  const validationState = useMemo(() => buildValidationState(analysis), [analysis]);
+  const handleCopySnippet = useCallback(
+    (snippet: string) => {
+      const nextContent = content.trim() ? `${content.trim()}\n\n${snippet}` : snippet;
+      applyContent(nextContent);
+    },
+    [applyContent, content]
+  );
 
   const handleSave = useCallback(() => {
     saveGrid.mutate(
@@ -458,14 +357,6 @@ export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorP
     setIsDirty(false);
   }, [baselineContent]);
 
-  const handleApplyPreset = useCallback(
-    (presetContent: string) => {
-      setContent(presetContent);
-      setIsDirty(presetContent !== baselineContent);
-    },
-    [baselineContent]
-  );
-
   if (isLoading) {
     return <LoadingState />;
   }
@@ -479,24 +370,58 @@ export function OptimizationGridEditor({ strategyName }: OptimizationGridEditorP
       ? `${saveGrid.data.param_count} params, ${saveGrid.data.combinations} combinations`
       : null;
 
+  const displaySavedInfo = lastSaveInfo || savedInfo;
+
   return (
-    <OptimizationGridEditorView
-      basename={basename}
-      content={content}
-      analysis={analysis}
-      validationState={validationState}
-      savedInfo={lastSaveInfo || savedInfo}
-      isDirty={isDirty}
-      canDelete={hasPersistedConfig}
-      isSavePending={saveGrid.isPending}
-      isDeletePending={deleteGrid.isPending}
-      saveErrorMessage={saveGrid.isError ? saveGrid.error.message : null}
-      deleteErrorMessage={deleteGrid.isError ? deleteGrid.error.message : null}
-      onContentChange={handleContentChange}
-      onReset={handleReset}
-      onDelete={handleDelete}
-      onSave={handleSave}
-      onApplyPreset={handleApplyPreset}
-    />
+    <div className="space-y-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="space-y-1">
+          <h4 className="text-sm font-semibold">Optimization Grid</h4>
+          <p className="text-xs text-muted-foreground">
+            Open the editor popup to modify grid YAML while browsing signal definitions.
+          </p>
+          <p className="text-xs font-mono text-muted-foreground">strategy: {basename}</p>
+        </div>
+
+        <Button size="sm" variant="outline" onClick={() => setIsEditorOpen(true)}>
+          <Edit className="h-4 w-4 mr-1" />
+          Open Editor
+        </Button>
+      </div>
+
+      <SummaryCards
+        paramCount={analysis.paramCount}
+        combinations={analysis.combinations}
+        savedInfo={displaySavedInfo}
+        isDirty={isDirty}
+      />
+
+      {!hasPersistedConfig && (
+        <p className="text-xs text-muted-foreground">
+          No saved grid config exists yet. Use <span className="font-medium">Open Editor</span> and save to create one.
+        </p>
+      )}
+
+      <EditorDialog
+        open={isEditorOpen}
+        onOpenChange={setIsEditorOpen}
+        basename={basename}
+        content={content}
+        analysis={analysis}
+        validationState={validationState}
+        savedInfo={displaySavedInfo}
+        isDirty={isDirty}
+        canDelete={hasPersistedConfig}
+        isSavePending={saveGrid.isPending}
+        isDeletePending={deleteGrid.isPending}
+        saveErrorMessage={saveGrid.isError ? saveGrid.error.message : null}
+        deleteErrorMessage={deleteGrid.isError ? deleteGrid.error.message : null}
+        onContentChange={applyContent}
+        onCopySnippet={handleCopySnippet}
+        onReset={handleReset}
+        onDelete={handleDelete}
+        onSave={handleSave}
+      />
+    </div>
   );
 }
