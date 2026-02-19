@@ -484,6 +484,92 @@ class TestSignalProcessor:
         assert any("ValueError" in message for message in warning_messages)
         assert any("予期しないエラー" in message for message in warning_messages)
 
+    def test_apply_signals_entry_early_stop_when_recent_window_exhausted(self):
+        base_signal = pd.Series([True, True, True, True, True], index=self.test_data.index)
+
+        first_signal = SimpleNamespace(
+            name="FirstGate",
+            signal_func=lambda **_kwargs: pd.Series(
+                [True, True, False, False, False],
+                index=self.test_data.index,
+            ),
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test.first",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        second_called = {"value": False}
+
+        def _second_signal(**_kwargs):
+            second_called["value"] = True
+            return pd.Series([True, True, True, True, True], index=self.test_data.index)
+
+        second_signal = SimpleNamespace(
+            name="SecondGate",
+            signal_func=_second_signal,
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="test.second",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        with patch(
+            "src.strategies.signals.processor.SIGNAL_REGISTRY",
+            [first_signal, second_signal],
+        ):
+            result = self.processor.apply_signals(
+                base_signal=base_signal,
+                signal_type="entry",
+                ohlc_data=self.test_data,
+                signal_params=self.signal_params,
+                entry_recent_days_for_early_stop=2,
+            )
+
+        assert second_called["value"] is False
+        assert not result.tail(2).any()
+
+    def test_generate_signals_skips_exit_when_recent_entry_is_empty(self):
+        index = self.test_data.index
+        entry_only_old = pd.Series([True, True, False, False, False], index=index)
+
+        with (
+            patch.object(
+                self.processor,
+                "apply_entry_signals",
+                return_value=entry_only_old,
+            ) as mock_entry,
+            patch.object(self.processor, "apply_exit_signals") as mock_exit,
+        ):
+            result = self.processor.generate_signals(
+                strategy_entries=self.base_signal,
+                strategy_exits=self.base_signal,
+                ohlc_data=self.test_data,
+                entry_signal_params=self.signal_params,
+                exit_signal_params=self.signal_params,
+                screening_recent_days=2,
+                skip_exit_when_no_recent_entry=True,
+            )
+
+        assert mock_entry.called
+        assert mock_entry.call_args.kwargs["screening_recent_days"] == 2
+        assert not mock_exit.called
+        assert result.entries.equals(entry_only_old)
+        assert result.exits.dtype == bool
+        assert result.exits.sum() == 0
+
 
 if __name__ == "__main__":
     pytest.main([__file__])

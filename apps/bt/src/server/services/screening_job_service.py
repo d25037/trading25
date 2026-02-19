@@ -81,7 +81,7 @@ class ScreeningJobService:
             else:
                 progress = max(0.0, min(1.0, completed / total))
 
-            message = f"戦略評価 {completed}/{total}"
+            message = f"スクリーニング評価 {completed}/{total}"
             loop.call_soon_threadsafe(
                 asyncio.create_task,
                 self._manager.update_job_status(

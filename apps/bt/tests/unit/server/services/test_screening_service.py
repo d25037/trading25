@@ -20,6 +20,7 @@ from src.server.services.screening_service import (
     RequestCacheStats,
     ScreeningService,
     StockUniverseItem,
+    StockEvaluationOutcome,
     StrategyDataBundle,
     StrategyEvaluationResult,
     StrategyExecutionInput,
@@ -453,29 +454,65 @@ class TestRequestMemoizationAndParallelization:
         s1 = _runtime("s1")
         s2 = _runtime("s2")
         s3 = _runtime("s3")
-
-        strategy_inputs = [
-            StrategyExecutionInput(strategy=s1, data_bundle=StrategyDataBundle(multi_data={}), load_warnings=[]),
-            StrategyExecutionInput(strategy=s2, data_bundle=StrategyDataBundle(multi_data={}), load_warnings=[]),
-            StrategyExecutionInput(strategy=s3, data_bundle=StrategyDataBundle(multi_data={}), load_warnings=[]),
+        stock_universe = [
+            StockUniverseItem(
+                code="1001",
+                company_name="A",
+                scale_category=None,
+                sector_33_name=None,
+            ),
+            StockUniverseItem(
+                code="1002",
+                company_name="B",
+                scale_category=None,
+                sector_33_name=None,
+            ),
+            StockUniverseItem(
+                code="1003",
+                company_name="C",
+                scale_category=None,
+                sector_33_name=None,
+            ),
         ]
 
-        def _evaluate_input(strategy_input, _stock_universe, _recent_days):
+        strategy_inputs = [
+            StrategyExecutionInput(
+                strategy=s1,
+                data_bundle=StrategyDataBundle(multi_data={}),
+                load_warnings=[],
+            ),
+            StrategyExecutionInput(
+                strategy=s2,
+                data_bundle=StrategyDataBundle(multi_data={}),
+                load_warnings=[],
+            ),
+            StrategyExecutionInput(
+                strategy=s3,
+                data_bundle=StrategyDataBundle(multi_data={}),
+                load_warnings=[],
+            ),
+        ]
+
+        def _evaluate_stock(stock, _strategy_inputs, _recent_days, _strategy_cache_tokens):
             time.sleep(0.01)
-            return StrategyEvaluationResult(
-                strategy=strategy_input.strategy,
-                matched_rows=[],
-                processed_codes=set(),
-                warnings=[],
+            return StockEvaluationOutcome(
+                stock=stock,
+                matched_dates_by_strategy={},
+                processed_strategy_names={
+                    s1.response_name,
+                    s2.response_name,
+                    s3.response_name,
+                },
+                warning_by_strategy=[],
             )
 
-        monkeypatch.setattr(service, "_evaluate_strategy_input", _evaluate_input)
-        monkeypatch.setenv("BT_SCREENING_MAX_STRATEGY_WORKERS", "3")
+        monkeypatch.setattr(service, "_evaluate_stock", _evaluate_stock)
+        monkeypatch.setenv("BT_SCREENING_MAX_STOCK_WORKERS", "3")
 
         progresses: list[tuple[int, int]] = []
         results, warnings, worker_count = service._evaluate_strategies(  # noqa: SLF001
             strategy_inputs=strategy_inputs,
-            stock_universe=[],
+            stock_universe=stock_universe,
             recent_days=10,
             progress_callback=lambda completed, total: progresses.append((completed, total)),
         )
@@ -484,5 +521,6 @@ class TestRequestMemoizationAndParallelization:
         assert len(results) == 3
         assert warnings == []
         assert worker_count == expected_workers
+        assert all(result.processed_codes == {"1001", "1002", "1003"} for result in results)
         assert progresses[0] == (0, 3)
         assert progresses[-1] == (3, 3)
