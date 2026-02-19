@@ -1,12 +1,12 @@
 ---
 id: bt-016
 title: テストカバレッジ70%達成
-status: closed
+status: done
 priority: high
 labels: [test, coverage, ci]
 project: bt
 created: 2026-01-31
-updated: 2026-02-03
+updated: 2026-02-19
 depends_on: []
 blocks: []
 parent: null

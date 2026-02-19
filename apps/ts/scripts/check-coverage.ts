@@ -10,7 +10,7 @@ type CoverageSummary = {
 
 const thresholds: Record<string, CoverageThreshold> = {
   shared: { lines: 0.8, functions: 0.8 },
-  cli: { lines: 0.7, functions: 0.7 },
+  cli: { lines: 0.8, functions: 0.8 },
   web: { lines: 0.45, functions: 0.7 },
 };
 
