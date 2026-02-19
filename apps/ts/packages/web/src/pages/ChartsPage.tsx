@@ -18,7 +18,7 @@ import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { useStockData } from '@/hooks/useStockData';
 import { cn } from '@/lib/utils';
-import { useChartStore } from '@/stores/chartStore';
+import { type FundamentalsPanelId, useChartStore } from '@/stores/chartStore';
 import type {
   BollingerBandsData,
   IndicatorValue,
@@ -275,6 +275,106 @@ export function ChartsPage() {
     </div>
   );
 
+  const panelVisibilityById: Record<FundamentalsPanelId, boolean> = {
+    fundamentals: settings.showFundamentalsPanel,
+    fundamentalsHistory: settings.showFundamentalsHistoryPanel,
+    marginPressure: settings.showMarginPressurePanel,
+    factorRegression: settings.showFactorRegressionPanel,
+  };
+
+  const renderOrderedPanelSection = (panelId: FundamentalsPanelId) => {
+    switch (panelId) {
+      case 'fundamentals':
+        return (
+          <div key={panelId} ref={fundamentalsPanelSection.sectionRef} className="h-[440px]">
+            <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+              <div className="absolute inset-0 gradient-glass opacity-50" />
+              <div className="relative z-10 h-full">
+                <div className="p-4 border-b border-border/30">
+                  <h3 className="text-lg font-semibold text-foreground">Fundamental Analysis</h3>
+                </div>
+                <div className="h-[calc(100%-4rem)] p-4">
+                  <ErrorBoundary>
+                    <FundamentalsPanel
+                      symbol={selectedSymbol}
+                      enabled={fundamentalsPanelSection.isVisible}
+                      tradingValuePeriod={tradingValuePeriod}
+                    />
+                  </ErrorBoundary>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      case 'fundamentalsHistory':
+        return (
+          <div key={panelId} ref={fundamentalsHistorySection.sectionRef} className="h-[340px]">
+            <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+              <div className="absolute inset-0 gradient-glass opacity-50" />
+              <div className="relative z-10 h-full">
+                <div className="p-4 border-b border-border/30">
+                  <h3 className="text-lg font-semibold text-foreground">FY推移</h3>
+                </div>
+                <div className="h-[calc(100%-4rem)] p-4">
+                  <ErrorBoundary>
+                    <FundamentalsHistoryPanel symbol={selectedSymbol} enabled={fundamentalsHistorySection.isVisible} />
+                  </ErrorBoundary>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      case 'marginPressure':
+        return (
+          <div key={panelId} ref={marginSection.sectionRef} className="h-72">
+            <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+              <div className="absolute inset-0 gradient-glass opacity-50" />
+              <div className="relative z-10 h-full">
+                <div className="p-4 border-b border-border/30">
+                  <h3 className="text-lg font-semibold text-foreground">
+                    信用圧力指標
+                    {marginPressureData && (
+                      <span className="text-sm font-normal text-muted-foreground ml-2">
+                        ({marginPressureData.averagePeriod}日平均)
+                      </span>
+                    )}
+                  </h3>
+                </div>
+                <div className="h-[calc(100%-4rem)] p-4">
+                  <MarginPressureIndicatorsSection
+                    data={marginPressureData}
+                    isLoading={marginPressureLoading}
+                    error={marginPressureError}
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      case 'factorRegression':
+        return (
+          <div key={panelId} ref={factorSection.sectionRef} className="h-64">
+            <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
+              <div className="absolute inset-0 gradient-glass opacity-50" />
+              <div className="relative z-10 h-full">
+                <div className="p-4 border-b border-border/30">
+                  <h3 className="text-lg font-semibold text-foreground">Factor Regression Analysis</h3>
+                </div>
+                <div className="h-[calc(100%-4rem)] p-4">
+                  <ErrorBoundary>
+                    <FactorRegressionPanel
+                      symbol={selectedSymbol}
+                      enabled={settings.showFactorRegressionPanel && factorSection.isVisible}
+                    />
+                  </ErrorBoundary>
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+    }
+  };
+
   return (
     <div className="flex">
       {/* Chart Controls Sidebar */}
@@ -494,100 +594,9 @@ export function ChartsPage() {
               </div>
             )}
 
-            {/* Fundamentals Panel Section */}
-            {settings.showFundamentalsPanel && (
-              <div ref={fundamentalsPanelSection.sectionRef} className="h-[440px]">
-                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                  <div className="absolute inset-0 gradient-glass opacity-50" />
-                  <div className="relative z-10 h-full">
-                    <div className="p-4 border-b border-border/30">
-                      <h3 className="text-lg font-semibold text-foreground">Fundamental Analysis</h3>
-                    </div>
-                    <div className="h-[calc(100%-4rem)] p-4">
-                      <ErrorBoundary>
-                        <FundamentalsPanel
-                          symbol={selectedSymbol}
-                          enabled={fundamentalsPanelSection.isVisible}
-                          tradingValuePeriod={tradingValuePeriod}
-                        />
-                      </ErrorBoundary>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* FY History Panel Section */}
-            {settings.showFundamentalsHistoryPanel && (
-              <div ref={fundamentalsHistorySection.sectionRef} className="h-[340px]">
-                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                  <div className="absolute inset-0 gradient-glass opacity-50" />
-                  <div className="relative z-10 h-full">
-                    <div className="p-4 border-b border-border/30">
-                      <h3 className="text-lg font-semibold text-foreground">FY推移</h3>
-                    </div>
-                    <div className="h-[calc(100%-4rem)] p-4">
-                      <ErrorBoundary>
-                        <FundamentalsHistoryPanel
-                          symbol={selectedSymbol}
-                          enabled={fundamentalsHistorySection.isVisible}
-                        />
-                      </ErrorBoundary>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Margin Pressure Indicators Row - 3 charts */}
-            {settings.showMarginPressurePanel && (
-              <div ref={marginSection.sectionRef} className="h-72">
-                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                  <div className="absolute inset-0 gradient-glass opacity-50" />
-                  <div className="relative z-10 h-full">
-                    <div className="p-4 border-b border-border/30">
-                      <h3 className="text-lg font-semibold text-foreground">
-                        信用圧力指標
-                        {marginPressureData && (
-                          <span className="text-sm font-normal text-muted-foreground ml-2">
-                            ({marginPressureData.averagePeriod}日平均)
-                          </span>
-                        )}
-                      </h3>
-                    </div>
-                    <div className="h-[calc(100%-4rem)] p-4">
-                      <MarginPressureIndicatorsSection
-                        data={marginPressureData}
-                        isLoading={marginPressureLoading}
-                        error={marginPressureError}
-                      />
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Factor Regression Panel Section */}
-            {settings.showFactorRegressionPanel && (
-              <div ref={factorSection.sectionRef} className="h-64">
-                <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
-                  <div className="absolute inset-0 gradient-glass opacity-50" />
-                  <div className="relative z-10 h-full">
-                    <div className="p-4 border-b border-border/30">
-                      <h3 className="text-lg font-semibold text-foreground">Factor Regression Analysis</h3>
-                    </div>
-                    <div className="h-[calc(100%-4rem)] p-4">
-                      <ErrorBoundary>
-                        <FactorRegressionPanel
-                          symbol={selectedSymbol}
-                          enabled={settings.showFactorRegressionPanel && factorSection.isVisible}
-                        />
-                      </ErrorBoundary>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
+            {settings.fundamentalsPanelOrder
+              .filter((panelId) => panelVisibilityById[panelId])
+              .map((panelId) => renderOrderedPanelSection(panelId))}
           </div>
         )}
       </div>

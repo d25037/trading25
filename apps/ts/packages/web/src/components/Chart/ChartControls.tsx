@@ -1,7 +1,18 @@
-import { Activity, BarChart3, Eye, Loader2, Search, Settings as SettingsIcon, TrendingUp } from 'lucide-react';
+import {
+  Activity,
+  ArrowDown,
+  ArrowUp,
+  BarChart3,
+  Eye,
+  Loader2,
+  Search,
+  Settings as SettingsIcon,
+  TrendingUp,
+} from 'lucide-react';
 import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { Button } from '@/components/ui/button';
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -9,7 +20,7 @@ import { Switch } from '@/components/ui/switch';
 import { useSignalReference } from '@/hooks/useBacktest';
 import { type StockSearchResultItem, useStockSearch } from '@/hooks/useStockSearch';
 import { cn } from '@/lib/utils';
-import type { ChartSettings } from '@/stores/chartStore';
+import type { ChartSettings, FundamentalsPanelId } from '@/stores/chartStore';
 import { useChartStore } from '@/stores/chartStore';
 import { logger } from '@/utils/logger';
 import { ChartPresetSelector } from './ChartPresetSelector';
@@ -36,6 +47,7 @@ interface PanelVisibilityToggle {
   id: string;
   label: string;
   settingKey: PanelVisibilitySettingKey;
+  panelId: FundamentalsPanelId;
   linkPanel: SignalLinkedPanel;
 }
 
@@ -44,25 +56,75 @@ const PANEL_VISIBILITY_TOGGLES: PanelVisibilityToggle[] = [
     id: 'show-fundamentals-panel',
     label: 'Fundamentals',
     settingKey: 'showFundamentalsPanel',
+    panelId: 'fundamentals',
     linkPanel: 'fundamentals',
   },
   {
     id: 'show-fundamentals-history-panel',
     label: 'FY History',
     settingKey: 'showFundamentalsHistoryPanel',
+    panelId: 'fundamentalsHistory',
     linkPanel: 'fundamentalsHistory',
   },
   {
     id: 'show-margin-pressure-panel',
     label: 'Margin Pressure',
     settingKey: 'showMarginPressurePanel',
+    panelId: 'marginPressure',
     linkPanel: 'marginPressure',
   },
   {
     id: 'show-factor-regression-panel',
     label: 'Factor Regression',
     settingKey: 'showFactorRegressionPanel',
+    panelId: 'factorRegression',
     linkPanel: 'factorRegression',
+  },
+];
+
+const PANEL_TOGGLE_BY_ID = Object.fromEntries(
+  PANEL_VISIBILITY_TOGGLES.map((toggle) => [toggle.panelId, toggle])
+) as Record<FundamentalsPanelId, PanelVisibilityToggle>;
+
+type SettingDialogId = 'chartSettings' | 'panelLayout' | 'overlayIndicators' | 'subChartIndicators' | 'signalOverlay';
+
+interface SettingDialogDefinition {
+  id: SettingDialogId;
+  title: string;
+  description: string;
+  icon: React.ComponentType<{ className?: string }>;
+}
+
+const SETTING_DIALOGS: SettingDialogDefinition[] = [
+  {
+    id: 'chartSettings',
+    title: 'Chart Settings',
+    description: 'Main chart display and base toggles.',
+    icon: SettingsIcon,
+  },
+  {
+    id: 'panelLayout',
+    title: 'Panel Layout',
+    description: 'Choose visible panels and their display order.',
+    icon: Eye,
+  },
+  {
+    id: 'overlayIndicators',
+    title: 'Overlay Indicators',
+    description: 'Configure overlays rendered on the price chart.',
+    icon: TrendingUp,
+  },
+  {
+    id: 'subChartIndicators',
+    title: 'Sub-Chart Indicators',
+    description: 'Configure additional panels rendered below the chart.',
+    icon: BarChart3,
+  },
+  {
+    id: 'signalOverlay',
+    title: 'Signal Overlay',
+    description: 'Select signal markers and overlay behavior.',
+    icon: Activity,
   },
 ];
 
@@ -87,16 +149,15 @@ export function ChartControls() {
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [selectedIndex, setSelectedIndex] = useState(-1);
   const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
+  const [openDialogId, setOpenDialogId] = useState<SettingDialogId | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const suggestionsRef = useRef<HTMLDivElement>(null);
 
-  // Generate unique IDs for form elements
   const symbolSearchId = useId();
   const showVolumeId = useId();
   const relativeModeId = useId();
   const visibleBarsId = useId();
 
-  // Update dropdown position when input is focused or suggestions shown
   useEffect(() => {
     if (showSuggestions && inputRef.current) {
       const rect = inputRef.current.getBoundingClientRect();
@@ -104,13 +165,11 @@ export function ChartControls() {
     }
   }, [showSuggestions]);
 
-  // Debounce search query
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedQuery(symbolInput), 300);
     return () => clearTimeout(timer);
   }, [symbolInput]);
 
-  // Search stocks with debounced query
   const { data: searchResults, isLoading: isSearching } = useStockSearch(debouncedQuery, {
     limit: 50,
     enabled: debouncedQuery.length >= 1,
@@ -126,6 +185,7 @@ export function ChartControls() {
     [settings.signalOverlay?.signals, signalReferenceData?.signals]
   );
   const showSignalMeta = !!signalReferenceData && !signalReferenceError;
+  const searchCandidates = searchResults?.results ?? [];
 
   const getPanelSignalMeta = useCallback(
     (panel: SignalLinkedPanel): string | undefined => {
@@ -137,7 +197,6 @@ export function ChartControls() {
     [showSignalMeta, signalPanelLinks]
   );
 
-  // Auto-scroll selected item into view
   useEffect(() => {
     if (selectedIndex >= 0 && suggestionsRef.current) {
       const selectedElement = suggestionsRef.current.children[selectedIndex] as HTMLElement;
@@ -145,7 +204,6 @@ export function ChartControls() {
     }
   }, [selectedIndex]);
 
-  // Handle click outside to close suggestions
   useEffect(() => {
     function handleClickOutside(event: MouseEvent) {
       if (
@@ -174,8 +232,8 @@ export function ChartControls() {
 
   const handleSymbolSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (selectedIndex >= 0 && searchResults?.results?.[selectedIndex]) {
-      handleSelectStock(searchResults.results[selectedIndex]);
+    if (selectedIndex >= 0 && searchCandidates[selectedIndex]) {
+      handleSelectStock(searchCandidates[selectedIndex]);
       return;
     }
     if (symbolInput.trim()) {
@@ -188,21 +246,21 @@ export function ChartControls() {
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!showSuggestions || !searchResults?.results?.length) return;
+    if (!showSuggestions || searchCandidates.length === 0) return;
 
     switch (e.key) {
       case 'ArrowDown':
         e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, searchResults.results.length - 1));
+        setSelectedIndex((prev) => Math.min(prev + 1, searchCandidates.length - 1));
         break;
       case 'ArrowUp':
         e.preventDefault();
         setSelectedIndex((prev) => Math.max(prev - 1, -1));
         break;
       case 'Enter':
-        if (selectedIndex >= 0 && searchResults.results[selectedIndex]) {
+        if (selectedIndex >= 0 && searchCandidates[selectedIndex]) {
           e.preventDefault();
-          handleSelectStock(searchResults.results[selectedIndex]);
+          handleSelectStock(searchCandidates[selectedIndex]);
         }
         break;
       case 'Escape':
@@ -219,6 +277,26 @@ export function ChartControls() {
     [updateSettings]
   );
 
+  const movePanelOrder = useCallback(
+    (panelId: FundamentalsPanelId, direction: 'up' | 'down') => {
+      const currentOrder = settings.fundamentalsPanelOrder;
+      const currentIndex = currentOrder.indexOf(panelId);
+      if (currentIndex < 0) return;
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= currentOrder.length) return;
+
+      const nextOrder = [...currentOrder];
+      const currentPanel = nextOrder[currentIndex];
+      const targetPanel = nextOrder[targetIndex];
+      if (!currentPanel || !targetPanel) return;
+      nextOrder[currentIndex] = targetPanel;
+      nextOrder[targetIndex] = currentPanel;
+      updateSettings({ fundamentalsPanelOrder: nextOrder });
+    },
+    [settings.fundamentalsPanelOrder, updateSettings]
+  );
+
   const updateRiskAdjustedReturn = useCallback(
     (newSettings: Partial<ChartSettings['riskAdjustedReturn']>) => {
       updateSettings({
@@ -231,11 +309,315 @@ export function ChartControls() {
     [settings.riskAdjustedReturn, updateSettings]
   );
 
+  const renderDialogBody = (dialogId: SettingDialogId) => {
+    switch (dialogId) {
+      case 'chartSettings':
+        return (
+          <div className="space-y-2">
+            <ToggleRow
+              id={showVolumeId}
+              icon={BarChart3}
+              label="Show Volume"
+              checked={settings.showVolume}
+              onCheckedChange={(checked) => updateSettings({ showVolume: checked })}
+            />
+
+            <ToggleRow
+              id="showPPOChart"
+              icon={Activity}
+              label="Show PPO Chart"
+              checked={settings.showPPOChart}
+              onCheckedChange={(checked) => updateSettings({ showPPOChart: checked })}
+              meta={getPanelSignalMeta('ppo')}
+            />
+
+            <ToggleRow
+              id={relativeModeId}
+              icon={Activity}
+              label="Relative to TOPIX"
+              checked={settings.relativeMode}
+              onCheckedChange={toggleRelativeMode}
+            />
+
+            <div className="space-y-1.5 p-2 rounded glass-panel">
+              <div className="flex items-center gap-1.5">
+                <Eye className="h-3.5 w-3.5 text-muted-foreground" />
+                <Label htmlFor={visibleBarsId} className="text-xs font-medium">
+                  Visible Bars
+                </Label>
+              </div>
+              <Select
+                value={settings.visibleBars.toString()}
+                onValueChange={(value) => updateSettings({ visibleBars: Number.parseInt(value, 10) })}
+              >
+                <SelectTrigger
+                  id={visibleBarsId}
+                  className="h-8 text-xs glass-panel border-border/30 focus:border-primary/50"
+                >
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                  {VISIBLE_BAR_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value.toString()} className="text-xs">
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
+        );
+
+      case 'panelLayout':
+        return (
+          <div className="space-y-2">
+            {settings.fundamentalsPanelOrder.map((panelId, index) => {
+              const toggle = PANEL_TOGGLE_BY_ID[panelId];
+              const panelMeta = getPanelSignalMeta(toggle.linkPanel);
+              const isVisible = settings[toggle.settingKey];
+              return (
+                <div key={panelId} className="rounded glass-panel p-2 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Order {index + 1}</p>
+                      <Label htmlFor={toggle.id} className="text-sm font-medium cursor-pointer">
+                        {toggle.label}
+                      </Label>
+                      {panelMeta && (
+                        <p className="text-[10px] text-muted-foreground leading-tight mt-0.5">{panelMeta}</p>
+                      )}
+                    </div>
+                    <Switch
+                      id={toggle.id}
+                      checked={isVisible}
+                      onCheckedChange={(checked) => updatePanelVisibility(toggle.settingKey, checked)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => movePanelOrder(panelId, 'up')}
+                      disabled={index === 0}
+                    >
+                      <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => movePanelOrder(panelId, 'down')}
+                      disabled={index === settings.fundamentalsPanelOrder.length - 1}
+                    >
+                      <ArrowDown className="h-3.5 w-3.5 mr-1" />
+                      Down
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'overlayIndicators':
+        return (
+          <div className="space-y-2">
+            <IndicatorToggle
+              label="ATR Support Line"
+              enabled={settings.indicators.atrSupport.enabled}
+              onToggle={(enabled) => updateIndicatorSettings('atrSupport', { enabled })}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                <NumberInput
+                  label="Period"
+                  value={settings.indicators.atrSupport.period}
+                  onChange={(period) => updateIndicatorSettings('atrSupport', { period })}
+                  defaultValue={20}
+                />
+                <NumberInput
+                  label="Multiplier"
+                  value={settings.indicators.atrSupport.multiplier}
+                  onChange={(multiplier) => updateIndicatorSettings('atrSupport', { multiplier })}
+                  step="0.1"
+                  defaultValue={3.0}
+                />
+              </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="N-Bar Support Line"
+              enabled={settings.indicators.nBarSupport.enabled}
+              onToggle={(enabled) => updateIndicatorSettings('nBarSupport', { enabled })}
+            >
+              <NumberInput
+                label="Period"
+                value={settings.indicators.nBarSupport.period}
+                onChange={(period) => updateIndicatorSettings('nBarSupport', { period })}
+                defaultValue={60}
+              />
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="Bollinger Bands"
+              enabled={settings.indicators.bollinger.enabled}
+              onToggle={(enabled) => updateIndicatorSettings('bollinger', { enabled })}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                <NumberInput
+                  label="Period"
+                  value={settings.indicators.bollinger.period}
+                  onChange={(period) => updateIndicatorSettings('bollinger', { period })}
+                  defaultValue={20}
+                />
+                <NumberInput
+                  label="Deviation"
+                  value={settings.indicators.bollinger.deviation}
+                  onChange={(deviation) => updateIndicatorSettings('bollinger', { deviation })}
+                  step="0.1"
+                  defaultValue={2.0}
+                />
+              </div>
+            </IndicatorToggle>
+          </div>
+        );
+
+      case 'subChartIndicators':
+        return (
+          <div className="space-y-2">
+            <IndicatorToggle
+              label="Risk Adjusted Return"
+              enabled={settings.showRiskAdjustedReturnChart}
+              onToggle={(checked) => updateSettings({ showRiskAdjustedReturnChart: checked })}
+              meta={getPanelSignalMeta('riskAdjustedReturn')}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                <NumberInput
+                  label="Lookback"
+                  value={settings.riskAdjustedReturn.lookbackPeriod}
+                  onChange={(lookbackPeriod) => updateRiskAdjustedReturn({ lookbackPeriod })}
+                  defaultValue={60}
+                />
+                <NumberInput
+                  label="Threshold"
+                  value={settings.riskAdjustedReturn.threshold}
+                  onChange={(threshold) => updateRiskAdjustedReturn({ threshold })}
+                  step="0.1"
+                  defaultValue={1.0}
+                />
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Ratio Type</Label>
+                  <Select
+                    value={settings.riskAdjustedReturn.ratioType}
+                    onValueChange={(ratioType) =>
+                      updateRiskAdjustedReturn({
+                        ratioType: ratioType as ChartSettings['riskAdjustedReturn']['ratioType'],
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs glass-panel border-border/30 focus:border-primary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                      <SelectItem value="sortino" className="text-xs">
+                        sortino
+                      </SelectItem>
+                      <SelectItem value="sharpe" className="text-xs">
+                        sharpe
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="space-y-1">
+                  <Label className="text-xs text-muted-foreground">Condition</Label>
+                  <Select
+                    value={settings.riskAdjustedReturn.condition}
+                    onValueChange={(condition) =>
+                      updateRiskAdjustedReturn({
+                        condition: condition as ChartSettings['riskAdjustedReturn']['condition'],
+                      })
+                    }
+                  >
+                    <SelectTrigger className="h-7 text-xs glass-panel border-border/30 focus:border-primary/50">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
+                      <SelectItem value="above" className="text-xs">
+                        above
+                      </SelectItem>
+                      <SelectItem value="below" className="text-xs">
+                        below
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="Volume Comparison"
+              enabled={settings.showVolumeComparison}
+              onToggle={(checked) => updateSettings({ showVolumeComparison: checked })}
+              meta={getPanelSignalMeta('volumeComparison')}
+            >
+              <div className="grid grid-cols-2 gap-1.5">
+                <NumberInput
+                  label="Short Period"
+                  value={settings.volumeComparison.shortPeriod}
+                  onChange={(shortPeriod) => updateVolumeComparison({ shortPeriod })}
+                  defaultValue={20}
+                />
+                <NumberInput
+                  label="Long Period"
+                  value={settings.volumeComparison.longPeriod}
+                  onChange={(longPeriod) => updateVolumeComparison({ longPeriod })}
+                  defaultValue={100}
+                />
+                <NumberInput
+                  label="Lower Mult."
+                  value={settings.volumeComparison.lowerMultiplier}
+                  onChange={(lowerMultiplier) => updateVolumeComparison({ lowerMultiplier })}
+                  step="0.1"
+                  defaultValue={1.0}
+                />
+                <NumberInput
+                  label="Higher Mult."
+                  value={settings.volumeComparison.higherMultiplier}
+                  onChange={(higherMultiplier) => updateVolumeComparison({ higherMultiplier })}
+                  step="0.1"
+                  defaultValue={1.5}
+                />
+              </div>
+            </IndicatorToggle>
+
+            <IndicatorToggle
+              label="Trading Value MA"
+              enabled={settings.showTradingValueMA}
+              onToggle={(checked) => updateSettings({ showTradingValueMA: checked })}
+              meta={getPanelSignalMeta('tradingValueMA')}
+            >
+              <NumberInput
+                label="Period"
+                value={settings.tradingValueMA.period}
+                onChange={(period) => updateTradingValueMA({ period })}
+                defaultValue={15}
+              />
+            </IndicatorToggle>
+          </div>
+        );
+
+      case 'signalOverlay':
+        return <SignalOverlayControls />;
+    }
+  };
+
   return (
     <div className="space-y-3 p-3">
       <ChartPresetSelector />
 
-      {/* Symbol Search Section */}
       <div className="glass-panel rounded-lg p-3 space-y-2">
         <SectionHeader icon={Search} title="Symbol Search" />
         <div className="space-y-2">
@@ -299,277 +681,42 @@ export function ChartControls() {
         </div>
       </div>
 
-      {/* Chart Settings */}
       <div className="glass-panel rounded-lg p-3 space-y-2">
-        <SectionHeader icon={SettingsIcon} title="Chart Settings" />
-
-        <ToggleRow
-          id={showVolumeId}
-          icon={BarChart3}
-          label="Show Volume"
-          checked={settings.showVolume}
-          onCheckedChange={(checked) => updateSettings({ showVolume: checked })}
-        />
-
-        <ToggleRow
-          id="showPPOChart"
-          icon={Activity}
-          label="Show PPO Chart"
-          checked={settings.showPPOChart}
-          onCheckedChange={(checked) => updateSettings({ showPPOChart: checked })}
-          meta={getPanelSignalMeta('ppo')}
-        />
-
-        <ToggleRow
-          id={relativeModeId}
-          icon={Activity}
-          label="Relative to TOPIX"
-          checked={settings.relativeMode}
-          onCheckedChange={toggleRelativeMode}
-        />
-
-        <div className="space-y-1.5 p-2 rounded glass-panel">
-          <div className="flex items-center gap-1.5">
-            <Eye className="h-3.5 w-3.5 text-muted-foreground" />
-            <Label htmlFor={visibleBarsId} className="text-xs font-medium">
-              Visible Bars
-            </Label>
-          </div>
-          <Select
-            value={settings.visibleBars.toString()}
-            onValueChange={(value) => updateSettings({ visibleBars: Number.parseInt(value, 10) })}
-          >
-            <SelectTrigger
-              id={visibleBarsId}
-              className="h-8 text-xs glass-panel border-border/30 focus:border-primary/50"
-            >
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
-              {VISIBLE_BAR_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value.toString()} className="text-xs">
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-        </div>
-      </div>
-
-      {/* Panel Visibility */}
-      <div className="glass-panel rounded-lg p-3 space-y-2">
-        <SectionHeader icon={Eye} title="Panel Visibility" />
+        <SectionHeader icon={SettingsIcon} title="Settings" />
         <div className="space-y-1.5">
-          {PANEL_VISIBILITY_TOGGLES.map((toggle) => (
-            <ToggleRow
-              key={toggle.id}
-              id={toggle.id}
-              icon={BarChart3}
-              label={toggle.label}
-              checked={settings[toggle.settingKey]}
-              onCheckedChange={(checked) => updatePanelVisibility(toggle.settingKey, checked)}
-              meta={getPanelSignalMeta(toggle.linkPanel)}
-            />
+          {SETTING_DIALOGS.map((dialog) => (
+            <Button
+              key={dialog.id}
+              type="button"
+              variant="outline"
+              className="w-full justify-start h-auto py-2 px-3 glass-panel border-border/30 hover:bg-accent/40"
+              onClick={() => setOpenDialogId(dialog.id)}
+            >
+              <dialog.icon className="h-4 w-4 mr-2 text-muted-foreground" />
+              <span className="text-sm">{dialog.title}</span>
+            </Button>
           ))}
         </div>
       </div>
 
-      {/* Overlay Indicators */}
-      <div className="glass-panel rounded-lg p-3 space-y-2">
-        <SectionHeader icon={TrendingUp} title="Overlay Indicators" />
-
-        <IndicatorToggle
-          label="ATR Support Line"
-          enabled={settings.indicators.atrSupport.enabled}
-          onToggle={(enabled) => updateIndicatorSettings('atrSupport', { enabled })}
+      {SETTING_DIALOGS.map((dialog) => (
+        <Dialog
+          key={dialog.id}
+          open={openDialogId === dialog.id}
+          onOpenChange={(open) => setOpenDialogId(open ? dialog.id : null)}
         >
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumberInput
-              label="Period"
-              value={settings.indicators.atrSupport.period}
-              onChange={(period) => updateIndicatorSettings('atrSupport', { period })}
-              defaultValue={20}
-            />
-            <NumberInput
-              label="Multiplier"
-              value={settings.indicators.atrSupport.multiplier}
-              onChange={(multiplier) => updateIndicatorSettings('atrSupport', { multiplier })}
-              step="0.1"
-              defaultValue={3.0}
-            />
-          </div>
-        </IndicatorToggle>
-
-        <IndicatorToggle
-          label="N-Bar Support Line"
-          enabled={settings.indicators.nBarSupport.enabled}
-          onToggle={(enabled) => updateIndicatorSettings('nBarSupport', { enabled })}
-        >
-          <NumberInput
-            label="Period"
-            value={settings.indicators.nBarSupport.period}
-            onChange={(period) => updateIndicatorSettings('nBarSupport', { period })}
-            defaultValue={60}
-          />
-        </IndicatorToggle>
-
-        <IndicatorToggle
-          label="Bollinger Bands"
-          enabled={settings.indicators.bollinger.enabled}
-          onToggle={(enabled) => updateIndicatorSettings('bollinger', { enabled })}
-        >
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumberInput
-              label="Period"
-              value={settings.indicators.bollinger.period}
-              onChange={(period) => updateIndicatorSettings('bollinger', { period })}
-              defaultValue={20}
-            />
-            <NumberInput
-              label="Deviation"
-              value={settings.indicators.bollinger.deviation}
-              onChange={(deviation) => updateIndicatorSettings('bollinger', { deviation })}
-              step="0.1"
-              defaultValue={2.0}
-            />
-          </div>
-        </IndicatorToggle>
-      </div>
-
-      {/* Sub-Chart Indicators */}
-      <div className="glass-panel rounded-lg p-3 space-y-2">
-        <SectionHeader icon={BarChart3} title="Sub-Chart Indicators" />
-
-        <IndicatorToggle
-          label="Risk Adjusted Return"
-          enabled={settings.showRiskAdjustedReturnChart}
-          onToggle={(checked) => updateSettings({ showRiskAdjustedReturnChart: checked })}
-          meta={getPanelSignalMeta('riskAdjustedReturn')}
-        >
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumberInput
-              label="Lookback"
-              value={settings.riskAdjustedReturn.lookbackPeriod}
-              onChange={(lookbackPeriod) => updateRiskAdjustedReturn({ lookbackPeriod })}
-              defaultValue={60}
-            />
-            <NumberInput
-              label="Threshold"
-              value={settings.riskAdjustedReturn.threshold}
-              onChange={(threshold) => updateRiskAdjustedReturn({ threshold })}
-              step="0.1"
-              defaultValue={1.0}
-            />
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Ratio Type</Label>
-              <Select
-                value={settings.riskAdjustedReturn.ratioType}
-                onValueChange={(ratioType) =>
-                  updateRiskAdjustedReturn({
-                    ratioType: ratioType as ChartSettings['riskAdjustedReturn']['ratioType'],
-                  })
-                }
-              >
-                <SelectTrigger className="h-7 text-xs glass-panel border-border/30 focus:border-primary/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
-                  <SelectItem value="sortino" className="text-xs">
-                    sortino
-                  </SelectItem>
-                  <SelectItem value="sharpe" className="text-xs">
-                    sharpe
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-            <div className="space-y-1">
-              <Label className="text-xs text-muted-foreground">Condition</Label>
-              <Select
-                value={settings.riskAdjustedReturn.condition}
-                onValueChange={(condition) =>
-                  updateRiskAdjustedReturn({
-                    condition: condition as ChartSettings['riskAdjustedReturn']['condition'],
-                  })
-                }
-              >
-                <SelectTrigger className="h-7 text-xs glass-panel border-border/30 focus:border-primary/50">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent className="bg-background/95 backdrop-blur-md border-border shadow-xl">
-                  <SelectItem value="above" className="text-xs">
-                    above
-                  </SelectItem>
-                  <SelectItem value="below" className="text-xs">
-                    below
-                  </SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-          </div>
-        </IndicatorToggle>
-
-        <IndicatorToggle
-          label="Volume Comparison"
-          enabled={settings.showVolumeComparison}
-          onToggle={(checked) => updateSettings({ showVolumeComparison: checked })}
-          meta={getPanelSignalMeta('volumeComparison')}
-        >
-          <div className="grid grid-cols-2 gap-1.5">
-            <NumberInput
-              label="Short Period"
-              value={settings.volumeComparison.shortPeriod}
-              onChange={(shortPeriod) => updateVolumeComparison({ shortPeriod })}
-              defaultValue={20}
-            />
-            <NumberInput
-              label="Long Period"
-              value={settings.volumeComparison.longPeriod}
-              onChange={(longPeriod) => updateVolumeComparison({ longPeriod })}
-              defaultValue={100}
-            />
-            <NumberInput
-              label="Lower Mult."
-              value={settings.volumeComparison.lowerMultiplier}
-              onChange={(lowerMultiplier) => updateVolumeComparison({ lowerMultiplier })}
-              step="0.1"
-              defaultValue={1.0}
-            />
-            <NumberInput
-              label="Higher Mult."
-              value={settings.volumeComparison.higherMultiplier}
-              onChange={(higherMultiplier) => updateVolumeComparison({ higherMultiplier })}
-              step="0.1"
-              defaultValue={1.5}
-            />
-          </div>
-        </IndicatorToggle>
-
-        <IndicatorToggle
-          label="Trading Value MA"
-          enabled={settings.showTradingValueMA}
-          onToggle={(checked) => updateSettings({ showTradingValueMA: checked })}
-          meta={getPanelSignalMeta('tradingValueMA')}
-        >
-          <NumberInput
-            label="Period"
-            value={settings.tradingValueMA.period}
-            onChange={(period) => updateTradingValueMA({ period })}
-            defaultValue={15}
-          />
-        </IndicatorToggle>
-      </div>
-
-      {/* Signal Overlay */}
-      <div className="glass-panel rounded-lg p-3 space-y-2">
-        <SectionHeader icon={Activity} title="Signal Overlay" />
-        <SignalOverlayControls />
-      </div>
+          <DialogContent className="max-w-2xl">
+            <DialogHeader>
+              <DialogTitle>{dialog.title}</DialogTitle>
+              <DialogDescription>{dialog.description}</DialogDescription>
+            </DialogHeader>
+            <div className="max-h-[70vh] overflow-y-auto pr-1">{renderDialogBody(dialog.id)}</div>
+          </DialogContent>
+        </Dialog>
+      ))}
     </div>
   );
 }
-
-// Helper Components
 
 interface SectionHeaderProps {
   icon: React.ComponentType<{ className?: string }>;
