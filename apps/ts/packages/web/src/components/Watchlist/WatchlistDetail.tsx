@@ -2,6 +2,7 @@ import { Eye, Loader2, Plus, Trash2, TrendingUp } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import type { ReactNode } from 'react';
 import { useMemo, useState } from 'react';
+import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
@@ -31,13 +32,15 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
   const [code, setCode] = useState('');
   const [memo, setMemo] = useState('');
   const addItem = useAddWatchlistItem();
+  const normalizedCode = code.trim();
+  const isValidCode = /^\d{4}$/.test(normalizedCode);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (!code.trim()) return;
+    if (!isValidCode) return;
 
     addItem.mutate(
-      { watchlistId, data: { code: code.trim(), memo: memo.trim() || undefined } },
+      { watchlistId, data: { code: normalizedCode, memo: memo.trim() || undefined } },
       {
         onSuccess: () => {
           setOpen(false);
@@ -73,15 +76,18 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
           <div className="grid gap-4 py-4">
             <div className="grid gap-2">
               <Label htmlFor="stock-code">Stock Code</Label>
-              <Input
+              <StockSearchInput
                 id="stock-code"
                 value={code}
-                onChange={(e) => setCode(e.target.value)}
-                placeholder="7203"
+                onValueChange={setCode}
+                onSelect={(stock) => setCode(stock.code)}
+                placeholder="銘柄コードまたは会社名で検索..."
                 required
                 autoFocus
-                maxLength={4}
+                className="border-input bg-transparent"
+                searchLimit={50}
               />
+              <p className="text-xs text-muted-foreground">Search by code or company name, then select a symbol.</p>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="stock-memo">Memo (optional)</Label>
@@ -98,7 +104,7 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
             <Button type="button" variant="outline" onClick={() => setOpen(false)}>
               Cancel
             </Button>
-            <Button type="submit" disabled={!code.trim() || addItem.isPending}>
+            <Button type="submit" disabled={!isValidCode || addItem.isPending}>
               {addItem.isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               Add
             </Button>
