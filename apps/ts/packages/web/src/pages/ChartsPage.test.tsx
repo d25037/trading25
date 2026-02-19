@@ -63,6 +63,7 @@ const mockSettings = {
   showFundamentalsHistoryPanel: true,
   showMarginPressurePanel: true,
   showFactorRegressionPanel: true,
+  fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
   visibleBars: 120,
   relativeMode: true,
 };
@@ -194,6 +195,7 @@ describe('ChartsPage', () => {
     mockSettings.showFundamentalsHistoryPanel = true;
     mockSettings.showMarginPressurePanel = true;
     mockSettings.showFactorRegressionPanel = true;
+    mockSettings.fundamentalsPanelOrder = ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'];
     mockSettings.tradingValueMA.period = 15;
     mockSettings.relativeMode = true;
 
@@ -389,6 +391,41 @@ describe('ChartsPage', () => {
     expect(screen.queryByRole('heading', { name: 'FY推移（過去5期）' })).not.toBeInTheDocument();
   });
 
+  it('renders panel sections based on configured order', () => {
+    mockSettings.fundamentalsPanelOrder = ['marginPressure', 'fundamentalsHistory', 'factorRegression', 'fundamentals'];
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: { longPressure: [], flowPressure: [], turnoverDays: [], averagePeriod: 20 },
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    render(<ChartsPage />);
+
+    const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
+    const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
+    const factorHeading = screen.getByRole('heading', { name: 'Factor Regression Analysis' });
+    const fundamentalsHeading = screen.getByRole('heading', { name: 'Fundamental Analysis' });
+
+    expect(marginHeading.compareDocumentPosition(fyHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(fyHeading.compareDocumentPosition(factorHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+    expect(factorHeading.compareDocumentPosition(fundamentalsHeading) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0);
+  });
+
   it('normalizes trading value period before passing to fundamentals hooks/components', () => {
     mockSettings.tradingValueMA.period = 0;
     mockUseMultiTimeframeChart.mockReturnValue({
@@ -478,10 +515,8 @@ describe('ChartsPage', () => {
     mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
-      data: options?.enabled
-        ? { dailyValuation: [{ marketCap: 1000000000 }] }
-        : null,
-    })
+        data: options?.enabled ? { dailyValuation: [{ marketCap: 1000000000 }] } : null,
+      })
     );
 
     render(<ChartsPage />);
