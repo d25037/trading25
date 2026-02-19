@@ -133,6 +133,22 @@ class StrategyEvaluationResult:
     warnings: list[str]
 
 
+@dataclass
+class StrategyEvaluationAccumulator:
+    strategy: StrategyRuntime
+    matched_rows: list[tuple[StockUniverseItem, str]] = field(default_factory=list)
+    processed_codes: set[str] = field(default_factory=set)
+    warnings: list[str] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class StockEvaluationOutcome:
+    stock: StockUniverseItem
+    matched_dates_by_strategy: dict[str, str]
+    processed_strategy_names: set[str]
+    warning_by_strategy: list[tuple[str, str]]
+
+
 @dataclass(frozen=True)
 class RequestCacheStats:
     hits: int
@@ -783,75 +799,252 @@ class ScreeningService:
         recent_days: int,
         progress_callback: Callable[[int, int], None] | None,
     ) -> tuple[list[StrategyEvaluationResult], list[str], int]:
-        """戦略評価を自動並列で実行。例外は戦略単位で吸収して継続する。"""
-        total = len(strategy_inputs)
-        if total == 0:
+        """銘柄主導(stock-major)で戦略評価を実行する。"""
+        strategy_count = len(strategy_inputs)
+        if strategy_count == 0:
             self._emit_progress(progress_callback, completed=0, total=0)
             return [], [], 1
 
-        self._emit_progress(progress_callback, completed=0, total=total)
+        accumulators: dict[str, StrategyEvaluationAccumulator] = {}
+        strategy_cache_tokens: dict[str, str] = {}
+        for strategy_input in strategy_inputs:
+            strategy_name = strategy_input.strategy.response_name
+            accumulators[strategy_name] = StrategyEvaluationAccumulator(
+                strategy=strategy_input.strategy,
+                warnings=list(strategy_input.load_warnings),
+            )
+            strategy_cache_tokens[strategy_name] = self._build_strategy_signal_cache_token(
+                strategy_input.strategy
+            )
 
-        worker_count = self._resolve_strategy_workers(total)
-        completed = 0
+        total_stocks = len(stock_universe)
+        if total_stocks == 0:
+            self._emit_progress(progress_callback, completed=0, total=0)
+            ordered_results = self._build_ordered_strategy_results(
+                strategy_inputs=strategy_inputs,
+                accumulators=accumulators,
+            )
+            return ordered_results, [], 1
+
+        self._emit_progress(progress_callback, completed=0, total=total_stocks)
+
+        worker_count = self._resolve_stock_workers(total_stocks)
         warnings: list[str] = []
-        result_by_strategy: dict[str, StrategyEvaluationResult] = {}
+        completed = 0
 
         if worker_count == 1:
-            for strategy_input in strategy_inputs:
+            for stock in stock_universe:
                 try:
-                    result = self._evaluate_strategy_input(
-                        strategy_input,
-                        stock_universe=stock_universe,
+                    outcome = self._evaluate_stock(
+                        stock=stock,
+                        strategy_inputs=strategy_inputs,
                         recent_days=recent_days,
+                        strategy_cache_tokens=strategy_cache_tokens,
                     )
-                    result_by_strategy[strategy_input.strategy.response_name] = result
                 except Exception as exc:
                     logger.exception(
-                        "Strategy screening failed",
-                        strategy=strategy_input.strategy.name,
+                        "Stock screening failed",
+                        stock_code=stock.code,
                     )
-                    warnings.append(
-                        f"{strategy_input.strategy.response_name}: evaluation failed ({exc})"
-                    )
+                    warnings.append(f"{stock.code}: evaluation failed ({exc})")
+                else:
+                    self._apply_stock_outcome(outcome, accumulators)
                 finally:
                     completed += 1
-                    self._emit_progress(progress_callback, completed=completed, total=total)
+                    self._emit_progress(progress_callback, completed=completed, total=total_stocks)
         else:
+            outcomes_by_code: dict[str, StockEvaluationOutcome] = {}
             with ThreadPoolExecutor(max_workers=worker_count) as executor:
-                future_to_input = {
+                future_to_stock = {
                     executor.submit(
-                        self._evaluate_strategy_input,
-                        strategy_input,
-                        stock_universe,
+                        self._evaluate_stock,
+                        stock,
+                        strategy_inputs,
                         recent_days,
-                    ): strategy_input
-                    for strategy_input in strategy_inputs
+                        strategy_cache_tokens,
+                    ): stock
+                    for stock in stock_universe
                 }
 
-                for future in as_completed(future_to_input):
-                    strategy_input = future_to_input[future]
+                for future in as_completed(future_to_stock):
+                    stock = future_to_stock[future]
                     try:
-                        result = future.result()
-                        result_by_strategy[strategy_input.strategy.response_name] = result
+                        outcome = future.result()
+                        outcomes_by_code[stock.code] = outcome
                     except Exception as exc:
                         logger.exception(
-                            "Strategy screening failed",
-                            strategy=strategy_input.strategy.name,
+                            "Stock screening failed",
+                            stock_code=stock.code,
                         )
-                        warnings.append(
-                            f"{strategy_input.strategy.response_name}: evaluation failed ({exc})"
-                        )
+                        warnings.append(f"{stock.code}: evaluation failed ({exc})")
                     finally:
                         completed += 1
-                        self._emit_progress(progress_callback, completed=completed, total=total)
+                        self._emit_progress(progress_callback, completed=completed, total=total_stocks)
 
-        ordered_results: list[StrategyEvaluationResult] = []
-        for strategy_input in strategy_inputs:
-            result = result_by_strategy.get(strategy_input.strategy.response_name)
-            if result is not None:
-                ordered_results.append(result)
+            for stock in stock_universe:
+                outcome = outcomes_by_code.get(stock.code)
+                if outcome is None:
+                    continue
+                self._apply_stock_outcome(outcome, accumulators)
+
+        ordered_results = self._build_ordered_strategy_results(
+            strategy_inputs=strategy_inputs,
+            accumulators=accumulators,
+        )
 
         return ordered_results, warnings, worker_count
+
+    def _build_ordered_strategy_results(
+        self,
+        strategy_inputs: list[StrategyExecutionInput],
+        accumulators: dict[str, StrategyEvaluationAccumulator],
+    ) -> list[StrategyEvaluationResult]:
+        ordered_results: list[StrategyEvaluationResult] = []
+        for strategy_input in strategy_inputs:
+            accumulator = accumulators[strategy_input.strategy.response_name]
+            ordered_results.append(
+                StrategyEvaluationResult(
+                    strategy=accumulator.strategy,
+                    matched_rows=accumulator.matched_rows,
+                    processed_codes=accumulator.processed_codes,
+                    warnings=accumulator.warnings,
+                )
+            )
+        return ordered_results
+
+    def _build_strategy_signal_cache_token(self, strategy: StrategyRuntime) -> str:
+        payload = {
+            "entry": strategy.entry_params.model_dump(mode="json"),
+            "exit": strategy.exit_params.model_dump(mode="json"),
+        }
+        return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
+
+    def _build_per_stock_signal_cache_key(
+        self,
+        strategy_cache_token: str,
+        daily: pd.DataFrame,
+        margin_data: Any,
+        statements_data: Any,
+        data_bundle: StrategyDataBundle,
+        stock_code: str,
+        recent_days: int,
+    ) -> tuple[Any, ...]:
+        return (
+            strategy_cache_token,
+            id(daily),
+            id(margin_data),
+            id(statements_data),
+            id(data_bundle.benchmark_data),
+            id(data_bundle.sector_data),
+            data_bundle.stock_sector_mapping.get(stock_code),
+            recent_days,
+        )
+
+    def _evaluate_stock(
+        self,
+        stock: StockUniverseItem,
+        strategy_inputs: list[StrategyExecutionInput],
+        recent_days: int,
+        strategy_cache_tokens: dict[str, str],
+    ) -> StockEvaluationOutcome:
+        matched_dates_by_strategy: dict[str, str] = {}
+        processed_strategy_names: set[str] = set()
+        warning_by_strategy: list[tuple[str, str]] = []
+        signal_cache: dict[tuple[Any, ...], Signals] = {}
+
+        for strategy_input in strategy_inputs:
+            strategy = strategy_input.strategy
+            strategy_name = strategy.response_name
+            data_bundle = strategy_input.data_bundle
+            try:
+                stock_data = data_bundle.multi_data.get(stock.code)
+                if not stock_data:
+                    continue
+
+                daily = stock_data.get("daily")
+                if not isinstance(daily, pd.DataFrame) or daily.empty:
+                    continue
+
+                processed_strategy_names.add(strategy_name)
+                margin_data = stock_data.get("margin_daily")
+                statements_data = stock_data.get("statements_daily")
+
+                cache_token = strategy_cache_tokens.get(strategy_name)
+                if cache_token is None:
+                    cache_token = self._build_strategy_signal_cache_token(strategy)
+
+                cache_key = self._build_per_stock_signal_cache_key(
+                    strategy_cache_token=cache_token,
+                    daily=daily,
+                    margin_data=margin_data,
+                    statements_data=statements_data,
+                    data_bundle=data_bundle,
+                    stock_code=stock.code,
+                    recent_days=recent_days,
+                )
+                signals = signal_cache.get(cache_key)
+                if signals is None:
+                    try:
+                        signals = self._signal_processor.generate_signals(
+                            strategy_entries=pd.Series(True, index=daily.index),
+                            strategy_exits=pd.Series(False, index=daily.index),
+                            ohlc_data=daily,
+                            entry_signal_params=strategy.entry_params,
+                            exit_signal_params=strategy.exit_params,
+                            margin_data=margin_data,
+                            statements_data=statements_data,
+                            benchmark_data=data_bundle.benchmark_data,
+                            sector_data=data_bundle.sector_data,
+                            stock_sector_name=data_bundle.stock_sector_mapping.get(stock.code),
+                            screening_recent_days=recent_days,
+                            skip_exit_when_no_recent_entry=True,
+                        )
+                    except Exception as exc:
+                        warning_by_strategy.append(
+                            (strategy_name, f"{stock.code} signal generation failed ({exc})")
+                        )
+                        continue
+                    signal_cache[cache_key] = signals
+
+                matched_date = self._find_recent_match_date(signals, recent_days)
+                if matched_date is not None:
+                    matched_dates_by_strategy[strategy_name] = matched_date
+            except Exception as exc:
+                warning_by_strategy.append(
+                    (strategy_name, f"{stock.code} evaluation failed ({exc})")
+                )
+                continue
+
+        return StockEvaluationOutcome(
+            stock=stock,
+            matched_dates_by_strategy=matched_dates_by_strategy,
+            processed_strategy_names=processed_strategy_names,
+            warning_by_strategy=warning_by_strategy,
+        )
+
+    def _apply_stock_outcome(
+        self,
+        outcome: StockEvaluationOutcome,
+        accumulators: dict[str, StrategyEvaluationAccumulator],
+    ) -> None:
+        stock_code = outcome.stock.code
+        for strategy_name in outcome.processed_strategy_names:
+            accumulator = accumulators.get(strategy_name)
+            if accumulator is None:
+                continue
+            accumulator.processed_codes.add(stock_code)
+
+        for strategy_name, matched_date in outcome.matched_dates_by_strategy.items():
+            accumulator = accumulators.get(strategy_name)
+            if accumulator is None:
+                continue
+            accumulator.matched_rows.append((outcome.stock, matched_date))
+
+        for strategy_name, warning in outcome.warning_by_strategy:
+            accumulator = accumulators.get(strategy_name)
+            if accumulator is None:
+                continue
+            accumulator.warnings.append(warning)
 
     def _evaluate_strategy_input(
         self,
@@ -914,6 +1107,8 @@ class ScreeningService:
                     benchmark_data=data_bundle.benchmark_data,
                     sector_data=data_bundle.sector_data,
                     stock_sector_name=data_bundle.stock_sector_mapping.get(stock.code),
+                    screening_recent_days=recent_days,
+                    skip_exit_when_no_recent_entry=True,
                 )
             except Exception as exc:
                 warnings.append(f"{stock.code} signal generation failed ({exc})")
@@ -929,11 +1124,40 @@ class ScreeningService:
 
     def _resolve_strategy_workers(self, strategy_count: int) -> int:
         """戦略並列数を自動決定する。"""
-        if strategy_count <= 1:
+        return self._resolve_parallel_workers(
+            work_count=strategy_count,
+            env_names=("BT_SCREENING_MAX_STRATEGY_WORKERS",),
+        )
+
+    def _resolve_stock_workers(self, stock_count: int) -> int:
+        """銘柄並列数を自動決定する。"""
+        return self._resolve_parallel_workers(
+            work_count=stock_count,
+            env_names=(
+                "BT_SCREENING_MAX_STOCK_WORKERS",
+                "BT_SCREENING_MAX_STRATEGY_WORKERS",
+            ),
+        )
+
+    def _resolve_parallel_workers(
+        self,
+        work_count: int,
+        env_names: tuple[str, ...],
+    ) -> int:
+        if work_count <= 1:
             return 1
 
-        auto_workers = min(strategy_count, os.cpu_count() or 1)
-        configured = os.getenv("BT_SCREENING_MAX_STRATEGY_WORKERS")
+        auto_workers = min(work_count, os.cpu_count() or 1)
+        configured_name: str | None = None
+        configured: str | None = None
+        for env_name in env_names:
+            raw = os.getenv(env_name)
+            if raw is None:
+                continue
+            configured_name = env_name
+            configured = raw
+            break
+
         if configured is None:
             return max(1, auto_workers)
 
@@ -944,7 +1168,7 @@ class ScreeningService:
             return max(1, min(auto_workers, configured_workers))
         except ValueError:
             logger.warning(
-                "Invalid BT_SCREENING_MAX_STRATEGY_WORKERS. Fallback to auto workers.",
+                f"Invalid {configured_name}. Fallback to auto workers.",
                 value=configured,
             )
             return max(1, auto_workers)
