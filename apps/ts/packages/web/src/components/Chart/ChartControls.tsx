@@ -4,22 +4,19 @@ import {
   ArrowUp,
   BarChart3,
   Eye,
-  Loader2,
   Search,
   Settings as SettingsIcon,
   TrendingUp,
 } from 'lucide-react';
-import { useCallback, useEffect, useId, useMemo, useRef, useState } from 'react';
-import { createPortal } from 'react-dom';
+import { useCallback, useId, useMemo, useState } from 'react';
+import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { useSignalReference } from '@/hooks/useBacktest';
-import { type StockSearchResultItem, useStockSearch } from '@/hooks/useStockSearch';
-import { cn } from '@/lib/utils';
+import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import type { ChartSettings, FundamentalsPanelId } from '@/stores/chartStore';
 import { useChartStore } from '@/stores/chartStore';
 import { logger } from '@/utils/logger';
@@ -145,35 +142,12 @@ export function ChartControls() {
   } = useChartStore();
 
   const [symbolInput, setSymbolInput] = useState('');
-  const [debouncedQuery, setDebouncedQuery] = useState('');
-  const [showSuggestions, setShowSuggestions] = useState(false);
-  const [selectedIndex, setSelectedIndex] = useState(-1);
-  const [dropdownPosition, setDropdownPosition] = useState({ top: 0, left: 0, width: 0 });
   const [openDialogId, setOpenDialogId] = useState<SettingDialogId | null>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
-  const suggestionsRef = useRef<HTMLDivElement>(null);
 
   const symbolSearchId = useId();
   const showVolumeId = useId();
   const relativeModeId = useId();
   const visibleBarsId = useId();
-
-  useEffect(() => {
-    if (showSuggestions && inputRef.current) {
-      const rect = inputRef.current.getBoundingClientRect();
-      setDropdownPosition({ top: rect.bottom, left: rect.left, width: rect.width });
-    }
-  }, [showSuggestions]);
-
-  useEffect(() => {
-    const timer = setTimeout(() => setDebouncedQuery(symbolInput), 300);
-    return () => clearTimeout(timer);
-  }, [symbolInput]);
-
-  const { data: searchResults, isLoading: isSearching } = useStockSearch(debouncedQuery, {
-    limit: 50,
-    enabled: debouncedQuery.length >= 1,
-  });
   const { data: signalReferenceData, error: signalReferenceError } = useSignalReference();
 
   const signalPanelLinks = useMemo(
@@ -185,7 +159,6 @@ export function ChartControls() {
     [settings.signalOverlay?.signals, signalReferenceData?.signals]
   );
   const showSignalMeta = !!signalReferenceData && !signalReferenceError;
-  const searchCandidates = searchResults?.results ?? [];
 
   const getPanelSignalMeta = useCallback(
     (panel: SignalLinkedPanel): string | undefined => {
@@ -197,76 +170,22 @@ export function ChartControls() {
     [showSignalMeta, signalPanelLinks]
   );
 
-  useEffect(() => {
-    if (selectedIndex >= 0 && suggestionsRef.current) {
-      const selectedElement = suggestionsRef.current.children[selectedIndex] as HTMLElement;
-      selectedElement?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-    }
-  }, [selectedIndex]);
-
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        suggestionsRef.current &&
-        !suggestionsRef.current.contains(event.target as Node) &&
-        inputRef.current &&
-        !inputRef.current.contains(event.target as Node)
-      ) {
-        setShowSuggestions(false);
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, []);
-
   const handleSelectStock = useCallback(
     (stock: StockSearchResultItem) => {
       logger.debug('Stock selected from search', { code: stock.code, companyName: stock.companyName });
       setSelectedSymbol(stock.code);
       setSymbolInput('');
-      setShowSuggestions(false);
-      setSelectedIndex(-1);
     },
     [setSelectedSymbol]
   );
 
   const handleSymbolSubmit = (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (selectedIndex >= 0 && searchCandidates[selectedIndex]) {
-      handleSelectStock(searchCandidates[selectedIndex]);
-      return;
-    }
     if (symbolInput.trim()) {
       const symbol = symbolInput.trim().toUpperCase();
       logger.debug('Setting selected symbol', { symbol });
       setSelectedSymbol(symbol);
       setSymbolInput('');
-      setShowSuggestions(false);
-    }
-  };
-
-  const handleKeyDown = (e: React.KeyboardEvent<HTMLInputElement>) => {
-    if (!showSuggestions || searchCandidates.length === 0) return;
-
-    switch (e.key) {
-      case 'ArrowDown':
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.min(prev + 1, searchCandidates.length - 1));
-        break;
-      case 'ArrowUp':
-        e.preventDefault();
-        setSelectedIndex((prev) => Math.max(prev - 1, -1));
-        break;
-      case 'Enter':
-        if (selectedIndex >= 0 && searchCandidates[selectedIndex]) {
-          e.preventDefault();
-          handleSelectStock(searchCandidates[selectedIndex]);
-        }
-        break;
-      case 'Escape':
-        setShowSuggestions(false);
-        setSelectedIndex(-1);
-        break;
     }
   };
 
@@ -622,47 +541,15 @@ export function ChartControls() {
         <SectionHeader icon={Search} title="Symbol Search" />
         <div className="space-y-2">
           <form onSubmit={handleSymbolSubmit} className="space-y-2" autoComplete="off">
-            <div className="relative">
-              <Input
-                ref={inputRef}
-                id={symbolSearchId}
-                type="search"
-                name="symbol-search"
-                placeholder="銘柄コードまたは会社名で検索..."
-                value={symbolInput}
-                onChange={(e) => {
-                  setSymbolInput(e.target.value);
-                  setShowSuggestions(true);
-                  setSelectedIndex(-1);
-                }}
-                onFocus={() => setShowSuggestions(true)}
-                onKeyDown={handleKeyDown}
-                className="w-full glass-panel border-border/30 focus:border-primary/50 transition-all duration-200 pr-10"
-                autoComplete="off"
-                autoCapitalize="off"
-                autoCorrect="off"
-                spellCheck={false}
-                inputMode="search"
-                enterKeyHint="search"
-                data-form-type="other"
-                data-lpignore="true"
-                data-1p-ignore="true"
-              />
-              {isSearching && (
-                <div className="absolute right-3 top-1/2 -translate-y-1/2">
-                  <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
-                </div>
-              )}
-              {showSuggestions && searchResults && searchResults.results.length > 0 && (
-                <SearchSuggestions
-                  containerRef={suggestionsRef}
-                  results={searchResults.results}
-                  selectedIndex={selectedIndex}
-                  position={dropdownPosition}
-                  onSelect={handleSelectStock}
-                />
-              )}
-            </div>
+            <StockSearchInput
+              id={symbolSearchId}
+              name="symbol-search"
+              value={symbolInput}
+              onValueChange={setSymbolInput}
+              onSelect={handleSelectStock}
+              className="glass-panel border-border/30 focus:border-primary/50 transition-all duration-200"
+              searchLimit={50}
+            />
             <Button
               type="submit"
               size="sm"
@@ -757,46 +644,5 @@ function ToggleRow({ id, icon: Icon, label, checked, onCheckedChange, meta }: To
       </div>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
-  );
-}
-
-interface SearchSuggestionsProps {
-  containerRef: React.RefObject<HTMLDivElement | null>;
-  results: StockSearchResultItem[];
-  selectedIndex: number;
-  position: { top: number; left: number; width: number };
-  onSelect: (stock: StockSearchResultItem) => void;
-}
-
-function SearchSuggestions({ containerRef, results, selectedIndex, position, onSelect }: SearchSuggestionsProps) {
-  return createPortal(
-    <div
-      ref={containerRef}
-      style={{ position: 'fixed', top: position.top, left: position.left, width: position.width }}
-      className="z-[9999] max-h-96 overflow-auto rounded-lg border border-border/50 bg-background/95 backdrop-blur-md shadow-xl"
-    >
-      {results.map((stock, index) => (
-        <button
-          key={stock.code}
-          type="button"
-          onClick={() => onSelect(stock)}
-          className={cn(
-            'w-full px-4 py-3 text-left hover:bg-accent/50 transition-colors',
-            'border-b border-border/30 last:border-b-0',
-            index === selectedIndex && 'bg-accent/50'
-          )}
-        >
-          <div className="flex items-center justify-between gap-2">
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="font-mono font-bold text-primary text-base">{stock.code}</span>
-              <span className="text-sm text-foreground truncate">{stock.companyName}</span>
-            </div>
-            <span className="text-xs text-muted-foreground whitespace-nowrap">{stock.marketName}</span>
-          </div>
-          <div className="text-xs text-muted-foreground mt-1">{stock.sector33Name}</div>
-        </button>
-      ))}
-    </div>,
-    document.body
   );
 }
