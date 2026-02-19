@@ -165,7 +165,7 @@ test.describe('backtest optimize popup smoke', () => {
     const dialog = page.getByRole('dialog');
     await expect(dialog).toBeVisible();
     await expect(dialog.getByText(`Optimization Grid Editor: ${STRATEGY_BASENAME}`)).toBeVisible();
-    await expect(dialog.getByText('Signal Reference')).toBeVisible();
+    await expect(dialog.getByRole('heading', { name: 'Signal Reference' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Save' })).toBeVisible();
     await expect(dialog.getByRole('button', { name: 'Close' })).toBeVisible();
   });
