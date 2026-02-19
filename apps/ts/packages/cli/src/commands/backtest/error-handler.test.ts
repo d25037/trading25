@@ -14,10 +14,29 @@ class MockBacktestApiError extends Error {
 
 mock.module('chalk', () => {
   const identity = (text: string) => text;
+  const bold = Object.assign((text: string) => text, {
+    white: identity,
+    blue: identity,
+    green: identity,
+    yellow: identity,
+    red: identity,
+    gray: identity,
+    dim: identity,
+    cyan: identity,
+    magenta: identity,
+  });
   return {
     default: {
       red: identity,
+      blue: identity,
+      green: identity,
+      yellow: identity,
+      gray: identity,
       dim: identity,
+      cyan: identity,
+      white: identity,
+      magenta: identity,
+      bold,
     },
   };
 });
