@@ -108,7 +108,7 @@ describe('WatchlistDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(mockAddItemMutate).toHaveBeenCalledWith(
-      { watchlistId: 1, data: { code: '6501', memo: 'watch' } },
+      { watchlistId: 1, data: { code: '6501', companyName: '6501', memo: 'watch' } },
       expect.any(Object)
     );
   });
@@ -139,7 +139,7 @@ describe('WatchlistDetail', () => {
     await user.click(screen.getByRole('button', { name: 'Add' }));
 
     expect(mockAddItemMutate).toHaveBeenCalledWith(
-      { watchlistId: 1, data: { code: '6501', memo: undefined } },
+      { watchlistId: 1, data: { code: '6501', companyName: 'Hitachi', memo: undefined } },
       expect.any(Object)
     );
   });

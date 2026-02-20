@@ -11,6 +11,7 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { useAddPortfolioItem } from '@/hooks/usePortfolio';
+import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import { type StockFormData, StockFormFields, validateStockForm } from './StockFormFields';
 
 const getTodayDate = (): string => {
@@ -31,20 +32,34 @@ interface AddStockDialogProps {
   portfolioId: number;
 }
 
+function normalizeStockCode(value: string | undefined): string {
+  return (value || '').trim().toUpperCase();
+}
+
+function resolveCompanyName(code: string, selectedStock: StockSearchResultItem | null): string {
+  const selectedCode = selectedStock ? normalizeStockCode(selectedStock.code) : '';
+  return selectedStock && selectedCode === code ? selectedStock.companyName : code;
+}
+
 export function AddStockDialog({ portfolioId }: AddStockDialogProps) {
   const [open, setOpen] = useState(false);
   const [formData, setFormData] = useState<StockFormData>(createInitialFormData);
+  const [selectedStock, setSelectedStock] = useState<StockSearchResultItem | null>(null);
   const addStock = useAddPortfolioItem();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!validateStockForm(formData)) return;
 
+    const normalizedCode = normalizeStockCode(formData.code);
+    const resolvedCompanyName = resolveCompanyName(normalizedCode, selectedStock);
+
     addStock.mutate(
       {
         portfolioId,
         data: {
-          code: (formData.code || '').trim().toUpperCase(),
+          code: normalizedCode,
+          companyName: resolvedCompanyName,
           quantity: Number.parseInt(formData.quantity, 10),
           purchasePrice: Number.parseFloat(formData.purchasePrice),
           purchaseDate: formData.purchaseDate,
@@ -56,6 +71,7 @@ export function AddStockDialog({ portfolioId }: AddStockDialogProps) {
         onSuccess: () => {
           setOpen(false);
           setFormData(createInitialFormData());
+          setSelectedStock(null);
         },
       }
     );
@@ -65,7 +81,17 @@ export function AddStockDialog({ portfolioId }: AddStockDialogProps) {
     setOpen(newOpen);
     if (!newOpen) {
       setFormData(createInitialFormData());
+      setSelectedStock(null);
     }
+  };
+
+  const handleFormChange = (nextData: StockFormData) => {
+    const normalizedInputCode = normalizeStockCode(nextData.code);
+    const selectedCode = selectedStock ? normalizeStockCode(selectedStock.code) : '';
+    if (selectedStock && normalizedInputCode !== selectedCode) {
+      setSelectedStock(null);
+    }
+    setFormData(nextData);
   };
 
   return (
@@ -82,10 +108,16 @@ export function AddStockDialog({ portfolioId }: AddStockDialogProps) {
             <DialogTitle>Add Stock</DialogTitle>
             <DialogDescription>Add a new stock to your portfolio.</DialogDescription>
           </DialogHeader>
-          <StockFormFields data={formData} onChange={setFormData} showCodeField={true} idPrefix="add" />
+          <StockFormFields
+            data={formData}
+            onChange={handleFormChange}
+            showCodeField={true}
+            idPrefix="add"
+            onStockSelect={setSelectedStock}
+          />
           {addStock.error && <p className="text-sm text-destructive mb-4">{addStock.error.message}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!validateStockForm(formData) || addStock.isPending}>

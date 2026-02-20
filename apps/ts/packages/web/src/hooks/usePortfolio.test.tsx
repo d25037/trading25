@@ -123,6 +123,7 @@ describe('usePortfolio hooks', () => {
 
     const data: CreatePortfolioItemRequest = {
       code: '7203',
+      companyName: 'Toyota Motor',
       quantity: 100,
       purchasePrice: 2500,
       purchaseDate: '2025-01-30',

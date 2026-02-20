@@ -102,9 +102,9 @@ describe('useWatchlist hooks', () => {
     const spy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useAddWatchlistItem(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync({ watchlistId: 1, data: { code: '7203' } });
+      await result.current.mutateAsync({ watchlistId: 1, data: { code: '7203', companyName: 'Toyota Motor' } });
     });
-    expect(apiPost).toHaveBeenCalledWith('/api/watchlist/1/items', { code: '7203' });
+    expect(apiPost).toHaveBeenCalledWith('/api/watchlist/1/items', { code: '7203', companyName: 'Toyota Motor' });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['watchlist', 1] });
     expect(spy).toHaveBeenCalledWith({ queryKey: ['watchlist-prices', 1] });
   });
