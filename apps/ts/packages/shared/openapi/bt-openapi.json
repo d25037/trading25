@@ -7490,7 +7490,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/OHLCVRecord"
+                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -7610,7 +7610,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/OHLCVRecord"
+                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -12516,7 +12516,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/DateRange"
+                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
               },
               {
                 "type": "null"
@@ -12564,19 +12564,19 @@
       },
       "DateRange": {
         "properties": {
-          "min": {
+          "from": {
             "type": "string",
-            "title": "Min"
+            "title": "From"
           },
-          "max": {
+          "to": {
             "type": "string",
-            "title": "Max"
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "min",
-          "max"
+          "from",
+          "to"
         ],
         "title": "DateRange"
       },
@@ -12727,21 +12727,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/IndexMatch"
+              "$ref": "#/components/schemas/src__server__schemas__factor_regression__IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -14180,37 +14180,26 @@
       },
       "IndexMatch": {
         "properties": {
-          "indexCode": {
+          "code": {
             "type": "string",
-            "title": "Indexcode"
+            "title": "Code"
           },
-          "indexName": {
+          "name": {
             "type": "string",
-            "title": "Indexname"
-          },
-          "category": {
-            "type": "string",
-            "title": "Category"
+            "title": "Name"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
-          },
-          "beta": {
-            "type": "number",
-            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "indexCode",
-          "indexName",
-          "category",
-          "rSquared",
-          "beta"
+          "code",
+          "name",
+          "rSquared"
         ],
-        "title": "IndexMatch",
-        "description": "指数マッチ結果"
+        "title": "IndexMatch"
       },
       "IndexOHLCRecord": {
         "properties": {
@@ -16221,27 +16210,33 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date"
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
           },
           "open": {
             "type": "number",
-            "title": "Open"
+            "title": "Open",
+            "description": "始値"
           },
           "high": {
             "type": "number",
-            "title": "High"
+            "title": "High",
+            "description": "高値"
           },
           "low": {
             "type": "number",
-            "title": "Low"
+            "title": "Low",
+            "description": "安値"
           },
           "close": {
             "type": "number",
-            "title": "Close"
+            "title": "Close",
+            "description": "終値"
           },
           "volume": {
-            "type": "integer",
-            "title": "Volume"
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
           }
         },
         "type": "object",
@@ -16253,7 +16248,8 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord"
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -16374,7 +16370,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
+              "$ref": "#/components/schemas/OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -16975,21 +16971,21 @@
           },
           "sector17Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector17Matches"
           },
           "sector33Matches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Sector33Matches"
           },
           "topixStyleMatches": {
             "items": {
-              "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__IndexMatch"
+              "$ref": "#/components/schemas/IndexMatch"
             },
             "type": "array",
             "title": "Topixstylematches"
@@ -17003,7 +16999,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -21863,6 +21859,62 @@
         "type": "object",
         "title": "WatchlistUpdateRequest"
       },
+      "src__server__schemas__dataset__DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
+      },
+      "src__server__schemas__dataset_data__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open"
+          },
+          "high": {
+            "type": "number",
+            "title": "High"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close"
+          },
+          "volume": {
+            "type": "integer",
+            "title": "Volume"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord"
+      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -21900,91 +21952,39 @@
         "title": "DateRange",
         "description": "分析期間"
       },
-      "src__server__schemas__indicators__OHLCVRecord": {
+      "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
-          "date": {
+          "indexCode": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Indexcode"
           },
-          "open": {
-            "type": "number",
-            "title": "Open",
-            "description": "始値"
-          },
-          "high": {
-            "type": "number",
-            "title": "High",
-            "description": "高値"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low",
-            "description": "安値"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close",
-            "description": "終値"
-          },
-          "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
-      },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
-        "properties": {
-          "from": {
+          "indexName": {
             "type": "string",
-            "title": "From"
+            "title": "Indexname"
           },
-          "to": {
+          "category": {
             "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange"
-      },
-      "src__server__schemas__portfolio_factor_regression__IndexMatch": {
-        "properties": {
-          "code": {
-            "type": "string",
-            "title": "Code"
-          },
-          "name": {
-            "type": "string",
-            "title": "Name"
+            "title": "Category"
           },
           "rSquared": {
             "type": "number",
             "title": "Rsquared"
+          },
+          "beta": {
+            "type": "number",
+            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "code",
-          "name",
-          "rSquared"
+          "indexCode",
+          "indexName",
+          "category",
+          "rSquared",
+          "beta"
         ],
-        "title": "IndexMatch"
+        "title": "IndexMatch",
+        "description": "指数マッチ結果"
       },
       "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {

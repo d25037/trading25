@@ -249,6 +249,36 @@ class FundamentalSignalParams(BaseSignalParams):
             description="連続期間数（直近N回分の決算発表で条件を満たす必要がある）",
         )
 
+    class CFOMarginParams(BaseModel):
+        """CFOマージン（営業CF/売上高）シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="CFOマージンシグナル有効")
+        threshold: float = Field(
+            default=5.0,
+            ge=-100.0,
+            le=100.0,
+            description="CFOマージン閾値（この値以上で高CFOマージン判定、%単位）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
+    class SimpleFCFMarginParams(BaseModel):
+        """簡易FCFマージン（(CFO+CFI)/売上高）シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="簡易FCFマージンシグナル有効")
+        threshold: float = Field(
+            default=5.0,
+            ge=-100.0,
+            le=100.0,
+            description="簡易FCFマージン閾値（この値以上で高FCFマージン判定、%単位）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
     # =========================================================================
     # 時価総額系パラメータ
     # =========================================================================
@@ -404,6 +434,12 @@ class FundamentalSignalParams(BaseSignalParams):
     )
     simple_fcf: SimpleFCFParams = Field(
         default_factory=SimpleFCFParams, description="簡易FCF（CFO+CFI）シグナル"
+    )
+    cfo_margin: CFOMarginParams = Field(
+        default_factory=CFOMarginParams, description="CFOマージンシグナル"
+    )
+    simple_fcf_margin: SimpleFCFMarginParams = Field(
+        default_factory=SimpleFCFMarginParams, description="簡易FCFマージンシグナル"
     )
 
     # 利回り系

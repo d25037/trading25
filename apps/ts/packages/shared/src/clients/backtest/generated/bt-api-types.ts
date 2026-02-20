@@ -3075,7 +3075,7 @@ export interface components {
              * @description Stocks with OHLCV data
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["DateRange"] | null;
+            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetValidation */
@@ -3089,10 +3089,10 @@ export interface components {
         };
         /** DateRange */
         DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /**
          * DefaultConfigResponse
@@ -3189,11 +3189,11 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["IndexMatch"][];
+            sector17Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["IndexMatch"][];
+            sector33Matches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["IndexMatch"][];
+            topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
@@ -3930,21 +3930,14 @@ export interface components {
              */
             end_date?: string | null;
         };
-        /**
-         * IndexMatch
-         * @description 指数マッチ結果
-         */
+        /** IndexMatch */
         IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
+            /** Code */
+            code: string;
+            /** Name */
+            name: string;
             /** Rsquared */
             rSquared: number;
-            /** Beta */
-            beta: number;
         };
         /**
          * IndexOHLCRecord
@@ -4964,19 +4957,40 @@ export interface components {
             /** Close */
             close: number;
         };
-        /** OHLCVRecord */
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
         OHLCVRecord: {
-            /** Date */
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
             date: string;
-            /** Open */
+            /**
+             * Open
+             * @description 始値
+             */
             open: number;
-            /** High */
+            /**
+             * High
+             * @description 高値
+             */
             high: number;
-            /** Low */
+            /**
+             * Low
+             * @description 安値
+             */
             low: number;
-            /** Close */
+            /**
+             * Close
+             * @description 終値
+             */
             close: number;
-            /** Volume */
+            /**
+             * Volume
+             * @description 出来高
+             */
             volume: number;
         };
         /**
@@ -5055,7 +5069,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
+            data: components["schemas"]["OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -5397,16 +5411,16 @@ export interface components {
             /** Marketrsquared */
             marketRSquared: number;
             /** Sector17Matches */
-            sector17Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
+            sector17Matches: components["schemas"]["IndexMatch"][];
             /** Sector33Matches */
-            sector33Matches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
+            sector33Matches: components["schemas"]["IndexMatch"][];
             /** Topixstylematches */
-            topixStyleMatches: components["schemas"]["src__server__schemas__portfolio_factor_regression__IndexMatch"][];
+            topixStyleMatches: components["schemas"]["IndexMatch"][];
             /** Analysisdate */
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -7471,6 +7485,28 @@ export interface components {
             description?: string | null;
         };
         /** DateRange */
+        src__server__schemas__dataset__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
+        /** OHLCVRecord */
+        src__server__schemas__dataset_data__OHLCVRecord: {
+            /** Date */
+            date: string;
+            /** Open */
+            open: number;
+            /** High */
+            high: number;
+            /** Low */
+            low: number;
+            /** Close */
+            close: number;
+            /** Volume */
+            volume: number;
+        };
+        /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
             min: string;
@@ -7488,56 +7524,20 @@ export interface components {
             to: string;
         };
         /**
-         * OHLCVRecord
-         * @description OHLCVレコード
+         * IndexMatch
+         * @description 指数マッチ結果
          */
-        src__server__schemas__indicators__OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
-            date: string;
-            /**
-             * Open
-             * @description 始値
-             */
-            open: number;
-            /**
-             * High
-             * @description 高値
-             */
-            high: number;
-            /**
-             * Low
-             * @description 安値
-             */
-            low: number;
-            /**
-             * Close
-             * @description 終値
-             */
-            close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
-            volume: number;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /** IndexMatch */
-        src__server__schemas__portfolio_factor_regression__IndexMatch: {
-            /** Code */
-            code: string;
-            /** Name */
-            name: string;
+        src__server__schemas__factor_regression__IndexMatch: {
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
             /** Rsquared */
             rSquared: number;
+            /** Beta */
+            beta: number;
         };
         /** DateRange */
         src__server__schemas__portfolio_performance__DateRange: {
@@ -13010,7 +13010,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["OHLCVRecord"][];
+                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                     };
                 };
             };
@@ -13073,7 +13073,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["OHLCVRecord"][];
+                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

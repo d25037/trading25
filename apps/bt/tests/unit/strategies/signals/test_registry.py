@@ -210,6 +210,25 @@ class TestSignalRegistry:
         assert "statements:InvestingCashFlow" in sig.data_requirements
         assert "statements:SharesOutstanding" in sig.data_requirements
 
+    def test_cfo_margin_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.cfo_margin"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "CFOマージン"
+        assert sig.category == "fundamental"
+        assert "statements:OperatingCashFlow" in sig.data_requirements
+        assert "statements:Sales" in sig.data_requirements
+
+    def test_simple_fcf_margin_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.simple_fcf_margin"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "簡易FCFマージン"
+        assert sig.category == "fundamental"
+        assert "statements:OperatingCashFlow" in sig.data_requirements
+        assert "statements:InvestingCashFlow" in sig.data_requirements
+        assert "statements:Sales" in sig.data_requirements
+
     def test_roa_registered(self) -> None:
         """roa（総資産利益率）がレジストリに登録されていること"""
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.roa"]
@@ -258,6 +277,20 @@ class TestSignalRegistry:
         assert sig.enabled_checker(params)
 
         params.fundamental.cfo_yield_growth.enabled = False
+        assert not sig.enabled_checker(params)
+
+    def test_cfo_margin_enabled_checker(self) -> None:
+        sig = next(s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.cfo_margin")
+
+        params = SignalParams()
+        params.fundamental.enabled = False
+        params.fundamental.cfo_margin.enabled = True
+        assert not sig.enabled_checker(params)
+
+        params.fundamental.enabled = True
+        assert sig.enabled_checker(params)
+
+        params.fundamental.cfo_margin.enabled = False
         assert not sig.enabled_checker(params)
 
     def test_risk_adjusted_return_registered_as_volatility(self) -> None:
