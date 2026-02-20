@@ -553,11 +553,18 @@ class FundamentalsService:
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
             stmt, eps, prefer_consolidated
         )
-        dividend_fy = self._round_or_none(self._get_dividend_fy(stmt))
+        raw_dividend_fy = self._get_dividend_fy(stmt)
+        dividend_fy = self._round_or_none(raw_dividend_fy)
         forecast_dividend_fy, forecast_dividend_fy_change_rate = (
             self._get_forecast_dividend_fy(stmt, dividend_fy)
         )
-        payout_ratio = self._round_or_none(stmt.PayoutRatioAnn)
+        payout_ratio = self._round_or_none(
+            self._normalize_payout_ratio(
+                stmt.PayoutRatioAnn,
+                dividend_fy=raw_dividend_fy,
+                eps=eps,
+            )
+        )
         forecast_payout_ratio, forecast_payout_ratio_change_rate = (
             self._get_forecast_payout_ratio(stmt, payout_ratio)
         )
@@ -1009,15 +1016,66 @@ class FundamentalsService:
     ) -> tuple[float | None, float | None]:
         """Get forecast payout ratio and change rate."""
         is_fy = normalize_period_type(stmt.CurPerType) == "FY"
+        current_fy_forecast = self._normalize_payout_ratio(
+            stmt.FPayoutRatioAnn,
+            dividend_fy=stmt.FDivAnn if stmt.FDivAnn is not None else stmt.FDivFY,
+            eps=stmt.FEPS,
+        )
+        next_fy_forecast = self._normalize_payout_ratio(
+            stmt.NxFPayoutRatioAnn,
+            dividend_fy=stmt.NxFDivAnn if stmt.NxFDivAnn is not None else stmt.NxFDivFY,
+            eps=stmt.NxFEPS,
+        )
         primary, fallback = (
-            (stmt.NxFPayoutRatioAnn, stmt.FPayoutRatioAnn)
+            (next_fy_forecast, current_fy_forecast)
             if is_fy
-            else (stmt.FPayoutRatioAnn, stmt.NxFPayoutRatioAnn)
+            else (current_fy_forecast, next_fy_forecast)
         )
         forecast_payout_ratio = primary if primary is not None else fallback
         return forecast_payout_ratio, self._calculate_change_rate(
             actual_payout_ratio, forecast_payout_ratio
         )
+
+    def _normalize_payout_ratio(
+        self,
+        payout_ratio: float | None,
+        *,
+        dividend_fy: float | None = None,
+        eps: float | None = None,
+    ) -> float | None:
+        """Normalize payout ratio to percent unit.
+
+        J-Quants payload can return decimal-style ratios (e.g. 0.283 for 28.3%).
+        We infer scale from dividend/EPS when possible and fallback to a safe
+        heuristic for sub-1 values.
+        """
+        if payout_ratio is None:
+            return None
+        if not math.isfinite(payout_ratio):
+            return None
+
+        normalized = float(payout_ratio)
+
+        reference_percent: float | None = None
+        if (
+            dividend_fy is not None
+            and eps is not None
+            and eps != 0
+            and math.isfinite(dividend_fy)
+            and math.isfinite(eps)
+        ):
+            reference_percent = (dividend_fy / eps) * 100
+
+        if reference_percent is not None and math.isfinite(reference_percent):
+            direct_error = abs(normalized - reference_percent)
+            scaled_error = abs((normalized * 100) - reference_percent)
+            if scaled_error < direct_error:
+                return normalized * 100
+            return normalized
+
+        if abs(normalized) <= 1:
+            return normalized * 100
+        return normalized
 
     # ===== Daily Valuation Methods =====
 

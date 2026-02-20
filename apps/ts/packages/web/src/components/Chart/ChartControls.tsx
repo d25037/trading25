@@ -21,6 +21,11 @@ import {
   FUNDAMENTAL_METRIC_DEFINITIONS,
   type FundamentalMetricId,
 } from '@/constants/fundamentalMetrics';
+import {
+  countVisibleFundamentalsHistoryMetrics,
+  FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS,
+  type FundamentalsHistoryMetricId,
+} from '@/constants/fundamentalsHistoryMetrics';
 import { useSignalReference } from '@/hooks/useBacktest';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import type { ChartSettings, FundamentalsPanelId } from '@/stores/chartStore';
@@ -91,11 +96,15 @@ const PANEL_TOGGLE_BY_ID = Object.fromEntries(
 const FUNDAMENTAL_METRIC_LABEL_BY_ID = Object.fromEntries(
   FUNDAMENTAL_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
 ) as Record<FundamentalMetricId, string>;
+const FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID = Object.fromEntries(
+  FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
+) as Record<FundamentalsHistoryMetricId, string>;
 
 type SettingDialogId =
   | 'chartSettings'
   | 'panelLayout'
   | 'fundamentalMetrics'
+  | 'fundamentalsHistoryMetrics'
   | 'overlayIndicators'
   | 'subChartIndicators'
   | 'signalOverlay';
@@ -124,6 +133,12 @@ const SETTING_DIALOGS: SettingDialogDefinition[] = [
     id: 'fundamentalMetrics',
     title: 'Fundamental Metrics',
     description: 'Toggle and reorder metrics shown inside the fundamentals panel.',
+    icon: BookOpen,
+  },
+  {
+    id: 'fundamentalsHistoryMetrics',
+    title: 'FY History Metrics',
+    description: 'Toggle and reorder columns shown inside the FY history panel.',
     icon: BookOpen,
   },
   {
@@ -273,6 +288,46 @@ export function ChartControls() {
   const visibleFundamentalMetricCount = useMemo(
     () => countVisibleFundamentalMetrics(settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility),
     [settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility]
+  );
+  const visibleFundamentalsHistoryMetricCount = useMemo(
+    () =>
+      countVisibleFundamentalsHistoryMetrics(
+        settings.fundamentalsHistoryMetricOrder,
+        settings.fundamentalsHistoryMetricVisibility
+      ),
+    [settings.fundamentalsHistoryMetricOrder, settings.fundamentalsHistoryMetricVisibility]
+  );
+
+  const updateFundamentalsHistoryMetricVisibility = useCallback(
+    (metricId: FundamentalsHistoryMetricId, checked: boolean) => {
+      updateSettings({
+        fundamentalsHistoryMetricVisibility: {
+          ...settings.fundamentalsHistoryMetricVisibility,
+          [metricId]: checked,
+        },
+      });
+    },
+    [settings.fundamentalsHistoryMetricVisibility, updateSettings]
+  );
+
+  const moveFundamentalsHistoryMetricOrder = useCallback(
+    (metricId: FundamentalsHistoryMetricId, direction: 'up' | 'down') => {
+      const currentOrder = settings.fundamentalsHistoryMetricOrder;
+      const currentIndex = currentOrder.indexOf(metricId);
+      if (currentIndex < 0) return;
+
+      const targetIndex = direction === 'up' ? currentIndex - 1 : currentIndex + 1;
+      if (targetIndex < 0 || targetIndex >= currentOrder.length) return;
+
+      const nextOrder = [...currentOrder];
+      const currentMetric = nextOrder[currentIndex];
+      const targetMetric = nextOrder[targetIndex];
+      if (!currentMetric || !targetMetric) return;
+      nextOrder[currentIndex] = targetMetric;
+      nextOrder[targetIndex] = currentMetric;
+      updateSettings({ fundamentalsHistoryMetricOrder: nextOrder });
+    },
+    [settings.fundamentalsHistoryMetricOrder, updateSettings]
   );
 
   const updateRiskAdjustedReturn = useCallback(
@@ -447,6 +502,63 @@ export function ChartControls() {
                       className="h-7 px-2"
                       onClick={() => moveFundamentalMetricOrder(metricId, 'down')}
                       disabled={index === settings.fundamentalsMetricOrder.length - 1}
+                    >
+                      <ArrowDown className="h-3.5 w-3.5 mr-1" />
+                      Down
+                    </Button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        );
+
+      case 'fundamentalsHistoryMetrics':
+        return (
+          <div className="space-y-2">
+            <div className="rounded glass-panel p-2">
+              <p className="text-xs text-muted-foreground">
+                Visible: {visibleFundamentalsHistoryMetricCount} / {settings.fundamentalsHistoryMetricOrder.length}
+              </p>
+            </div>
+            {settings.fundamentalsHistoryMetricOrder.map((metricId, index) => {
+              const metricLabel = FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID[metricId];
+              const isVisible = settings.fundamentalsHistoryMetricVisibility[metricId];
+              const switchId = `fundamentals-history-metric-${metricId}`;
+              return (
+                <div key={metricId} className="rounded glass-panel p-2 space-y-2">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <p className="text-xs text-muted-foreground">Order {index + 1}</p>
+                      <Label htmlFor={switchId} className="text-sm font-medium cursor-pointer">
+                        {metricLabel}
+                      </Label>
+                    </div>
+                    <Switch
+                      id={switchId}
+                      checked={isVisible}
+                      onCheckedChange={(checked) => updateFundamentalsHistoryMetricVisibility(metricId, checked)}
+                    />
+                  </div>
+                  <div className="flex items-center gap-1">
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => moveFundamentalsHistoryMetricOrder(metricId, 'up')}
+                      disabled={index === 0}
+                    >
+                      <ArrowUp className="h-3.5 w-3.5 mr-1" />
+                      Up
+                    </Button>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 px-2"
+                      onClick={() => moveFundamentalsHistoryMetricOrder(metricId, 'down')}
+                      disabled={index === settings.fundamentalsHistoryMetricOrder.length - 1}
                     >
                       <ArrowDown className="h-3.5 w-3.5 mr-1" />
                       Down

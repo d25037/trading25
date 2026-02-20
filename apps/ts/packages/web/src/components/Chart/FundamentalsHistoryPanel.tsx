@@ -1,4 +1,11 @@
+import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
 import { useMemo, useState } from 'react';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+  FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS,
+  type FundamentalsHistoryMetricId,
+} from '@/constants/fundamentalsHistoryMetrics';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFundamentals } from '@/hooks/useFundamentals';
 import { cn } from '@/lib/utils';
@@ -9,6 +16,8 @@ import { hasActualFinancialData, isFiscalYear, isQuarterPeriod } from '@/utils/f
 interface FundamentalsHistoryPanelProps {
   symbol: string | null;
   enabled?: boolean;
+  metricOrder?: FundamentalsHistoryMetricId[];
+  metricVisibility?: Record<FundamentalsHistoryMetricId, boolean>;
 }
 
 interface ForecastEpsFields {
@@ -100,7 +109,79 @@ function renderForecastDividend(fy: ForecastDividendFields): React.ReactNode {
   return formatFundamentalValue(displayForecastDividend, 'yen');
 }
 
-export function FundamentalsHistoryPanel({ symbol, enabled = true }: FundamentalsHistoryPanelProps) {
+const FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID = Object.fromEntries(
+  FUNDAMENTALS_HISTORY_METRIC_DEFINITIONS.map((definition) => [definition.id, definition.label])
+) as Record<FundamentalsHistoryMetricId, string>;
+
+function resolveMetricCell(
+  period: ApiFundamentalDataPoint,
+  metricId: FundamentalsHistoryMetricId
+): { className: string; content: React.ReactNode } {
+  switch (metricId) {
+    case 'eps':
+      return {
+        className: 'text-foreground',
+        content: formatFundamentalValue(period.adjustedEps ?? period.eps, 'yen'),
+      };
+    case 'forecastEps':
+      return {
+        className: 'text-muted-foreground',
+        content: renderForecastEps(period),
+      };
+    case 'bps':
+      return {
+        className: 'text-foreground',
+        content: formatFundamentalValue(period.adjustedBps ?? period.bps, 'yen'),
+      };
+    case 'dividendPerShare':
+      return {
+        className: 'text-foreground',
+        content: formatFundamentalValue(period.adjustedDividendFy ?? period.dividendFy ?? null, 'yen'),
+      };
+    case 'forecastDividendPerShare':
+      return {
+        className: 'text-muted-foreground',
+        content: renderForecastDividend(period),
+      };
+    case 'payoutRatio':
+      return {
+        className: 'text-foreground',
+        content: formatFundamentalValue(period.payoutRatio ?? null, 'percent'),
+      };
+    case 'forecastPayoutRatio':
+      return {
+        className: 'text-muted-foreground',
+        content: formatFundamentalValue(period.forecastPayoutRatio ?? null, 'percent'),
+      };
+    case 'roe':
+      return {
+        className: 'text-foreground',
+        content: formatFundamentalValue(period.roe, 'percent'),
+      };
+    case 'cashFlowOperating':
+      return {
+        className: getFundamentalColor(period.cashFlowOperating, 'cashFlow'),
+        content: formatFundamentalValue(period.cashFlowOperating, 'millions'),
+      };
+    case 'cashFlowInvesting':
+      return {
+        className: getFundamentalColor(period.cashFlowInvesting, 'cashFlow'),
+        content: formatFundamentalValue(period.cashFlowInvesting, 'millions'),
+      };
+    case 'cashFlowFinancing':
+      return {
+        className: getFundamentalColor(period.cashFlowFinancing, 'cashFlow'),
+        content: formatFundamentalValue(period.cashFlowFinancing, 'millions'),
+      };
+  }
+}
+
+export function FundamentalsHistoryPanel({
+  symbol,
+  enabled = true,
+  metricOrder = DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  metricVisibility = DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+}: FundamentalsHistoryPanelProps) {
   const [historyMode, setHistoryMode] = useState<HistoryMode>('fyOnly5');
   const { data, isLoading, error } = useFundamentals(symbol, { enabled });
 
@@ -115,6 +196,10 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
     const limit = historyMode === 'fyOnly5' ? 5 : 10;
     return filtered.sort(compareByDateAndDisclosedDateDesc).slice(0, limit);
   }, [data, historyMode]);
+  const visibleMetricOrder = useMemo(
+    () => metricOrder.filter((metricId) => metricVisibility[metricId]),
+    [metricOrder, metricVisibility]
+  );
 
   if (!symbol) {
     return (
@@ -168,75 +253,41 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
                 <tr className="border-b border-border/30 text-xs text-muted-foreground">
                   <th className="text-left py-2 px-3 font-medium">期別</th>
                   <th className="text-left py-2 px-3 font-medium">発表日</th>
-                  <th className="text-right py-2 px-3 font-medium">EPS</th>
-                  <th className="text-right py-2 px-3 font-medium">来期予想EPS</th>
-                  <th className="text-right py-2 px-3 font-medium">BPS</th>
-                  <th className="text-right py-2 px-3 font-medium">1株配当</th>
-                  <th className="text-right py-2 px-3 font-medium">予想1株配当</th>
-                  <th className="text-right py-2 px-3 font-medium">配当性向</th>
-                  <th className="text-right py-2 px-3 font-medium">予想配当性向</th>
-                  <th className="text-right py-2 px-3 font-medium">ROE</th>
-                  <th className="text-right py-2 px-3 font-medium">営業CF</th>
-                  <th className="text-right py-2 px-3 font-medium">投資CF</th>
-                  <th className="text-right py-2 px-3 font-medium">財務CF</th>
+                  {visibleMetricOrder.map((metricId) => (
+                    <th key={metricId} className="text-right py-2 px-3 font-medium">
+                      {FUNDAMENTALS_HISTORY_METRIC_LABEL_BY_ID[metricId]}
+                    </th>
+                  ))}
                 </tr>
               </thead>
               <tbody>
-                {historyData.map((period) => (
-                  <tr
-                    key={`${period.date}-${period.disclosedDate}-${period.periodType}`}
-                    className="border-b border-border/20 hover:bg-background/40"
-                  >
-                    <td className="py-2.5 px-3 font-medium text-foreground">
-                      {formatPeriodLabel(period.date, period.periodType)}
-                    </td>
-                    <td className="py-2.5 px-3 text-xs text-muted-foreground">{period.disclosedDate}</td>
-                    <td className="py-2.5 px-3 text-right text-foreground">
-                      {formatFundamentalValue(period.adjustedEps ?? period.eps, 'yen')}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-muted-foreground">{renderForecastEps(period)}</td>
-                    <td className="py-2.5 px-3 text-right text-foreground">
-                      {formatFundamentalValue(period.adjustedBps ?? period.bps, 'yen')}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-foreground">
-                      {formatFundamentalValue(period.adjustedDividendFy ?? period.dividendFy ?? null, 'yen')}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-muted-foreground">{renderForecastDividend(period)}</td>
-                    <td className="py-2.5 px-3 text-right text-foreground">
-                      {formatFundamentalValue(period.payoutRatio ?? null, 'percent')}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-muted-foreground">
-                      {formatFundamentalValue(period.forecastPayoutRatio ?? null, 'percent')}
-                    </td>
-                    <td className="py-2.5 px-3 text-right text-foreground">
-                      {formatFundamentalValue(period.roe, 'percent')}
-                    </td>
-                    <td
-                      className={cn(
-                        'py-2.5 px-3 text-right',
-                        getFundamentalColor(period.cashFlowOperating, 'cashFlow')
-                      )}
-                    >
-                      {formatFundamentalValue(period.cashFlowOperating, 'millions')}
-                    </td>
-                    <td
-                      className={cn(
-                        'py-2.5 px-3 text-right',
-                        getFundamentalColor(period.cashFlowInvesting, 'cashFlow')
-                      )}
-                    >
-                      {formatFundamentalValue(period.cashFlowInvesting, 'millions')}
-                    </td>
-                    <td
-                      className={cn(
-                        'py-2.5 px-3 text-right',
-                        getFundamentalColor(period.cashFlowFinancing, 'cashFlow')
-                      )}
-                    >
-                      {formatFundamentalValue(period.cashFlowFinancing, 'millions')}
+                {visibleMetricOrder.length === 0 ? (
+                  <tr>
+                    <td colSpan={2} className="py-8 px-3 text-center text-sm text-muted-foreground">
+                      表示する指標をサイドバーで選択してください
                     </td>
                   </tr>
-                ))}
+                ) : (
+                  historyData.map((period) => (
+                    <tr
+                      key={`${period.date}-${period.disclosedDate}-${period.periodType}`}
+                      className="border-b border-border/20 hover:bg-background/40"
+                    >
+                      <td className="py-2.5 px-3 font-medium text-foreground">
+                        {formatPeriodLabel(period.date, period.periodType)}
+                      </td>
+                      <td className="py-2.5 px-3 text-xs text-muted-foreground">{period.disclosedDate}</td>
+                      {visibleMetricOrder.map((metricId) => {
+                        const cell = resolveMetricCell(period, metricId);
+                        return (
+                          <td key={metricId} className={cn('py-2.5 px-3 text-right', cell.className)}>
+                            {cell.content}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))
+                )}
               </tbody>
             </table>
           </div>

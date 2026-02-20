@@ -333,7 +333,12 @@ export function ChartsPage() {
                 </div>
                 <div className="h-[calc(100%-4rem)] p-4">
                   <ErrorBoundary>
-                    <FundamentalsHistoryPanel symbol={selectedSymbol} enabled={fundamentalsHistorySection.isVisible} />
+                    <FundamentalsHistoryPanel
+                      symbol={selectedSymbol}
+                      enabled={fundamentalsHistorySection.isVisible}
+                      metricOrder={settings.fundamentalsHistoryMetricOrder}
+                      metricVisibility={settings.fundamentalsHistoryMetricVisibility}
+                    />
                   </ErrorBoundary>
                 </div>
               </div>

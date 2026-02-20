@@ -2,6 +2,10 @@
 
 import { fireEvent, render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+} from '@/constants/fundamentalsHistoryMetrics';
 import { FundamentalsHistoryPanel } from './FundamentalsHistoryPanel';
 
 const mockUseFundamentals = vi.fn();
@@ -147,6 +151,94 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('ROE')).toBeInTheDocument();
     expect(screen.getByText('2024/3期')).toBeInTheDocument();
     expect(screen.getByText('2023/3期')).toBeInTheDocument();
+  });
+
+  it('applies FY metric visibility settings to table columns', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 250,
+            bps: 3200,
+            roe: 12.5,
+            cashFlowOperating: 500,
+            cashFlowInvesting: -200,
+            cashFlowFinancing: -100,
+            dividendFy: 120,
+            forecastDividendFy: 125,
+            payoutRatio: 35,
+            forecastPayoutRatio: 38,
+            netProfit: 1000,
+            equity: 8000,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <FundamentalsHistoryPanel
+        symbol="7203"
+        metricVisibility={{
+          ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+          roe: false,
+          payoutRatio: false,
+        }}
+      />
+    );
+
+    expect(screen.queryByText('ROE')).not.toBeInTheDocument();
+    expect(screen.queryByText('配当性向')).not.toBeInTheDocument();
+    expect(screen.getByText('EPS')).toBeInTheDocument();
+    expect(screen.getByText('予想配当性向')).toBeInTheDocument();
+  });
+
+  it('applies FY metric order settings to table columns', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            disclosedDate: '2024-05-10',
+            periodType: 'FY',
+            eps: 250,
+            bps: 3200,
+            roe: 12.5,
+            cashFlowOperating: 500,
+            cashFlowInvesting: -200,
+            cashFlowFinancing: -100,
+            dividendFy: 120,
+            forecastDividendFy: 125,
+            payoutRatio: 35,
+            forecastPayoutRatio: 38,
+            netProfit: 1000,
+            equity: 8000,
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(
+      <FundamentalsHistoryPanel
+        symbol="7203"
+        metricOrder={['payoutRatio', ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.filter((id) => id !== 'payoutRatio')]}
+      />
+    );
+
+    const headers = screen
+      .getAllByRole('columnheader')
+      .map((header) => header.textContent?.trim())
+      .filter((text): text is string => typeof text === 'string' && text.length > 0);
+    expect(headers[0]).toBe('期別');
+    expect(headers[1]).toBe('発表日');
+    expect(headers[2]).toBe('配当性向');
+    expect(headers[3]).toBe('EPS');
   });
 
   it('sorts FY rows by date descending, then disclosedDate descending', () => {
