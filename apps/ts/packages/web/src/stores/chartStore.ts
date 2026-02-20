@@ -7,6 +7,13 @@ import {
   normalizeFundamentalMetricOrder,
   normalizeFundamentalMetricVisibility,
 } from '@/constants/fundamentalMetrics';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+  type FundamentalsHistoryMetricId,
+  normalizeFundamentalsHistoryMetricOrder,
+  normalizeFundamentalsHistoryMetricVisibility,
+} from '@/constants/fundamentalsHistoryMetrics';
 
 export type DisplayTimeframe = 'daily' | 'weekly' | 'monthly';
 export type RiskAdjustedReturnRatioType = 'sharpe' | 'sortino';
@@ -73,6 +80,8 @@ export interface ChartSettings {
   fundamentalsPanelOrder: FundamentalsPanelId[];
   fundamentalsMetricOrder: FundamentalMetricId[];
   fundamentalsMetricVisibility: Record<FundamentalMetricId, boolean>;
+  fundamentalsHistoryMetricOrder: FundamentalsHistoryMetricId[];
+  fundamentalsHistoryMetricVisibility: Record<FundamentalsHistoryMetricId, boolean>;
   visibleBars: number;
   relativeMode: boolean;
   signalOverlay: SignalOverlaySettings;
@@ -171,6 +180,8 @@ export const defaultSettings: ChartSettings = {
   fundamentalsPanelOrder: [...DEFAULT_FUNDAMENTALS_PANEL_ORDER],
   fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
   fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
+  fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
+  fundamentalsHistoryMetricVisibility: { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY },
   visibleBars: 120,
   relativeMode: false,
   signalOverlay: {
@@ -401,6 +412,10 @@ function normalizeSettings(settings: unknown): ChartSettings {
     fundamentalsPanelOrder: normalizeFundamentalsPanelOrder(partial.fundamentalsPanelOrder),
     fundamentalsMetricOrder: normalizeFundamentalMetricOrder(partial.fundamentalsMetricOrder),
     fundamentalsMetricVisibility: normalizeFundamentalMetricVisibility(partial.fundamentalsMetricVisibility),
+    fundamentalsHistoryMetricOrder: normalizeFundamentalsHistoryMetricOrder(partial.fundamentalsHistoryMetricOrder),
+    fundamentalsHistoryMetricVisibility: normalizeFundamentalsHistoryMetricVisibility(
+      partial.fundamentalsHistoryMetricVisibility
+    ),
     visibleBars: normalizePositiveInt(partial.visibleBars, defaultSettings.visibleBars),
     relativeMode: normalizeBoolean(partial.relativeMode, defaultSettings.relativeMode),
     signalOverlay: {

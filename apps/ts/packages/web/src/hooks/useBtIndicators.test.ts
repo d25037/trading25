@@ -4,6 +4,10 @@ import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
 } from '@/constants/fundamentalMetrics';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+} from '@/constants/fundamentalsHistoryMetrics';
 import { apiPost } from '@/lib/api-client';
 import type { ChartSettings } from '@/stores/chartStore';
 import { createTestWrapper } from '@/test-utils';
@@ -60,6 +64,8 @@ describe('buildIndicatorSpecs', () => {
     ] as ChartSettings['fundamentalsPanelOrder'],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
+    fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
+    fundamentalsHistoryMetricVisibility: { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY },
     visibleBars: 200,
     relativeMode: false,
     signalOverlay: { enabled: false, signals: [] },
@@ -363,6 +369,8 @@ describe('useBtIndicators', () => {
     ] as ChartSettings['fundamentalsPanelOrder'],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
+    fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
+    fundamentalsHistoryMetricVisibility: { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY },
     visibleBars: 200,
     relativeMode: false,
     signalOverlay: { enabled: false, signals: [] },

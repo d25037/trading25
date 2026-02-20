@@ -1615,6 +1615,158 @@ class TestForecastEps:
         assert dividend_change_rate is not None and abs(dividend_change_rate - 6.67) < 0.1
         assert payout_change_rate is not None and abs(payout_change_rate - 7.69) < 0.1
 
+    def test_get_forecast_payout_ratio_normalizes_decimal_scale(
+        self, service: FundamentalsService
+    ):
+        """小数スケールの配当性向を百分率に正規化する。"""
+        stmt = JQuantsStatement(
+            DiscDate="2024-05-15",
+            Code="7203",
+            DocType="連結",
+            CurPerType="FY",
+            CurPerSt="2023-04-01",
+            CurPerEn="2024-03-31",
+            CurFYSt="2023-04-01",
+            CurFYEn="2024-03-31",
+            NxtFYSt=None,
+            NxtFYEn=None,
+            Sales=None,
+            OP=None,
+            OdP=None,
+            NP=None,
+            EPS=300.0,
+            DEPS=None,
+            TA=None,
+            Eq=None,
+            EqAR=None,
+            BPS=None,
+            CFO=None,
+            CFI=None,
+            CFF=None,
+            CashEq=None,
+            ShOutFY=None,
+            TrShFY=None,
+            AvgSh=None,
+            FEPS=320.0,
+            NxFEPS=350.0,
+            DivFY=60.0,
+            DivAnn=60.0,
+            PayoutRatioAnn=0.2,
+            FDivFY=64.0,
+            FDivAnn=64.0,
+            FPayoutRatioAnn=0.2,
+            NxFDivFY=70.0,
+            NxFDivAnn=70.0,
+            NxFPayoutRatioAnn=0.2,
+            NCSales=None,
+            NCOP=None,
+            NCOdP=None,
+            NCNP=None,
+            NCEPS=None,
+            NCTA=None,
+            NCEq=None,
+            NCEqAR=None,
+            NCBPS=None,
+            FNCEPS=None,
+            NxFNCEPS=None,
+        )
+
+        forecast_payout, payout_change_rate = service._get_forecast_payout_ratio(
+            stmt, 20.0
+        )
+
+        assert forecast_payout == 20.0
+        assert payout_change_rate == 0.0
+
+    def test_calculate_all_metrics_normalizes_decimal_actual_payout_ratio(
+        self, service: FundamentalsService
+    ):
+        """実績配当性向が小数スケールでも百分率で返す。"""
+        stmt = JQuantsStatement(
+            DiscDate="2024-05-15",
+            Code="7203",
+            DocType="連結",
+            CurPerType="FY",
+            CurPerSt="2023-04-01",
+            CurPerEn="2024-03-31",
+            CurFYSt="2023-04-01",
+            CurFYEn="2024-03-31",
+            NxtFYSt=None,
+            NxtFYEn=None,
+            Sales=1000.0,
+            OP=100.0,
+            OdP=100.0,
+            NP=100.0,
+            EPS=300.0,
+            DEPS=None,
+            TA=1000.0,
+            Eq=500.0,
+            EqAR=None,
+            BPS=300.0,
+            CFO=100.0,
+            CFI=-20.0,
+            CFF=-10.0,
+            CashEq=100.0,
+            ShOutFY=100.0,
+            TrShFY=0.0,
+            AvgSh=100.0,
+            FEPS=320.0,
+            NxFEPS=350.0,
+            DivFY=60.0,
+            DivAnn=60.0,
+            PayoutRatioAnn=0.2,
+            FDivFY=64.0,
+            FDivAnn=64.0,
+            FPayoutRatioAnn=0.2,
+            NxFDivFY=70.0,
+            NxFDivAnn=70.0,
+            NxFPayoutRatioAnn=0.2,
+            NCSales=None,
+            NCOP=None,
+            NCOdP=None,
+            NCNP=None,
+            NCEPS=None,
+            NCTA=None,
+            NCEq=None,
+            NCEqAR=None,
+            NCBPS=None,
+            FNCEPS=None,
+            NxFNCEPS=None,
+        )
+
+        point = service._calculate_all_metrics(
+            stmt,
+            {"2024-05-15": 3000.0},
+            prefer_consolidated=True,
+        )
+
+        assert point.payoutRatio == 20.0
+        assert point.forecastPayoutRatio == 20.0
+
+    def test_normalize_payout_ratio_handles_non_finite(self, service: FundamentalsService):
+        """非有限値は None を返す。"""
+        assert service._normalize_payout_ratio(float("inf")) is None
+        assert service._normalize_payout_ratio(float("-inf")) is None
+        assert service._normalize_payout_ratio(float("nan")) is None
+
+    def test_normalize_payout_ratio_prefers_direct_percent_scale(
+        self, service: FundamentalsService
+    ):
+        """参照値と一致する場合はそのまま百分率として扱う。"""
+        normalized = service._normalize_payout_ratio(
+            0.8,
+            dividend_fy=0.8,
+            eps=100.0,
+        )
+        assert normalized == 0.8
+
+    def test_normalize_payout_ratio_fallback_without_reference(
+        self, service: FundamentalsService
+    ):
+        """参照値がない場合はヒューリスティックで補正する。"""
+        assert service._normalize_payout_ratio(0.75) == 75.0
+        assert service._normalize_payout_ratio(1.2) == 1.2
+
     def test_enhance_latest_metrics_prefers_latest_disclosure_for_same_period(
         self, service: FundamentalsService
     ):
