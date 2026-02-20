@@ -154,6 +154,69 @@ class TestMarketDbUpsert:
         ])
         assert count == 1
 
+    def test_upsert_statements_merges_non_null_fields_on_conflict(self, market_db: MarketDb) -> None:
+        market_db.upsert_statements([
+            {
+                "code": "1899",
+                "disclosed_date": "2026-02-13",
+                "type_of_current_period": "FY",
+                "type_of_document": "EarnForecastRevision",
+                "forecast_eps": 580.0,
+            }
+        ])
+        market_db.upsert_statements([
+            {
+                "code": "1899",
+                "disclosed_date": "2026-02-13",
+                "type_of_current_period": "FY",
+                "type_of_document": "DividendForecastRevision",
+                "dividend_fy": 200.0,
+                "forecast_eps": None,
+            }
+        ])
+
+        with market_db.engine.connect() as conn:
+            row = conn.execute(
+                text(
+                    """
+                    SELECT forecast_eps, dividend_fy, type_of_document
+                    FROM statements
+                    WHERE code='1899' AND disclosed_date='2026-02-13'
+                    """
+                )
+            ).fetchone()
+
+        assert row is not None
+        assert row[0] == 580.0
+        assert row[1] == 200.0
+        assert row[2] == "DividendForecastRevision"
+
+        market_db.upsert_statements([
+            {
+                "code": "1899",
+                "disclosed_date": "2026-02-13",
+                "type_of_current_period": "FY",
+                "type_of_document": "EarnForecastRevision",
+                "forecast_eps": 604.0,
+            }
+        ])
+
+        with market_db.engine.connect() as conn:
+            updated = conn.execute(
+                text(
+                    """
+                    SELECT forecast_eps, dividend_fy, type_of_document
+                    FROM statements
+                    WHERE code='1899' AND disclosed_date='2026-02-13'
+                    """
+                )
+            ).fetchone()
+
+        assert updated is not None
+        assert updated[0] == 604.0
+        assert updated[1] == 200.0
+        assert updated[2] == "EarnForecastRevision"
+
     def test_upsert_empty_for_all_tables(self, market_db: MarketDb) -> None:
         assert market_db.upsert_stock_data([]) == 0
         assert market_db.upsert_topix_data([]) == 0

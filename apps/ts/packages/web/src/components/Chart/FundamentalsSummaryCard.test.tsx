@@ -101,6 +101,21 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.queryByText(/株価 @ 開示日/)).not.toBeInTheDocument();
   });
 
+  it('prioritizes revised forecast EPS over adjusted/raw forecast EPS', () => {
+    const metrics: ApiFundamentalDataPoint = {
+      ...baseMetrics,
+      forecastEps: 580,
+      adjustedForecastEps: 560,
+      revisedForecastEps: 604,
+      revisedForecastSource: '1Q',
+    };
+
+    render(<FundamentalsSummaryCard metrics={metrics} />);
+
+    expect(screen.getByText('予: 604')).toBeInTheDocument();
+    expect(screen.queryByText('予: 560')).not.toBeInTheDocument();
+  });
+
   it('does not render EPS forecast block when forecast values are missing', () => {
     const metrics: ApiFundamentalDataPoint = {
       ...baseMetrics,

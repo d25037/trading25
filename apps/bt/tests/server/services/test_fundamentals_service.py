@@ -1615,6 +1615,79 @@ class TestForecastEps:
         assert dividend_change_rate is not None and abs(dividend_change_rate - 6.67) < 0.1
         assert payout_change_rate is not None and abs(payout_change_rate - 7.69) < 0.1
 
+    def test_enhance_latest_metrics_prefers_latest_disclosure_for_same_period(
+        self, service: FundamentalsService
+    ):
+        """同一CurPerEnが複数ある場合は最新開示を優先する"""
+        metrics = FundamentalDataPoint(
+            date="2025-12-31",
+            disclosedDate="2026-02-13",
+            periodType="FY",
+            isConsolidated=True,
+            accountingStandard=None,
+            eps=500.0,
+        )
+
+        base = {
+            "Code": "1899",
+            "DocType": "EarnForecastRevision",
+            "CurPerType": "FY",
+            "CurPerSt": "2025-01-01",
+            "CurPerEn": "2025-12-31",
+            "CurFYSt": "2025-01-01",
+            "CurFYEn": "2025-12-31",
+            "NxtFYSt": None,
+            "NxtFYEn": None,
+            "Sales": None,
+            "OP": None,
+            "OdP": None,
+            "NP": None,
+            "EPS": None,
+            "DEPS": None,
+            "TA": None,
+            "Eq": None,
+            "EqAR": None,
+            "BPS": None,
+            "CFO": None,
+            "CFI": None,
+            "CFF": None,
+            "CashEq": None,
+            "ShOutFY": None,
+            "TrShFY": None,
+            "AvgSh": None,
+            "NxFEPS": None,
+            "DivAnn": None,
+            "NCSales": None,
+            "NCOP": None,
+            "NCOdP": None,
+            "NCNP": None,
+            "NCEPS": None,
+            "NCTA": None,
+            "NCEq": None,
+            "NCEqAR": None,
+            "NCBPS": None,
+            "FNCEPS": None,
+            "NxFNCEPS": None,
+        }
+        older = JQuantsStatement(
+            **{
+                **base,
+                "DiscDate": "2025-11-07",
+                "FEPS": 580.0,
+            }
+        )
+        newer = JQuantsStatement(
+            **{
+                **base,
+                "DiscDate": "2026-02-13",
+                "FEPS": 604.0,
+            }
+        )
+
+        result = service._enhance_latest_metrics(metrics, [older, newer], True)
+
+        assert result is not None
+        assert result.forecastEps == 604.0
 
 class TestFCFYield:
     """FCF Yield計算のテスト"""

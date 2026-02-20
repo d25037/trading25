@@ -364,7 +364,7 @@ def load_statements_data(
                     start_date,
                     end_date,
                     period_type="all",
-                    actual_only=actual_only,
+                    actual_only=False,
                 )
             except Exception as e:  # noqa: BLE001 - continue with FY-only baseline
                 logger.warning(
