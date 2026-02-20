@@ -222,6 +222,10 @@ export interface ApiFundamentalDataPoint {
   fcfYield: number | null;
   /** FCF Margin = FCF / Net Sales × 100 (%) */
   fcfMargin: number | null;
+  /** CFO Yield = CFO / Market Cap × 100 (%) */
+  cfoYield: number | null;
+  /** CFO Margin = CFO / Net Sales × 100 (%) */
+  cfoMargin: number | null;
   /** Operating Cash Flow / Net Profit (x) */
   cfoToNetProfitRatio: number | null;
   /** Market cap / N-day average trading value (x) */

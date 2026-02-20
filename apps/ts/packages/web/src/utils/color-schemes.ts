@@ -70,6 +70,16 @@ export function getReturnColor(value: number | null | undefined): string {
   return 'text-muted-foreground';
 }
 
+function getTieredHigherIsBetterColor(
+  value: number,
+  excellentThreshold: number,
+  acceptableThreshold: number
+): string {
+  if (value >= excellentThreshold) return 'text-green-500';
+  if (value >= acceptableThreshold) return 'text-yellow-500';
+  return 'text-red-500';
+}
+
 /**
  * Get color class for FCF Yield values (higher is better).
  * - >= 5%: Green (excellent)
@@ -78,9 +88,7 @@ export function getReturnColor(value: number | null | undefined): string {
  * - Negative: Red
  */
 export function getFcfYieldColor(value: number): string {
-  if (value >= 5) return 'text-green-500';
-  if (value >= 2) return 'text-yellow-500';
-  return 'text-red-500';
+  return getTieredHigherIsBetterColor(value, 5, 2);
 }
 
 /**
@@ -91,15 +99,44 @@ export function getFcfYieldColor(value: number): string {
  * - Negative: Red
  */
 export function getFcfMarginColor(value: number): string {
-  if (value >= 10) return 'text-green-500';
-  if (value >= 5) return 'text-yellow-500';
-  return 'text-red-500';
+  return getTieredHigherIsBetterColor(value, 10, 5);
+}
+
+/**
+ * Get color class for CFO Yield values (higher is better).
+ * - >= 5%: Green (excellent)
+ * - >= 2%: Yellow (acceptable)
+ * - < 2%: Red (poor)
+ * - Negative: Red
+ */
+export function getCfoYieldColor(value: number): string {
+  return getTieredHigherIsBetterColor(value, 5, 2);
+}
+
+/**
+ * Get color class for CFO Margin values (higher is better).
+ * - >= 10%: Green (excellent)
+ * - >= 5%: Yellow (acceptable)
+ * - < 5%: Red (poor)
+ * - Negative: Red
+ */
+export function getCfoMarginColor(value: number): string {
+  return getTieredHigherIsBetterColor(value, 10, 5);
 }
 
 /**
  * Color scheme types for fundamental metrics
  */
-export type FundamentalColorScheme = 'roe' | 'per' | 'pbr' | 'cashFlow' | 'fcfYield' | 'fcfMargin' | 'neutral';
+export type FundamentalColorScheme =
+  | 'roe'
+  | 'per'
+  | 'pbr'
+  | 'cashFlow'
+  | 'fcfYield'
+  | 'fcfMargin'
+  | 'cfoYield'
+  | 'cfoMargin'
+  | 'neutral';
 
 /**
  * Get color class for fundamental metrics based on scheme type.
@@ -122,6 +159,10 @@ export function getFundamentalColor(value: number | null, scheme: FundamentalCol
       return getFcfYieldColor(value);
     case 'fcfMargin':
       return getFcfMarginColor(value);
+    case 'cfoYield':
+      return getCfoYieldColor(value);
+    case 'cfoMargin':
+      return getCfoMarginColor(value);
     default:
       return 'text-foreground';
   }

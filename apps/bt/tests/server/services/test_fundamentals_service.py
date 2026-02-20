@@ -266,6 +266,15 @@ class TestMetricCalculations:
         assert fcf_margin is not None
         assert abs(fcf_margin - 8.89) < 0.1
 
+    def test_calculate_cfo_margin(self, service: FundamentalsService):
+        """CFOマージン計算"""
+        cfo_margin = service._calculate_cfo_margin(
+            cfo=6000000000000, net_sales=45000000000000
+        )
+        # = (6兆 / 45兆) * 100 = 13.33%
+        assert cfo_margin is not None
+        assert abs(cfo_margin - 13.33) < 0.1
+
     def test_calculate_cfo_to_net_profit_ratio(self, service: FundamentalsService):
         """営業CF / 純利益 比率計算"""
         ratio = service._calculate_cfo_to_net_profit_ratio(
@@ -1063,6 +1072,9 @@ class TestComputeFundamentals:
         assert len(result.data) == 1
         assert result.data[0].eps == 300.0
         assert result.data[0].bps == 2250.0
+        assert result.data[0].cfoYield is not None
+        assert abs(result.data[0].cfoYield - 7.38) < 0.1
+        assert result.data[0].cfoMargin == 13.33
         assert result.data[0].cfoToNetProfitRatio == 1.5
         assert result.data[0].tradingValueToMarketCapRatio is not None
         assert result.latestMetrics is not None
@@ -1533,6 +1545,74 @@ class TestFCFYield:
         """自己株式が発行済株式より多い場合"""
         result = service._calculate_fcf_yield(
             fcf=4000000000000,
+            stock_price=6000.0,
+            shares_outstanding=1000,
+            treasury_shares=2000,
+        )
+        assert result is None
+
+
+class TestCFOYield:
+    """CFO Yield計算のテスト"""
+
+    @pytest.fixture
+    def service(self):
+        return FundamentalsService()
+
+    def test_calculate_cfo_yield(self, service: FundamentalsService):
+        """正常なCFO Yield計算"""
+        # CFO = 6兆円, 株価 = 6000円, 発行済株式 = 133.33億株
+        # Market Cap = 6000 * 13333333333 = 80兆円
+        # CFO Yield = (6兆 / 80兆) * 100 = 7.5%
+        result = service._calculate_cfo_yield(
+            cfo=6000000000000,
+            stock_price=6000.0,
+            shares_outstanding=13333333333,
+            treasury_shares=0,
+        )
+        assert result is not None
+        assert abs(result - 7.5) < 0.1
+
+    def test_calculate_cfo_yield_with_treasury(self, service: FundamentalsService):
+        """自己株式を考慮したCFO Yield"""
+        result = service._calculate_cfo_yield(
+            cfo=6000000000000,
+            stock_price=6000.0,
+            shares_outstanding=13333333333,
+            treasury_shares=3333333333,  # 25%が自己株式
+        )
+        assert result is not None
+        # actual_shares = 10000000000
+        # Market Cap = 6000 * 10000000000 = 60兆円
+        # CFO Yield = (6兆 / 60兆) * 100 = 10.0%
+        assert abs(result - 10.0) < 0.1
+
+    def test_calculate_cfo_yield_no_shares(self, service: FundamentalsService):
+        """発行済株式数がない場合"""
+        result = service._calculate_cfo_yield(
+            cfo=6000000000000,
+            stock_price=6000.0,
+            shares_outstanding=None,
+            treasury_shares=None,
+        )
+        assert result is None
+
+    def test_calculate_cfo_yield_zero_price(self, service: FundamentalsService):
+        """株価が0の場合"""
+        result = service._calculate_cfo_yield(
+            cfo=6000000000000,
+            stock_price=0.0,
+            shares_outstanding=13333333333,
+            treasury_shares=None,
+        )
+        assert result is None
+
+    def test_calculate_cfo_yield_negative_actual_shares(
+        self, service: FundamentalsService
+    ):
+        """自己株式が発行済株式より多い場合"""
+        result = service._calculate_cfo_yield(
+            cfo=6000000000000,
             stock_price=6000.0,
             shares_outstanding=1000,
             treasury_shares=2000,
