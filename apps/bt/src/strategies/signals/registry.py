@@ -23,6 +23,7 @@ from .crossover import indicator_crossover_signal
 from .fundamental import (
     cfo_margin_threshold,
     cfo_yield_threshold,
+    cfo_to_net_profit_ratio_threshold,
     is_expected_growth_eps,
     is_growing_cfo_yield,
     is_growing_dividend_per_share,
@@ -864,6 +865,27 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         param_key="fundamental.operating_cash_flow",
         data_checker=lambda d: _has_statements_column(d, "OperatingCashFlow"),
         data_requirements=["statements:OperatingCashFlow"],
+    ),
+    # 27-2. 営業CF/純利益シグナル
+    SignalDefinition(
+        name="営業CF/純利益",
+        signal_func=cfo_to_net_profit_ratio_threshold,
+        enabled_checker=lambda p: p.fundamental.enabled
+        and p.fundamental.cfo_to_net_profit_ratio.enabled,
+        param_builder=lambda p, d: {
+            "operating_cash_flow": d["statements_data"]["OperatingCashFlow"],
+            "net_profit": d["statements_data"]["Profit"],
+            "threshold": p.fundamental.cfo_to_net_profit_ratio.threshold,
+            "condition": p.fundamental.cfo_to_net_profit_ratio.condition,
+            "consecutive_periods": p.fundamental.cfo_to_net_profit_ratio.consecutive_periods,
+        },
+        entry_purpose="営業CF/純利益が閾値以上の企業を選定",
+        exit_purpose="営業CF/純利益が閾値を下回った企業を除外",
+        category="fundamental",
+        description="営業CF/純利益比率の閾値判定",
+        param_key="fundamental.cfo_to_net_profit_ratio",
+        data_checker=lambda d: _has_statements_columns(d, "OperatingCashFlow", "Profit"),
+        data_requirements=["statements:OperatingCashFlow", "statements:Profit"],
     ),
     # 28. 配当利回りシグナル
     SignalDefinition(

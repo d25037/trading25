@@ -215,6 +215,28 @@ class FundamentalSignalParams(BaseSignalParams):
             description="連続期間数（直近N回分の決算発表で条件を満たす必要がある）",
         )
 
+    class CFOToNetProfitRatioParams(BaseModel):
+        """営業CF/純利益シグナルパラメータ"""
+
+        enabled: bool = Field(
+            default=False,
+            description="営業CF/純利益シグナル有効",
+        )
+        threshold: float = Field(
+            default=1.0,
+            description="営業CF/純利益閾値（1.0以上は利益の質が高い目安）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値未満）",
+        )
+        consecutive_periods: int = Field(
+            default=1,
+            ge=1,
+            le=10,
+            description="連続期間数（直近N回分の決算発表で条件を満たす必要がある）",
+        )
+
     class DividendYieldParams(BaseModel):
         """配当利回りシグナルパラメータ"""
 
@@ -428,6 +450,9 @@ class FundamentalSignalParams(BaseSignalParams):
     )
     operating_cash_flow: OperatingCashFlowParams = Field(
         default_factory=OperatingCashFlowParams, description="営業CFシグナル"
+    )
+    cfo_to_net_profit_ratio: CFOToNetProfitRatioParams = Field(
+        default_factory=CFOToNetProfitRatioParams, description="営業CF/純利益シグナル"
     )
     dividend_yield: DividendYieldParams = Field(
         default_factory=DividendYieldParams, description="配当利回りシグナル"
