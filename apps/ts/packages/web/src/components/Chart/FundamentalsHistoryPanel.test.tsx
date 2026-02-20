@@ -102,6 +102,9 @@ describe('FundamentalsHistoryPanel', () => {
             cashFlowFinancing: -100,
             fcf: 300,
             forecastEps: 280,
+            forecastDividendFy: 120,
+            payoutRatio: 35,
+            forecastPayoutRatio: 38,
             netProfit: 1000,
             equity: 8000,
           },
@@ -117,6 +120,9 @@ describe('FundamentalsHistoryPanel', () => {
             cashFlowFinancing: -80,
             fcf: 220,
             forecastEps: 250,
+            forecastDividendFy: 110,
+            payoutRatio: 33,
+            forecastPayoutRatio: 36,
             netProfit: 900,
             equity: 7500,
           },
@@ -132,6 +138,9 @@ describe('FundamentalsHistoryPanel', () => {
     expect(screen.getByText('EPS')).toBeInTheDocument();
     expect(screen.getByText('来期予想EPS')).toBeInTheDocument();
     expect(screen.getByText('BPS')).toBeInTheDocument();
+    expect(screen.getByText('予想1株配当')).toBeInTheDocument();
+    expect(screen.getByText('配当性向')).toBeInTheDocument();
+    expect(screen.getByText('予想配当性向')).toBeInTheDocument();
     expect(screen.getByText('営業CF')).toBeInTheDocument();
     expect(screen.getByText('投資CF')).toBeInTheDocument();
     expect(screen.getByText('財務CF')).toBeInTheDocument();

@@ -48,13 +48,15 @@ function MetricCard({ label, value, format, colorScheme = 'neutral', prevValue, 
   );
 }
 
-interface EpsMetricCardProps {
-  actualEps: number | null;
-  forecastEps?: number | null;
+interface ForecastMetricCardProps {
+  label: string;
+  actualValue: number | null;
+  forecastValue?: number | null;
   changeRate?: number | null;
+  format: 'percent' | 'yen';
 }
 
-function EpsMetricCard({ actualEps, forecastEps, changeRate }: EpsMetricCardProps) {
+function ForecastMetricCard({ label, actualValue, forecastValue, changeRate, format }: ForecastMetricCardProps) {
   const formatChangeRate = (rate: number | null | undefined): string => {
     if (rate === null || rate === undefined) return '';
     const sign = rate >= 0 ? '+' : '';
@@ -71,14 +73,14 @@ function EpsMetricCard({ actualEps, forecastEps, changeRate }: EpsMetricCardProp
   return (
     <div className="flex min-h-16 flex-col justify-center rounded-md bg-background/50 px-2 py-1.5">
       <span className="mb-0.5 text-center text-[10px] uppercase tracking-wide text-muted-foreground leading-tight">
-        EPS
+        {label}
       </span>
       <span className="text-center text-sm font-semibold leading-tight text-foreground">
-        {formatFundamentalValue(actualEps, 'yen')}
+        {formatFundamentalValue(actualValue, format)}
       </span>
-      {forecastEps != null && (
+      {forecastValue != null && (
         <div className="mt-0.5 flex items-center justify-center gap-1">
-          <span className="text-[10px] text-muted-foreground">予: {formatFundamentalValue(forecastEps, 'yen')}</span>
+          <span className="text-[10px] text-muted-foreground">予: {formatFundamentalValue(forecastValue, format)}</span>
           {changeRate != null && (
             <span className={cn('text-[10px] font-medium', getChangeRateColor(changeRate))}>
               ({formatChangeRate(changeRate)})
@@ -122,6 +124,8 @@ export function FundamentalsSummaryCard({
   const displayForecastPer = resolveForecastPer(metrics.stockPrice, displayForecastEps ?? null);
   const displayBps = metrics.adjustedBps ?? metrics.bps;
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
+  const displayForecastDividendFy =
+    metrics.adjustedForecastDividendFy ?? metrics.forecastDividendFy ?? null;
   const visibleMetricOrder = metricOrder.filter((metricId) => metricVisibility[metricId]);
 
   const renderMetric = (metricId: FundamentalMetricId) => {
@@ -138,16 +142,36 @@ export function FundamentalsSummaryCard({
         return <MetricCard label="ROA" value={metrics.roa} format="percent" colorScheme="roe" />;
       case 'eps':
         return (
-          <EpsMetricCard
-            actualEps={displayEps}
-            forecastEps={displayForecastEps}
+          <ForecastMetricCard
+            label="EPS"
+            actualValue={displayEps}
+            forecastValue={displayForecastEps}
             changeRate={metrics.forecastEpsChangeRate}
+            format="yen"
           />
         );
       case 'bps':
         return <MetricCard label="BPS" value={displayBps} format="yen" />;
       case 'dividendPerShare':
-        return <MetricCard label="1株配当" value={displayDividendFy} format="yen" />;
+        return (
+          <ForecastMetricCard
+            label="1株配当"
+            actualValue={displayDividendFy}
+            forecastValue={displayForecastDividendFy}
+            changeRate={metrics.forecastDividendFyChangeRate}
+            format="yen"
+          />
+        );
+      case 'payoutRatio':
+        return (
+          <ForecastMetricCard
+            label="配当性向"
+            actualValue={metrics.payoutRatio ?? null}
+            forecastValue={metrics.forecastPayoutRatio ?? null}
+            changeRate={metrics.forecastPayoutRatioChangeRate}
+            format="percent"
+          />
+        );
       case 'operatingMargin':
         return <MetricCard label="営業利益率" value={metrics.operatingMargin} format="percent" />;
       case 'netMargin':

@@ -182,6 +182,18 @@ export interface ApiFundamentalDataPoint {
   dividendFy?: number | null;
   /** Adjusted FY dividend per share using share count (円) */
   adjustedDividendFy?: number | null;
+  /** Forecast FY dividend per share (円) */
+  forecastDividendFy?: number | null;
+  /** Adjusted forecast FY dividend per share using share count (円) */
+  adjustedForecastDividendFy?: number | null;
+  /** Change rate from actual dividend to forecast dividend (%) */
+  forecastDividendFyChangeRate?: number | null;
+  /** Payout ratio (%) */
+  payoutRatio?: number | null;
+  /** Forecast payout ratio (%) */
+  forecastPayoutRatio?: number | null;
+  /** Change rate from actual payout ratio to forecast payout ratio (%) */
+  forecastPayoutRatioChangeRate?: number | null;
   /** Price to Earnings Ratio (倍) - calculated with disclosure date price */
   per: number | null;
   /** Price to Book Ratio (倍) - calculated with disclosure date price */

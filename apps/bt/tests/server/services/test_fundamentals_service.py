@@ -1483,6 +1483,138 @@ class TestForecastEps:
         assert forecast == 350.0
         assert change_rate is None
 
+    def test_get_forecast_dividend_and_payout_fy(self, service: FundamentalsService):
+        """FYでは次年度予想値を優先する"""
+        stmt = JQuantsStatement(
+            DiscDate="2024-05-15",
+            Code="7203",
+            DocType="連結",
+            CurPerType="FY",
+            CurPerSt="2023-04-01",
+            CurPerEn="2024-03-31",
+            CurFYSt="2023-04-01",
+            CurFYEn="2024-03-31",
+            NxtFYSt=None,
+            NxtFYEn=None,
+            Sales=None,
+            OP=None,
+            OdP=None,
+            NP=None,
+            EPS=300.0,
+            DEPS=None,
+            TA=None,
+            Eq=None,
+            EqAR=None,
+            BPS=None,
+            CFO=None,
+            CFI=None,
+            CFF=None,
+            CashEq=None,
+            ShOutFY=None,
+            TrShFY=None,
+            AvgSh=None,
+            FEPS=320.0,
+            NxFEPS=350.0,
+            DivFY=60.0,
+            DivAnn=60.0,
+            PayoutRatioAnn=30.0,
+            FDivFY=62.0,
+            FDivAnn=62.0,
+            FPayoutRatioAnn=32.0,
+            NxFDivFY=65.0,
+            NxFDivAnn=65.0,
+            NxFPayoutRatioAnn=35.0,
+            NCSales=None,
+            NCOP=None,
+            NCOdP=None,
+            NCNP=None,
+            NCEPS=None,
+            NCTA=None,
+            NCEq=None,
+            NCEqAR=None,
+            NCBPS=None,
+            FNCEPS=None,
+            NxFNCEPS=None,
+        )
+
+        forecast_dividend, dividend_change_rate = service._get_forecast_dividend_fy(
+            stmt, 60.0
+        )
+        forecast_payout, payout_change_rate = service._get_forecast_payout_ratio(
+            stmt, 30.0
+        )
+
+        assert forecast_dividend == 65.0
+        assert forecast_payout == 35.0
+        assert dividend_change_rate is not None and abs(dividend_change_rate - 8.33) < 0.1
+        assert payout_change_rate is not None and abs(payout_change_rate - 16.67) < 0.1
+
+    def test_get_forecast_dividend_and_payout_quarterly(self, service: FundamentalsService):
+        """四半期では当年度予想値を優先する"""
+        stmt = JQuantsStatement(
+            DiscDate="2024-08-10",
+            Code="7203",
+            DocType="連結",
+            CurPerType="1Q",
+            CurPerSt="2024-04-01",
+            CurPerEn="2024-06-30",
+            CurFYSt="2024-04-01",
+            CurFYEn="2025-03-31",
+            NxtFYSt=None,
+            NxtFYEn=None,
+            Sales=None,
+            OP=None,
+            OdP=None,
+            NP=None,
+            EPS=90.0,
+            DEPS=None,
+            TA=None,
+            Eq=None,
+            EqAR=None,
+            BPS=None,
+            CFO=None,
+            CFI=None,
+            CFF=None,
+            CashEq=None,
+            ShOutFY=None,
+            TrShFY=None,
+            AvgSh=None,
+            FEPS=320.0,
+            NxFEPS=350.0,
+            DivFY=15.0,
+            DivAnn=15.0,
+            PayoutRatioAnn=26.0,
+            FDivFY=16.0,
+            FDivAnn=16.0,
+            FPayoutRatioAnn=28.0,
+            NxFDivFY=18.0,
+            NxFDivAnn=18.0,
+            NxFPayoutRatioAnn=30.0,
+            NCSales=None,
+            NCOP=None,
+            NCOdP=None,
+            NCNP=None,
+            NCEPS=None,
+            NCTA=None,
+            NCEq=None,
+            NCEqAR=None,
+            NCBPS=None,
+            FNCEPS=None,
+            NxFNCEPS=None,
+        )
+
+        forecast_dividend, dividend_change_rate = service._get_forecast_dividend_fy(
+            stmt, 15.0
+        )
+        forecast_payout, payout_change_rate = service._get_forecast_payout_ratio(
+            stmt, 26.0
+        )
+
+        assert forecast_dividend == 16.0
+        assert forecast_payout == 28.0
+        assert dividend_change_rate is not None and abs(dividend_change_rate - 6.67) < 0.1
+        assert payout_change_rate is not None and abs(payout_change_rate - 7.69) < 0.1
+
 
 class TestFCFYield:
     """FCF Yield計算のテスト"""

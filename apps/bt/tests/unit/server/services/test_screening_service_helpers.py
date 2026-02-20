@@ -595,8 +595,16 @@ class TestRuntimeEvaluationHelpers:
         entry.fundamental.peg_ratio.enabled = True
         assert service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
 
-        entry.fundamental.enabled = False
         entry.fundamental.peg_ratio.enabled = False
+        entry.fundamental.forward_dividend_growth.enabled = True
+        assert service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
+
+        entry.fundamental.forward_dividend_growth.enabled = False
+        entry.fundamental.forward_payout_ratio.enabled = True
+        assert service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
+
+        entry.fundamental.enabled = False
+        entry.fundamental.forward_payout_ratio.enabled = False
         assert not service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
 
     def test_build_result_item_and_best_strategy_helpers(self):

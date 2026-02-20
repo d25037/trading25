@@ -9,28 +9,30 @@ import pandas as pd
 import numpy as np
 
 from src.strategies.signals.fundamental import (
-    is_undervalued_by_per,
-    is_undervalued_by_pbr,
+    cfo_margin_threshold,
+    cfo_yield_threshold,
+    is_expected_growth_dividend_per_share,
+    is_expected_growth_eps,
+    is_growing_cfo_yield,
+    is_growing_dividend_per_share,
     is_growing_eps,
     is_growing_profit,
     is_growing_sales,
-    is_growing_dividend_per_share,
-    is_high_roe,
-    is_high_roa,
+    is_growing_simple_fcf_yield,
     is_high_dividend_yield,
     is_high_operating_margin,
+    is_high_roa,
+    is_high_roe,
+    is_payout_ratio_threshold,
+    is_undervalued_by_pbr,
+    is_undervalued_by_per,
+    is_undervalued_growth_by_peg,
+    market_cap_threshold,
     operating_cash_flow_threshold,
     cfo_to_net_profit_ratio_threshold,
     simple_fcf_threshold,
-    is_undervalued_growth_by_peg,
-    is_expected_growth_eps,
-    cfo_margin_threshold,
-    cfo_yield_threshold,
-    is_growing_cfo_yield,
     simple_fcf_margin_threshold,
     simple_fcf_yield_threshold,
-    is_growing_simple_fcf_yield,
-    market_cap_threshold,
 )
 
 
@@ -366,6 +368,53 @@ class TestIsExpectedGrowthEps:
         )
 
         assert signal.tolist() == [False, False, True]
+
+
+class TestIsExpectedGrowthDividendPerShare:
+    """is_expected_growth_dividend_per_share()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.dividend_fy = pd.Series(np.ones(100) * 20.0, index=self.dates)
+        self.next_year_forecast_dividend_fy = pd.Series(
+            np.ones(100) * 22.0, index=self.dates
+        )
+
+    def test_forward_growth_basic(self):
+        signal = is_expected_growth_dividend_per_share(
+            self.dividend_fy, self.next_year_forecast_dividend_fy, growth_threshold=0.05
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == len(self.dividend_fy)
+        assert signal.sum() == len(self.dividend_fy)
+
+    def test_forward_growth_threshold_effect(self):
+        signal_low = is_expected_growth_dividend_per_share(
+            self.dividend_fy, self.next_year_forecast_dividend_fy, growth_threshold=0.05
+        )
+        signal_high = is_expected_growth_dividend_per_share(
+            self.dividend_fy, self.next_year_forecast_dividend_fy, growth_threshold=0.5
+        )
+
+        assert signal_low.sum() >= signal_high.sum()
+
+    def test_forward_growth_invalid_values(self):
+        dividend_with_zero = self.dividend_fy.copy()
+        dividend_with_zero.iloc[0:10] = 0.0
+        signal = is_expected_growth_dividend_per_share(
+            dividend_with_zero, self.next_year_forecast_dividend_fy, growth_threshold=0.05
+        )
+        assert not signal.iloc[0:10].any()
+
+        forecast_with_zero = self.next_year_forecast_dividend_fy.copy()
+        forecast_with_zero.iloc[20:30] = 0.0
+        signal = is_expected_growth_dividend_per_share(
+            self.dividend_fy, forecast_with_zero, growth_threshold=0.05
+        )
+        assert not signal.iloc[20:30].any()
 
 
 # =====================================================================
@@ -861,6 +910,36 @@ class TestDividendPerShareGrowth:
 
         assert isinstance(signal, pd.Series)
         assert not signal.iloc[10:20].any()
+
+
+class TestPayoutRatioThreshold:
+    """is_payout_ratio_threshold()のテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.payout_ratio = pd.Series(np.ones(100) * 35.0, index=self.dates)
+
+    def test_basic_above(self):
+        signal = is_payout_ratio_threshold(
+            self.payout_ratio, threshold=30.0, condition="above"
+        )
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert signal.all()
+
+    def test_condition_below(self):
+        signal = is_payout_ratio_threshold(
+            self.payout_ratio, threshold=40.0, condition="below"
+        )
+        assert signal.all()
+
+    def test_zero_and_negative_values(self):
+        mixed = self.payout_ratio.copy()
+        mixed.iloc[0] = 0.0
+        mixed.iloc[1] = -5.0
+        signal = is_payout_ratio_threshold(mixed, threshold=10.0, condition="below")
+        assert signal.iloc[0]
+        assert signal.iloc[1]
 
 
 # =====================================================================
@@ -2499,6 +2578,17 @@ class TestFundamentalSignalParamsConfig:
         assert params.forward_eps_growth.threshold == 0.15
         assert params.forward_eps_growth.condition == "above"
 
+    def test_forward_dividend_growth_field_exists(self):
+        """forward_dividend_growthフィールドが正しくパースされること"""
+        from src.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams(
+            forward_dividend_growth={"enabled": True, "threshold": 0.08, "condition": "above"}
+        )
+        assert params.forward_dividend_growth.enabled is True
+        assert params.forward_dividend_growth.threshold == 0.08
+        assert params.forward_dividend_growth.condition == "above"
+
     def test_eps_growth_field_exists(self):
         """eps_growth（実績ベース）フィールドが正しくパースされること"""
         from src.models.signals.fundamental import FundamentalSignalParams
@@ -2578,6 +2668,21 @@ class TestFundamentalSignalParamsConfig:
         assert params.cfo_to_net_profit_ratio.threshold == 1.2
         assert params.cfo_to_net_profit_ratio.condition == "above"
         assert params.cfo_to_net_profit_ratio.consecutive_periods == 2
+
+    def test_payout_ratio_fields_exist(self):
+        """payout_ratio/forward_payout_ratioが正しくパースされること"""
+        from src.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams(
+            payout_ratio={"enabled": True, "threshold": 40.0, "condition": "above"},
+            forward_payout_ratio={"enabled": True, "threshold": 45.0, "condition": "below"},
+        )
+        assert params.payout_ratio.enabled is True
+        assert params.payout_ratio.threshold == 40.0
+        assert params.payout_ratio.condition == "above"
+        assert params.forward_payout_ratio.enabled is True
+        assert params.forward_payout_ratio.threshold == 45.0
+        assert params.forward_payout_ratio.condition == "below"
 
     def test_yield_growth_fields_default(self):
         """yield成長率フィールドのデフォルト値が正しいこと"""

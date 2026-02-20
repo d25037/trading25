@@ -59,7 +59,10 @@ def test_dataset_dir(tmp_path):
             next_year_forecast_earnings_per_share REAL,
             bps REAL, sales REAL, operating_profit REAL,
             ordinary_profit REAL, operating_cash_flow REAL,
-            dividend_fy REAL, forecast_eps REAL,
+            dividend_fy REAL, forecast_dividend_fy REAL,
+            next_year_forecast_dividend_fy REAL,
+            payout_ratio REAL, forecast_payout_ratio REAL,
+            next_year_forecast_payout_ratio REAL, forecast_eps REAL,
             investing_cash_flow REAL, financing_cash_flow REAL,
             cash_and_equivalents REAL, total_assets REAL,
             shares_outstanding REAL, treasury_shares REAL,
@@ -80,11 +83,11 @@ def test_dataset_dir(tmp_path):
         INSERT INTO margin_data VALUES ('7203', '2024-01-04', 50000, 30000);
         INSERT INTO margin_data VALUES ('9984', '2024-01-04', 40000, 20000);
 
-        INSERT INTO statements VALUES ('7203', '2024-01-30', 150.0, 2000000, 5000000, 'FY', 'AnnualReport', 160.0, 3000, 20000000, 1500000, 1600000, 1800000, 60.0, 165.0, -500000, -300000, 4000000, 50000000, 330000000, 10000000);
-        INSERT INTO statements VALUES ('7203', '2024-04-30', 45.0, 550000, 5100000, '1Q', 'QuarterlyReport', 170.0, 3050, 5200000, 420000, 430000, 510000, 15.0, 172.0, -110000, -90000, 4100000, 50100000, 331000000, 10000000);
-        INSERT INTO statements VALUES ('7203', '2024-07-30', 48.0, 600000, 5200000, 'Q1', 'QuarterlyReport', 175.0, 3100, 5400000, 450000, 460000, 530000, 16.0, 176.0, -100000, -85000, 4200000, 50200000, 332000000, 10000000);
+        INSERT INTO statements VALUES ('7203', '2024-01-30', 150.0, 2000000, 5000000, 'FY', 'AnnualReport', 160.0, 3000, 20000000, 1500000, 1600000, 1800000, 60.0, 62.0, 64.0, 30.0, 32.0, 34.0, 165.0, -500000, -300000, 4000000, 50000000, 330000000, 10000000);
+        INSERT INTO statements VALUES ('7203', '2024-04-30', 45.0, 550000, 5100000, '1Q', 'QuarterlyReport', 170.0, 3050, 5200000, 420000, 430000, 510000, 15.0, 16.0, 17.0, 28.0, 29.0, 30.0, 172.0, -110000, -90000, 4100000, 50100000, 331000000, 10000000);
+        INSERT INTO statements VALUES ('7203', '2024-07-30', 48.0, 600000, 5200000, 'Q1', 'QuarterlyReport', 175.0, 3100, 5400000, 450000, 460000, 530000, 16.0, 17.0, 18.0, 29.0, 30.0, 31.0, 176.0, -100000, -85000, 4200000, 50200000, 332000000, 10000000);
         -- forecast-only row (actual_only=true では除外される)
-        INSERT INTO statements VALUES ('7203', '2024-10-30', NULL, NULL, NULL, 'FY', 'ForecastRevision', 180.0, NULL, NULL, NULL, NULL, NULL, NULL, 180.0, NULL, NULL, NULL, NULL, NULL, NULL);
+        INSERT INTO statements VALUES ('7203', '2024-10-30', NULL, NULL, NULL, 'FY', 'ForecastRevision', 180.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 180.0, NULL, NULL, NULL, NULL, NULL, NULL);
 
         INSERT INTO dataset_info VALUES ('preset', 'primeMarket', NULL);
     """)

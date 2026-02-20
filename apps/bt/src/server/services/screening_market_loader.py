@@ -41,6 +41,11 @@ _STATEMENT_DB_TO_API_COLUMNS = {
     "ordinary_profit": "ordinaryProfit",
     "operating_cash_flow": "operatingCashFlow",
     "dividend_fy": "dividendFY",
+    "forecast_dividend_fy": "forecastDividendFY",
+    "next_year_forecast_dividend_fy": "nextYearForecastDividendFY",
+    "payout_ratio": "payoutRatio",
+    "forecast_payout_ratio": "forecastPayoutRatio",
+    "next_year_forecast_payout_ratio": "nextYearForecastPayoutRatio",
     "forecast_eps": "forecastEps",
     "investing_cash_flow": "investingCashFlow",
     "financing_cash_flow": "financingCashFlow",
@@ -350,6 +355,11 @@ def _query_statements_rows(
             ordinary_profit,
             operating_cash_flow,
             dividend_fy,
+            forecast_dividend_fy,
+            next_year_forecast_dividend_fy,
+            payout_ratio,
+            forecast_payout_ratio,
+            next_year_forecast_payout_ratio,
             forecast_eps,
             investing_cash_flow,
             financing_cash_flow,
@@ -462,4 +472,3 @@ def _rows_to_ohlc_df(rows: list[Any]) -> pd.DataFrame:
     )
     df["date"] = pd.to_datetime(df["date"])
     return df.set_index("date").sort_index()
-

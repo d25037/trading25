@@ -116,6 +116,9 @@ describe('FundamentalsPanel', () => {
             eps: 95,
             adjustedForecastEps: 120,
             forecastEps: 110,
+            adjustedDividendFy: 100,
+            dividendFy: 95,
+            payoutRatio: 50,
             adjustedBps: 2200,
             bps: 2100,
             cashFlowOperating: 100,
@@ -130,6 +133,11 @@ describe('FundamentalsPanel', () => {
           forecastEps: 130,
           adjustedForecastEps: 150,
           forecastEpsChangeRate: 999,
+          forecastDividendFy: 110,
+          adjustedForecastDividendFy: 120,
+          forecastDividendFyChangeRate: 999,
+          forecastPayoutRatio: 75,
+          forecastPayoutRatioChangeRate: 999,
           prevCashFlowOperating: 90,
           prevCashFlowInvesting: -40,
           prevCashFlowFinancing: -10,
@@ -154,6 +162,12 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.forecastEps).toBe(130);
     expect(metrics?.adjustedForecastEps).toBe(150);
     expect(metrics?.forecastEpsChangeRate).toBe(50);
+    expect(metrics?.forecastDividendFy).toBe(110);
+    expect(metrics?.adjustedForecastDividendFy).toBe(120);
+    expect(metrics?.forecastDividendFyChangeRate).toBe(20);
+    expect(metrics?.payoutRatio).toBe(50);
+    expect(metrics?.forecastPayoutRatio).toBe(75);
+    expect(metrics?.forecastPayoutRatioChangeRate).toBe(50);
     expect(metrics?.per).toBe(18);
     expect(metrics?.pbr).toBe(1.4);
     expect(metrics?.stockPrice).toBe(2500);

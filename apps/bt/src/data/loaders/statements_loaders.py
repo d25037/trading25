@@ -33,6 +33,14 @@ _COLUMN_MAPPING = {
     "operatingCashFlow": "OperatingCashFlow",
     "investingCashFlow": "InvestingCashFlow",
     "dividendFY": "DividendFY",
+    "dividendFy": "DividendFY",
+    "forecastDividendFY": "ForecastDividendFY",
+    "forecastDividendFy": "ForecastDividendFY",
+    "nextYearForecastDividendFY": "NextYearForecastDividendFY",
+    "nextYearForecastDividendFy": "NextYearForecastDividendFY",
+    "payoutRatio": "PayoutRatio",
+    "forecastPayoutRatio": "ForecastPayoutRatio",
+    "nextYearForecastPayoutRatio": "NextYearForecastPayoutRatio",
     "forecastEps": "ForecastEPS",
     "totalAssets": "TotalAssets",
     "sharesOutstanding": "SharesOutstanding",
@@ -52,6 +60,11 @@ _NUMERIC_COLUMNS = [
     "OperatingCashFlow",
     "InvestingCashFlow",
     "DividendFY",
+    "ForecastDividendFY",
+    "NextYearForecastDividendFY",
+    "PayoutRatio",
+    "ForecastPayoutRatio",
+    "NextYearForecastPayoutRatio",
     "ForecastEPS",
     "TotalAssets",
     "SharesOutstanding",
@@ -61,11 +74,20 @@ _NUMERIC_COLUMNS = [
     "AdjustedBPS",
     "AdjustedForecastEPS",
     "AdjustedNextYearForecastEPS",
+    "AdjustedDividendFY",
+    "AdjustedForecastDividendFY",
+    "AdjustedNextYearForecastDividendFY",
     # Forward forecast columns (used by forecast-based signals)
     "ForwardBaseEPS",
     "AdjustedForwardBaseEPS",
     "ForwardForecastEPS",
     "AdjustedForwardForecastEPS",
+    "ForwardBaseDividendFY",
+    "AdjustedForwardBaseDividendFY",
+    "ForwardForecastDividendFY",
+    "AdjustedForwardForecastDividendFY",
+    "ForwardBasePayoutRatio",
+    "ForwardForecastPayoutRatio",
 ]
 
 # Raw -> Adjusted カラム名マッピング（株式数調整対象）
@@ -74,9 +96,18 @@ _ADJUSTED_COLUMN_MAP = {
     "BPS": "AdjustedBPS",
     "ForecastEPS": "AdjustedForecastEPS",
     "NextYearForecastEPS": "AdjustedNextYearForecastEPS",
+    "DividendFY": "AdjustedDividendFY",
+    "ForecastDividendFY": "AdjustedForecastDividendFY",
+    "NextYearForecastDividendFY": "AdjustedNextYearForecastDividendFY",
 }
 
-_FORWARD_FORECAST_COLUMNS = ["ForwardForecastEPS", "AdjustedForwardForecastEPS"]
+_FORWARD_FORECAST_COLUMNS = [
+    "ForwardForecastEPS",
+    "AdjustedForwardForecastEPS",
+    "ForwardForecastDividendFY",
+    "AdjustedForwardForecastDividendFY",
+    "ForwardForecastPayoutRatio",
+]
 
 
 def _resolve_baseline_shares(df: pd.DataFrame) -> float | None:
@@ -164,6 +195,55 @@ def _build_forward_eps_columns(df: pd.DataFrame) -> None:
         adjusted_q_forecast
     )
 
+    # Dividend forecast helpers (same policy as EPS: FY uses next FY forecast, Q uses current FY forecast)
+    if "DividendFY" in df.columns:
+        df["ForwardBaseDividendFY"] = df["DividendFY"].where(is_fy).ffill()
+    if "AdjustedDividendFY" in df.columns:
+        df["AdjustedForwardBaseDividendFY"] = df["AdjustedDividendFY"].where(is_fy).ffill()
+
+    if "NextYearForecastDividendFY" in df.columns:
+        fy_div_forecast = df["NextYearForecastDividendFY"].where(is_fy)
+    else:
+        fy_div_forecast = pd.Series(np.nan, index=df.index)
+
+    if "ForecastDividendFY" in df.columns:
+        q_div_forecast = df["ForecastDividendFY"].where(is_quarter)
+    else:
+        q_div_forecast = pd.Series(np.nan, index=df.index)
+
+    df["ForwardForecastDividendFY"] = fy_div_forecast.combine_first(q_div_forecast)
+
+    if "AdjustedNextYearForecastDividendFY" in df.columns:
+        adjusted_fy_div_forecast = df["AdjustedNextYearForecastDividendFY"].where(is_fy)
+    else:
+        adjusted_fy_div_forecast = pd.Series(np.nan, index=df.index)
+
+    if "AdjustedForecastDividendFY" in df.columns:
+        adjusted_q_div_forecast = df["AdjustedForecastDividendFY"].where(is_quarter)
+    else:
+        adjusted_q_div_forecast = pd.Series(np.nan, index=df.index)
+
+    df["AdjustedForwardForecastDividendFY"] = adjusted_fy_div_forecast.combine_first(
+        adjusted_q_div_forecast
+    )
+
+    if "PayoutRatio" in df.columns:
+        df["ForwardBasePayoutRatio"] = df["PayoutRatio"].where(is_fy).ffill()
+
+    if "NextYearForecastPayoutRatio" in df.columns:
+        fy_payout_forecast = df["NextYearForecastPayoutRatio"].where(is_fy)
+    else:
+        fy_payout_forecast = pd.Series(np.nan, index=df.index)
+
+    if "ForecastPayoutRatio" in df.columns:
+        q_payout_forecast = df["ForecastPayoutRatio"].where(is_quarter)
+    else:
+        q_payout_forecast = pd.Series(np.nan, index=df.index)
+
+    df["ForwardForecastPayoutRatio"] = fy_payout_forecast.combine_first(
+        q_payout_forecast
+    )
+
 
 def merge_forward_forecast_revision(
     base_daily_df: pd.DataFrame, revision_daily_df: pd.DataFrame
@@ -247,11 +327,16 @@ def load_statements_data(
         pandas.DataFrame: 日次同期された財務諸表データ
             基本指標: EPS, Profit, Equity, ROE
             拡張指標: BPS, Sales, OperatingProfit, OrdinaryProfit,
-                     OperatingCashFlow, InvestingCashFlow, DividendFY, ForecastEPS,
+                     OperatingCashFlow, InvestingCashFlow,
+                     DividendFY, ForecastDividendFY, NextYearForecastDividendFY,
+                     PayoutRatio, ForecastPayoutRatio, NextYearForecastPayoutRatio,
+                     ForecastEPS,
                      NextYearForecastEPS, TotalAssets,
                      ROA, OperatingMargin (派生指標)
             Adjusted指標: AdjustedEPS, AdjustedBPS, AdjustedForecastEPS,
-                         AdjustedNextYearForecastEPS
+                         AdjustedNextYearForecastEPS,
+                         AdjustedDividendFY, AdjustedForecastDividendFY,
+                         AdjustedNextYearForecastDividendFY
 
     Raises:
         ValueError: データが見つからない場合

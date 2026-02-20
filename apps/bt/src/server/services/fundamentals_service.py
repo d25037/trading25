@@ -290,8 +290,23 @@ class FundamentalsService:
         adjusted_dividend = self._compute_adjusted_value(
             item.dividendFy, dividend_shares, base_shares
         )
+        adjusted_forecast_dividend = self._compute_adjusted_value(
+            item.forecastDividendFy, dividend_shares, base_shares
+        )
         display_eps = adjusted_eps if adjusted_eps is not None else item.eps
         display_bps = adjusted_bps if adjusted_bps is not None else item.bps
+        display_dividend = adjusted_dividend if adjusted_dividend is not None else item.dividendFy
+        display_forecast_dividend = (
+            adjusted_forecast_dividend
+            if adjusted_forecast_dividend is not None
+            else item.forecastDividendFy
+        )
+        forecast_dividend_change_rate = self._calculate_change_rate(
+            display_dividend, display_forecast_dividend
+        )
+        forecast_payout_change_rate = self._calculate_change_rate(
+            item.payoutRatio, item.forecastPayoutRatio
+        )
 
         return FundamentalDataPoint(
             **{
@@ -300,6 +315,13 @@ class FundamentalsService:
                 "adjustedForecastEps": adjusted_forecast,
                 "adjustedBps": adjusted_bps,
                 "adjustedDividendFy": adjusted_dividend,
+                "adjustedForecastDividendFy": adjusted_forecast_dividend,
+                "forecastDividendFyChangeRate": self._round_or_none(
+                    forecast_dividend_change_rate
+                ),
+                "forecastPayoutRatioChangeRate": self._round_or_none(
+                    forecast_payout_change_rate
+                ),
                 "per": self._round_or_none(self._calculate_per(display_eps, item.stockPrice)),
                 "pbr": self._round_or_none(self._calculate_pbr(display_bps, item.stockPrice)),
             }
@@ -531,7 +553,14 @@ class FundamentalsService:
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
             stmt, eps, prefer_consolidated
         )
-        dividend_fy = self._round_or_none(stmt.DivAnn)
+        dividend_fy = self._round_or_none(self._get_dividend_fy(stmt))
+        forecast_dividend_fy, forecast_dividend_fy_change_rate = (
+            self._get_forecast_dividend_fy(stmt, dividend_fy)
+        )
+        payout_ratio = self._round_or_none(stmt.PayoutRatioAnn)
+        forecast_payout_ratio, forecast_payout_ratio_change_rate = (
+            self._get_forecast_payout_ratio(stmt, payout_ratio)
+        )
 
         normalized_period_type = normalize_period_type(stmt.CurPerType)
 
@@ -547,6 +576,16 @@ class FundamentalsService:
             bps=self._round_or_none(bps),
             dividendFy=dividend_fy,
             adjustedDividendFy=dividend_fy,
+            forecastDividendFy=self._round_or_none(forecast_dividend_fy),
+            adjustedForecastDividendFy=self._round_or_none(forecast_dividend_fy),
+            forecastDividendFyChangeRate=self._round_or_none(
+                forecast_dividend_fy_change_rate
+            ),
+            payoutRatio=payout_ratio,
+            forecastPayoutRatio=self._round_or_none(forecast_payout_ratio),
+            forecastPayoutRatioChangeRate=self._round_or_none(
+                forecast_payout_ratio_change_rate
+            ),
             per=self._round_or_none(per),
             pbr=self._round_or_none(pbr),
             roa=self._round_or_none(roa),
@@ -931,11 +970,54 @@ class FundamentalsService:
         forecast_eps = primary if primary is not None else fallback
 
         # Calculate change rate
-        forecast_eps_change_rate: float | None = None
-        if forecast_eps is not None and actual_eps is not None and actual_eps != 0:
-            forecast_eps_change_rate = ((forecast_eps - actual_eps) / abs(actual_eps)) * 100
+        return forecast_eps, self._calculate_change_rate(actual_eps, forecast_eps)
 
-        return forecast_eps, forecast_eps_change_rate
+    def _get_dividend_fy(self, stmt: JQuantsStatement) -> float | None:
+        """Get annual dividend per share from statement payload."""
+        return stmt.DivAnn if stmt.DivAnn is not None else stmt.DivFY
+
+    def _get_forecast_dividend_fy(
+        self,
+        stmt: JQuantsStatement,
+        actual_dividend_fy: float | None,
+    ) -> tuple[float | None, float | None]:
+        """Get forecast annual dividend and change rate.
+
+        Priority logic (aligned with forecast EPS):
+        - FY: NxFDivAnn/NxFDivFY (next FY forecast)
+        - Q: FDivAnn/FDivFY (current FY forecast revision)
+        """
+        is_fy = normalize_period_type(stmt.CurPerType) == "FY"
+        current_fy_forecast = stmt.FDivAnn if stmt.FDivAnn is not None else stmt.FDivFY
+        next_fy_forecast = (
+            stmt.NxFDivAnn if stmt.NxFDivAnn is not None else stmt.NxFDivFY
+        )
+        primary, fallback = (
+            (next_fy_forecast, current_fy_forecast)
+            if is_fy
+            else (current_fy_forecast, next_fy_forecast)
+        )
+        forecast_dividend_fy = primary if primary is not None else fallback
+        return forecast_dividend_fy, self._calculate_change_rate(
+            actual_dividend_fy, forecast_dividend_fy
+        )
+
+    def _get_forecast_payout_ratio(
+        self,
+        stmt: JQuantsStatement,
+        actual_payout_ratio: float | None,
+    ) -> tuple[float | None, float | None]:
+        """Get forecast payout ratio and change rate."""
+        is_fy = normalize_period_type(stmt.CurPerType) == "FY"
+        primary, fallback = (
+            (stmt.NxFPayoutRatioAnn, stmt.FPayoutRatioAnn)
+            if is_fy
+            else (stmt.FPayoutRatioAnn, stmt.NxFPayoutRatioAnn)
+        )
+        forecast_payout_ratio = primary if primary is not None else fallback
+        return forecast_payout_ratio, self._calculate_change_rate(
+            actual_payout_ratio, forecast_payout_ratio
+        )
 
     # ===== Daily Valuation Methods =====
 
@@ -1160,6 +1242,16 @@ class FundamentalsService:
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
             current_statement, metrics.eps, prefer_consolidated
         ) if current_statement else (None, None)
+        forecast_dividend_fy, forecast_dividend_fy_change_rate = (
+            self._get_forecast_dividend_fy(current_statement, metrics.dividendFy)
+            if current_statement
+            else (None, None)
+        )
+        forecast_payout_ratio, forecast_payout_ratio_change_rate = (
+            self._get_forecast_payout_ratio(current_statement, metrics.payoutRatio)
+            if current_statement
+            else (None, None)
+        )
 
         # Find previous period CF data
         prev_cf = self._get_previous_period_cash_flow(
@@ -1171,6 +1263,14 @@ class FundamentalsService:
                 **metrics.model_dump(),
                 "forecastEps": self._round_or_none(forecast_eps),
                 "forecastEpsChangeRate": self._round_or_none(forecast_eps_change_rate),
+                "forecastDividendFy": self._round_or_none(forecast_dividend_fy),
+                "forecastDividendFyChangeRate": self._round_or_none(
+                    forecast_dividend_fy_change_rate
+                ),
+                "forecastPayoutRatio": self._round_or_none(forecast_payout_ratio),
+                "forecastPayoutRatioChangeRate": self._round_or_none(
+                    forecast_payout_ratio_change_rate
+                ),
                 **prev_cf,
             }
         )
@@ -1298,6 +1398,18 @@ class FundamentalsService:
         if value is None:
             return None
         return value / 1_000_000
+
+    def _calculate_change_rate(
+        self, actual_value: float | None, forecast_value: float | None
+    ) -> float | None:
+        """Calculate change rate from actual to forecast value."""
+        if (
+            actual_value is None
+            or forecast_value is None
+            or actual_value == 0
+        ):
+            return None
+        return ((forecast_value - actual_value) / abs(actual_value)) * 100
 
 
 # Global service instance

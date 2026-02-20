@@ -91,6 +91,11 @@ def dataset_db(tmp_path):
             ordinary_profit REAL,
             operating_cash_flow REAL,
             dividend_fy REAL,
+            forecast_dividend_fy REAL,
+            next_year_forecast_dividend_fy REAL,
+            payout_ratio REAL,
+            forecast_payout_ratio REAL,
+            next_year_forecast_payout_ratio REAL,
             forecast_eps REAL,
             investing_cash_flow REAL,
             financing_cash_flow REAL,
@@ -123,8 +128,8 @@ def dataset_db(tmp_path):
         INSERT INTO margin_data VALUES ('7203', '2024-01-05', 52000, 31000);
         INSERT INTO margin_data VALUES ('9984', '2024-01-04', 40000, 20000);
 
-        INSERT INTO statements VALUES ('7203', '2024-01-30', 150.0, 2000000, 5000000, 'FY', 'AnnualReport', 160.0, 3000, 20000000, 1500000, 1600000, 1800000, 60.0, 165.0, -500000, -300000, 4000000, 50000000, 330000000, 10000000);
-        INSERT INTO statements VALUES ('9984', '2024-01-30', 100.0, 1500000, 3000000, 'FY', 'AnnualReport', 110.0, 2500, 15000000, 1200000, 1300000, 1400000, 50.0, 115.0, -400000, -200000, 3000000, 40000000, 200000000, 5000000);
+        INSERT INTO statements VALUES ('7203', '2024-01-30', 150.0, 2000000, 5000000, 'FY', 'AnnualReport', 160.0, 3000, 20000000, 1500000, 1600000, 1800000, 60.0, 62.0, 64.0, 30.0, 32.0, 34.0, 165.0, -500000, -300000, 4000000, 50000000, 330000000, 10000000);
+        INSERT INTO statements VALUES ('9984', '2024-01-30', 100.0, 1500000, 3000000, 'FY', 'AnnualReport', 110.0, 2500, 15000000, 1200000, 1300000, 1400000, 50.0, 51.0, 53.0, 25.0, 27.0, 28.0, 115.0, -400000, -200000, 3000000, 40000000, 200000000, 5000000);
 
         INSERT INTO dataset_info VALUES ('preset', 'primeMarket', NULL);
         INSERT INTO dataset_info VALUES ('created_at', '2024-01-01T00:00:00', NULL);

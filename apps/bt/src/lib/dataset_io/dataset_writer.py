@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import func, insert, select
+from sqlalchemy import func, insert, select, text
 
 from src.lib.market_db.base import BaseDbAccess
 from src.lib.market_db.tables import (
@@ -35,6 +35,31 @@ class DatasetWriter(BaseDbAccess):
     def _ensure_schema(self) -> None:
         """テーブルが存在しない場合は作成"""
         dataset_meta.create_all(self.engine, checkfirst=True)
+        self._ensure_statements_columns()
+
+    def _ensure_statements_columns(self) -> None:
+        """既存 statements テーブルに不足カラムを追加する。"""
+        additional_columns: tuple[tuple[str, str], ...] = (
+            ("forecast_dividend_fy", "REAL"),
+            ("next_year_forecast_dividend_fy", "REAL"),
+            ("payout_ratio", "REAL"),
+            ("forecast_payout_ratio", "REAL"),
+            ("next_year_forecast_payout_ratio", "REAL"),
+        )
+        with self.engine.begin() as conn:
+            existing_columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(statements)")).fetchall()
+                if len(row) > 1
+            }
+            for column_name, column_type in additional_columns:
+                if column_name in existing_columns:
+                    continue
+                conn.execute(
+                    text(
+                        f"ALTER TABLE statements ADD COLUMN {column_name} {column_type}"  # noqa: S608
+                    )
+                )
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
         if not rows:

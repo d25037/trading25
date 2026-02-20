@@ -1321,7 +1321,7 @@ class ScreeningService:
         entry_params: SignalParams,
         exit_params: SignalParams,
     ) -> bool:
-        """forward_eps_growth/peg_ratio 有効時に四半期修正取得を有効化。"""
+        """予想系シグナル有効時に四半期修正取得を有効化。"""
 
         def _enabled(params: SignalParams) -> bool:
             fundamental = params.fundamental
@@ -1330,6 +1330,8 @@ class ScreeningService:
             return bool(
                 fundamental.forward_eps_growth.enabled
                 or fundamental.peg_ratio.enabled
+                or fundamental.forward_dividend_growth.enabled
+                or fundamental.forward_payout_ratio.enabled
             )
 
         return _enabled(entry_params) or _enabled(exit_params)
