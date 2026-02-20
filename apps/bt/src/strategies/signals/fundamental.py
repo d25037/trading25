@@ -55,6 +55,7 @@ from .fundamental_quality import (
 from .fundamental_cashflow import (
     cfo_margin_threshold,
     cfo_yield_threshold,
+    cfo_to_net_profit_ratio_threshold,
     is_growing_cfo_yield,
     is_growing_simple_fcf_yield,
     market_cap_threshold,
@@ -87,6 +88,7 @@ __all__ = [
     "is_high_dividend_yield",
     # キャッシュフロー系・時価総額系
     "operating_cash_flow_threshold",
+    "cfo_to_net_profit_ratio_threshold",
     "simple_fcf_threshold",
     "cfo_margin_threshold",
     "simple_fcf_margin_threshold",

@@ -1,7 +1,7 @@
 """
 財務指標シグナル — キャッシュフロー系・時価総額系
 
-営業CF・簡易FCF・CFO/FCF利回り・CFO/FCFマージン・時価総額に基づくシグナルを提供
+営業CF・営業CF/純利益・簡易FCF・CFO/FCF利回り・CFO/FCFマージン・時価総額に基づくシグナルを提供
 """
 
 from __future__ import annotations
@@ -60,6 +60,48 @@ def operating_cash_flow_threshold(
     return _calc_threshold_signal(
         operating_cash_flow, threshold, condition, require_positive=False
     )
+
+
+def cfo_to_net_profit_ratio_threshold(
+    operating_cash_flow: pd.Series[float],
+    net_profit: pd.Series[float],
+    threshold: float = 1.0,
+    condition: Literal["above", "below"] = "above",
+    consecutive_periods: int = 1,
+) -> pd.Series[bool]:
+    """
+    営業CF/純利益 比率シグナル
+
+    営業CF/純利益 比率が指定した条件で閾値と比較してTrueを返すシグナル
+
+    Args:
+        operating_cash_flow: 営業キャッシュフローデータ（日次インデックスに補完済み想定）
+        net_profit: 純利益データ（日次インデックスに補完済み想定）
+        threshold: 比率閾値（デフォルト1.0）
+        condition: 条件（above=閾値以上、below=閾値未満）
+        consecutive_periods: 連続期間数（直近N回分の決算発表で条件を満たす必要がある）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - 純利益が0の場合は比率を無効値（NaN）として扱う
+        - 純利益が負の場合も計算対象（比率は負値になり得る）
+        - consecutive_periods > 1 の場合、直近N回分の決算発表で条件を満たす必要がある
+        - 推奨period_type: "FY"（純利益・営業CFの整合を優先）
+    """
+    ratio = operating_cash_flow / net_profit.where(net_profit != 0, np.nan)
+
+    if consecutive_periods > 1:
+        return _calc_consecutive_release_threshold_signal(
+            ratio,
+            threshold,
+            condition,
+            consecutive_periods,
+            operating_cash_flow,
+            net_profit,
+        )
+    return _calc_threshold_signal(ratio, threshold, condition, require_positive=False)
 
 
 def simple_fcf_threshold(
@@ -259,15 +301,62 @@ def _freeze_metric_by_release_dates(
     if metric.empty:
         return metric
 
-    release_mask = pd.Series(False, index=metric.index)
+    release_mask = _build_release_mask(metric.index, *release_sources)
+    return metric.where(release_mask).ffill()
+
+
+def _calc_consecutive_release_threshold_signal(
+    metric: pd.Series[float],
+    threshold: float,
+    condition: Literal["above", "below"],
+    consecutive_periods: int,
+    *release_sources: pd.Series,
+) -> pd.Series[bool]:
+    """
+    開示更新タイミングを基準に連続閾値判定を行う。
+
+    metric 値自体が同値継続でも、source が更新されていれば新しい決算発表として扱う。
+    """
+    if metric.empty:
+        return metric.astype(bool)
+
+    release_mask = _build_release_mask(metric.index, *release_sources)
+    release_dates = release_mask[release_mask].index
+    if len(release_dates) < consecutive_periods:
+        return pd.Series(False, index=metric.index)
+
+    release_values = metric.loc[release_dates]
+    meets_threshold = (
+        release_values >= threshold if condition == "above" else release_values < threshold
+    )
+    valid_release = meets_threshold & release_values.notna()
+    consecutive_met = (
+        valid_release
+        .rolling(window=consecutive_periods, min_periods=consecutive_periods)
+        .sum()
+        .eq(consecutive_periods)
+    )
+
+    daily_result = pd.Series(np.nan, index=metric.index)
+    daily_result.loc[consecutive_met.index] = consecutive_met.astype(float)
+    return daily_result.ffill().fillna(0.0).astype(bool) & metric.notna()
+
+
+def _build_release_mask(
+    index: pd.Index,
+    *release_sources: pd.Series,
+) -> pd.Series[bool]:
+    """開示更新タイミングを表す bool マスクを構築する。"""
+    release_mask = pd.Series(False, index=index)
     for source in release_sources:
-        aligned_source = source.reindex(metric.index)
+        aligned_source = source.reindex(index)
         # NaN継続は「更新なし」とみなす。NaN -> 値 の遷移は更新として扱う。
         source_release = aligned_source.notna() & aligned_source.ne(aligned_source.shift(1))
         release_mask |= source_release.fillna(False)
 
-    release_mask.iloc[0] = True
-    return metric.where(release_mask).ffill()
+    if len(release_mask) > 0:
+        release_mask.iloc[0] = True
+    return release_mask
 
 
 def is_growing_cfo_yield(
