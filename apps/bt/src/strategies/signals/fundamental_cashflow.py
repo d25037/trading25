@@ -1,7 +1,7 @@
 """
 財務指標シグナル — キャッシュフロー系・時価総額系
 
-営業CF・簡易FCF・CFO利回り・FCF利回り・時価総額に基づくシグナルを提供
+営業CF・簡易FCF・CFO/FCF利回り・CFO/FCFマージン・時価総額に基づくシグナルを提供
 """
 
 from __future__ import annotations
@@ -18,6 +18,14 @@ from .fundamental_helpers import (
     _calc_growth_signal,
     _calc_threshold_signal,
 )
+
+
+def _calc_margin_percent(
+    numerator: pd.Series[float],
+    sales: pd.Series[float],
+) -> pd.Series[float]:
+    """売上高が正の期間のみを分母にしてマージン(%)を計算する。"""
+    return (numerator / sales.where(sales > 0, np.nan)) * 100
 
 
 def operating_cash_flow_threshold(
@@ -134,6 +142,35 @@ def cfo_yield_threshold(
     return _calc_threshold_signal(cfo_yield, threshold, condition, require_positive=False)
 
 
+def cfo_margin_threshold(
+    operating_cash_flow: pd.Series[float],
+    sales: pd.Series[float],
+    threshold: float = 5.0,
+    condition: Literal["above", "below"] = "above",
+) -> pd.Series[bool]:
+    """
+    CFOマージン（営業キャッシュフロー/売上高）シグナル
+
+    CFOマージン = (CFO / 売上高) × 100 [%]
+
+    Args:
+        operating_cash_flow: 営業キャッシュフローデータ（日次インデックスに補完済み想定）
+        sales: 売上高データ（日次インデックスに補完済み想定）
+        threshold: CFOマージン閾値（デフォルト5.0 = 5%）
+        condition: 条件（above=閾値以上、below=閾値以下）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - 売上高が0以下またはNaNの場合はFalseを返す
+        - CFOが負の場合も計算対象（負のマージンとなる）
+        - 推奨period_type: "FY"（CFデータはFYで一貫性あり）
+    """
+    cfo_margin = _calc_margin_percent(operating_cash_flow, sales)
+    return _calc_threshold_signal(cfo_margin, threshold, condition, require_positive=False)
+
+
 def simple_fcf_yield_threshold(
     close: pd.Series[float],
     operating_cash_flow: pd.Series[float],
@@ -179,6 +216,39 @@ def simple_fcf_yield_threshold(
     fcf_yield = (fcf / market_cap.where(market_cap > 0, np.nan)) * 100
 
     return _calc_threshold_signal(fcf_yield, threshold, condition, require_positive=False)
+
+
+def simple_fcf_margin_threshold(
+    operating_cash_flow: pd.Series[float],
+    investing_cash_flow: pd.Series[float],
+    sales: pd.Series[float],
+    threshold: float = 5.0,
+    condition: Literal["above", "below"] = "above",
+) -> pd.Series[bool]:
+    """
+    簡易FCFマージン（(CFO+CFI)/売上高）シグナル
+
+    簡易FCFマージン = ((CFO + CFI) / 売上高) × 100 [%]
+
+    Args:
+        operating_cash_flow: 営業キャッシュフローデータ（日次インデックスに補完済み想定）
+        investing_cash_flow: 投資キャッシュフローデータ（日次インデックスに補完済み想定）
+        sales: 売上高データ（日次インデックスに補完済み想定）
+        threshold: 簡易FCFマージン閾値（デフォルト5.0 = 5%）
+        condition: 条件（above=閾値以上、below=閾値以下）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - 売上高が0以下またはNaNの場合はFalseを返す
+        - 簡易FCF = 営業CF + 投資CF（通常、投資CFは負の値）
+        - 簡易FCFが負の場合も計算対象（負のマージンとなる）
+        - 推奨period_type: "FY"（CFデータはFYで一貫性あり）
+    """
+    fcf = operating_cash_flow + investing_cash_flow
+    fcf_margin = _calc_margin_percent(fcf, sales)
+    return _calc_threshold_signal(fcf_margin, threshold, condition, require_positive=False)
 
 
 def _freeze_metric_by_release_dates(

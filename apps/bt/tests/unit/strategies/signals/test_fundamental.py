@@ -23,8 +23,10 @@ from src.strategies.signals.fundamental import (
     simple_fcf_threshold,
     is_undervalued_growth_by_peg,
     is_expected_growth_eps,
+    cfo_margin_threshold,
     cfo_yield_threshold,
     is_growing_cfo_yield,
+    simple_fcf_margin_threshold,
     simple_fcf_yield_threshold,
     is_growing_simple_fcf_yield,
     market_cap_threshold,
@@ -1577,8 +1579,109 @@ class TestConsecutivePeriodsEdgeCases:
 
 
 # =====================================================================
-# CFO利回り・簡易FCF利回りシグナルテスト（2026-01追加）
+# CFO/FCFマージン・利回りシグナルテスト（2026-01追加）
 # =====================================================================
+
+
+class TestCfoMarginThreshold:
+    """cfo_margin_threshold()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        # CFO=1200万円、売上高=1億円 -> CFOマージン=12%
+        self.operating_cash_flow = pd.Series(np.ones(100) * 12_000_000, index=self.dates)
+        self.sales = pd.Series(np.ones(100) * 100_000_000, index=self.dates)
+
+    def test_cfo_margin_basic(self):
+        signal = cfo_margin_threshold(
+            self.operating_cash_flow,
+            self.sales,
+            threshold=12.0,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert signal.all()
+
+    def test_cfo_margin_threshold_effect(self):
+        signal_low = cfo_margin_threshold(
+            self.operating_cash_flow,
+            self.sales,
+            threshold=8.0,
+        )
+        signal_high = cfo_margin_threshold(
+            self.operating_cash_flow,
+            self.sales,
+            threshold=20.0,
+        )
+
+        assert signal_low.sum() >= signal_high.sum()
+        assert signal_low.all()
+        assert not signal_high.any()
+
+    def test_cfo_margin_invalid_sales(self):
+        sales_zero = pd.Series(np.zeros(100), index=self.dates)
+        signal = cfo_margin_threshold(
+            self.operating_cash_flow,
+            sales_zero,
+            threshold=1.0,
+        )
+        assert isinstance(signal, pd.Series)
+        assert not signal.any()
+
+
+class TestSimpleFcfMarginThreshold:
+    """simple_fcf_margin_threshold()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        # CFO=1500万円、CFI=-500万円 -> FCF=1000万円
+        # 売上高=1億円 -> FCFマージン=10%
+        self.operating_cash_flow = pd.Series(np.ones(100) * 15_000_000, index=self.dates)
+        self.investing_cash_flow = pd.Series(np.ones(100) * -5_000_000, index=self.dates)
+        self.sales = pd.Series(np.ones(100) * 100_000_000, index=self.dates)
+
+    def test_simple_fcf_margin_basic(self):
+        signal = simple_fcf_margin_threshold(
+            self.operating_cash_flow,
+            self.investing_cash_flow,
+            self.sales,
+            threshold=10.0,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert signal.all()
+
+    def test_simple_fcf_margin_negative_fcf(self):
+        investing_cash_flow_large = pd.Series(np.ones(100) * -30_000_000, index=self.dates)
+        signal = simple_fcf_margin_threshold(
+            self.operating_cash_flow,
+            investing_cash_flow_large,
+            self.sales,
+            threshold=0.0,
+            condition="below",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.all()
+
+    def test_simple_fcf_margin_nan_handling(self):
+        sales_nan = self.sales.copy()
+        sales_nan.iloc[0:10] = np.nan
+
+        signal = simple_fcf_margin_threshold(
+            self.operating_cash_flow,
+            self.investing_cash_flow,
+            sales_nan,
+            threshold=10.0,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert not signal.iloc[0:10].any()
+        assert signal.iloc[10:].all()
 
 
 class TestCfoYieldThreshold:
@@ -2283,6 +2386,10 @@ class TestFundamentalSignalParamsConfig:
         from src.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams()
+        assert params.cfo_margin.enabled is False
+        assert params.simple_fcf_margin.enabled is False
+        assert params.cfo_margin.threshold == 5.0
+        assert params.simple_fcf_margin.threshold == 5.0
         assert params.cfo_yield_growth.periods == 1
         assert params.simple_fcf_yield_growth.periods == 1
         assert params.cfo_yield_growth.use_floating_shares is True
