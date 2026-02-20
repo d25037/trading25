@@ -522,6 +522,10 @@ class FundamentalsService:
             fcf, stock_price, stmt.ShOutFY, stmt.TrShFY
         )
         fcf_margin = self._calculate_fcf_margin(fcf, net_sales)
+        cfo_yield = self._calculate_cfo_yield(
+            stmt.CFO, stock_price, stmt.ShOutFY, stmt.TrShFY
+        )
+        cfo_margin = self._calculate_cfo_margin(stmt.CFO, net_sales)
 
         # Get forecast EPS
         forecast_eps, forecast_eps_change_rate = self._get_forecast_eps(
@@ -561,6 +565,8 @@ class FundamentalsService:
             fcf=self._to_millions(self._round_or_none(fcf)),
             fcfYield=self._round_or_none(fcf_yield),
             fcfMargin=self._round_or_none(fcf_margin),
+            cfoYield=self._round_or_none(cfo_yield),
+            cfoMargin=self._round_or_none(cfo_margin),
             cfoToNetProfitRatio=self._round_or_none(cfo_to_net_profit_ratio),
             tradingValueToMarketCapRatio=None,
             forecastEps=self._round_or_none(forecast_eps),
@@ -705,6 +711,35 @@ class FundamentalsService:
         if fcf is None or net_sales is None or net_sales <= 0:
             return None
         return (fcf / net_sales) * 100
+
+    def _calculate_cfo_yield(
+        self,
+        cfo: float | None,
+        stock_price: float | None,
+        shares_outstanding: float | None,
+        treasury_shares: float | None,
+    ) -> float | None:
+        """Calculate CFO yield = (CFO / Market Cap) * 100."""
+        if (
+            cfo is None
+            or stock_price is None
+            or shares_outstanding is None
+            or stock_price <= 0
+        ):
+            return None
+
+        market_cap = calc_market_cap_scalar(stock_price, shares_outstanding, treasury_shares)
+        if market_cap is None:
+            return None
+        return (cfo / market_cap) * 100
+
+    def _calculate_cfo_margin(
+        self, cfo: float | None, net_sales: float | None
+    ) -> float | None:
+        """Calculate CFO margin = (CFO / Net Sales) * 100."""
+        if cfo is None or net_sales is None or net_sales <= 0:
+            return None
+        return (cfo / net_sales) * 100
 
     def _calculate_cfo_to_net_profit_ratio(
         self, cfo: float | None, net_profit: float | None

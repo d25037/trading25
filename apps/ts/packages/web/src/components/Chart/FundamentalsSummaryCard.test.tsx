@@ -34,6 +34,8 @@ const baseMetrics: ApiFundamentalDataPoint = {
   fcf: 4_000_000,
   fcfYield: 0.5,
   fcfMargin: 8.9,
+  cfoYield: 0.75,
+  cfoMargin: 13.3,
   cfoToNetProfitRatio: 1.5,
   tradingValueToMarketCapRatio: 8.33,
   forecastEps: 350,
@@ -55,6 +57,8 @@ describe('FundamentalsSummaryCard', () => {
   it('renders new ratio row with custom trading value period', () => {
     render(<FundamentalsSummaryCard metrics={baseMetrics} tradingValuePeriod={20} />);
 
+    expect(screen.getByText('CFO利回り')).toBeInTheDocument();
+    expect(screen.getByText('CFOマージン')).toBeInTheDocument();
     expect(screen.getByText('営業CF/純利益')).toBeInTheDocument();
     expect(screen.getByText('時価総額/20日売買代金')).toBeInTheDocument();
     expect(screen.getByText('1.50x')).toBeInTheDocument();

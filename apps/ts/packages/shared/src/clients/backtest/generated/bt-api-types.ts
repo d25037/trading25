@@ -3380,6 +3380,16 @@ export interface components {
              */
             fcfMargin?: number | null;
             /**
+             * Cfoyield
+             * @description CFO yield (%)
+             */
+            cfoYield?: number | null;
+            /**
+             * Cfomargin
+             * @description CFO margin (%)
+             */
+            cfoMargin?: number | null;
+            /**
              * Cfotonetprofitratio
              * @description Operating cash flow / net profit ratio (x)
              */

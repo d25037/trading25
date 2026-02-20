@@ -195,6 +195,10 @@ export function FundamentalsSummaryCard({
         return <MetricCard label="FCF利回り" value={metrics.fcfYield} format="percent" colorScheme="fcfYield" />;
       case 'fcfMargin':
         return <MetricCard label="FCFマージン" value={metrics.fcfMargin} format="percent" colorScheme="fcfMargin" />;
+      case 'cfoYield':
+        return <MetricCard label="CFO利回り" value={metrics.cfoYield} format="percent" colorScheme="cfoYield" />;
+      case 'cfoMargin':
+        return <MetricCard label="CFOマージン" value={metrics.cfoMargin} format="percent" colorScheme="cfoMargin" />;
       case 'cfoToNetProfitRatio':
         return <MetricCard label="営業CF/純利益" value={metrics.cfoToNetProfitRatio ?? null} format="times" />;
       case 'tradingValueToMarketCapRatio':
