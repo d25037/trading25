@@ -31,6 +31,6 @@ export interface UpdateWatchlistRequest {
 
 export interface CreateWatchlistItemRequest {
   code: string;
-  companyName?: string;
+  companyName: string;
   memo?: string;
 }

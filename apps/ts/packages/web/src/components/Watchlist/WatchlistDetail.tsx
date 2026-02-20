@@ -23,29 +23,50 @@ import {
   useRemoveWatchlistItem,
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
+import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 import { useChartStore } from '@/stores/chartStore';
 import type { WatchlistItem, WatchlistStockPrice, WatchlistWithItems } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
+
+function normalizeStockCode(value: string): string {
+  return value.trim();
+}
+
+function resolveCompanyName(code: string, selectedStock: StockSearchResultItem | null): string {
+  const selectedCode = selectedStock ? normalizeStockCode(selectedStock.code) : '';
+  return selectedStock && selectedCode === code ? selectedStock.companyName : code;
+}
 
 function AddStockDialog({ watchlistId }: { watchlistId: number }) {
   const [open, setOpen] = useState(false);
   const [code, setCode] = useState('');
   const [memo, setMemo] = useState('');
+  const [selectedStock, setSelectedStock] = useState<StockSearchResultItem | null>(null);
   const addItem = useAddWatchlistItem();
-  const normalizedCode = code.trim();
+  const normalizedCode = normalizeStockCode(code);
   const isValidCode = /^\d{4}$/.test(normalizedCode);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!isValidCode) return;
 
+    const resolvedCompanyName = resolveCompanyName(normalizedCode, selectedStock);
+
     addItem.mutate(
-      { watchlistId, data: { code: normalizedCode, memo: memo.trim() || undefined } },
+      {
+        watchlistId,
+        data: {
+          code: normalizedCode,
+          companyName: resolvedCompanyName,
+          memo: memo.trim() || undefined,
+        },
+      },
       {
         onSuccess: () => {
           setOpen(false);
           setCode('');
           setMemo('');
+          setSelectedStock(null);
         },
       }
     );
@@ -56,6 +77,7 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
     if (!open) {
       setCode('');
       setMemo('');
+      setSelectedStock(null);
     }
   };
 
@@ -79,8 +101,17 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
               <StockSearchInput
                 id="stock-code"
                 value={code}
-                onValueChange={setCode}
-                onSelect={(stock) => setCode(stock.code)}
+                onValueChange={(value) => {
+                  setCode(value);
+                  const selectedCode = selectedStock ? normalizeStockCode(selectedStock.code) : '';
+                  if (selectedStock && value.trim() !== selectedCode) {
+                    setSelectedStock(null);
+                  }
+                }}
+                onSelect={(stock) => {
+                  setCode(stock.code);
+                  setSelectedStock(stock);
+                }}
                 placeholder="銘柄コードまたは会社名で検索..."
                 required
                 autoFocus
@@ -101,7 +132,7 @@ function AddStockDialog({ watchlistId }: { watchlistId: number }) {
           </div>
           {addItem.error && <p className="text-sm text-destructive mb-4">{addItem.error.message}</p>}
           <DialogFooter>
-            <Button type="button" variant="outline" onClick={() => setOpen(false)}>
+            <Button type="button" variant="outline" onClick={() => handleOpenChange(false)}>
               Cancel
             </Button>
             <Button type="submit" disabled={!isValidCode || addItem.isPending}>

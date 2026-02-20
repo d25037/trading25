@@ -1,6 +1,7 @@
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
+import type { StockSearchResultItem } from '@/hooks/useStockSearch';
 
 export interface StockFormData {
   code?: string;
@@ -16,9 +17,16 @@ interface StockFormFieldsProps {
   onChange: (data: StockFormData) => void;
   showCodeField?: boolean;
   idPrefix?: string;
+  onStockSelect?: (stock: StockSearchResultItem) => void;
 }
 
-export function StockFormFields({ data, onChange, showCodeField = true, idPrefix = 'stock' }: StockFormFieldsProps) {
+export function StockFormFields({
+  data,
+  onChange,
+  showCodeField = true,
+  idPrefix = 'stock',
+  onStockSelect,
+}: StockFormFieldsProps) {
   const updateField = <K extends keyof StockFormData>(field: K, value: StockFormData[K]) => {
     onChange({ ...data, [field]: value });
   };
@@ -33,7 +41,10 @@ export function StockFormFields({ data, onChange, showCodeField = true, idPrefix
               id={`${idPrefix}-code`}
               value={data.code || ''}
               onValueChange={(value) => updateField('code', value)}
-              onSelect={(stock) => updateField('code', stock.code)}
+              onSelect={(stock) => {
+                updateField('code', stock.code);
+                onStockSelect?.(stock);
+              }}
               placeholder="銘柄コードまたは会社名で検索..."
               required
               autoFocus

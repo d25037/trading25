@@ -30,7 +30,7 @@ export interface UpdatePortfolioRequest {
 
 export interface CreatePortfolioItemRequest {
   code: string;
-  companyName?: string;
+  companyName: string;
   quantity: number;
   purchasePrice: number;
   purchaseDate: string;
