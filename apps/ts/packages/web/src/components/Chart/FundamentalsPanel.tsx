@@ -47,12 +47,20 @@ export function FundamentalsPanel({
     };
 
     // Start with FY data and merge enhanced fields from latestMetrics
+    const revisedForecastEps = data.latestMetrics?.revisedForecastEps ?? fyData.revisedForecastEps ?? null;
+    const revisedForecastSource = data.latestMetrics?.revisedForecastSource ?? fyData.revisedForecastSource ?? null;
+    const forecastEps = revisedForecastEps ?? data.latestMetrics?.forecastEps ?? null;
+    const adjustedForecastEps =
+      revisedForecastEps != null ? null : data.latestMetrics?.adjustedForecastEps ?? fyData.adjustedForecastEps ?? null;
+
     let result = {
       ...fyData,
       // Merge forecast and previous period data from latestMetrics (API enhances these)
-      forecastEps: data.latestMetrics?.forecastEps ?? null,
-      adjustedForecastEps: data.latestMetrics?.adjustedForecastEps ?? fyData.adjustedForecastEps ?? null,
+      forecastEps,
+      adjustedForecastEps,
       forecastEpsChangeRate: data.latestMetrics?.forecastEpsChangeRate ?? null,
+      revisedForecastEps,
+      revisedForecastSource,
       forecastDividendFy: data.latestMetrics?.forecastDividendFy ?? null,
       adjustedForecastDividendFy:
         data.latestMetrics?.adjustedForecastDividendFy ?? fyData.adjustedForecastDividendFy ?? null,
@@ -70,7 +78,7 @@ export function FundamentalsPanel({
     };
 
     const displayActualEps = result.adjustedEps ?? result.eps ?? null;
-    const displayForecastEps = result.adjustedForecastEps ?? result.forecastEps ?? null;
+    const displayForecastEps = result.revisedForecastEps ?? result.adjustedForecastEps ?? result.forecastEps ?? null;
     const epsChangeRate = resolveChangeRate(displayActualEps, displayForecastEps);
     if (epsChangeRate != null) {
       result = {

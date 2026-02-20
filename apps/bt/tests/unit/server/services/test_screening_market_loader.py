@@ -233,8 +233,10 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
     }
     base_rows = [base_row]
     revision_rows = [{**base_row, "earnings_per_share": 2.0, "profit": 2.0, "equity": 2.0}]
+    query_calls: list[dict[str, object]] = []
 
     def _query(_reader, _codes, **kwargs):
+        query_calls.append(kwargs)
         return revision_rows if kwargs.get("period_type") == "all" else base_rows
 
     monkeypatch.setattr("src.server.services.screening_market_loader._query_statements_rows", _query)
@@ -257,6 +259,14 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
     assert warnings == []
     assert "statements_daily" in result["7203"]
     assert bool(result["7203"]["statements_daily"]["merged"].iloc[-1]) is True
+    assert any(
+        call.get("period_type") == "FY" and call.get("actual_only") is True
+        for call in query_calls
+    )
+    assert any(
+        call.get("period_type") == "all" and call.get("actual_only") is False
+        for call in query_calls
+    )
 
 
 def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPatch) -> None:
