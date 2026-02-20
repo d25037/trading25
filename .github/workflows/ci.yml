@@ -94,6 +94,7 @@ jobs:
           CI_DEPS_READY: "1"
 
   web-e2e:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     needs:
