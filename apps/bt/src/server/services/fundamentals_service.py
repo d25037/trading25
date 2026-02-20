@@ -1228,14 +1228,16 @@ class FundamentalsService:
         if metrics is None:
             return None
 
-        # Sort statements by period end date descending
+        # Sort statements by period end + disclosure date descending
         sorted_statements = sorted(
-            statements, key=lambda s: s.CurPerEn, reverse=True
+            statements, key=lambda s: (s.CurPerEn, s.DiscDate), reverse=True
         )
 
         # Find the statement corresponding to latestMetrics
-        current_statement = next(
-            (s for s in sorted_statements if s.CurPerEn == metrics.date), None
+        current_statement = self._select_statement_for_latest_metrics(
+            sorted_statements,
+            metrics,
+            prefer_consolidated,
         )
 
         # Get forecast EPS from current statement
@@ -1274,6 +1276,70 @@ class FundamentalsService:
                 **prev_cf,
             }
         )
+
+    def _select_statement_for_latest_metrics(
+        self,
+        statements: list[JQuantsStatement],
+        metrics: FundamentalDataPoint,
+        prefer_consolidated: bool,
+    ) -> JQuantsStatement | None:
+        """Select statement row for latest metrics.
+
+        Multiple rows can share the same period end (CurPerEn) due to revisions.
+        In that case, prioritize the latest disclosure and prefer rows that
+        actually carry forecast EPS values.
+        """
+        normalized_period_type = normalize_period_type(metrics.periodType)
+        candidates = [
+            stmt
+            for stmt in statements
+            if stmt.CurPerEn == metrics.date
+            and (
+                normalized_period_type is None
+                or normalize_period_type(stmt.CurPerType) == normalized_period_type
+            )
+        ]
+        if not candidates:
+            candidates = [stmt for stmt in statements if stmt.CurPerEn == metrics.date]
+        if not candidates:
+            return None
+
+        prioritized = sorted(
+            candidates,
+            key=lambda stmt: (
+                stmt.DiscDate,
+                self._forecast_doc_priority(stmt.DocType),
+            ),
+            reverse=True,
+        )
+
+        # Prefer entries that have forecast EPS to avoid dividend-only revisions
+        # overshadowing earnings forecast revisions on the same period.
+        for candidate in prioritized:
+            forecast_eps, _ = self._get_forecast_eps(
+                candidate, metrics.eps, prefer_consolidated
+            )
+            if forecast_eps is not None:
+                return candidate
+
+        return prioritized[0]
+
+    def _forecast_doc_priority(self, doc_type: str | None) -> int:
+        """Return ranking for statement doc types when selecting forecast rows."""
+        if doc_type is None:
+            return 0
+        normalized = doc_type.lower()
+        if "earnforecastrevision" in normalized or "業績予想修正" in normalized:
+            return 3
+        if (
+            "financialstatements" in normalized
+            or "決算短信" in normalized
+            or "有価証券報告書" in normalized
+        ):
+            return 2
+        if "dividend" in normalized or "配当予想修正" in normalized:
+            return 1
+        return 0
 
     def _get_previous_period_cash_flow(
         self,

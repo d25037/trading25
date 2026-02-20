@@ -176,6 +176,49 @@ describe('FundamentalsPanel', () => {
     expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 20 });
   });
 
+  it('prioritizes revised forecast EPS from latestMetrics in summary payload', () => {
+    mockUseFundamentals.mockReturnValue({
+      data: {
+        data: [
+          {
+            date: '2024-03-31',
+            periodType: 'FY',
+            adjustedEps: 100,
+            eps: 95,
+            adjustedForecastEps: 120,
+            forecastEps: 110,
+            cashFlowOperating: 100,
+            cashFlowInvesting: -50,
+            cashFlowFinancing: -20,
+            cashAndEquivalents: 500,
+            netProfit: 200,
+            equity: 1000,
+          },
+        ],
+        latestMetrics: {
+          forecastEps: 580,
+          adjustedForecastEps: 560,
+          revisedForecastEps: 604,
+          revisedForecastSource: '1Q',
+          forecastEpsChangeRate: 999,
+        },
+        dailyValuation: [],
+      },
+      isLoading: false,
+      error: null,
+    });
+
+    render(<FundamentalsPanel symbol="7203" />);
+
+    const metrics = (mockSummaryCard.mock.calls.at(-1)?.[0] as { metrics?: Record<string, unknown> }).metrics;
+    expect(metrics).toBeDefined();
+    expect(metrics?.forecastEps).toBe(604);
+    expect(metrics?.adjustedForecastEps).toBeNull();
+    expect(metrics?.revisedForecastEps).toBe(604);
+    expect(metrics?.revisedForecastSource).toBe('1Q');
+    expect(metrics?.forecastEpsChangeRate).toBe(504);
+  });
+
   it('falls back when latestMetrics is missing and adjusted EPS cannot compute change rate', () => {
     mockUseFundamentals.mockReturnValue({
       data: {

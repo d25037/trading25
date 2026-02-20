@@ -271,6 +271,7 @@ class TestLoadStatementsDataPeriodType:
         assert mock_client.get_statements.call_count == 2
         assert mock_client.get_statements.call_args_list[0].kwargs["period_type"] == "FY"
         assert mock_client.get_statements.call_args_list[1].kwargs["period_type"] == "all"
+        assert mock_client.get_statements.call_args_list[1].kwargs["actual_only"] is False
         assert result.loc["2024-07-29", "ForwardForecastEPS"] == 100.0
         assert result.loc["2024-07-30", "ForwardForecastEPS"] == 120.0
         # 分母はFY実績EPSを維持
