@@ -24,6 +24,7 @@ from .fundamental import (
     cfo_margin_threshold,
     cfo_yield_threshold,
     cfo_to_net_profit_ratio_threshold,
+    is_expected_growth_dividend_per_share,
     is_expected_growth_eps,
     is_growing_cfo_yield,
     is_growing_dividend_per_share,
@@ -35,6 +36,7 @@ from .fundamental import (
     is_high_operating_margin,
     is_high_roa,
     is_high_roe,
+    is_payout_ratio_threshold,
     market_cap_threshold,
     operating_cash_flow_threshold,
     simple_fcf_margin_threshold,
@@ -209,6 +211,45 @@ def _select_forward_forecast_eps_column(
         preferred_raw="ForwardForecastEPS",
         fallback_adjusted="AdjustedNextYearForecastEPS",
         fallback_raw="NextYearForecastEPS",
+    )
+
+
+def _select_forward_base_dividend_column(
+    params: SignalParams, data_sources: dict[str, Any]
+) -> str:
+    return _select_existing_fundamental_column(
+        params=params,
+        statements_data=data_sources["statements_data"],
+        preferred_adjusted="AdjustedForwardBaseDividendFY",
+        preferred_raw="ForwardBaseDividendFY",
+        fallback_adjusted="AdjustedDividendFY",
+        fallback_raw="DividendFY",
+    )
+
+
+def _select_forward_forecast_dividend_column(
+    params: SignalParams, data_sources: dict[str, Any]
+) -> str:
+    return _select_existing_fundamental_column(
+        params=params,
+        statements_data=data_sources["statements_data"],
+        preferred_adjusted="AdjustedForwardForecastDividendFY",
+        preferred_raw="ForwardForecastDividendFY",
+        fallback_adjusted="AdjustedNextYearForecastDividendFY",
+        fallback_raw="NextYearForecastDividendFY",
+    )
+
+
+def _select_forward_forecast_payout_ratio_column(
+    params: SignalParams, data_sources: dict[str, Any]
+) -> str:
+    return _select_existing_fundamental_column(
+        params=params,
+        statements_data=data_sources["statements_data"],
+        preferred_adjusted="ForwardForecastPayoutRatio",
+        preferred_raw="ForwardForecastPayoutRatio",
+        fallback_adjusted="NextYearForecastPayoutRatio",
+        fallback_raw="NextYearForecastPayoutRatio",
     )
 
 
@@ -770,6 +811,30 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         and _has_any_statements_column(d, "ForwardForecastEPS", "NextYearForecastEPS"),
         data_requirements=["statements:EPS", "statements:ForwardForecastEPS"],
     ),
+    # 23-1. Forward 1株配当成長率シグナル（来期予想配当ベース）
+    SignalDefinition(
+        name="Forward 1株配当成長率",
+        signal_func=is_expected_growth_dividend_per_share,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.forward_dividend_growth.enabled,
+        param_builder=lambda p, d: {
+            "dividend_fy": d["statements_data"][
+                _select_forward_base_dividend_column(p, d)
+            ],
+            "next_year_forecast_dividend_fy": d["statements_data"][
+                _select_forward_forecast_dividend_column(p, d)
+            ],
+            "growth_threshold": p.fundamental.forward_dividend_growth.threshold,
+            "condition": p.fundamental.forward_dividend_growth.condition,
+        },
+        entry_purpose="来期1株配当成長率が閾値以上の増配予想企業を選定",
+        exit_purpose="配当成長率予想が閾値を下回った企業を除外",
+        category="fundamental",
+        description="来期1株配当成長率の閾値判定",
+        param_key="fundamental.forward_dividend_growth",
+        data_checker=lambda d: _has_any_statements_column(d, "ForwardBaseDividendFY", "DividendFY")
+        and _has_any_statements_column(d, "ForwardForecastDividendFY", "NextYearForecastDividendFY"),
+        data_requirements=["statements:DividendFY", "statements:ForwardForecastDividendFY"],
+    ),
     # 23-2. EPS成長率シグナル（実績EPSベース）
     SignalDefinition(
         name="EPS成長率",
@@ -905,6 +970,46 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         param_key="fundamental.dividend_yield",
         data_checker=lambda d: _has_statements_column(d, "DividendFY"),
         data_requirements=["statements:DividendFY"],
+    ),
+    # 28-2. 配当性向シグナル
+    SignalDefinition(
+        name="配当性向",
+        signal_func=is_payout_ratio_threshold,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.payout_ratio.enabled,
+        param_builder=lambda p, d: {
+            "payout_ratio": d["statements_data"]["PayoutRatio"],
+            "threshold": p.fundamental.payout_ratio.threshold,
+            "condition": p.fundamental.payout_ratio.condition,
+        },
+        entry_purpose="配当性向が閾値条件を満たす企業を選定",
+        exit_purpose="配当性向が閾値条件から外れた企業を除外",
+        category="fundamental",
+        description="配当性向の閾値判定",
+        param_key="fundamental.payout_ratio",
+        data_checker=lambda d: _has_statements_column(d, "PayoutRatio"),
+        data_requirements=["statements:PayoutRatio"],
+    ),
+    # 28-3. 予想配当性向シグナル
+    SignalDefinition(
+        name="予想配当性向",
+        signal_func=is_payout_ratio_threshold,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.forward_payout_ratio.enabled,
+        param_builder=lambda p, d: {
+            "payout_ratio": d["statements_data"][
+                _select_forward_forecast_payout_ratio_column(p, d)
+            ],
+            "threshold": p.fundamental.forward_payout_ratio.threshold,
+            "condition": p.fundamental.forward_payout_ratio.condition,
+        },
+        entry_purpose="予想配当性向が閾値条件を満たす企業を選定",
+        exit_purpose="予想配当性向が閾値条件から外れた企業を除外",
+        category="fundamental",
+        description="予想配当性向の閾値判定",
+        param_key="fundamental.forward_payout_ratio",
+        data_checker=lambda d: _has_any_statements_column(
+            d, "ForwardForecastPayoutRatio", "NextYearForecastPayoutRatio"
+        ),
+        data_requirements=["statements:ForwardForecastPayoutRatio"],
     ),
     # 29. 簡易FCFシグナル（CFO + CFI）
     SignalDefinition(

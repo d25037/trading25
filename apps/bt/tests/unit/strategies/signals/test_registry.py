@@ -196,6 +196,14 @@ class TestSignalRegistry:
         assert "statements:EPS" in sig.data_requirements
         assert "statements:NextYearForecastEPS" not in sig.data_requirements
 
+    def test_forward_dividend_growth_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.forward_dividend_growth"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "Forward 1株配当成長率"
+        assert "statements:DividendFY" in sig.data_requirements
+        assert "statements:ForwardForecastDividendFY" in sig.data_requirements
+
     def test_dividend_per_share_growth_registered(self) -> None:
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.dividend_per_share_growth"]
         assert len(matches) == 1
@@ -203,6 +211,20 @@ class TestSignalRegistry:
         assert sig.name == "1株配当成長率"
         assert sig.category == "fundamental"
         assert sig.data_requirements == ["statements:DividendFY"]
+
+    def test_payout_ratio_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.payout_ratio"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "配当性向"
+        assert sig.data_requirements == ["statements:PayoutRatio"]
+
+    def test_forward_payout_ratio_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.forward_payout_ratio"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "予想配当性向"
+        assert sig.data_requirements == ["statements:ForwardForecastPayoutRatio"]
 
     def test_cfo_yield_growth_registered(self) -> None:
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.cfo_yield_growth"]
@@ -452,6 +474,80 @@ class TestFundamentalAdjustedSelection:
         built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
         assert built["eps"].equals(df["AdjustedEPS"])
         assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
+
+    def test_forward_dividend_growth_prefers_forward_columns_when_available(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_dividend_growth.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "DividendFY": [10.0],
+                "AdjustedDividendFY": [9.0],
+                "ForwardBaseDividendFY": [11.0],
+                "AdjustedForwardBaseDividendFY": [10.0],
+                "NextYearForecastDividendFY": [12.0],
+                "AdjustedNextYearForecastDividendFY": [11.0],
+                "ForwardForecastDividendFY": [12.5],
+                "AdjustedForwardForecastDividendFY": [11.5],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forward_dividend_growth")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["dividend_fy"].equals(df["AdjustedForwardBaseDividendFY"])
+        assert built["next_year_forecast_dividend_fy"].equals(
+            df["AdjustedForwardForecastDividendFY"]
+        )
+
+    def test_forward_dividend_growth_fallbacks_when_forward_columns_are_all_nan(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_dividend_growth.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "DividendFY": [10.0, 10.5],
+                "AdjustedDividendFY": [9.0, 9.5],
+                "NextYearForecastDividendFY": [12.0, 12.5],
+                "AdjustedNextYearForecastDividendFY": [11.0, 11.5],
+                "ForwardBaseDividendFY": [float("nan"), float("nan")],
+                "AdjustedForwardBaseDividendFY": [float("nan"), float("nan")],
+                "ForwardForecastDividendFY": [float("nan"), float("nan")],
+                "AdjustedForwardForecastDividendFY": [float("nan"), float("nan")],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forward_dividend_growth")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["dividend_fy"].equals(df["AdjustedDividendFY"])
+        assert built["next_year_forecast_dividend_fy"].equals(
+            df["AdjustedNextYearForecastDividendFY"]
+        )
+
+    def test_forward_payout_ratio_prefers_forward_column(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_payout_ratio.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "PayoutRatio": [30.0],
+                "ForwardForecastPayoutRatio": [35.0],
+                "NextYearForecastPayoutRatio": [40.0],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forward_payout_ratio")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["payout_ratio"].equals(df["ForwardForecastPayoutRatio"])
+
+    def test_forward_payout_ratio_fallbacks_when_forward_column_missing(self) -> None:
+        params = SignalParams()
+        params.fundamental.forward_payout_ratio.enabled = True
+
+        df = pd.DataFrame({"NextYearForecastPayoutRatio": [40.0]})
+
+        sig = self._get_signal("fundamental.forward_payout_ratio")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["payout_ratio"].equals(df["NextYearForecastPayoutRatio"])
 
     def test_adjusted_can_be_disabled(self) -> None:
         params = SignalParams()

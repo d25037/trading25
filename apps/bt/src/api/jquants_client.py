@@ -65,7 +65,16 @@ class JQuantsStatement(BaseModel):
     FEPS: NullableFloat
     NxFEPS: NullableFloat
     # Dividend
+    DivFY: NullableFloat = None
     DivAnn: NullableFloat = None
+    PayoutRatioAnn: NullableFloat = None
+    # Forecast Dividend / Payout Ratio
+    FDivFY: NullableFloat = None
+    FDivAnn: NullableFloat = None
+    FPayoutRatioAnn: NullableFloat = None
+    NxFDivFY: NullableFloat = None
+    NxFDivAnn: NullableFloat = None
+    NxFPayoutRatioAnn: NullableFloat = None
     # Non-Consolidated Financial Performance
     NCSales: NullableFloat
     NCOP: NullableFloat

@@ -37,7 +37,10 @@ def _rows_to_records(
     field_map: dict[str, str],
 ) -> list[dict[str, Any]]:
     return [
-        {output_field: getattr(row, source_attr) for output_field, source_attr in field_map.items()}
+        {
+            output_field: getattr(row, source_attr, None)
+            for output_field, source_attr in field_map.items()
+        }
         for row in rows
     ]
 
@@ -130,6 +133,11 @@ def _to_statements_df(rows: list[Any]) -> pd.DataFrame:
             "ordinaryProfit": "ordinary_profit",
             "operatingCashFlow": "operating_cash_flow",
             "dividendFY": "dividend_fy",
+            "forecastDividendFY": "forecast_dividend_fy",
+            "nextYearForecastDividendFY": "next_year_forecast_dividend_fy",
+            "payoutRatio": "payout_ratio",
+            "forecastPayoutRatio": "forecast_payout_ratio",
+            "nextYearForecastPayoutRatio": "next_year_forecast_payout_ratio",
             "forecastEps": "forecast_eps",
             "investingCashFlow": "investing_cash_flow",
             "financingCashFlow": "financing_cash_flow",

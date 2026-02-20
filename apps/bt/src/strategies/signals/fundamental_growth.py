@@ -1,7 +1,7 @@
 """
 財務指標シグナル — 成長率系
 
-EPS・利益・売上高・1株配当の成長率およびForward EPS成長率シグナルを提供
+EPS・利益・売上高・1株配当の成長率と、Forward EPS/Forward 1株配当成長率シグナルを提供
 """
 
 from __future__ import annotations
@@ -84,6 +84,50 @@ def is_expected_growth_eps(
         & (forward_growth_rate < 10.0)
         & (eps > 0)
         & (next_year_forecast_eps > 0)
+    ).fillna(False)
+
+
+def is_expected_growth_dividend_per_share(
+    dividend_fy: pd.Series[float],
+    next_year_forecast_dividend_fy: pd.Series[float],
+    growth_threshold: float = 0.05,
+    condition: Literal["above", "below"] = "above",
+) -> pd.Series[bool]:
+    """
+    Forward 1株配当成長率シグナル
+
+    来年予想配当と現在配当から将来配当成長率を計算し、
+    指定した条件で閾値と比較してTrueを返すシグナル
+
+    Args:
+        dividend_fy: 現在の通期配当データ（日次インデックスに補完済み想定）
+        next_year_forecast_dividend_fy: 来年予想通期配当（日次インデックスに補完済み想定）
+        growth_threshold: 成長率閾値（デフォルト0.05 = 5%）
+        condition: 条件（above=閾値以上、below=閾値以下）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - 現在配当または来年予想配当が0以下またはNaNの場合はFalseを返す
+        - 成長率が極端に高い値（10倍以上）の場合はFalseを返す（異常値処理）
+        - 推奨period_type: "FY"（NextYearForecastDividendFYはFYベース）
+    """
+    forward_growth_rate = (next_year_forecast_dividend_fy - dividend_fy) / dividend_fy.where(
+        dividend_fy > 0, np.nan
+    )
+
+    if condition == "above":
+        threshold_condition = forward_growth_rate >= growth_threshold
+    else:  # below
+        threshold_condition = forward_growth_rate < growth_threshold
+
+    return (
+        threshold_condition
+        & forward_growth_rate.notna()
+        & (forward_growth_rate < 10.0)
+        & (dividend_fy > 0)
+        & (next_year_forecast_dividend_fy > 0)
     ).fillna(False)
 
 

@@ -33,7 +33,7 @@ class DataManagerMixin:
         return "FY"
 
     def _should_include_forecast_revision(self: "StrategyProtocol") -> bool:
-        """四半期修正（FEPS）の追加取得が必要か判定する。"""
+        """四半期修正予想データの追加取得が必要か判定する。"""
         for params in (self.entry_filter_params, self.exit_trigger_params):
             if params is None:
                 continue
@@ -45,6 +45,8 @@ class DataManagerMixin:
             if (
                 fundamental.forward_eps_growth.enabled
                 or fundamental.peg_ratio.enabled
+                or fundamental.forward_dividend_growth.enabled
+                or fundamental.forward_payout_ratio.enabled
             ):
                 return True
         return False
