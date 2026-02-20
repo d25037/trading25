@@ -1,19 +1,23 @@
 """registry.py データチェックヘルパー関数のテスト"""
 
 import pandas as pd
+import pytest
 
 from src.models.signals import SignalParams
 
 from src.strategies.signals.registry import (
     SIGNAL_REGISTRY,
+    _has_any_statements_column,
     _has_benchmark_data,
     _has_margin_data,
     _has_sector_data,
     _has_sector_data_and_benchmark,
     _has_statements_column,
     _has_statements_columns,
+    _select_existing_fundamental_column,
     _has_stock_sector_close,
     _has_stock_sector_close_and_benchmark,
+    _validate_registry,
 )
 
 
@@ -55,6 +59,15 @@ class TestHasStatementsColumns:
 
     def test_missing_key(self) -> None:
         assert not _has_statements_columns({}, "A")
+
+
+class TestHasAnyStatementsColumn:
+    def test_any_present(self) -> None:
+        df = pd.DataFrame({"A": [float("nan")], "B": [1.0]})
+        assert _has_any_statements_column({"statements_data": df}, "A", "B")
+
+    def test_none_data(self) -> None:
+        assert not _has_any_statements_column({"statements_data": None}, "A", "B")
 
 
 class TestHasBenchmarkData:
@@ -228,6 +241,15 @@ class TestSignalRegistry:
         assert "statements:OperatingCashFlow" in sig.data_requirements
         assert "statements:InvestingCashFlow" in sig.data_requirements
         assert "statements:Sales" in sig.data_requirements
+
+    def test_cfo_to_net_profit_ratio_registered(self) -> None:
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.cfo_to_net_profit_ratio"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "営業CF/純利益"
+        assert sig.category == "fundamental"
+        assert "statements:OperatingCashFlow" in sig.data_requirements
+        assert "statements:Profit" in sig.data_requirements
 
     def test_roa_registered(self) -> None:
         """roa（総資産利益率）がレジストリに登録されていること"""
@@ -447,3 +469,49 @@ class TestFundamentalAdjustedSelection:
         sig = self._get_signal("fundamental.per")
         built = sig.param_builder(params, {"statements_data": df, "execution_close": close})
         assert built["eps"].equals(df["EPS"])
+
+    def test_select_existing_prefers_present_column_even_when_empty(self) -> None:
+        params = SignalParams()
+        params.fundamental.use_adjusted = True
+        statements = pd.DataFrame(
+            {
+                "AdjustedForwardBaseEPS": [float("nan")],
+                "AdjustedEPS": [float("nan")],
+            }
+        )
+
+        selected = _select_existing_fundamental_column(
+            params=params,
+            statements_data=statements,
+            preferred_adjusted="AdjustedForwardBaseEPS",
+            preferred_raw="ForwardBaseEPS",
+            fallback_adjusted="AdjustedEPS",
+            fallback_raw="EPS",
+        )
+        assert selected == "AdjustedForwardBaseEPS"
+
+    def test_select_existing_falls_back_when_preferred_missing(self) -> None:
+        params = SignalParams()
+        params.fundamental.use_adjusted = True
+        statements = pd.DataFrame({"AdjustedEPS": [float("nan")]})
+
+        selected = _select_existing_fundamental_column(
+            params=params,
+            statements_data=statements,
+            preferred_adjusted="AdjustedForwardBaseEPS",
+            preferred_raw="ForwardBaseEPS",
+            fallback_adjusted="AdjustedEPS",
+            fallback_raw="EPS",
+        )
+        assert selected == "AdjustedEPS"
+
+
+class TestValidateRegistry:
+    def test_validate_registry_detects_duplicate_param_key(self) -> None:
+        duplicate = SIGNAL_REGISTRY[0]
+        SIGNAL_REGISTRY.append(duplicate)
+        try:
+            with pytest.raises(ValueError, match="Duplicate param_key"):
+                _validate_registry()
+        finally:
+            SIGNAL_REGISTRY.pop()
