@@ -21,6 +21,7 @@ from .breakout import (
 from .buy_and_hold import generate_buy_and_hold_signals
 from .crossover import indicator_crossover_signal
 from .fundamental import (
+    cfo_margin_threshold,
     cfo_yield_threshold,
     is_expected_growth_eps,
     is_growing_cfo_yield,
@@ -35,6 +36,7 @@ from .fundamental import (
     is_high_roe,
     market_cap_threshold,
     operating_cash_flow_threshold,
+    simple_fcf_margin_threshold,
     simple_fcf_threshold,
     simple_fcf_yield_threshold,
     is_undervalued_by_pbr,
@@ -922,7 +924,48 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=lambda d: _has_statements_column(d, "DividendFY"),
         data_requirements=["statements:DividendFY"],
     ),
-    # 30. CFO利回りシグナル（営業CF / 時価総額）
+    # 30. CFOマージンシグナル（営業CF / 売上高）
+    SignalDefinition(
+        name="CFOマージン",
+        signal_func=cfo_margin_threshold,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.cfo_margin.enabled,
+        param_builder=lambda p, d: {
+            "operating_cash_flow": d["statements_data"]["OperatingCashFlow"],
+            "sales": d["statements_data"]["Sales"],
+            "threshold": p.fundamental.cfo_margin.threshold,
+            "condition": p.fundamental.cfo_margin.condition,
+        },
+        entry_purpose="CFOマージンが閾値以上の高CF収益性企業を選定",
+        exit_purpose="CFOマージンが閾値を下回った企業を除外",
+        category="fundamental",
+        description="CFOマージン（営業CF÷売上高）の閾値判定",
+        param_key="fundamental.cfo_margin",
+        data_checker=lambda d: _has_statements_columns(d, "OperatingCashFlow", "Sales"),
+        data_requirements=["statements:OperatingCashFlow", "statements:Sales"],
+    ),
+    # 31. 簡易FCFマージンシグナル（(CFO+CFI) / 売上高）
+    SignalDefinition(
+        name="簡易FCFマージン",
+        signal_func=simple_fcf_margin_threshold,
+        enabled_checker=lambda p: p.fundamental.enabled and p.fundamental.simple_fcf_margin.enabled,
+        param_builder=lambda p, d: {
+            "operating_cash_flow": d["statements_data"]["OperatingCashFlow"],
+            "investing_cash_flow": d["statements_data"]["InvestingCashFlow"],
+            "sales": d["statements_data"]["Sales"],
+            "threshold": p.fundamental.simple_fcf_margin.threshold,
+            "condition": p.fundamental.simple_fcf_margin.condition,
+        },
+        entry_purpose="簡易FCFマージンが閾値以上の高CF収益性企業を選定",
+        exit_purpose="簡易FCFマージンが閾値を下回った企業を除外",
+        category="fundamental",
+        description="簡易FCFマージン（(CFO+CFI)÷売上高）の閾値判定",
+        param_key="fundamental.simple_fcf_margin",
+        data_checker=lambda d: _has_statements_columns(
+            d, "OperatingCashFlow", "InvestingCashFlow", "Sales"
+        ),
+        data_requirements=["statements:OperatingCashFlow", "statements:InvestingCashFlow", "statements:Sales"],
+    ),
+    # 32. CFO利回りシグナル（営業CF / 時価総額）
     SignalDefinition(
         name="CFO利回り",
         signal_func=cfo_yield_threshold,
@@ -946,7 +989,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         ),
         data_requirements=["statements:OperatingCashFlow", "statements:SharesOutstanding"],
     ),
-    # 30-2. CFO利回り成長率シグナル
+    # 32-2. CFO利回り成長率シグナル
     SignalDefinition(
         name="CFO利回り成長率",
         signal_func=is_growing_cfo_yield,
@@ -971,7 +1014,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         ),
         data_requirements=["statements:OperatingCashFlow", "statements:SharesOutstanding"],
     ),
-    # 31. 簡易FCF利回りシグナル（(CFO+CFI) / 時価総額）
+    # 33. 簡易FCF利回りシグナル（(CFO+CFI) / 時価総額）
     SignalDefinition(
         name="簡易FCF利回り",
         signal_func=simple_fcf_yield_threshold,
@@ -996,7 +1039,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         ),
         data_requirements=["statements:OperatingCashFlow", "statements:InvestingCashFlow", "statements:SharesOutstanding"],
     ),
-    # 31-2. 簡易FCF利回り成長率シグナル
+    # 33-2. 簡易FCF利回り成長率シグナル
     SignalDefinition(
         name="簡易FCF利回り成長率",
         signal_func=is_growing_simple_fcf_yield,
@@ -1027,7 +1070,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
             "statements:SharesOutstanding",
         ],
     ),
-    # 31-2. 時価総額シグナル（市場規模フィルター）
+    # 34. 時価総額シグナル（市場規模フィルター）
     SignalDefinition(
         name="時価総額",
         signal_func=market_cap_threshold,

@@ -80,6 +80,8 @@ class TestBuildSignalReference:
         result = build_signal_reference()
         keys = {s["key"] for s in result["signals"]}
         assert "fundamental_dividend_per_share_growth" in keys
+        assert "fundamental_cfo_margin" in keys
+        assert "fundamental_simple_fcf_margin" in keys
         assert "fundamental_cfo_yield_growth" in keys
         assert "fundamental_simple_fcf_yield_growth" in keys
 
