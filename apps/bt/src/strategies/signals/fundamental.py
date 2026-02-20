@@ -36,6 +36,7 @@ from .fundamental_valuation import (
 
 # 成長率系シグナル
 from .fundamental_growth import (
+    is_expected_growth_dividend_per_share,
     is_expected_growth_eps,
     is_growing_dividend_per_share,
     is_growing_eps,
@@ -49,6 +50,7 @@ from .fundamental_quality import (
     is_high_operating_margin,
     is_high_roa,
     is_high_roe,
+    is_payout_ratio_threshold,
 )
 
 # キャッシュフロー系・時価総額系シグナル
@@ -78,6 +80,7 @@ __all__ = [
     # 成長率系
     "is_growing_eps",
     "is_expected_growth_eps",
+    "is_expected_growth_dividend_per_share",
     "is_growing_profit",
     "is_growing_sales",
     "is_growing_dividend_per_share",
@@ -86,6 +89,7 @@ __all__ = [
     "is_high_roa",
     "is_high_operating_margin",
     "is_high_dividend_yield",
+    "is_payout_ratio_threshold",
     # キャッシュフロー系・時価総額系
     "operating_cash_flow_threshold",
     "cfo_to_net_profit_ratio_threshold",

@@ -87,6 +87,11 @@ class StatementRecord(BaseModel):
     ordinaryProfit: float | None = None
     operatingCashFlow: float | None = None
     dividendFy: float | None = None
+    forecastDividendFy: float | None = None
+    nextYearForecastDividendFy: float | None = None
+    payoutRatio: float | None = None
+    forecastPayoutRatio: float | None = None
+    nextYearForecastPayoutRatio: float | None = None
     forecastEps: float | None = None
     investingCashFlow: float | None = None
     financingCashFlow: float | None = None

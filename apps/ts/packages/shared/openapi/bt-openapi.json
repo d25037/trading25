@@ -7490,7 +7490,7 @@
                   "additionalProperties": {
                     "type": "array",
                     "items": {
-                      "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                      "$ref": "#/components/schemas/OHLCVRecord"
                     }
                   },
                   "title": "Response Get Dataset Ohlcv Batch Api Dataset  Name  Stocks Ohlcv Batch Get"
@@ -7610,7 +7610,7 @@
                 "schema": {
                   "type": "array",
                   "items": {
-                    "$ref": "#/components/schemas/src__server__schemas__dataset_data__OHLCVRecord"
+                    "$ref": "#/components/schemas/OHLCVRecord"
                   },
                   "title": "Response Get Dataset Stock Ohlcv Api Dataset  Name  Stocks  Code  Ohlcv Get"
                 }
@@ -12578,7 +12578,8 @@
           "from",
           "to"
         ],
-        "title": "DateRange"
+        "title": "DateRange",
+        "description": "分析期間"
       },
       "DefaultConfigResponse": {
         "properties": {
@@ -12755,7 +12756,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/src__server__schemas__factor_regression__DateRange"
+            "$ref": "#/components/schemas/DateRange"
           }
         },
         "type": "object",
@@ -12965,6 +12966,78 @@
             ],
             "title": "Adjusteddividendfy",
             "description": "Adjusted FY dividend per share using share count (JPY)"
+          },
+          "forecastDividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastdividendfy",
+            "description": "Forecast dividend per share for FY (JPY)"
+          },
+          "adjustedForecastDividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Adjustedforecastdividendfy",
+            "description": "Adjusted forecast FY dividend per share using share count (JPY)"
+          },
+          "forecastDividendFyChangeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastdividendfychangerate",
+            "description": "Forecast dividend change rate from actual dividend (%)"
+          },
+          "payoutRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payoutratio",
+            "description": "Payout ratio (%)"
+          },
+          "forecastPayoutRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastpayoutratio",
+            "description": "Forecast payout ratio (%)"
+          },
+          "forecastPayoutRatioChangeRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastpayoutratiochangerate",
+            "description": "Forecast payout ratio change rate from actual payout ratio (%)"
           },
           "per": {
             "anyOf": [
@@ -16234,33 +16307,27 @@
         "properties": {
           "date": {
             "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
+            "title": "Date"
           },
           "open": {
             "type": "number",
-            "title": "Open",
-            "description": "始値"
+            "title": "Open"
           },
           "high": {
             "type": "number",
-            "title": "High",
-            "description": "高値"
+            "title": "High"
           },
           "low": {
             "type": "number",
-            "title": "Low",
-            "description": "安値"
+            "title": "Low"
           },
           "close": {
             "type": "number",
-            "title": "Close",
-            "description": "終値"
+            "title": "Close"
           },
           "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
+            "type": "integer",
+            "title": "Volume"
           }
         },
         "type": "object",
@@ -16272,8 +16339,7 @@
           "close",
           "volume"
         ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
+        "title": "OHLCVRecord"
       },
       "OHLCVResampleRequest": {
         "properties": {
@@ -16394,7 +16460,7 @@
           },
           "data": {
             "items": {
-              "$ref": "#/components/schemas/OHLCVRecord"
+              "$ref": "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
             },
             "type": "array",
             "title": "Data",
@@ -17023,7 +17089,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__portfolio_factor_regression__DateRange"
           },
           "excludedStocks": {
             "items": {
@@ -18086,6 +18152,17 @@
             ],
             "title": "Nxfeps"
           },
+          "DivFY": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Divfy"
+          },
           "DivAnn": {
             "anyOf": [
               {
@@ -18096,6 +18173,83 @@
               }
             ],
             "title": "Divann"
+          },
+          "PayoutRatioAnn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payoutratioann"
+          },
+          "FDivFY": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fdivfy"
+          },
+          "FDivAnn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fdivann"
+          },
+          "FPayoutRatioAnn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fpayoutratioann"
+          },
+          "NxFDivFY": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfdivfy"
+          },
+          "NxFDivAnn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfdivann"
+          },
+          "NxFPayoutRatioAnn": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nxfpayoutratioann"
           },
           "NCSales": {
             "anyOf": [
@@ -20140,6 +20294,61 @@
             ],
             "title": "Dividendfy"
           },
+          "forecastDividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastdividendfy"
+          },
+          "nextYearForecastDividendFy": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextyearforecastdividendfy"
+          },
+          "payoutRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Payoutratio"
+          },
+          "forecastPayoutRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Forecastpayoutratio"
+          },
+          "nextYearForecastPayoutRatio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextyearforecastpayoutratio"
+          },
           "forecastEps": {
             "anyOf": [
               {
@@ -21901,44 +22110,6 @@
         ],
         "title": "DateRange"
       },
-      "src__server__schemas__dataset_data__OHLCVRecord": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date"
-          },
-          "open": {
-            "type": "number",
-            "title": "Open"
-          },
-          "high": {
-            "type": "number",
-            "title": "High"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close"
-          },
-          "volume": {
-            "type": "integer",
-            "title": "Volume"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord"
-      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -21956,25 +22127,6 @@
           "max"
         ],
         "title": "DateRange"
-      },
-      "src__server__schemas__factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange",
-        "description": "分析期間"
       },
       "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
@@ -22009,6 +22161,69 @@
         ],
         "title": "IndexMatch",
         "description": "指数マッチ結果"
+      },
+      "src__server__schemas__indicators__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
+      },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
       },
       "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {

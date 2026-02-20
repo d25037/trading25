@@ -38,12 +38,12 @@ export function FundamentalsPanel({
 
     if (!fyData) return undefined;
 
-    const resolveAdjustedChangeRate = (
-      actualEps: number | null | undefined,
-      forecastEps: number | null | undefined
+    const resolveChangeRate = (
+      actualValue: number | null | undefined,
+      forecastValue: number | null | undefined
     ): number | null => {
-      if (actualEps == null || forecastEps == null || actualEps === 0) return null;
-      return Math.round(((forecastEps - actualEps) / Math.abs(actualEps)) * 100 * 100) / 100;
+      if (actualValue == null || forecastValue == null || actualValue === 0) return null;
+      return Math.round(((forecastValue - actualValue) / Math.abs(actualValue)) * 100 * 100) / 100;
     };
 
     // Start with FY data and merge enhanced fields from latestMetrics
@@ -53,6 +53,13 @@ export function FundamentalsPanel({
       forecastEps: data.latestMetrics?.forecastEps ?? null,
       adjustedForecastEps: data.latestMetrics?.adjustedForecastEps ?? fyData.adjustedForecastEps ?? null,
       forecastEpsChangeRate: data.latestMetrics?.forecastEpsChangeRate ?? null,
+      forecastDividendFy: data.latestMetrics?.forecastDividendFy ?? null,
+      adjustedForecastDividendFy:
+        data.latestMetrics?.adjustedForecastDividendFy ?? fyData.adjustedForecastDividendFy ?? null,
+      forecastDividendFyChangeRate: data.latestMetrics?.forecastDividendFyChangeRate ?? null,
+      payoutRatio: data.latestMetrics?.payoutRatio ?? fyData.payoutRatio ?? null,
+      forecastPayoutRatio: data.latestMetrics?.forecastPayoutRatio ?? null,
+      forecastPayoutRatioChangeRate: data.latestMetrics?.forecastPayoutRatioChangeRate ?? null,
       prevCashFlowOperating: data.latestMetrics?.prevCashFlowOperating ?? null,
       prevCashFlowInvesting: data.latestMetrics?.prevCashFlowInvesting ?? null,
       prevCashFlowFinancing: data.latestMetrics?.prevCashFlowFinancing ?? null,
@@ -64,11 +71,30 @@ export function FundamentalsPanel({
 
     const displayActualEps = result.adjustedEps ?? result.eps ?? null;
     const displayForecastEps = result.adjustedForecastEps ?? result.forecastEps ?? null;
-    const adjustedChangeRate = resolveAdjustedChangeRate(displayActualEps, displayForecastEps);
-    if (adjustedChangeRate != null) {
+    const epsChangeRate = resolveChangeRate(displayActualEps, displayForecastEps);
+    if (epsChangeRate != null) {
       result = {
         ...result,
-        forecastEpsChangeRate: adjustedChangeRate,
+        forecastEpsChangeRate: epsChangeRate,
+      };
+    }
+
+    const displayActualDividend = result.adjustedDividendFy ?? result.dividendFy ?? null;
+    const displayForecastDividend =
+      result.adjustedForecastDividendFy ?? result.forecastDividendFy ?? null;
+    const dividendChangeRate = resolveChangeRate(displayActualDividend, displayForecastDividend);
+    if (dividendChangeRate != null) {
+      result = {
+        ...result,
+        forecastDividendFyChangeRate: dividendChangeRate,
+      };
+    }
+
+    const payoutChangeRate = resolveChangeRate(result.payoutRatio ?? null, result.forecastPayoutRatio ?? null);
+    if (payoutChangeRate != null) {
+      result = {
+        ...result,
+        forecastPayoutRatioChangeRate: payoutChangeRate,
       };
     }
 

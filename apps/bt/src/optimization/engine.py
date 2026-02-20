@@ -313,6 +313,8 @@ class ParameterOptimizationEngine:
             and (
                 fundamental.forward_eps_growth.enabled
                 or fundamental.peg_ratio.enabled
+                or fundamental.forward_dividend_growth.enabled
+                or fundamental.forward_payout_ratio.enabled
             )
         )
 
@@ -346,7 +348,12 @@ class ParameterOptimizationEngine:
             if not fundamental_enabled:
                 continue
 
-            for signal_name in ("forward_eps_growth", "peg_ratio"):
+            for signal_name in (
+                "forward_eps_growth",
+                "peg_ratio",
+                "forward_dividend_growth",
+                "forward_payout_ratio",
+            ):
                 signal_cfg = fundamental_cfg.get(signal_name)
                 if not isinstance(signal_cfg, dict):
                     continue

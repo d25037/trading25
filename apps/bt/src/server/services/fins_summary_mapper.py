@@ -38,6 +38,15 @@ def _to_nullable_float(value: Any) -> float | None:
     return None
 
 
+def _first_numeric(item: dict[str, Any], *keys: str) -> float | None:
+    """指定キー群から最初に解釈できる数値を返す。"""
+    for key in keys:
+        value = _to_nullable_float(item.get(key))
+        if value is not None:
+            return value
+    return None
+
+
 def convert_fins_summary_rows(
     data: list[dict[str, Any]],
     *,
@@ -70,7 +79,16 @@ def convert_fins_summary_rows(
             "operating_profit": _to_nullable_float(item.get("OP")),
             "ordinary_profit": _to_nullable_float(item.get("OdP")),
             "operating_cash_flow": _to_nullable_float(item.get("CFO")),
-            "dividend_fy": _to_nullable_float(item.get("DivAnn")),
+            "dividend_fy": _first_numeric(item, "DivAnn", "DivFY"),
+            "forecast_dividend_fy": _first_numeric(item, "FDivAnn", "FDivFY"),
+            "next_year_forecast_dividend_fy": _first_numeric(
+                item, "NxFDivAnn", "NxFDivFY"
+            ),
+            "payout_ratio": _to_nullable_float(item.get("PayoutRatioAnn")),
+            "forecast_payout_ratio": _to_nullable_float(item.get("FPayoutRatioAnn")),
+            "next_year_forecast_payout_ratio": _to_nullable_float(
+                item.get("NxFPayoutRatioAnn")
+            ),
             "forecast_eps": _to_nullable_float(item.get("FEPS")),
             "investing_cash_flow": _to_nullable_float(item.get("CFI")),
             "financing_cash_flow": _to_nullable_float(item.get("CFF")),

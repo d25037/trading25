@@ -18,6 +18,11 @@ interface ForecastEpsFields {
   revisedForecastSource?: string | null;
 }
 
+interface ForecastDividendFields {
+  forecastDividendFy?: number | null;
+  adjustedForecastDividendFy?: number | null;
+}
+
 type HistoryMode = 'fyOnly5' | 'fyAndQuarter10';
 
 const HISTORY_MODE_OPTIONS: Array<{ mode: HistoryMode; label: string }> = [
@@ -88,6 +93,11 @@ function renderForecastEps(fy: ForecastEpsFields): React.ReactNode {
   }
 
   return formatFundamentalValue(null, 'yen');
+}
+
+function renderForecastDividend(fy: ForecastDividendFields): React.ReactNode {
+  const displayForecastDividend = fy.adjustedForecastDividendFy ?? fy.forecastDividendFy ?? null;
+  return formatFundamentalValue(displayForecastDividend, 'yen');
 }
 
 export function FundamentalsHistoryPanel({ symbol, enabled = true }: FundamentalsHistoryPanelProps) {
@@ -162,6 +172,9 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
                   <th className="text-right py-2 px-3 font-medium">来期予想EPS</th>
                   <th className="text-right py-2 px-3 font-medium">BPS</th>
                   <th className="text-right py-2 px-3 font-medium">1株配当</th>
+                  <th className="text-right py-2 px-3 font-medium">予想1株配当</th>
+                  <th className="text-right py-2 px-3 font-medium">配当性向</th>
+                  <th className="text-right py-2 px-3 font-medium">予想配当性向</th>
                   <th className="text-right py-2 px-3 font-medium">ROE</th>
                   <th className="text-right py-2 px-3 font-medium">営業CF</th>
                   <th className="text-right py-2 px-3 font-medium">投資CF</th>
@@ -187,6 +200,13 @@ export function FundamentalsHistoryPanel({ symbol, enabled = true }: Fundamental
                     </td>
                     <td className="py-2.5 px-3 text-right text-foreground">
                       {formatFundamentalValue(period.adjustedDividendFy ?? period.dividendFy ?? null, 'yen')}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-muted-foreground">{renderForecastDividend(period)}</td>
+                    <td className="py-2.5 px-3 text-right text-foreground">
+                      {formatFundamentalValue(period.payoutRatio ?? null, 'percent')}
+                    </td>
+                    <td className="py-2.5 px-3 text-right text-muted-foreground">
+                      {formatFundamentalValue(period.forecastPayoutRatio ?? null, 'percent')}
                     </td>
                     <td className="py-2.5 px-3 text-right text-foreground">
                       {formatFundamentalValue(period.roe, 'percent')}
