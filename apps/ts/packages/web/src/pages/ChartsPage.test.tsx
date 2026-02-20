@@ -7,6 +7,10 @@ import {
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
   resolveFundamentalsPanelHeightPx,
 } from '@/constants/fundamentalMetrics';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+} from '@/constants/fundamentalsHistoryMetrics';
 import { ChartsPage } from './ChartsPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
@@ -15,6 +19,7 @@ const mockUseStockData = vi.fn();
 const mockUseFundamentals = vi.fn();
 const mockWindowOpen = vi.fn();
 const mockFundamentalsPanelProps = vi.fn<[unknown], void>();
+const mockFundamentalsHistoryPanelProps = vi.fn<[unknown], void>();
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
   useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
@@ -72,6 +77,8 @@ const mockSettings = {
   fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
   fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
   fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
+  fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
+  fundamentalsHistoryMetricVisibility: { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY },
   visibleBars: 120,
   relativeMode: true,
 };
@@ -116,7 +123,10 @@ vi.mock('@/components/Chart/FundamentalsPanel', () => ({
 }));
 
 vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
-  FundamentalsHistoryPanel: () => <div>FY History Panel</div>,
+  FundamentalsHistoryPanel: (props: unknown) => {
+    mockFundamentalsHistoryPanelProps(props);
+    return <div>FY History Panel</div>;
+  },
 }));
 
 const mockFactorRegressionPanelProps = vi.fn<[unknown], void>();
@@ -193,6 +203,7 @@ describe('ChartsPage', () => {
     mockUseStockData.mockReset();
     mockUseFundamentals.mockReset();
     mockFundamentalsPanelProps.mockReset();
+    mockFundamentalsHistoryPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
 
     mockSettings.showPPOChart = true;
@@ -206,6 +217,8 @@ describe('ChartsPage', () => {
     mockSettings.fundamentalsPanelOrder = ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'];
     mockSettings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
     mockSettings.fundamentalsMetricVisibility = { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY };
+    mockSettings.fundamentalsHistoryMetricOrder = [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER];
+    mockSettings.fundamentalsHistoryMetricVisibility = { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY };
     mockSettings.tradingValueMA.period = 15;
     mockSettings.relativeMode = true;
 
@@ -325,6 +338,12 @@ describe('ChartsPage', () => {
       symbol: '7203',
       enabled: false,
       tradingValuePeriod: 15,
+    });
+    expect(mockFundamentalsHistoryPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
+      symbol: '7203',
+      enabled: false,
+      metricOrder: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+      metricVisibility: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     });
   });
 

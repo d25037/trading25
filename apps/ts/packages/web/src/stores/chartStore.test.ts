@@ -249,6 +249,10 @@ describe('chartStore', () => {
     expect(state.settings.showFactorRegressionPanel).toBe(defaultSettings.showFactorRegressionPanel);
     expect(state.settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
     expect(state.settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
+    expect(state.settings.fundamentalsHistoryMetricOrder).toEqual(defaultSettings.fundamentalsHistoryMetricOrder);
+    expect(state.settings.fundamentalsHistoryMetricVisibility).toEqual(
+      defaultSettings.fundamentalsHistoryMetricVisibility
+    );
     expect(state.settings.signalOverlay.enabled).toBe(false);
     expect(state.settings.signalOverlay.signals).toEqual([]);
     expect(state.presets[0]?.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
@@ -296,6 +300,10 @@ describe('chartStore', () => {
     expect(state.settings.indicators.ppo.fast).toBe(defaultSettings.indicators.ppo.fast);
     expect(state.settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
     expect(state.settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
+    expect(state.settings.fundamentalsHistoryMetricOrder).toEqual(defaultSettings.fundamentalsHistoryMetricOrder);
+    expect(state.settings.fundamentalsHistoryMetricVisibility).toEqual(
+      defaultSettings.fundamentalsHistoryMetricVisibility
+    );
     expect(state.settings.signalOverlay.enabled).toBe(defaultSettings.signalOverlay.enabled);
     expect(state.settings.signalOverlay.signals).toHaveLength(1);
     expect(state.settings.signalOverlay.signals[0]?.enabled).toBe(true);
@@ -319,6 +327,8 @@ describe('chartStore', () => {
     ]);
     expect(settings.fundamentalsMetricOrder).toEqual(defaultSettings.fundamentalsMetricOrder);
     expect(settings.fundamentalsMetricVisibility).toEqual(defaultSettings.fundamentalsMetricVisibility);
+    expect(settings.fundamentalsHistoryMetricOrder).toEqual(defaultSettings.fundamentalsHistoryMetricOrder);
+    expect(settings.fundamentalsHistoryMetricVisibility).toEqual(defaultSettings.fundamentalsHistoryMetricVisibility);
   });
 
   it('defaults risk adjusted return chart settings', () => {
@@ -370,6 +380,11 @@ describe('chartStore', () => {
               eps: false,
               per: 'yes',
             },
+            fundamentalsHistoryMetricOrder: ['roe', 'invalid', 'roe'],
+            fundamentalsHistoryMetricVisibility: {
+              roe: false,
+              eps: 'no',
+            },
           },
         },
         version: 0,
@@ -391,5 +406,13 @@ describe('chartStore', () => {
     ]);
     expect(settings.fundamentalsMetricVisibility.eps).toBe(false);
     expect(settings.fundamentalsMetricVisibility.per).toBe(defaultSettings.fundamentalsMetricVisibility.per);
+    expect(settings.fundamentalsHistoryMetricOrder).toEqual([
+      'roe',
+      ...defaultSettings.fundamentalsHistoryMetricOrder.filter((metricId) => metricId !== 'roe'),
+    ]);
+    expect(settings.fundamentalsHistoryMetricVisibility.roe).toBe(false);
+    expect(settings.fundamentalsHistoryMetricVisibility.eps).toBe(
+      defaultSettings.fundamentalsHistoryMetricVisibility.eps
+    );
   });
 });
