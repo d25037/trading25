@@ -53,11 +53,13 @@ from .fundamental_quality import (
 
 # キャッシュフロー系・時価総額系シグナル
 from .fundamental_cashflow import (
+    cfo_margin_threshold,
     cfo_yield_threshold,
     is_growing_cfo_yield,
     is_growing_simple_fcf_yield,
     market_cap_threshold,
     operating_cash_flow_threshold,
+    simple_fcf_margin_threshold,
     simple_fcf_threshold,
     simple_fcf_yield_threshold,
 )
@@ -86,6 +88,8 @@ __all__ = [
     # キャッシュフロー系・時価総額系
     "operating_cash_flow_threshold",
     "simple_fcf_threshold",
+    "cfo_margin_threshold",
+    "simple_fcf_margin_threshold",
     "cfo_yield_threshold",
     "simple_fcf_yield_threshold",
     "is_growing_cfo_yield",
