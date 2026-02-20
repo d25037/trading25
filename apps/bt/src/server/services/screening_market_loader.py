@@ -302,7 +302,7 @@ def _attach_statements(
                 start_date=start_date,
                 end_date=end_date,
                 period_type="all",
-                actual_only=True,
+                actual_only=False,
             )
         except sqlite3.OperationalError as e:
             warnings.append(f"market statements revision load failed ({e})")

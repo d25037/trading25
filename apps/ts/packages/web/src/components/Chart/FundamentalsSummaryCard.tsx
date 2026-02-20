@@ -120,7 +120,7 @@ export function FundamentalsSummaryCard({
   }
 
   const displayEps = metrics.adjustedEps ?? metrics.eps;
-  const displayForecastEps = metrics.adjustedForecastEps ?? metrics.forecastEps;
+  const displayForecastEps = metrics.revisedForecastEps ?? metrics.adjustedForecastEps ?? metrics.forecastEps;
   const displayForecastPer = resolveForecastPer(metrics.stockPrice, displayForecastEps ?? null);
   const displayBps = metrics.adjustedBps ?? metrics.bps;
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;

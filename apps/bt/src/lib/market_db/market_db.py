@@ -314,12 +314,44 @@ class MarketDb(BaseDbAccess):
         """statements テーブルに upsert"""
         if not rows:
             return 0
+        updatable_columns = [
+            "earnings_per_share",
+            "profit",
+            "equity",
+            "type_of_current_period",
+            "type_of_document",
+            "next_year_forecast_earnings_per_share",
+            "bps",
+            "sales",
+            "operating_profit",
+            "ordinary_profit",
+            "operating_cash_flow",
+            "dividend_fy",
+            "forecast_eps",
+            "investing_cash_flow",
+            "financing_cash_flow",
+            "cash_and_equivalents",
+            "total_assets",
+            "shares_outstanding",
+            "treasury_shares",
+        ]
         with self.engine.begin() as conn:
             for row in rows:
+                stmt = sqlite_insert(market_statements).values(row)
                 conn.execute(
-                    insert(market_statements)
-                    .values(row)
-                    .prefix_with("OR REPLACE")
+                    stmt.on_conflict_do_update(
+                        index_elements=[
+                            market_statements.c.code,
+                            market_statements.c.disclosed_date,
+                        ],
+                        set_={
+                            column: func.coalesce(
+                                getattr(stmt.excluded, column),
+                                getattr(market_statements.c, column),
+                            )
+                            for column in updatable_columns
+                        },
+                    )
                 )
             return len(rows)
 

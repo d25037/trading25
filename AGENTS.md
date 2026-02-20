@@ -22,6 +22,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
   - **portfolio.db**: CRUD（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
 - `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
+- `market.db` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
@@ -111,6 +112,7 @@ uv run pyright src/              # 型チェック
 - Fundamental signal system は `cfo_margin` / `simple_fcf_margin`（売上高比マージン判定）をサポートし、`OperatingCashFlow` / `InvestingCashFlow` / `Sales` をデータ要件とする
 - Fundamental signal は `cfo_to_net_profit_ratio`（営業CF/純利益）をサポートし、`consecutive_periods` 判定は比率値同値時でも開示更新（OperatingCashFlow/Profit）を起点に連続判定する
 - Fundamentals は EPS に加えて `dividend_fy` / `forecast_dividend_fy` と `payout_ratio` / `forecast_payout_ratio`（実績/予想）を SoT とし、Charts の Fundamentals panel と Backtest Signal system（`forward_dividend_growth` / `dividend_per_share_growth` / `payout_ratio` / `forward_payout_ratio`）で同一指標を使う
+- fundamentals 最新値の forecast EPS は同一期末内で `DiscDate` が新しい開示を優先し、旧開示値の逆転表示を防ぐ
 - Strategy group 再振り分けは `/api/strategies/{strategy_name}/move`（`target_category`: `production` / `experimental` / `legacy`）を SoT とし、web の `Backtest > Strategies` から実行する
 
 主要技術: Python 3.12, vectorbt, pydantic, FastAPI, pandas, ruff, pyright, pytest
@@ -142,6 +144,7 @@ bun run cli backtest attribution run <strategy> --wait
 - `analysis screening`（web/cli）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
 - Charts の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
+- Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする
 
 主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 

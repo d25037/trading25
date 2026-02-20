@@ -260,7 +260,7 @@ def load_multiple_statements_data(
                         start_date,
                         end_date,
                         period_type="all",
-                        actual_only=True,
+                        actual_only=False,
                     )
                 except (ConnectionError, RuntimeError, BatchAPIError) as e:
                     logger.warning(f"財務諸表四半期修正バッチ取得失敗、FYのみで続行: {e}")
