@@ -65,6 +65,20 @@ class FundamentalDataPoint(BaseModel):
     adjustedDividendFy: float | None = Field(
         None, description="Adjusted FY dividend per share using share count (JPY)"
     )
+    forecastDividendFy: float | None = Field(
+        None, description="Forecast dividend per share for FY (JPY)"
+    )
+    adjustedForecastDividendFy: float | None = Field(
+        None, description="Adjusted forecast FY dividend per share using share count (JPY)"
+    )
+    forecastDividendFyChangeRate: float | None = Field(
+        None, description="Forecast dividend change rate from actual dividend (%)"
+    )
+    payoutRatio: float | None = Field(None, description="Payout ratio (%)")
+    forecastPayoutRatio: float | None = Field(None, description="Forecast payout ratio (%)")
+    forecastPayoutRatioChangeRate: float | None = Field(
+        None, description="Forecast payout ratio change rate from actual payout ratio (%)"
+    )
     per: float | None = Field(None, description="Price to earnings ratio")
     pbr: float | None = Field(None, description="Price to book ratio")
 

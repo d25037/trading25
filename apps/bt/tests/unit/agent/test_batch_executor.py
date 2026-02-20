@@ -138,3 +138,28 @@ class TestPrepareBatchData:
             prepare_batch_data({"dataset": "test"}, [candidate])
 
         assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True
+
+    def test_integration_enables_forecast_revision_for_forward_dividend_signal(self):
+        with (
+            patch("src.agent.evaluator.batch_executor.fetch_stock_codes") as mock_codes,
+            patch("src.agent.evaluator.batch_executor.fetch_ohlcv_data") as mock_ohlcv,
+            patch("src.agent.evaluator.batch_executor.fetch_benchmark_data") as mock_bench,
+        ):
+            mock_codes.return_value = ["1234"]
+            mock_ohlcv.return_value = {"1234": {"data": "test"}}
+            mock_bench.return_value = {"index": [], "columns": [], "data": []}
+
+            candidate = StrategyCandidate(
+                strategy_id="c2",
+                entry_filter_params={
+                    "fundamental": {
+                        "enabled": True,
+                        "forward_dividend_growth": {"enabled": True},
+                    }
+                },
+                exit_trigger_params={},
+            )
+
+            prepare_batch_data({"dataset": "test"}, [candidate])
+
+        assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True

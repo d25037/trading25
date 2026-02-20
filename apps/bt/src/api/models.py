@@ -144,6 +144,19 @@ class StatementsRecord(BaseModel):
     operating_cash_flow: Optional[float] = Field(default=None, alias="operatingCashFlow")
     investing_cash_flow: Optional[float] = Field(default=None, alias="investingCashFlow")
     dividend_fy: Optional[float] = Field(default=None, alias="dividendFY")
+    forecast_dividend_fy: Optional[float] = Field(
+        default=None, alias="forecastDividendFY"
+    )
+    next_year_forecast_dividend_fy: Optional[float] = Field(
+        default=None, alias="nextYearForecastDividendFY"
+    )
+    payout_ratio: Optional[float] = Field(default=None, alias="payoutRatio")
+    forecast_payout_ratio: Optional[float] = Field(
+        default=None, alias="forecastPayoutRatio"
+    )
+    next_year_forecast_payout_ratio: Optional[float] = Field(
+        default=None, alias="nextYearForecastPayoutRatio"
+    )
     forecast_eps: Optional[float] = Field(default=None, alias="forecastEps")
     # Share count data (added 2026-01)
     shares_outstanding: Optional[int] = Field(default=None, alias="sharesOutstanding")

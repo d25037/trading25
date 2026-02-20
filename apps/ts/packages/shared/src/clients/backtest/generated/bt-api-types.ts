@@ -3087,7 +3087,10 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
-        /** DateRange */
+        /**
+         * DateRange
+         * @description 分析期間
+         */
         DateRange: {
             /** From */
             from: string;
@@ -3198,7 +3201,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["src__server__schemas__factor_regression__DateRange"];
+            dateRange: components["schemas"]["DateRange"];
         };
         /**
          * FieldConstraints
@@ -3289,6 +3292,36 @@ export interface components {
              * @description Adjusted FY dividend per share using share count (JPY)
              */
             adjustedDividendFy?: number | null;
+            /**
+             * Forecastdividendfy
+             * @description Forecast dividend per share for FY (JPY)
+             */
+            forecastDividendFy?: number | null;
+            /**
+             * Adjustedforecastdividendfy
+             * @description Adjusted forecast FY dividend per share using share count (JPY)
+             */
+            adjustedForecastDividendFy?: number | null;
+            /**
+             * Forecastdividendfychangerate
+             * @description Forecast dividend change rate from actual dividend (%)
+             */
+            forecastDividendFyChangeRate?: number | null;
+            /**
+             * Payoutratio
+             * @description Payout ratio (%)
+             */
+            payoutRatio?: number | null;
+            /**
+             * Forecastpayoutratio
+             * @description Forecast payout ratio (%)
+             */
+            forecastPayoutRatio?: number | null;
+            /**
+             * Forecastpayoutratiochangerate
+             * @description Forecast payout ratio change rate from actual payout ratio (%)
+             */
+            forecastPayoutRatioChangeRate?: number | null;
             /**
              * Per
              * @description Price to earnings ratio
@@ -4967,40 +5000,19 @@ export interface components {
             /** Close */
             close: number;
         };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
+        /** OHLCVRecord */
         OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
+            /** Date */
             date: string;
-            /**
-             * Open
-             * @description 始値
-             */
+            /** Open */
             open: number;
-            /**
-             * High
-             * @description 高値
-             */
+            /** High */
             high: number;
-            /**
-             * Low
-             * @description 安値
-             */
+            /** Low */
             low: number;
-            /**
-             * Close
-             * @description 終値
-             */
+            /** Close */
             close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
+            /** Volume */
             volume: number;
         };
         /**
@@ -5079,7 +5091,7 @@ export interface components {
              * Data
              * @description OHLCVデータ
              */
-            data: components["schemas"]["OHLCVRecord"][];
+            data: components["schemas"]["src__server__schemas__indicators__OHLCVRecord"][];
         };
         /**
          * OptimizationGridConfig
@@ -5430,7 +5442,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__portfolio_factor_regression__DateRange"];
             /** Excludedstocks */
             excludedStocks: components["schemas"]["ExcludedStock"][];
         };
@@ -5763,8 +5775,24 @@ export interface components {
             FEPS?: number | null;
             /** Nxfeps */
             NxFEPS?: number | null;
+            /** Divfy */
+            DivFY?: number | null;
             /** Divann */
             DivAnn?: number | null;
+            /** Payoutratioann */
+            PayoutRatioAnn?: number | null;
+            /** Fdivfy */
+            FDivFY?: number | null;
+            /** Fdivann */
+            FDivAnn?: number | null;
+            /** Fpayoutratioann */
+            FPayoutRatioAnn?: number | null;
+            /** Nxfdivfy */
+            NxFDivFY?: number | null;
+            /** Nxfdivann */
+            NxFDivAnn?: number | null;
+            /** Nxfpayoutratioann */
+            NxFPayoutRatioAnn?: number | null;
             /** Ncsales */
             NCSales?: number | null;
             /** Ncop */
@@ -6666,6 +6694,16 @@ export interface components {
             operatingCashFlow?: number | null;
             /** Dividendfy */
             dividendFy?: number | null;
+            /** Forecastdividendfy */
+            forecastDividendFy?: number | null;
+            /** Nextyearforecastdividendfy */
+            nextYearForecastDividendFy?: number | null;
+            /** Payoutratio */
+            payoutRatio?: number | null;
+            /** Forecastpayoutratio */
+            forecastPayoutRatio?: number | null;
+            /** Nextyearforecastpayoutratio */
+            nextYearForecastPayoutRatio?: number | null;
             /** Forecasteps */
             forecastEps?: number | null;
             /** Investingcashflow */
@@ -7501,37 +7539,12 @@ export interface components {
             /** Max */
             max: string;
         };
-        /** OHLCVRecord */
-        src__server__schemas__dataset_data__OHLCVRecord: {
-            /** Date */
-            date: string;
-            /** Open */
-            open: number;
-            /** High */
-            high: number;
-            /** Low */
-            low: number;
-            /** Close */
-            close: number;
-            /** Volume */
-            volume: number;
-        };
         /** DateRange */
         src__server__schemas__db__DateRange: {
             /** Min */
             min: string;
             /** Max */
             max: string;
-        };
-        /**
-         * DateRange
-         * @description 分析期間
-         */
-        src__server__schemas__factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
         };
         /**
          * IndexMatch
@@ -7548,6 +7561,49 @@ export interface components {
             rSquared: number;
             /** Beta */
             beta: number;
+        };
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
         };
         /** DateRange */
         src__server__schemas__portfolio_performance__DateRange: {
@@ -13020,7 +13076,7 @@ export interface operations {
                 };
                 content: {
                     "application/json": {
-                        [key: string]: components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                        [key: string]: components["schemas"]["OHLCVRecord"][];
                     };
                 };
             };
@@ -13083,7 +13139,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["src__server__schemas__dataset_data__OHLCVRecord"][];
+                    "application/json": components["schemas"]["OHLCVRecord"][];
                 };
             };
             /** @description Bad Request */

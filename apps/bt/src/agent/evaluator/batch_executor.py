@@ -60,6 +60,14 @@ def _is_forecast_signal_enabled(side_params: dict[str, Any]) -> bool:
     if isinstance(peg, dict) and bool(peg.get("enabled", False)):
         return True
 
+    forward_dividend = fundamental.get("forward_dividend_growth")
+    if isinstance(forward_dividend, dict) and bool(forward_dividend.get("enabled", False)):
+        return True
+
+    forward_payout = fundamental.get("forward_payout_ratio")
+    if isinstance(forward_payout, dict) and bool(forward_payout.get("enabled", False)):
+        return True
+
     return False
 
 

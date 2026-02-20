@@ -39,6 +39,14 @@ METADATA_KEYS = {
     "FUNDAMENTALS_FAILED_CODES": "fundamentals_failed_codes",
 }
 
+_STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
+    ("forecast_dividend_fy", "REAL"),
+    ("next_year_forecast_dividend_fy", "REAL"),
+    ("payout_ratio", "REAL"),
+    ("forecast_payout_ratio", "REAL"),
+    ("next_year_forecast_payout_ratio", "REAL"),
+)
+
 
 class MarketDb(BaseDbAccess):
     """market.db アクセス（read + write）"""
@@ -51,6 +59,24 @@ class MarketDb(BaseDbAccess):
     def ensure_schema(self) -> None:
         """不足テーブルを補完する（既存DB互換）"""
         market_meta.create_all(self.engine, checkfirst=True)
+        self._ensure_statements_columns()
+
+    def _ensure_statements_columns(self) -> None:
+        """既存 statements テーブルに不足カラムを追加する。"""
+        with self.engine.begin() as conn:
+            existing_columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(statements)")).fetchall()
+                if len(row) > 1
+            }
+            for column_name, column_type in _STATEMENTS_ADDITIONAL_COLUMNS:
+                if column_name in existing_columns:
+                    continue
+                conn.execute(
+                    text(
+                        f"ALTER TABLE statements ADD COLUMN {column_name} {column_type}"  # noqa: S608
+                    )
+                )
 
     # --- Read ---
 

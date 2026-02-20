@@ -110,6 +110,7 @@ uv run pyright src/              # 型チェック
 - `forward_eps_growth` / `peg_ratio` は FY実績EPSを分母に固定し、`period_type=FY` でも必要時のみ追加取得した四半期 FEPS 修正を forecast 側へ反映する
 - Fundamental signal system は `cfo_margin` / `simple_fcf_margin`（売上高比マージン判定）をサポートし、`OperatingCashFlow` / `InvestingCashFlow` / `Sales` をデータ要件とする
 - Fundamental signal は `cfo_to_net_profit_ratio`（営業CF/純利益）をサポートし、`consecutive_periods` 判定は比率値同値時でも開示更新（OperatingCashFlow/Profit）を起点に連続判定する
+- Fundamentals は EPS に加えて `dividend_fy` / `forecast_dividend_fy` と `payout_ratio` / `forecast_payout_ratio`（実績/予想）を SoT とし、Charts の Fundamentals panel と Backtest Signal system（`forward_dividend_growth` / `dividend_per_share_growth` / `payout_ratio` / `forward_payout_ratio`）で同一指標を使う
 - Strategy group 再振り分けは `/api/strategies/{strategy_name}/move`（`target_category`: `production` / `experimental` / `legacy`）を SoT とし、web の `Backtest > Strategies` から実行する
 
 主要技術: Python 3.12, vectorbt, pydantic, FastAPI, pandas, ruff, pyright, pytest

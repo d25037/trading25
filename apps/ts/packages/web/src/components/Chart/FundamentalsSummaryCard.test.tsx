@@ -16,6 +16,12 @@ const baseMetrics: ApiFundamentalDataPoint = {
   eps: 300,
   dilutedEps: 290,
   bps: 2250,
+  dividendFy: 120,
+  forecastDividendFy: 130,
+  forecastDividendFyChangeRate: 8.3,
+  payoutRatio: 40,
+  forecastPayoutRatio: 45,
+  forecastPayoutRatioChangeRate: 12.5,
   per: 20,
   pbr: 2.7,
   roa: 4.4,
@@ -101,11 +107,26 @@ describe('FundamentalsSummaryCard', () => {
       forecastEps: null,
       adjustedForecastEps: null,
       forecastEpsChangeRate: 0,
+      forecastDividendFy: null,
+      adjustedForecastDividendFy: null,
+      forecastPayoutRatio: null,
+      forecastPayoutRatioChangeRate: null,
     };
 
     render(<FundamentalsSummaryCard metrics={metrics} />);
     expect(screen.queryByText(/予:/)).not.toBeInTheDocument();
     expect(screen.queryByText('(17.43x)')).not.toBeInTheDocument();
+  });
+
+  it('renders forecast blocks for dividend per share and payout ratio', () => {
+    render(<FundamentalsSummaryCard metrics={baseMetrics} />);
+
+    expect(screen.getByText('1株配当')).toBeInTheDocument();
+    expect(screen.getByText('配当性向')).toBeInTheDocument();
+    expect(screen.getByText('予: 130')).toBeInTheDocument();
+    expect(screen.getByText('予: 45.0%')).toBeInTheDocument();
+    expect(screen.getByText('(+8.3%)')).toBeInTheDocument();
+    expect(screen.getByText('(+12.5%)')).toBeInTheDocument();
   });
 
   it('supports metric visibility and ordering', () => {

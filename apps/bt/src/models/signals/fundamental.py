@@ -88,6 +88,20 @@ class FundamentalSignalParams(BaseSignalParams):
             description="条件（above=閾値以上、below=閾値以下）",
         )
 
+    class ForwardDividendGrowthParams(BaseModel):
+        """Forward 1株配当成長率シグナル（来期予想配当 vs 当期配当）"""
+
+        enabled: bool = Field(
+            default=False, description="Forward 1株配当成長率シグナル有効"
+        )
+        threshold: float = Field(
+            default=0.05, gt=0, le=2.0, description="Forward 1株配当成長率閾値（5%=0.05）"
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
     class EPSGrowthParams(BaseModel):
         """EPS成長率シグナルパラメータ（実績EPS同士の比較）"""
 
@@ -246,6 +260,36 @@ class FundamentalSignalParams(BaseSignalParams):
             gt=0,
             le=30.0,
             description="配当利回り閾値（この値以上で高配当判定、%単位）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
+    class PayoutRatioParams(BaseModel):
+        """配当性向シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="配当性向シグナル有効")
+        threshold: float = Field(
+            default=30.0,
+            ge=0,
+            le=300.0,
+            description="配当性向閾値（%単位）",
+        )
+        condition: Literal["above", "below"] = Field(
+            default="above",
+            description="条件（above=閾値以上、below=閾値以下）",
+        )
+
+    class ForwardPayoutRatioParams(BaseModel):
+        """予想配当性向シグナルパラメータ"""
+
+        enabled: bool = Field(default=False, description="予想配当性向シグナル有効")
+        threshold: float = Field(
+            default=30.0,
+            ge=0,
+            le=300.0,
+            description="予想配当性向閾値（%単位）",
         )
         condition: Literal["above", "below"] = Field(
             default="above",
@@ -428,6 +472,10 @@ class FundamentalSignalParams(BaseSignalParams):
     forward_eps_growth: ForwardEPSParams = Field(
         default_factory=ForwardEPSParams, description="Forward EPS成長率シグナル"
     )
+    forward_dividend_growth: ForwardDividendGrowthParams = Field(
+        default_factory=ForwardDividendGrowthParams,
+        description="Forward 1株配当成長率シグナル",
+    )
     eps_growth: EPSGrowthParams = Field(
         default_factory=EPSGrowthParams, description="EPS成長率シグナル（実績ベース）"
     )
@@ -456,6 +504,13 @@ class FundamentalSignalParams(BaseSignalParams):
     )
     dividend_yield: DividendYieldParams = Field(
         default_factory=DividendYieldParams, description="配当利回りシグナル"
+    )
+    payout_ratio: PayoutRatioParams = Field(
+        default_factory=PayoutRatioParams, description="配当性向シグナル"
+    )
+    forward_payout_ratio: ForwardPayoutRatioParams = Field(
+        default_factory=ForwardPayoutRatioParams,
+        description="予想配当性向シグナル",
     )
     simple_fcf: SimpleFCFParams = Field(
         default_factory=SimpleFCFParams, description="簡易FCF（CFO+CFI）シグナル"

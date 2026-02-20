@@ -1,7 +1,7 @@
 """
 財務指標シグナル — 収益性・品質系
 
-ROE・ROA・営業利益率・配当利回りに基づく品質判定シグナルを提供
+ROE・ROA・営業利益率・配当利回り・配当性向に基づく品質判定シグナルを提供
 """
 
 from __future__ import annotations
@@ -127,4 +127,31 @@ def is_high_dividend_yield(
     base_signal = _calc_threshold_signal(dividend_yield, threshold, condition)
     return (base_signal & (dividend_yield < max_yield) & (dividend_fy > 0)).fillna(
         False
+    )
+
+
+def is_payout_ratio_threshold(
+    payout_ratio: pd.Series[float],
+    threshold: float = 30.0,
+    condition: Literal["above", "below"] = "above",
+) -> pd.Series[bool]:
+    """
+    配当性向閾値シグナル
+
+    配当性向（Payout Ratio）が指定した条件で閾値と比較してTrueを返すシグナル
+
+    Args:
+        payout_ratio: 配当性向データ（%単位、日次インデックスに補完済み想定）
+        threshold: 配当性向閾値（デフォルト30.0 = 30%）
+        condition: 条件（above=閾値以上、below=閾値以下）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+
+    Note:
+        - 配当性向がNaNの場合はFalseを返す
+        - 0%も有効値として扱う
+    """
+    return _calc_threshold_signal(
+        payout_ratio, threshold, condition, require_positive=False
     )
