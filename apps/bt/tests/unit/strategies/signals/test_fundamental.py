@@ -20,6 +20,7 @@ from src.strategies.signals.fundamental import (
     is_high_dividend_yield,
     is_high_operating_margin,
     operating_cash_flow_threshold,
+    cfo_to_net_profit_ratio_threshold,
     simple_fcf_threshold,
     is_undervalued_growth_by_peg,
     is_expected_growth_eps,
@@ -512,6 +513,137 @@ class TestOperatingCashFlowThreshold:
         assert signal.dtype == bool
         # 1000 > 500なので全てTrue
         assert signal.sum() == len(self.operating_cash_flow)
+
+
+class TestCFOToNetProfitRatioThreshold:
+    """cfo_to_net_profit_ratio_threshold()のテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.operating_cash_flow = pd.Series(np.ones(100) * 1200, index=self.dates)
+        self.net_profit = pd.Series(np.ones(100) * 800, index=self.dates)  # 比率 1.5
+
+    def test_ratio_basic(self):
+        """営業CF/純利益シグナル基本テスト"""
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=1.0,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == len(self.operating_cash_flow)
+        assert signal.all()
+
+    def test_ratio_threshold_effect(self):
+        """閾値の効果テスト"""
+        signal_low = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=1.0,
+        )
+        signal_high = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=2.0,
+        )
+
+        assert signal_low.sum() > signal_high.sum()
+        assert signal_high.sum() == 0
+
+    def test_ratio_condition_below(self):
+        """below条件テスト"""
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=2.0,
+            condition="below",
+        )
+
+        assert signal.all()
+
+    def test_ratio_zero_net_profit(self):
+        """純利益=0は無効値としてFalse"""
+        net_profit_zero = self.net_profit.copy()
+        net_profit_zero.iloc[0:10] = 0.0
+
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            net_profit_zero,
+            threshold=1.0,
+        )
+
+        assert not signal.iloc[0:10].any()
+        assert signal.iloc[10:].all()
+
+    def test_ratio_consecutive_periods(self):
+        """consecutive_periodsが適用されること"""
+        net_profit = pd.Series(
+            [1000.0] * 20 + [900.0] * 20 + [1500.0] * 20 + [800.0] * 40,
+            index=self.dates,
+        )
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            net_profit,
+            threshold=1.0,
+            condition="above",
+            consecutive_periods=2,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert signal.sum() > 0
+
+    def test_ratio_consecutive_periods_counts_release_even_if_ratio_constant(self):
+        """比率が同値でも開示更新を連続期間にカウントすること"""
+        operating_cash_flow = pd.Series(
+            [100.0] * 20 + [200.0] * 20 + [300.0] * 20 + [400.0] * 40,
+            index=self.dates,
+        )
+        net_profit = pd.Series(
+            [50.0] * 20 + [100.0] * 20 + [150.0] * 20 + [200.0] * 40,
+            index=self.dates,
+        )  # 比率は全期間 2.0
+        signal = cfo_to_net_profit_ratio_threshold(
+            operating_cash_flow,
+            net_profit,
+            threshold=1.5,
+            condition="above",
+            consecutive_periods=2,
+        )
+
+        # 2回目開示以降は連続2回条件達成としてTrue
+        assert not signal.iloc[0:20].any()
+        assert signal.iloc[20:].all()
+
+    def test_ratio_consecutive_periods_insufficient_releases(self):
+        """開示回数が不足する場合は全てFalse"""
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=1.0,
+            condition="above",
+            consecutive_periods=3,
+        )
+
+        assert not signal.any()
+
+    def test_ratio_consecutive_periods_empty_series(self):
+        """空Seriesでもクラッシュせず空Seriesを返す"""
+        empty = pd.Series(dtype=float)
+        signal = cfo_to_net_profit_ratio_threshold(
+            empty,
+            empty,
+            threshold=1.0,
+            condition="above",
+            consecutive_periods=2,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.empty
+        assert signal.dtype == bool
 
 
 class TestSimpleFCFThreshold:
@@ -1055,6 +1187,35 @@ class TestConditionParameterOperatingCashFlow:
             self.operating_cash_flow, threshold=2000.0, condition="below"
         )
         # 1000 < 2000 → True
+        assert signal.all()
+
+
+class TestConditionParameterCFOToNetProfitRatio:
+    """営業CF/純利益のconditionパラメータテスト"""
+
+    def setup_method(self):
+        """テストデータ作成"""
+        self.dates = pd.date_range("2023-01-01", periods=100)
+        self.operating_cash_flow = pd.Series(np.ones(100) * 1200, index=self.dates)
+        self.net_profit = pd.Series(np.ones(100) * 800, index=self.dates)  # 比率 1.5
+
+    def test_condition_above_default(self):
+        """above条件（デフォルト）"""
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=1.0,
+        )
+        assert signal.all()
+
+    def test_condition_below(self):
+        """below条件"""
+        signal = cfo_to_net_profit_ratio_threshold(
+            self.operating_cash_flow,
+            self.net_profit,
+            threshold=2.0,
+            condition="below",
+        )
         assert signal.all()
 
 
@@ -2230,6 +2391,26 @@ class TestSimpleFcfYieldGrowth:
 
         assert not signal.iloc[0:10].any()
 
+    def test_growth_use_floating_shares_false(self):
+        treasury_changes = pd.Series([200_000.0] * 50 + [0.0] * 50, index=self.dates)
+        operating_constant = pd.Series(np.ones(100) * 60_000_000.0, index=self.dates)
+        investing_constant = pd.Series(np.ones(100) * -24_000_000.0, index=self.dates)
+
+        signal = is_growing_simple_fcf_yield(
+            self.close,
+            operating_constant,
+            investing_constant,
+            self.shares_outstanding,
+            treasury_changes,
+            growth_threshold=0.0,
+            periods=1,
+            condition="above",
+            use_floating_shares=False,
+        )
+
+        # 株式数計算に自己株式を使わないため、自己株変化のみでは成長シグナルは発火しない
+        assert not signal.any()
+
 
 class TestYieldSignalsEdgeCases:
     """利回りシグナルのエッジケーステスト"""
@@ -2380,6 +2561,23 @@ class TestFundamentalSignalParamsConfig:
         assert params.dividend_per_share_growth.threshold == 0.15
         assert params.dividend_per_share_growth.periods == 2
         assert params.dividend_per_share_growth.condition == "above"
+
+    def test_cfo_to_net_profit_ratio_field_exists(self):
+        """cfo_to_net_profit_ratioフィールドが正しくパースされること"""
+        from src.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams(
+            cfo_to_net_profit_ratio={
+                "enabled": True,
+                "threshold": 1.2,
+                "condition": "above",
+                "consecutive_periods": 2,
+            }
+        )
+        assert params.cfo_to_net_profit_ratio.enabled is True
+        assert params.cfo_to_net_profit_ratio.threshold == 1.2
+        assert params.cfo_to_net_profit_ratio.condition == "above"
+        assert params.cfo_to_net_profit_ratio.consecutive_periods == 2
 
     def test_yield_growth_fields_default(self):
         """yield成長率フィールドのデフォルト値が正しいこと"""
