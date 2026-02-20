@@ -13182,6 +13182,30 @@
             "title": "Fcfmargin",
             "description": "FCF margin (%)"
           },
+          "cfoYield": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfoyield",
+            "description": "CFO yield (%)"
+          },
+          "cfoMargin": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cfomargin",
+            "description": "CFO margin (%)"
+          },
           "cfoToNetProfitRatio": {
             "anyOf": [
               {

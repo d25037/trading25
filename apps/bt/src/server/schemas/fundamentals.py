@@ -101,6 +101,8 @@ class FundamentalDataPoint(BaseModel):
     fcf: float | None = Field(None, description="Free cash flow (millions JPY)")
     fcfYield: float | None = Field(None, description="FCF yield (%)")
     fcfMargin: float | None = Field(None, description="FCF margin (%)")
+    cfoYield: float | None = Field(None, description="CFO yield (%)")
+    cfoMargin: float | None = Field(None, description="CFO margin (%)")
     cfoToNetProfitRatio: float | None = Field(
         None, description="Operating cash flow / net profit ratio (x)"
     )

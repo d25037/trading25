@@ -486,6 +486,8 @@ describe('ChartsPage', () => {
       fcf: false,
       fcfYield: false,
       fcfMargin: false,
+      cfoYield: false,
+      cfoMargin: false,
       cfoToNetProfitRatio: false,
       tradingValueToMarketCapRatio: false,
     };

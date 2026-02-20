@@ -15,6 +15,8 @@ export const FUNDAMENTAL_METRIC_IDS = [
   'fcf',
   'fcfYield',
   'fcfMargin',
+  'cfoYield',
+  'cfoMargin',
   'cfoToNetProfitRatio',
   'tradingValueToMarketCapRatio',
 ] as const;
@@ -43,6 +45,8 @@ export const FUNDAMENTAL_METRIC_DEFINITIONS: FundamentalMetricDefinition[] = [
   { id: 'fcf', label: 'FCF' },
   { id: 'fcfYield', label: 'FCF利回り' },
   { id: 'fcfMargin', label: 'FCFマージン' },
+  { id: 'cfoYield', label: 'CFO利回り' },
+  { id: 'cfoMargin', label: 'CFOマージン' },
   { id: 'cfoToNetProfitRatio', label: '営業CF/純利益' },
   { id: 'tradingValueToMarketCapRatio', label: '時価総額/売買代金' },
 ];
@@ -66,6 +70,8 @@ export const DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY: Record<FundamentalMetricId, 
   fcf: true,
   fcfYield: true,
   fcfMargin: true,
+  cfoYield: true,
+  cfoMargin: true,
   cfoToNetProfitRatio: true,
   tradingValueToMarketCapRatio: true,
 };

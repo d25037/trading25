@@ -1,5 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import {
+  getCfoMarginColor,
+  getCfoYieldColor,
   getCashFlowColor,
   getFcfMarginColor,
   getFcfYieldColor,
@@ -141,6 +143,34 @@ describe('getFcfMarginColor', () => {
   });
 });
 
+describe('getCfoYieldColor', () => {
+  it('returns green for >= 5', () => {
+    expect(getCfoYieldColor(5)).toBe('text-green-500');
+  });
+
+  it('returns yellow for >= 2 and < 5', () => {
+    expect(getCfoYieldColor(3)).toBe('text-yellow-500');
+  });
+
+  it('returns red for < 2', () => {
+    expect(getCfoYieldColor(1)).toBe('text-red-500');
+  });
+});
+
+describe('getCfoMarginColor', () => {
+  it('returns green for >= 10', () => {
+    expect(getCfoMarginColor(10)).toBe('text-green-500');
+  });
+
+  it('returns yellow for >= 5 and < 10', () => {
+    expect(getCfoMarginColor(7)).toBe('text-yellow-500');
+  });
+
+  it('returns red for < 5', () => {
+    expect(getCfoMarginColor(3)).toBe('text-red-500');
+  });
+});
+
 describe('getFundamentalColor', () => {
   it('returns muted for null value', () => {
     expect(getFundamentalColor(null, 'roe')).toBe('text-muted-foreground');
@@ -172,5 +202,13 @@ describe('getFundamentalColor', () => {
 
   it('dispatches to fcfMargin color', () => {
     expect(getFundamentalColor(12, 'fcfMargin')).toBe('text-green-500');
+  });
+
+  it('dispatches to cfoYield color', () => {
+    expect(getFundamentalColor(6, 'cfoYield')).toBe('text-green-500');
+  });
+
+  it('dispatches to cfoMargin color', () => {
+    expect(getFundamentalColor(12, 'cfoMargin')).toBe('text-green-500');
   });
 });
