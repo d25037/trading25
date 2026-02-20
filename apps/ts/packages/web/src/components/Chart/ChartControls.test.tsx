@@ -7,6 +7,10 @@ import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
 } from '@/constants/fundamentalMetrics';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+} from '@/constants/fundamentalsHistoryMetrics';
 import { ChartControls } from './ChartControls';
 
 const queryClient = new QueryClient({
@@ -49,6 +53,8 @@ const mockChartStore = {
     fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
+    fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
+    fundamentalsHistoryMetricVisibility: { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY },
     visibleBars: 30,
     relativeMode: false,
     indicators: {
@@ -136,6 +142,10 @@ describe('ChartControls', () => {
     ];
     mockChartStore.settings.fundamentalsMetricOrder = [...DEFAULT_FUNDAMENTAL_METRIC_ORDER];
     mockChartStore.settings.fundamentalsMetricVisibility = { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY };
+    mockChartStore.settings.fundamentalsHistoryMetricOrder = [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER];
+    mockChartStore.settings.fundamentalsHistoryMetricVisibility = {
+      ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+    };
     mockChartStore.settings.signalOverlay.signals = [];
     mockChartStore.setSelectedSymbol = vi.fn();
     mockChartStore.updateSettings = vi.fn();
@@ -285,6 +295,44 @@ describe('ChartControls', () => {
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
       fundamentalsMetricOrder: ['pbr', 'per', ...DEFAULT_FUNDAMENTAL_METRIC_ORDER.slice(2)],
+    });
+  });
+
+  it('opens FY history metrics dialog and toggles metric visibility', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
+    await user.click(screen.getByRole('switch', { name: /^EPS$/i }));
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      fundamentalsHistoryMetricVisibility: {
+        ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+        eps: false,
+      },
+    });
+  });
+
+  it('moves FY history metric order down from FY history metrics dialog', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
+    const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
+    expect(firstDownButton).toBeDefined();
+    if (!firstDownButton) return;
+    await user.click(firstDownButton);
+
+    expect(mockChartStore.updateSettings).toHaveBeenCalledWith({
+      fundamentalsHistoryMetricOrder: [
+        'forecastEps',
+        'eps',
+        ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER.slice(2),
+      ],
     });
   });
 

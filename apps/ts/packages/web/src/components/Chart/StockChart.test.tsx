@@ -4,6 +4,10 @@ import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
 } from '@/constants/fundamentalMetrics';
+import {
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
+  DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+} from '@/constants/fundamentalsHistoryMetrics';
 import type { StockDataPoint } from '@/types/chart';
 import { calculateChangePct, formatPrice, StockChart, timeToDateString } from './StockChart';
 
@@ -25,6 +29,8 @@ const mockChartStore = {
     fundamentalsPanelOrder: ['fundamentals', 'fundamentalsHistory', 'marginPressure', 'factorRegression'],
     fundamentalsMetricOrder: [...DEFAULT_FUNDAMENTAL_METRIC_ORDER],
     fundamentalsMetricVisibility: { ...DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY },
+    fundamentalsHistoryMetricOrder: [...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER],
+    fundamentalsHistoryMetricVisibility: { ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY },
     visibleBars: 30,
     relativeMode: false,
     indicators: {
