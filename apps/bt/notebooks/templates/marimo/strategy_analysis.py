@@ -149,8 +149,8 @@ def show_signal_params(mo, entry_filter_params, exit_trigger_params):
 
 @app.cell
 def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_params):
-    from src.models.config import SharedConfig
-    from src.models.signals import SignalParams
+    from src.shared.models import SharedConfig
+    from src.shared.models import SignalParams
     from pydantic import ValidationError
 
     _validation_errors = []
@@ -181,7 +181,7 @@ def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_par
 
 @app.cell
 def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params):
-    from src.strategies.core.factory import StrategyFactory
+    from src.domains.strategy.core.factory import StrategyFactory
 
     if not shared_config:
         mo.md("**Error**: No shared_config provided. Skipping strategy execution.")

@@ -4,6 +4,7 @@ Tests for DatasetDb
 
 from __future__ import annotations
 
+import sqlite3
 from pathlib import Path
 
 import pytest
@@ -111,6 +112,72 @@ def ds_db(tmp_path: Path) -> DatasetDb:
     db_path = _create_test_db(tmp_path)
     db = DatasetDb(db_path)
     yield db  # type: ignore[misc]
+    db.close()
+
+
+@pytest.fixture()
+def legacy_ds_db(tmp_path: Path) -> DatasetDb:
+    """旧 statements スキーマ（配当/配当性向予想カラムなし）の DatasetDb。"""
+    db_path = tmp_path / "legacy-dataset.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE statements (
+            code TEXT NOT NULL,
+            disclosed_date TEXT NOT NULL,
+            earnings_per_share REAL,
+            profit REAL,
+            equity REAL,
+            type_of_current_period TEXT,
+            type_of_document TEXT,
+            next_year_forecast_earnings_per_share REAL,
+            bps REAL,
+            sales REAL,
+            operating_profit REAL,
+            ordinary_profit REAL,
+            operating_cash_flow REAL,
+            dividend_fy REAL,
+            forecast_eps REAL,
+            investing_cash_flow REAL,
+            financing_cash_flow REAL,
+            cash_and_equivalents REAL,
+            total_assets REAL,
+            shares_outstanding REAL,
+            treasury_shares REAL,
+            PRIMARY KEY (code, disclosed_date)
+        );
+
+        INSERT INTO statements VALUES (
+            '7203', '2024-01-15',
+            150.0, 2000000.0, 10000000.0, 'FY', 'AnnualReport',
+            160.0, 3000.0, 20000000.0, 1500000.0, 1600000.0, 1800000.0,
+            60.0, 165.0, -500000.0, -300000.0, 4000000.0, 50000000.0,
+            330000000.0, 10000000.0
+        );
+    """)
+    conn.close()
+
+    db = DatasetDb(str(db_path))
+    yield db
+    db.close()
+
+
+@pytest.fixture()
+def invalid_schema_ds_db(tmp_path: Path) -> DatasetDb:
+    """必須列が不足した statements スキーマ（破損想定）。"""
+    db_path = tmp_path / "invalid-schema.db"
+    conn = sqlite3.connect(db_path)
+    conn.executescript("""
+        CREATE TABLE statements (
+            code TEXT NOT NULL,
+            earnings_per_share REAL
+        );
+
+        INSERT INTO statements VALUES ('7203', 150.0);
+    """)
+    conn.close()
+
+    db = DatasetDb(str(db_path))
+    yield db
     db.close()
 
 
@@ -264,6 +331,38 @@ class TestDatasetDbStatements:
             "2024-10-15",
         }
         assert len(result["6758"]) == 0
+
+    def test_get_statements_legacy_schema_fills_missing_columns_with_none(
+        self, legacy_ds_db: DatasetDb
+    ) -> None:
+        result = legacy_ds_db.get_statements("7203", actual_only=False)
+        assert len(result) == 1
+        row = result[0]
+        assert row.forecast_dividend_fy is None
+        assert row.next_year_forecast_dividend_fy is None
+        assert row.payout_ratio is None
+        assert row.forecast_payout_ratio is None
+        assert row.next_year_forecast_payout_ratio is None
+
+    def test_get_statements_batch_legacy_schema_does_not_fail(
+        self, legacy_ds_db: DatasetDb
+    ) -> None:
+        result = legacy_ds_db.get_statements_batch(
+            ["7203", "6758"],
+            actual_only=False,
+        )
+        assert len(result["7203"]) == 1
+        assert result["7203"][0].forecast_dividend_fy is None
+        assert len(result["6758"]) == 0
+
+    def test_get_statements_invalid_schema_raises_runtime_error(
+        self, invalid_schema_ds_db: DatasetDb
+    ) -> None:
+        with pytest.raises(
+            RuntimeError,
+            match="missing required columns: disclosed_date",
+        ):
+            invalid_schema_ds_db.get_statements("7203")
 
 
 class TestDatasetDbSectors:
