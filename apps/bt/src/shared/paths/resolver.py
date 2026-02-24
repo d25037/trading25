@@ -52,8 +52,9 @@ def get_strategies_dir(category: str | None = None) -> Path:
         Path: 戦略ディレクトリパス
 
     Note:
-        - experimental: 外部ディレクトリ（~/.local/share/trading25/strategies/experimental）
-        - production/reference/legacy: プロジェクト内（config/strategies/{category}）
+        - experimental/production/legacy: 外部ディレクトリ
+          （~/.local/share/trading25/strategies/{category}）
+        - reference: プロジェクト内（config/strategies/reference）
     """
     # 環境変数による個別指定
     env_strategies = os.environ.get(ENV_STRATEGIES_DIR)
@@ -62,7 +63,7 @@ def get_strategies_dir(category: str | None = None) -> Path:
         return base / category if category else base
 
     if category is None:
-        # ベースディレクトリを返す（プロジェクト内）
+        # カテゴリ未指定時は共有定義を置くプロジェクト内ベースを返す
         return PROJECT_STRATEGIES_DIR
 
     if category in EXTERNAL_CATEGORIES:
@@ -222,7 +223,9 @@ def find_strategy_path(strategy_name: str) -> Path | None:
 
     Note:
         検索順序: experimental（外部）→ experimental（プロジェクト内）
-                  → production → reference → legacy
+                  → production（外部）→ production（プロジェクト内）
+                  → reference（プロジェクト内）
+                  → legacy（外部）→ legacy（プロジェクト内）
     """
     if "/" in strategy_name:
         # カテゴリ付きの場合
@@ -352,18 +355,28 @@ def ensure_data_dirs() -> None:
 
     ~/.local/share/trading25/ 配下に必要なディレクトリを作成
     """
-    dirs_to_create = [
+    dirs_to_create: list[Path] = [
         get_data_dir(),
-        get_strategies_dir("experimental"),
-        get_strategies_dir("experimental") / "auto",
-        get_strategies_dir("experimental") / "evolved",
-        get_strategies_dir("experimental") / "optuna",
         get_backtest_results_dir(),
         get_backtest_attribution_dir(),
         get_optimization_results_dir(),
         get_optimization_grid_dir(),
         get_cache_dir(),
     ]
+
+    # 外部管理カテゴリのルートを作成
+    for category in EXTERNAL_CATEGORIES:
+        dirs_to_create.append(get_strategies_dir(category))
+
+    # 実験系の自動生成サブディレクトリ
+    experimental_dir = get_strategies_dir("experimental")
+    dirs_to_create.extend(
+        [
+            experimental_dir / "auto",
+            experimental_dir / "evolved",
+            experimental_dir / "optuna",
+        ]
+    )
 
     for dir_path in dirs_to_create:
         dir_path.mkdir(parents=True, exist_ok=True)

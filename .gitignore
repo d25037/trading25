@@ -66,6 +66,9 @@ apps/bt/**/*.xlsx
 apps/bt/**/*.json
 apps/bt/**/*.pickle
 apps/bt/**/*.pkl
+apps/bt/config/strategies/experimental/
+apps/bt/config/strategies/production/
+apps/bt/config/strategies/legacy/
 
 # === apps/ts ===
 apps/ts/**/test-portfolio-*.db

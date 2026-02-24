@@ -83,7 +83,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 
 両プロジェクトが `~/.local/share/trading25/` を共有:
 - `market.db` / `datasets/` / `portfolio.db` — FastAPI が管理
-- `strategies/experimental/` / `backtest/results/` / `backtest/attribution/` — bt が管理
+- `strategies/experimental/` / `strategies/production/` / `strategies/legacy/` / `backtest/results/` / `backtest/attribution/` — bt が管理
 
 ## bt (Python / uv)
 VectorBT基盤の高速バックテスト・Marimo Notebook実行システム。

@@ -20,7 +20,7 @@ class YamlUpdater:
     YAML自動更新クラス
 
     戦略設定をYAMLファイルに書き出し
-    experimentalカテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
+    external 管理カテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
     """
 
     def __init__(self, base_dir: str | None = None, use_external: bool = True):
@@ -29,7 +29,7 @@ class YamlUpdater:
 
         Args:
             base_dir: 戦略設定ベースディレクトリ（Noneでデフォルト使用）
-            use_external: Trueで外部ディレクトリを使用（experimental用）
+            use_external: Trueで外部ディレクトリを使用（external 管理カテゴリ用）
         """
         if base_dir is None:
             self.base_dir = "config/strategies"
@@ -46,7 +46,7 @@ class YamlUpdater:
         """
         戦略候補をYAMLファイルに保存
 
-        experimentalカテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
+        external 管理カテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
 
         Args:
             candidate: 戦略候補
@@ -60,14 +60,8 @@ class YamlUpdater:
             # 自動生成
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
             filename = f"{candidate.strategy_id}_{timestamp}.yaml"
-
-            # experimentalカテゴリは外部ディレクトリに保存
-            if self.use_external and category == "experimental":
-                from src.shared.paths import get_strategies_dir
-                base_dir = str(get_strategies_dir("experimental"))
-                output_path = os.path.join(base_dir, "auto", filename)
-            else:
-                output_path = os.path.join(self.base_dir, category, "auto", filename)
+            output_dir = self._resolve_auto_output_dir(category)
+            output_path = os.path.join(output_dir, filename)
 
         # ディレクトリ作成
         os.makedirs(os.path.dirname(output_path), exist_ok=True)
@@ -84,6 +78,17 @@ class YamlUpdater:
 
         logger.info(f"Strategy saved to: {output_path}")
         return output_path
+
+    def _resolve_auto_output_dir(self, category: str) -> str:
+        """auto 出力時のカテゴリ別ディレクトリを解決"""
+        if self.use_external:
+            from src.shared.paths import get_strategies_dir
+            from src.shared.paths.constants import EXTERNAL_CATEGORIES
+
+            if category in EXTERNAL_CATEGORIES:
+                return os.path.join(str(get_strategies_dir(category)), "auto")
+
+        return os.path.join(self.base_dir, category, "auto")
 
     def apply_improvements(
         self,

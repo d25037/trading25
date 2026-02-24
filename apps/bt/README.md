@@ -65,7 +65,11 @@ uv run pytest tests
 - `portfolio.db`
 - `datasets/`
 - `strategies/experimental/`
+- `strategies/production/`
+- `strategies/legacy/`
 - `backtest/results/`
+
+共有テンプレート等の最小セットのみ `apps/bt/config/strategies/reference/` に保持します。
 
 ## Integration with apps/ts
 

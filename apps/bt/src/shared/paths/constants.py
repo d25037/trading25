@@ -17,16 +17,16 @@ DEFAULT_DATA_DIR = Path.home() / ".local" / "share" / "trading25"
 # 戦略カテゴリ定義
 STRATEGY_CATEGORIES = [
     "experimental",  # 実験的戦略（外部保存）
-    "production",    # 本番戦略（プロジェクト内）
+    "production",    # 本番戦略（外部保存）
     "reference",     # リファレンス（プロジェクト内）
-    "legacy",        # レガシー（プロジェクト内）
+    "legacy",        # レガシー（外部保存）
 ]
 
 # 外部ディレクトリに保存するカテゴリ
-EXTERNAL_CATEGORIES = ["experimental"]
+EXTERNAL_CATEGORIES = ["experimental", "production", "legacy"]
 
 # プロジェクト内に残すカテゴリ
-PROJECT_CATEGORIES = ["production", "reference", "legacy"]
+PROJECT_CATEGORIES = ["reference"]
 
 # デフォルトの検索順序（experimental を最優先）
 SEARCH_ORDER = ["experimental", "production", "reference", "legacy"]

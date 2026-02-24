@@ -688,8 +688,8 @@ def test_get_category_roots_default_experimental_includes_fallback(monkeypatch):
     assert roots[1] == Path("config/strategies/experimental")
 
 
-def test_get_category_roots_default_non_experimental(monkeypatch):
-    """デフォルト設定時の non-experimental は外部ルートのみ"""
+def test_get_category_roots_default_non_reference_includes_fallback(monkeypatch):
+    """デフォルト設定時の external 管理カテゴリは外部 + プロジェクト内フォールバック"""
     loader = ConfigLoader()
     monkeypatch.setattr(loader, "_is_default_config", lambda: True)
     monkeypatch.setattr(
@@ -699,7 +699,8 @@ def test_get_category_roots_default_non_experimental(monkeypatch):
 
     roots = loader._get_category_roots("production")
 
-    assert roots == [Path("/tmp/external/production")]
+    assert roots[0] == Path("/tmp/external/production")
+    assert roots[1] == Path("config/strategies/production")
 
 
 def test_resolve_category_root_and_relative_path_raises_for_outside_path(tmp_path):

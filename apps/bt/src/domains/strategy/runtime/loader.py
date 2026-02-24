@@ -39,7 +39,7 @@ from src.domains.strategy.runtime.validator import (
     validate_strategy_config,
     validate_strategy_name,
 )
-from src.shared.paths.constants import STRATEGY_CATEGORIES
+from src.shared.paths.constants import EXTERNAL_CATEGORIES, STRATEGY_CATEGORIES
 
 
 MOVABLE_STRATEGY_CATEGORIES = {"production", "experimental", "legacy"}
@@ -113,8 +113,8 @@ class ConfigLoader:
 
         if self._is_default_config():
             roots = [get_strategies_dir(category)]
-            # experimental は外部ディレクトリ優先、プロジェクト内をフォールバックで許可
-            if category == "experimental":
+            # 外部管理カテゴリは外部優先 + プロジェクト内フォールバックを許可
+            if category in EXTERNAL_CATEGORIES:
                 fallback = self.config_dir / "strategies" / category
                 if fallback not in roots:
                     roots.append(fallback)
@@ -282,7 +282,7 @@ class ConfigLoader:
         """
         戦略設定を保存（デフォルト: experimental カテゴリのみ）
 
-        experimentalカテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
+        external 管理カテゴリは外部ディレクトリ（~/.local/share/trading25）に保存
         ただし、config_dirがデフォルト("config")以外の場合はconfig_dir内に保存
 
         Args:
@@ -323,8 +323,8 @@ class ConfigLoader:
         is_default_config = str(self.config_dir) == "config"
 
         name_only = "/".join(strategy_name.split("/")[1:])
-        if category == "experimental" and is_default_config:
-            strategy_path = get_strategies_dir("experimental") / f"{name_only}.yaml"
+        if category in EXTERNAL_CATEGORIES and is_default_config:
+            strategy_path = get_strategies_dir(category) / f"{name_only}.yaml"
         else:
             strategy_path = self.config_dir / "strategies" / f"{strategy_name}.yaml"
 

@@ -118,6 +118,16 @@ class TestSaveCandidate:
         assert os.path.exists(result_path)
         assert os.path.dirname(result_path) == str(tmp_path / "auto")
 
+    def test_auto_generate_path_external_production(self, tmp_path):
+        updater = YamlUpdater(base_dir=str(tmp_path), use_external=True)
+        candidate = _make_candidate()
+
+        with patch("src.shared.paths.get_strategies_dir", return_value=tmp_path):
+            result_path = updater.save_candidate(candidate, category="production")
+
+        assert os.path.exists(result_path)
+        assert os.path.dirname(result_path) == str(tmp_path / "auto")
+
 
 class TestFormatSignalParams:
     def test_numeric_rounding(self):

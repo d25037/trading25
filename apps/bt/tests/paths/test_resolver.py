@@ -8,6 +8,10 @@ from unittest.mock import patch
 
 
 from src.shared.paths import (
+    get_all_backtest_result_dirs,
+    get_all_optimization_grid_dirs,
+    get_all_optimization_result_dirs,
+    get_all_strategy_paths,
     get_data_dir,
     get_strategies_dir,
     get_backtest_results_dir,
@@ -50,25 +54,46 @@ class TestGetStrategiesDir:
         # デフォルトでは外部ディレクトリ
         assert ".local/share/trading25" in str(result) or "TRADING25" in str(result)
 
-    def test_production_category_returns_project(self):
-        """productionカテゴリはプロジェクト内を返す"""
+    def test_production_category_returns_external(self):
+        """productionカテゴリは外部ディレクトリを返す"""
         result = get_strategies_dir("production")
-        assert result == Path("config/strategies/production")
+        assert "production" in str(result)
+        assert ".local/share/trading25" in str(result) or "TRADING25" in str(result)
 
     def test_reference_category_returns_project(self):
         """referenceカテゴリはプロジェクト内を返す"""
         result = get_strategies_dir("reference")
         assert result == Path("config/strategies/reference")
 
-    def test_legacy_category_returns_project(self):
-        """legacyカテゴリはプロジェクト内を返す"""
+    def test_legacy_category_returns_external(self):
+        """legacyカテゴリは外部ディレクトリを返す"""
         result = get_strategies_dir("legacy")
-        assert result == Path("config/strategies/legacy")
+        assert "legacy" in str(result)
+        assert ".local/share/trading25" in str(result) or "TRADING25" in str(result)
 
     def test_none_category_returns_base(self):
         """カテゴリなしはベースディレクトリを返す"""
         result = get_strategies_dir(None)
         assert result == Path("config/strategies")
+
+    def test_env_strategies_dir_with_category(self, tmp_path: Path):
+        """TRADING25_STRATEGIES_DIR 指定時はベース配下を返す"""
+        custom_base = tmp_path / "strategies"
+        with patch.dict(os.environ, {"TRADING25_STRATEGIES_DIR": str(custom_base)}):
+            result = get_strategies_dir("production")
+        assert result == custom_base / "production"
+
+    def test_env_strategies_dir_without_category(self, tmp_path: Path):
+        """TRADING25_STRATEGIES_DIR 指定 + category=None はベースを返す"""
+        custom_base = tmp_path / "strategies"
+        with patch.dict(os.environ, {"TRADING25_STRATEGIES_DIR": str(custom_base)}):
+            result = get_strategies_dir(None)
+        assert result == custom_base
+
+    def test_unknown_category_falls_back_to_project(self):
+        """未知カテゴリはプロジェクト配下にフォールバック"""
+        result = get_strategies_dir("custom")
+        assert result == Path("config/strategies/custom")
 
 
 class TestGetBacktestResultsDir:
@@ -85,6 +110,13 @@ class TestGetBacktestResultsDir:
         result = get_backtest_results_dir("test_strategy")
         assert "test_strategy" in str(result)
 
+    def test_backtest_dir_from_env(self, tmp_path: Path):
+        """TRADING25_BACKTEST_DIR 指定時は環境変数の値を優先"""
+        base = tmp_path / "bt"
+        with patch.dict(os.environ, {"TRADING25_BACKTEST_DIR": str(base)}):
+            result = get_backtest_results_dir("alpha")
+        assert result == base / "results" / "alpha"
+
 
 class TestGetBacktestAttributionDir:
     """get_backtest_attribution_dir関数のテスト"""
@@ -100,6 +132,13 @@ class TestGetBacktestAttributionDir:
         result = get_backtest_attribution_dir("test_strategy")
         assert "test_strategy" in str(result)
 
+    def test_attribution_dir_from_env(self, tmp_path: Path):
+        """TRADING25_BACKTEST_DIR 指定時は環境変数の値を優先"""
+        base = tmp_path / "bt"
+        with patch.dict(os.environ, {"TRADING25_BACKTEST_DIR": str(base)}):
+            result = get_backtest_attribution_dir("alpha")
+        assert result == base / "attribution" / "alpha"
+
 
 class TestGetOptimizationResultsDir:
     """get_optimization_results_dir関数のテスト"""
@@ -113,6 +152,13 @@ class TestGetOptimizationResultsDir:
         """戦略名付き最適化結果ディレクトリのテスト"""
         result = get_optimization_results_dir("test_strategy")
         assert "test_strategy" in str(result)
+
+    def test_optimization_dir_from_env(self, tmp_path: Path):
+        """TRADING25_BACKTEST_DIR 指定時は環境変数の値を優先"""
+        base = tmp_path / "bt"
+        with patch.dict(os.environ, {"TRADING25_BACKTEST_DIR": str(base)}):
+            result = get_optimization_results_dir("alpha")
+        assert result == base / "optimization" / "alpha"
 
 
 class TestGetOptimizationGridDir:
@@ -156,6 +202,35 @@ class TestFindStrategyPath:
         if result:
             assert result.exists()
 
+    def test_find_with_category_uses_subdirectory_search(self, tmp_path: Path):
+        """カテゴリ付き検索でサブディレクトリ検索にフォールバックできる"""
+        base = tmp_path / "strategies"
+        nested = base / "production" / "auto"
+        nested.mkdir(parents=True)
+        target = nested / "deep_case.yaml"
+        target.write_text("entry_filter_params: {}\n", encoding="utf-8")
+
+        with patch.dict(os.environ, {"TRADING25_STRATEGIES_DIR": str(base)}):
+            result = find_strategy_path("production/deep_case")
+
+        assert result == target
+
+    def test_find_without_category_uses_subdirectory_search(self, tmp_path: Path):
+        """カテゴリなし検索でもサブディレクトリ検索にフォールバックできる"""
+        base = tmp_path / "strategies"
+        nested = base / "reference" / "nested"
+        nested.mkdir(parents=True)
+        target = nested / "deep_lookup.yaml"
+        target.write_text("entry_filter_params: {}\n", encoding="utf-8")
+
+        with (
+            patch.dict(os.environ, {"TRADING25_STRATEGIES_DIR": str(base)}),
+            patch("src.shared.paths.resolver.PROJECT_STRATEGIES_DIR", base),
+        ):
+            result = find_strategy_path("deep_lookup")
+
+        assert result == target
+
 
 class TestEnsureDataDirs:
     """ensure_data_dirs関数のテスト"""
@@ -170,11 +245,76 @@ class TestEnsureDataDirs:
             data_dir = Path(custom_dir)
             assert data_dir.exists()
             assert (data_dir / "strategies" / "experimental").exists()
+            assert (data_dir / "strategies" / "production").exists()
+            assert (data_dir / "strategies" / "legacy").exists()
             assert (data_dir / "backtest" / "results").exists()
             assert (data_dir / "backtest" / "attribution").exists()
             assert (data_dir / "backtest" / "optimization").exists()
             assert (data_dir / "optimization").exists()
             assert (data_dir / "cache").exists()
+
+
+class TestListDirsHelpers:
+    """一覧系ヘルパー関数のテスト"""
+
+    def test_get_all_backtest_result_dirs_empty(self, monkeypatch, tmp_path: Path):
+        """結果ディレクトリが存在しない場合は空リスト"""
+        monkeypatch.setattr(
+            "src.shared.paths.resolver.get_backtest_results_dir",
+            lambda: tmp_path / "missing-results",
+        )
+        assert get_all_backtest_result_dirs() == []
+
+    def test_get_all_optimization_result_dirs_empty(self, monkeypatch, tmp_path: Path):
+        """最適化結果ディレクトリが存在しない場合は空リスト"""
+        monkeypatch.setattr(
+            "src.shared.paths.resolver.get_optimization_results_dir",
+            lambda: tmp_path / "missing-opt",
+        )
+        assert get_all_optimization_result_dirs() == []
+
+    def test_get_all_optimization_grid_dirs_includes_project_fallback(self, monkeypatch, tmp_path: Path):
+        """外部 + プロジェクトの両方があれば両方返す"""
+        external = tmp_path / "external-grid"
+        project = tmp_path / "project-grid"
+        external.mkdir(parents=True)
+        project.mkdir(parents=True)
+        monkeypatch.setattr("src.shared.paths.resolver.get_optimization_grid_dir", lambda: external)
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_OPTIMIZATION_DIR", project)
+
+        result = get_all_optimization_grid_dirs()
+        assert result == [external, project]
+
+    def test_get_all_optimization_grid_dirs_deduplicates_same_dir(self, monkeypatch, tmp_path: Path):
+        """外部とプロジェクトが同一パスでも重複しない"""
+        same = tmp_path / "same-grid"
+        same.mkdir(parents=True)
+        monkeypatch.setattr("src.shared.paths.resolver.get_optimization_grid_dir", lambda: same)
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_OPTIMIZATION_DIR", same)
+
+        result = get_all_optimization_grid_dirs()
+        assert result == [same]
+
+
+class TestGetAllStrategyPaths:
+    """get_all_strategy_paths関数のテスト"""
+
+    def test_collects_external_and_project_paths(self, monkeypatch, tmp_path: Path):
+        external_base = tmp_path / "external"
+        project_base = tmp_path / "project"
+        (external_base / "production").mkdir(parents=True)
+        (project_base / "reference").mkdir(parents=True)
+        (external_base / "production" / "prod_a.yaml").write_text("x: 1\n", encoding="utf-8")
+        (project_base / "reference" / "ref_a.yaml").write_text("x: 1\n", encoding="utf-8")
+
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_STRATEGIES_DIR", project_base)
+        with patch.dict(os.environ, {"TRADING25_STRATEGIES_DIR": str(external_base)}):
+            result = get_all_strategy_paths()
+
+        assert "production" in result
+        assert "reference" in result
+        assert any(path.name == "prod_a.yaml" for path in result["production"])
+        assert any(path.name == "ref_a.yaml" for path in result["reference"])
 
 
 class TestResolveStrategyName:
@@ -318,6 +458,23 @@ class TestGetCategorizedStrategies:
         assert "root" in result
         assert "template" in result["root"]
 
+    def test_default_project_dir_argument(self, monkeypatch, tmp_path: Path):
+        """project_strategies_dir 未指定時にデフォルト値を使う"""
+        from src.shared.paths.resolver import get_categorized_strategies
+
+        project_dir = tmp_path / "project_strategies"
+        reference_dir = project_dir / "reference"
+        reference_dir.mkdir(parents=True)
+        (reference_dir / "default_ref.yaml").write_text("x: 1\n", encoding="utf-8")
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_STRATEGIES_DIR", project_dir)
+        monkeypatch.setattr(
+            "src.shared.paths.resolver.get_strategies_dir",
+            lambda category: tmp_path / "external" / category,
+        )
+
+        result = get_categorized_strategies()
+        assert "reference/default_ref" in result.get("reference", [])
+
 
 class TestGetStrategyMetadataList:
     """get_strategy_metadata_list関数のテスト"""
@@ -375,6 +532,44 @@ class TestGetStrategyMetadataList:
         paths = [m.path for m in result]
         assert len(paths) == len(set(paths))
 
+    def test_metadata_default_project_dir_and_include_external(self, monkeypatch, tmp_path: Path):
+        """引数省略時はデフォルトproject_dir + external検索を使う"""
+        from src.shared.paths.resolver import get_strategy_metadata_list
+
+        project_dir = tmp_path / "project_strategies"
+        reference_dir = project_dir / "reference"
+        reference_dir.mkdir(parents=True)
+        (reference_dir / "proj_ref.yaml").write_text("x: 1\n", encoding="utf-8")
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_STRATEGIES_DIR", project_dir)
+        monkeypatch.setattr(
+            "src.shared.paths.resolver.get_strategies_dir",
+            lambda category: tmp_path / "external" / category,
+        )
+
+        result = get_strategy_metadata_list()
+        assert any(item.name == "reference/proj_ref" for item in result)
+
+    def test_metadata_skips_duplicate_paths_between_external_and_project(self, monkeypatch, tmp_path: Path):
+        """external/projectで同一Pathを指す場合は重複登録しない"""
+        from src.shared.paths.resolver import get_strategy_metadata_list
+
+        project_dir = tmp_path / "project_strategies"
+        production_dir = project_dir / "production"
+        production_dir.mkdir(parents=True)
+        (production_dir / "dup.yaml").write_text("x: 1\n", encoding="utf-8")
+        monkeypatch.setattr("src.shared.paths.resolver.PROJECT_STRATEGIES_DIR", project_dir)
+
+        def _same_dir(category: str) -> Path:
+            if category == "production":
+                return production_dir
+            return tmp_path / "external" / category
+
+        monkeypatch.setattr("src.shared.paths.resolver.get_strategies_dir", _same_dir)
+
+        result = get_strategy_metadata_list()
+        names = [item.name for item in result if item.path.name == "dup.yaml"]
+        assert len(names) == 1
+
 
 class TestConstants:
     """定数のテスト"""
@@ -382,12 +577,12 @@ class TestConstants:
     def test_external_categories(self):
         """外部カテゴリの定義"""
         assert "experimental" in EXTERNAL_CATEGORIES
+        assert "production" in EXTERNAL_CATEGORIES
+        assert "legacy" in EXTERNAL_CATEGORIES
 
     def test_project_categories(self):
         """プロジェクト内カテゴリの定義"""
-        assert "production" in PROJECT_CATEGORIES
         assert "reference" in PROJECT_CATEGORIES
-        assert "legacy" in PROJECT_CATEGORIES
 
     def test_categories_are_mutually_exclusive(self):
         """カテゴリが重複しないことを確認"""

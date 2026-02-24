@@ -43,10 +43,14 @@ def infer_strategy_path(config_dir: Path, strategy_name: str) -> Path:
 
     推測ルール:
         1. カテゴリ付き（"/"含む）の場合:
-           - experimentalは外部ディレクトリ → プロジェクト内の順で検索
-           - その他はプロジェクト内を検索
+           - external 管理カテゴリ（experimental / production / legacy）は
+             外部ディレクトリ → プロジェクト内の順で検索
+           - reference はプロジェクト内を検索
         2. 戦略名のみの場合:
-           - experimental（外部）→ experimental（プロジェクト）→ production → reference → legacy の順で探索
+           - experimental（外部）→ experimental（プロジェクト）→
+             production（外部）→ production（プロジェクト）→
+             reference（プロジェクト）→
+             legacy（外部）→ legacy（プロジェクト）の順で探索
     """
     # config_dirがデフォルト(config)の場合のみ外部ディレクトリを検索
     # テスト時はtmp_pathが渡されるため、外部ディレクトリは検索しない
