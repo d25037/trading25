@@ -14,7 +14,7 @@ from src.server.clients.jquants_client import JQuantsApiError, JQuantsAsyncClien
 @pytest.fixture
 def client():
     """テスト用 JQuantsAsyncClient"""
-    return JQuantsAsyncClient(api_key="test-api-key-12345678", plan="premium", timeout=5.0)
+    return JQuantsAsyncClient(api_key="dummy_token_value_0000", plan="premium", timeout=5.0)
 
 
 class TestJQuantsAsyncClient:
@@ -26,7 +26,7 @@ class TestJQuantsAsyncClient:
         assert c.has_api_key is False
 
     def test_masked_key(self, client):
-        assert client.masked_key == "test...5678"
+        assert client.masked_key == "dumm...0000"
 
     def test_masked_key_short(self):
         c = JQuantsAsyncClient(api_key="abc", plan="free")

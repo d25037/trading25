@@ -12578,8 +12578,7 @@
           "from",
           "to"
         ],
-        "title": "DateRange",
-        "description": "分析期間"
+        "title": "DateRange"
       },
       "DefaultConfigResponse": {
         "properties": {
@@ -12756,7 +12755,7 @@
             "title": "Datapoints"
           },
           "dateRange": {
-            "$ref": "#/components/schemas/DateRange"
+            "$ref": "#/components/schemas/src__server__schemas__factor_regression__DateRange"
           }
         },
         "type": "object",
@@ -17388,7 +17387,7 @@
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__portfolio_performance__DateRange"
+                "$ref": "#/components/schemas/DateRange"
               },
               {
                 "type": "null"
@@ -22128,6 +22127,25 @@
         ],
         "title": "DateRange"
       },
+      "src__server__schemas__factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange",
+        "description": "分析期間"
+      },
       "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
           "indexCode": {
@@ -22208,24 +22226,6 @@
         "description": "OHLCVレコード"
       },
       "src__server__schemas__portfolio_factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange"
-      },
-      "src__server__schemas__portfolio_performance__DateRange": {
         "properties": {
           "from": {
             "type": "string",

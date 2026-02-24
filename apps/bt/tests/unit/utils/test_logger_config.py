@@ -36,8 +36,8 @@ class TestSanitizeSensitiveInfo:
         assert "password=***" in result
 
     def test_masks_token(self):
-        result = sanitize_sensitive_info("token=abc123def456")
-        assert "abc123def456" not in result
+        result = sanitize_sensitive_info("token=dummytoken")
+        assert "dummytoken" not in result
 
     def test_masks_key(self):
         result = sanitize_sensitive_info("key=secretkey")

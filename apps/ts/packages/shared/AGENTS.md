@@ -25,6 +25,18 @@ Phase 4D 以降、`@trading25/shared` は apps/ts の共通実装境界（API �
 JQuants API v2 uses API key authentication via `x-api-key` header.
 Set `JQUANTS_API_KEY` environment variable.
 
+## Secure Key File Handling (`.trading25.key`)
+
+`SecureEnvManager` generates an encryption key file (`.trading25.key`) for token encryption.
+
+- **Placement**: Do not store the key file in tracked source directories. Prefer an untracked local path (for example under `~/.local/share/trading25/`).
+- **Permission**: Keep file mode at `0600` (owner read/write only).
+- **Rotation**: If leakage is suspected, generate a new key and re-encrypt tokens immediately.
+- **Deletion**: Remove old keys securely and confirm they are not tracked in Git.
+
+Operational checks and rotation steps are documented in:
+- `docs/security/secret-key-runbook.md`
+
 ## Technical Analysis
 
 全TA機能はapps/bt/ APIに移行完了（Phase 4.3）:

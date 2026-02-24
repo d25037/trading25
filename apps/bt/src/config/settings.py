@@ -14,8 +14,16 @@ from typing import Any
 from dotenv import load_dotenv
 from pydantic import BaseModel, Field
 
-# Bun は apps/ts/.env を自動読み込みするが、FastAPI は明示的に必要
-_dotenv_path = Path(__file__).resolve().parents[3] / "ts" / ".env"
+# Monorepo SoT: repository root の .env を読み込む
+def _find_repo_root(start: Path) -> Path:
+    for current in (start, *start.parents):
+        if (current / ".git").exists():
+            return current
+    raise RuntimeError(f"Repository root not found from {start}")
+
+
+_repo_root = _find_repo_root(Path(__file__).resolve())
+_dotenv_path = _repo_root / ".env"
 load_dotenv(_dotenv_path, override=False)
 
 

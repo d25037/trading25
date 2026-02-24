@@ -141,7 +141,7 @@ def analytics_db_path(tmp_path):
 def analytics_client(analytics_db_path, monkeypatch):
     """analytics テスト用クライアント"""
     monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
-    monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
+    monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
     from src.config.settings import reload_settings
     reload_settings()
@@ -489,7 +489,7 @@ class TestAnalyticsRouteErrorMapping:
         from src.server.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
 
         monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
-        monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
+        monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
         monkeypatch.setenv("JQUANTS_PLAN", "free")
         reload_settings()
 

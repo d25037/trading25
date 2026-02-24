@@ -5,7 +5,7 @@
  * Built with Gunshi for modern CLI experience
  */
 
-// Note: Bun automatically loads .env files from project root
+// Note: Environment SoT is monorepo root .env (resolved by shared utils where needed)
 import { cli, define } from 'gunshi';
 import { CLI_NAME, CLI_VERSION } from './utils/constants.js';
 import { CLIError } from './utils/error-handling.js';

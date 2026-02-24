@@ -45,6 +45,10 @@ htmlcov/
 # === Environment ===
 .env
 .env.*
+!**/.env.example
+!**/.env.template
+.trading25.key
+**/.trading25.key
 
 # === AI / Editor configs ===
 **/.claude/settings.json

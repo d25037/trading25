@@ -15,6 +15,22 @@ function reportProjectIndicatorParseError(packageJsonPath: string, error: unknow
 }
 
 /**
+ * Find repository root by locating .git directory
+ */
+export function findRepositoryRoot(startDir: string = process.cwd()): string {
+  let currentDir = path.resolve(startDir);
+
+  while (currentDir !== path.dirname(currentDir)) {
+    if (fs.existsSync(path.join(currentDir, '.git'))) {
+      return currentDir;
+    }
+    currentDir = path.dirname(currentDir);
+  }
+
+  throw new Error(`Could not find repository root from ${startDir}. Expected a .git directory in ancestors.`);
+}
+
+/**
  * Check if directory contains project indicators
  */
 function checkForProjectIndicators(dir: string): boolean {
@@ -70,9 +86,9 @@ export function findProjectRoot(startDir: string = process.cwd()): string {
 }
 
 /**
- * Get the path to the .env file in the project root
+ * Get the path to the .env file in the repository root
  */
 export function getProjectEnvPath(startDir?: string): string {
-  const projectRoot = findProjectRoot(startDir);
-  return path.join(projectRoot, '.env');
+  const repositoryRoot = findRepositoryRoot(startDir);
+  return path.join(repositoryRoot, '.env');
 }

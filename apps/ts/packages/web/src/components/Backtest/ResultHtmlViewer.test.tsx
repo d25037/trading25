@@ -36,7 +36,7 @@ describe('ResultHtmlViewer', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Open in New Tab' }));
 
     expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
-    expect(openSpy).toHaveBeenCalledWith('blob:test-url', '_blank');
+    expect(openSpy).toHaveBeenCalledWith('blob:test-url', '_blank', 'noopener,noreferrer');
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 60000);
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:test-url');
   });

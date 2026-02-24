@@ -147,7 +147,7 @@ describe('CLI Token Manager', () => {
 
     describe('saveApiKey', () => {
       it('should save API key via TokenManager', async () => {
-        const apiKey = 'test_api_key_12345';
+        const apiKey = 'dummy_token_value_1234';
 
         await cliTokenManager.saveApiKey(apiKey);
 
@@ -158,14 +158,14 @@ describe('CLI Token Manager', () => {
     describe('getApiKey', () => {
       it('should get API key from TokenManager', async () => {
         const mockTokenData = {
-          apiKey: 'test_api_key_12345',
+          apiKey: 'dummy_token_value_1234',
         };
         mockTokenManager.getTokens.mockResolvedValue(mockTokenData);
 
         const result = await cliTokenManager.getApiKey();
 
         expect(mockTokenManager.getTokens).toHaveBeenCalled();
-        expect(result).toBe('test_api_key_12345');
+        expect(result).toBe('dummy_token_value_1234');
       });
 
       it('should handle missing API key', async () => {
@@ -199,14 +199,14 @@ describe('CLI Token Manager', () => {
     describe('displayStatus', () => {
       it('should display status with API key present', async () => {
         mockTokenManager.getTokens.mockResolvedValue({
-          apiKey: 'test_api_key_12345678',
+          apiKey: 'dummy_token_value_9999',
         });
 
         await cliTokenManager.displayStatus();
 
         expect(mockConsole.log).toHaveBeenCalledWith(expect.stringContaining('JQuants API v2 Status'));
         expect(mockConsole.log).toHaveBeenCalledWith('Has API Key:', 'Yes');
-        expect(mockConsole.log).toHaveBeenCalledWith('API Key:', 'test...5678');
+        expect(mockConsole.log).toHaveBeenCalledWith('API Key:', 'dumm...9999');
       });
 
       it('should display status with no API key', async () => {
