@@ -7,9 +7,9 @@ from datetime import datetime, timedelta
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import app
-from src.server.schemas.backtest import JobStatus
-from src.server.services.job_manager import JobManager
+from src.entrypoints.http.app import app
+from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.services.job_manager import JobManager
 
 
 @pytest.fixture

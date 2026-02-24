@@ -9,8 +9,8 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api.exceptions import APIError, APINotFoundError
-from src.server.app import create_app
+from src.infrastructure.external_api.exceptions import APIError, APINotFoundError
+from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture
@@ -51,7 +51,7 @@ class TestResampleEndpoint:
 
     def test_resample_weekly(self, client, mock_ohlcv_data):
         """週足リサンプルが正しく動作すること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.return_value = mock_ohlcv_data
             mock_service.resample_timeframe.return_value = mock_ohlcv_data.resample("W").agg({
@@ -77,7 +77,7 @@ class TestResampleEndpoint:
 
     def test_resample_with_dates(self, client, mock_ohlcv_data):
         """日付範囲指定が正しく動作すること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.return_value = mock_ohlcv_data
             mock_service.resample_timeframe.return_value = mock_ohlcv_data.resample("W").agg({
@@ -103,8 +103,8 @@ class TestResampleEndpoint:
 
     def test_resample_with_benchmark(self, client, mock_ohlcv_data, mock_benchmark_data):
         """ベンチマーク指定（相対OHLC）が正しく動作すること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
-            with patch("src.server.routes.ohlcv.calculate_relative_ohlcv") as mock_relative:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            with patch("src.entrypoints.http.routes.ohlcv.calculate_relative_ohlcv") as mock_relative:
                 mock_service = MockService.return_value
                 mock_service.load_ohlcv.return_value = mock_ohlcv_data
                 mock_service.load_benchmark_ohlcv.return_value = mock_benchmark_data
@@ -140,7 +140,7 @@ class TestResampleEndpoint:
 
     def test_resample_daily_no_resample(self, client, mock_ohlcv_data):
         """日足指定時は変換なしで返却されること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.return_value = mock_ohlcv_data
             mock_service.resample_timeframe.return_value = mock_ohlcv_data
@@ -158,7 +158,7 @@ class TestResampleEndpoint:
 
     def test_resample_stock_not_found(self, client):
         """銘柄が見つからない場合に404を返すこと"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.side_effect = ValueError("銘柄 9999 のOHLCVデータが取得できません")
 
@@ -189,7 +189,7 @@ class TestResampleResponse:
 
     def test_response_structure(self, client, mock_ohlcv_data):
         """レスポンス構造が正しいこと"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.return_value = mock_ohlcv_data
             mock_service.resample_timeframe.return_value = mock_ohlcv_data.head(2)
@@ -225,7 +225,7 @@ class TestResampleResponse:
 
     def test_ohlcv_values_rounded(self, client, mock_ohlcv_data):
         """OHLCV値が適切に丸められること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             # 小数点を含むデータ
             mock_data = mock_ohlcv_data.copy()
             mock_data["Open"] = mock_data["Open"] + 0.123456789
@@ -256,8 +256,8 @@ class TestRelativeOptions:
 
     def test_handle_zero_division_skip(self, client, mock_ohlcv_data, mock_benchmark_data):
         """handleZeroDivision: skipが正しく渡されること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
-            with patch("src.server.routes.ohlcv.calculate_relative_ohlcv") as mock_relative:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            with patch("src.entrypoints.http.routes.ohlcv.calculate_relative_ohlcv") as mock_relative:
                 mock_service = MockService.return_value
                 mock_service.load_ohlcv.return_value = mock_ohlcv_data
                 mock_service.load_benchmark_ohlcv.return_value = mock_benchmark_data
@@ -282,8 +282,8 @@ class TestRelativeOptions:
 
     def test_handle_zero_division_zero(self, client, mock_ohlcv_data, mock_benchmark_data):
         """handleZeroDivision: zeroが正しく渡されること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
-            with patch("src.server.routes.ohlcv.calculate_relative_ohlcv") as mock_relative:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            with patch("src.entrypoints.http.routes.ohlcv.calculate_relative_ohlcv") as mock_relative:
                 mock_service = MockService.return_value
                 mock_service.load_ohlcv.return_value = mock_ohlcv_data
                 mock_service.load_benchmark_ohlcv.return_value = mock_benchmark_data
@@ -310,20 +310,20 @@ class TestCleanValueFunction:
 
     def test_nan_to_none(self, client, mock_ohlcv_data):
         """NaN値がNoneに変換されること"""
-        from src.server.services.indicator_service import _clean_value
+        from src.application.services.indicator_service import _clean_value
 
         assert _clean_value(np.nan) is None
 
     def test_inf_to_none(self, client, mock_ohlcv_data):
         """Inf値がNoneに変換されること"""
-        from src.server.services.indicator_service import _clean_value
+        from src.application.services.indicator_service import _clean_value
 
         assert _clean_value(np.inf) is None
         assert _clean_value(-np.inf) is None
 
     def test_valid_value_rounded(self, client, mock_ohlcv_data):
         """有効な値が4桁に丸められること"""
-        from src.server.services.indicator_service import _clean_value
+        from src.application.services.indicator_service import _clean_value
 
         # _clean_valueは常に4桁で丸める（indicator_serviceで定義）
         assert _clean_value(1.23456789) == 1.2346
@@ -345,7 +345,7 @@ class TestResampleMonthly:
             "Volume": [1000.0 + i*100 for i in range(30)],
         }, index=dates).astype(float)
 
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.return_value = monthly_data
             mock_service.resample_timeframe.return_value = monthly_data.resample("ME").agg({
@@ -372,7 +372,7 @@ class TestResampleAPIErrors:
 
     def test_api_not_found_returns_404(self, client):
         """APINotFoundError が 404 で返ること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.side_effect = APINotFoundError("Resource not found: Stock not found")
 
@@ -386,7 +386,7 @@ class TestResampleAPIErrors:
 
     def test_api_error_returns_status_code(self, client):
         """APIError が適切なステータスコードで返ること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.side_effect = APIError("Bad request", status_code=400)
 
@@ -400,7 +400,7 @@ class TestResampleAPIErrors:
 
     def test_api_error_no_status_returns_500(self, client):
         """status_code=None の APIError が 500 で返ること"""
-        with patch("src.server.routes.ohlcv.IndicatorService") as MockService:
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.side_effect = APIError("Connection failed")
 

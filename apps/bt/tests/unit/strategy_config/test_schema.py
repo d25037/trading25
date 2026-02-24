@@ -6,7 +6,7 @@ import pytest
 
 from pydantic import ValidationError
 
-from src.strategy_config.models import validate_strategy_config_dict
+from src.domains.strategy.runtime.models import validate_strategy_config_dict
 
 
 def test_strategy_config_schema_valid_minimal():
@@ -31,7 +31,7 @@ def test_strategy_config_schema_no_stock_code_resolution(monkeypatch):
     def _raise(*args, **kwargs):  # pragma: no cover - should not be called
         raise RuntimeError("should not be called")
 
-    monkeypatch.setattr("src.data.get_stock_list", _raise)
+    monkeypatch.setattr("src.infrastructure.data_access.loaders.get_stock_list", _raise)
 
     config = {
         "shared_config": {

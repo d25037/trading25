@@ -5,8 +5,8 @@ from unittest.mock import MagicMock, patch
 
 from ruamel.yaml import YAML
 
-from src.agent.models import Improvement, StrategyCandidate
-from src.agent.yaml_updater import YamlUpdater
+from src.domains.lab_agent.models import Improvement, StrategyCandidate
+from src.domains.lab_agent.yaml_updater import YamlUpdater
 
 
 def _make_candidate():
@@ -112,7 +112,7 @@ class TestSaveCandidate:
         updater = YamlUpdater(base_dir=str(tmp_path), use_external=True)
         candidate = _make_candidate()
 
-        with patch("src.paths.get_strategies_dir", return_value=tmp_path):
+        with patch("src.shared.paths.get_strategies_dir", return_value=tmp_path):
             result_path = updater.save_candidate(candidate, category="experimental")
 
         assert os.path.exists(result_path)
@@ -231,7 +231,7 @@ class TestSaveEvolutionResult:
         candidate = _make_candidate()
         history = [{"generation": 1, "best_score": 0.5}]
 
-        with patch("src.paths.get_strategies_dir", return_value=tmp_path):
+        with patch("src.shared.paths.get_strategies_dir", return_value=tmp_path):
             strategy_path, history_path = updater.save_evolution_result(
                 candidate, history, "production/range_break_v15"
             )
@@ -304,7 +304,7 @@ class TestSaveOptunaResult:
         candidate = _make_candidate()
         study_history = [{"trial": 1, "value": 0.8}]
 
-        with patch("src.paths.get_strategies_dir", return_value=tmp_path):
+        with patch("src.shared.paths.get_strategies_dir", return_value=tmp_path):
             strategy_path, history_path = updater.save_optuna_result(
                 candidate, study_history, "production/range_break_v15"
             )
@@ -331,8 +331,8 @@ class TestApplyImprovements:
         output_path = str(tmp_path / "improved.yaml")
 
         with (
-            patch("src.lib.strategy_runtime.loader.ConfigLoader") as mock_loader_cls,
-            patch("src.agent.strategy_improver.StrategyImprover") as mock_improver_cls,
+            patch("src.domains.strategy.runtime.loader.ConfigLoader") as mock_loader_cls,
+            patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as mock_improver_cls,
         ):
             mock_loader = MagicMock()
             mock_loader.load_strategy_config.return_value = original_config
@@ -368,8 +368,8 @@ class TestApplyImprovements:
         original_config = {"entry_filter_params": {}, "exit_trigger_params": {}}
 
         with (
-            patch("src.lib.strategy_runtime.loader.ConfigLoader") as mock_loader_cls,
-            patch("src.agent.strategy_improver.StrategyImprover") as mock_improver_cls,
+            patch("src.domains.strategy.runtime.loader.ConfigLoader") as mock_loader_cls,
+            patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as mock_improver_cls,
         ):
             mock_loader = MagicMock()
             mock_loader.load_strategy_config.return_value = original_config
@@ -405,9 +405,9 @@ class TestApplyImprovements:
         original_config = {"entry_filter_params": {}, "exit_trigger_params": {}}
 
         with (
-            patch("src.paths.get_strategies_dir", return_value=tmp_path),
-            patch("src.lib.strategy_runtime.loader.ConfigLoader") as mock_loader_cls,
-            patch("src.agent.strategy_improver.StrategyImprover") as mock_improver_cls,
+            patch("src.shared.paths.get_strategies_dir", return_value=tmp_path),
+            patch("src.domains.strategy.runtime.loader.ConfigLoader") as mock_loader_cls,
+            patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as mock_improver_cls,
         ):
             mock_loader = MagicMock()
             mock_loader.load_strategy_config.return_value = original_config

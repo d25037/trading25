@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import uvicorn
 
-from src.cli_bt import _build_uvicorn_log_config, configure_logging
+from src.entrypoints.cli import _build_uvicorn_log_config, configure_logging
 
 
 TIMESTAMP_TOKEN = "{time:YYYY-MM-DD HH:mm:ss.SSS}"
@@ -12,7 +12,7 @@ UVICORN_TIMESTAMP_TOKEN = "%(asctime)s.%(msecs)03d"
 
 
 def test_configure_logging_verbose_has_timestamp_and_debug_level() -> None:
-    with patch("src.cli_bt.logger") as mock_logger:
+    with patch("src.entrypoints.cli.logger") as mock_logger:
         configure_logging(True)
 
     assert mock_logger.remove.call_count == 1
@@ -25,7 +25,7 @@ def test_configure_logging_verbose_has_timestamp_and_debug_level() -> None:
 
 
 def test_configure_logging_non_verbose_has_timestamp_and_warning_level() -> None:
-    with patch("src.cli_bt.logger") as mock_logger:
+    with patch("src.entrypoints.cli.logger") as mock_logger:
         configure_logging(False)
 
     assert mock_logger.remove.call_count == 1

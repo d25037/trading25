@@ -2,8 +2,8 @@
 FundamentalSignalParams period_type テスト
 """
 
-from src.models.signals.fundamental import FundamentalSignalParams
-from src.models.types import StatementsPeriodType
+from src.shared.models.signals.fundamental import FundamentalSignalParams
+from src.shared.models.types import StatementsPeriodType
 
 
 class TestFundamentalPeriodType:
@@ -69,7 +69,7 @@ class TestResolvePeriodType:
     def test_resolve_from_entry_params(self):
         """entry_filter_params から period_type が解決されること"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         mock_self = MagicMock()
         mock_self.entry_filter_params = MagicMock()
@@ -82,7 +82,7 @@ class TestResolvePeriodType:
     def test_resolve_from_exit_params(self):
         """exit_trigger_params から period_type が解決されること"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         mock_self = MagicMock()
         mock_self.entry_filter_params = None
@@ -95,7 +95,7 @@ class TestResolvePeriodType:
     def test_resolve_default_when_no_params(self):
         """パラメータ未設定時のデフォルト 'FY'"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         mock_self = MagicMock()
         mock_self.entry_filter_params = None
@@ -107,7 +107,7 @@ class TestResolvePeriodType:
     def test_entry_priority_over_exit(self):
         """entry側が exit側より優先されること"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         mock_self = MagicMock()
         mock_self.entry_filter_params = MagicMock()
@@ -120,7 +120,7 @@ class TestResolvePeriodType:
 
     def test_should_include_forecast_revision_detects_forward_or_peg(self):
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         mock_self = MagicMock()
         mock_self.entry_filter_params = MagicMock()
@@ -136,7 +136,7 @@ class TestResolvePeriodType:
 
     def test_should_include_forecast_revision_false_when_fundamental_disabled(self):
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         mock_self = MagicMock()
         mock_self.entry_filter_params = MagicMock()
@@ -155,7 +155,7 @@ class TestResolvePeriodType:
     ):
         """依存シグナルが無い場合、margin/statementsロードを無効化すること"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         captured: dict[str, object] = {}
 
@@ -164,7 +164,7 @@ class TestResolvePeriodType:
             return {"7203": {"daily": MagicMock()}}
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.prepare_multi_data",
             fake_prepare_multi_data,
         )
 
@@ -191,7 +191,7 @@ class TestResolvePeriodType:
     def test_load_multi_data_keeps_optional_sources_when_required(self, monkeypatch):
         """依存シグナルが有効な場合、margin/statementsロードを維持すること"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         captured: dict[str, object] = {}
 
@@ -200,7 +200,7 @@ class TestResolvePeriodType:
             return {"7203": {"daily": MagicMock()}}
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.prepare_multi_data",
             fake_prepare_multi_data,
         )
 
@@ -229,7 +229,7 @@ class TestResolvePeriodType:
     ):
         """forward/PEGシグナル利用時にinclude_forecast_revisionを有効化すること"""
         from unittest.mock import MagicMock
-        from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+        from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
         captured: dict[str, object] = {}
 
@@ -238,7 +238,7 @@ class TestResolvePeriodType:
             return {"7203": {"daily": MagicMock()}}
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.prepare_multi_data",
             fake_prepare_multi_data,
         )
 

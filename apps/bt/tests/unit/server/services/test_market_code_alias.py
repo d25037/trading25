@@ -2,7 +2,7 @@
 Market code alias utility tests.
 """
 
-from src.server.services.market_code_alias import (
+from src.application.services.market_code_alias import (
     expand_market_codes,
     parse_requested_market_codes,
     resolve_market_codes,

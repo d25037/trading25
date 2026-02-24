@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.strategy_config.path_resolver import (
+from src.domains.strategy.runtime.path_resolver import (
     get_available_strategies,
     get_strategy_metadata,
     infer_strategy_path,
@@ -48,7 +48,7 @@ class TestValidatePathWithinStrategies:
         validate_path_within_strategies(strategy_file, tmp_path)
 
     def test_invalid_path(self, tmp_path: Path) -> None:
-        with patch("src.paths.get_data_dir", return_value=tmp_path / "data"):
+        with patch("src.shared.paths.get_data_dir", return_value=tmp_path / "data"):
             with pytest.raises(ValueError, match="許可されたディレクトリ外"):
                 validate_path_within_strategies(Path("/etc/passwd"), tmp_path)
 

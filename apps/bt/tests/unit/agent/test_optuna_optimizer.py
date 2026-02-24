@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.agent.models import OptunaConfig, StrategyCandidate
-from src.agent.optuna_optimizer import OptunaOptimizer, _extract_enabled_signal_names
+from src.domains.lab_agent.models import OptunaConfig, StrategyCandidate
+from src.domains.lab_agent.optuna_optimizer import OptunaOptimizer, _extract_enabled_signal_names
 
 
 def _make_candidate(sid: str = "test_strat"):
@@ -67,7 +67,7 @@ class TestOptunaOptimizerInit:
     def test_load_base_strategy_from_name(self):
         optimizer = _make_optimizer()
         optimizer.shared_config_dict = None
-        with patch("src.agent.optuna_optimizer.ConfigLoader") as MockLoader:
+        with patch("src.domains.lab_agent.optuna_optimizer.ConfigLoader") as MockLoader:
             MockLoader.return_value.load_strategy_config.return_value = {
                 "entry_filter_params": {"volume": {"enabled": True}},
                 "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
@@ -82,7 +82,7 @@ class TestOptunaOptimizerInit:
         assert optimizer.shared_config_dict == {"dataset": "demo"}
 
     def test_creation_raises_when_optuna_unavailable(self):
-        with patch("src.agent.optuna_optimizer.OPTUNA_AVAILABLE", False):
+        with patch("src.domains.lab_agent.optuna_optimizer.OPTUNA_AVAILABLE", False):
             with pytest.raises(ImportError, match="not installed"):
                 OptunaOptimizer()
 
@@ -111,7 +111,7 @@ class TestCreateSampler:
 
     def test_raises_when_optuna_unavailable(self):
         optimizer = _make_optimizer()
-        with patch("src.agent.optuna_optimizer.OPTUNA_AVAILABLE", False):
+        with patch("src.domains.lab_agent.optuna_optimizer.OPTUNA_AVAILABLE", False):
             with pytest.raises(ImportError, match="not available"):
                 optimizer._create_sampler()
 
@@ -164,7 +164,7 @@ class TestOptimizeFlow:
                 "_build_candidate_from_params",
                 return_value=_make_candidate("best"),
             ) as mock_build,
-            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
             best_candidate, result_study = optimizer.optimize(
                 "demo_strategy",
@@ -191,7 +191,7 @@ class TestOptimizeFlow:
             patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
             patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate()),
-            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
             optimizer.optimize("demo_strategy", progress_callback=None)
 
@@ -222,10 +222,10 @@ class TestOptimizeFlow:
             patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
             patch(
-                "src.agent.optuna_optimizer.apply_random_add_structure",
+                "src.domains.lab_agent.optuna_optimizer.apply_random_add_structure",
                 return_value=(augmented, {"entry": ["period_breakout"], "exit": []}),
             ) as mock_random_add,
-            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
             optimizer.optimize("demo_strategy", progress_callback=None)
 
@@ -248,7 +248,7 @@ class TestOptimizeFlow:
             patch.object(optimizer, "_create_pruner", return_value=MagicMock()) as mock_pruner,
             patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate()),
-            patch("src.agent.optuna_optimizer.optuna_runtime.create_study", return_value=study) as mock_create_study,
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study) as mock_create_study,
         ):
             optimizer.optimize("demo_strategy", progress_callback=None)
 
@@ -453,7 +453,7 @@ class TestObjective:
                 ],
             ),
             patch(
-                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
                 return_value=strategy_instance,
             ),
         ):
@@ -502,7 +502,7 @@ class TestObjective:
                 side_effect=[{"volume": {"enabled": True}}, {}],
             ),
             patch(
-                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
                 return_value=strategy_instance,
             ),
         ):
@@ -546,7 +546,7 @@ class TestObjective:
                 side_effect=[{"volume": {"enabled": True}}, {}],
             ),
             patch(
-                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
                 return_value=strategy_instance,
             ),
         ):
@@ -583,7 +583,7 @@ class TestObjective:
                 side_effect=[{"volume": {"enabled": True}}, {}],
             ),
             patch(
-                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
                 return_value=strategy_instance,
             ),
         ):
@@ -627,7 +627,7 @@ class TestObjective:
                 side_effect=[{"volume": {"enabled": True}}, {}],
             ),
             patch(
-                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
                 return_value=strategy_instance,
             ),
         ):
@@ -666,16 +666,16 @@ class TestPrefetchAndBacktestHelpers:
         benchmark = pd.DataFrame({"Close": [1.0]})
 
         with (
-            patch("src.agent.optuna_optimizer.SharedConfig", return_value=shared_config),
+            patch("src.domains.lab_agent.optuna_optimizer.SharedConfig", return_value=shared_config),
             patch(
-                "src.agent.optuna_optimizer.YamlConfigurableStrategy",
+                "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
                 return_value=probe,
             ),
             patch(
-                "src.agent.optuna_optimizer.prepare_multi_data",
+                "src.domains.lab_agent.optuna_optimizer.prepare_multi_data",
                 return_value=prefetched,
             ) as mock_prepare,
-            patch("src.agent.optuna_optimizer.load_topix_data", return_value=benchmark),
+            patch("src.domains.lab_agent.optuna_optimizer.load_topix_data", return_value=benchmark),
         ):
             optimizer._prepare_prefetched_data()
 
@@ -693,7 +693,7 @@ class TestPrefetchAndBacktestHelpers:
         optimizer._prefetched_multi_data = {"cached": {"daily": pd.DataFrame()}}
         optimizer._prefetched_benchmark_data = pd.DataFrame({"Close": [1.0]})
 
-        with patch("src.agent.optuna_optimizer.SharedConfig", side_effect=RuntimeError("boom")):
+        with patch("src.domains.lab_agent.optuna_optimizer.SharedConfig", side_effect=RuntimeError("boom")):
             optimizer._prepare_prefetched_data()
 
         assert optimizer._prefetched_multi_data is None

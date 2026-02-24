@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import numpy as np
 import pytest
 
-from src.optimization.scoring import (
+from src.domains.optimization.scoring import (
     calculate_composite_score,
     is_valid_metric,
     normalize_and_recalculate_scores,

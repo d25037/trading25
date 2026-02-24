@@ -9,14 +9,14 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.api.jquants_client import JQuantsStatement, StockInfo
-from src.server.schemas.fundamentals import (
+from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
+from src.entrypoints.http.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
     FundamentalsComputeRequest,
 )
-from src.models.types import normalize_period_type
-from src.server.services.fundamentals_service import (
+from src.shared.models.types import normalize_period_type
+from src.application.services.fundamentals_service import (
     FundamentalsService,
     FYDataPoint,
     fundamentals_service,
@@ -36,7 +36,7 @@ class TestFundamentalsServiceInit:
         """遅延初期化でクライアントが生成される"""
         service = FundamentalsService()
         with patch(
-            "src.server.services.fundamentals_service.JQuantsAPIClient"
+            "src.application.services.fundamentals_service.JQuantsAPIClient"
         ) as mock_jquants:
             mock_jquants.return_value = MagicMock()
             _ = service.jquants_client

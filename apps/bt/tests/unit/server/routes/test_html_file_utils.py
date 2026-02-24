@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 from fastapi import HTTPException
 
-from src.server.routes.html_file_utils import (
+from src.entrypoints.http.routes.html_file_utils import (
     delete_html_file,
     list_html_files_in_dir,
     parse_html_filename,

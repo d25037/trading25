@@ -6,8 +6,8 @@ import sqlite3
 
 import pytest
 
-from src.lib.market_db.market_reader import MarketDbReader
-from src.server.services.chart_service import ChartService
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.chart_service import ChartService
 
 
 @pytest.fixture

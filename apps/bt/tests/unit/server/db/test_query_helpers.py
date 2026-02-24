@@ -4,7 +4,7 @@ Tests for query_helpers
 
 from __future__ import annotations
 
-from src.lib.market_db.query_helpers import (
+from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
     is_valid_stock_code,
     normalize_stock_code,

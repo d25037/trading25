@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.utils.financial import calc_market_cap, calc_market_cap_scalar
+from src.shared.utils.financial import calc_market_cap, calc_market_cap_scalar
 
 
 class TestCalcMarketCap:

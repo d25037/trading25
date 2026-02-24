@@ -7,12 +7,12 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 
-from src.server.routes.optimize import _build_optimization_job_response
+from src.entrypoints.http.routes.optimize import _build_optimization_job_response
 
 
 @pytest.fixture
 def mock_job_manager():
-    with patch("src.server.routes.optimize.job_manager") as mock:
+    with patch("src.entrypoints.http.routes.optimize.job_manager") as mock:
         yield mock
 
 
@@ -53,19 +53,19 @@ class TestBuildOptimizationJobResponse:
 class TestGridConfigEndpoints:
     @pytest.fixture
     def client(self):
-        from src.server.app import create_app
+        from src.entrypoints.http.app import create_app
         app = create_app()
         return TestClient(app)
 
     def test_get_grid_config_not_found(self, client):
-        with patch("src.server.routes.optimize._find_grid_file", return_value=None):
+        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=None):
             resp = client.get("/api/optimize/grid-configs/missing")
         assert resp.status_code == 404
 
     def test_get_grid_config_success(self, client, tmp_path):
         grid_file = tmp_path / "test_grid.yaml"
         grid_file.write_text("parameter_ranges:\n  period: [10, 20]\n")
-        with patch("src.server.routes.optimize._find_grid_file", return_value=grid_file):
+        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file):
             resp = client.get("/api/optimize/grid-configs/test")
         assert resp.status_code == 200
         data = resp.json()
@@ -74,7 +74,7 @@ class TestGridConfigEndpoints:
 
     def test_save_grid_config_valid(self, client, tmp_path):
         grid_file = tmp_path / "test_grid.yaml"
-        with patch("src.server.routes.optimize._get_grid_write_path", return_value=grid_file):
+        with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=grid_file):
             resp = client.put(
                 "/api/optimize/grid-configs/test",
                 json={"content": "parameter_ranges:\n  period: [10, 20, 30]\n"},
@@ -84,7 +84,7 @@ class TestGridConfigEndpoints:
         assert resp.json()["combinations"] == 3
 
     def test_save_grid_config_invalid_yaml(self, client):
-        with patch("src.server.routes.optimize._get_grid_write_path", return_value=Path("/tmp/test.yaml")):
+        with patch("src.entrypoints.http.routes.optimize._get_grid_write_path", return_value=Path("/tmp/test.yaml")):
             resp = client.put(
                 "/api/optimize/grid-configs/test",
                 json={"content": "invalid: [yaml: bad"},
@@ -94,12 +94,12 @@ class TestGridConfigEndpoints:
     def test_delete_grid_config_success(self, client, tmp_path):
         grid_file = tmp_path / "test_grid.yaml"
         grid_file.write_text("data")
-        with patch("src.server.routes.optimize._find_grid_file", return_value=grid_file):
+        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=grid_file):
             resp = client.delete("/api/optimize/grid-configs/test")
         assert resp.status_code == 200
         assert resp.json()["success"] is True
 
     def test_delete_grid_config_not_found(self, client):
-        with patch("src.server.routes.optimize._find_grid_file", return_value=None):
+        with patch("src.entrypoints.http.routes.optimize._find_grid_file", return_value=None):
             resp = client.delete("/api/optimize/grid-configs/missing")
         assert resp.status_code == 404

@@ -5,7 +5,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from src.server.services.optimization_service import OptimizationService
+from src.application.services.optimization_service import OptimizationService
 
 
 def _success_payload() -> dict[str, object]:
@@ -37,7 +37,7 @@ def test_execute_optimization_sync_extracts_best_and_worst(monkeypatch):
                 notebook_path="/tmp/result.ipynb",
             )
 
-    monkeypatch.setattr("src.optimization.engine.ParameterOptimizationEngine", _FakeEngine)
+    monkeypatch.setattr("src.domains.optimization.engine.ParameterOptimizationEngine", _FakeEngine)
 
     payload = service._execute_optimization_sync("demo")
 
@@ -64,7 +64,7 @@ def test_execute_optimization_sync_handles_empty_all_results(monkeypatch):
                 notebook_path="",
             )
 
-    monkeypatch.setattr("src.optimization.engine.ParameterOptimizationEngine", _FakeEngine)
+    monkeypatch.setattr("src.domains.optimization.engine.ParameterOptimizationEngine", _FakeEngine)
 
     payload = service._execute_optimization_sync("demo")
 

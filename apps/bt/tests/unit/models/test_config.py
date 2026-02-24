@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.models.config import ParameterOptimizationConfig, SharedConfig, WalkForwardConfig
+from src.shared.models.config import ParameterOptimizationConfig, SharedConfig, WalkForwardConfig
 
 
 class TestParameterOptimizationConfig:

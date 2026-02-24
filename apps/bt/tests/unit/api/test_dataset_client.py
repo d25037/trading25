@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.api.dataset_client import DatasetAPIClient
+from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 
 
 class TestDatasetAPIClient:

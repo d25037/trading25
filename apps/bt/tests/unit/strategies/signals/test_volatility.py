@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.volatility import (
+from src.domains.strategy.signals.volatility import (
     volatility_relative_signal,
     rolling_volatility_signal,
     volatility_percentile_signal,
@@ -323,8 +323,8 @@ class TestVolatilitySignalIntegration:
 
     def test_bollinger_signal_with_signal_processor(self):
         """SignalProcessorでボリンジャーバンドシグナルを使用"""
-        from src.strategies.signals.processor import SignalProcessor
-        from src.models.signals import SignalParams
+        from src.domains.strategy.signals.processor import SignalProcessor
+        from src.shared.models.signals import SignalParams
 
         dates = pd.date_range("2023-01-01", periods=200)
         ohlc_data = pd.DataFrame(

@@ -5,9 +5,9 @@ from types import SimpleNamespace
 
 import pytest
 
-import src.optimization.engine as engine_mod
-from src.models.signals import SignalParams
-from src.optimization.engine import (
+import src.domains.optimization.engine as engine_mod
+from src.shared.models.signals import SignalParams
+from src.domains.optimization.engine import (
     ParameterOptimizationEngine,
     _init_worker_data,
     _run_with_timeout,
@@ -149,7 +149,7 @@ def test_init_with_explicit_base_config(monkeypatch, tmp_path):
         lambda: {"parameter_optimization": {"n_jobs": 1, "scoring_weights": {"sharpe_ratio": 1.0}}},
     )
 
-    import src.lib.strategy_runtime.loader as loader_mod
+    import src.domains.strategy.runtime.loader as loader_mod
 
     class DummyLoader:
         def merge_shared_config(self, _config):
@@ -191,7 +191,7 @@ def test_init_with_inferred_base_config(monkeypatch, tmp_path):
         lambda: {"parameter_optimization": {"n_jobs": 1, "scoring_weights": {"sharpe_ratio": 1.0}}},
     )
 
-    import src.lib.strategy_runtime.loader as loader_mod
+    import src.domains.strategy.runtime.loader as loader_mod
 
     inferred = tmp_path / "inferred.yaml"
 
@@ -303,8 +303,8 @@ def test_prefetch_data_loads_multi_data_and_benchmark(monkeypatch):
     monkeypatch.setattr(engine_mod, "SharedConfig", _DummySharedConfig)
     monkeypatch.setattr(engine, "_should_include_forecast_revision", lambda: True)
 
-    import src.data as data_mod
-    import src.data.loaders as loaders_mod
+    import src.infrastructure.data_access.loaders as data_mod
+    import src.infrastructure.data_access.loaders as loaders_mod
 
     called: dict[str, object] = {}
 
@@ -327,8 +327,8 @@ def test_prefetch_data_continues_when_benchmark_load_fails(monkeypatch):
     monkeypatch.setattr(engine_mod, "SharedConfig", _DummySharedConfig)
     monkeypatch.setattr(engine, "_should_include_forecast_revision", lambda: False)
 
-    import src.data as data_mod
-    import src.data.loaders as loaders_mod
+    import src.infrastructure.data_access.loaders as data_mod
+    import src.infrastructure.data_access.loaders as loaders_mod
 
     monkeypatch.setattr(loaders_mod, "prepare_multi_data", lambda **kwargs: {"1301": {"close": []}})
 
@@ -347,7 +347,7 @@ def test_prefetch_data_skips_benchmark_when_not_requested(monkeypatch):
     monkeypatch.setattr(engine_mod, "SharedConfig", _DummySharedConfig)
     monkeypatch.setattr(engine, "_should_include_forecast_revision", lambda: False)
 
-    import src.data.loaders as loaders_mod
+    import src.infrastructure.data_access.loaders as loaders_mod
 
     monkeypatch.setattr(loaders_mod, "prepare_multi_data", lambda **kwargs: {"1301": {"close": []}})
 
@@ -692,8 +692,8 @@ def test_generate_visualization_notebook_handles_unknown_dataset(monkeypatch, tm
     engine = _make_engine()
     engine.shared_config_dict = {}
 
-    import src.optimization.notebook_generator as notebook_mod
-    import src.paths as paths_mod
+    import src.domains.optimization.notebook_generator as notebook_mod
+    import src.shared.paths as paths_mod
 
     out_dir = tmp_path / "optimization"
     monkeypatch.setattr(paths_mod, "get_optimization_results_dir", lambda _strategy: out_dir)
@@ -713,8 +713,8 @@ def test_generate_visualization_notebook_uses_dataset_stem(monkeypatch, tmp_path
     engine = _make_engine()
     engine.shared_config_dict = {"dataset": "datasets/primeExTopix500.db"}
 
-    import src.optimization.notebook_generator as notebook_mod
-    import src.paths as paths_mod
+    import src.domains.optimization.notebook_generator as notebook_mod
+    import src.shared.paths as paths_mod
 
     out_dir = tmp_path / "optimization"
     monkeypatch.setattr(paths_mod, "get_optimization_results_dir", lambda _strategy: out_dir)

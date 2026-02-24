@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.analysis.portfolio_regression import (
+from src.domains.analytics.portfolio_regression import (
     RegressionResult,
     align_pc_and_benchmark_dates,
     perform_pc_regression,

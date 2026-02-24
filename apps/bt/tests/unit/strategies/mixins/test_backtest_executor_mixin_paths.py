@@ -8,12 +8,12 @@ import pandas as pd
 import pytest
 import vectorbt as vbt
 
-from src.models.allocation import AllocationInfo
-from src.models.signals import SignalParams, Signals
-from src.models.signals.fundamental import FundamentalSignalParams
-from src.models.signals.macro import MarginSignalParams
-from src.models.signals.sector import SectorStrengthRankingParams
-from src.strategies.core.mixins.backtest_executor_mixin import (
+from src.shared.models.allocation import AllocationInfo
+from src.shared.models.signals import SignalParams, Signals
+from src.shared.models.signals.fundamental import FundamentalSignalParams
+from src.shared.models.signals.macro import MarginSignalParams
+from src.shared.models.signals.sector import SectorStrengthRankingParams
+from src.domains.strategy.core.mixins.backtest_executor_mixin import (
     BacktestExecutorMixin,
     _any_signal_enabled,
     _is_signal_enabled,
@@ -226,11 +226,11 @@ class TestBacktestExecutorMixinPaths:
         }
 
         monkeypatch.setattr(
-            "src.data.loaders.sector_loaders.load_all_sector_indices",
+            "src.infrastructure.data_access.loaders.sector_loaders.load_all_sector_indices",
             lambda *_args, **_kwargs: {"Tech": _ohlcv_df()},
         )
         monkeypatch.setattr(
-            "src.data.loaders.sector_loaders.get_stock_sector_mapping",
+            "src.infrastructure.data_access.loaders.sector_loaders.get_stock_sector_mapping",
             lambda *_args, **_kwargs: {"1111": "Tech", "2222": "Tech"},
         )
 

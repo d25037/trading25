@@ -1,6 +1,6 @@
 """composite.py (SignalParams) のテスト"""
 
-from src.models.signals.composite import SignalParams
+from src.shared.models.signals.composite import SignalParams
 
 
 class TestSignalParams:

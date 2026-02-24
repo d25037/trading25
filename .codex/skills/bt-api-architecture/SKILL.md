@@ -9,8 +9,8 @@ FastAPI (`apps/bt`) が唯一のバックエンド。
 
 ## Source of Truth
 
-- Router wiring: `apps/bt/src/server/app.py`
-- OpenAPI config: `apps/bt/src/server/openapi_config.py`
+- Router wiring: `apps/bt/src/entrypoints/http/app.py`
+- OpenAPI config: `apps/bt/src/entrypoints/http/openapi_config.py`
 - Generated route reference: `references/fastapi-routers.md`
 
 ## Architecture Rules

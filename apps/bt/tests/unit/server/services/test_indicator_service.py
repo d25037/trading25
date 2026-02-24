@@ -9,8 +9,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.lib.market_db.market_reader import MarketDbReader
-from src.server.services.indicator_service import (
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.indicator_service import (
     INDICATOR_REGISTRY,
     _compute_relative_ohlc_column,
     _make_key,
@@ -375,7 +375,7 @@ class TestIndicatorServiceResample:
 class TestIndicatorServiceLoadOHLCV:
     """load_ohlcv テスト"""
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_load_dataset_source(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -398,7 +398,7 @@ class TestIndicatorServiceLoadOHLCV:
         assert len(df) == 50
         mock_client.get_stock_ohlcv.assert_called_once()
 
-    @patch("src.api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
     def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
         reader = MarketDbReader(market_db_path)
         try:
@@ -410,7 +410,7 @@ class TestIndicatorServiceLoadOHLCV:
         finally:
             reader.close()
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_load_with_dates(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -422,7 +422,7 @@ class TestIndicatorServiceLoadOHLCV:
         service.load_ohlcv("7203", "topix500", date(2024, 1, 1), date(2024, 6, 30))
         mock_client.get_stock_ohlcv.assert_called_once_with("7203", "2024-01-01", "2024-06-30")
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_load_empty_raises(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -438,7 +438,7 @@ class TestIndicatorServiceLoadOHLCV:
 class TestIndicatorServiceComputeIndicators:
     """compute_indicators テスト"""
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_compute_single(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -456,7 +456,7 @@ class TestIndicatorServiceComputeIndicators:
         assert "sma_20" in result["indicators"]
         assert result["meta"]["bars"] == 100
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_compute_multiple(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -475,7 +475,7 @@ class TestIndicatorServiceComputeIndicators:
         )
         assert len(result["indicators"]) == 3
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_compute_unknown_type_skipped(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -490,7 +490,7 @@ class TestIndicatorServiceComputeIndicators:
         )
         assert len(result["indicators"]) == 0
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_compute_with_weekly_resample(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -506,7 +506,7 @@ class TestIndicatorServiceComputeIndicators:
         assert result["timeframe"] == "weekly"
         assert result["meta"]["bars"] < 100
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_compute_with_nan_omit(self, MockClient):
         service = IndicatorService()
         mock_client = MagicMock()
@@ -535,8 +535,8 @@ class TestIndicatorServiceComputeMarginIndicators:
             "shortMarginVolume": np.random.randint(10000, 100000, n).astype(float),
         }, index=dates)
 
-    @patch("src.api.market_client.MarketAPIClient")
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_compute_single_margin(self, MockJQuantsClient, MockMarketClient):
         service = IndicatorService()
 
@@ -560,8 +560,8 @@ class TestIndicatorServiceComputeMarginIndicators:
         assert result["stock_code"] == "7203"
         assert "margin_long_pressure" in result["indicators"]
 
-    @patch("src.api.market_client.MarketAPIClient")
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_compute_all_margin(self, MockJQuantsClient, MockMarketClient):
         service = IndicatorService()
 
@@ -583,7 +583,7 @@ class TestIndicatorServiceComputeMarginIndicators:
         )
         assert len(result["indicators"]) == 3
 
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_margin_empty_data_raises(self, MockJQuantsClient):
         service = IndicatorService()
         mock_jquants = MagicMock()
@@ -595,8 +595,8 @@ class TestIndicatorServiceComputeMarginIndicators:
         with pytest.raises(ValueError, match="信用データが取得できません"):
             service.compute_margin_indicators("9999", "topix500", ["margin_long_pressure"])
 
-    @patch("src.api.market_client.MarketAPIClient")
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_margin_empty_ohlcv_raises(self, MockJQuantsClient, MockMarketClient):
         service = IndicatorService()
 
@@ -615,8 +615,8 @@ class TestIndicatorServiceComputeMarginIndicators:
         with pytest.raises(ValueError, match="OHLCVデータが取得できません"):
             service.compute_margin_indicators("7203", "topix500", ["margin_long_pressure"])
 
-    @patch("src.api.market_client.MarketAPIClient")
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_margin_unknown_type_skipped(self, MockJQuantsClient, MockMarketClient):
         service = IndicatorService()
 
@@ -637,8 +637,8 @@ class TestIndicatorServiceComputeMarginIndicators:
         )
         assert len(result["indicators"]) == 0
 
-    @patch("src.api.market_client.MarketAPIClient")
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_margin_with_dates(self, MockJQuantsClient, MockMarketClient):
         service = IndicatorService()
 
@@ -660,8 +660,8 @@ class TestIndicatorServiceComputeMarginIndicators:
         )
         mock_jquants.get_margin_interest.assert_called_once_with("7203", "2024-01-01", "2024-06-30")
 
-    @patch("src.api.market_client.MarketAPIClient")
-    @patch("src.api.jquants_client.JQuantsAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.jquants_client.JQuantsAPIClient")
     def test_margin_prefers_market_reader(self, MockJQuantsClient, MockMarketClient, market_db_path):
         reader = MarketDbReader(market_db_path)
         try:

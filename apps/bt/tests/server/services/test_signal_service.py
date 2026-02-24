@@ -12,8 +12,8 @@ import pytest
 
 from datetime import date
 
-from src.lib.market_db.market_reader import MarketDbReader
-from src.server.services.signal_service import (
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.signal_service import (
     PHASE1_SIGNAL_NAMES,
     SignalService,
     _SIGNAL_DEFINITION_MAP,
@@ -103,7 +103,7 @@ class TestSignalService:
         with pytest.raises(ValueError, match="Phase 1では未対応"):
             service.compute_signal("per", {}, "entry", data)
 
-    @patch("src.api.market_client.MarketAPIClient")
+    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
     def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
         reader = MarketDbReader(market_db_path)
         try:
@@ -115,7 +115,7 @@ class TestSignalService:
         finally:
             reader.close()
 
-    @patch("src.api.dataset.DatasetAPIClient")
+    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
     def test_load_dataset_source(self, MockDatasetClient):
         service = SignalService()
         mock_client = MagicMock()
@@ -164,7 +164,7 @@ class TestSignalService:
         assert signal_params.fundamental.per.condition == "above"
 
     def test_update_top_level_field_unknown_is_noop(self, service):
-        from src.models.signals import SignalParams
+        from src.shared.models.signals import SignalParams
 
         signal_params = SignalParams()
         before = signal_params.model_dump()
@@ -174,7 +174,7 @@ class TestSignalService:
         assert signal_params.model_dump() == before
 
     def test_update_nested_field_unknown_parent_is_noop(self, service):
-        from src.models.signals import SignalParams
+        from src.shared.models.signals import SignalParams
 
         signal_params = SignalParams()
         before = signal_params.model_dump()
@@ -213,8 +213,8 @@ class TestSignalDefinitionMap:
         sig_def = _get_signal_definition("volume")
         assert sig_def is not None
 
-        with patch("src.server.services.signal_service.SIGNAL_REGISTRY", [sig_def, sig_def]):
-            with patch("src.server.services.signal_service.logger") as mock_logger:
+        with patch("src.application.services.signal_service.SIGNAL_REGISTRY", [sig_def, sig_def]):
+            with patch("src.application.services.signal_service.logger") as mock_logger:
                 mapping = _build_signal_definition_map()
 
         assert mapping["volume"] is sig_def
@@ -307,7 +307,7 @@ class TestExceptionHandling:
         }, index=pd.date_range("2025-01-01", periods=3))
 
         with patch.object(service, "load_ohlcv", return_value=mock_ohlcv):
-            with patch("src.server.services.signal_service.logger") as mock_logger:
+            with patch("src.application.services.signal_service.logger") as mock_logger:
                 # 未知のシグナルを含むリクエスト
                 result = service.compute_signals(
                     stock_code="7203",

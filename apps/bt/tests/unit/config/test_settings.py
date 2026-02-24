@@ -4,7 +4,7 @@ Settings unit tests
 
 import pytest
 
-from src.config.settings import get_settings, reload_settings
+from src.shared.config.settings import get_settings, reload_settings
 
 
 def test_settings_defaults(monkeypatch):
@@ -42,7 +42,7 @@ def test_settings_cache(monkeypatch):
 
 def test_settings_module_loads_dotenv():
     """settings モジュールが load_dotenv をモジュールレベルで呼び出していること"""
-    import src.config.settings as settings_mod
+    import src.shared.config.settings as settings_mod
 
     # モジュールレベルで _dotenv_path が定義されていることを確認
     assert hasattr(settings_mod, "_dotenv_path")
@@ -51,7 +51,7 @@ def test_settings_module_loads_dotenv():
 
 
 def test_find_repo_root_raises_when_git_not_found(tmp_path):
-    from src.config.settings import _find_repo_root
+    from src.shared.config.settings import _find_repo_root
 
     start = tmp_path / "nested" / "path"
     start.mkdir(parents=True)

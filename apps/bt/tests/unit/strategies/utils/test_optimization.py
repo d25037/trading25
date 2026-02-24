@@ -1,7 +1,7 @@
 """strategies/utils/optimization.py のテスト
 
 Note: 循環import回避のため importlib で直接モジュールをロードする
-(src.optimization.__init__ -> engine -> src.strategies.utils.optimization の循環)
+(src.domains.optimization.__init__ -> engine -> src.domains.strategy.utils.optimization の循環)
 """
 
 import random
@@ -10,12 +10,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-# 循環import回避: src.optimization をダミーで挿入してからインポート
-if "src.optimization" not in sys.modules:
+# 循環import回避: src.domains.optimization をダミーで挿入してからインポート
+if "src.domains.optimization" not in sys.modules:
     import types
 
-    _dummy = types.ModuleType("src.optimization")
-    _dummy.scoring = types.ModuleType("src.optimization.scoring")  # type: ignore[attr-defined]
+    _dummy = types.ModuleType("src.domains.optimization")
+    _dummy.scoring = types.ModuleType("src.domains.optimization.scoring")  # type: ignore[attr-defined]
 
     def _is_valid_metric(value):
         import numpy as np
@@ -29,10 +29,10 @@ if "src.optimization" not in sys.modules:
 
     _dummy.scoring.is_valid_metric = _is_valid_metric  # type: ignore[attr-defined]
     _dummy.scoring.normalize_and_recalculate_scores = _normalize_and_recalculate_scores  # type: ignore[attr-defined]
-    sys.modules["src.optimization"] = _dummy
-    sys.modules["src.optimization.scoring"] = _dummy.scoring  # type: ignore[attr-defined]
+    sys.modules["src.domains.optimization"] = _dummy
+    sys.modules["src.domains.optimization.scoring"] = _dummy.scoring  # type: ignore[attr-defined]
 
-from src.strategies.utils.optimization import (  # noqa: E402
+from src.domains.strategy.utils.optimization import (  # noqa: E402
     OptimizationResult,
     ParameterOptimizer,
     ParameterRange,

@@ -7,7 +7,7 @@ import sqlite3
 
 import pytest
 
-from src.server.services.dataset_resolver import DatasetResolver
+from src.application.services.dataset_resolver import DatasetResolver
 
 
 @pytest.fixture

@@ -8,8 +8,8 @@ from fastapi.testclient import TestClient
 from pydantic import BaseModel, Field
 from sqlalchemy.exc import OperationalError
 
-from src.server.app import create_app
-from src.server.clients.jquants_client import JQuantsApiError
+from src.entrypoints.http.app import create_app
+from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
 
 
 def _make_test_app() -> TestClient:

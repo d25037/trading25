@@ -7,7 +7,7 @@ INDEXのMACDヒストグラム（MACD線 - Signal線）の符号に基づくシ�
 import pandas as pd
 import pytest
 
-from src.strategies.signals.index_macd_histogram import (
+from src.domains.strategy.signals.index_macd_histogram import (
     index_macd_histogram_signal,
     index_macd_histogram_multi_signal,
 )

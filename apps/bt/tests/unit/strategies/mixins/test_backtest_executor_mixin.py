@@ -4,8 +4,8 @@ BacktestExecutorMixin ユニットテスト
 β値シグナルのベンチマークデータロード機能のテスト
 """
 
-from src.strategies.core.mixins.backtest_executor_mixin import BacktestExecutorMixin
-from src.models.signals import (
+from src.domains.strategy.core.mixins.backtest_executor_mixin import BacktestExecutorMixin
+from src.shared.models.signals import (
     BetaSignalParams,
     FundamentalSignalParams,
     MarginSignalParams,

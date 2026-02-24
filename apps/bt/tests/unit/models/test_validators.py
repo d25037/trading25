@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.models.validators import (
+from src.shared.models.validators import (
     DIRECTION_CHOICES,
     INDICATOR_CHOICES,
     _format_choices_message,

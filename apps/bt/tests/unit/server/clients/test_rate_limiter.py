@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from src.server.clients.rate_limiter import RateLimiter
+from src.infrastructure.external_api.clients.rate_limiter import RateLimiter
 
 
 class TestRateLimiter:

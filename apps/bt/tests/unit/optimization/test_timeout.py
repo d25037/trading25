@@ -7,7 +7,7 @@ import time
 
 import pytest
 
-from src.optimization.engine import _run_with_timeout
+from src.domains.optimization.engine import _run_with_timeout
 
 
 @pytest.mark.skipif(sys.platform.startswith("win"), reason="signal-based timeout unsupported on Windows")

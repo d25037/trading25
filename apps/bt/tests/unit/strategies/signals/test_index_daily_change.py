@@ -7,7 +7,7 @@
 import pandas as pd
 import pytest
 
-from src.strategies.signals.index_daily_change import (
+from src.domains.strategy.signals.index_daily_change import (
     index_daily_change_signal,
     index_daily_change_multi_signal,
     calculate_index_statistics,

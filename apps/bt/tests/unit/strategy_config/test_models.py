@@ -1,6 +1,6 @@
 """strategy_config/models.py のテスト"""
 
-from src.strategy_config.models import (
+from src.domains.strategy.runtime.models import (
     StrategyConfigStrictValidationError,
     try_validate_strategy_config_dict,
     try_validate_strategy_config_dict_strict,

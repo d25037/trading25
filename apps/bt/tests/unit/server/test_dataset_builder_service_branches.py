@@ -5,17 +5,17 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-import src.server.services.dataset_builder_service as dataset_builder_service
-from src.server.services.dataset_builder_service import (
+import src.application.services.dataset_builder_service as dataset_builder_service
+from src.application.services.dataset_builder_service import (
     DatasetJobData,
     DatasetResult,
     _build_dataset,
     _convert_stocks,
     start_dataset_build,
 )
-from src.server.services.dataset_presets import PresetConfig
-from src.server.services.generic_job_manager import GenericJobManager
-from src.server.schemas.job import JobStatus
+from src.application.services.dataset_presets import PresetConfig
+from src.application.services.generic_job_manager import GenericJobManager
+from src.entrypoints.http.schemas.job import JobStatus
 
 
 @pytest.fixture

@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import create_engine, insert
 
-from src.lib.market_db.dataset_db import DatasetDb
-from src.lib.market_db.tables import (
+from src.infrastructure.db.market.dataset_db import DatasetDb
+from src.infrastructure.db.market.tables import (
     dataset_info,
     dataset_meta,
     ds_indices_data,

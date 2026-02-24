@@ -5,7 +5,7 @@
 import numpy as np
 import pandas as pd
 
-from src.utils.indicators import (
+from src.domains.strategy.indicators.calculations import (
     compute_atr_support_line,
     compute_nbar_support,
     compute_trading_value_ma,

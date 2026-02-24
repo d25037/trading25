@@ -6,12 +6,12 @@ from unittest.mock import patch
 import pytest
 
 
-from src.agent.models import (
+from src.domains.lab_agent.models import (
     EvaluationResult,
     EvolutionConfig,
     StrategyCandidate,
 )
-from src.agent.parameter_evolver import ParameterEvolver
+from src.domains.lab_agent.parameter_evolver import ParameterEvolver
 
 
 def _make_candidate(sid="test", entry_params=None, exit_params=None):
@@ -167,7 +167,7 @@ class TestMutation:
         candidate = _make_candidate()
 
         with patch(
-            "src.agent.parameter_evolver.apply_random_add_structure",
+            "src.domains.lab_agent.parameter_evolver.apply_random_add_structure",
             return_value=(candidate, {"entry": [], "exit": []}),
         ) as mock_random_add:
             evolver._mutate(candidate, mutation_strength=0.0)
@@ -256,7 +256,7 @@ class TestCrossover:
         evolver = _make_evolver()
         parent1 = _make_candidate("p1", entry_params={"volume": {"enabled": True}})
         parent2 = _make_candidate("p2", entry_params={})
-        with patch("src.agent.parameter_evolver.random.random", return_value=0.8):
+        with patch("src.domains.lab_agent.parameter_evolver.random.random", return_value=0.8):
             child = evolver._crossover(parent1, parent2)
         assert child.entry_filter_params == {}
 
@@ -268,7 +268,7 @@ class TestCrossover:
             exit_params={"rsi_threshold": {"enabled": True, "period": 14}},
         )
         parent2 = _make_candidate("p2", entry_params={}, exit_params={})
-        with patch("src.agent.parameter_evolver.random.random", return_value=0.2):
+        with patch("src.domains.lab_agent.parameter_evolver.random.random", return_value=0.2):
             child = evolver._crossover(parent1, parent2)
         assert "rsi_threshold" in child.exit_trigger_params
 
@@ -342,7 +342,7 @@ class TestGetEvolutionHistory:
 class TestEvolveFlow:
     def test_load_base_strategy_from_name(self):
         evolver = ParameterEvolver(config=EvolutionConfig(), shared_config_dict=None)
-        with patch("src.agent.parameter_evolver.ConfigLoader") as MockLoader:
+        with patch("src.domains.lab_agent.parameter_evolver.ConfigLoader") as MockLoader:
             MockLoader.return_value.load_strategy_config.return_value = {
                 "entry_filter_params": {"volume": {"enabled": True}},
                 "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
@@ -362,7 +362,7 @@ class TestEvolveFlow:
             config=EvolutionConfig(),
             shared_config_dict={"dataset": "preconfigured"},
         )
-        with patch("src.agent.parameter_evolver.ConfigLoader") as MockLoader:
+        with patch("src.domains.lab_agent.parameter_evolver.ConfigLoader") as MockLoader:
             MockLoader.return_value.load_strategy_config.return_value = {
                 "entry_filter_params": {"volume": {"enabled": True}},
                 "exit_trigger_params": {"rsi_threshold": {"enabled": True}},

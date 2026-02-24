@@ -14,7 +14,7 @@ import pytest
 from sqlalchemy import ForeignKeyConstraint, Integer, Text, UniqueConstraint
 from sqlalchemy.types import REAL
 
-from src.lib.market_db.tables import (
+from src.infrastructure.db.market.tables import (
     dataset_info,
     dataset_meta,
     ds_indices_data,

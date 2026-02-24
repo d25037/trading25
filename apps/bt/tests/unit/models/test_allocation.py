@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.models.allocation import AllocationInfo
+from src.shared.models.allocation import AllocationInfo
 
 
 def _make_info(**kwargs) -> AllocationInfo:

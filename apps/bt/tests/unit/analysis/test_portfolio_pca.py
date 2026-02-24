@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.analysis.portfolio_pca import (
+from src.domains.analytics.portfolio_pca import (
     analyze_stock_clustering,
     calculate_pca_diversification_score,
     get_top_contributors,

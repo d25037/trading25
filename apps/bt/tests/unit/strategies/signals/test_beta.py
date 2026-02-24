@@ -5,7 +5,7 @@
 import numpy as np
 import pandas as pd
 
-from src.strategies.signals.beta import (
+from src.domains.strategy.signals.beta import (
     beta_range_signal,
     beta_range_signal_with_value,
     calculate_beta,

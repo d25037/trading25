@@ -10,8 +10,8 @@ from typing import Any
 
 import pytest
 
-from src.server.schemas.backtest import JobStatus
-from src.server.services.backtest_attribution_service import BacktestAttributionService
+from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.services.backtest_attribution_service import BacktestAttributionService
 
 
 def test_execute_attribution_sync_uses_threadsafe_progress(monkeypatch):
@@ -41,7 +41,7 @@ def test_execute_attribution_sync_uses_threadsafe_progress(monkeypatch):
 
     monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_run_coroutine_threadsafe)
     monkeypatch.setattr(
-        "src.server.services.backtest_attribution_service.SignalAttributionAnalyzer",
+        "src.application.services.backtest_attribution_service.SignalAttributionAnalyzer",
         _FakeAnalyzer,
     )
 
@@ -92,7 +92,7 @@ def test_execute_attribution_sync_skips_progress_when_cancelled(monkeypatch):
 
     monkeypatch.setattr(asyncio, "run_coroutine_threadsafe", _fake_run_coroutine_threadsafe)
     monkeypatch.setattr(
-        "src.server.services.backtest_attribution_service.SignalAttributionAnalyzer",
+        "src.application.services.backtest_attribution_service.SignalAttributionAnalyzer",
         _FakeAnalyzer,
     )
 
@@ -311,15 +311,15 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
     service = BacktestAttributionService(manager=manager)
 
     monkeypatch.setattr(
-        "src.server.services.backtest_attribution_service.get_backtest_attribution_dir",
+        "src.application.services.backtest_attribution_service.get_backtest_attribution_dir",
         lambda: tmp_path,
     )
     monkeypatch.setattr(
-        "src.server.services.backtest_attribution_service.find_strategy_path",
+        "src.application.services.backtest_attribution_service.find_strategy_path",
         lambda _name: Path("/tmp/strategies/experimental/range_break_v18.yaml"),
     )
     monkeypatch.setattr(
-        "src.server.services.backtest_attribution_service.get_settings",
+        "src.application.services.backtest_attribution_service.get_settings",
         lambda: SimpleNamespace(
             market_db_path="/tmp/market.db",
             portfolio_db_path="/tmp/portfolio.db",

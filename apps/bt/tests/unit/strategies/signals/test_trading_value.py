@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.trading_value import trading_value_signal
+from src.domains.strategy.signals.trading_value import trading_value_signal
 
 
 class TestTradingValueSignal:
@@ -282,8 +282,8 @@ class TestTradingValueSignalIntegration:
 
     def test_trading_value_signal_with_signal_processor_entry(self):
         """SignalProcessorでエントリーフィルターとして使用"""
-        from src.strategies.signals.processor import SignalProcessor
-        from src.models.signals import SignalParams
+        from src.domains.strategy.signals.processor import SignalProcessor
+        from src.shared.models.signals import SignalParams
 
         dates = pd.date_range("2023-01-01", periods=200)
         ohlc_data = pd.DataFrame(
@@ -322,8 +322,8 @@ class TestTradingValueSignalIntegration:
 
     def test_trading_value_signal_with_signal_processor_exit(self):
         """SignalProcessorでエグジットトリガーとして使用"""
-        from src.strategies.signals.processor import SignalProcessor
-        from src.models.signals import SignalParams
+        from src.domains.strategy.signals.processor import SignalProcessor
+        from src.shared.models.signals import SignalParams
 
         dates = pd.date_range("2023-01-01", periods=200)
         ohlc_data = pd.DataFrame(

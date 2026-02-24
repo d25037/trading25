@@ -2,9 +2,9 @@
 
 from contextlib import contextmanager
 
-from src.agent.evaluator import evaluator as evaluator_module
-from src.agent.evaluator.evaluator import StrategyEvaluator
-from src.agent.models import EvaluationResult, StrategyCandidate
+from src.domains.lab_agent.evaluator import evaluator as evaluator_module
+from src.domains.lab_agent.evaluator.evaluator import StrategyEvaluator
+from src.domains.lab_agent.models import EvaluationResult, StrategyCandidate
 
 
 def _candidate() -> StrategyCandidate:
@@ -25,11 +25,11 @@ def test_evaluate_single_forces_direct_mode(monkeypatch) -> None:
         yield
 
     monkeypatch.setattr(
-        "src.agent.evaluator.evaluator.data_access_mode_context",
+        "src.domains.lab_agent.evaluator.evaluator.data_access_mode_context",
         _fake_mode_context,
     )
     monkeypatch.setattr(
-        "src.agent.evaluator.evaluator.evaluate_single_candidate",
+        "src.domains.lab_agent.evaluator.evaluator.evaluate_single_candidate",
         lambda *_args, **_kwargs: expected,
     )
 
@@ -49,7 +49,7 @@ def test_evaluate_batch_forces_direct_mode(monkeypatch) -> None:
         yield
 
     monkeypatch.setattr(
-        "src.agent.evaluator.evaluator.data_access_mode_context",
+        "src.domains.lab_agent.evaluator.evaluator.data_access_mode_context",
         _fake_mode_context,
     )
     monkeypatch.setattr(
@@ -74,7 +74,7 @@ def test_evaluate_batch_empty_returns_immediately(monkeypatch) -> None:
         yield
 
     monkeypatch.setattr(
-        "src.agent.evaluator.evaluator.data_access_mode_context",
+        "src.domains.lab_agent.evaluator.evaluator.data_access_mode_context",
         _fake_mode_context,
     )
 

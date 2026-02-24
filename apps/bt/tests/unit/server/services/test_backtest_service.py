@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.lib.backtest_core.runner import BacktestResult
-from src.server.services.backtest_service import BacktestService
+from src.domains.backtest.core.runner import BacktestResult
+from src.application.services.backtest_service import BacktestService
 
 
 def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: Path):
@@ -97,14 +97,18 @@ async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
         return None
 
     monkeypatch.setattr(service, "_run_backtest", _dummy_run_backtest)
-    service._manager.create_job = lambda _strategy_name: "job-123"  # type: ignore[assignment]
+    monkeypatch.setattr(
+        service._manager,
+        "create_job",
+        lambda _strategy_name, job_type="backtest": "job-123",
+    )
 
     async def _set_job_task(job_id: str, task):
         captured["job_id"] = job_id
         captured["task"] = task
         await task
 
-    service._manager.set_job_task = _set_job_task  # type: ignore[assignment]
+    monkeypatch.setattr(service._manager, "set_job_task", _set_job_task)
 
     job_id = await service.submit_backtest("strategy")
 
@@ -211,7 +215,7 @@ def test_extract_result_summary_prefers_html_metrics(tmp_path: Path):
         dataset_name="sample",
     )
 
-    with patch("src.server.services.backtest_result_summary.extract_metrics_from_html") as mock_extract:
+    with patch("src.application.services.backtest_result_summary.extract_metrics_from_html") as mock_extract:
         mock_extract.return_value = type(
             "Metrics",
             (),
@@ -252,7 +256,7 @@ def test_extract_result_summary_fallback_when_metrics_fail(tmp_path: Path):
         dataset_name="sample",
     )
 
-    with patch("src.server.services.backtest_result_summary.extract_metrics_from_html", side_effect=RuntimeError("bad html")):
+    with patch("src.application.services.backtest_result_summary.extract_metrics_from_html", side_effect=RuntimeError("bad html")):
         summary = service._extract_result_summary(result)
         assert summary.total_return == 7.0
         assert summary.sortino_ratio == 8.5

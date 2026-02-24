@@ -4,7 +4,7 @@ from typing import Any
 
 import pytest
 
-from src.server.services.stock_refresh_service import refresh_stocks
+from src.application.services.stock_refresh_service import refresh_stocks
 
 
 class DummyMarketDb:

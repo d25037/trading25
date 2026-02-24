@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
-from src.lib.market_db.market_db import MarketDb
+from src.entrypoints.http.app import create_app
+from src.infrastructure.db.market.market_db import MarketDb
 
 
 @pytest.fixture
@@ -47,7 +47,7 @@ def client(market_db_path: str):
 
 class TestSyncRoutes:
     def test_sync_start(self, client: TestClient) -> None:
-        with patch("src.server.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
+        with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
             mock_job = MagicMock()
             mock_job.job_id = "test-job-123"
             mock_job.data.resolved_mode = "incremental"
@@ -62,7 +62,7 @@ class TestSyncRoutes:
             assert data["status"] == "pending"
 
     def test_sync_conflict(self, client: TestClient) -> None:
-        with patch("src.server.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
+        with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
             mock_start.return_value = None  # Active job exists
             resp = client.post("/api/db/sync", json={"mode": "auto"})
             assert resp.status_code == 409
@@ -78,8 +78,8 @@ class TestSyncRoutes:
 
 class TestRefreshRoute:
     def test_refresh_success(self, client: TestClient) -> None:
-        with patch("src.server.services.stock_refresh_service.refresh_stocks") as mock_refresh:
-            from src.server.schemas.db import RefreshResponse, RefreshStockResult
+        with patch("src.application.services.stock_refresh_service.refresh_stocks") as mock_refresh:
+            from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
             mock_refresh.return_value = RefreshResponse(
                 totalStocks=1,
                 successCount=1,

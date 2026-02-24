@@ -7,9 +7,9 @@ from pathlib import Path
 
 import pytest
 
-from src.lib.market_db.market_reader import MarketDbReader
-from src.lib.market_db.portfolio_db import PortfolioDb
-from src.server.services.watchlist_prices_service import WatchlistPricesService
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.portfolio_db import PortfolioDb
+from src.application.services.watchlist_prices_service import WatchlistPricesService
 
 
 def _create_market_db(path: str) -> None:

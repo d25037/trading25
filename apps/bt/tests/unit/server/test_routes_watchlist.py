@@ -7,8 +7,8 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
-from src.lib.market_db.portfolio_db import PortfolioDb
+from src.entrypoints.http.app import create_app
+from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
 @pytest.fixture()

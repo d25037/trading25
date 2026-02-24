@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from src.strategy_config.parameter_extractor import (
+from src.domains.strategy.runtime.parameter_extractor import (
     _deep_merge_dict,
     _get_dict_value,
     extract_entry_filter_params,
@@ -98,7 +98,7 @@ class TestGetOutputDirectory:
 
     def test_default_directory(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(
-            "src.paths.get_backtest_results_dir",
+            "src.shared.paths.get_backtest_results_dir",
             lambda: Path("/default/results"),
         )
         result = get_output_directory({})

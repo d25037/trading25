@@ -10,8 +10,8 @@ import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import app
-from src.server.schemas.signals import (
+from src.entrypoints.http.app import app
+from src.entrypoints.http.schemas.signals import (
     SignalComputeRequest,
     SignalComputeResponse,
     SignalResult,
@@ -108,7 +108,7 @@ class TestSignalComputeEndpoint:
     def test_compute_invalid_signal_type(self, client: TestClient, mock_ohlcv: pd.DataFrame) -> None:
         """Phase 1非対応シグナルはエラー情報を含む"""
         with patch(
-            "src.server.services.signal_service.SignalService.load_ohlcv",
+            "src.application.services.signal_service.SignalService.load_ohlcv",
             return_value=mock_ohlcv,
         ):
             response = client.post(
@@ -127,7 +127,7 @@ class TestSignalComputeEndpoint:
     def test_compute_valid_signal(self, client: TestClient, mock_ohlcv: pd.DataFrame) -> None:
         """有効なシグナル計算"""
         with patch(
-            "src.server.services.signal_service.SignalService.load_ohlcv",
+            "src.application.services.signal_service.SignalService.load_ohlcv",
             return_value=mock_ohlcv,
         ):
             response = client.post(

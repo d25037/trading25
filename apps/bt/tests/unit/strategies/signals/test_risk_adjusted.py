@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.strategies.signals.risk_adjusted import risk_adjusted_return_signal
+from src.domains.strategy.signals.risk_adjusted import risk_adjusted_return_signal
 
 
 class TestRiskAdjustedReturnSignal:

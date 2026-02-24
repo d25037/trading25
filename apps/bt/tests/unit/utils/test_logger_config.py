@@ -1,7 +1,7 @@
 """logger_config.py のテスト"""
 
 
-from src.utils.logger_config import (
+from src.shared.utils.logger_config import (
     Logger,
     get_logger,
     log_debug,

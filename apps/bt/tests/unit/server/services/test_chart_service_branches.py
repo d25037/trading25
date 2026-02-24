@@ -4,7 +4,7 @@ ChartService branch coverage tests for fallback/error paths.
 
 import pytest
 
-from src.server.services.chart_service import ChartService
+from src.application.services.chart_service import ChartService
 
 
 class FakeReader:

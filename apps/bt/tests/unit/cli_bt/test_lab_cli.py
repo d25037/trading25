@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 
 from typer.testing import CliRunner
 
-from src.cli_bt import app
+from src.entrypoints.cli import app
 
 runner = CliRunner()
 ANSI_ESCAPE_RE = re.compile(r"\x1b\[[0-9;]*m")
@@ -33,8 +33,8 @@ def _make_eval_result() -> MagicMock:
 
 def test_lab_generate_accepts_fundamental_constraints() -> None:
     with (
-        patch("src.agent.StrategyGenerator") as MockGenerator,
-        patch("src.agent.StrategyEvaluator") as MockEvaluator,
+        patch("src.domains.lab_agent.StrategyGenerator") as MockGenerator,
+        patch("src.domains.lab_agent.StrategyEvaluator") as MockEvaluator,
     ):
         MockGenerator.return_value.generate.return_value = [MagicMock()]
         MockEvaluator.return_value.evaluate_batch.return_value = [_make_eval_result()]
@@ -101,8 +101,8 @@ def test_lab_generate_help_includes_new_options() -> None:
 
 def test_lab_evolve_command_runs() -> None:
     with (
-        patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver,
-        patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+        patch("src.domains.lab_agent.parameter_evolver.ParameterEvolver") as MockEvolver,
+        patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
     ):
         candidate = MagicMock()
         candidate.strategy_id = "evolved_x"
@@ -138,7 +138,7 @@ def test_lab_evolve_command_runs() -> None:
 
 
 def test_lab_evolve_command_runs_without_save() -> None:
-    with patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver:
+    with patch("src.domains.lab_agent.parameter_evolver.ParameterEvolver") as MockEvolver:
         candidate = MagicMock()
         candidate.strategy_id = "evolved_x"
         MockEvolver.return_value.evolve.return_value = (candidate, [])
@@ -164,7 +164,7 @@ def test_lab_evolve_command_runs_without_save() -> None:
 
 
 def test_lab_evolve_accepts_random_add_options() -> None:
-    with patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver:
+    with patch("src.domains.lab_agent.parameter_evolver.ParameterEvolver") as MockEvolver:
         candidate = MagicMock()
         candidate.strategy_id = "evolved_x"
         MockEvolver.return_value.evolve.return_value = (candidate, [])
@@ -214,8 +214,8 @@ def test_lab_evolve_rejects_invalid_structure_mode() -> None:
 
 def test_lab_optimize_command_runs() -> None:
     with (
-        patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer,
-        patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+        patch("src.domains.lab_agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer,
+        patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
     ):
         candidate = MagicMock()
         study = MagicMock()
@@ -285,7 +285,7 @@ def test_lab_optimize_help_includes_filter_options() -> None:
 
 
 def test_lab_optimize_command_runs_without_save() -> None:
-    with patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer:
+    with patch("src.domains.lab_agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer:
         candidate = MagicMock()
         study = MagicMock()
         study.best_value = 1.5
@@ -308,7 +308,7 @@ def test_lab_optimize_command_runs_without_save() -> None:
 
 
 def test_lab_optimize_accepts_random_add_options() -> None:
-    with patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer:
+    with patch("src.domains.lab_agent.optuna_optimizer.OptunaOptimizer") as MockOptimizer:
         candidate = MagicMock()
         study = MagicMock()
         study.best_value = 1.5
@@ -354,8 +354,8 @@ def test_lab_optimize_rejects_invalid_structure_mode() -> None:
 
 def test_lab_generate_handles_failed_results() -> None:
     with (
-        patch("src.agent.StrategyGenerator") as MockGenerator,
-        patch("src.agent.StrategyEvaluator") as MockEvaluator,
+        patch("src.domains.lab_agent.StrategyGenerator") as MockGenerator,
+        patch("src.domains.lab_agent.StrategyEvaluator") as MockEvaluator,
     ):
         mock_candidate = MagicMock()
         mock_candidate.strategy_id = "auto_failed"
@@ -376,9 +376,9 @@ def test_lab_generate_handles_failed_results() -> None:
 
 def test_lab_generate_saves_best_strategy() -> None:
     with (
-        patch("src.agent.StrategyGenerator") as MockGenerator,
-        patch("src.agent.StrategyEvaluator") as MockEvaluator,
-        patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+        patch("src.domains.lab_agent.StrategyGenerator") as MockGenerator,
+        patch("src.domains.lab_agent.StrategyEvaluator") as MockEvaluator,
+        patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
     ):
         mock_candidate = MagicMock()
         mock_candidate.strategy_id = "auto_success"
@@ -401,8 +401,8 @@ def test_lab_generate_saves_best_strategy() -> None:
 
 def test_lab_improve_accepts_fundamental_constraints() -> None:
     with (
-        patch("src.agent.strategy_improver.StrategyImprover") as MockImprover,
-        patch("src.lib.strategy_runtime.loader.ConfigLoader") as MockLoader,
+        patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as MockImprover,
+        patch("src.domains.strategy.runtime.loader.ConfigLoader") as MockLoader,
     ):
         report = MagicMock()
         report.max_drawdown = 0.1
@@ -450,9 +450,9 @@ def test_lab_improve_rejects_invalid_category() -> None:
 
 def test_lab_improve_renders_details_and_auto_applies() -> None:
     with (
-        patch("src.agent.strategy_improver.StrategyImprover") as MockImprover,
-        patch("src.lib.strategy_runtime.loader.ConfigLoader") as MockLoader,
-        patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+        patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as MockImprover,
+        patch("src.domains.strategy.runtime.loader.ConfigLoader") as MockLoader,
+        patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
     ):
         report = MagicMock()
         report.max_drawdown = 0.2

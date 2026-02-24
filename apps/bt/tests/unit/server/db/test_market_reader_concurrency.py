@@ -2,7 +2,7 @@
 
 from concurrent.futures import ThreadPoolExecutor
 
-from src.lib.market_db.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 def test_query_one_is_thread_safe(market_db_path: str) -> None:

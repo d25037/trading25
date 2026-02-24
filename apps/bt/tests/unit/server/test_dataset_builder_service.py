@@ -5,14 +5,14 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.server.services.dataset_builder_service import (
+from src.application.services.dataset_builder_service import (
     DatasetJobData,
     DatasetResult,
     _filter_stocks,
     start_dataset_build,
     dataset_job_manager,
 )
-from src.server.services.dataset_presets import PresetConfig
+from src.application.services.dataset_presets import PresetConfig
 
 
 # --- _filter_stocks ---
@@ -96,7 +96,7 @@ async def test_start_dataset_build_returns_job() -> None:
         if job.status.value in ("pending", "running"):
             await dataset_job_manager.cancel_job(job.job_id)
 
-    with patch("src.server.services.dataset_builder_service._build_dataset") as mock_build:
+    with patch("src.application.services.dataset_builder_service._build_dataset") as mock_build:
         mock_build.return_value = DatasetResult(success=True)
         job = await start_dataset_build(data, resolver, client)
 
@@ -127,7 +127,7 @@ async def test_start_dataset_build_conflict() -> None:
 
     # Create a blocking job
     data1 = DatasetJobData(name="first", preset="quickTesting")
-    with patch("src.server.services.dataset_builder_service._build_dataset") as mock_build:
+    with patch("src.application.services.dataset_builder_service._build_dataset") as mock_build:
         future: asyncio.Future[DatasetResult] = asyncio.get_event_loop().create_future()
         mock_build.return_value = future
         job1 = await start_dataset_build(data1, resolver, client)

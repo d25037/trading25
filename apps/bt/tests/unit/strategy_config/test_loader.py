@@ -7,7 +7,7 @@ shared_config マージ機能のテスト
 from pathlib import Path
 
 import pytest
-from src.strategy_config.loader import ConfigLoader, StrategyMetadata
+from src.domains.strategy.runtime.loader import ConfigLoader, StrategyMetadata
 
 
 @pytest.fixture
@@ -678,7 +678,7 @@ def test_get_category_roots_default_experimental_includes_fallback(monkeypatch):
     loader = ConfigLoader()
     monkeypatch.setattr(loader, "_is_default_config", lambda: True)
     monkeypatch.setattr(
-        "src.paths.get_strategies_dir",
+        "src.shared.paths.get_strategies_dir",
         lambda category: Path(f"/tmp/external/{category}"),
     )
 
@@ -693,7 +693,7 @@ def test_get_category_roots_default_non_experimental(monkeypatch):
     loader = ConfigLoader()
     monkeypatch.setattr(loader, "_is_default_config", lambda: True)
     monkeypatch.setattr(
-        "src.paths.get_strategies_dir",
+        "src.shared.paths.get_strategies_dir",
         lambda category: Path(f"/tmp/external/{category}"),
     )
 
@@ -749,9 +749,9 @@ def test_load_strategy_config_file_not_found_branch(monkeypatch):
     loader = ConfigLoader(config_dir="/tmp/config")
 
     monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: Path("/tmp/sample.yaml"))
-    monkeypatch.setattr("src.lib.strategy_runtime.loader.validate_path_within_strategies", lambda *_args: None)
+    monkeypatch.setattr("src.domains.strategy.runtime.loader.validate_path_within_strategies", lambda *_args: None)
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.load_yaml_file",
+        "src.domains.strategy.runtime.loader.load_yaml_file",
         lambda _path: (_ for _ in ()).throw(FileNotFoundError("missing")),
     )
 
@@ -764,9 +764,9 @@ def test_load_strategy_config_generic_error_branch(monkeypatch):
     loader = ConfigLoader(config_dir="/tmp/config")
 
     monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: Path("/tmp/sample.yaml"))
-    monkeypatch.setattr("src.lib.strategy_runtime.loader.validate_path_within_strategies", lambda *_args: None)
+    monkeypatch.setattr("src.domains.strategy.runtime.loader.validate_path_within_strategies", lambda *_args: None)
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.load_yaml_file",
+        "src.domains.strategy.runtime.loader.load_yaml_file",
         lambda _path: (_ for _ in ()).throw(RuntimeError("boom")),
     )
 
@@ -782,15 +782,15 @@ def test_runtime_wrapper_methods_delegate(monkeypatch):
     loader.default_config = {"k": "v"}
 
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.get_execution_config",
+        "src.domains.strategy.runtime.loader.get_execution_config",
         lambda cfg, default: {"cfg": cfg, "default": default},
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.get_available_strategies",
+        "src.domains.strategy.runtime.loader.get_available_strategies",
         lambda _config_dir: {"experimental": ["demo"]},
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.get_strategy_metadata",
+        "src.domains.strategy.runtime.loader.get_strategy_metadata",
         lambda _config_dir: [
             StrategyMetadata(
                 name="experimental/demo",
@@ -801,23 +801,23 @@ def test_runtime_wrapper_methods_delegate(monkeypatch):
         ],
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.validate_strategy_config",
+        "src.domains.strategy.runtime.loader.validate_strategy_config",
         lambda _cfg: True,
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.get_template_notebook_path",
+        "src.domains.strategy.runtime.loader.get_template_notebook_path",
         lambda _execution: Path("/tmp/template.ipynb"),
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.get_output_directory",
+        "src.domains.strategy.runtime.loader.get_output_directory",
         lambda _execution: Path("/tmp/output"),
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.extract_entry_filter_params",
+        "src.domains.strategy.runtime.loader.extract_entry_filter_params",
         lambda _cfg: {"entry": True},
     )
     monkeypatch.setattr(
-        "src.lib.strategy_runtime.loader.extract_exit_trigger_params",
+        "src.domains.strategy.runtime.loader.extract_exit_trigger_params",
         lambda _cfg: {"exit": True},
     )
 
@@ -909,9 +909,9 @@ def test_duplicate_strategy_default_config_conflict_branch(tmp_path, monkeypatch
 
     loader = ConfigLoader(config_dir="config")
     monkeypatch.setattr(loader, "load_strategy_config", lambda _name: {"entry_filter_params": {}})
-    monkeypatch.setattr("src.paths.get_strategies_dir", lambda _category: external_experimental)
+    monkeypatch.setattr("src.shared.paths.get_strategies_dir", lambda _category: external_experimental)
     monkeypatch.setattr(
-        "src.paths.find_strategy_path",
+        "src.shared.paths.find_strategy_path",
         lambda _name: external_experimental / "already_exists.yaml",
     )
 
@@ -928,8 +928,8 @@ def test_rename_strategy_default_config_success(tmp_path, monkeypatch):
 
     loader = ConfigLoader(config_dir="config")
     monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: current_path)
-    monkeypatch.setattr("src.paths.get_strategies_dir", lambda _category: external_experimental)
-    monkeypatch.setattr("src.paths.find_strategy_path", lambda _name: None)
+    monkeypatch.setattr("src.shared.paths.get_strategies_dir", lambda _category: external_experimental)
+    monkeypatch.setattr("src.shared.paths.find_strategy_path", lambda _name: None)
 
     new_path = loader.rename_strategy("experimental/old_name", "new_name")
     assert new_path == external_experimental / "new_name.yaml"
@@ -963,9 +963,9 @@ def test_rename_strategy_default_config_conflict(tmp_path, monkeypatch):
 
     loader = ConfigLoader(config_dir="config")
     monkeypatch.setattr(loader, "_infer_strategy_path", lambda _name: current_path)
-    monkeypatch.setattr("src.paths.get_strategies_dir", lambda _category: external_experimental)
+    monkeypatch.setattr("src.shared.paths.get_strategies_dir", lambda _category: external_experimental)
     monkeypatch.setattr(
-        "src.paths.find_strategy_path",
+        "src.shared.paths.find_strategy_path",
         lambda _name: external_experimental / "new_name.yaml",
     )
 

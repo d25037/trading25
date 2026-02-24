@@ -5,7 +5,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 
-from src.api.portfolio_client import PortfolioAPIClient
+from src.infrastructure.external_api.portfolio_client import PortfolioAPIClient
 
 
 class TestPortfolioAPIClient:

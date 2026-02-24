@@ -5,7 +5,7 @@ Agent models のユニットテスト
 import pytest
 from pydantic import ValidationError
 
-from src.agent.models import (
+from src.domains.lab_agent.models import (
     EvolutionConfig,
     EvaluationResult,
     GeneratorConfig,

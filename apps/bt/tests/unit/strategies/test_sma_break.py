@@ -8,9 +8,9 @@ import pandas as pd
 import pytest
 import numpy as np
 
-from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
-from src.models.config import SharedConfig
-from src.models.signals import SignalParams
+from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams
 
 
 class TestSMABreakStrategy:
@@ -156,7 +156,7 @@ class TestSMABreakStrategy:
 
         # 異常なパラメータ（Pydanticバリデーション）
         with pytest.raises(ValueError):
-            from src.models.signals import VolumeSignalParams
+            from src.shared.models.signals import VolumeSignalParams
 
             VolumeSignalParams(threshold=0.0)  # <=0.1は無効
 

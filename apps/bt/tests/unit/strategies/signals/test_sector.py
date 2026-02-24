@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.strategies.signals.sector import (
+from src.domains.strategy.signals.sector import (
     get_all_sectors,
     get_sector_correlation_matrix,
     get_sector_index_code,
@@ -27,12 +27,12 @@ def _make_mapping_df():
 
 class TestGetSectorIndexCode:
     def test_found(self):
-        with patch("src.strategies.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
+        with patch("src.domains.strategy.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
             result = get_sector_index_code("test", "化学")
         assert result == "I301"
 
     def test_not_found(self):
-        with patch("src.strategies.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
+        with patch("src.domains.strategy.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
             with pytest.raises(ValueError, match="セクター名が見つかりません"):
                 get_sector_index_code("test", "存在しない")
 
@@ -43,7 +43,7 @@ class TestGetSectorStocks:
         mock_client.get_sector_stocks.return_value = ["1234", "5678"]
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.strategies.signals.sector.DatasetAPIClient", return_value=mock_client):
+        with patch("src.domains.strategy.signals.sector.DatasetAPIClient", return_value=mock_client):
             result = get_sector_stocks("test", "化学")
         assert result == ["1234", "5678"]
 
@@ -52,7 +52,7 @@ class TestGetSectorStocks:
         mock_client.get_sector_stocks.return_value = []
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.strategies.signals.sector.DatasetAPIClient", return_value=mock_client):
+        with patch("src.domains.strategy.signals.sector.DatasetAPIClient", return_value=mock_client):
             with pytest.raises(ValueError, match="銘柄が見つかりません"):
                 get_sector_stocks("test", "化学")
 
@@ -63,22 +63,22 @@ class TestGetAllSectors:
         mock_client.get_all_sectors.return_value = _make_mapping_df()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.strategies.signals.sector.DatasetAPIClient", return_value=mock_client):
+        with patch("src.domains.strategy.signals.sector.DatasetAPIClient", return_value=mock_client):
             result = get_all_sectors("test")
         assert len(result) == 2
 
 
 class TestValidateSectorName:
     def test_valid(self):
-        with patch("src.strategies.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
+        with patch("src.domains.strategy.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
             assert validate_sector_name("test", "化学") is True
 
     def test_invalid(self):
-        with patch("src.strategies.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
+        with patch("src.domains.strategy.signals.sector.get_sector_mapping", return_value=_make_mapping_df()):
             assert validate_sector_name("test", "存在しない") is False
 
     def test_exception_returns_false(self):
-        with patch("src.strategies.signals.sector.get_sector_mapping", side_effect=Exception("error")):
+        with patch("src.domains.strategy.signals.sector.get_sector_mapping", side_effect=Exception("error")):
             assert validate_sector_name("test", "化学") is False
 
 
@@ -100,8 +100,8 @@ class TestGetSectorCorrelationMatrix:
             return index_data_1 if call_count[0] == 1 else index_data_2
 
         with (
-            patch("src.strategies.signals.sector.get_all_sectors", return_value=sectors_df),
-            patch("src.strategies.signals.sector.load_index_data", side_effect=mock_load),
+            patch("src.domains.strategy.signals.sector.get_all_sectors", return_value=sectors_df),
+            patch("src.domains.strategy.signals.sector.load_index_data", side_effect=mock_load),
         ):
             result = get_sector_correlation_matrix("test")
         assert result.shape == (2, 2)
@@ -111,8 +111,8 @@ class TestGetSectorCorrelationMatrix:
     def test_empty_raises(self):
         sectors_df = _make_mapping_df()
         with (
-            patch("src.strategies.signals.sector.get_all_sectors", return_value=sectors_df),
-            patch("src.strategies.signals.sector.load_index_data", side_effect=Exception("error")),
+            patch("src.domains.strategy.signals.sector.get_all_sectors", return_value=sectors_df),
+            patch("src.domains.strategy.signals.sector.load_index_data", side_effect=Exception("error")),
         ):
             with pytest.raises(ValueError, match="セクターデータが取得できません"):
                 get_sector_correlation_matrix("test")

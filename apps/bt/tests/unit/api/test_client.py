@@ -8,8 +8,8 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from src.api.client import BaseAPIClient
-from src.api.exceptions import (
+from src.infrastructure.external_api.client import BaseAPIClient
+from src.infrastructure.external_api.exceptions import (
     APIConnectionError,
     APIError,
     APINotFoundError,
@@ -190,7 +190,7 @@ class TestBaseAPIClient:
         )
 
     @patch("httpx.Client")
-    @patch("src.api.client.get_correlation_id", return_value="cid-123")
+    @patch("src.infrastructure.external_api.client.get_correlation_id", return_value="cid-123")
     def test_request_propagates_correlation_id_header(
         self,
         _mock_get_correlation_id: MagicMock,

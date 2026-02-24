@@ -1,0 +1,24 @@
+{
+  "include": [
+    "apps/bt/src"
+  ],
+  "exclude": [
+    "**/__pycache__"
+  ],
+  "pythonVersion": "3.12",
+  "executionEnvironments": [
+    {
+      "root": "apps/bt"
+    }
+  ],
+  "reportMissingImports": true,
+  "reportMissingTypeStubs": false,
+  "reportAttributeAccessIssue": false,
+  "reportCallIssue": false,
+  "reportOptionalMemberAccess": false,
+  "reportPossiblyUnboundVariable": true,
+  "reportUnusedImport": "error",
+  "reportUnusedClass": "error",
+  "reportUnusedFunction": "error",
+  "reportUnusedVariable": "error"
+}

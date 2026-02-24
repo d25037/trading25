@@ -1,12 +1,12 @@
 ---
 id: bt-031
 title: "apps/bt/src 再編: 機能境界ベースのパッケージ構造へ移行"
-status: open
+status: done
 priority: medium
 labels: [architecture, refactor, bt]
 project: bt
 created: 2026-02-23
-updated: 2026-02-23
+updated: 2026-02-24
 depends_on: []
 blocks: []
 parent: null
@@ -95,11 +95,11 @@ parent: null
 - 代表ユースケース（backtest, optimize, screening）で回帰確認。
 
 ## 受け入れ条件
-- [ ] `src` のトップレベルが「責務名ベース」の固定セットに収束している。
-- [ ] 新規開発者向けに「どこに何を書くか」ガイドが docs に追加されている。
-- [ ] API/CLI の既存挙動が E2E / integration テストで維持される。
-- [ ] import 循環が現状より減少（またはゼロ維持）している。
-- [ ] OpenAPI 契約と `contracts/` の整合が CI で確認できる。
+- [x] `src` のトップレベルが「責務名ベース」の固定セットに収束している。
+- [x] 新規開発者向けに「どこに何を書くか」ガイドが docs に追加されている。
+- [x] API/CLI の既存挙動が E2E / integration テストで維持される。
+- [x] import 循環が現状より減少（またはゼロ維持）している。
+- [x] OpenAPI 契約と `contracts/` の整合が CI で確認できる。
 
 ## リスクと対策
 - **リスク**: 大規模移動で差分レビューが困難。
@@ -111,3 +111,11 @@ parent: null
 
 ## 備考
 - 本Issueは「全面書き換え」ではなく、**互換性を維持した漸進リファクタリング**を目的とする。
+
+## 結果
+- `apps/bt/src` を `entrypoints / application / domains / infrastructure / shared` の5層へ全面移行し、旧トップレベル境界（`server`, `cli_bt`, `lib`, `api`, `data`, `backtest`, `strategy_config` など）を削除。
+- 互換 shim は導入せず、リポジトリ内 import を新パスへ一括更新。
+- アーキテクチャガードレールとして `tests/unit/architecture/test_layer_boundaries.py` と `tests/unit/architecture/test_legacy_imports_removed.py` を追加。
+- OpenAPI 出力の historical key 整合（`DateRange` / `IndexMatch` / `OHLCVRecord`）を `entrypoints/http/openapi_config.py` で安定化し、baseline 差分 0 を再現可能に修正。
+- `bt` CLI エントリポイント、`/doc` 表示、3002表記、strategy default config path 解決を新構成に合わせて更新。
+- 検証: `uv run --project apps/bt pytest apps/bt/tests -q`（3605 passed）, `uv run --project apps/bt pyright apps/bt/src`（0 errors/0 warnings）, OpenAPI baseline diff 0 を確認。

@@ -7,13 +7,13 @@ import pandas as pd
 import numpy as np
 from unittest.mock import patch, MagicMock
 
-from src.data import (
+from src.infrastructure.data_access.loaders import (
     load_stock_data,
     load_multiple_stocks,
-    create_relative_ohlc_data,
     get_available_stocks,
     prepare_data,
 )
+from src.domains.strategy.transforms import create_relative_ohlc_data
 
 
 @pytest.fixture
@@ -35,7 +35,7 @@ def sample_daily_data():
 class TestLoadStockData:
     """load_stock_data関数のテストクラス"""
 
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_load_stock_data_success(self, mock_client_class):
         """データ読み込み成功のテスト"""
         # モックデータ作成（VectorBT形式：DatetimeIndex + OHLCV列）
@@ -66,7 +66,7 @@ class TestLoadStockData:
         assert isinstance(result.index, pd.DatetimeIndex)
         mock_client.get_stock_ohlcv.assert_called_once_with("1234", None, None, "daily")
 
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_load_stock_data_empty_result(self, mock_client_class):
         """空のデータの場合のテスト"""
         # 空のDataFrameを返すモック
@@ -78,7 +78,7 @@ class TestLoadStockData:
         with pytest.raises(ValueError, match="No data found for stock code"):
             load_stock_data("test.db", "NONEXISTENT")
 
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_load_stock_data_with_date_range(self, mock_client_class):
         """日付範囲指定のテスト"""
         dates = pd.to_datetime(["2023-01-01", "2023-01-02"])
@@ -109,7 +109,7 @@ class TestLoadStockData:
 class TestMultipleStocks:
     """複数銘柄読み込みのテストクラス"""
 
-    @patch("src.data.loaders.multi_asset_loaders.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_stock_data")
     def test_load_multiple_stocks_success(self, mock_load_stock):
         """複数銘柄読み込み成功のテスト"""
         # モックデータ作成
@@ -138,8 +138,8 @@ class TestMultipleStocks:
         assert "5678" in result.columns
         assert len(result) == 5
 
-    @patch("src.data.loaders.multi_asset_loaders.load_stock_data")
-    @patch("src.data.loaders.multi_asset_loaders.logger")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.logger")
     def test_load_multiple_stocks_with_errors(self, mock_logger, mock_load_stock):
         """一部銘柄でエラーが発生する場合のテスト"""
 
@@ -196,7 +196,7 @@ class TestRelativeStrength:
 class TestGetAvailableStocks:
     """利用可能銘柄取得のテストクラス"""
 
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_get_available_stocks(self, mock_client_class):
         """利用可能銘柄取得のテスト"""
         mock_df = pd.DataFrame(
@@ -225,7 +225,7 @@ class TestGetAvailableStocks:
 class TestPrepareData:
     """データ準備関数のテストクラス"""
 
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_prepare_data_basic(self, mock_load_stock):
         """基本的なデータ準備のテスト"""
         # モックデータ作成（十分な期間）

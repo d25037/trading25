@@ -5,7 +5,7 @@ Backtest manifest tests
 import json
 from pathlib import Path
 
-from src.backtest.runner import BacktestRunner
+from src.domains.backtest.core.runner import BacktestRunner
 
 
 def test_write_manifest_creates_file(tmp_path: Path):

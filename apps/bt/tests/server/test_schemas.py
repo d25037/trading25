@@ -1,15 +1,15 @@
 """server/schemas/ のテスト"""
 
 
-from src.server.schemas.backtest import (
+from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
     BacktestResultSummary,
     HtmlFileInfo,
     HtmlFileRenameRequest,
     JobStatus,
 )
-from src.server.schemas.common import SSEJobEvent
-from src.server.schemas.optimize import (
+from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.entrypoints.http.schemas.optimize import (
     OptimizationRequest,
 )
 

@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
+from src.entrypoints.http.app import create_app
 
 # Hono baseline に存在する 10 operation tags
 HONO_OPERATION_TAGS = {
@@ -62,6 +62,48 @@ class TestOpenAPISchema:
         tag_names = {t["name"] for t in self.schema.get("tags", [])}
         missing = HONO_OPERATION_TAGS - tag_names
         assert not missing, f"Missing tags: {missing}"
+
+    def test_ohlcv_refs_are_stable_and_legacy_compatible(self) -> None:
+        """OHLCV系の $ref が baseline 互換キーへ固定されること"""
+        schemas = self.schema.get("components", {}).get("schemas", {})
+
+        ohlcv_resample = schemas.get("OHLCVResampleResponse", {})
+        resample_ref = (
+            ohlcv_resample.get("properties", {})
+            .get("data", {})
+            .get("items", {})
+            .get("$ref")
+        )
+        assert resample_ref == "#/components/schemas/src__server__schemas__indicators__OHLCVRecord"
+
+        path_single_ref = (
+            self.schema.get("paths", {})
+            .get("/api/dataset/{name}/stocks/{code}/ohlcv", {})
+            .get("get", {})
+            .get("responses", {})
+            .get("200", {})
+            .get("content", {})
+            .get("application/json", {})
+            .get("schema", {})
+            .get("items", {})
+            .get("$ref")
+        )
+        assert path_single_ref == "#/components/schemas/OHLCVRecord"
+
+        path_batch_ref = (
+            self.schema.get("paths", {})
+            .get("/api/dataset/{name}/stocks/ohlcv/batch", {})
+            .get("get", {})
+            .get("responses", {})
+            .get("200", {})
+            .get("content", {})
+            .get("application/json", {})
+            .get("schema", {})
+            .get("additionalProperties", {})
+            .get("items", {})
+            .get("$ref")
+        )
+        assert path_batch_ref == "#/components/schemas/OHLCVRecord"
 
 
 class TestErrorResponseSchema:

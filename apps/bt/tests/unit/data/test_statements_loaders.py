@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 from unittest.mock import patch, MagicMock
 
-from src.data.loaders.statements_loaders import (
+from src.infrastructure.data_access.loaders.statements_loaders import (
     load_statements_data,
     transform_statements_df,
 )
@@ -37,8 +37,8 @@ class TestLoadStatementsDataPeriodType:
             }
         ).set_index("disclosedDate")
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_period_type_fy_calls_api_with_fy(
         self, mock_extract, mock_client_class
     ):
@@ -71,8 +71,8 @@ class TestLoadStatementsDataPeriodType:
         # FYのEPS=200が適用されていることを確認
         assert result.loc["2024-04-28", "EPS"] == 200.0
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_period_type_all_calls_api_with_all(
         self, mock_extract, mock_client_class
     ):
@@ -101,8 +101,8 @@ class TestLoadStatementsDataPeriodType:
         # 3Q（2024-01-15以降）のEPS=100が適用されていることを確認
         assert result.loc["2024-01-15", "EPS"] == 100.0
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_period_type_default_is_fy(self, mock_extract, mock_client_class):
         """デフォルトのperiod_typeがFYであることを確認"""
         mock_extract.return_value = "test_dataset"
@@ -130,8 +130,8 @@ class TestLoadStatementsDataPeriodType:
         )
         assert result is not None
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_period_type_2q_calls_api_with_2q(
         self, mock_extract, mock_client_class
     ):
@@ -172,8 +172,8 @@ class TestLoadStatementsDataPeriodType:
         # 2Q（2024-02-15以降）のEPS=120が適用されていることを確認
         assert result.loc["2024-02-15", "EPS"] == 120.0
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_actual_only_default_is_true(self, mock_extract, mock_client_class):
         """デフォルトでactual_only=Trueであることを確認"""
         mock_extract.return_value = "test_dataset"
@@ -198,8 +198,8 @@ class TestLoadStatementsDataPeriodType:
             "7203", None, None, period_type="FY", actual_only=True
         )
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_actual_only_can_be_disabled(self, mock_extract, mock_client_class):
         """actual_only=Falseを指定できることを確認"""
         mock_extract.return_value = "test_dataset"
@@ -225,8 +225,8 @@ class TestLoadStatementsDataPeriodType:
             "7203", None, None, period_type="FY", actual_only=False
         )
 
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_include_forecast_revision_merges_quarterly_forecast(
         self, mock_extract, mock_client_class
     ):
@@ -277,9 +277,9 @@ class TestLoadStatementsDataPeriodType:
         # 分母はFY実績EPSを維持
         assert result.loc["2024-07-30", "ForwardBaseEPS"] == 80.0
 
-    @patch("src.data.loaders.statements_loaders.logger")
-    @patch("src.data.loaders.statements_loaders.DatasetAPIClient")
-    @patch("src.data.loaders.statements_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.logger")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
     def test_include_forecast_revision_fallback_on_revision_error(
         self, mock_extract, mock_client_class, mock_logger
     ):

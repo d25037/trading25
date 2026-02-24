@@ -5,7 +5,7 @@
 import numpy as np
 import pandas as pd
 
-from src.strategies.signals.breakout import period_breakout_signal
+from src.domains.strategy.signals.breakout import period_breakout_signal
 
 
 class TestPeriodBreakoutSignal:

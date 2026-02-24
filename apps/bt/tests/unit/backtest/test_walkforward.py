@@ -5,8 +5,8 @@ Walk-forward tests
 import pandas as pd
 import pytest
 
-from src.backtest.runner import BacktestRunner
-from src.backtest.walkforward import generate_walkforward_splits
+from src.domains.backtest.core.runner import BacktestRunner
+from src.domains.backtest.core.walkforward import generate_walkforward_splits
 
 
 def test_negative_step_raises():
@@ -49,10 +49,10 @@ def test_run_walk_forward_collects_metrics(monkeypatch):
         return {"kelly_portfolio": _FakePortfolio()}
 
     monkeypatch.setattr(
-        "src.data.loaders.stock_loaders.load_stock_data", _fake_load_stock_data
+        "src.infrastructure.data_access.loaders.stock_loaders.load_stock_data", _fake_load_stock_data
     )
     monkeypatch.setattr(
-        "src.strategies.core.factory.StrategyFactory.execute_strategy_with_config",
+        "src.domains.strategy.core.factory.StrategyFactory.execute_strategy_with_config",
         _fake_execute_strategy_with_config,
     )
 

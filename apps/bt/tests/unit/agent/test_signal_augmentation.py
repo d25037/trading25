@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import random
 
-from src.agent.models import StrategyCandidate
-from src.agent.signal_augmentation import (
+from src.domains.lab_agent.models import StrategyCandidate
+from src.domains.lab_agent.signal_augmentation import (
     _apply_random_add_side,
     _is_enabled_signal_params,
     _is_fundamental_only,
@@ -16,9 +16,9 @@ from src.agent.signal_augmentation import (
     _enable_fundamental_children,
     apply_random_add_structure,
 )
-from src.agent.signal_catalog import SIGNAL_CONSTRAINTS_MAP
-from src.agent.signal_param_factory import build_signal_params
-from src.agent.signal_search_space import PARAM_RANGES
+from src.domains.lab_agent.signal_catalog import SIGNAL_CONSTRAINTS_MAP
+from src.domains.lab_agent.signal_param_factory import build_signal_params
+from src.domains.lab_agent.signal_search_space import PARAM_RANGES
 
 
 class DeterministicRng:

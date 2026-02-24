@@ -9,8 +9,8 @@ from pathlib import Path
 import pytest
 from sqlalchemy import text
 
-from src.lib.market_db.market_db import MarketDb
-from src.lib.market_db.tables import market_meta
+from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.tables import market_meta
 
 
 @pytest.fixture()
@@ -446,7 +446,7 @@ class TestMarketDbReadOnly:
         def _raise_os_error(_path: str) -> int:
             raise OSError("stat failed")
 
-        monkeypatch.setattr("src.lib.market_db.market_db.os.path.getsize", _raise_os_error)
+        monkeypatch.setattr("src.infrastructure.db.market.market_db.os.path.getsize", _raise_os_error)
         assert market_db.get_db_file_size() == 0
 
 

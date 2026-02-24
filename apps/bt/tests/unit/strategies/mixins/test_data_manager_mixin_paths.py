@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 import pytest
 
-from src.strategies.core.mixins.data_manager_mixin import DataManagerMixin
+from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
 
 
 def _ohlcv_df(start: str = "2020-01-01", periods: int = 4) -> pd.DataFrame:
@@ -58,7 +58,7 @@ class TestDataManagerMixinPaths:
             return _ohlcv_df()[["Open", "High", "Low", "Close"]]
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.load_topix_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.load_topix_data",
             fake_load_topix,
         )
 
@@ -75,7 +75,7 @@ class TestDataManagerMixinPaths:
             raise RuntimeError("load fail")
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.load_topix_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.load_topix_data",
             raise_error,
         )
 
@@ -106,7 +106,7 @@ class TestDataManagerMixinPaths:
             return out
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.create_relative_ohlc_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.create_relative_ohlc_data",
             fake_relative,
         )
 
@@ -145,7 +145,7 @@ class TestDataManagerMixinPaths:
             return {"1111": {"daily": _ohlcv_df()}}
 
         monkeypatch.setattr(
-            "src.strategies.core.mixins.data_manager_mixin.prepare_multi_data",
+            "src.domains.strategy.core.mixins.data_manager_mixin.prepare_multi_data",
             fake_prepare_multi_data,
         )
 

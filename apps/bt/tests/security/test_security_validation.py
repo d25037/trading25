@@ -10,8 +10,8 @@ import pytest
 from pathlib import Path
 from unittest.mock import patch
 
-from src.strategy_config.loader import ConfigLoader
-from src.utils.logger_config import sanitize_sensitive_info
+from src.domains.strategy.runtime.loader import ConfigLoader
+from src.shared.utils.logger_config import sanitize_sensitive_info
 
 
 class TestPathTraversalSecurity:
@@ -25,7 +25,7 @@ class TestPathTraversalSecurity:
         with patch("pathlib.Path.exists", return_value=True):
             with patch("builtins.open", create=True):
                 with patch(
-                    "src.lib.strategy_runtime.file_operations.YAML"
+                    "src.domains.strategy.runtime.file_operations.YAML"
                 ) as mock_yaml_class:
                     mock_yaml_instance = mock_yaml_class.return_value
                     mock_yaml_instance.load.return_value = {"strategy_params": {"name": "test"}}

@@ -9,8 +9,8 @@ from unittest.mock import AsyncMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
-from src.server.schemas.jquants import (
+from src.entrypoints.http.app import create_app
+from src.entrypoints.http.schemas.jquants import (
     ApiIndicesResponse,
     ApiListedInfoResponse,
     ApiMarginInterestResponse,

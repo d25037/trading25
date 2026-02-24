@@ -4,14 +4,14 @@ Tests for SignalParams dynamic builder
 
 from loguru import logger
 
-from src.models.signals import (
+from src.shared.models.signals import (
     SignalParams,
     PeriodBreakoutParams,
     VolumeSignalParams,
     CrossoverSignalParams,
     FundamentalSignalParams,
 )
-from src.optimization.param_builder import (
+from src.domains.optimization.param_builder import (
     build_signal_params,
     _unflatten_params,
     _deep_merge,

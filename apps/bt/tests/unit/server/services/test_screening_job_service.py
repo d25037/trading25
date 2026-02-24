@@ -9,9 +9,9 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from src.server.schemas.backtest import JobStatus
-from src.server.schemas.screening_job import ScreeningJobRequest
-from src.server.services.screening_job_service import ScreeningJobService
+from src.entrypoints.http.schemas.backtest import JobStatus
+from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
+from src.application.services.screening_job_service import ScreeningJobService
 
 
 @pytest.mark.asyncio
@@ -76,7 +76,7 @@ async def test_run_job_releases_slot_after_success(monkeypatch: pytest.MonkeyPat
             return _DummyResponse()
 
     monkeypatch.setattr(
-        "src.server.services.screening_job_service.ScreeningService",
+        "src.application.services.screening_job_service.ScreeningService",
         _DummyScreeningService,
     )
 

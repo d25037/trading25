@@ -12,11 +12,11 @@ from pathlib import Path
 
 import pytest
 
-from src.lib.market_db.market_reader import MarketDbReader
-from src.models.config import SharedConfig
-from src.models.signals import SignalParams
-from src.paths.resolver import StrategyMetadata
-from src.server.services.screening_service import (
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams
+from src.shared.paths.resolver import StrategyMetadata
+from src.application.services.screening_service import (
     RequestCacheStats,
     ScreeningService,
     StockUniverseItem,

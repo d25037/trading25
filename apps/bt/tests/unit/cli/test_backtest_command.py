@@ -1,4 +1,4 @@
-"""Unit tests for src.cli_bt.backtest."""
+"""Unit tests for src.entrypoints.cli.backtest."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from pathlib import Path
 
 import pytest
 
-from src.cli_bt import backtest as backtest_module
-from src.data.access.mode import DATA_ACCESS_MODE_ENV
+from src.entrypoints.cli import backtest as backtest_module
+from src.infrastructure.data_access.mode import DATA_ACCESS_MODE_ENV
 
 
 class _NoOpLive:
@@ -75,7 +75,7 @@ def test_run_backtest_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
     )
     monkeypatch.setitem(
         sys.modules,
-        "src.lib.backtest_core.marimo_executor",
+        "src.domains.backtest.core.marimo_executor",
         types.SimpleNamespace(MarimoExecutor=_FakeMarimoExecutor),
     )
 
@@ -112,7 +112,7 @@ def test_run_backtest_execution_error(monkeypatch: pytest.MonkeyPatch, tmp_path:
     monkeypatch.setattr(backtest_module.console, "print", lambda *args, **kwargs: None)  # noqa: ARG005
     monkeypatch.setitem(
         sys.modules,
-        "src.lib.backtest_core.marimo_executor",
+        "src.domains.backtest.core.marimo_executor",
         types.SimpleNamespace(MarimoExecutor=_FakeMarimoExecutor),
     )
 

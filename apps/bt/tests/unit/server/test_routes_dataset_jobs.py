@@ -9,10 +9,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
-from src.server.schemas.job import JobStatus
-from src.server.services.dataset_builder_service import DatasetJobData, DatasetResult
-from src.server.services.generic_job_manager import JobInfo
+from src.entrypoints.http.app import create_app
+from src.entrypoints.http.schemas.job import JobStatus
+from src.application.services.dataset_builder_service import DatasetJobData, DatasetResult
+from src.application.services.generic_job_manager import JobInfo
 
 
 @pytest.fixture
@@ -61,7 +61,7 @@ def test_create_dataset_success(client: TestClient) -> None:
     mock_job = MagicMock()
     mock_job.job_id = "test-job-id"
 
-    with patch("src.server.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
+    with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = mock_job
         resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
 
@@ -77,7 +77,7 @@ def test_create_dataset_conflict(client: TestClient) -> None:
     resolver = client.app.state.dataset_resolver  # type: ignore[union-attr]
     resolver.get_db_path.return_value = "/nonexistent/test.db"
 
-    with patch("src.server.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
+    with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = None
         resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
 
@@ -106,7 +106,7 @@ def test_resume_dataset_success(client: TestClient) -> None:
         mock_job = MagicMock()
         mock_job.job_id = "resume-job-id"
 
-        with patch("src.server.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
+        with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
             mock_start.return_value = mock_job
             resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
 
@@ -130,7 +130,7 @@ def test_get_job_pending(client: TestClient) -> None:
     job_data = DatasetJobData(name="test", preset="quickTesting")
     job = JobInfo(job_id="test-123", status=JobStatus.PENDING, data=job_data)
 
-    with patch("src.server.routes.dataset.dataset_job_manager") as mock_mgr:
+    with patch("src.entrypoints.http.routes.dataset.dataset_job_manager") as mock_mgr:
         mock_mgr.get_job.return_value = job
         resp = client.get("/api/dataset/jobs/test-123")
 
@@ -157,7 +157,7 @@ def test_get_job_completed(client: TestClient) -> None:
         completed_at=datetime(2024, 1, 1, tzinfo=UTC),
     )
 
-    with patch("src.server.routes.dataset.dataset_job_manager") as mock_mgr:
+    with patch("src.entrypoints.http.routes.dataset.dataset_job_manager") as mock_mgr:
         mock_mgr.get_job.return_value = job
         resp = client.get("/api/dataset/jobs/test-456")
 
@@ -180,7 +180,7 @@ def test_cancel_job_not_cancellable(client: TestClient) -> None:
     job_data = DatasetJobData(name="test", preset="quickTesting")
     job = JobInfo(job_id="test-789", status=JobStatus.COMPLETED, data=job_data)
 
-    with patch("src.server.routes.dataset.dataset_job_manager") as mock_mgr:
+    with patch("src.entrypoints.http.routes.dataset.dataset_job_manager") as mock_mgr:
         mock_mgr.get_job.return_value = job
         resp = client.delete("/api/dataset/jobs/test-789")
 
@@ -192,7 +192,7 @@ def test_cancel_job_success(client: TestClient) -> None:
     job_data = DatasetJobData(name="test", preset="quickTesting")
     job = JobInfo(job_id="test-cancel", status=JobStatus.RUNNING, data=job_data)
 
-    with patch("src.server.routes.dataset.dataset_job_manager") as mock_mgr:
+    with patch("src.entrypoints.http.routes.dataset.dataset_job_manager") as mock_mgr:
         mock_mgr.get_job.return_value = job
         mock_mgr.cancel_job = AsyncMock()
         resp = client.delete("/api/dataset/jobs/test-cancel")

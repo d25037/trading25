@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.server.services.stock_data_row_builder import build_stock_data_row
+from src.application.services.stock_data_row_builder import build_stock_data_row
 
 
 def test_build_stock_data_row_with_raw_fields() -> None:

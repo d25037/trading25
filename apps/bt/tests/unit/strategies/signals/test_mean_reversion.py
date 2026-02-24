@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.mean_reversion import (
+from src.domains.strategy.signals.mean_reversion import (
     deviation_signal,
     price_recovery_signal,
     mean_reversion_entry_signal,

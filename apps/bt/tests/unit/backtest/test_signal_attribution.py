@@ -7,7 +7,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from src.lib.backtest_core.signal_attribution import (
+from src.domains.backtest.core.signal_attribution import (
     AttributionMetrics,
     SignalAttributionAnalyzer,
     SignalAttributionCancelled,
@@ -19,7 +19,7 @@ from src.lib.backtest_core.signal_attribution import (
     _iter_enabled_signals,
     _safe_metric,
 )
-from src.strategies.signals.registry import SIGNAL_REGISTRY
+from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 
 
 def _make_parameters(
@@ -423,7 +423,7 @@ def test_evaluate_falls_back_to_default_function(monkeypatch: Any) -> None:
         return AttributionMetrics(total_return=1.0, sharpe_ratio=2.0), StrategyRuntimeCache()
 
     monkeypatch.setattr(
-        "src.lib.backtest_core.signal_attribution._evaluate_parameters",
+        "src.domains.backtest.core.signal_attribution._evaluate_parameters",
         _fake_eval,
     )
 
@@ -473,7 +473,7 @@ def test_evaluate_parameters_applies_cache_and_extracts_metrics(monkeypatch: Any
 
     fake_strategy = _FakeStrategy()
     monkeypatch.setattr(
-        "src.lib.backtest_core.signal_attribution._create_strategy_from_parameters",
+        "src.domains.backtest.core.signal_attribution._create_strategy_from_parameters",
         lambda _p: (fake_strategy, _FakeSharedConfig()),
     )
 

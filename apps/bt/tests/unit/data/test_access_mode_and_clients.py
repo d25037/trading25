@@ -1,4 +1,4 @@
-"""Unit tests for src.data.access.mode and src.data.access.clients."""
+"""Unit tests for src.infrastructure.data_access.mode and src.infrastructure.data_access.clients."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any, Generator
 import pandas as pd
 import pytest
 
-from src.data.access import clients, mode
+from src.infrastructure.data_access import clients, mode
 
 
 @pytest.fixture(autouse=True)

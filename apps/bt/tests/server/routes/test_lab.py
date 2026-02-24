@@ -10,8 +10,8 @@ import pytest
 from fastapi.testclient import TestClient
 from pydantic import ValidationError
 
-from src.server.app import app
-from src.server.schemas.lab import (
+from src.entrypoints.http.app import app
+from src.entrypoints.http.schemas.lab import (
     LabEvolveRequest,
     LabEvolveResult,
     LabGenerateRequest,
@@ -26,7 +26,7 @@ from src.server.schemas.lab import (
     OptimizeTrialItem,
     ImprovementItem,
 )
-from src.server.services.job_manager import JobManager, job_manager
+from src.application.services.job_manager import JobManager, job_manager
 
 
 @pytest.fixture
@@ -635,7 +635,7 @@ class TestLabSubmitEndpoints:
         """generate サブミットが成功する"""
         job_id = job_manager.create_job("generate(n=50,top=5)", job_type="lab_generate")
         with patch(
-            "src.server.routes.lab.lab_service.submit_generate",
+            "src.entrypoints.http.routes.lab.lab_service.submit_generate",
             new_callable=AsyncMock,
             return_value=job_id,
         ) as mock_submit:
@@ -667,7 +667,7 @@ class TestLabSubmitEndpoints:
         """evolve サブミットが成功する"""
         job_id = job_manager.create_job("test_strategy", job_type="lab_evolve")
         with patch(
-            "src.server.routes.lab.lab_service.submit_evolve",
+            "src.entrypoints.http.routes.lab.lab_service.submit_evolve",
             new_callable=AsyncMock,
             return_value=job_id,
         ) as mock_submit:
@@ -708,7 +708,7 @@ class TestLabSubmitEndpoints:
         """optimize サブミットが成功する"""
         job_id = job_manager.create_job("test_strategy", job_type="lab_optimize")
         with patch(
-            "src.server.routes.lab.lab_service.submit_optimize",
+            "src.entrypoints.http.routes.lab.lab_service.submit_optimize",
             new_callable=AsyncMock,
             return_value=job_id,
         ) as mock_submit:
@@ -749,7 +749,7 @@ class TestLabSubmitEndpoints:
         """improve サブミットが成功する"""
         job_id = job_manager.create_job("test_strategy", job_type="lab_improve")
         with patch(
-            "src.server.routes.lab.lab_service.submit_improve",
+            "src.entrypoints.http.routes.lab.lab_service.submit_improve",
             new_callable=AsyncMock,
             return_value=job_id,
         ) as mock_submit:
@@ -775,7 +775,7 @@ class TestLabSubmitEndpoints:
     def test_submit_generate_error(self, client: TestClient) -> None:
         """generate サブミットが例外で500を返す"""
         with patch(
-            "src.server.routes.lab.lab_service.submit_generate",
+            "src.entrypoints.http.routes.lab.lab_service.submit_generate",
             new_callable=AsyncMock,
             side_effect=RuntimeError("テストエラー"),
         ):
@@ -789,7 +789,7 @@ class TestLabSubmitEndpoints:
     def test_submit_evolve_error(self, client: TestClient) -> None:
         """evolve サブミットが例外で500を返す"""
         with patch(
-            "src.server.routes.lab.lab_service.submit_evolve",
+            "src.entrypoints.http.routes.lab.lab_service.submit_evolve",
             new_callable=AsyncMock,
             side_effect=RuntimeError("evolveエラー"),
         ):
@@ -802,7 +802,7 @@ class TestLabSubmitEndpoints:
     def test_submit_optimize_error(self, client: TestClient) -> None:
         """optimize サブミットが例外で500を返す"""
         with patch(
-            "src.server.routes.lab.lab_service.submit_optimize",
+            "src.entrypoints.http.routes.lab.lab_service.submit_optimize",
             new_callable=AsyncMock,
             side_effect=RuntimeError("optimizeエラー"),
         ):
@@ -815,7 +815,7 @@ class TestLabSubmitEndpoints:
     def test_submit_improve_error(self, client: TestClient) -> None:
         """improve サブミットが例外で500を返す"""
         with patch(
-            "src.server.routes.lab.lab_service.submit_improve",
+            "src.entrypoints.http.routes.lab.lab_service.submit_improve",
             new_callable=AsyncMock,
             side_effect=RuntimeError("improveエラー"),
         ):
@@ -834,7 +834,7 @@ class TestLabEdgeCases:
         job_id = job_manager.create_job("test", job_type="lab_generate")
         job = job_manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         job.status = JobStatus.COMPLETED
         job.completed_at = job.created_at
@@ -895,7 +895,7 @@ class TestLabServiceUnit:
 
     def test_service_initialization(self) -> None:
         """サービスが初期化できる"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
         assert service._executor is not None
@@ -904,7 +904,7 @@ class TestLabServiceUnit:
 
     def test_service_custom_manager(self) -> None:
         """カスタムManagerでサービスを初期化できる"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -918,7 +918,7 @@ class TestLabServiceAsync:
 
     async def test_submit_generate_creates_job(self) -> None:
         """submit_generateがジョブを作成する"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -933,7 +933,7 @@ class TestLabServiceAsync:
 
     async def test_submit_evolve_creates_job(self) -> None:
         """submit_evolveがジョブを作成する"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -948,7 +948,7 @@ class TestLabServiceAsync:
 
     async def test_submit_optimize_creates_job(self) -> None:
         """submit_optimizeがジョブを作成する"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -964,7 +964,7 @@ class TestLabServiceAsync:
 
     async def test_submit_improve_creates_job(self) -> None:
         """submit_improveがジョブを作成する"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -986,7 +986,7 @@ class TestLabServiceAsync:
         side_effect: type[BaseException] | Exception | None = None,
     ) -> tuple["LabService", str]:  # type: ignore[name-defined]  # noqa: F821
         """_run_job テストの共通ヘルパー"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1030,7 +1030,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result == mock_result
@@ -1055,7 +1055,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result == mock_result
@@ -1063,7 +1063,7 @@ class TestLabServiceAsync:
 
     async def test_run_optimize_success(self) -> None:
         """_run_optimizeが成功時にCOMPLETEDになる"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1097,14 +1097,14 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         service._executor.shutdown(wait=False)
 
     async def test_run_job_uses_result_message_override(self) -> None:
         """_run_jobは結果の内部メッセージで完了メッセージを上書きできる"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1135,7 +1135,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert (
@@ -1150,7 +1150,7 @@ class TestLabServiceAsync:
         """_run_jobでget_jobがNoneでも完了できる"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1179,7 +1179,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result is None
@@ -1187,7 +1187,7 @@ class TestLabServiceAsync:
 
     async def test_run_optimize_success_without_job_record_for_raw_result(self) -> None:
         """_run_optimizeでget_jobがNoneでも完了できる"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1224,7 +1224,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         assert job.raw_result is None
@@ -1250,7 +1250,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.COMPLETED
         service._executor.shutdown(wait=False)
@@ -1266,7 +1266,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.FAILED
         assert job.error == "テストエラー"
@@ -1283,14 +1283,14 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.FAILED
         service._executor.shutdown(wait=False)
 
     async def test_run_optimize_failure(self) -> None:
         """_run_optimizeが例外時にFAILEDになる"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1317,7 +1317,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.FAILED
         service._executor.shutdown(wait=False)
@@ -1333,7 +1333,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.FAILED
         service._executor.shutdown(wait=False)
@@ -1351,7 +1351,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1369,7 +1369,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1378,7 +1378,7 @@ class TestLabServiceAsync:
         """_run_optimizeがキャンセル時にCANCELLEDになる"""
         import asyncio
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
@@ -1405,7 +1405,7 @@ class TestLabServiceAsync:
 
         job = manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1423,7 +1423,7 @@ class TestLabServiceAsync:
         )
         job = service._manager.get_job(job_id)
         assert job is not None
-        from src.server.schemas.backtest import JobStatus
+        from src.entrypoints.http.schemas.backtest import JobStatus
 
         assert job.status == JobStatus.CANCELLED
         service._executor.shutdown(wait=False)
@@ -1436,7 +1436,7 @@ class TestLabServiceSyncMethods:
         """_execute_generate_syncが結果dictを返す"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1458,13 +1458,13 @@ class TestLabServiceSyncMethods:
 
         with (
             patch(
-                "src.agent.strategy_generator.StrategyGenerator"
+                "src.domains.lab_agent.strategy_generator.StrategyGenerator"
             ) as MockGen,
             patch(
-                "src.agent.evaluator.StrategyEvaluator"
+                "src.domains.lab_agent.evaluator.StrategyEvaluator"
             ) as MockEval,
             patch(
-                "src.agent.yaml_updater.YamlUpdater"
+                "src.domains.lab_agent.yaml_updater.YamlUpdater"
             ) as MockYaml,
         ):
             MockGen.return_value.generate.return_value = [mock_candidate]
@@ -1487,7 +1487,7 @@ class TestLabServiceSyncMethods:
         """_execute_generate_syncでsave=Falseの場合"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1508,8 +1508,8 @@ class TestLabServiceSyncMethods:
         mock_result.success = True
 
         with (
-            patch("src.agent.strategy_generator.StrategyGenerator") as MockGen,
-            patch("src.agent.evaluator.StrategyEvaluator") as MockEval,
+            patch("src.domains.lab_agent.strategy_generator.StrategyGenerator") as MockGen,
+            patch("src.domains.lab_agent.evaluator.StrategyEvaluator") as MockEval,
         ):
             MockGen.return_value.generate.return_value = [mock_candidate]
             MockEval.return_value.evaluate_batch.return_value = [mock_result]
@@ -1524,13 +1524,13 @@ class TestLabServiceSyncMethods:
 
     def test_execute_generate_sync_with_constraints(self) -> None:
         """_execute_generate_syncで制約がGeneratorConfigに渡る"""
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
         with (
-            patch("src.agent.strategy_generator.StrategyGenerator") as MockGen,
-            patch("src.agent.evaluator.StrategyEvaluator") as MockEval,
+            patch("src.domains.lab_agent.strategy_generator.StrategyGenerator") as MockGen,
+            patch("src.domains.lab_agent.evaluator.StrategyEvaluator") as MockEval,
         ):
             MockGen.return_value.generate.return_value = []
             MockEval.return_value.evaluate_batch.return_value = []
@@ -1560,7 +1560,7 @@ class TestLabServiceSyncMethods:
         """_execute_evolve_syncが結果dictを返す"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1573,8 +1573,8 @@ class TestLabServiceSyncMethods:
         ]
 
         with (
-            patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver,
-            patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+            patch("src.domains.lab_agent.parameter_evolver.ParameterEvolver") as MockEvolver,
+            patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
         ):
             MockEvolver.return_value.evolve.return_value = (mock_candidate, [])
             MockEvolver.return_value.get_evolution_history.return_value = mock_history
@@ -1610,14 +1610,14 @@ class TestLabServiceSyncMethods:
         """_execute_evolve_syncでベース戦略が最良なら専用メッセージを返す"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
         mock_candidate = MagicMock()
         mock_candidate.strategy_id = "base_test_strat"
 
-        with patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver:
+        with patch("src.domains.lab_agent.parameter_evolver.ParameterEvolver") as MockEvolver:
             MockEvolver.return_value.evolve.return_value = (mock_candidate, [])
             MockEvolver.return_value.get_evolution_history.return_value = [
                 {
@@ -1649,14 +1649,14 @@ class TestLabServiceSyncMethods:
         """_execute_evolve_syncでsave=Falseの場合"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
         mock_candidate = MagicMock()
         mock_candidate.strategy_id = "evo-002"
 
-        with patch("src.agent.parameter_evolver.ParameterEvolver") as MockEvolver:
+        with patch("src.domains.lab_agent.parameter_evolver.ParameterEvolver") as MockEvolver:
             MockEvolver.return_value.evolve.return_value = (mock_candidate, [])
             MockEvolver.return_value.get_evolution_history.return_value = []
 
@@ -1679,7 +1679,7 @@ class TestLabServiceSyncMethods:
         """_execute_optimize_syncが結果dictを返す"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1696,8 +1696,8 @@ class TestLabServiceSyncMethods:
         ]
 
         with (
-            patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOpt,
-            patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+            patch("src.domains.lab_agent.optuna_optimizer.OptunaOptimizer") as MockOpt,
+            patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
         ):
             MockOpt.return_value.optimize.return_value = (mock_candidate, mock_study)
             MockOpt.return_value.get_optimization_history.return_value = mock_history
@@ -1733,7 +1733,7 @@ class TestLabServiceSyncMethods:
         """_execute_optimize_syncでbest_trialなし/save=Falseの分岐を通す"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1743,7 +1743,7 @@ class TestLabServiceSyncMethods:
         mock_study.best_value = 9.9
         mock_study.trials = []
 
-        with patch("src.agent.optuna_optimizer.OptunaOptimizer") as MockOpt:
+        with patch("src.domains.lab_agent.optuna_optimizer.OptunaOptimizer") as MockOpt:
             MockOpt.return_value.optimize.return_value = (mock_candidate, mock_study)
             MockOpt.return_value.get_optimization_history.return_value = []
 
@@ -1772,7 +1772,7 @@ class TestLabServiceSyncMethods:
         """_execute_improve_syncが結果dictを返す"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1790,9 +1790,9 @@ class TestLabServiceSyncMethods:
         mock_improvement.expected_impact = "DD改善"
 
         with (
-            patch("src.agent.strategy_improver.StrategyImprover") as MockImprover,
-            patch("src.lib.strategy_runtime.loader.ConfigLoader") as MockLoader,
-            patch("src.agent.yaml_updater.YamlUpdater") as MockYaml,
+            patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as MockImprover,
+            patch("src.domains.strategy.runtime.loader.ConfigLoader") as MockLoader,
+            patch("src.domains.lab_agent.yaml_updater.YamlUpdater") as MockYaml,
         ):
             MockImprover.return_value.analyze.return_value = mock_report
             MockLoader.return_value.load_strategy_config.return_value = {}
@@ -1811,7 +1811,7 @@ class TestLabServiceSyncMethods:
         """_execute_improve_syncでauto_apply=Falseの場合"""
         from unittest.mock import MagicMock
 
-        from src.server.services.lab_service import LabService
+        from src.application.services.lab_service import LabService
 
         service = LabService(max_workers=1)
 
@@ -1821,8 +1821,8 @@ class TestLabServiceSyncMethods:
         mock_report.suggested_improvements = []
 
         with (
-            patch("src.agent.strategy_improver.StrategyImprover") as MockImprover,
-            patch("src.lib.strategy_runtime.loader.ConfigLoader") as MockLoader,
+            patch("src.domains.lab_agent.strategy_improver.StrategyImprover") as MockImprover,
+            patch("src.domains.strategy.runtime.loader.ConfigLoader") as MockLoader,
         ):
             MockImprover.return_value.analyze.return_value = mock_report
             MockLoader.return_value.load_strategy_config.return_value = {}

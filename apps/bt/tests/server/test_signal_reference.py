@@ -7,7 +7,7 @@ from typing import Literal, Optional
 import yaml
 from pydantic import BaseModel, Field
 
-from src.server.services.signal_reference_service import (
+from src.application.services.signal_reference_service import (
     build_signal_reference,
     _get_param_model,
     _extract_fields,
@@ -17,7 +17,7 @@ from src.server.services.signal_reference_service import (
     _unwrap_optional,
     CATEGORY_LABELS,
 )
-from src.strategies.signals.registry import SIGNAL_REGISTRY
+from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 
 
 class TestBuildSignalReference:

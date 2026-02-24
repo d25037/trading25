@@ -75,7 +75,7 @@ def _render_router_reference(app_path: Path) -> str:
     lines = [
         "# FastAPI Router Wiring",
         "",
-        "Generated from `apps/bt/src/server/app.py`. Do not edit manually.",
+        "Generated from `apps/bt/src/entrypoints/http/app.py`. Do not edit manually.",
         "",
         f"Total include_router calls: **{len(includes)}**",
         "",
@@ -97,8 +97,8 @@ def _extract_commands(path: Path, decorator: str, prefix: str) -> list[str]:
 
 
 def _render_cli_reference(repo_root: Path) -> str:
-    bt_main = repo_root / "apps/bt/src/cli_bt/__init__.py"
-    bt_lab = repo_root / "apps/bt/src/cli_bt/lab.py"
+    bt_main = repo_root / "apps/bt/src/entrypoints/cli/__init__.py"
+    bt_lab = repo_root / "apps/bt/src/entrypoints/cli/lab.py"
 
     commands = []
     commands.extend(_extract_commands(bt_main, "app", "bt"))
@@ -121,8 +121,8 @@ def _render_cli_reference(repo_root: Path) -> str:
         [
             "## Source Files",
             "",
-            "- `apps/bt/src/cli_bt/__init__.py`",
-            "- `apps/bt/src/cli_bt/lab.py`",
+            "- `apps/bt/src/entrypoints/cli/__init__.py`",
+            "- `apps/bt/src/entrypoints/cli/lab.py`",
             "",
         ]
     )
@@ -138,7 +138,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parents[2]
 
     openapi_json = repo_root / "apps/ts/packages/shared/openapi/bt-openapi.json"
-    fastapi_app = repo_root / "apps/bt/src/server/app.py"
+    fastapi_app = repo_root / "apps/bt/src/entrypoints/http/app.py"
 
     targets = {
         repo_root / ".codex/skills/ts-api-endpoints/references/openapi-paths.md": _render_openapi_reference(openapi_json),

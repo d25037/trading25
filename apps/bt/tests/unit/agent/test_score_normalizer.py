@@ -2,8 +2,8 @@
 
 import pytest
 
-from src.agent.evaluator.score_normalizer import normalize_scores, normalize_value
-from src.agent.models import EvaluationResult, StrategyCandidate
+from src.domains.lab_agent.evaluator.score_normalizer import normalize_scores, normalize_value
+from src.domains.lab_agent.models import EvaluationResult, StrategyCandidate
 
 
 def _make_candidate(sid="test"):

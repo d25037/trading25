@@ -4,7 +4,7 @@ DataCache のユニットテスト
 
 import pandas as pd
 
-from src.data.loaders.cache import DataCache
+from src.infrastructure.data_access.loaders.cache import DataCache
 
 
 class TestDataCache:

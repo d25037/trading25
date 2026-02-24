@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from src.data.metrics_extractor import (
+from src.domains.backtest.metrics_extractor import (
     BacktestMetrics,
     extract_metrics_from_html,
 )

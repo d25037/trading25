@@ -7,7 +7,7 @@ from unittest.mock import patch
 import pytest
 from fastapi import HTTPException
 
-from src.server.routes.attribution_file_utils import (
+from src.entrypoints.http.routes.attribution_file_utils import (
     list_attribution_files_in_dir,
     parse_attribution_filename,
     read_attribution_file,

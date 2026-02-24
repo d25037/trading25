@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.server.services.indicator_service import (
+from src.application.services.indicator_service import (
     IndicatorService,
     calculate_relative_ohlcv,
     compute_margin_volume_ratio,

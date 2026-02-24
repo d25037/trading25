@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from src.paths import (
+from src.shared.paths import (
     get_data_dir,
     get_strategies_dir,
     get_backtest_results_dir,
@@ -182,7 +182,7 @@ class TestResolveStrategyName:
 
     def test_simple_name(self, tmp_path: Path):
         """単純な戦略名の解決"""
-        from src.paths.resolver import _resolve_strategy_name
+        from src.shared.paths.resolver import _resolve_strategy_name
 
         base = tmp_path / "strategies" / "production"
         yaml_file = base / "my_strategy.yaml"
@@ -190,7 +190,7 @@ class TestResolveStrategyName:
 
     def test_nested_name(self, tmp_path: Path):
         """ネストされた戦略名の解決"""
-        from src.paths.resolver import _resolve_strategy_name
+        from src.shared.paths.resolver import _resolve_strategy_name
 
         base = tmp_path / "strategies" / "experimental"
         yaml_file = base / "auto" / "evolved_v1.yaml"
@@ -198,7 +198,7 @@ class TestResolveStrategyName:
 
     def test_unrelated_path_fallback(self, tmp_path: Path):
         """relative_to失敗時のフォールバック"""
-        from src.paths.resolver import _resolve_strategy_name
+        from src.shared.paths.resolver import _resolve_strategy_name
 
         base = tmp_path / "strategies" / "production"
         unrelated = Path("/completely/different/path/strat.yaml")
@@ -210,7 +210,7 @@ class TestCollectStrategyNames:
 
     def test_collect_from_directory(self, tmp_path: Path):
         """ディレクトリからの戦略名収集"""
-        from src.paths.resolver import _collect_strategy_names
+        from src.shared.paths.resolver import _collect_strategy_names
 
         cat_dir = tmp_path / "production"
         cat_dir.mkdir()
@@ -222,14 +222,14 @@ class TestCollectStrategyNames:
 
     def test_collect_from_nonexistent_directory(self, tmp_path: Path):
         """存在しないディレクトリからの収集は空リスト"""
-        from src.paths.resolver import _collect_strategy_names
+        from src.shared.paths.resolver import _collect_strategy_names
 
         result = _collect_strategy_names(tmp_path / "nonexistent", "production")
         assert result == []
 
     def test_collect_nested_subdirectories(self, tmp_path: Path):
         """サブディレクトリ内のYAMLも収集"""
-        from src.paths.resolver import _collect_strategy_names
+        from src.shared.paths.resolver import _collect_strategy_names
 
         cat_dir = tmp_path / "experimental"
         (cat_dir / "auto").mkdir(parents=True)
@@ -246,7 +246,7 @@ class TestMergeInto:
 
     def test_merge_new_category(self):
         """新規カテゴリのマージ"""
-        from src.paths.resolver import _merge_into
+        from src.shared.paths.resolver import _merge_into
 
         cat: dict[str, list[str]] = {}
         _merge_into(cat, "prod", ["prod/a", "prod/b"])
@@ -254,7 +254,7 @@ class TestMergeInto:
 
     def test_merge_existing_category_deduplicates(self):
         """既存カテゴリへのマージで重複除去"""
-        from src.paths.resolver import _merge_into
+        from src.shared.paths.resolver import _merge_into
 
         cat: dict[str, list[str]] = {"prod": ["prod/a", "prod/b"]}
         _merge_into(cat, "prod", ["prod/b", "prod/c"])
@@ -262,7 +262,7 @@ class TestMergeInto:
 
     def test_merge_empty_list_noop(self):
         """空リストのマージは何も変更しない"""
-        from src.paths.resolver import _merge_into
+        from src.shared.paths.resolver import _merge_into
 
         cat: dict[str, list[str]] = {"prod": ["prod/a"]}
         _merge_into(cat, "prod", [])
@@ -274,7 +274,7 @@ class TestGetCategorizedStrategies:
 
     def test_with_tmp_project_dir(self, tmp_path: Path):
         """一時ディレクトリでのカテゴリ別取得"""
-        from src.paths.resolver import get_categorized_strategies
+        from src.shared.paths.resolver import get_categorized_strategies
 
         strategies_dir = tmp_path / "strategies"
         prod_dir = strategies_dir / "production"
@@ -289,7 +289,7 @@ class TestGetCategorizedStrategies:
 
     def test_empty_project_dir(self, tmp_path: Path):
         """空ディレクトリでは外部カテゴリのみ返す可能性"""
-        from src.paths.resolver import get_categorized_strategies
+        from src.shared.paths.resolver import get_categorized_strategies
 
         strategies_dir = tmp_path / "strategies"
         strategies_dir.mkdir()
@@ -299,7 +299,7 @@ class TestGetCategorizedStrategies:
 
     def test_nonexistent_project_dir(self, tmp_path: Path):
         """存在しないディレクトリでもエラーにならない"""
-        from src.paths.resolver import get_categorized_strategies
+        from src.shared.paths.resolver import get_categorized_strategies
 
         result = get_categorized_strategies(
             project_strategies_dir=tmp_path / "nonexistent"
@@ -308,7 +308,7 @@ class TestGetCategorizedStrategies:
 
     def test_root_level_strategies(self, tmp_path: Path):
         """ルート直下のYAMLファイルがrootカテゴリとして取得される"""
-        from src.paths.resolver import get_categorized_strategies
+        from src.shared.paths.resolver import get_categorized_strategies
 
         strategies_dir = tmp_path / "strategies"
         strategies_dir.mkdir()
@@ -324,7 +324,7 @@ class TestGetStrategyMetadataList:
 
     def test_metadata_from_project_dir(self, tmp_path: Path):
         """プロジェクトディレクトリからのメタデータ取得"""
-        from src.paths.resolver import StrategyMetadata, get_strategy_metadata_list
+        from src.shared.paths.resolver import StrategyMetadata, get_strategy_metadata_list
 
         strategies_dir = tmp_path / "strategies"
         prod_dir = strategies_dir / "production"
@@ -342,7 +342,7 @@ class TestGetStrategyMetadataList:
 
     def test_metadata_empty_dir(self, tmp_path: Path):
         """空ディレクトリからのメタデータ取得"""
-        from src.paths.resolver import get_strategy_metadata_list
+        from src.shared.paths.resolver import get_strategy_metadata_list
 
         strategies_dir = tmp_path / "strategies"
         strategies_dir.mkdir()
@@ -353,7 +353,7 @@ class TestGetStrategyMetadataList:
 
     def test_metadata_nonexistent_dir(self, tmp_path: Path):
         """存在しないディレクトリからのメタデータ取得"""
-        from src.paths.resolver import get_strategy_metadata_list
+        from src.shared.paths.resolver import get_strategy_metadata_list
 
         result = get_strategy_metadata_list(
             project_strategies_dir=tmp_path / "nonexistent", include_external=False
@@ -362,7 +362,7 @@ class TestGetStrategyMetadataList:
 
     def test_metadata_deduplicates(self, tmp_path: Path):
         """重複パスが除外される"""
-        from src.paths.resolver import get_strategy_metadata_list
+        from src.shared.paths.resolver import get_strategy_metadata_list
 
         strategies_dir = tmp_path / "strategies"
         prod_dir = strategies_dir / "production"

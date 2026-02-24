@@ -4,7 +4,7 @@ import pandas as pd
 import pytest
 from pydantic import ValidationError
 
-from src.models.signals.base import (
+from src.shared.models.signals.base import (
     BaseSignalParams,
     Signals,
     _validate_condition_above_below,

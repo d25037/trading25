@@ -7,8 +7,8 @@ SharedConfig + SignalParams（統一Signalsシステム）対応
 import pytest
 from pydantic import ValidationError
 
-from src.models.config import SharedConfig
-from src.models.signals import (
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import (
     SignalParams,
     VolumeSignalParams,
     CrossoverSignalParams,

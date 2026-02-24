@@ -28,7 +28,7 @@ class TestExportOpenApi(unittest.TestCase):
     def test_build_openapi_schema_uses_create_app(self) -> None:
         module = _load_module()
 
-        fake_app_module = types.ModuleType("src.server.app")
+        fake_app_module = types.ModuleType("src.entrypoints.http.app")
 
         class _FakeApp:
             def openapi(self) -> dict[str, str]:
@@ -36,7 +36,7 @@ class TestExportOpenApi(unittest.TestCase):
 
         fake_app_module.create_app = lambda: _FakeApp()
 
-        with patch.dict(sys.modules, {"src.server.app": fake_app_module}):
+        with patch.dict(sys.modules, {"src.entrypoints.http.app": fake_app_module}):
             schema = module.build_openapi_schema()
 
         self.assertEqual(schema, {"openapi": "3.1.0"})

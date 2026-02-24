@@ -7,9 +7,9 @@ YamlConfigurableStrategy + YAML設定 + SignalParams（統一Signalsシステム
 import pandas as pd
 import pytest
 
-from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
-from src.models.config import SharedConfig
-from src.models.signals import SignalParams
+from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams
 
 
 class TestMACDStrategy:
@@ -149,7 +149,7 @@ class TestMACDStrategy:
 
         # 異常なパラメータ（Pydanticバリデーション）
         with pytest.raises(ValueError):
-            from src.models.signals import CrossoverSignalParams
+            from src.shared.models.signals import CrossoverSignalParams
 
             CrossoverSignalParams(fast_period=26, slow_period=12)  # fast >= slowは無効
 

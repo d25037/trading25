@@ -8,8 +8,8 @@ from unittest.mock import patch
 
 import pytest
 
-from src.api.exceptions import APIConnectionError, APINotFoundError, APITimeoutError
-from src.api.jquants_client import JQuantsAPIClient, JQuantsStatement, StockInfo
+from src.infrastructure.external_api.exceptions import APIConnectionError, APINotFoundError, APITimeoutError
+from src.infrastructure.external_api.jquants_client import JQuantsAPIClient, JQuantsStatement, StockInfo
 
 
 class TestJQuantsStatementModel:
@@ -208,7 +208,7 @@ class TestJQuantsAPIClientInit:
 
     def test_inheritance(self):
         """BaseAPIClientを継承している"""
-        from src.api.client import BaseAPIClient
+        from src.infrastructure.external_api.client import BaseAPIClient
 
         client = JQuantsAPIClient()
         assert isinstance(client, BaseAPIClient)

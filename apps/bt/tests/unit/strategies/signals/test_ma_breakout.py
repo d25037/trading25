@@ -5,7 +5,7 @@
 import numpy as np
 import pandas as pd
 
-from src.strategies.signals.breakout import ma_breakout_signal
+from src.domains.strategy.signals.breakout import ma_breakout_signal
 
 
 class TestMABreakoutSignal:
@@ -271,8 +271,8 @@ class TestMABreakoutWithSignalProcessor:
 
     def test_ma_breakout_via_processor(self):
         """SignalProcessor経由のMA breakoutシグナル"""
-        from src.models.signals import MABreakoutParams, SignalParams
-        from src.strategies.signals.processor import SignalProcessor
+        from src.shared.models.signals import MABreakoutParams, SignalParams
+        from src.domains.strategy.signals.processor import SignalProcessor
 
         dates = pd.date_range("2024-01-01", periods=100)
         np.random.seed(42)

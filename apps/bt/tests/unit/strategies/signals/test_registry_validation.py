@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import pytest
 
-from src.strategies.signals.registry import SIGNAL_REGISTRY, SignalDefinition, _validate_registry
+from src.domains.strategy.signals.registry import SIGNAL_REGISTRY, SignalDefinition, _validate_registry
 
 
 class TestRegistryParamKeyUniqueness:
@@ -50,7 +50,7 @@ class TestRegistryParamKeyUniqueness:
         ]
 
         with patch(
-            "src.strategies.signals.registry.SIGNAL_REGISTRY", duplicate_registry
+            "src.domains.strategy.signals.registry.SIGNAL_REGISTRY", duplicate_registry
         ):
             with pytest.raises(ValueError, match="Duplicate param_key.*duplicate_key"):
                 _validate_registry()

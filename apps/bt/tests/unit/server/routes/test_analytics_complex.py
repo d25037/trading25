@@ -11,9 +11,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
-from src.server.schemas.backtest import JobStatus
-from src.server.schemas.screening_job import ScreeningJobRequest
+from src.entrypoints.http.app import create_app
+from src.entrypoints.http.schemas.backtest import JobStatus
+from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 
 
 def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
@@ -143,7 +143,7 @@ def analytics_client(analytics_db_path, monkeypatch):
     monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
     monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
-    from src.config.settings import reload_settings
+    from src.shared.config.settings import reload_settings
     reload_settings()
     app = create_app()
     with TestClient(app) as client:
@@ -290,8 +290,8 @@ class TestScreening:
 
     def test_create_job_202(self, analytics_client):
         with (
-            patch("src.server.routes.analytics_complex.screening_job_service") as mock_service,
-            patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager,
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
         ):
             mock_service.submit_screening = AsyncMock(return_value="job-1")
             mock_service.get_job_request.return_value = ScreeningJobRequest()
@@ -315,8 +315,8 @@ class TestScreening:
 
     def test_get_job_status(self, analytics_client):
         with (
-            patch("src.server.routes.analytics_complex.screening_job_service") as mock_service,
-            patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager,
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
         ):
             mock_service.get_job_request.return_value = ScreeningJobRequest(
                 markets="prime,standard",
@@ -336,7 +336,7 @@ class TestScreening:
         assert data["markets"] == "prime,standard"
 
     def test_cancel_job_conflict_for_completed(self, analytics_client):
-        with patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager:
+        with patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager:
             mock_manager.get_job.return_value = self._make_job("job-3", JobStatus.COMPLETED)
             mock_manager.cancel_job = AsyncMock(return_value=None)
 
@@ -366,7 +366,7 @@ class TestScreening:
             }
         }
 
-        with patch("src.server.routes.analytics_complex.screening_job_manager") as mock_manager:
+        with patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager:
             mock_manager.get_job.return_value = self._make_job(
                 "job-4",
                 JobStatus.COMPLETED,
@@ -390,7 +390,7 @@ class TestScreening:
 
 class TestAnalyticsRouteErrorMapping:
     def test_ranking_maps_value_error_to_422(self, analytics_client, monkeypatch):
-        from src.server.services.ranking_service import RankingService
+        from src.application.services.ranking_service import RankingService
 
         def _raise_value_error(self, **_kwargs):  # noqa: ANN001
             raise ValueError("invalid ranking params")
@@ -401,7 +401,7 @@ class TestAnalyticsRouteErrorMapping:
         assert "invalid ranking params" in str(resp.json())
 
     def test_ranking_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
-        from src.server.services.ranking_service import RankingService
+        from src.application.services.ranking_service import RankingService
 
         def _raise_runtime_error(self, **_kwargs):  # noqa: ANN001
             raise RuntimeError("ranking boom")
@@ -412,7 +412,7 @@ class TestAnalyticsRouteErrorMapping:
         assert "Failed to get rankings" in str(resp.json())
 
     def test_factor_regression_maps_insufficient_to_422(self, analytics_client, monkeypatch):
-        from src.server.services.factor_regression_service import FactorRegressionService
+        from src.application.services.factor_regression_service import FactorRegressionService
 
         def _raise_value_error(self, symbol, lookback_days):  # noqa: ANN001
             raise ValueError("insufficient history")
@@ -422,7 +422,7 @@ class TestAnalyticsRouteErrorMapping:
         assert resp.status_code == 422
 
     def test_factor_regression_maps_other_value_error_to_400(self, analytics_client, monkeypatch):
-        from src.server.services.factor_regression_service import FactorRegressionService
+        from src.application.services.factor_regression_service import FactorRegressionService
 
         def _raise_value_error(self, symbol, lookback_days):  # noqa: ANN001
             raise ValueError("bad input")
@@ -432,7 +432,7 @@ class TestAnalyticsRouteErrorMapping:
         assert resp.status_code == 400
 
     def test_factor_regression_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
-        from src.server.services.factor_regression_service import FactorRegressionService
+        from src.application.services.factor_regression_service import FactorRegressionService
 
         def _raise_runtime_error(self, symbol, lookback_days):  # noqa: ANN001
             raise RuntimeError("factor boom")
@@ -443,7 +443,7 @@ class TestAnalyticsRouteErrorMapping:
         assert "Failed to analyze" in str(resp.json())
 
     def test_screening_job_submit_maps_value_error_to_422(self, analytics_client, monkeypatch):
-        from src.server.services.screening_job_service import ScreeningJobService
+        from src.application.services.screening_job_service import ScreeningJobService
 
         async def _raise_value_error(self, reader, request):  # noqa: ANN001
             raise ValueError("invalid strategy")
@@ -454,7 +454,7 @@ class TestAnalyticsRouteErrorMapping:
         assert "invalid strategy" in str(resp.json())
 
     def test_screening_job_submit_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
-        from src.server.services.screening_job_service import ScreeningJobService
+        from src.application.services.screening_job_service import ScreeningJobService
 
         async def _raise_runtime_error(self, reader, request):  # noqa: ANN001
             raise RuntimeError("screening boom")
@@ -485,8 +485,8 @@ class TestAnalyticsRouteErrorMapping:
         analytics_db_path,
         monkeypatch,
     ):
-        from src.config.settings import reload_settings
-        from src.server.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
+        from src.shared.config.settings import reload_settings
+        from src.application.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
 
         monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
         monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")

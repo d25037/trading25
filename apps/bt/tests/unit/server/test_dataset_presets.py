@@ -1,6 +1,6 @@
 """Tests for dataset_presets module."""
 
-from src.server.services.dataset_presets import PRESETS, PresetConfig, get_preset, list_presets
+from src.application.services.dataset_presets import PRESETS, PresetConfig, get_preset, list_presets
 
 
 def test_presets_count() -> None:

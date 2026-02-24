@@ -9,9 +9,9 @@ import pandas as pd
 import numpy as np
 from pydantic import ValidationError
 
-from src.strategies.signals.trading_value_range import trading_value_range_signal
-from src.models.signals import TradingValueRangeSignalParams, SignalParams
-from src.strategies.signals.processor import SignalProcessor
+from src.domains.strategy.signals.trading_value_range import trading_value_range_signal
+from src.shared.models.signals import TradingValueRangeSignalParams, SignalParams
+from src.domains.strategy.signals.processor import SignalProcessor
 
 
 class TestTradingValueRangeSignal:

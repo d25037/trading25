@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
+from src.entrypoints.http.app import create_app
 
 ALLOWED_ORIGINS = [
     "http://localhost:5173",

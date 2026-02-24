@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from src.server.schemas.job import JobStatus
-from src.server.services.generic_job_manager import GenericJobManager
+from src.entrypoints.http.schemas.job import JobStatus
+from src.application.services.generic_job_manager import GenericJobManager
 
 
 @pytest.fixture

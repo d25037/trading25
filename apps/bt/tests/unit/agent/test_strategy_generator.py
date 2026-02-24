@@ -2,8 +2,8 @@
 StrategyGenerator のユニットテスト
 """
 
-from src.agent.models import GeneratorConfig, StrategyCandidate
-from src.agent.strategy_generator import (
+from src.domains.lab_agent.models import GeneratorConfig, StrategyCandidate
+from src.domains.lab_agent.strategy_generator import (
     AVAILABLE_SIGNALS,
     SIGNAL_CONSTRAINTS_MAP,
     StrategyGenerator,
@@ -176,7 +176,7 @@ class TestStrategyGenerator:
 
     def test_generate_parameters_within_valid_ranges(self):
         """生成されたパラメータが有効範囲内であることを確認"""
-        from src.agent.parameter_evolver import ParameterEvolver
+        from src.domains.lab_agent.parameter_evolver import ParameterEvolver
 
         config = GeneratorConfig(n_strategies=10, seed=42)
         generator = StrategyGenerator(config=config)

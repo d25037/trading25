@@ -8,7 +8,7 @@ import pytest
 import httpx
 import respx
 
-from src.server.clients.jquants_client import JQuantsApiError, JQuantsAsyncClient
+from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError, JQuantsAsyncClient
 
 
 @pytest.fixture

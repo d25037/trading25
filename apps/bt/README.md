@@ -88,5 +88,6 @@ uv run pytest tests
 ## Documentation
 
 - `AGENTS.md` - 運用ルールと責務
+- `../../docs/bt-src-layering-guide.md` - `src` 5層構成の配置ルール
 - `docs/` - 戦略・コマンド・仕様メモ
 - `docs/vectorbt/` - VectorBT リファレンス

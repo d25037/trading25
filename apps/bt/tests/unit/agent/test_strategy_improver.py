@@ -4,8 +4,8 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 
-from src.agent.models import Improvement, WeaknessReport
-from src.agent.strategy_improver import StrategyImprover
+from src.domains.lab_agent.models import Improvement, WeaknessReport
+from src.domains.lab_agent.strategy_improver import StrategyImprover
 
 
 # ===== Helpers =====

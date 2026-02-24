@@ -8,7 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from src.optimization.notebook_generator import (
+from src.domains.optimization.notebook_generator import (
     _save_results_as_json,
     generate_optimization_notebook,
 )
@@ -170,7 +170,7 @@ class TestSaveResultsAsJson:
 class TestNotebookGeneratorMarimo:
     """Notebook生成機能のテスト（Marimo実行方式）"""
 
-    @patch("src.lib.backtest_core.marimo_executor.MarimoExecutor")
+    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
     def test_generate_notebook_with_marimo_mock(
         self,
         mock_executor_class,
@@ -220,8 +220,8 @@ class TestNotebookGeneratorMarimo:
         # 戻り値確認
         assert result_path == str(output_path)
 
-    @patch("src.lib.backtest_core.marimo_executor.MarimoExecutor")
-    @patch("src.optimization.notebook_generator.os.remove")
+    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
+    @patch("src.domains.optimization.notebook_generator.os.remove")
     def test_json_file_creation_marimo(
         self,
         mock_remove,
@@ -262,7 +262,7 @@ class TestNotebookGeneratorMarimo:
         assert len(loaded_data) == 3
         assert loaded_data[0]["score"] == 0.85
 
-    @patch("src.lib.backtest_core.marimo_executor.MarimoExecutor")
+    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
     def test_parameter_passing_marimo(
         self,
         mock_executor_class,
@@ -298,7 +298,7 @@ class TestNotebookGeneratorMarimo:
         assert params["scoring_weights"] == sample_scoring_weights
         assert "results_json_path" in params
 
-    @patch("src.lib.backtest_core.marimo_executor.MarimoExecutor")
+    @patch("src.domains.backtest.core.marimo_executor.MarimoExecutor")
     def test_error_handling_marimo(
         self,
         mock_executor_class,

@@ -4,9 +4,9 @@ from unittest.mock import MagicMock
 
 import pandas as pd
 
-from src.optimization.engine import ParameterOptimizationEngine
-from src.optimization.metrics import collect_metrics
-from src.models.signals import SignalParams
+from src.domains.optimization.engine import ParameterOptimizationEngine
+from src.domains.optimization.metrics import collect_metrics
+from src.shared.models.signals import SignalParams
 
 
 def _make_scoring_weights() -> dict[str, float]:

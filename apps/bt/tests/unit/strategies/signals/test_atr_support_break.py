@@ -5,7 +5,7 @@ ATRサポートブレイクシグナル ユニットテスト
 import numpy as np
 import pandas as pd
 
-from src.strategies.signals.breakout import atr_support_break_signal
+from src.domains.strategy.signals.breakout import atr_support_break_signal
 
 
 class TestATRSupportBreakSignal:

@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.strategies.signals.sector_strength import (
+from src.domains.strategy.signals.sector_strength import (
     sector_rotation_phase_signal,
     sector_strength_ranking_signal,
     sector_volatility_regime_signal,
@@ -620,7 +620,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_strength_ranking_params_defaults(self):
         """SectorStrengthRankingParams デフォルト値テスト"""
-        from src.models.signals.sector import SectorStrengthRankingParams
+        from src.shared.models.signals.sector import SectorStrengthRankingParams
 
         params = SectorStrengthRankingParams()
         assert params.enabled is False
@@ -634,7 +634,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_strength_ranking_params_validation(self):
         """SectorStrengthRankingParams バリデーションテスト"""
-        from src.models.signals.sector import SectorStrengthRankingParams
+        from src.shared.models.signals.sector import SectorStrengthRankingParams
 
         with pytest.raises(Exception):
             SectorStrengthRankingParams(top_n=0)  # gt=0 違反
@@ -647,7 +647,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_strength_ranking_selection_mode_validation(self):
         """SectorStrengthRankingParams selection_mode バリデーションテスト"""
-        from src.models.signals.sector import SectorStrengthRankingParams
+        from src.shared.models.signals.sector import SectorStrengthRankingParams
 
         # 有効な値
         params_top = SectorStrengthRankingParams(selection_mode="top")
@@ -662,7 +662,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_rotation_phase_params_defaults(self):
         """SectorRotationPhaseParams デフォルト値テスト"""
-        from src.models.signals.sector import SectorRotationPhaseParams
+        from src.shared.models.signals.sector import SectorRotationPhaseParams
 
         params = SectorRotationPhaseParams()
         assert params.enabled is False
@@ -671,7 +671,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_rotation_phase_params_direction_validation(self):
         """SectorRotationPhaseParams direction バリデーションテスト"""
-        from src.models.signals.sector import SectorRotationPhaseParams
+        from src.shared.models.signals.sector import SectorRotationPhaseParams
 
         with pytest.raises(Exception):
             SectorRotationPhaseParams(direction="invalid")
@@ -682,7 +682,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_volatility_regime_params_defaults(self):
         """SectorVolatilityRegimeParams デフォルト値テスト"""
-        from src.models.signals.sector import SectorVolatilityRegimeParams
+        from src.shared.models.signals.sector import SectorVolatilityRegimeParams
 
         params = SectorVolatilityRegimeParams()
         assert params.enabled is False
@@ -693,7 +693,7 @@ class TestSectorSignalParamsValidation:
 
     def test_sector_volatility_regime_params_validation(self):
         """SectorVolatilityRegimeParams バリデーションテスト"""
-        from src.models.signals.sector import SectorVolatilityRegimeParams
+        from src.shared.models.signals.sector import SectorVolatilityRegimeParams
 
         with pytest.raises(Exception):
             SectorVolatilityRegimeParams(direction="invalid")
@@ -710,7 +710,7 @@ class TestSectorSignalCompositeIntegration:
 
     def test_signal_params_has_sector_fields(self):
         """SignalParams にセクターフィールドが存在するか"""
-        from src.models.signals import SignalParams
+        from src.shared.models.signals import SignalParams
 
         params = SignalParams()
         assert hasattr(params, "sector_strength_ranking")
@@ -719,7 +719,7 @@ class TestSectorSignalCompositeIntegration:
 
     def test_signal_params_sector_disabled_by_default(self):
         """セクターシグナルがデフォルトで無効"""
-        from src.models.signals import SignalParams
+        from src.shared.models.signals import SignalParams
 
         params = SignalParams()
         assert params.sector_strength_ranking.enabled is False
@@ -728,7 +728,7 @@ class TestSectorSignalCompositeIntegration:
 
     def test_signal_params_yaml_roundtrip(self):
         """YAML用のdictシリアライズ・デシリアライズ"""
-        from src.models.signals import SignalParams
+        from src.shared.models.signals import SignalParams
 
         params = SignalParams()
         params.sector_strength_ranking.enabled = True
@@ -747,7 +747,7 @@ class TestSectorSignalCompositeIntegration:
 
     def test_has_any_enabled_with_sector(self):
         """has_any_enabled() がセクターシグナルを検出"""
-        from src.models.signals import SignalParams
+        from src.shared.models.signals import SignalParams
 
         params = SignalParams()
         assert params.has_any_enabled() is False
@@ -761,7 +761,7 @@ class TestHasSectorDataChecker:
 
     def test_returns_false_when_no_sector_data(self):
         """sector_dataが空の場合はFalse"""
-        from src.strategies.signals.registry import _has_sector_data
+        from src.domains.strategy.signals.registry import _has_sector_data
 
         assert _has_sector_data({}) is False
         assert _has_sector_data({"sector_data": {}}) is False
@@ -769,14 +769,14 @@ class TestHasSectorDataChecker:
 
     def test_returns_false_when_no_stock_sector_name(self):
         """stock_sector_nameがない場合はFalse"""
-        from src.strategies.signals.registry import _has_sector_data
+        from src.domains.strategy.signals.registry import _has_sector_data
 
         d = {"sector_data": {"電気機器": pd.DataFrame()}, "stock_sector_name": ""}
         assert _has_sector_data(d) is False
 
     def test_returns_false_when_sector_not_in_data(self):
         """銘柄セクターがsector_dataに含まれない場合はFalse（warningログ）"""
-        from src.strategies.signals.registry import _has_sector_data
+        from src.domains.strategy.signals.registry import _has_sector_data
 
         d = {
             "sector_data": {"化学": pd.DataFrame(), "銀行業": pd.DataFrame()},
@@ -786,7 +786,7 @@ class TestHasSectorDataChecker:
 
     def test_returns_true_when_sector_present(self):
         """銘柄セクターがsector_dataに含まれる場合はTrue"""
-        from src.strategies.signals.registry import _has_sector_data
+        from src.domains.strategy.signals.registry import _has_sector_data
 
         d = {
             "sector_data": {"電気機器": pd.DataFrame(), "化学": pd.DataFrame()},

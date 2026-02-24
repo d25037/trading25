@@ -7,7 +7,7 @@ Basic integration tests for unified CLI system
 import pytest
 from typer.testing import CliRunner
 
-from src.cli_bt import app
+from src.entrypoints.cli import app
 
 runner = CliRunner()
 

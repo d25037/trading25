@@ -9,8 +9,8 @@ import pandas as pd
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from src.strategies.signals.processor import SignalProcessor
-from src.models.signals import SignalParams, Signals
+from src.domains.strategy.signals.processor import SignalProcessor
+from src.shared.models.signals import SignalParams, Signals
 
 
 class TestSignalProcessor:
@@ -135,7 +135,7 @@ class TestSignalProcessor:
         params.volume.direction = "surge"
 
         # モックでエラーを発生させる（データ駆動設計対応: registry経由のシグナル関数）
-        with patch("src.strategies.signals.volume.volume_signal") as mock_volume:
+        with patch("src.domains.strategy.signals.volume.volume_signal") as mock_volume:
             mock_volume.side_effect = Exception("テストエラー")
 
             # エラーが発生してもプロセシングが継続することを確認
@@ -192,7 +192,7 @@ class TestSignalProcessor:
         params.volume.enabled = True
         params.volume.direction = "surge"
 
-        with patch("src.strategies.signals.processor.logger") as mock_logger:
+        with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             self.processor.apply_signals(
                 base_signal=self.base_signal,
                 signal_type="entry",
@@ -258,8 +258,8 @@ class TestSignalProcessor:
         )
 
         with (
-            patch("src.strategies.signals.processor.SIGNAL_REGISTRY", [dummy_signal]),
-            patch("src.strategies.signals.processor.logger") as mock_logger,
+            patch("src.domains.strategy.signals.processor.SIGNAL_REGISTRY", [dummy_signal]),
+            patch("src.domains.strategy.signals.processor.logger") as mock_logger,
         ):
             self.processor.apply_signals(
                 base_signal=self.base_signal,
@@ -286,7 +286,7 @@ class TestSignalProcessor:
     def test_apply_signals_warns_when_volume_all_nan(self):
         data = self.test_data.copy()
         data["Volume"] = [float("nan")] * len(data)
-        with patch("src.strategies.signals.processor.logger") as mock_logger:
+        with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             result = self.processor.apply_signals(
                 base_signal=self.base_signal,
                 signal_type="entry",
@@ -357,7 +357,7 @@ class TestSignalProcessor:
         )
 
         signal_conditions = [self.base_signal]
-        with patch("src.strategies.signals.processor.logger") as mock_logger:
+        with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             self.processor._apply_unified_signal(  # noqa: SLF001
                 signal_def=dummy_signal,
                 signal_conditions=signal_conditions,
@@ -388,7 +388,7 @@ class TestSignalProcessor:
         )
 
         signal_conditions = [self.base_signal]
-        with patch("src.strategies.signals.processor.logger") as mock_logger:
+        with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             self.processor._apply_unified_signal(  # noqa: SLF001
                 signal_def=dummy_signal,
                 signal_conditions=signal_conditions,
@@ -461,7 +461,7 @@ class TestSignalProcessor:
         )
 
         signal_conditions = [self.base_signal]
-        with patch("src.strategies.signals.processor.logger") as mock_logger:
+        with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             self.processor._apply_unified_signal(  # noqa: SLF001
                 signal_def=value_error_signal,
                 signal_conditions=signal_conditions,
@@ -527,7 +527,7 @@ class TestSignalProcessor:
         )
 
         with patch(
-            "src.strategies.signals.processor.SIGNAL_REGISTRY",
+            "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
             [first_signal, second_signal],
         ):
             result = self.processor.apply_signals(

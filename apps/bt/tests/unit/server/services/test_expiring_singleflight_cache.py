@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.server.services.expiring_singleflight_cache import ExpiringSingleFlightCache
+from src.application.services.expiring_singleflight_cache import ExpiringSingleFlightCache
 
 
 @pytest.mark.asyncio

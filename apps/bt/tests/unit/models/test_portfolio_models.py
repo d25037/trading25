@@ -5,7 +5,7 @@ from datetime import date, datetime
 import pytest
 from pydantic import ValidationError
 
-from src.models.portfolio import Portfolio, PortfolioItem, PortfolioMetadata, PortfolioSummary
+from src.shared.models.portfolio import Portfolio, PortfolioItem, PortfolioMetadata, PortfolioSummary
 
 
 NOW = datetime(2025, 1, 1, 0, 0, 0)

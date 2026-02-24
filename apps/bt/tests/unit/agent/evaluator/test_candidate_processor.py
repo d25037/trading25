@@ -4,9 +4,9 @@ from contextlib import contextmanager
 
 import pandas as pd
 
-from src.agent.evaluator import candidate_processor
-from src.agent.evaluator.candidate_processor import _safe_float, evaluate_single_candidate
-from src.agent.models import StrategyCandidate
+from src.domains.lab_agent.evaluator import candidate_processor
+from src.domains.lab_agent.evaluator.candidate_processor import _safe_float, evaluate_single_candidate
+from src.domains.lab_agent.models import StrategyCandidate
 
 
 class TestSafeFloat:

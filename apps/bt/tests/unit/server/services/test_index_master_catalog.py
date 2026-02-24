@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.server.services.index_master_catalog import (
+from src.application.services.index_master_catalog import (
     _in_hex_range,
     _resolve_category,
     build_index_master_seed_rows,

@@ -3,8 +3,8 @@
 import json
 from pathlib import Path
 
-from src.server.schemas.backtest import BacktestResultSummary
-from src.server.services.backtest_result_summary import resolve_backtest_result_summary
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary
+from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 
 
 def test_resolve_backtest_result_summary_prefers_artifact_set(tmp_path: Path):

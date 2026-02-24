@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.analysis.portfolio_risk import (
+from src.domains.analytics.portfolio_risk import (
     analyze_portfolio_risk,
     calculate_correlation_matrix,
     calculate_cvar,

@@ -1,12 +1,12 @@
 """signal_catalog のユニットテスト。"""
 
-from src.agent.signal_catalog import (
+from src.domains.lab_agent.signal_catalog import (
     PARAM_RANGES,
     SIGNAL_CATEGORY_MAP,
     SIGNAL_CONSTRAINTS_MAP,
 )
-from src.models.signals import SignalParams
-from src.strategies.signals.registry import SIGNAL_REGISTRY
+from src.shared.models.signals import SignalParams
+from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 
 
 def test_registry_top_level_signals_are_covered_by_catalog() -> None:

@@ -3,7 +3,7 @@
 import pytest
 from pydantic import ValidationError
 
-from src.models.signals.breakout import (
+from src.shared.models.signals.breakout import (
     BreakoutSignalParams,
     BuyAndHoldSignalParams,
     CrossoverSignalParams,
@@ -12,23 +12,23 @@ from src.models.signals.breakout import (
     PeriodBreakoutParams,
     RiskAdjustedReturnSignalParams,
 )
-from src.models.signals.macro import (
+from src.shared.models.signals.macro import (
     BetaSignalParams,
     IndexDailyChangeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
 )
-from src.models.signals.oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
-from src.models.signals.sector import (
+from src.shared.models.signals.oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
+from src.shared.models.signals.sector import (
     SectorRotationPhaseParams,
     SectorStrengthRankingParams,
     SectorVolatilityRegimeParams,
 )
-from src.models.signals.volatility import (
+from src.shared.models.signals.volatility import (
     ATRSupportBreakParams,
     BollingerBandsSignalParams,
 )
-from src.models.signals.volume import (
+from src.shared.models.signals.volume import (
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
     VolumeSignalParams,

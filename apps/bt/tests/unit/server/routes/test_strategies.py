@@ -9,8 +9,8 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import src.server.routes.strategies as strategies_mod
-from src.server.routes.strategies import router
+import src.entrypoints.http.routes.strategies as strategies_mod
+from src.entrypoints.http.routes.strategies import router
 
 
 @pytest.fixture(autouse=True)
@@ -36,7 +36,7 @@ class TestGetStrategyDetail:
             "entry_filter_params": {"volume": {"enabled": True}},
             "shared_config": {"dataset": "test"},
         }
-        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {"status": "ok"}
             mock_runner_cls.return_value = mock_runner
@@ -56,7 +56,7 @@ class TestValidateStrategy:
         mock_config_loader.load_strategy_config.return_value = {
             "entry_filter_params": {"volume": {"enabled": True}},
         }
-        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner
@@ -67,7 +67,7 @@ class TestValidateStrategy:
 
     def test_missing_params_warning(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {}
-        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner
@@ -79,7 +79,7 @@ class TestValidateStrategy:
         mock_config_loader.load_strategy_config.return_value = {
             "shared_config": {"kelly_fraction": 5.0},
         }
-        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner
@@ -89,7 +89,7 @@ class TestValidateStrategy:
         assert any("kelly_fraction" in e for e in data["errors"])
 
     def test_strict_nested_typo(self, client, mock_config_loader):
-        with patch("src.lib.backtest_core.runner.BacktestRunner") as mock_runner_cls:
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
             mock_runner_cls.return_value = mock_runner
@@ -348,26 +348,26 @@ class TestDefaultConfig:
     def test_get_success(self, client, mock_config_loader, tmp_path):
         default_path = tmp_path / "default.yaml"
         default_path.write_text("default:\n  dataset: test\n", encoding="utf-8")
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = default_path
 
         resp = client.get("/api/config/default")
         assert resp.status_code == 200
         assert "default:" in resp.json()["content"]
 
     def test_get_not_found(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
         resp = client.get("/api/config/default")
         assert resp.status_code == 404
 
     def test_get_error_500(self, client, mock_config_loader):  # noqa: ARG002
-        mock_config_loader.config_dir = None
+        mock_config_loader.get_default_config_path.return_value = None
 
         resp = client.get("/api/config/default")
         assert resp.status_code == 500
 
     def test_update_success(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -379,7 +379,7 @@ class TestDefaultConfig:
         mock_config_loader.reload_default_config.assert_called_once()
 
     def test_update_yaml_syntax_error_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -388,7 +388,7 @@ class TestDefaultConfig:
         assert resp.status_code == 400
 
     def test_update_non_object_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -398,7 +398,7 @@ class TestDefaultConfig:
         assert "オブジェクト" in resp.json()["detail"]
 
     def test_update_missing_default_key_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -408,7 +408,7 @@ class TestDefaultConfig:
         assert "default" in resp.json()["detail"]
 
     def test_update_default_not_object_400(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path
+        mock_config_loader.get_default_config_path.return_value = tmp_path / "default.yaml"
 
         resp = client.put(
             "/api/config/default",
@@ -417,7 +417,9 @@ class TestDefaultConfig:
         assert resp.status_code == 400
 
     def test_update_write_error_500(self, client, mock_config_loader, tmp_path):
-        mock_config_loader.config_dir = tmp_path / "missing_parent"
+        mock_config_loader.get_default_config_path.return_value = (
+            tmp_path / "missing_parent" / "default.yaml"
+        )
 
         resp = client.put(
             "/api/config/default",

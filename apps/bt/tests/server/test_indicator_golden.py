@@ -27,7 +27,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from src.server.services.indicator_service import (
+from src.application.services.indicator_service import (
     INDICATOR_REGISTRY,
 )
 

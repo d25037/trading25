@@ -8,7 +8,7 @@ import sqlite3
 
 import pytest
 
-from src.lib.market_db.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 @pytest.fixture

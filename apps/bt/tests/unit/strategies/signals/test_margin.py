@@ -8,8 +8,8 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.margin import margin_balance_percentile_signal
-from src.models.signals import MarginSignalParams
+from src.domains.strategy.signals.margin import margin_balance_percentile_signal
+from src.shared.models.signals import MarginSignalParams
 
 
 class TestMarginBalancePercentileSignal:
@@ -163,8 +163,8 @@ class TestMarginSignalIntegration:
 
     def test_margin_signal_with_signal_processor(self):
         """SignalProcessorでマージンシグナルを使用"""
-        from src.strategies.signals.processor import SignalProcessor
-        from src.models.signals import SignalParams
+        from src.domains.strategy.signals.processor import SignalProcessor
+        from src.shared.models.signals import SignalParams
 
         dates = pd.date_range("2023-01-01", periods=200)
         ohlc_data = pd.DataFrame(

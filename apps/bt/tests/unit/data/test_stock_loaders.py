@@ -30,11 +30,11 @@ def _mock_cache_disabled():
 
 
 class TestGetStockList:
-    @patch("src.data.loaders.stock_loaders.DataCache")
-    @patch("src.data.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_returns_list(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.stock_loaders import get_stock_list
+        from src.infrastructure.data_access.loaders.stock_loaders import get_stock_list
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -45,11 +45,11 @@ class TestGetStockList:
         result = get_stock_list("testds")
         assert result == ["7203", "6758"]
 
-    @patch("src.data.loaders.stock_loaders.DataCache")
-    @patch("src.data.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_empty_returns_empty_list(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.stock_loaders import get_stock_list
+        from src.infrastructure.data_access.loaders.stock_loaders import get_stock_list
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -62,11 +62,11 @@ class TestGetStockList:
 
 
 class TestLoadStockData:
-    @patch("src.data.loaders.stock_loaders.DataCache")
-    @patch("src.data.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_returns_dataframe(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.stock_loaders import load_stock_data
+        from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -78,11 +78,11 @@ class TestLoadStockData:
         assert len(result) == 5
         assert "Close" in result.columns
 
-    @patch("src.data.loaders.stock_loaders.DataCache")
-    @patch("src.data.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_empty_raises_value_error(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.stock_loaders import load_stock_data
+        from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -95,10 +95,10 @@ class TestLoadStockData:
 
 
 class TestGetAvailableStocks:
-    @patch("src.data.loaders.stock_loaders.extract_dataset_name")
-    @patch("src.data.loaders.stock_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.stock_loaders.DatasetAPIClient")
     def test_returns_dataframe(self, mock_client_cls, mock_extract):
-        from src.data.loaders.stock_loaders import get_available_stocks
+        from src.infrastructure.data_access.loaders.stock_loaders import get_available_stocks
 
         mock_extract.return_value = "testds"
         expected = pd.DataFrame({"stockCode": ["7203"], "recordCount": [500]})

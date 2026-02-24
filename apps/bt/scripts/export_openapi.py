@@ -24,7 +24,7 @@ if project_root_str not in sys.path:
 
 def build_openapi_schema() -> dict[str, Any]:
     """Create FastAPI app and return its OpenAPI schema."""
-    from src.server.app import create_app
+    from src.entrypoints.http.app import create_app
 
     app = create_app()
     return app.openapi()

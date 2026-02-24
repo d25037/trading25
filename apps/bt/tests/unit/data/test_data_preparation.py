@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.exceptions import DataPreparationError, NoValidDataError
+from src.shared.exceptions import DataPreparationError, NoValidDataError
 
 
 def _ohlcv_df(n=5):
@@ -29,9 +29,9 @@ def _mock_api_client():
 
 
 class TestPrepareData:
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_single_stock_basic(self, mock_load):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_load.return_value = _ohlcv_df()
         result = prepare_data("testds", "7203")
@@ -39,10 +39,10 @@ class TestPrepareData:
         assert len(result["daily"]) == 5
         mock_load.assert_called_once()
 
-    @patch("src.data.loaders.data_preparation.load_margin_data")
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_margin_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_with_margin_data(self, mock_stock, mock_margin):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_stock.return_value = _ohlcv_df()
         mock_margin.return_value = pd.DataFrame(
@@ -53,10 +53,10 @@ class TestPrepareData:
         assert "daily" in result
         assert "margin_daily" in result
 
-    @patch("src.data.loaders.data_preparation.load_margin_data")
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_margin_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_margin_error_graceful(self, mock_stock, mock_margin):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_stock.return_value = _ohlcv_df()
         mock_margin.side_effect = ValueError("no margin")
@@ -64,10 +64,10 @@ class TestPrepareData:
         assert "daily" in result
         assert "margin_daily" not in result
 
-    @patch("src.data.loaders.data_preparation.load_statements_data")
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_statements_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_with_statements_data(self, mock_stock, mock_stmt):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_stock.return_value = _ohlcv_df()
         mock_stmt.return_value = pd.DataFrame(
@@ -77,10 +77,10 @@ class TestPrepareData:
         result = prepare_data("testds", "7203", include_statements_data=True)
         assert "statements_daily" in result
 
-    @patch("src.data.loaders.data_preparation.load_statements_data")
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_statements_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_statements_error_graceful(self, mock_stock, mock_stmt):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_stock.return_value = _ohlcv_df()
         mock_stmt.side_effect = ValueError("no statements")
@@ -90,10 +90,10 @@ class TestPrepareData:
         assert "daily" in result
         assert "statements_daily" not in result
 
-    @patch("src.data.loaders.data_preparation.load_statements_data")
-    @patch("src.data.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_statements_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
     def test_with_statements_data_propagates_forecast_revision_flag(self, mock_stock, mock_stmt):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_stock.return_value = _ohlcv_df()
         mock_stmt.return_value = pd.DataFrame(
@@ -110,9 +110,9 @@ class TestPrepareData:
 
         assert mock_stmt.call_args.kwargs["include_forecast_revision"] is True
 
-    @patch("src.data.loaders.data_preparation.prepare_all_stocks_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.prepare_all_stocks_data")
     def test_all_delegates(self, mock_all):
-        from src.data.loaders.data_preparation import prepare_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_data
 
         mock_all.return_value = {"daily": _ohlcv_df()}
         result = prepare_data("testds", "all")
@@ -121,30 +121,30 @@ class TestPrepareData:
 
 
 class TestPrepareAllStocksData:
-    @patch("src.data.loaders.data_preparation.load_multiple_stocks")
-    @patch("src.data.loaders.data_preparation.get_available_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_available_stocks")
     def test_basic(self, mock_avail, mock_multi):
-        from src.data.loaders.data_preparation import prepare_all_stocks_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_all_stocks_data
 
         mock_avail.return_value = _available_stocks_df()
         mock_multi.return_value = _ohlcv_df()
         result = prepare_all_stocks_data("testds")
         assert "daily" in result
 
-    @patch("src.data.loaders.data_preparation.load_multiple_stocks")
-    @patch("src.data.loaders.data_preparation.get_available_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_available_stocks")
     def test_value_error_raises_data_preparation_error(self, mock_avail, mock_multi):
-        from src.data.loaders.data_preparation import prepare_all_stocks_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_all_stocks_data
 
         mock_avail.return_value = _available_stocks_df()
         mock_multi.side_effect = ValueError("no data")
         with pytest.raises(DataPreparationError):
             prepare_all_stocks_data("testds")
 
-    @patch("src.data.loaders.data_preparation.load_multiple_statements_data")
-    @patch("src.data.loaders.data_preparation.load_multiple_margin_data")
-    @patch("src.data.loaders.data_preparation.load_multiple_stocks")
-    @patch("src.data.loaders.data_preparation.get_available_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_statements_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_margin_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_available_stocks")
     def test_with_margin_and_statements_data(
         self,
         mock_avail,
@@ -152,7 +152,7 @@ class TestPrepareAllStocksData:
         mock_multi_margin,
         mock_multi_statements,
     ):
-        from src.data.loaders.data_preparation import prepare_all_stocks_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_all_stocks_data
 
         mock_avail.return_value = _available_stocks_df()
         combined = _ohlcv_df()
@@ -178,10 +178,10 @@ class TestPrepareAllStocksData:
         assert "statements_daily" in result
         assert mock_multi_statements.call_args.kwargs["include_forecast_revision"] is True
 
-    @patch("src.data.loaders.data_preparation.load_multiple_statements_data")
-    @patch("src.data.loaders.data_preparation.load_multiple_margin_data")
-    @patch("src.data.loaders.data_preparation.load_multiple_stocks")
-    @patch("src.data.loaders.data_preparation.get_available_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_statements_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_margin_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_multiple_stocks")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.get_available_stocks")
     def test_margin_and_statements_errors_are_ignored(
         self,
         mock_avail,
@@ -189,7 +189,7 @@ class TestPrepareAllStocksData:
         mock_multi_margin,
         mock_multi_statements,
     ):
-        from src.data.loaders.data_preparation import prepare_all_stocks_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_all_stocks_data
 
         mock_avail.return_value = _available_stocks_df()
         mock_multi_stocks.return_value = _ohlcv_df()
@@ -208,10 +208,10 @@ class TestPrepareAllStocksData:
 
 
 class TestPrepareMultiData:
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_basic(self, mock_client_cls, mock_extract):
-        from src.data.loaders.data_preparation import prepare_multi_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -223,17 +223,17 @@ class TestPrepareMultiData:
         assert "daily" in result["7203"]
 
     def test_empty_stock_codes(self):
-        from src.data.loaders.data_preparation import prepare_multi_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
         result = prepare_multi_data("testds", [])
         assert result == {}
 
-    @patch("src.data.loaders.data_preparation.load_stock_data")
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_batch_fallback(self, mock_client_cls, mock_extract, mock_load):
-        from src.data.loaders.data_preparation import prepare_multi_data
-        from src.exceptions import BatchAPIError
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
+        from src.shared.exceptions import BatchAPIError
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -244,12 +244,12 @@ class TestPrepareMultiData:
         result = prepare_multi_data("testds", ["7203"])
         assert "7203" in result
 
-    @patch("src.data.loaders.data_preparation.load_stock_data")
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_batch_fallback_skips_invalid_stock_code(self, mock_client_cls, mock_extract, mock_load):
-        from src.data.loaders.data_preparation import prepare_multi_data
-        from src.exceptions import BatchAPIError
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
+        from src.shared.exceptions import BatchAPIError
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -262,10 +262,10 @@ class TestPrepareMultiData:
         assert "7203" not in result
         assert "6758" in result
 
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_no_valid_data_raises(self, mock_client_cls, mock_extract):
-        from src.data.loaders.data_preparation import prepare_multi_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -275,10 +275,10 @@ class TestPrepareMultiData:
         with pytest.raises(NoValidDataError):
             prepare_multi_data("testds", ["7203"])
 
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_include_forecast_revision_fetches_all_period_batch(self, mock_client_cls, mock_extract):
-        from src.data.loaders.data_preparation import prepare_multi_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -328,10 +328,10 @@ class TestPrepareMultiData:
         assert client.get_statements_batch.call_args_list[1].kwargs["period_type"] == "all"
         assert client.get_statements_batch.call_args_list[1].kwargs["actual_only"] is False
 
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_forecast_revision_skipped_when_period_type_not_fy(self, mock_client_cls, mock_extract):
-        from src.data.loaders.data_preparation import prepare_multi_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -360,16 +360,16 @@ class TestPrepareMultiData:
 
         assert client.get_statements_batch.call_count == 1
 
-    @patch("src.data.loaders.data_preparation.transform_margin_df")
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.transform_margin_df")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_include_margin_data_batch_success(
         self,
         mock_client_cls,
         mock_extract,
         mock_transform_margin_df,
     ):
-        from src.data.loaders.data_preparation import prepare_multi_data
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 
         mock_extract.return_value = "testds"
         mock_transform_margin_df.side_effect = lambda df: df
@@ -390,17 +390,17 @@ class TestPrepareMultiData:
         assert "margin_daily" in result["7203"]
         assert result["7203"]["margin_daily"].iloc[0]["LongMargin"] == 10.0
 
-    @patch("src.data.loaders.data_preparation.load_margin_data")
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_margin_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_include_margin_data_batch_failure_fallback(
         self,
         mock_client_cls,
         mock_extract,
         mock_load_margin_data,
     ):
-        from src.data.loaders.data_preparation import prepare_multi_data
-        from src.exceptions import BatchAPIError
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
+        from src.shared.exceptions import BatchAPIError
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -422,17 +422,17 @@ class TestPrepareMultiData:
         assert "margin_daily" in result["7203"]
         assert "margin_daily" not in result["6758"]
 
-    @patch("src.data.loaders.data_preparation.logger")
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.logger")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_revision_batch_failure_continues_with_fy_data(
         self,
         mock_client_cls,
         mock_extract,
         mock_logger,
     ):
-        from src.data.loaders.data_preparation import prepare_multi_data
-        from src.exceptions import BatchAPIError
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
+        from src.shared.exceptions import BatchAPIError
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -465,17 +465,17 @@ class TestPrepareMultiData:
         assert "statements_daily" in result["7203"]
         mock_logger.warning.assert_called_once()
 
-    @patch("src.data.loaders.data_preparation.load_statements_data")
-    @patch("src.data.loaders.data_preparation.extract_dataset_name")
-    @patch("src.data.loaders.data_preparation.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.load_statements_data")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.data_preparation.DatasetAPIClient")
     def test_statements_batch_failure_fallback_to_individual(
         self,
         mock_client_cls,
         mock_extract,
         mock_load_statements_data,
     ):
-        from src.data.loaders.data_preparation import prepare_multi_data
-        from src.exceptions import BatchAPIError
+        from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
+        from src.shared.exceptions import BatchAPIError
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()

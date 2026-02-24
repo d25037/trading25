@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.fundamental import (
+from src.domains.strategy.signals.fundamental import (
     cfo_margin_threshold,
     cfo_yield_threshold,
     is_expected_growth_dividend_per_share,
@@ -2569,7 +2569,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_forward_eps_growth_field_exists(self):
         """forward_eps_growthフィールドが正しくパースされること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             forward_eps_growth={"enabled": True, "threshold": 0.15, "condition": "above"}
@@ -2580,7 +2580,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_forward_dividend_growth_field_exists(self):
         """forward_dividend_growthフィールドが正しくパースされること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             forward_dividend_growth={"enabled": True, "threshold": 0.08, "condition": "above"}
@@ -2591,7 +2591,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_eps_growth_field_exists(self):
         """eps_growth（実績ベース）フィールドが正しくパースされること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             eps_growth={"enabled": True, "threshold": 0.2, "periods": 2, "condition": "above"}
@@ -2603,28 +2603,28 @@ class TestFundamentalSignalParamsConfig:
 
     def test_eps_growth_default_periods(self):
         """eps_growthのperiodsデフォルト値が1であること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams()
         assert params.eps_growth.periods == 1
 
     def test_profit_growth_default_periods(self):
         """profit_growthのperiodsデフォルト値が1であること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams()
         assert params.profit_growth.periods == 1
 
     def test_sales_growth_default_periods(self):
         """sales_growthのperiodsデフォルト値が1であること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams()
         assert params.sales_growth.periods == 1
 
     def test_both_eps_growth_fields_coexist(self):
         """forward_eps_growthとeps_growthが共存できること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             forward_eps_growth={"enabled": True, "threshold": 0.1},
@@ -2637,7 +2637,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_dividend_per_share_growth_field_exists(self):
         """dividend_per_share_growthフィールドが正しくパースされること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             dividend_per_share_growth={
@@ -2654,7 +2654,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_cfo_to_net_profit_ratio_field_exists(self):
         """cfo_to_net_profit_ratioフィールドが正しくパースされること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             cfo_to_net_profit_ratio={
@@ -2671,7 +2671,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_payout_ratio_fields_exist(self):
         """payout_ratio/forward_payout_ratioが正しくパースされること"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
             payout_ratio={"enabled": True, "threshold": 40.0, "condition": "above"},
@@ -2686,7 +2686,7 @@ class TestFundamentalSignalParamsConfig:
 
     def test_yield_growth_fields_default(self):
         """yield成長率フィールドのデフォルト値が正しいこと"""
-        from src.models.signals.fundamental import FundamentalSignalParams
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams()
         assert params.cfo_margin.enabled is False

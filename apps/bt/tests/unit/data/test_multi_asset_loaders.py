@@ -5,13 +5,13 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.data.loaders.multi_asset_loaders import (
+from src.infrastructure.data_access.loaders.multi_asset_loaders import (
     load_multiple_indices,
     load_multiple_margin_data,
     load_multiple_statements_data,
     load_multiple_stocks,
 )
-from src.exceptions import BatchAPIError, NoValidDataError
+from src.shared.exceptions import BatchAPIError, NoValidDataError
 
 
 def _mock_context_manager(client: MagicMock) -> MagicMock:
@@ -40,9 +40,9 @@ def _margin_df(values: list[float] | None = None, column: str = "TotalMargin") -
 
 
 class TestLoadMultipleStocks:
-    @patch("src.data.loaders.multi_asset_loaders.DataCache.get_instance")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.DataCache.get_instance")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_batch_api_uses_valid_price_columns_only(
         self,
         mock_get_client,
@@ -70,10 +70,10 @@ class TestLoadMultipleStocks:
         assert list(result.columns) == ["7203"]
         assert len(result.index) == 3
 
-    @patch("src.data.loaders.multi_asset_loaders.load_stock_data")
-    @patch("src.data.loaders.multi_asset_loaders.DataCache.get_instance")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.DataCache.get_instance")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_batch_failure_falls_back_to_individual_load(
         self,
         mock_get_client,
@@ -103,8 +103,8 @@ class TestLoadMultipleStocks:
         assert list(result.columns) == ["7203"]
         assert mock_load_stock_data.call_count == 2
 
-    @patch("src.data.loaders.multi_asset_loaders.load_stock_data")
-    @patch("src.data.loaders.multi_asset_loaders.DataCache.get_instance")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_stock_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.DataCache.get_instance")
     def test_raises_when_no_valid_stock_data(self, mock_cache_get_instance, mock_load_stock_data):
         cache = MagicMock()
         cache.is_enabled.return_value = True
@@ -120,7 +120,7 @@ class TestLoadMultipleStocks:
 
 
 class TestLoadMultipleIndices:
-    @patch("src.data.loaders.multi_asset_loaders.load_index_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_index_data")
     def test_partial_failure_is_skipped(self, mock_load_index_data):
         mock_load_index_data.side_effect = [
             _price_df([3000.0, 3010.0, 3020.0], "Close"),
@@ -136,7 +136,7 @@ class TestLoadMultipleIndices:
         assert list(result.columns) == ["TOPIX"]
         assert len(result.index) == 3
 
-    @patch("src.data.loaders.multi_asset_loaders.load_index_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_index_data")
     def test_raises_when_no_valid_indices(self, mock_load_index_data):
         mock_load_index_data.side_effect = ValueError("missing")
 
@@ -149,9 +149,9 @@ class TestLoadMultipleIndices:
 
 
 class TestLoadMultipleMarginData:
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
-    @patch("src.data.loaders.multi_asset_loaders.transform_margin_df")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.transform_margin_df")
     def test_batch_api_margin_success(
         self,
         mock_transform_margin_df,
@@ -176,9 +176,9 @@ class TestLoadMultipleMarginData:
         assert list(result.columns) == ["7203"]
         assert result.iloc[-1, 0] == 1200.0
 
-    @patch("src.data.loaders.multi_asset_loaders.load_margin_data")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_margin_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_batch_failure_margin_fallback(
         self,
         mock_get_client,
@@ -203,9 +203,9 @@ class TestLoadMultipleMarginData:
 
         assert list(result.columns) == ["7203"]
 
-    @patch("src.data.loaders.multi_asset_loaders.load_margin_data")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_margin_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_raises_when_no_valid_margin_data(
         self,
         mock_get_client,
@@ -227,8 +227,8 @@ class TestLoadMultipleMarginData:
 
 
 class TestLoadMultipleStatementsData:
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_include_forecast_revision_merges_batch_all_period(
         self,
         mock_get_client,
@@ -282,9 +282,9 @@ class TestLoadMultipleStatementsData:
         assert client.get_statements_batch.call_args_list[1].kwargs["period_type"] == "all"
         assert client.get_statements_batch.call_args_list[1].kwargs["actual_only"] is False
 
-    @patch("src.data.loaders.multi_asset_loaders.logger")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.logger")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_include_forecast_revision_fallback_on_all_period_error(
         self,
         mock_get_client,
@@ -324,8 +324,8 @@ class TestLoadMultipleStatementsData:
         assert result.loc["2025-01-05", "7203"] == 100.0
         mock_logger.warning.assert_called_once()
 
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_revision_fetch_skipped_when_period_type_not_fy(
         self,
         mock_get_client,
@@ -360,8 +360,8 @@ class TestLoadMultipleStatementsData:
 
         assert client.get_statements_batch.call_count == 1
 
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_revision_fetch_skipped_when_non_forward_column_requested(
         self,
         mock_get_client,
@@ -396,8 +396,8 @@ class TestLoadMultipleStatementsData:
 
         assert client.get_statements_batch.call_count == 1
 
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_lowercase_alias_column_is_resolved(
         self,
         mock_get_client,
@@ -430,9 +430,9 @@ class TestLoadMultipleStatementsData:
 
         assert result.loc["2025-01-05", "7203"] == 80.0
 
-    @patch("src.data.loaders.multi_asset_loaders.load_statements_data")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_statements_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_batch_missing_requested_column_falls_back_to_individual(
         self,
         mock_get_client,
@@ -471,10 +471,10 @@ class TestLoadMultipleStatementsData:
         assert result.loc["2025-01-05", "7203"] == 42.0
         mock_load_statements_data.assert_called_once()
 
-    @patch("src.data.loaders.multi_asset_loaders.logger")
-    @patch("src.data.loaders.multi_asset_loaders.load_statements_data")
-    @patch("src.data.loaders.multi_asset_loaders.extract_dataset_name")
-    @patch("src.data.loaders.multi_asset_loaders.get_dataset_client")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.logger")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.load_statements_data")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_batch_failure_and_invalid_fallback_rows_raise(
         self,
         mock_get_client,

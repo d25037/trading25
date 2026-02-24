@@ -7,9 +7,9 @@ YamlConfigurableStrategy + YAML設定 + SignalParams（統一Signalsシステム
 import pandas as pd
 import pytest
 
-from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
-from src.models.config import SharedConfig
-from src.models.signals import SignalParams
+from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams
 
 
 class TestBnfMeanReversionStrategy:
@@ -140,7 +140,7 @@ class TestBnfMeanReversionStrategy:
 
         # 異常なパラメータ（Pydanticバリデーション）
         with pytest.raises(ValueError):
-            from src.models.signals import MeanReversionSignalParams
+            from src.shared.models.signals import MeanReversionSignalParams
 
             MeanReversionSignalParams(deviation_threshold=1.5)  # >1.0は無効
 

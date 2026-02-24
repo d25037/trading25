@@ -8,9 +8,9 @@ import pytest
 import pandas as pd
 from pydantic import ValidationError
 
-from src.models.config import SharedConfig
-from src.models.signals import Signals, SignalParams
-from src.strategies.core.yaml_configurable_strategy import YamlConfigurableStrategy
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import Signals, SignalParams
+from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
 
 
 class TestSignalsTypeSafety:
@@ -123,7 +123,7 @@ class TestSignalParamsTypeSafety:
         # 異常な設定（期間順序）
         # Pydanticバリデーションは初期化時に実行されるため、新規オブジェクト作成が必要
         with pytest.raises(ValidationError):
-            from src.models.signals import VolumeSignalParams
+            from src.shared.models.signals import VolumeSignalParams
 
             VolumeSignalParams(
                 enabled=True,

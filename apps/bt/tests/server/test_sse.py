@@ -8,10 +8,10 @@ import asyncio
 
 import pytest
 
-from src.server.schemas.backtest import JobStatus
-from src.server.schemas.common import SSEJobEvent
-from src.server.services.job_manager import JobManager
-from src.server.services.sse_manager import SSEManager
+from src.entrypoints.http.schemas.backtest import JobStatus
+from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.services.job_manager import JobManager
+from src.application.services.sse_manager import SSEManager
 
 
 @pytest.fixture

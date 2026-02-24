@@ -12,8 +12,8 @@ from typing import Any
 
 import pandas as pd
 
-from src.api.client import BaseAPIClient
-from src.lib.backtest_core.runner import BacktestRunner
+from src.infrastructure.external_api.client import BaseAPIClient
+from src.domains.backtest.core.runner import BacktestRunner
 
 
 class _FakeExecutor:
@@ -73,7 +73,7 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.lib.backtest_core.runner.MarimoExecutor",
+        "src.domains.backtest.core.runner.MarimoExecutor",
         _fake_executor_factory,
     )
 
@@ -105,7 +105,7 @@ def test_backtest_runner_allows_http_override(monkeypatch, tmp_path: Path):
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.lib.backtest_core.runner.MarimoExecutor",
+        "src.domains.backtest.core.runner.MarimoExecutor",
         lambda _output_dir: fake_executor,
     )
 
@@ -146,7 +146,7 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
             self.executed_template_path = template_path
             self.executed_strategy_name = strategy_name
             self.executed_extra_env = extra_env
-            from src.data.loaders.stock_loaders import load_stock_data
+            from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
             df = load_stock_data("sample", "7203")
             assert not df.empty
@@ -155,7 +155,7 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
             return html_path
 
     monkeypatch.setattr(
-        "src.data.access.clients._resolve_dataset_db",
+        "src.infrastructure.data_access.clients._resolve_dataset_db",
         lambda _dataset_name: _FakeDatasetDb(),
     )
 
@@ -182,7 +182,7 @@ def test_backtest_runner_default_direct_mode_bypasses_http_requests(
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.lib.backtest_core.runner.MarimoExecutor",
+        "src.domains.backtest.core.runner.MarimoExecutor",
         lambda _output_dir: fake_executor,
     )
 
@@ -215,7 +215,7 @@ def test_backtest_runner_progress_callback_and_walk_forward_manifest(
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.lib.backtest_core.runner.MarimoExecutor",
+        "src.domains.backtest.core.runner.MarimoExecutor",
         lambda _output_dir: fake_executor,
     )
     monkeypatch.setattr(
@@ -269,7 +269,7 @@ def test_backtest_runner_raises_when_html_missing(monkeypatch, tmp_path: Path):
         lambda _: tmp_path,
     )
     monkeypatch.setattr(
-        "src.lib.backtest_core.runner.MarimoExecutor",
+        "src.domains.backtest.core.runner.MarimoExecutor",
         lambda _output_dir: _MissingHtmlExecutor(str(tmp_path)),
     )
 
@@ -356,10 +356,10 @@ def test_run_walk_forward_guard_paths(monkeypatch):
             "dataset": "sample",
         }
     }
-    monkeypatch.setattr("src.data.get_stock_list", lambda _dataset: (_ for _ in ()).throw(RuntimeError("failed")))
+    monkeypatch.setattr("src.infrastructure.data_access.loaders.get_stock_list", lambda _dataset: (_ for _ in ()).throw(RuntimeError("failed")))
     assert runner._run_walk_forward(parameters) is None
 
-    monkeypatch.setattr("src.data.get_stock_list", lambda _dataset: [])
+    monkeypatch.setattr("src.infrastructure.data_access.loaders.get_stock_list", lambda _dataset: [])
     assert runner._run_walk_forward(parameters) is None
 
 
@@ -407,10 +407,10 @@ def test_run_walk_forward_success_and_max_splits(monkeypatch):
         )
     )
 
-    monkeypatch.setitem(sys.modules, "src.data", fake_data_module)
-    monkeypatch.setitem(sys.modules, "src.data.loaders.stock_loaders", fake_stock_loader_module)
-    monkeypatch.setitem(sys.modules, "src.lib.backtest_core.walkforward", fake_walkforward_module)
-    monkeypatch.setitem(sys.modules, "src.strategies.core.factory", fake_factory_module)
+    monkeypatch.setitem(sys.modules, "src.infrastructure.data_access.loaders", fake_data_module)
+    monkeypatch.setitem(sys.modules, "src.infrastructure.data_access.loaders.stock_loaders", fake_stock_loader_module)
+    monkeypatch.setitem(sys.modules, "src.domains.backtest.core.walkforward", fake_walkforward_module)
+    monkeypatch.setitem(sys.modules, "src.domains.strategy.core.factory", fake_factory_module)
 
     result = runner._run_walk_forward(
         {

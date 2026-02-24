@@ -31,7 +31,7 @@ build-backend = "setuptools.build_meta"
 
 [project.scripts]
 # 統一CLIコマンド
-bt = "src.cli_bt:app"
+bt = "src.entrypoints.cli:app"
 
 [tool.setuptools.packages.find]
 where = ["."]
@@ -80,7 +80,7 @@ markers = [
 source = ["src"]
 omit = [
     "src/*/__init__.py",
-    "src/cli_bt/__main__.py",
+    "src/entrypoints/cli/__main__.py",
 ]
 branch = true
 

@@ -8,9 +8,9 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.routes import dataset_data as dataset_data_routes
-from src.server.app import create_app
-from src.server.services.dataset_resolver import DatasetResolver
+from src.entrypoints.http.routes import dataset_data as dataset_data_routes
+from src.entrypoints.http.app import create_app
+from src.application.services.dataset_resolver import DatasetResolver
 
 
 @pytest.fixture

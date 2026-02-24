@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from src.server.services.jquants_proxy_service import JQuantsProxyService
+from src.application.services.jquants_proxy_service import JQuantsProxyService
 
 
 def _daily_quote_item(code: str = "72030") -> dict[str, object]:

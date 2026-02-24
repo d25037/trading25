@@ -45,7 +45,7 @@ def test_filename_generation():
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     # ファイル名生成（XDG準拠パスを使用）
-    from src.paths import get_optimization_results_dir
+    from src.shared.paths import get_optimization_results_dir
 
     output_dir = get_optimization_results_dir(strategy_name)
     output_path = output_dir / f"{db_name}_{timestamp}.html"

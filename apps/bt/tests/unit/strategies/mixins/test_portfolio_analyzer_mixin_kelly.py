@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 from unittest.mock import MagicMock, patch
 
-from src.strategies.core.mixins.portfolio_analyzer_mixin_kelly import (
+from src.domains.strategy.core.mixins.portfolio_analyzer_mixin_kelly import (
     PortfolioAnalyzerKellyMixin,
 )
 

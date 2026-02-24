@@ -11,7 +11,7 @@ import numpy as np
 from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
+from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture

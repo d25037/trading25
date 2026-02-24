@@ -1,6 +1,6 @@
 """server/routes/optimize.py - _parse_grid_yaml のテスト"""
 
-from src.server.routes.optimize import _parse_grid_yaml
+from src.entrypoints.http.routes.optimize import _parse_grid_yaml
 
 
 class TestParseGridYaml:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import random
 
-from src.agent import signal_param_factory
+from src.domains.lab_agent import signal_param_factory
 
 
 def test_randomize_params_keeps_values_when_no_range_defined() -> None:

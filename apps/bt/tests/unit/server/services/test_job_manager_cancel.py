@@ -6,8 +6,8 @@ import asyncio
 
 import pytest
 
-from src.server.schemas.backtest import JobStatus
-from src.server.services.job_manager import JobManager
+from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.services.job_manager import JobManager
 
 
 @pytest.fixture

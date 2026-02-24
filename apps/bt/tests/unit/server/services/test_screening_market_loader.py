@@ -6,7 +6,7 @@ from typing import Any
 import pandas as pd
 import pytest
 
-from src.server.services.screening_market_loader import (
+from src.application.services.screening_market_loader import (
     _attach_statements,
     _group_statement_rows,
     _load_daily_by_code,
@@ -44,7 +44,7 @@ def test_load_market_multi_data_returns_empty_for_empty_codes() -> None:
 
 def test_load_market_multi_data_handles_daily_operational_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
-        "src.server.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_market_loader._load_daily_by_code",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("stock_data missing")),
     )
     result, warnings = load_market_multi_data(DummyReader(), ["7203"])
@@ -60,7 +60,7 @@ def test_load_market_multi_data_attaches_statements(monkeypatch: pytest.MonkeyPa
     )
 
     monkeypatch.setattr(
-        "src.server.services.screening_market_loader._load_daily_by_code",
+        "src.application.services.screening_market_loader._load_daily_by_code",
         lambda *_args, **_kwargs: {"7203": daily},
     )
 
@@ -68,7 +68,7 @@ def test_load_market_multi_data_attaches_statements(monkeypatch: pytest.MonkeyPa
         result["7203"]["statements_daily"] = pd.DataFrame({"dummy": [1, 2]}, index=index)
         return ["attached"]
 
-    monkeypatch.setattr("src.server.services.screening_market_loader._attach_statements", _attach)
+    monkeypatch.setattr("src.application.services.screening_market_loader._attach_statements", _attach)
 
     result, warnings = load_market_multi_data(
         DummyReader(),
@@ -183,7 +183,7 @@ def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
-        "src.server.services.screening_market_loader._query_statements_rows",
+        "src.application.services.screening_market_loader._query_statements_rows",
         lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("no such table: statements")),
     )
 
@@ -239,10 +239,10 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
         query_calls.append(kwargs)
         return revision_rows if kwargs.get("period_type") == "all" else base_rows
 
-    monkeypatch.setattr("src.server.services.screening_market_loader._query_statements_rows", _query)
-    monkeypatch.setattr("src.server.services.screening_market_loader.transform_statements_df", lambda df: df)
+    monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", _query)
+    monkeypatch.setattr("src.application.services.screening_market_loader.transform_statements_df", lambda df: df)
     monkeypatch.setattr(
-        "src.server.services.screening_market_loader.merge_forward_forecast_revision",
+        "src.application.services.screening_market_loader.merge_forward_forecast_revision",
         lambda base, _revision: base.assign(merged=True),
     )
 
@@ -304,9 +304,9 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
         }
     ]
 
-    monkeypatch.setattr("src.server.services.screening_market_loader._query_statements_rows", lambda *_args, **_kwargs: rows)
+    monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(
-        "src.server.services.screening_market_loader.transform_statements_df",
+        "src.application.services.screening_market_loader.transform_statements_df",
         lambda _df: (_ for _ in ()).throw(ValueError("transform failed")),
     )
 

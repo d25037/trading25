@@ -5,9 +5,9 @@ Buy&Holdシグナル ユニットテスト
 import numpy as np
 import pandas as pd
 
-from src.strategies.signals.buy_and_hold import generate_buy_and_hold_signals
-from src.strategies.signals.processor import SignalProcessor
-from src.models.signals import SignalParams, BuyAndHoldSignalParams
+from src.domains.strategy.signals.buy_and_hold import generate_buy_and_hold_signals
+from src.domains.strategy.signals.processor import SignalProcessor
+from src.shared.models.signals import SignalParams, BuyAndHoldSignalParams
 
 
 class TestBuyAndHoldSignal:

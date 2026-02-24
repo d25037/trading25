@@ -8,8 +8,8 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
-from src.lib.market_db.market_db import MarketDb
+from src.entrypoints.http.app import create_app
+from src.infrastructure.db.market.market_db import MarketDb
 
 
 @pytest.fixture

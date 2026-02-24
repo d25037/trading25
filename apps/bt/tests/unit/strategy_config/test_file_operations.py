@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from src.strategy_config.file_operations import (
+from src.domains.strategy.runtime.file_operations import (
     delete_strategy_file,
     duplicate_to_experimental,
     load_yaml_file,

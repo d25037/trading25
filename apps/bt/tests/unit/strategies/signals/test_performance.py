@@ -3,7 +3,7 @@
 import numpy as np
 import pandas as pd
 
-from src.strategies.signals.performance import (
+from src.domains.strategy.signals.performance import (
     multi_timeframe_relative_performance_signal,
     relative_performance_signal,
 )

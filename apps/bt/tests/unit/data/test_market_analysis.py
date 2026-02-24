@@ -8,7 +8,7 @@ market_analysis.pyはsignal_screeningのre-exportモジュール。
 import pytest
 import pandas as pd
 
-from src.data.market_analysis import (
+from src.domains.analytics.market_analysis import (
     is_signal_available_in_market_db,
     calculate_signal_for_stock,
 )

@@ -6,7 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.strategies.signals.rsi_threshold import rsi_threshold_signal
+from src.domains.strategy.signals.rsi_threshold import rsi_threshold_signal
 
 
 class TestRSIThresholdSignal:

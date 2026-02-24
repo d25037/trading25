@@ -5,7 +5,7 @@ Indicator Schemas ユニットテスト
 import pytest
 from pydantic import ValidationError
 
-from src.server.schemas.indicators import (
+from src.entrypoints.http.schemas.indicators import (
     ATRParams,
     ATRSupportParams,
     BollingerParams,

@@ -5,12 +5,12 @@ SIGNAL_REGISTRY / build_signal_reference / SignalParams JSON Schema の
 整合性をCIレベルで保証する。
 """
 
-from src.models.signals import SignalParams
-from src.server.services.signal_reference_service import (
+from src.shared.models.signals import SignalParams
+from src.application.services.signal_reference_service import (
     _get_param_model,
     build_signal_reference,
 )
-from src.strategies.signals.registry import SIGNAL_REGISTRY
+from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 
 
 class TestRegistryReferenceSync:

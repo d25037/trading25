@@ -3,9 +3,9 @@
 import pandas as pd
 import pytest
 
-from src.models.signals import SignalParams
+from src.shared.models.signals import SignalParams
 
-from src.strategies.signals.registry import (
+from src.domains.strategy.signals.registry import (
     SIGNAL_REGISTRY,
     _has_any_statements_column,
     _has_benchmark_data,

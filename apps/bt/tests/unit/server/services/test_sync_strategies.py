@@ -8,8 +8,8 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.lib.market_db.market_db import METADATA_KEYS
-from src.server.services.sync_strategies import (
+from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.application.services.sync_strategies import (
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
@@ -442,11 +442,11 @@ def patch_small_index_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
         return rows
 
     monkeypatch.setattr(
-        "src.server.services.sync_strategies.get_index_catalog_codes",
+        "src.application.services.sync_strategies.get_index_catalog_codes",
         lambda: {"0000", "0040"},
     )
     monkeypatch.setattr(
-        "src.server.services.sync_strategies.build_index_master_seed_rows",
+        "src.application.services.sync_strategies.build_index_master_seed_rows",
         _seed_rows,
     )
 
@@ -744,11 +744,11 @@ async def test_indices_only_sync_collects_errors_and_continues_other_codes(
         return rows
 
     monkeypatch.setattr(
-        "src.server.services.sync_strategies.get_index_catalog_codes",
+        "src.application.services.sync_strategies.get_index_catalog_codes",
         lambda: {"0000", "9999"},
     )
     monkeypatch.setattr(
-        "src.server.services.sync_strategies.build_index_master_seed_rows",
+        "src.application.services.sync_strategies.build_index_master_seed_rows",
         _seed_rows,
     )
 
@@ -828,7 +828,7 @@ async def test_indices_only_sync_handles_seed_exception(
 ) -> None:
     market_db = DummyMarketDb()
     monkeypatch.setattr(
-        "src.server.services.sync_strategies._seed_index_master_from_catalog",
+        "src.application.services.sync_strategies._seed_index_master_from_catalog",
         lambda _ctx: (_ for _ in ()).throw(RuntimeError("seed failed")),
     )
 
@@ -1148,7 +1148,7 @@ async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
     )
 
     monkeypatch.setattr(
-        "src.server.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_strategies._build_incremental_date_targets",
         lambda _anchor, _retry: ["2026-02-10"],
     )
 
@@ -1200,7 +1200,7 @@ async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
     )
 
     monkeypatch.setattr(
-        "src.server.services.sync_strategies._build_incremental_date_targets",
+        "src.application.services.sync_strategies._build_incremental_date_targets",
         lambda _anchor, _retry: [],
     )
 
@@ -1250,7 +1250,7 @@ async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata
         captured["retry"] = retry_dates
         return []
 
-    monkeypatch.setattr("src.server.services.sync_strategies._build_incremental_date_targets", _capture)
+    monkeypatch.setattr("src.application.services.sync_strategies._build_incremental_date_targets", _capture)
 
     ctx = SyncContext(
         client=client,  # type: ignore[arg-type]

@@ -5,9 +5,9 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from src.server.schemas.backtest import BacktestResultSummary, JobStatus
-from src.server.schemas.common import SSEJobEvent
-from src.server.services.job_manager import JobInfo, JobManager
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
+from src.entrypoints.http.schemas.common import SSEJobEvent
+from src.application.services.job_manager import JobInfo, JobManager
 
 
 class TestJobInfo:

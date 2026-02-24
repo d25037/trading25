@@ -19,24 +19,24 @@
 
 ### API接続管理
 **詳細**: `.claude/skills/api-architecture/SKILL.md`
-- **統一APIクライアント**: `src/api/`パッケージによるREST API（localhost:3002）経由データアクセス
+- **統一APIクライアント**: `src/infrastructure/external_api/` によるREST API（localhost:3002）経由データアクセス
 - **リソース管理**: HTTPセッション管理・リトライ機構・タイムアウト設定・エラーハンドリング
-- **旧実装削除**: `src/data/database.py`完全削除（SQLite直接アクセス廃止）
+- **旧実装削除**: `src/data/database.py` は削除済み（SQLite直接アクセス廃止）
 
 ### Kelly基準数値安全性
 - **ゼロ除算対策**: Kelly係数計算時の分母チェック（b > 0 検証）
 - **NaN/Inf検証**: リターン比較時の異常値検出・安全なフォールバック処理
-- **実装箇所**: `src/strategies/core/mixins/portfolio_analyzer_mixin_kelly.py:168-171`
+- **実装箇所**: `src/domains/strategy/core/mixins/portfolio_analyzer_mixin_kelly.py:168-171`
 
 ### 並列処理タイムアウト
 - **ProcessPoolExecutor タイムアウト**: 1組み合わせあたり600秒（10分）制限
 - **ハングアップ防止**: 無限ループ・デッドロック検出による自動スキップ
-- **実装箇所**: `src/optimization/engine.py:462-498`
+- **実装箇所**: `src/domains/optimization/engine.py:462-498`
 
 ### データ品質検証
 - **空DataFrame検出**: Close/Volume データの全NaNチェック
 - **早期エラー通知**: データ品質問題を処理開始前に検出
-- **実装箇所**: `src/strategies/signals/processor.py:220-228`
+- **実装箇所**: `src/domains/strategy/signals/processor.py:220-228`
 
 ### テスト品質
 - **100%テスト成功率**: 1,996/1,996 passed（2026-02-03時点）
@@ -95,10 +95,10 @@
 | `legacy` | `config/strategies/legacy/` | Git管理・読み取り専用 |
 | `experimental` | `~/.local/share/trading25/strategies/experimental/` | **ユーザー編集可能・Git管理外** |
 
-- **検索優先順**: experimental（外部）→ production → reference → legacy（`src/paths/constants.py: SEARCH_ORDER`）
+- **検索優先順**: experimental（外部）→ production → reference → legacy（`src/shared/paths/constants.py: SEARCH_ORDER`）
 - **書き込み先**: 新規作成・複製・リネームは常に `experimental`（外部ディレクトリ）に保存
 - **環境変数**: `TRADING25_DATA_DIR` / `TRADING25_STRATEGIES_DIR` でベースパス変更可能
-- **実装**: `src/paths/resolver.py`（検索・マージ）、`src/strategy_config/loader.py`（読み書き）
+- **実装**: `src/shared/paths/resolver.py`（検索・マージ）、`src/domains/strategy/runtime/loader.py`（読み書き）
 
 ## プロジェクト構成
 
@@ -116,7 +116,28 @@
 │   └── generated/           # （廃止: XDG準拠パスへ移行）
 ├── docs/                    # プロジェクトドキュメント
 ├── tests/                   # テストスイート（843+ tests）
-└── src/                    # ソースコード
+└── src/                     # ソースコード（5層構成）
+    ├── entrypoints/         # 実行入口（http/cli）
+    │   ├── http/            # FastAPI app, routes, middleware, schemas
+    │   └── cli/             # `bt` Typer CLI
+    ├── application/         # アプリケーションサービス層
+    │   └── services/
+    ├── domains/             # ドメインロジック
+    │   ├── analytics/
+    │   ├── backtest/
+    │   ├── lab_agent/
+    │   ├── optimization/
+    │   └── strategy/
+    ├── infrastructure/      # I/O・外部接続
+    │   ├── data_access/
+    │   ├── db/
+    │   └── external_api/
+    └── shared/              # 共有モジュール
+        ├── config/
+        ├── models/
+        ├── observability/
+        ├── paths/
+        └── utils/
 
 ~/.local/share/trading25/          # XDG準拠 外部データディレクトリ
 ├── strategies/
@@ -126,18 +147,6 @@
 │   └── optimization/{strategy}/   # 最適化結果
 ├── optimization/                  # 最適化グリッド設定
 └── cache/                         # キャッシュ
-    ├── agent/              # 戦略自動生成・最適化（GA/Optuna）
-    ├── cli_bt/             # バックテストCLI（bt コマンド）
-    ├── api/                # REST APIクライアント（Dataset/Market/Portfolio）
-    ├── analysis/           # ポートフォリオ分析（PCA/リスク分析/回帰分析）
-    ├── data/               # データ処理・ローダーシステム
-    ├── backtest/           # バックテストシステム（Marimo実行）
-    ├── strategy_config/    # 戦略設定管理（YAML）
-    ├── optimization/       # パラメータ最適化システム
-    ├── server/             # FastAPI サーバー（バックテストAPI）
-    ├── strategies/         # 戦略実装（YAML完全制御版）
-    ├── models/             # 統一モデル（Pydantic型安全性）
-    └── utils/              # ユーティリティ
 ```
 
 **詳細**: `src/`配下の詳細はコードまたは各Skillsを参照

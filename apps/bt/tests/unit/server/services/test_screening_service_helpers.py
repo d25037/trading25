@@ -11,10 +11,10 @@ from types import SimpleNamespace
 import pandas as pd
 import pytest
 
-from src.models.config import SharedConfig
-from src.models.signals import SignalParams, Signals
-from src.server.schemas.screening import MatchedStrategyItem, ScreeningResultItem
-from src.server.services.screening_service import (
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams, Signals
+from src.entrypoints.http.schemas.screening import MatchedStrategyItem, ScreeningResultItem
+from src.application.services.screening_service import (
     MultiDataRequirementKey,
     ScreeningService,
     ScreeningRequestCache,
@@ -194,7 +194,7 @@ class TestDataLoadingHelpers:
     ):
         service = ScreeningService(DummyReader())
         monkeypatch.setattr(
-            "src.server.services.screening_service.get_backtest_results_dir",
+            "src.application.services.screening_service.get_backtest_results_dir",
             lambda basename: tmp_path / basename,
         )
 
@@ -305,7 +305,7 @@ class TestStrategyResolutionHelpers:
         monkeypatch: pytest.MonkeyPatch,
         tmp_path: Path,
     ):
-        from src.paths.resolver import StrategyMetadata
+        from src.shared.paths.resolver import StrategyMetadata
 
         service = ScreeningService(DummyReader())
         meta = StrategyMetadata(
@@ -397,7 +397,7 @@ class TestRuntimeEvaluationHelpers:
         }
 
         monkeypatch.setattr(
-            "src.server.services.screening_service.load_market_multi_data",
+            "src.application.services.screening_service.load_market_multi_data",
             lambda *_args, **_kwargs: (market_data, []),
         )
 
@@ -421,7 +421,7 @@ class TestRuntimeEvaluationHelpers:
         )
 
         monkeypatch.setattr(
-            "src.server.services.screening_service.load_market_multi_data",
+            "src.application.services.screening_service.load_market_multi_data",
             lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("should not be called")),
         )
 
@@ -448,9 +448,9 @@ class TestRuntimeEvaluationHelpers:
             text = message.format(*args) if args else message
             logged.append(text)
 
-        monkeypatch.setattr("src.server.services.screening_service.logger.warning", _warn)
+        monkeypatch.setattr("src.application.services.screening_service.logger.warning", _warn)
         monkeypatch.setattr(
-            "src.server.services.screening_service.load_market_multi_data",
+            "src.application.services.screening_service.load_market_multi_data",
             lambda *_args, **_kwargs: ({}, ["loader warning"]),
         )
 
@@ -468,15 +468,15 @@ class TestRuntimeEvaluationHelpers:
         mapping = {"7203": "輸送用機器"}
 
         monkeypatch.setattr(
-            "src.server.services.screening_service.load_market_topix_data",
+            "src.application.services.screening_service.load_market_topix_data",
             lambda *_args, **_kwargs: benchmark,
         )
         monkeypatch.setattr(
-            "src.server.services.screening_service.load_market_sector_indices",
+            "src.application.services.screening_service.load_market_sector_indices",
             lambda *_args, **_kwargs: sector,
         )
         monkeypatch.setattr(
-            "src.server.services.screening_service.load_market_stock_sector_mapping",
+            "src.application.services.screening_service.load_market_stock_sector_mapping",
             lambda *_args, **_kwargs: mapping,
         )
 
@@ -573,7 +573,7 @@ class TestRuntimeEvaluationHelpers:
                 enabled_checker=lambda _params: False,
             ),
         ]
-        monkeypatch.setattr("src.server.services.screening_service.SIGNAL_REGISTRY", registry)
+        monkeypatch.setattr("src.application.services.screening_service.SIGNAL_REGISTRY", registry)
 
         assert service._needs_data_requirement(entry_params, exit_params, "benchmark")  # noqa: SLF001
         assert not service._needs_data_requirement(entry_params, exit_params, "margin")  # noqa: SLF001

@@ -8,7 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.rsi_spread import rsi_spread_signal
+from src.domains.strategy.signals.rsi_spread import rsi_spread_signal
 
 
 class TestRSISpreadSignal:

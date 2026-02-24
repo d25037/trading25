@@ -5,14 +5,14 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.data.loaders import sector_loaders
-from src.data.loaders.sector_loaders import (
+from src.infrastructure.data_access.loaders import sector_loaders
+from src.infrastructure.data_access.loaders.sector_loaders import (
     get_sector_mapping,
     get_stock_sector_mapping,
     load_all_sector_indices,
     prepare_sector_data,
 )
-from src.exceptions import SectorDataLoadError
+from src.shared.exceptions import SectorDataLoadError
 
 
 @pytest.fixture(autouse=True)
@@ -42,7 +42,7 @@ class TestGetSectorMapping:
         mock_client.get_sector_mapping.return_value = _make_mapping_df()
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
             result = get_sector_mapping("test_dataset")
         assert len(result) == 2
         assert "sector_name" in result.columns
@@ -53,8 +53,8 @@ class TestPrepareSectorData:
         mapping_df = _make_mapping_df()
         index_data = pd.DataFrame({"Close": [100, 101]}, index=pd.date_range("2025-01-01", periods=2))
         with (
-            patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
-            patch("src.data.loaders.sector_loaders.load_index_data", return_value=index_data),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.load_index_data", return_value=index_data),
         ):
             result = prepare_sector_data("test", "化学")
         assert "sector_index" in result
@@ -62,15 +62,15 @@ class TestPrepareSectorData:
 
     def test_sector_not_found(self):
         mapping_df = _make_mapping_df()
-        with patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df):
             with pytest.raises(SectorDataLoadError, match="セクター名が見つかりません"):
                 prepare_sector_data("test", "存在しない業種")
 
     def test_index_load_error(self):
         mapping_df = _make_mapping_df()
         with (
-            patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
-            patch("src.data.loaders.sector_loaders.load_index_data", side_effect=ValueError("error")),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.load_index_data", side_effect=ValueError("error")),
         ):
             with pytest.raises(SectorDataLoadError):
                 prepare_sector_data("test", "化学")
@@ -81,8 +81,8 @@ class TestLoadAllSectorIndices:
         mapping_df = _make_mapping_df()
         index_data = pd.DataFrame({"Close": [100]}, index=pd.date_range("2025-01-01", periods=1))
         with (
-            patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
-            patch("src.data.loaders.sector_loaders.load_index_data", return_value=index_data),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.load_index_data", return_value=index_data),
         ):
             result = load_all_sector_indices("test")
         assert len(result) == 2
@@ -93,8 +93,8 @@ class TestLoadAllSectorIndices:
         mapping_df = _make_mapping_df()
         index_data = pd.DataFrame({"Close": [100]}, index=pd.date_range("2025-01-01", periods=1))
         with (
-            patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
-            patch("src.data.loaders.sector_loaders.load_index_data", return_value=index_data) as mock_load,
+            patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.load_index_data", return_value=index_data) as mock_load,
         ):
             result1 = load_all_sector_indices("test")
             result2 = load_all_sector_indices("test")
@@ -112,8 +112,8 @@ class TestLoadAllSectorIndices:
             raise Exception("load error")
 
         with (
-            patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
-            patch("src.data.loaders.sector_loaders.load_index_data", side_effect=side_effect),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=mapping_df),
+            patch("src.infrastructure.data_access.loaders.sector_loaders.load_index_data", side_effect=side_effect),
         ):
             result = load_all_sector_indices("test_partial")
         assert len(result) == 1
@@ -121,7 +121,7 @@ class TestLoadAllSectorIndices:
 
     def test_empty_mapping(self):
         empty_df = pd.DataFrame(columns=["sector_code", "sector_name", "index_code", "index_name"])
-        with patch("src.data.loaders.sector_loaders.get_sector_mapping", return_value=empty_df):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.get_sector_mapping", return_value=empty_df):
             result = load_all_sector_indices("test_empty")
         assert result == {}
 
@@ -132,7 +132,7 @@ class TestGetStockSectorMapping:
         mock_client.get_stock_sector_mapping.return_value = {"1234": "化学", "5678": "医薬品"}
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
             result = get_stock_sector_mapping("test_dataset")
         assert result == {"1234": "化学", "5678": "医薬品"}
 
@@ -141,7 +141,7 @@ class TestGetStockSectorMapping:
         mock_client.get_stock_sector_mapping.return_value = {"1234": "化学"}
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
             result1 = get_stock_sector_mapping("test_cache")
             result2 = get_stock_sector_mapping("test_cache")
         assert result1 is result2
@@ -152,6 +152,6 @@ class TestGetStockSectorMapping:
         mock_client.get_stock_sector_mapping.side_effect = Exception("API error")
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.sector_loaders.DatasetAPIClient", return_value=mock_client):
             result = get_stock_sector_mapping("test_error")
         assert result == {}

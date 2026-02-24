@@ -8,7 +8,7 @@ from pathlib import Path
 
 from sqlalchemy import text
 
-from src.lib.market_db.base import BaseDbAccess
+from src.infrastructure.db.market.base import BaseDbAccess
 
 
 class TestBaseDbAccess:

@@ -18,5 +18,5 @@ Total commands: **9**
 
 ## Source Files
 
-- `apps/bt/src/cli_bt/__init__.py`
-- `apps/bt/src/cli_bt/lab.py`
+- `apps/bt/src/entrypoints/cli/__init__.py`
+- `apps/bt/src/entrypoints/cli/lab.py`

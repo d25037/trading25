@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import numpy as np
 import pandas as pd
 
-from src.data.loaders.portfolio_loaders import (
+from src.infrastructure.data_access.loaders.portfolio_loaders import (
     _convert_portfolio_code_to_market_code,
     create_portfolio_price_matrix,
     create_portfolio_returns_matrix,
@@ -39,7 +39,7 @@ class TestLoadPortfolioList:
         )
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.portfolio_loaders.PortfolioAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.portfolio_loaders.PortfolioAPIClient", return_value=mock_client):
             result = load_portfolio_list()
         assert len(result) == 2
         assert "name" in result.columns
@@ -72,7 +72,7 @@ class TestLoadPortfolioSummary:
         }
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.portfolio_loaders.PortfolioAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.portfolio_loaders.PortfolioAPIClient", return_value=mock_client):
             result = load_portfolio_summary("test")
         assert result.total_stocks == 1
         assert result.items[0].code == "1234"
@@ -82,7 +82,7 @@ class TestLoadPortfolioSummary:
         mock_client.get_portfolio_by_name.return_value = None
         mock_client.__enter__ = MagicMock(return_value=mock_client)
         mock_client.__exit__ = MagicMock(return_value=False)
-        with patch("src.data.loaders.portfolio_loaders.PortfolioAPIClient", return_value=mock_client):
+        with patch("src.infrastructure.data_access.loaders.portfolio_loaders.PortfolioAPIClient", return_value=mock_client):
             import pytest
             with pytest.raises(ValueError, match="not found"):
                 load_portfolio_summary("nonexistent")

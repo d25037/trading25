@@ -7,15 +7,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.schemas.backtest import BacktestResultSummary, JobStatus
+from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 
 
 @pytest.fixture
 def mock_services():
     """backtest_service, job_manager を一括mock"""
     with (
-        patch("src.server.routes.backtest.backtest_service") as mock_bt_svc,
-        patch("src.server.routes.backtest.job_manager") as mock_jm,
+        patch("src.entrypoints.http.routes.backtest.backtest_service") as mock_bt_svc,
+        patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
     ):
         yield mock_bt_svc, mock_jm
 
@@ -49,7 +49,7 @@ def _make_job(
 
 @pytest.fixture
 def client():
-    from src.server.app import create_app
+    from src.entrypoints.http.app import create_app
     app = create_app()
     return TestClient(app)
 
@@ -166,7 +166,7 @@ class TestGetResult:
             total_trades=17,
         )
 
-        with patch("src.server.services.backtest_result_summary.extract_metrics_from_html", return_value=metrics):
+        with patch("src.application.services.backtest_result_summary.extract_metrics_from_html", return_value=metrics):
             resp = client.get("/api/backtest/result/job-1")
 
         assert resp.status_code == 200
@@ -248,7 +248,7 @@ class TestBacktestJobEndpoints:
             total_trades=21,
         )
 
-        with patch("src.server.services.backtest_result_summary.extract_metrics_from_html", return_value=metrics):
+        with patch("src.application.services.backtest_result_summary.extract_metrics_from_html", return_value=metrics):
             resp = client.get("/api/backtest/jobs/job-1")
 
         assert resp.status_code == 200
@@ -320,8 +320,8 @@ class TestSignalAttributionEndpoints:
 
     def test_run_submit_success(self, client):
         with (
-            patch("src.server.routes.backtest.backtest_attribution_service") as mock_attr_svc,
-            patch("src.server.routes.backtest.job_manager") as mock_jm,
+            patch("src.entrypoints.http.routes.backtest.backtest_attribution_service") as mock_attr_svc,
+            patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
         ):
             mock_attr_svc.submit_attribution = AsyncMock(return_value="attr-1")
             mock_jm.get_job.return_value = _make_job(
@@ -337,14 +337,14 @@ class TestSignalAttributionEndpoints:
             assert resp.json()["job_id"] == "attr-1"
 
     def test_run_submit_error_returns_500(self, client):
-        with patch("src.server.routes.backtest.backtest_attribution_service") as mock_attr_svc:
+        with patch("src.entrypoints.http.routes.backtest.backtest_attribution_service") as mock_attr_svc:
             mock_attr_svc.submit_attribution = AsyncMock(side_effect=RuntimeError("attr submit failed"))
             resp = client.post("/api/backtest/attribution/run", json={"strategy_name": "test"})
             assert resp.status_code == 500
             assert "attr submit failed" in str(resp.json())
 
     def test_get_job_success_completed_with_result(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
                 JobStatus.COMPLETED,
@@ -359,9 +359,9 @@ class TestSignalAttributionEndpoints:
 
     def test_get_job_attempts_parse_for_empty_raw_result(self, client):
         with (
-            patch("src.server.routes.backtest.job_manager") as mock_jm,
+            patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
             patch(
-                "src.server.routes.backtest.SignalAttributionResult.model_validate",
+                "src.entrypoints.http.routes.backtest.SignalAttributionResult.model_validate",
                 side_effect=ValueError("invalid result"),
             ) as mock_validate,
         ):
@@ -376,7 +376,7 @@ class TestSignalAttributionEndpoints:
             mock_validate.assert_called_once_with({})
 
     def test_get_job_type_mismatch(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
                 JobStatus.RUNNING,
@@ -386,7 +386,7 @@ class TestSignalAttributionEndpoints:
             assert resp.status_code == 400
 
     def test_cancel_success(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
                 JobStatus.RUNNING,
@@ -404,13 +404,13 @@ class TestSignalAttributionEndpoints:
             assert resp.json()["status"] == "cancelled"
 
     def test_stream_nonexistent_job(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = None
             resp = client.get("/api/backtest/attribution/jobs/missing/stream")
             assert resp.status_code == 404
 
     def test_result_success(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
                 JobStatus.COMPLETED,
@@ -424,7 +424,7 @@ class TestSignalAttributionEndpoints:
             assert data["result"]["signals"][0]["signal_id"] == "entry.volume"
 
     def test_result_not_completed(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
                 JobStatus.RUNNING,
@@ -434,7 +434,7 @@ class TestSignalAttributionEndpoints:
             assert resp.status_code == 400
 
     def test_result_missing_raw_result_returns_500(self, client):
-        with patch("src.server.routes.backtest.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
                 JobStatus.COMPLETED,
@@ -446,9 +446,9 @@ class TestSignalAttributionEndpoints:
 
     def test_result_parse_error_returns_500(self, client):
         with (
-            patch("src.server.routes.backtest.job_manager") as mock_jm,
+            patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
             patch(
-                "src.server.routes.backtest.SignalAttributionResult.model_validate",
+                "src.entrypoints.http.routes.backtest.SignalAttributionResult.model_validate",
                 side_effect=ValueError("bad attribution"),
             ),
         ):
@@ -467,8 +467,8 @@ class TestSignalAttributionEndpoints:
             yield {"data": "ok"}
 
         with (
-            patch("src.server.routes.backtest.job_manager") as mock_jm,
-            patch("src.server.routes.backtest.sse_manager") as mock_sse,
+            patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
+            patch("src.entrypoints.http.routes.backtest.sse_manager") as mock_sse,
         ):
             mock_jm.get_job.return_value = _make_job(
                 "attr-1",
@@ -483,8 +483,8 @@ class TestSignalAttributionEndpoints:
 class TestAttributionArtifactEndpoints:
     def test_list_attribution_files(self, client, tmp_path):
         with (
-            patch("src.server.routes.backtest.get_backtest_attribution_dir", return_value=tmp_path),
-            patch("src.server.routes.backtest.list_attribution_files_in_dir") as mock_list,
+            patch("src.entrypoints.http.routes.backtest.get_backtest_attribution_dir", return_value=tmp_path),
+            patch("src.entrypoints.http.routes.backtest.list_attribution_files_in_dir") as mock_list,
         ):
             mock_list.return_value = (
                 [
@@ -509,8 +509,8 @@ class TestAttributionArtifactEndpoints:
 
     def test_get_attribution_file_content(self, client, tmp_path):
         with (
-            patch("src.server.routes.backtest.get_backtest_attribution_dir", return_value=tmp_path),
-            patch("src.server.routes.backtest.read_attribution_file") as mock_read,
+            patch("src.entrypoints.http.routes.backtest.get_backtest_attribution_dir", return_value=tmp_path),
+            patch("src.entrypoints.http.routes.backtest.read_attribution_file") as mock_read,
         ):
             mock_read.return_value = {
                 "saved_at": "2026-01-12T12:30:00+00:00",
@@ -537,8 +537,8 @@ class TestAttributionArtifactEndpoints:
 class TestHtmlFileEndpoints:
     def test_list_html_files(self, client, tmp_path):
         with (
-            patch("src.server.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
-            patch("src.server.routes.backtest.list_html_files_in_dir") as mock_list,
+            patch("src.entrypoints.http.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
+            patch("src.entrypoints.http.routes.backtest.list_html_files_in_dir") as mock_list,
         ):
             mock_list.return_value = (
                 [
@@ -570,9 +570,9 @@ class TestHtmlFileEndpoints:
             total_trades=10,
         )
         with (
-            patch("src.server.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
-            patch("src.server.routes.backtest.read_html_file", return_value="<html>body</html>"),
-            patch("src.data.metrics_extractor.extract_metrics_from_html", return_value=metrics),
+            patch("src.entrypoints.http.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
+            patch("src.entrypoints.http.routes.backtest.read_html_file", return_value="<html>body</html>"),
+            patch("src.domains.backtest.metrics_extractor.extract_metrics_from_html", return_value=metrics),
         ):
             resp = client.get("/api/backtest/html-files/s1/f1.html")
             assert resp.status_code == 200
@@ -583,8 +583,8 @@ class TestHtmlFileEndpoints:
 
     def test_rename_html_file_endpoint(self, client, tmp_path):
         with (
-            patch("src.server.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
-            patch("src.server.routes.backtest.rename_html_file") as mock_rename,
+            patch("src.entrypoints.http.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
+            patch("src.entrypoints.http.routes.backtest.rename_html_file") as mock_rename,
         ):
             resp = client.post(
                 "/api/backtest/html-files/s1/f1.html/rename",
@@ -596,8 +596,8 @@ class TestHtmlFileEndpoints:
 
     def test_delete_html_file_endpoint(self, client, tmp_path):
         with (
-            patch("src.server.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
-            patch("src.server.routes.backtest.delete_html_file") as mock_delete,
+            patch("src.entrypoints.http.routes.backtest.get_backtest_results_dir", return_value=tmp_path),
+            patch("src.entrypoints.http.routes.backtest.delete_html_file") as mock_delete,
         ):
             resp = client.delete("/api/backtest/html-files/s1/f1.html")
             assert resp.status_code == 200
@@ -612,7 +612,7 @@ class TestSSEEndpoints:
         async def _gen(_job_id):
             yield {"data": "ok"}
 
-        with patch("src.server.routes.backtest.sse_manager") as mock_sse:
+        with patch("src.entrypoints.http.routes.backtest.sse_manager") as mock_sse:
             mock_jm.get_job.return_value = _make_job("job-1", JobStatus.RUNNING)
             mock_sse.job_event_generator.return_value = _gen("job-1")
             resp = client.get("/api/backtest/jobs/job-1/stream")

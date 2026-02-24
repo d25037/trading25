@@ -6,7 +6,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from src.agent.evaluator.data_preparation import (
+from src.domains.lab_agent.evaluator.data_preparation import (
     BatchPreparedData,
     _get_fallback_shared_config,
     convert_dataframes_to_dict,
@@ -83,11 +83,11 @@ default:
         yaml_file = tmp_path / "default.yaml"
         yaml_file.write_text(yaml_content)
         with patch(
-            "src.agent.evaluator.data_preparation.Path",
+            "src.domains.lab_agent.evaluator.data_preparation.Path",
             return_value=yaml_file,
         ):
             # Need to patch the Path constructor
-            from src.agent.evaluator import data_preparation
+            from src.domains.lab_agent.evaluator import data_preparation
             original = data_preparation.Path
             data_preparation.Path = lambda x: yaml_file  # type: ignore
             try:

@@ -5,7 +5,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
-from src.data.loaders.margin_loaders import get_margin_available_stocks, transform_margin_df
+from src.infrastructure.data_access.loaders.margin_loaders import get_margin_available_stocks, transform_margin_df
 
 
 def _mock_api_client():
@@ -68,11 +68,11 @@ class TestTransformMarginDf:
 
 
 class TestLoadMarginData:
-    @patch("src.data.loaders.margin_loaders.DataCache")
-    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
-    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DatasetAPIClient")
     def test_basic_load(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.margin_loaders import load_margin_data
+        from src.infrastructure.data_access.loaders.margin_loaders import load_margin_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -88,11 +88,11 @@ class TestLoadMarginData:
         assert "TotalMargin" in result.columns
         assert len(result) == 3
 
-    @patch("src.data.loaders.margin_loaders.DataCache")
-    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
-    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DatasetAPIClient")
     def test_empty_raises(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.margin_loaders import load_margin_data
+        from src.infrastructure.data_access.loaders.margin_loaders import load_margin_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -103,11 +103,11 @@ class TestLoadMarginData:
         with pytest.raises(ValueError, match="No margin data"):
             load_margin_data("testds", "9999")
 
-    @patch("src.data.loaders.margin_loaders.DataCache")
-    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
-    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DatasetAPIClient")
     def test_daily_index_reindex(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.margin_loaders import load_margin_data
+        from src.infrastructure.data_access.loaders.margin_loaders import load_margin_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -124,11 +124,11 @@ class TestLoadMarginData:
         assert len(result) == 10
         assert result.isna().sum().sum() == 0
 
-    @patch("src.data.loaders.margin_loaders.DataCache")
-    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
-    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DatasetAPIClient")
     def test_cache_hit_skips_api(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.margin_loaders import load_margin_data
+        from src.infrastructure.data_access.loaders.margin_loaders import load_margin_data
 
         mock_extract.return_value = "testds"
         cached_df = pd.DataFrame({"LongMargin": [100.0], "ShortMargin": [50.0]})
@@ -140,11 +140,11 @@ class TestLoadMarginData:
         assert result is cached_df
         client.get_margin.assert_not_called()
 
-    @patch("src.data.loaders.margin_loaders.DataCache")
-    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
-    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DataCache")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DatasetAPIClient")
     def test_cache_set_on_miss(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.margin_loaders import load_margin_data
+        from src.infrastructure.data_access.loaders.margin_loaders import load_margin_data
 
         mock_extract.return_value = "testds"
         cache = _mock_cache_enabled(get_value=None)
@@ -163,8 +163,8 @@ class TestLoadMarginData:
 
 
 class TestGetMarginAvailableStocks:
-    @patch("src.data.loaders.margin_loaders.extract_dataset_name")
-    @patch("src.data.loaders.margin_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.margin_loaders.DatasetAPIClient")
     def test_success(self, mock_client_cls, mock_extract):
         mock_extract.return_value = "testds"
         client = _mock_api_client()

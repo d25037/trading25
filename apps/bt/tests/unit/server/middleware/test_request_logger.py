@@ -10,8 +10,8 @@ import pytest
 from sqlalchemy.exc import SQLAlchemyError
 from starlette.requests import Request
 
-from src.server.middleware.request_logger import RequestLoggerMiddleware
-from src.server.app import create_app
+from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddleware
+from src.entrypoints.http.app import create_app
 
 
 def _make_client() -> TestClient:
@@ -27,7 +27,7 @@ class TestRequestLoggerMiddleware:
 
     def test_logs_method_path_status_elapsed(self) -> None:
         """ログに method, path, status, elapsed が含まれること"""
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             self.client.get("/api/health")
 
             mock_logger.info.assert_called()
@@ -40,7 +40,7 @@ class TestRequestLoggerMiddleware:
     def test_logs_correlation_id(self) -> None:
         """ログの kwargs に correlationId が含まれること"""
         test_cid = "12345678-1234-1234-1234-123456789abc"
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             self.client.get("/api/health", headers={"x-correlation-id": test_cid})
 
             mock_logger.info.assert_called()
@@ -49,7 +49,7 @@ class TestRequestLoggerMiddleware:
 
     def test_logs_auto_generated_correlation_id(self) -> None:
         """correlation ID が自動生成されてログに含まれること"""
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             self.client.get("/api/health")
 
             mock_logger.info.assert_called()
@@ -58,7 +58,7 @@ class TestRequestLoggerMiddleware:
 
     def test_logs_structured_fields(self) -> None:
         """構造化フィールド (method, path, status, elapsed) がログ kwargs に含まれること"""
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             self.client.get("/api/health")
 
             mock_logger.info.assert_called()
@@ -70,7 +70,7 @@ class TestRequestLoggerMiddleware:
 
     def test_error_status_logs_at_error_level(self) -> None:
         """5xx ステータスは error レベルでログされること"""
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             self.client.get("/nonexistent/path/that/triggers/500/somehow")
 
             # 404 は info レベル
@@ -97,7 +97,7 @@ class TestRequestLoggerMiddleware:
         app.include_router(test_router)
         client = TestClient(app)
 
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             client.get("/test/500")
 
             mock_logger.error.assert_called()
@@ -128,8 +128,8 @@ class TestRequestLoggerMiddleware:
             raise SQLAlchemyError("db failed")
 
         with (
-            patch("src.server.middleware.request_logger.logger") as mock_logger,
-            patch("src.server.middleware.request_logger.get_correlation_id", return_value="cid-123"),
+            patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger,
+            patch("src.entrypoints.http.middleware.request_logger.get_correlation_id", return_value="cid-123"),
         ):
             response = await middleware.dispatch(request, call_next)
 
@@ -151,7 +151,7 @@ class TestMiddlewareOrder:
         test_cid = "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         client = _make_client()
 
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             resp = client.get("/api/health", headers={"x-correlation-id": test_cid})
 
             # レスポンスヘッダにも同じ correlation ID
@@ -166,7 +166,7 @@ class TestMiddlewareOrder:
         """自動生成の correlation ID がレスポンスヘッダとログで一致すること"""
         client = _make_client()
 
-        with patch("src.server.middleware.request_logger.logger") as mock_logger:
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
             resp = client.get("/api/health")
 
             header_cid = resp.headers.get("x-correlation-id")
@@ -182,7 +182,7 @@ class TestRequestLoggerErrorResponse:
     def test_build_error_response_without_correlation_id_header(self) -> None:
         middleware = RequestLoggerMiddleware(FastAPI())
 
-        with patch("src.server.middleware.request_logger.get_correlation_id", return_value=""):
+        with patch("src.entrypoints.http.middleware.request_logger.get_correlation_id", return_value=""):
             response = middleware._build_error_response(
                 method="GET",
                 path="/test",

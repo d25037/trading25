@@ -7,7 +7,7 @@
 import pandas as pd
 import pytest
 
-from src.strategies.signals.breakout import retracement_signal
+from src.domains.strategy.signals.breakout import retracement_signal
 
 
 class TestRetracementSignal:

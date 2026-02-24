@@ -30,11 +30,11 @@ def _mock_cache_disabled():
 
 
 class TestLoadTopixData:
-    @patch("src.data.loaders.cache.DataCache")
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.cache.DataCache")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_basic(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.index_loaders import load_topix_data
+        from src.infrastructure.data_access.loaders.index_loaders import load_topix_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -47,11 +47,11 @@ class TestLoadTopixData:
 
 
 class TestLoadIndexData:
-    @patch("src.data.loaders.cache.DataCache")
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.cache.DataCache")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_basic(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.index_loaders import load_index_data
+        from src.infrastructure.data_access.loaders.index_loaders import load_index_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -62,11 +62,11 @@ class TestLoadIndexData:
         result = load_index_data("testds", "topix")
         assert len(result) == 5
 
-    @patch("src.data.loaders.cache.DataCache")
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.cache.DataCache")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_empty_raises(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.index_loaders import load_index_data
+        from src.infrastructure.data_access.loaders.index_loaders import load_index_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -79,10 +79,10 @@ class TestLoadIndexData:
 
 
 class TestGetIndexList:
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_returns_list(self, mock_client_cls, mock_extract):
-        from src.data.loaders.index_loaders import get_index_list
+        from src.infrastructure.data_access.loaders.index_loaders import get_index_list
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -94,10 +94,10 @@ class TestGetIndexList:
         result = get_index_list("testds")
         assert "topix" in result
 
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_empty_returns_empty_list(self, mock_client_cls, mock_extract):
-        from src.data.loaders.index_loaders import get_index_list
+        from src.infrastructure.data_access.loaders.index_loaders import get_index_list
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()
@@ -109,9 +109,9 @@ class TestGetIndexList:
 
 
 class TestLoadTopixDataFromMarketDb:
-    @patch("src.data.loaders.index_loaders.MarketAPIClient")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.MarketAPIClient")
     def test_basic(self, mock_client_cls):
-        from src.data.loaders.index_loaders import load_topix_data_from_market_db
+        from src.infrastructure.data_access.loaders.index_loaders import load_topix_data_from_market_db
 
         client = _mock_api_client()
         client.get_topix.return_value = _index_df()
@@ -120,9 +120,9 @@ class TestLoadTopixDataFromMarketDb:
         result = load_topix_data_from_market_db()
         assert len(result) == 5
 
-    @patch("src.data.loaders.index_loaders.MarketAPIClient")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.MarketAPIClient")
     def test_empty_raises(self, mock_client_cls):
-        from src.data.loaders.index_loaders import load_topix_data_from_market_db
+        from src.infrastructure.data_access.loaders.index_loaders import load_topix_data_from_market_db
 
         client = _mock_api_client()
         client.get_topix.return_value = pd.DataFrame()
@@ -133,11 +133,11 @@ class TestLoadTopixDataFromMarketDb:
 
 
 class TestLoadTopixDataEmpty:
-    @patch("src.data.loaders.cache.DataCache")
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.cache.DataCache")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_empty_raises(self, mock_client_cls, mock_extract, mock_cache_cls):
-        from src.data.loaders.index_loaders import load_topix_data
+        from src.infrastructure.data_access.loaders.index_loaders import load_topix_data
 
         mock_extract.return_value = "testds"
         mock_cache_cls.get_instance.return_value = _mock_cache_disabled()
@@ -150,10 +150,10 @@ class TestLoadTopixDataEmpty:
 
 
 class TestGetAvailableIndices:
-    @patch("src.data.loaders.index_loaders.extract_dataset_name")
-    @patch("src.data.loaders.index_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.index_loaders.DatasetAPIClient")
     def test_returns_dataframe(self, mock_client_cls, mock_extract):
-        from src.data.loaders.index_loaders import get_available_indices
+        from src.infrastructure.data_access.loaders.index_loaders import get_available_indices
 
         mock_extract.return_value = "testds"
         client = _mock_api_client()

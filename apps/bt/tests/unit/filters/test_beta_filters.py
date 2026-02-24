@@ -14,7 +14,7 @@ import unittest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.beta import (
+from src.domains.strategy.signals.beta import (
     calculate_beta,
     rolling_beta_calculation,
     beta_range_signal,

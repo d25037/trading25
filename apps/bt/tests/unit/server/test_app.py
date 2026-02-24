@@ -6,7 +6,7 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import _periodic_cleanup, create_app, lifespan
+from src.entrypoints.http.app import _periodic_cleanup, create_app, lifespan
 
 
 class TestCreateApp:
@@ -35,17 +35,17 @@ class TestCreateApp:
 class TestPeriodicCleanup:
     @pytest.mark.asyncio
     async def test_cleanup_runs_and_logs(self) -> None:
-        with patch("src.server.app.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.app.job_manager") as mock_jm:
             mock_jm.cleanup_old_jobs.return_value = 3
-            with patch("src.server.app.asyncio.sleep", side_effect=asyncio.CancelledError):
+            with patch("src.entrypoints.http.app.asyncio.sleep", side_effect=asyncio.CancelledError):
                 with pytest.raises(asyncio.CancelledError):
                     await _periodic_cleanup(interval_seconds=1)
 
     @pytest.mark.asyncio
     async def test_cleanup_handles_exception(self) -> None:
-        with patch("src.server.app.job_manager") as mock_jm:
+        with patch("src.entrypoints.http.app.job_manager") as mock_jm:
             mock_jm.cleanup_old_jobs.side_effect = RuntimeError("test error")
-            with patch("src.server.app.asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
+            with patch("src.entrypoints.http.app.asyncio.sleep", side_effect=[None, asyncio.CancelledError]):
                 with pytest.raises(asyncio.CancelledError):
                     await _periodic_cleanup(interval_seconds=1)
 
@@ -60,10 +60,10 @@ class TestLifespan:
             await asyncio.sleep(3600)
 
         with (
-            patch("src.server.app._periodic_cleanup", side_effect=_fake_cleanup),
-            patch("src.server.app.backtest_service") as mock_bt,
-            patch("src.server.app.optimization_service") as mock_opt,
-            patch("src.server.app.lab_service") as mock_lab,
+            patch("src.entrypoints.http.app._periodic_cleanup", side_effect=_fake_cleanup),
+            patch("src.entrypoints.http.app.backtest_service") as mock_bt,
+            patch("src.entrypoints.http.app.optimization_service") as mock_opt,
+            patch("src.entrypoints.http.app.lab_service") as mock_lab,
         ):
             # Mock executors に _broken / _shutdown を明示セット
             for mock_svc in (mock_bt, mock_opt, mock_lab):

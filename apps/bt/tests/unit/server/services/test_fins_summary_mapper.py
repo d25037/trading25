@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from src.server.services.fins_summary_mapper import convert_fins_summary_rows
+from src.application.services.fins_summary_mapper import convert_fins_summary_rows
 
 
 def test_convert_fins_summary_rows_normalizes_empty_numeric_values() -> None:

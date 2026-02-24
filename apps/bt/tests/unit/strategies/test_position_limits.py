@@ -4,7 +4,7 @@ Position limit tests
 
 import pandas as pd
 
-from src.strategies.core.mixins.backtest_executor_mixin import BacktestExecutorMixin
+from src.domains.strategy.core.mixins.backtest_executor_mixin import BacktestExecutorMixin
 
 
 class _DummyStrategy(BacktestExecutorMixin):

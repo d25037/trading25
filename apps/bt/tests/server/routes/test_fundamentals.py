@@ -9,8 +9,8 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.server.app import app
-from src.server.schemas.fundamentals import (
+from src.entrypoints.http.app import app
+from src.entrypoints.http.schemas.fundamentals import (
     FundamentalDataPoint,
     FundamentalsComputeResponse,
 )
@@ -76,7 +76,7 @@ class TestFundamentalsComputeEndpoint:
         )
 
         with patch(
-            "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
             return_value=mock_response,
         ):
             response = client.post(
@@ -104,7 +104,7 @@ class TestFundamentalsComputeEndpoint:
         )
 
         with patch(
-            "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
             return_value=mock_response,
         ):
             response = client.post(
@@ -133,7 +133,7 @@ class TestFundamentalsComputeEndpoint:
         )
 
         with patch(
-            "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
             return_value=mock_response,
         ):
             response = client.post(
@@ -168,10 +168,10 @@ class TestFundamentalsComputeEndpoint:
 
     def test_compute_stock_not_found(self, client: TestClient):
         """銘柄が見つからない場合(404)"""
-        from src.api.exceptions import APINotFoundError
+        from src.infrastructure.external_api.exceptions import APINotFoundError
 
         with patch(
-            "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
             side_effect=APINotFoundError("Stock not found"),
         ):
             response = client.post(
@@ -183,10 +183,10 @@ class TestFundamentalsComputeEndpoint:
 
     def test_compute_api_error(self, client: TestClient):
         """APIエラー(500)"""
-        from src.api.exceptions import APIError
+        from src.infrastructure.external_api.exceptions import APIError
 
         with patch(
-            "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
             side_effect=APIError("API error"),
         ):
             response = client.post(
@@ -199,7 +199,7 @@ class TestFundamentalsComputeEndpoint:
     def test_compute_unexpected_error(self, client: TestClient):
         """予期しないエラー(500)"""
         with patch(
-            "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+            "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
             side_effect=RuntimeError("Unexpected error"),
         ):
             response = client.post(
@@ -231,7 +231,7 @@ class TestFundamentalsSchemaValidation:
             )
 
             with patch(
-                "src.server.routes.fundamentals.fundamentals_service.compute_fundamentals",
+                "src.entrypoints.http.routes.fundamentals.fundamentals_service.compute_fundamentals",
                 return_value=mock_response,
             ):
                 response = client.post(

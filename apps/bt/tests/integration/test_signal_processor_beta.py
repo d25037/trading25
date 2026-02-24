@@ -8,8 +8,8 @@ import unittest
 import pandas as pd
 import numpy as np
 
-from src.strategies.signals.processor import SignalProcessor
-from src.models.signals import SignalParams, BetaSignalParams
+from src.domains.strategy.signals.processor import SignalProcessor
+from src.shared.models.signals import SignalParams, BetaSignalParams
 
 
 class TestSignalProcessorBeta(unittest.TestCase):
@@ -166,7 +166,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
 
     def test_beta_signal_integration_with_other_signals(self):
         """β値シグナルと他のシグナルの組み合わせテスト"""
-        from src.models.signals import VolumeSignalParams
+        from src.shared.models.signals import VolumeSignalParams
 
         # SignalParams作成（β値 + 出来高シグナル）
         signal_params = SignalParams(

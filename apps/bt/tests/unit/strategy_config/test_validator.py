@@ -4,8 +4,8 @@
 
 import pytest
 
-from src.lib.strategy_runtime import validator as runtime_validator
-from src.strategy_config.validator import (
+from src.domains.strategy.runtime import validator as runtime_validator
+from src.domains.strategy.runtime.validator import (
     is_editable_category,
     is_updatable_category,
     validate_strategy_config,
@@ -88,7 +88,7 @@ class TestValidateStrategyConfig:
     def test_valid_config(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """妥当な設定はTrueを返す"""
         monkeypatch.setattr(
-            "src.strategy_config.validator.try_validate_strategy_config_dict",
+            "src.domains.strategy.runtime.validator.try_validate_strategy_config_dict_strict",
             lambda c: (True, None),
         )
         config: dict = {
@@ -106,7 +106,7 @@ class TestValidateStrategyConfig:
     def test_invalid_config_returns_false(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """バリデーション失敗はFalseを返す"""
         monkeypatch.setattr(
-            "src.strategy_config.validator.try_validate_strategy_config_dict",
+            "src.domains.strategy.runtime.validator.try_validate_strategy_config_dict_strict",
             lambda c: (False, "validation error"),
         )
         assert validate_strategy_config({}) is False
@@ -114,7 +114,7 @@ class TestValidateStrategyConfig:
     def test_missing_filter_types_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
         """フィルター欠落時も警告のみでTrueを返す"""
         monkeypatch.setattr(
-            "src.strategy_config.validator.try_validate_strategy_config_dict",
+            "src.domains.strategy.runtime.validator.try_validate_strategy_config_dict_strict",
             lambda c: (True, None),
         )
         config: dict = {"entry_filter_params": {}}
@@ -160,7 +160,7 @@ class TestIsUpdatableCategory:
 
 
 class TestRuntimeValidator:
-    """src.lib.strategy_runtime.validator のカバレッジ補強"""
+    """src.domains.strategy.runtime.validator のカバレッジ補強"""
 
     def test_validate_strategy_config_success(self, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(

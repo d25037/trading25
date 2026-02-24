@@ -6,7 +6,7 @@ import pytest
 
 from fastapi.testclient import TestClient
 
-from src.server.app import create_app
+from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture
@@ -15,7 +15,7 @@ def client_with_market_db(market_db_path, monkeypatch):
     monkeypatch.setenv("MARKET_DB_PATH", market_db_path)
     monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
-    from src.config.settings import reload_settings
+    from src.shared.config.settings import reload_settings
     reload_settings()
     app = create_app()
     with TestClient(app) as client:

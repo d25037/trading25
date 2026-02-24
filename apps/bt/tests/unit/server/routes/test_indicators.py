@@ -6,8 +6,8 @@ from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
 
-from src.api.exceptions import APIError, APINotFoundError
-from src.server.app import app
+from src.infrastructure.external_api.exceptions import APIError, APINotFoundError
+from src.entrypoints.http.app import app
 
 client = TestClient(app)
 
@@ -15,7 +15,7 @@ client = TestClient(app)
 class TestComputeEndpoint:
     """POST /api/indicators/compute テスト"""
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_success(self, mock_compute: MagicMock):
         mock_compute.return_value = {
             "stock_code": "7203",
@@ -40,7 +40,7 @@ class TestComputeEndpoint:
         assert "sma_20" in data["indicators"]
         mock_compute.assert_called_once()
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_not_found(self, mock_compute: MagicMock):
         mock_compute.side_effect = ValueError("銘柄 9999 のOHLCVデータが取得できません")
 
@@ -87,8 +87,8 @@ class TestComputeEndpoint:
 
         assert response.status_code == 422
 
-    @patch("src.server.routes.indicators.TIMEOUT_SECONDS", 0.001)
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.TIMEOUT_SECONDS", 0.001)
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_timeout(self, mock_compute: MagicMock):
         """タイムアウト時に504を返す"""
         import time
@@ -110,7 +110,7 @@ class TestComputeEndpoint:
         assert response.status_code == 504
         assert "タイムアウト" in response.json()["message"]
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_unexpected_error(self, mock_compute: MagicMock):
         """予期しないエラー時に500を返す"""
         mock_compute.side_effect = RuntimeError("unexpected error")
@@ -126,7 +126,7 @@ class TestComputeEndpoint:
         assert response.status_code == 500
         assert "計算エラー" in response.json()["message"]
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_value_error_422(self, mock_compute: MagicMock):
         """ValueError（取得できません以外）で422を返す"""
         mock_compute.side_effect = ValueError("パラメータが不正です")
@@ -141,7 +141,7 @@ class TestComputeEndpoint:
 
         assert response.status_code == 422
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_multiple_indicators(self, mock_compute: MagicMock):
         mock_compute.return_value = {
             "stock_code": "7203",
@@ -170,7 +170,7 @@ class TestComputeEndpoint:
         data = response.json()
         assert len(data["indicators"]) == 3
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_risk_adjusted_return_indicator(self, mock_compute: MagicMock):
         mock_compute.return_value = {
             "stock_code": "7203",
@@ -195,7 +195,7 @@ class TestComputeEndpoint:
         data = response.json()
         assert "risk_adjusted_return_60_sortino" in data["indicators"]
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_api_not_found_returns_404(self, mock_compute: MagicMock):
         """APINotFoundError が 404 で返ること"""
         mock_compute.side_effect = APINotFoundError("Resource not found: Stock not found")
@@ -210,7 +210,7 @@ class TestComputeEndpoint:
 
         assert response.status_code == 404
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_api_error_returns_status_code(self, mock_compute: MagicMock):
         """APIError が適切なステータスコードで返ること"""
         mock_compute.side_effect = APIError("Bad request", status_code=400)
@@ -225,7 +225,7 @@ class TestComputeEndpoint:
 
         assert response.status_code == 400
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_api_error_no_status_returns_500(self, mock_compute: MagicMock):
         """status_code=None の APIError が 500 で返ること"""
         mock_compute.side_effect = APIError("Connection failed")
@@ -244,7 +244,7 @@ class TestComputeEndpoint:
 class TestMarginEndpoint:
     """POST /api/indicators/margin テスト"""
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_margin_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_margin_indicators")
     def test_margin_success(self, mock_compute: MagicMock):
         mock_compute.return_value = {
             "stock_code": "7203",
@@ -268,7 +268,7 @@ class TestMarginEndpoint:
         assert data["stock_code"] == "7203"
         assert "margin_long_pressure" in data["indicators"]
 
-    @patch("src.server.routes.indicators.IndicatorService.compute_margin_indicators")
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_margin_indicators")
     def test_margin_not_found(self, mock_compute: MagicMock):
         mock_compute.side_effect = ValueError("銘柄 9999 の信用データが取得できません")
 

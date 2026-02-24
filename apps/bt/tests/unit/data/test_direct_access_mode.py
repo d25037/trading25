@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.api.client import BaseAPIClient
-from src.data.access.mode import data_access_mode_context
-from src.data.loaders.index_loaders import load_topix_data_from_market_db
-from src.data.loaders.stock_loaders import load_stock_data
+from src.infrastructure.external_api.client import BaseAPIClient
+from src.infrastructure.data_access.mode import data_access_mode_context
+from src.infrastructure.data_access.loaders.index_loaders import load_topix_data_from_market_db
+from src.infrastructure.data_access.loaders.stock_loaders import load_stock_data
 
 
 def test_load_stock_data_direct_mode_bypasses_http(monkeypatch):
@@ -26,7 +26,7 @@ def test_load_stock_data_direct_mode_bypasses_http(monkeypatch):
             ]
 
     monkeypatch.setattr(
-        "src.data.access.clients._resolve_dataset_db",
+        "src.infrastructure.data_access.clients._resolve_dataset_db",
         lambda _dataset_name: _FakeDatasetDb(),
     )
 
@@ -56,7 +56,7 @@ def test_load_topix_market_direct_mode_bypasses_http(monkeypatch):
             ]
 
     monkeypatch.setattr(
-        "src.data.access.clients._resolve_market_reader",
+        "src.infrastructure.data_access.clients._resolve_market_reader",
         lambda: _FakeMarketReader(),
     )
 
