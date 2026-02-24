@@ -14,11 +14,13 @@ interface ScreeningTableProps {
 
 export function ScreeningTable({ results, isLoading, isFetching = false, error, onStockClick }: ScreeningTableProps) {
   return (
-    <Card className="glass-panel overflow-hidden flex-1">
+    <Card className="glass-panel overflow-hidden flex flex-1 min-h-0 flex-col">
       <CardHeader className="border-b border-border/30 py-3">
         <CardTitle className="text-base flex items-center gap-2">
           Screening Results
-          {results.length > 0 && <span className="text-sm font-normal text-muted-foreground ml-2">({results.length})</span>}
+          {results.length > 0 && (
+            <span className="text-sm font-normal text-muted-foreground ml-2">({results.length})</span>
+          )}
           {isFetching && (
             <span className="inline-flex items-center gap-1 text-xs font-normal text-muted-foreground ml-2">
               <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -27,7 +29,7 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 overflow-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+      <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
         <DataStateWrapper
           isLoading={isLoading}
           error={error}

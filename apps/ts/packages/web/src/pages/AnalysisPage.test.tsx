@@ -1,7 +1,9 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/api-client';
 import { createInitialAnalysisState, useAnalysisStore } from '@/stores/analysisStore';
+import type { MarketScreeningResponse } from '@/types/screening';
 import { AnalysisPage } from './AnalysisPage';
 
 const mockNavigate = vi.fn();
@@ -20,6 +22,46 @@ const mockRunScreeningJob = vi.fn().mockResolvedValue({
   job_id: 'job-1',
   status: 'pending',
 });
+const mockUseScreeningJobStatus = vi.fn();
+const mockUseScreeningResult = vi.fn();
+const mockCancelScreeningJob = vi.fn();
+
+function createCachedScreeningResult(): MarketScreeningResponse {
+  return {
+    summary: {
+      totalStocksScreened: 1,
+      matchCount: 1,
+      skippedCount: 0,
+      byStrategy: { 'production/range_break_v15': 1 },
+      strategiesEvaluated: ['production/range_break_v15'],
+      strategiesWithoutBacktestMetrics: [],
+      warnings: [],
+    },
+    markets: ['prime'],
+    recentDays: 10,
+    referenceDate: '2026-02-18',
+    sortBy: 'matchedDate',
+    order: 'desc',
+    lastUpdated: '2026-02-18T00:00:00Z',
+    results: [
+      {
+        stockCode: '7203',
+        companyName: 'トヨタ自動車',
+        matchedDate: '2026-02-18',
+        bestStrategyName: 'production/range_break_v15',
+        bestStrategyScore: 1.1,
+        matchStrategyCount: 1,
+        matchedStrategies: [
+          {
+            strategyName: 'production/range_break_v15',
+            matchedDate: '2026-02-18',
+            strategyScore: 1.1,
+          },
+        ],
+      },
+    ],
+  };
+}
 
 vi.mock('@/stores/chartStore', () => ({
   useChartStore: () => mockChartStore,
@@ -36,16 +78,10 @@ vi.mock('@/hooks/useScreening', () => ({
     data: null,
     error: null,
   }),
-  useScreeningJobStatus: () => ({
-    data: null,
-    error: null,
-  }),
-  useScreeningResult: () => ({
-    data: null,
-    error: null,
-  }),
+  useScreeningJobStatus: (...args: unknown[]) => mockUseScreeningJobStatus(...args),
+  useScreeningResult: (...args: unknown[]) => mockUseScreeningResult(...args),
   useCancelScreeningJob: () => ({
-    mutate: vi.fn(),
+    mutate: (...args: unknown[]) => mockCancelScreeningJob(...args),
     isPending: false,
   }),
 }));
@@ -101,6 +137,23 @@ describe('AnalysisPage', () => {
   beforeEach(() => {
     useAnalysisStore.persist?.clearStorage?.();
     useAnalysisStore.setState(createInitialAnalysisState());
+    mockNavigate.mockReset();
+    mockChartStore.setSelectedSymbol.mockReset();
+    mockScreeningFilters.mockClear();
+    mockScreeningTable.mockClear();
+    mockRunScreeningJob.mockResolvedValue({
+      job_id: 'job-1',
+      status: 'pending',
+    });
+    mockUseScreeningJobStatus.mockReturnValue({
+      data: null,
+      error: null,
+    });
+    mockUseScreeningResult.mockReturnValue({
+      data: null,
+      error: null,
+    });
+    mockCancelScreeningJob.mockReset();
   });
 
   it('passes full production strategy names to screening filters', () => {
@@ -148,46 +201,41 @@ describe('AnalysisPage', () => {
 
   it('restores cached screening result after remount', () => {
     useAnalysisStore.setState({
-      screeningResult: {
-        summary: {
-          totalStocksScreened: 1,
-          matchCount: 1,
-          skippedCount: 0,
-          byStrategy: { 'production/range_break_v15': 1 },
-          strategiesEvaluated: ['production/range_break_v15'],
-          strategiesWithoutBacktestMetrics: [],
-          warnings: [],
-        },
-        markets: ['prime'],
-        recentDays: 10,
-        referenceDate: '2026-02-18',
-        sortBy: 'matchedDate',
-        order: 'desc',
-        lastUpdated: '2026-02-18T00:00:00Z',
-        results: [
-          {
-            stockCode: '7203',
-            companyName: 'トヨタ自動車',
-            matchedDate: '2026-02-18',
-            bestStrategyName: 'production/range_break_v15',
-            bestStrategyScore: 1.1,
-            matchStrategyCount: 1,
-            matchedStrategies: [
-              {
-                strategyName: 'production/range_break_v15',
-                matchedDate: '2026-02-18',
-                strategyScore: 1.1,
-              },
-            ],
-          },
-        ],
-      },
+      screeningResult: createCachedScreeningResult(),
     });
 
     render(<AnalysisPage />);
 
     expect(mockScreeningTable).toHaveBeenCalledWith(
       expect.objectContaining({
+        results: expect.arrayContaining([
+          expect.objectContaining({
+            stockCode: '7203',
+          }),
+        ]),
+      })
+    );
+  });
+
+  it('clears stale screening job id and keeps cached result visible on 404', async () => {
+    useAnalysisStore.setState({
+      activeScreeningJobId: 'stale-job',
+      screeningResult: createCachedScreeningResult(),
+    });
+    mockUseScreeningJobStatus.mockReturnValue({
+      data: null,
+      error: new ApiError('ジョブが見つかりません: stale-job', 404),
+    });
+
+    render(<AnalysisPage />);
+
+    await waitFor(() => {
+      expect(useAnalysisStore.getState().activeScreeningJobId).toBeNull();
+    });
+
+    expect(mockScreeningTable).toHaveBeenCalledWith(
+      expect.objectContaining({
+        error: null,
         results: expect.arrayContaining([
           expect.objectContaining({
             stockCode: '7203',
