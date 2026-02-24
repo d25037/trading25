@@ -24,6 +24,8 @@ uv run bt server --port 3002
 
 ### 2) この workspace を起動
 ```bash
+cd <repo-root>
+cp .env.example .env
 cd apps/ts
 bun install
 bun run dev
@@ -105,6 +107,8 @@ bun cli backtest results --format json
 `portfolio` / `watchlist` の日常 CRUD は `packages/web` の Portfolio ページに移行済みです。
 
 ## Environment Variables
+
+環境変数の SoT はリポジトリルートの `.env`（`<repo-root>/.env`）。
 
 ```bash
 JQUANTS_API_KEY

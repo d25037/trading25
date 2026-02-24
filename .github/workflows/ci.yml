@@ -93,6 +93,44 @@ jobs:
         env:
           CI_DEPS_READY: "1"
 
+  secret-scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Run secret scan (gitleaks)
+        run: |
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo" ghcr.io/gitleaks/gitleaks:v8.25.1 \
+            detect --source="/repo" --no-git --redact --verbose
+
+  dependency-vulnerability-audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/ts)
+        run: bun install --frozen-lockfile
+        working-directory: apps/ts
+      - name: Audit Bun dependencies
+        run: bun audit --audit-level=moderate
+        working-directory: apps/ts
+      - name: Audit Python dependencies (pip-audit)
+        run: uv run --locked --with pip-audit pip-audit
+        working-directory: apps/bt
+
   web-e2e:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
@@ -101,6 +139,8 @@ jobs:
       - quality
       - package-unit-tests
       - app-integration-tests
+      - secret-scan
+      - dependency-vulnerability-audit
     steps:
       - uses: actions/checkout@v4
         with:

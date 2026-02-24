@@ -167,7 +167,7 @@ export function OptimizationHtmlFileBrowser() {
     if (!htmlString) return;
     const blob = new Blob([htmlString], { type: 'text/html' });
     const url = URL.createObjectURL(blob);
-    window.open(url, '_blank');
+    window.open(url, '_blank', 'noopener,noreferrer');
     setTimeout(() => URL.revokeObjectURL(url), 60000);
   };
 

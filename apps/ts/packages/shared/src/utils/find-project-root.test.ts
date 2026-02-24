@@ -2,7 +2,7 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { findProjectRoot, getProjectEnvPath } from './find-project-root';
+import { findProjectRoot, findRepositoryRoot, getProjectEnvPath } from './find-project-root';
 
 describe('findProjectRoot', () => {
   let testDir: string;
@@ -95,8 +95,34 @@ describe('findProjectRoot', () => {
 });
 
 describe('getProjectEnvPath', () => {
-  test('returns path to .env in project root', () => {
+  let testDir: string;
+
+  beforeEach(() => {
+    testDir = join(tmpdir(), `find-env-path-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    mkdirSync(testDir, { recursive: true });
+  });
+
+  afterEach(() => {
+    if (existsSync(testDir)) {
+      rmSync(testDir, { recursive: true, force: true });
+    }
+  });
+
+  test('returns path to .env in repository root', () => {
     const envPath = getProjectEnvPath();
     expect(envPath).toMatch(/\.env$/);
+  });
+
+  test('resolves to repository-root .env even with nested workspace', () => {
+    const repoRoot = join(testDir, 'repo');
+    const workspaceRoot = join(repoRoot, 'apps', 'ts');
+    const nestedDir = join(workspaceRoot, 'packages', 'shared');
+
+    mkdirSync(join(repoRoot, '.git'), { recursive: true });
+    mkdirSync(nestedDir, { recursive: true });
+    writeFileSync(join(workspaceRoot, 'package.json'), JSON.stringify({ name: 'ts', workspaces: ['packages/*'] }));
+
+    expect(findRepositoryRoot(nestedDir)).toBe(repoRoot);
+    expect(getProjectEnvPath(nestedDir)).toBe(join(repoRoot, '.env'));
   });
 });

@@ -23,13 +23,13 @@ export const statusCommand = define({
 ${CLI_NAME} jquants auth status
   `.trim(),
   run: async () => {
-    // Use the project root discovery utility to find .env file
+    // Use repository root .env as source of truth
     const envPath = getProjectEnvPath();
     const tokenManager = new CLITokenManager(envPath);
     const spinner = ora('Checking authentication status...').start();
 
     try {
-      // Display stored tokens from local .env
+      // Display stored tokens from repository root .env
       await tokenManager.displayStatus();
 
       // Check authentication status via API

@@ -36,10 +36,14 @@ uv run bt server --port 3002
 
 ### 2) Web 起動（apps/ts）
 ```bash
+cd <repo-root>
+cp .env.example .env
 cd apps/ts
 bun install
 bun run dev
 ```
+
+`.env` の SoT はリポジトリルート（`<repo-root>/.env`）です。
 
 `bun run dev:full` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。
 
@@ -126,4 +130,13 @@ bun run --filter @trading25/shared bt:sync
 3. Typecheck
 4. Package unit tests
 5. App integration tests
-6. Web E2E smoke tests（Playwright Chromium + bt server）
+6. Secret scan（gitleaks）
+7. Dependency vulnerability audit（Bun/Python）
+8. Web E2E smoke tests（Playwright Chromium + bt server）
+
+## Governance
+
+- Security policy: [`SECURITY.md`](SECURITY.md)
+- License: [`LICENSE`](LICENSE)
+- Code ownership: [`.github/CODEOWNERS`](.github/CODEOWNERS)
+- Security CI triage runbook: [`docs/security/ci-security-triage-runbook.md`](docs/security/ci-security-triage-runbook.md)

@@ -1,0 +1,8 @@
+# Default ownership
+* @d25037
+
+# Domain ownership
+/apps/bt/ @d25037
+/apps/ts/ @d25037
+/contracts/ @d25037
+/docs/ @d25037

@@ -157,7 +157,7 @@ def disable_warnings():
 @pytest.fixture
 def mock_jquants_env(monkeypatch):
     """JQuants 環境変数をセット（テスト用）"""
-    monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
+    monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
 
 

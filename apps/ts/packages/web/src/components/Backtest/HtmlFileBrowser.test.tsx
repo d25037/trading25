@@ -266,7 +266,7 @@ describe('HtmlFileBrowser', () => {
 
     await user.click(screen.getByRole('button', { name: 'Open in new tab' }));
     expect(createObjectUrlSpy).toHaveBeenCalledTimes(1);
-    expect(openSpy).toHaveBeenCalledWith('blob:html-report', '_blank');
+    expect(openSpy).toHaveBeenCalledWith('blob:html-report', '_blank', 'noopener,noreferrer');
     expect(setTimeoutSpy).toHaveBeenCalledWith(expect.any(Function), 60000);
     expect(revokeObjectUrlSpy).toHaveBeenCalledWith('blob:html-report');
   });

@@ -9,33 +9,33 @@
     "packages/web"
   ],
   "scripts": {
-    "cli": "bun packages/cli/src/index.ts",
-    "dev": "bun run dev:web",
-    "dev:full": "(bun run --filter @trading25/shared bt:sync || echo '[WARNING] bt:sync failed - continuing with existing types') && bun run dev:web",
-    "dev:web": "bun run --filter @trading25/web dev",
+    "cli": "bun --env-file=../../.env packages/cli/src/index.ts",
+    "dev": "bun --env-file=../../.env run dev:web",
+    "dev:full": "(bun --env-file=../../.env run --filter @trading25/shared bt:sync || echo '[WARNING] bt:sync failed - continuing with existing types') && bun --env-file=../../.env run dev:web",
+    "dev:web": "bun --env-file=../../.env run --filter @trading25/web dev",
     "dev:api": "echo 'Use: uv run bt server --port 3002'",
-    "dev:cli": "bun run --filter @trading25/cli dev",
-    "build": "bun run build:clients && bun run build:shared && bun run build:web && bun run build:cli",
-    "build:clients": "bun run --filter @trading25/clients-ts build",
-    "build:shared": "bun run --filter @trading25/shared build",
-    "build:web": "bun run --filter @trading25/web build",
-    "build:cli": "bun run --filter @trading25/cli build",
+    "dev:cli": "bun --env-file=../../.env run --filter @trading25/cli dev",
+    "build": "bun --env-file=../../.env run build:clients && bun --env-file=../../.env run build:shared && bun --env-file=../../.env run build:web && bun --env-file=../../.env run build:cli",
+    "build:clients": "bun --env-file=../../.env run --filter @trading25/clients-ts build",
+    "build:shared": "bun --env-file=../../.env run --filter @trading25/shared build",
+    "build:web": "bun --env-file=../../.env run --filter @trading25/web build",
+    "build:cli": "bun --env-file=../../.env run --filter @trading25/cli build",
     "start": "echo 'Use: uv run bt server --port 3002'",
-    "test": "bun run test:packages && bun run test:apps",
-    "test:packages": "bun run --filter @trading25/shared test && bun run --filter @trading25/clients-ts test",
-    "test:apps": "bun run --filter @trading25/cli test && bun run --filter @trading25/web test",
-    "test:backend": "bun run test:packages && bun run --filter @trading25/cli test",
-    "test:web": "bun run --filter @trading25/web test",
-    "test:coverage": "bun run --filter @trading25/shared test:coverage && bun run --filter @trading25/clients-ts test:coverage && bun run --filter @trading25/cli test:coverage && bun run --filter @trading25/web test:coverage",
-    "check:coverage": "bun scripts/check-coverage.ts",
+    "test": "bun --env-file=../../.env run test:packages && bun --env-file=../../.env run test:apps",
+    "test:packages": "bun --env-file=../../.env run --filter @trading25/shared test && bun --env-file=../../.env run --filter @trading25/clients-ts test",
+    "test:apps": "bun --env-file=../../.env run --filter @trading25/cli test && bun --env-file=../../.env run --filter @trading25/web test",
+    "test:backend": "bun --env-file=../../.env run test:packages && bun --env-file=../../.env run --filter @trading25/cli test",
+    "test:web": "bun --env-file=../../.env run --filter @trading25/web test",
+    "test:coverage": "bun --env-file=../../.env run --filter @trading25/shared test:coverage && bun --env-file=../../.env run --filter @trading25/clients-ts test:coverage && bun --env-file=../../.env run --filter @trading25/cli test:coverage && bun --env-file=../../.env run --filter @trading25/web test:coverage",
+    "check:coverage": "bun --env-file=../../.env scripts/check-coverage.ts",
     "clean": "rm -rf packages/*/dist packages/*/node_modules node_modules pnpm-lock.yaml bun.lockb",
     "format": "biome format",
     "lint": "biome lint",
     "lint:fix": "biome lint . --write",
     "check:fix": "biome check . --write",
     "typecheck": "tsc --noEmit",
-    "typecheck:web": "bun run --filter @trading25/web typecheck",
-    "typecheck:all": "bun run typecheck && bun run --filter @trading25/clients-ts typecheck && bun run typecheck:web"
+    "typecheck:web": "bun --env-file=../../.env run --filter @trading25/web typecheck",
+    "typecheck:all": "bun --env-file=../../.env run typecheck && bun --env-file=../../.env run --filter @trading25/clients-ts typecheck && bun --env-file=../../.env run typecheck:web"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.1.4",
@@ -46,5 +46,8 @@
   },
   "dependencies": {
     "gunshi": "0.27.0"
+  },
+  "overrides": {
+    "@redocly/openapi-core": "2.19.1"
   }
 }

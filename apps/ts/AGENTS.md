@@ -118,7 +118,7 @@ bun run --filter @trading25/shared bt:sync  # Generate schema + generate types
 
 ## Environment Variables
 
-Bun automatically loads `.env` from project root.
+`.env` のSoTはリポジトリルート（`/Users/shinjiroaso/dev/trading25/.env`）。
 
 ```
 JQUANTS_API_KEY         # JQuants API key (v2 API)

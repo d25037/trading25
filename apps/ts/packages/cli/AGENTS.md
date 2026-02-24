@@ -5,7 +5,7 @@ Gunshi CLI for JQuants API, dataset management, and portfolio operations.
 ## Architecture
 
 - **Framework**: Gunshi + Chalk + Ora + OutputManager
-- **Environment**: Bun native .env loading
+- **Environment**: Monorepo root `.env` (`/Users/shinjiroaso/dev/trading25/.env`) をSoTとして使用
 - **Logger**: Node.js specific (separate from frontend)
 
 ## Command Groups

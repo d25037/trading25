@@ -15,7 +15,7 @@ from src.server.app import create_app
 def client_with_market_db(market_db_path, monkeypatch):
     """market.db 付きテストクライアント"""
     monkeypatch.setenv("MARKET_DB_PATH", market_db_path)
-    monkeypatch.setenv("JQUANTS_API_KEY", "test-api-key-12345678")
+    monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
     # settings cache をクリア
     from src.config.settings import reload_settings

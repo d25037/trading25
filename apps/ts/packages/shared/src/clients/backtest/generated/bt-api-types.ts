@@ -3087,10 +3087,7 @@ export interface components {
             /** Warnings */
             warnings?: string[];
         };
-        /**
-         * DateRange
-         * @description 分析期間
-         */
+        /** DateRange */
         DateRange: {
             /** From */
             from: string;
@@ -3201,7 +3198,7 @@ export interface components {
             analysisDate: string;
             /** Datapoints */
             dataPoints: number;
-            dateRange: components["schemas"]["DateRange"];
+            dateRange: components["schemas"]["src__server__schemas__factor_regression__DateRange"];
         };
         /**
          * FieldConstraints
@@ -5522,7 +5519,7 @@ export interface components {
             benchmarkTimeSeries?: components["schemas"]["BenchmarkTimeSeriesPoint"][] | null;
             /** Analysisdate */
             analysisDate: string;
-            dateRange?: components["schemas"]["src__server__schemas__portfolio_performance__DateRange"] | null;
+            dateRange?: components["schemas"]["DateRange"] | null;
             /** Datapoints */
             dataPoints: number;
             /** Warnings */
@@ -7547,6 +7544,16 @@ export interface components {
             max: string;
         };
         /**
+         * DateRange
+         * @description 分析期間
+         */
+        src__server__schemas__factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
          * IndexMatch
          * @description 指数マッチ結果
          */
@@ -7600,13 +7607,6 @@ export interface components {
         };
         /** DateRange */
         src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_performance__DateRange: {
             /** From */
             from: string;
             /** To */
