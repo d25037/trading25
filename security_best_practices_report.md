@@ -5,7 +5,7 @@
 - `ts-131` 〜 `ts-134` の最終セキュリティチェックを再実施。
 - Python/JavaScript 依存脆弱性は解消済み（`pip-audit` / `bun audit` ともにゼロ）。
 - `window.open` の opener 保護不足は 3 箇所すべて修正済み。
-- `gitleaks` は Docker で実行可能になり、現在の検出は **ローカル未追跡の `/.env` 1件のみ**。
+- `gitleaks` は Docker で実行可能になり、現在の検出は **ローカル未追跡の `<repo-root>/.env` 1件のみ**。
 
 ## Scope / Method
 
@@ -21,7 +21,7 @@
 ### [Low] SBP-LOCAL-ENV-001: ローカル `.env` に実キーが存在（未追跡）
 
 - **Location**
-  - `/Users/shinjiroaso/dev/trading25/.env:2`
+  - `<repo-root>/.env:2`
 - **Evidence**
   - `gitleaks detect --source="/repo" --no-git` で `JQUANTS_API_KEY` を検出（1件）
   - `git ls-files --error-unmatch .env` は untracked（追跡なし）
@@ -45,9 +45,9 @@
 ### [Resolved] SBP-PY-001: Python依存脆弱性
 
 - **Location**
-  - `/Users/shinjiroaso/dev/trading25/apps/bt/uv.lock:373` (`fonttools`)
-  - `/Users/shinjiroaso/dev/trading25/apps/bt/uv.lock:1240` (`pillow`)
-  - `/Users/shinjiroaso/dev/trading25/apps/bt/uv.lock:2087` (`urllib3`)
+  - `<repo-root>/apps/bt/uv.lock:373` (`fonttools`)
+  - `<repo-root>/apps/bt/uv.lock:1240` (`pillow`)
+  - `<repo-root>/apps/bt/uv.lock:2087` (`urllib3`)
 - **Resolution Evidence**
   - `uv run --with pip-audit pip-audit` → `No known vulnerabilities found`
   - lock 更新:
@@ -58,19 +58,19 @@
 ### [Resolved] SBP-WEB-001: `window.open` opener 保護不足
 
 - **Location**
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/web/src/components/Backtest/HtmlFileBrowser.tsx:216`
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/web/src/components/Backtest/OptimizationHtmlFileBrowser.tsx:170`
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/web/src/components/Backtest/ResultHtmlViewer.tsx:34`
+  - `<repo-root>/apps/ts/packages/web/src/components/Backtest/HtmlFileBrowser.tsx:216`
+  - `<repo-root>/apps/ts/packages/web/src/components/Backtest/OptimizationHtmlFileBrowser.tsx:170`
+  - `<repo-root>/apps/ts/packages/web/src/components/Backtest/ResultHtmlViewer.tsx:34`
 - **Resolution Evidence**
   - 3箇所すべて `window.open(url, '_blank', 'noopener,noreferrer')` に統一。
 
 ### [Resolved] SBP-TS-001: JS依存脆弱性（`bun audit`）
 
 - **Location**
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/web/package.json:52`
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/web/package.json:53`
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/web/package.json:58`
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/package.json:51`
+  - `<repo-root>/apps/ts/packages/web/package.json:52`
+  - `<repo-root>/apps/ts/packages/web/package.json:53`
+  - `<repo-root>/apps/ts/packages/web/package.json:58`
+  - `<repo-root>/apps/ts/package.json:51`
 - **Resolution Evidence**
   - `bun audit` → `No vulnerabilities found`
   - `vitest` / `@vitest/coverage-v8` / `@vitest/ui` を `4.0.18` に更新
@@ -79,10 +79,10 @@
 ### [Resolved] SBP-SEC-SCAN-001: gitleaks 誤検知（テストダミー値）
 
 - **Location (examples)**
-  - `/Users/shinjiroaso/dev/trading25/apps/bt/tests/conftest.py:160`
-  - `/Users/shinjiroaso/dev/trading25/apps/bt/tests/unit/server/clients/test_jquants_client.py:17`
-  - `/Users/shinjiroaso/dev/trading25/apps/ts/packages/cli/src/utils/cli-token-manager.test.ts:150`
-  - `/Users/shinjiroaso/dev/trading25/docs/security/secret-key-runbook.md:7`
+  - `<repo-root>/apps/bt/tests/conftest.py:160`
+  - `<repo-root>/apps/bt/tests/unit/server/clients/test_jquants_client.py:17`
+  - `<repo-root>/apps/ts/packages/cli/src/utils/cli-token-manager.test.ts:150`
+  - `<repo-root>/docs/security/secret-key-runbook.md:7`
 - **Resolution Evidence**
   - テスト用トークンを低エントロピーのダミー値へ統一
   - runbook 文言を調整
@@ -106,4 +106,4 @@
 
 ## Recommended Next Action
 
-1. `/.env` の API キーを継続利用するなら、定期ローテーション運用（runbook準拠）を実施。
+1. `<repo-root>/.env` の API キーを継続利用するなら、定期ローテーション運用（runbook準拠）を実施。

@@ -103,7 +103,7 @@
 ## プロジェクト構成
 
 ```
-/Users/shinjiroaso/dev/trading25/apps/bt/
+<repo-root>/apps/bt/
 ├── config/                    # YAML設定システム
 │   ├── strategies/
 │   │   ├── production/       # 本番環境用戦略（Git管理）

@@ -4,7 +4,7 @@ This directory is retained for backward compatibility only.
 
 Canonical skill definitions are managed at:
 
-- `/Users/shinjiroaso/dev/trading25/.codex/skills`
+- `<repo-root>/.codex/skills`
 
 Rules:
 
