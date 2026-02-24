@@ -18,8 +18,8 @@ const mockUseBtMarginIndicators = vi.fn();
 const mockUseStockData = vi.fn();
 const mockUseFundamentals = vi.fn();
 const mockWindowOpen = vi.fn();
-const mockFundamentalsPanelProps = vi.fn<[unknown], void>();
-const mockFundamentalsHistoryPanelProps = vi.fn<[unknown], void>();
+const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
+const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
   useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
@@ -129,7 +129,7 @@ vi.mock('@/components/Chart/FundamentalsHistoryPanel', () => ({
   },
 }));
 
-const mockFactorRegressionPanelProps = vi.fn<[unknown], void>();
+const mockFactorRegressionPanelProps = vi.fn<(props: unknown) => void>();
 vi.mock('@/components/Chart/FactorRegressionPanel', () => ({
   FactorRegressionPanel: (props: unknown) => {
     mockFactorRegressionPanelProps(props);
