@@ -6467,6 +6467,92 @@
         }
       }
     },
+    "/api/analytics/fundamental-ranking": {
+      "get": {
+        "tags": [
+          "Analytics"
+        ],
+        "summary": "Get market fundamental rankings",
+        "description": "Get fundamental rankings including high/low stocks by latest forecast EPS and actual EPS.",
+        "operationId": "get_fundamental_ranking_api_analytics_fundamental_ranking_get",
+        "parameters": [
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "maximum": 100,
+              "minimum": 1,
+              "default": 20,
+              "title": "Limit"
+            }
+          },
+          {
+            "name": "markets",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "prime",
+              "title": "Markets"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/MarketFundamentalRankingResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Bad Request",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Not Found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal Server Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/analytics/factor-regression/{symbol}": {
       "get": {
         "tags": [
@@ -13409,6 +13495,109 @@
         "title": "FundamentalDataPoint",
         "description": "Single fundamental data point."
       },
+      "FundamentalRankingItem": {
+        "properties": {
+          "rank": {
+            "type": "integer",
+            "title": "Rank"
+          },
+          "code": {
+            "type": "string",
+            "title": "Code"
+          },
+          "companyName": {
+            "type": "string",
+            "title": "Companyname"
+          },
+          "marketCode": {
+            "type": "string",
+            "title": "Marketcode"
+          },
+          "sector33Name": {
+            "type": "string",
+            "title": "Sector33Name"
+          },
+          "currentPrice": {
+            "type": "number",
+            "title": "Currentprice"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume"
+          },
+          "epsValue": {
+            "type": "number",
+            "title": "Epsvalue"
+          },
+          "disclosedDate": {
+            "type": "string",
+            "title": "Discloseddate"
+          },
+          "periodType": {
+            "type": "string",
+            "title": "Periodtype"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "revised",
+              "fy"
+            ],
+            "title": "Source"
+          }
+        },
+        "type": "object",
+        "required": [
+          "rank",
+          "code",
+          "companyName",
+          "marketCode",
+          "sector33Name",
+          "currentPrice",
+          "volume",
+          "epsValue",
+          "disclosedDate",
+          "periodType",
+          "source"
+        ],
+        "title": "FundamentalRankingItem",
+        "description": "ファンダメンタルランキング項目"
+      },
+      "FundamentalRankings": {
+        "properties": {
+          "forecastHigh": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "type": "array",
+            "title": "Forecasthigh"
+          },
+          "forecastLow": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "type": "array",
+            "title": "Forecastlow"
+          },
+          "actualHigh": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "type": "array",
+            "title": "Actualhigh"
+          },
+          "actualLow": {
+            "items": {
+              "$ref": "#/components/schemas/FundamentalRankingItem"
+            },
+            "type": "array",
+            "title": "Actuallow"
+          }
+        },
+        "type": "object",
+        "title": "FundamentalRankings",
+        "description": "4種類のファンダメンタルランキング"
+      },
       "FundamentalsComputeRequest": {
         "properties": {
           "symbol": {
@@ -15849,6 +16038,37 @@
         ],
         "title": "MarginVolumeRatioResponse",
         "description": "マージン出来高比率レスポンス"
+      },
+      "MarketFundamentalRankingResponse": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date"
+          },
+          "markets": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Markets"
+          },
+          "rankings": {
+            "$ref": "#/components/schemas/FundamentalRankings"
+          },
+          "lastUpdated": {
+            "type": "string",
+            "title": "Lastupdated"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "markets",
+          "rankings",
+          "lastUpdated"
+        ],
+        "title": "MarketFundamentalRankingResponse",
+        "description": "ファンダメンタルランキングレスポンス"
       },
       "MarketOHLCRecord": {
         "properties": {
@@ -22091,39 +22311,98 @@
         "type": "object",
         "title": "WatchlistUpdateRequest"
       },
-      "src__server__schemas__dataset__DateRange": {
+      "ErrorDetail": {
+        "description": "バリデーションエラー詳細",
         "properties": {
-          "min": {
-            "type": "string",
-            "title": "Min"
+          "field": {
+            "description": "エラーフィールド名",
+            "title": "Field",
+            "type": "string"
           },
-          "max": {
-            "type": "string",
-            "title": "Max"
+          "message": {
+            "description": "エラーメッセージ",
+            "title": "Message",
+            "type": "string"
           }
         },
-        "type": "object",
         "required": [
-          "min",
-          "max"
+          "field",
+          "message"
         ],
-        "title": "DateRange"
+        "title": "ErrorDetail",
+        "type": "object"
       },
-      "src__server__schemas__db__DateRange": {
+      "ErrorResponse": {
+        "description": "統一エラーレスポンス（Hono ErrorResponseSchema 互換）",
         "properties": {
-          "min": {
-            "type": "string",
-            "title": "Min"
+          "status": {
+            "const": "error",
+            "default": "error",
+            "description": "ステータス",
+            "title": "Status",
+            "type": "string"
           },
-          "max": {
+          "error": {
+            "description": "HTTP ステータステキスト（例: 'Not Found'）",
+            "title": "Error",
+            "type": "string"
+          },
+          "message": {
+            "description": "詳細エラーメッセージ",
+            "title": "Message",
+            "type": "string"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/ErrorDetail"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "バリデーションエラー詳細",
+            "title": "Details"
+          },
+          "timestamp": {
+            "description": "ISO 8601 タイムスタンプ",
+            "title": "Timestamp",
+            "type": "string"
+          },
+          "correlationId": {
+            "description": "リクエスト追跡用 UUID",
+            "title": "Correlationid",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error",
+          "message",
+          "timestamp",
+          "correlationId"
+        ],
+        "title": "ErrorResponse",
+        "type": "object"
+      },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
             "type": "string",
-            "title": "Max"
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
           }
         },
         "type": "object",
         "required": [
-          "min",
-          "max"
+          "from",
+          "to"
         ],
         "title": "DateRange"
       },
@@ -22145,6 +22424,42 @@
         ],
         "title": "DateRange",
         "description": "分析期間"
+      },
+      "src__server__schemas__db__DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
+      },
+      "src__server__schemas__dataset__DateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DateRange"
       },
       "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
@@ -22224,101 +22539,6 @@
         ],
         "title": "OHLCVRecord",
         "description": "OHLCVレコード"
-      },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
-        "properties": {
-          "from": {
-            "type": "string",
-            "title": "From"
-          },
-          "to": {
-            "type": "string",
-            "title": "To"
-          }
-        },
-        "type": "object",
-        "required": [
-          "from",
-          "to"
-        ],
-        "title": "DateRange"
-      },
-      "ErrorDetail": {
-        "description": "バリデーションエラー詳細",
-        "properties": {
-          "field": {
-            "description": "エラーフィールド名",
-            "title": "Field",
-            "type": "string"
-          },
-          "message": {
-            "description": "エラーメッセージ",
-            "title": "Message",
-            "type": "string"
-          }
-        },
-        "required": [
-          "field",
-          "message"
-        ],
-        "title": "ErrorDetail",
-        "type": "object"
-      },
-      "ErrorResponse": {
-        "description": "統一エラーレスポンス（Hono ErrorResponseSchema 互換）",
-        "properties": {
-          "status": {
-            "const": "error",
-            "default": "error",
-            "description": "ステータス",
-            "title": "Status",
-            "type": "string"
-          },
-          "error": {
-            "description": "HTTP ステータステキスト（例: 'Not Found'）",
-            "title": "Error",
-            "type": "string"
-          },
-          "message": {
-            "description": "詳細エラーメッセージ",
-            "title": "Message",
-            "type": "string"
-          },
-          "details": {
-            "anyOf": [
-              {
-                "items": {
-                  "$ref": "#/components/schemas/ErrorDetail"
-                },
-                "type": "array"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "default": null,
-            "description": "バリデーションエラー詳細",
-            "title": "Details"
-          },
-          "timestamp": {
-            "description": "ISO 8601 タイムスタンプ",
-            "title": "Timestamp",
-            "type": "string"
-          },
-          "correlationId": {
-            "description": "リクエスト追跡用 UUID",
-            "title": "Correlationid",
-            "type": "string"
-          }
-        },
-        "required": [
-          "error",
-          "message",
-          "timestamp",
-          "correlationId"
-        ],
-        "title": "ErrorResponse",
-        "type": "object"
       }
     }
   },

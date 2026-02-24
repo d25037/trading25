@@ -6,6 +6,8 @@ Hono MarketRankingResponse 互換のレスポンススキーマ。
 
 from __future__ import annotations
 
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -46,4 +48,38 @@ class MarketRankingResponse(BaseModel):
     lookbackDays: int
     periodDays: int
     rankings: Rankings
+    lastUpdated: str
+
+
+class FundamentalRankingItem(BaseModel):
+    """ファンダメンタルランキング項目"""
+
+    rank: int
+    code: str
+    companyName: str
+    marketCode: str
+    sector33Name: str
+    currentPrice: float
+    volume: float
+    epsValue: float
+    disclosedDate: str
+    periodType: str
+    source: Literal["revised", "fy"]
+
+
+class FundamentalRankings(BaseModel):
+    """4種類のファンダメンタルランキング"""
+
+    forecastHigh: list[FundamentalRankingItem] = Field(default_factory=list)
+    forecastLow: list[FundamentalRankingItem] = Field(default_factory=list)
+    actualHigh: list[FundamentalRankingItem] = Field(default_factory=list)
+    actualLow: list[FundamentalRankingItem] = Field(default_factory=list)
+
+
+class MarketFundamentalRankingResponse(BaseModel):
+    """ファンダメンタルランキングレスポンス"""
+
+    date: str
+    markets: list[str]
+    rankings: FundamentalRankings
     lastUpdated: str

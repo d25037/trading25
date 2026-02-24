@@ -42,6 +42,36 @@ export interface MarketRankingResponse {
 
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
 
+export type FundamentalRankingSource = 'revised' | 'fy';
+
+export interface FundamentalRankingItem {
+  rank: number;
+  code: string;
+  companyName: string;
+  marketCode: string;
+  sector33Name: string;
+  currentPrice: number;
+  volume: number;
+  epsValue: number;
+  disclosedDate: string;
+  periodType: string;
+  source: FundamentalRankingSource;
+}
+
+export interface FundamentalRankings {
+  forecastHigh: FundamentalRankingItem[];
+  forecastLow: FundamentalRankingItem[];
+  actualHigh: FundamentalRankingItem[];
+  actualLow: FundamentalRankingItem[];
+}
+
+export interface MarketFundamentalRankingResponse {
+  date: string;
+  markets: string[];
+  rankings: FundamentalRankings;
+  lastUpdated: string;
+}
+
 // ===== SCREENING TYPES =====
 
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';

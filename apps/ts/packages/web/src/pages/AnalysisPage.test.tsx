@@ -94,6 +94,14 @@ vi.mock('@/hooks/useRanking', () => ({
   }),
 }));
 
+vi.mock('@/hooks/useFundamentalRanking', () => ({
+  useFundamentalRanking: () => ({
+    data: { rankings: { forecastHigh: [], forecastLow: [], actualHigh: [], actualLow: [] } },
+    isLoading: false,
+    error: null,
+  }),
+}));
+
 vi.mock('@/hooks/useBacktest', () => ({
   useStrategies: () => ({
     data: {
@@ -129,6 +137,16 @@ vi.mock('@/components/Ranking', () => ({
   RankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
     <button type="button" onClick={() => onStockClick('6758')}>
       Ranking Row
+    </button>
+  ),
+}));
+
+vi.mock('@/components/FundamentalRanking', () => ({
+  FundamentalRankingFilters: () => <div>Fundamental Ranking Filters</div>,
+  FundamentalRankingSummary: () => <div>Fundamental Ranking Summary</div>,
+  FundamentalRankingTable: ({ onStockClick }: { onStockClick: (code: string) => void }) => (
+    <button type="button" onClick={() => onStockClick('9432')}>
+      Fundamental Ranking Row
     </button>
   ),
 }));
@@ -180,14 +198,22 @@ describe('AnalysisPage', () => {
     );
   });
 
-  it('renders screening view by default and switches to ranking', async () => {
+  it('renders screening view by default and switches to daily ranking', async () => {
     const user = userEvent.setup();
     render(<AnalysisPage />);
 
     expect(screen.getByText('Screening Filters')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /Ranking/i }));
+    await user.click(screen.getByRole('button', { name: 'Daily Ranking' }));
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
+  });
+
+  it('switches to fundamental ranking tab', async () => {
+    const user = userEvent.setup();
+    render(<AnalysisPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Fundamental Ranking' }));
+    expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
   });
 
   it('navigates to chart when a stock is selected', async () => {

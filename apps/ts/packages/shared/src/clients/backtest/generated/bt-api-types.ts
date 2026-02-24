@@ -1600,6 +1600,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/analytics/fundamental-ranking": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get market fundamental rankings
+         * @description Get fundamental rankings including high/low stocks by latest forecast EPS and actual EPS.
+         */
+        get: operations["get_fundamental_ranking_api_analytics_fundamental_ranking_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/analytics/factor-regression/{symbol}": {
         parameters: {
             query?: never;
@@ -3471,6 +3491,51 @@ export interface components {
             prevCashAndEquivalents?: number | null;
         };
         /**
+         * FundamentalRankingItem
+         * @description ファンダメンタルランキング項目
+         */
+        FundamentalRankingItem: {
+            /** Rank */
+            rank: number;
+            /** Code */
+            code: string;
+            /** Companyname */
+            companyName: string;
+            /** Marketcode */
+            marketCode: string;
+            /** Sector33Name */
+            sector33Name: string;
+            /** Currentprice */
+            currentPrice: number;
+            /** Volume */
+            volume: number;
+            /** Epsvalue */
+            epsValue: number;
+            /** Discloseddate */
+            disclosedDate: string;
+            /** Periodtype */
+            periodType: string;
+            /**
+             * Source
+             * @enum {string}
+             */
+            source: "revised" | "fy";
+        };
+        /**
+         * FundamentalRankings
+         * @description 4種類のファンダメンタルランキング
+         */
+        FundamentalRankings: {
+            /** Forecasthigh */
+            forecastHigh?: components["schemas"]["FundamentalRankingItem"][];
+            /** Forecastlow */
+            forecastLow?: components["schemas"]["FundamentalRankingItem"][];
+            /** Actualhigh */
+            actualHigh?: components["schemas"]["FundamentalRankingItem"][];
+            /** Actuallow */
+            actualLow?: components["schemas"]["FundamentalRankingItem"][];
+        };
+        /**
          * FundamentalsComputeRequest
          * @description Request body for fundamentals computation.
          */
@@ -4798,6 +4863,19 @@ export interface components {
             longRatio: components["schemas"]["MarginVolumeRatioData"][];
             /** Shortratio */
             shortRatio: components["schemas"]["MarginVolumeRatioData"][];
+            /** Lastupdated */
+            lastUpdated: string;
+        };
+        /**
+         * MarketFundamentalRankingResponse
+         * @description ファンダメンタルランキングレスポンス
+         */
+        MarketFundamentalRankingResponse: {
+            /** Date */
+            date: string;
+            /** Markets */
+            markets: string[];
+            rankings: components["schemas"]["FundamentalRankings"];
             /** Lastupdated */
             lastUpdated: string;
         };
@@ -7529,89 +7607,6 @@ export interface components {
             /** Description */
             description?: string | null;
         };
-        /** DateRange */
-        src__server__schemas__dataset__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
-        /** DateRange */
-        src__server__schemas__db__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
-        /**
-         * DateRange
-         * @description 分析期間
-         */
-        src__server__schemas__factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /**
-         * IndexMatch
-         * @description 指数マッチ結果
-         */
-        src__server__schemas__factor_regression__IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
-            /** Rsquared */
-            rSquared: number;
-            /** Beta */
-            beta: number;
-        };
-        /**
-         * OHLCVRecord
-         * @description OHLCVレコード
-         */
-        src__server__schemas__indicators__OHLCVRecord: {
-            /**
-             * Date
-             * @description 日付 (YYYY-MM-DD)
-             */
-            date: string;
-            /**
-             * Open
-             * @description 始値
-             */
-            open: number;
-            /**
-             * High
-             * @description 高値
-             */
-            high: number;
-            /**
-             * Low
-             * @description 安値
-             */
-            low: number;
-            /**
-             * Close
-             * @description 終値
-             */
-            close: number;
-            /**
-             * Volume
-             * @description 出来高
-             */
-            volume: number;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
         /**
          * ErrorDetail
          * @description バリデーションエラー詳細
@@ -7666,6 +7661,89 @@ export interface components {
              * @description リクエスト追跡用 UUID
              */
             correlationId: string;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /**
+         * DateRange
+         * @description 分析期間
+         */
+        src__server__schemas__factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /** DateRange */
+        src__server__schemas__db__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
+        /** DateRange */
+        src__server__schemas__dataset__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
+        src__server__schemas__factor_regression__IndexMatch: {
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
+            /** Rsquared */
+            rSquared: number;
+            /** Beta */
+            beta: number;
+        };
+        /**
+         * OHLCVRecord
+         * @description OHLCVレコード
+         */
+        src__server__schemas__indicators__OHLCVRecord: {
+            /**
+             * Date
+             * @description 日付 (YYYY-MM-DD)
+             */
+            date: string;
+            /**
+             * Open
+             * @description 始値
+             */
+            open: number;
+            /**
+             * High
+             * @description 高値
+             */
+            high: number;
+            /**
+             * Low
+             * @description 安値
+             */
+            low: number;
+            /**
+             * Close
+             * @description 終値
+             */
+            close: number;
+            /**
+             * Volume
+             * @description 出来高
+             */
+            volume: number;
         };
     };
     responses: never;
@@ -12224,6 +12302,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["MarketRankingResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_fundamental_ranking_api_analytics_fundamental_ranking_get: {
+        parameters: {
+            query?: {
+                limit?: number;
+                markets?: string;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["MarketFundamentalRankingResponse"];
                 };
             };
             /** @description Bad Request */

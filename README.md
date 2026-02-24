@@ -82,8 +82,8 @@ uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mod
 - API では `/api/lab/evolve` と `/api/lab/optimize` に `structure_mode` / `random_add_*` / `seed` も指定可能
 - Web の Backtest > Lab ページでも `evolve` / `optimize` に同じ `structure_mode` 設定を反映済み
 
-### 5) Analysis Screening（戦略YAML駆動）
-Analysis Screening は非同期ジョブ方式です。
+### 5) Analysis（Screening / Daily Ranking / Fundamental Ranking）
+Analysis は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成です。
 
 - Web: Analysis > Screening で production 戦略を動的選択（未選択=全production）
 - CLI:
@@ -91,7 +91,7 @@ Analysis Screening は非同期ジョブ方式です。
 cd apps/ts
 bun run cli analysis screening --strategies production/forward_eps_driven --sort-by matchedDate
 ```
-- API:
+- Screening API:
 ```bash
 POST /api/analytics/screening/jobs
 GET /api/analytics/screening/jobs/{job_id}
@@ -103,6 +103,11 @@ GET /api/analytics/screening/result/{job_id}
 - CLI は完了待機が既定（`--no-wait` で job_id を返して終了）
 - 旧 `rangeBreakFast/Slow`, `minBreakPercentage`, `minVolumeRatio` は廃止（後方互換なし）
 - 旧 `GET /api/analytics/screening` は 410（移行メッセージ返却）
+- Fundamental Ranking API:
+```bash
+GET /api/analytics/fundamental-ranking?markets=prime&limit=20
+```
+- `fundamental-ranking` は `forecastHigh/forecastLow/actualHigh/actualLow` を返し、予想EPSは `revised > adjusted FY forecast > raw FY forecast` 優先で算出する
 
 ## Monorepo Commands (root)
 

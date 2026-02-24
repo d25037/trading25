@@ -42,6 +42,7 @@ bt が FastAPI の OpenAPI スキーマを公開し、ts/shared が型を自動�
 bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 ```
 スキーマ変更時は必ず `bt:sync` を実行し、`contracts/` 配下も更新すること。
+- `apps/ts` workspace は `@redocly/openapi-core` を `1.34.5` に固定し、`bt:sync`（openapi-typescript）を安定実行する
 
 ## contracts/ ガバナンス
 
@@ -114,6 +115,7 @@ uv run pyright src/              # 型チェック
 - Fundamental signal は `cfo_to_net_profit_ratio`（営業CF/純利益）をサポートし、`consecutive_periods` 判定は比率値同値時でも開示更新（OperatingCashFlow/Profit）を起点に連続判定する
 - Fundamentals は EPS に加えて `dividend_fy` / `forecast_dividend_fy` と `payout_ratio` / `forecast_payout_ratio`（実績/予想）を SoT とし、Charts の Fundamentals panel と Backtest Signal system（`forward_dividend_growth` / `dividend_per_share_growth` / `payout_ratio` / `forward_payout_ratio`）で同一指標を使う。配当性向は API 返却時に percent 単位へ正規化し、decimal スケール値（例: 0.283）を 28.3% として扱う
 - fundamentals 最新値の forecast EPS は同一期末内で `DiscDate` が新しい開示を優先し、旧開示値の逆転表示を防ぐ
+- `/api/analytics/fundamental-ranking` は `market.db`（`statements`/`stocks`/`stock_data`）を SoT とし、`forecastHigh`/`forecastLow`/`actualHigh`/`actualLow` を返す。予想EPSは `revised(四半期) > adjusted FY forecast > raw FY forecast`、実績EPSは最新 FY EPS（share補正）を採用する
 - Strategy group 再振り分けは `/api/strategies/{strategy_name}/move`（`target_category`: `production` / `experimental` / `legacy`）を SoT とし、web の `Backtest > Strategies` から実行する
 
 主要技術: Python 3.12, vectorbt, pydantic, FastAPI, pandas, ruff, pyright, pytest
@@ -143,6 +145,7 @@ bun run cli backtest attribution run <strategy> --wait
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、`Current` / `Saved` / `State` 要約を維持する。保存ブロックは YAML 構文エラー時のみとする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - `analysis screening`（web/cli）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
+- Analysis 画面は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する
 - Charts の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
 - Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする

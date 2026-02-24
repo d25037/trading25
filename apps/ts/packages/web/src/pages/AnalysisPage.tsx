@@ -1,6 +1,11 @@
 import { useNavigate } from '@tanstack/react-router';
 import { BarChart3, Filter } from 'lucide-react';
 import { useCallback, useEffect } from 'react';
+import {
+  FundamentalRankingFilters,
+  FundamentalRankingSummary,
+  FundamentalRankingTable,
+} from '@/components/FundamentalRanking';
 import { RankingFilters, RankingSummary, RankingTable } from '@/components/Ranking';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
 import { ScreeningJobProgress } from '@/components/Screening/ScreeningJobProgress';
@@ -8,6 +13,7 @@ import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
 import { useStrategies } from '@/hooks/useBacktest';
+import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRanking } from '@/hooks/useRanking';
 import {
   useCancelScreeningJob,
@@ -20,108 +26,179 @@ import { cn } from '@/lib/utils';
 import type { AnalysisSubTab } from '@/stores/analysisStore';
 import { useAnalysisStore } from '@/stores/analysisStore';
 import { useChartStore } from '@/stores/chartStore';
-import type { MarketRankingResponse } from '@/types/ranking';
-import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
+import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from '@/types/fundamentalRanking';
+import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
+import type {
+  MarketScreeningResponse,
+  ScreeningJobResponse,
+  ScreeningParams,
+  ScreeningResultItem,
+} from '@/types/screening';
 
 const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
   { id: 'screening', label: 'Screening', icon: Filter },
-  { id: 'ranking', label: 'Ranking', icon: BarChart3 },
+  { id: 'ranking', label: 'Daily Ranking', icon: BarChart3 },
+  { id: 'fundamentalRanking', label: 'Fundamental Ranking', icon: BarChart3 },
 ];
 
-interface ScreeningContentProps {
-  onRunScreening: () => void;
-  screeningIsRunning: boolean;
-  screeningJob: ScreeningJobResponse | null;
-  onCancelScreening?: () => void;
-  isCancelling: boolean;
-  screeningResult: MarketScreeningResponse | null;
-  fallbackRecentDays: number;
-  screeningError: Error | null;
-  onStockClick: (code: string) => void;
+interface AnalysisSidebarProps {
+  activeSubTab: AnalysisSubTab;
+  screeningParams: ScreeningParams;
+  rankingParams: RankingParams;
+  fundamentalRankingParams: FundamentalRankingParams;
+  setScreeningParams: (params: ScreeningParams) => void;
+  setRankingParams: (params: RankingParams) => void;
+  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
+  productionStrategies: string[];
+  isLoadingStrategies: boolean;
 }
 
-function ScreeningContent({
-  onRunScreening,
+function AnalysisSidebar({
+  activeSubTab,
+  screeningParams,
+  rankingParams,
+  fundamentalRankingParams,
+  setScreeningParams,
+  setRankingParams,
+  setFundamentalRankingParams,
+  productionStrategies,
+  isLoadingStrategies,
+}: AnalysisSidebarProps) {
+  if (activeSubTab === 'screening') {
+    return (
+      <ScreeningFilters
+        params={screeningParams}
+        onChange={setScreeningParams}
+        strategyOptions={productionStrategies}
+        strategiesLoading={isLoadingStrategies}
+      />
+    );
+  }
+
+  if (activeSubTab === 'ranking') {
+    return <RankingFilters params={rankingParams} onChange={setRankingParams} />;
+  }
+
+  return <FundamentalRankingFilters params={fundamentalRankingParams} onChange={setFundamentalRankingParams} />;
+}
+
+interface AnalysisMainContentProps {
+  activeSubTab: AnalysisSubTab;
+  handleRunScreening: () => Promise<void>;
+  screeningIsRunning: boolean;
+  screeningJob: ScreeningJobResponse | null;
+  handleCancelScreening: () => void;
+  cancelScreeningPending: boolean;
+  screeningSummary: MarketScreeningResponse['summary'] | undefined;
+  screeningMarkets: string[];
+  screeningRecentDays: number;
+  screeningReferenceDate: string | undefined;
+  screeningResults: ScreeningResultItem[];
+  screeningTableLoading: boolean;
+  screeningError: Error | null;
+  onStockClick: (code: string) => void;
+  rankingData: MarketRankingResponse | undefined;
+  rankingLoading: boolean;
+  rankingError: Error | null;
+  rankingPeriodDays: number | undefined;
+  fundamentalData: MarketFundamentalRankingResponse | undefined;
+  fundamentalLoading: boolean;
+  fundamentalError: Error | null;
+}
+
+function AnalysisMainContent({
+  activeSubTab,
+  handleRunScreening,
   screeningIsRunning,
   screeningJob,
-  onCancelScreening,
-  isCancelling,
-  screeningResult,
-  fallbackRecentDays,
+  handleCancelScreening,
+  cancelScreeningPending,
+  screeningSummary,
+  screeningMarkets,
+  screeningRecentDays,
+  screeningReferenceDate,
+  screeningResults,
+  screeningTableLoading,
   screeningError,
   onStockClick,
-}: ScreeningContentProps) {
-  return (
-    <>
-      <div className="mb-3 flex justify-end">
-        <Button onClick={onRunScreening} disabled={screeningIsRunning}>
-          Run Screening
-        </Button>
-      </div>
+  rankingData,
+  rankingLoading,
+  rankingError,
+  rankingPeriodDays,
+  fundamentalData,
+  fundamentalLoading,
+  fundamentalError,
+}: AnalysisMainContentProps) {
+  if (activeSubTab === 'screening') {
+    return (
+      <>
+        <div className="mb-3 flex justify-end">
+          <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
+            Run Screening
+          </Button>
+        </div>
 
-      <ScreeningJobProgress
-        job={screeningJob}
-        onCancel={screeningIsRunning ? onCancelScreening : undefined}
-        isCancelling={isCancelling}
-      />
+        <ScreeningJobProgress
+          job={screeningJob}
+          onCancel={screeningIsRunning ? handleCancelScreening : undefined}
+          isCancelling={cancelScreeningPending}
+        />
 
-      <ScreeningSummary
-        summary={screeningResult?.summary}
-        markets={screeningResult?.markets || []}
-        recentDays={screeningResult?.recentDays || fallbackRecentDays}
-        referenceDate={screeningResult?.referenceDate}
-      />
-      <div className="flex-1 min-h-0">
+        <ScreeningSummary
+          summary={screeningSummary}
+          markets={screeningMarkets}
+          recentDays={screeningRecentDays}
+          referenceDate={screeningReferenceDate}
+        />
         <ScreeningTable
-          results={screeningResult?.results || []}
-          isLoading={!screeningResult && screeningIsRunning}
+          results={screeningResults}
+          isLoading={screeningTableLoading}
           isFetching={screeningIsRunning}
           error={screeningError}
           onStockClick={onStockClick}
         />
-      </div>
-    </>
-  );
-}
+      </>
+    );
+  }
 
-interface RankingContentProps {
-  rankingData: MarketRankingResponse | undefined;
-  isRankingLoading: boolean;
-  rankingError: Error | null;
-  onStockClick: (code: string) => void;
-  rankingPeriodDays: number | undefined;
-}
+  if (activeSubTab === 'ranking') {
+    return (
+      <>
+        <RankingSummary data={rankingData} />
+        <RankingTable
+          rankings={rankingData?.rankings}
+          isLoading={rankingLoading}
+          error={rankingError}
+          onStockClick={onStockClick}
+          periodDays={rankingPeriodDays}
+        />
+      </>
+    );
+  }
 
-function RankingContent({
-  rankingData,
-  isRankingLoading,
-  rankingError,
-  onStockClick,
-  rankingPeriodDays,
-}: RankingContentProps) {
   return (
     <>
-      <RankingSummary data={rankingData} />
-      <RankingTable
-        rankings={rankingData?.rankings}
-        isLoading={isRankingLoading}
-        error={rankingError}
+      <FundamentalRankingSummary data={fundamentalData} />
+      <FundamentalRankingTable
+        rankings={fundamentalData?.rankings}
+        isLoading={fundamentalLoading}
+        error={fundamentalError}
         onStockClick={onStockClick}
-        periodDays={rankingPeriodDays}
       />
     </>
   );
 }
-
 export function AnalysisPage() {
   const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
   const screeningParams = useAnalysisStore((state) => state.screeningParams);
   const rankingParams = useAnalysisStore((state) => state.rankingParams);
+  const fundamentalRankingParams = useAnalysisStore((state) => state.fundamentalRankingParams);
   const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
   const screeningResult = useAnalysisStore((state) => state.screeningResult);
   const setActiveSubTab = useAnalysisStore((state) => state.setActiveSubTab);
   const setScreeningParams = useAnalysisStore((state) => state.setScreeningParams);
   const setRankingParams = useAnalysisStore((state) => state.setRankingParams);
+  const setFundamentalRankingParams = useAnalysisStore((state) => state.setFundamentalRankingParams);
   const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
   const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
 
@@ -140,6 +217,10 @@ export function AnalysisPage() {
   const shouldResetStaleScreeningJobId = Boolean(activeScreeningJobId) && isStaleScreeningJob;
 
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
+  const fundamentalRankingQuery = useFundamentalRanking(
+    fundamentalRankingParams,
+    activeSubTab === 'fundamentalRanking'
+  );
 
   const productionStrategies = (strategiesData?.strategies ?? [])
     .filter((strategy) => strategy.category === 'production')
@@ -208,41 +289,44 @@ export function AnalysisPage() {
       <div className="flex flex-1 gap-4 min-h-0">
         {/* Sidebar */}
         <div className="w-64 flex-shrink-0">
-          {activeSubTab === 'screening' ? (
-            <ScreeningFilters
-              params={screeningParams}
-              onChange={setScreeningParams}
-              strategyOptions={productionStrategies}
-              strategiesLoading={isLoadingStrategies}
-            />
-          ) : (
-            <RankingFilters params={rankingParams} onChange={setRankingParams} />
-          )}
+          <AnalysisSidebar
+            activeSubTab={activeSubTab}
+            screeningParams={screeningParams}
+            rankingParams={rankingParams}
+            fundamentalRankingParams={fundamentalRankingParams}
+            setScreeningParams={setScreeningParams}
+            setRankingParams={setRankingParams}
+            setFundamentalRankingParams={setFundamentalRankingParams}
+            productionStrategies={productionStrategies}
+            isLoadingStrategies={isLoadingStrategies}
+          />
         </div>
 
         {/* Main Content */}
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
-          {activeSubTab === 'screening' ? (
-            <ScreeningContent
-              onRunScreening={() => void handleRunScreening()}
-              screeningIsRunning={screeningIsRunning}
-              screeningJob={screeningJob}
-              onCancelScreening={handleCancelScreening}
-              isCancelling={cancelScreeningJob.isPending}
-              screeningResult={screeningResult}
-              fallbackRecentDays={screeningParams.recentDays ?? 0}
-              screeningError={screeningError}
-              onStockClick={handleStockClick}
-            />
-          ) : (
-            <RankingContent
-              rankingData={rankingQuery.data}
-              isRankingLoading={rankingQuery.isLoading}
-              rankingError={rankingQuery.error as Error | null}
-              onStockClick={handleStockClick}
-              rankingPeriodDays={rankingParams.periodDays}
-            />
-          )}
+          <AnalysisMainContent
+            activeSubTab={activeSubTab}
+            handleRunScreening={handleRunScreening}
+            screeningIsRunning={screeningIsRunning}
+            screeningJob={screeningJob}
+            handleCancelScreening={handleCancelScreening}
+            cancelScreeningPending={cancelScreeningJob.isPending}
+            screeningSummary={screeningResult?.summary}
+            screeningMarkets={screeningResult?.markets || []}
+            screeningRecentDays={screeningResult?.recentDays || (screeningParams.recentDays ?? 0)}
+            screeningReferenceDate={screeningResult?.referenceDate}
+            screeningResults={screeningResult?.results || []}
+            screeningTableLoading={!screeningResult && screeningIsRunning}
+            screeningError={screeningError}
+            onStockClick={handleStockClick}
+            rankingData={rankingQuery.data}
+            rankingLoading={rankingQuery.isLoading}
+            rankingError={rankingQuery.error}
+            rankingPeriodDays={rankingParams.periodDays}
+            fundamentalData={fundamentalRankingQuery.data}
+            fundamentalLoading={fundamentalRankingQuery.isLoading}
+            fundamentalError={fundamentalRankingQuery.error}
+          />
         </div>
       </div>
     </div>

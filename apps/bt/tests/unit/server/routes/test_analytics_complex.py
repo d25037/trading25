@@ -74,6 +74,37 @@ def analytics_db_path(tmp_path):
             PRIMARY KEY (code, date)
         )
     """)
+    conn.execute("""
+        CREATE TABLE statements (
+            code TEXT NOT NULL,
+            disclosed_date TEXT NOT NULL,
+            earnings_per_share REAL,
+            profit REAL,
+            equity REAL,
+            type_of_current_period TEXT,
+            type_of_document TEXT,
+            next_year_forecast_earnings_per_share REAL,
+            bps REAL,
+            sales REAL,
+            operating_profit REAL,
+            ordinary_profit REAL,
+            operating_cash_flow REAL,
+            dividend_fy REAL,
+            forecast_dividend_fy REAL,
+            next_year_forecast_dividend_fy REAL,
+            payout_ratio REAL,
+            forecast_payout_ratio REAL,
+            next_year_forecast_payout_ratio REAL,
+            forecast_eps REAL,
+            investing_cash_flow REAL,
+            financing_cash_flow REAL,
+            cash_and_equivalents REAL,
+            total_assets REAL,
+            shares_outstanding REAL,
+            treasury_shares REAL,
+            PRIMARY KEY (code, disclosed_date)
+        )
+    """)
 
     # 銘柄
     conn.execute(
@@ -131,6 +162,46 @@ def analytics_db_path(tmp_path):
                 "INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
                 (idx_code, d, idx_price * 0.99, idx_price * 1.01, idx_price * 0.98, idx_price, None, None),
             )
+
+    # statements data for fundamental ranking
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        ("72030", "2024-05-10", 100.0, "FY", 120.0, 118.0, 100.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?)
+        """,
+        ("72030", "2024-08-10", "1Q", 130.0, 100.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?)
+        """,
+        ("67580", "2024-05-12", 180.0, "FY", 210.0, 200.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, type_of_current_period, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?)
+        """,
+        ("67580", "2024-08-12", "Q1", 225.0, 200.0),
+    )
 
     conn.commit()
     conn.close()
@@ -205,6 +276,50 @@ class TestRanking:
             # lifespan 後に market_reader を None に上書き
             app.state.market_reader = None
             resp = client.get("/api/analytics/ranking")
+            assert resp.status_code == 422
+
+
+class TestFundamentalRanking:
+    def test_200_default(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/fundamental-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "date" in data
+        assert "markets" in data
+        assert "rankings" in data
+        assert "lastUpdated" in data
+        rankings = data["rankings"]
+        assert "forecastHigh" in rankings
+        assert "forecastLow" in rankings
+        assert "actualHigh" in rankings
+        assert "actualLow" in rankings
+
+    def test_with_limit(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/fundamental-ranking?limit=1")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["rankings"]["forecastHigh"]) <= 1
+        assert len(data["rankings"]["forecastLow"]) <= 1
+        assert len(data["rankings"]["actualHigh"]) <= 1
+        assert len(data["rankings"]["actualLow"]) <= 1
+
+    def test_item_shape(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/fundamental-ranking")
+        assert resp.status_code == 200
+        data = resp.json()
+        if data["rankings"]["forecastHigh"]:
+            item = data["rankings"]["forecastHigh"][0]
+            assert "code" in item
+            assert "companyName" in item
+            assert "epsValue" in item
+            assert "source" in item
+            assert item["source"] in {"fy", "revised"}
+
+    def test_422_no_db(self):
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.market_reader = None
+            resp = client.get("/api/analytics/fundamental-ranking")
             assert resp.status_code == 422
 
 
@@ -410,6 +525,28 @@ class TestAnalyticsRouteErrorMapping:
         resp = analytics_client.get("/api/analytics/ranking")
         assert resp.status_code == 500
         assert "Failed to get rankings" in str(resp.json())
+
+    def test_fundamental_ranking_maps_value_error_to_422(self, analytics_client, monkeypatch):
+        from src.application.services.ranking_service import RankingService
+
+        def _raise_value_error(self, **_kwargs):  # noqa: ANN001
+            raise ValueError("invalid fundamental ranking params")
+
+        monkeypatch.setattr(RankingService, "get_fundamental_rankings", _raise_value_error)
+        resp = analytics_client.get("/api/analytics/fundamental-ranking")
+        assert resp.status_code == 422
+        assert "invalid fundamental ranking params" in str(resp.json())
+
+    def test_fundamental_ranking_maps_unexpected_error_to_500(self, analytics_client, monkeypatch):
+        from src.application.services.ranking_service import RankingService
+
+        def _raise_runtime_error(self, **_kwargs):  # noqa: ANN001
+            raise RuntimeError("fundamental ranking boom")
+
+        monkeypatch.setattr(RankingService, "get_fundamental_rankings", _raise_runtime_error)
+        resp = analytics_client.get("/api/analytics/fundamental-ranking")
+        assert resp.status_code == 500
+        assert "Failed to get fundamental rankings" in str(resp.json())
 
     def test_factor_regression_maps_insufficient_to_422(self, analytics_client, monkeypatch):
         from src.application.services.factor_regression_service import FactorRegressionService
