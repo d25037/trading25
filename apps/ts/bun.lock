@@ -9,7 +9,7 @@
       },
       "devDependencies": {
         "@biomejs/biome": "^2.1.4",
-        "@gunshi/docs": "0.27.0",
+        "@gunshi/docs": "0.29.2",
         "bun-types": "^1.3.6",
         "tsx": "^4.19.1",
         "typescript": "^5.9.2",
@@ -30,7 +30,7 @@
         "string-width": "^7.2.0",
       },
       "devDependencies": {
-        "@gunshi/docs": "^0.27.0",
+        "@gunshi/docs": "^0.29.2",
       },
     },
     "packages/clients-ts": {
@@ -236,7 +236,7 @@
 
     "@floating-ui/utils": ["@floating-ui/utils@0.2.10", "", {}, "sha512-aGTxbpbg8/b5JfU1HXSrbH3wXZuLPJcNEcZQFMxLs3oSzgtVu6nFPkbbGGUvBcUjKV2YyB9Wxxabo+HEH9tcRQ=="],
 
-    "@gunshi/docs": ["@gunshi/docs@0.27.0", "", { "dependencies": { "@antfu/install-pkg": "^1.1.0", "tinyexec": "^1.0.2" }, "bin": { "gunshi-docs-init": "bin/init.js" } }, "sha512-5353dCkPzAbScCtUO/i2rge0E8BGupeeV/H8kLPHWHHGV9i/K4FRu57RepEgNZ8mag8qn7YFli/kg6HCXPN62g=="],
+    "@gunshi/docs": ["@gunshi/docs@0.29.2", "", { "dependencies": { "@antfu/install-pkg": "^1.1.0", "tinyexec": "^1.0.2" }, "bin": { "gunshi-docs-init": "bin/init.js" } }, "sha512-XWJClT3zQ288dtC9hZNyRt9faaT5zcAygBu1Q5W+sefZMFOTRUQJxaHPEuE7vS62GaiavGibdukl8RoF3zeT5A=="],
 
     "@jridgewell/gen-mapping": ["@jridgewell/gen-mapping@0.3.13", "", { "dependencies": { "@jridgewell/sourcemap-codec": "^1.5.0", "@jridgewell/trace-mapping": "^0.3.24" } }, "sha512-2kkt/7niJ6MgEPxF0bYdQ6etZaA+fQvDcLKckhy1yIQOzaoKjBBjSj63/aLVjYE3qhRt5dvM+uUyfCg6UKCBbA=="],
 
