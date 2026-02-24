@@ -14,6 +14,9 @@ from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
 from src.entrypoints.http.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
 from src.entrypoints.http.schemas.ranking import MarketRankingResponse
+from src.entrypoints.http.schemas.ranking import (
+    MarketFundamentalRankingResponse,
+)
 from src.entrypoints.http.schemas.screening import (
     MarketScreeningResponse,
 )
@@ -86,6 +89,40 @@ async def get_ranking(
     except Exception as e:
         logger.exception(f"Ranking error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to get rankings: {e}")
+
+
+@router.get(
+    "/api/analytics/fundamental-ranking",
+    response_model=MarketFundamentalRankingResponse,
+    summary="Get market fundamental rankings",
+    description=(
+        "Get fundamental rankings including high/low stocks by latest forecast EPS "
+        "and actual EPS."
+    ),
+)
+async def get_fundamental_ranking(
+    request: Request,
+    limit: int = Query(20, ge=1, le=100),
+    markets: str = Query("prime"),
+) -> MarketFundamentalRankingResponse:
+    """ファンダメンタルランキングを取得"""
+    from src.application.services.ranking_service import RankingService
+
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Database not initialized")
+
+    service = RankingService(reader)
+    try:
+        return service.get_fundamental_rankings(limit=limit, markets=markets)
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    except Exception as e:
+        logger.exception(f"Fundamental ranking error: {e}")
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to get fundamental rankings: {e}",
+        )
 
 
 # --- Factor Regression ---

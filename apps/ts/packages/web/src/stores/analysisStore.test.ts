@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createInitialAnalysisState,
+  DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   DEFAULT_RANKING_PARAMS,
   DEFAULT_SCREENING_PARAMS,
   useAnalysisStore,
@@ -81,5 +82,18 @@ describe('analysisStore', () => {
     const state = useAnalysisStore.getState();
     expect(state.rankingParams.markets).toBe('growth');
     expect(state.rankingParams.lookbackDays).toBe(5);
+  });
+
+  it('updates fundamental ranking params', () => {
+    const { setFundamentalRankingParams } = useAnalysisStore.getState();
+    setFundamentalRankingParams({
+      ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
+      markets: 'prime,standard',
+      limit: 50,
+    });
+
+    const state = useAnalysisStore.getState();
+    expect(state.fundamentalRankingParams.markets).toBe('prime,standard');
+    expect(state.fundamentalRankingParams.limit).toBe(50);
   });
 });
