@@ -48,7 +48,7 @@ from .strategy_generator import StrategyGenerator
 from .strategy_improver import StrategyImprover
 from .yaml_updater import YamlUpdater
 
-_COMMON_EXPORTS = (
+__all__ = [
     "StrategyGenerator",
     "StrategyEvaluator",
     "ParameterEvolver",
@@ -62,15 +62,12 @@ _COMMON_EXPORTS = (
     "SignalConstraints",
     "WeaknessReport",
     "Improvement",
-)
+]
 
 # Optunaは任意依存のため、インポートエラーを許容
-_exports = _COMMON_EXPORTS
 try:
     from .optuna_optimizer import OptunaOptimizer  # noqa: F401
 except ImportError:
     pass
 else:
-    _exports = _COMMON_EXPORTS + ("OptunaOptimizer",)
-
-__all__ = _exports  # pyright: ignore[reportUnsupportedDunderAll]
+    __all__.append("OptunaOptimizer")
