@@ -10,7 +10,7 @@ from __future__ import annotations
 import random
 from typing import Any
 
-from sqlalchemy import Row, func, literal_column, select
+from sqlalchemy import Row, func, literal, literal_column, or_, select, text
 
 from src.infrastructure.db.market.base import BaseDbAccess
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
@@ -30,6 +30,12 @@ _LEGACY_PERIOD_TYPE_MAP = {
     "2Q": "Q2",
     "3Q": "Q3",
 }
+_REQUIRED_STATEMENTS_COLUMNS = {"code", "disclosed_date"}
+_ACTUAL_ONLY_COLUMNS = (
+    "earnings_per_share",
+    "profit",
+    "equity",
+)
 
 
 def _resolve_period_filter_values(period_type: str) -> list[str] | None:
@@ -50,6 +56,42 @@ class DatasetDb(BaseDbAccess):
 
     def __init__(self, db_path: str) -> None:
         super().__init__(db_path, read_only=True)
+        self._statements_columns_cache: set[str] | None = None
+
+    def _get_statements_columns(self) -> set[str]:
+        """statements テーブルの実カラム一覧を取得（レガシーDB互換）。"""
+        if self._statements_columns_cache is not None:
+            return self._statements_columns_cache
+
+        with self.engine.connect() as conn:
+            rows = conn.execute(text("PRAGMA table_info(statements)")).fetchall()
+        columns = {
+            str(row[1])
+            for row in rows
+            if len(row) > 1 and row[1]
+        }
+        missing_required = _REQUIRED_STATEMENTS_COLUMNS - columns
+        if missing_required:
+            raise RuntimeError(
+                "statements schema is missing required columns: "
+                + ", ".join(sorted(missing_required))
+            )
+        self._statements_columns_cache = columns
+        return columns
+
+    def _select_statements_projection(self) -> Any:
+        """
+        statements の選択列を動的構築する。
+
+        旧 dataset.db で未追加の列は NULL を同名 alias で補完し、
+        呼び出し側の列マッピングを壊さない。
+        """
+        existing = self._get_statements_columns()
+        projected_columns = [
+            column if column.name in existing else literal(None).label(column.name)
+            for column in statements.columns
+        ]
+        return select(*projected_columns)
 
     # --- Stocks ---
 
@@ -187,21 +229,25 @@ class DatasetDb(BaseDbAccess):
         actual_only: bool = True,
     ) -> Any:
         """Apply common filters for statements queries."""
-        if start:
+        existing = self._get_statements_columns()
+
+        if start and "disclosed_date" in existing:
             stmt = stmt.where(statements.c.disclosed_date >= start)
-        if end:
+        if end and "disclosed_date" in existing:
             stmt = stmt.where(statements.c.disclosed_date <= end)
 
         period_values = _resolve_period_filter_values(period_type)
-        if period_values:
+        if period_values and "type_of_current_period" in existing:
             stmt = stmt.where(statements.c.type_of_current_period.in_(period_values))
 
         if actual_only:
-            stmt = stmt.where(
-                (statements.c.earnings_per_share.is_not(None))
-                | (statements.c.profit.is_not(None))
-                | (statements.c.equity.is_not(None))
-            )
+            actual_cols = [
+                getattr(statements.c, column_name)
+                for column_name in _ACTUAL_ONLY_COLUMNS
+                if column_name in existing
+            ]
+            if actual_cols:
+                stmt = stmt.where(or_(*(col.is_not(None) for col in actual_cols)))
 
         return stmt
 
@@ -215,7 +261,7 @@ class DatasetDb(BaseDbAccess):
     ) -> list[Row[Any]]:
         """財務諸表データを取得"""
         code = normalize_stock_code(code)
-        stmt = select(statements).where(statements.c.code == code)
+        stmt = self._select_statements_projection().where(statements.c.code == code)
         stmt = self._apply_statements_filters(
             stmt,
             start=start,
@@ -240,7 +286,7 @@ class DatasetDb(BaseDbAccess):
         if not normalized:
             return {}
 
-        stmt = select(statements).where(statements.c.code.in_(normalized))
+        stmt = self._select_statements_projection().where(statements.c.code.in_(normalized))
         stmt = self._apply_statements_filters(
             stmt,
             start=start,

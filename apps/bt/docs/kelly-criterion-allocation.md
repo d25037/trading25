@@ -112,7 +112,7 @@ src/strategies/core/mixins/portfolio_analyzer_mixin_kelly.py
 ### 基本的な使い方
 
 ```python
-from src.strategies.core.mixins.portfolio_analyzer_mixin_kelly import PortfolioAnalyzerKellyMixin
+from src.domains.strategy.core.mixins.portfolio_analyzer_mixin_kelly import PortfolioAnalyzerKellyMixin
 
 class MyStrategy(PortfolioAnalyzerKellyMixin):
     # ... 戦略実装 ...
