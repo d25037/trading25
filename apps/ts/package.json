@@ -38,7 +38,7 @@
     "typecheck:all": "bun --env-file=../../.env run typecheck && bun --env-file=../../.env run --filter @trading25/clients-ts typecheck && bun --env-file=../../.env run typecheck:web"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.1.4",
+    "@biomejs/biome": "^2.4.4",
     "@gunshi/docs": "0.27.0",
     "bun-types": "^1.3.6",
     "tsx": "^4.19.1",
