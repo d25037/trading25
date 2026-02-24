@@ -15,15 +15,103 @@ import {
   useScreeningJobStatus,
   useScreeningResult,
 } from '@/hooks/useScreening';
+import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import type { AnalysisSubTab } from '@/stores/analysisStore';
 import { useAnalysisStore } from '@/stores/analysisStore';
 import { useChartStore } from '@/stores/chartStore';
+import type { MarketRankingResponse } from '@/types/ranking';
+import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
 
 const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
   { id: 'screening', label: 'Screening', icon: Filter },
   { id: 'ranking', label: 'Ranking', icon: BarChart3 },
 ];
+
+interface ScreeningContentProps {
+  onRunScreening: () => void;
+  screeningIsRunning: boolean;
+  screeningJob: ScreeningJobResponse | null;
+  onCancelScreening?: () => void;
+  isCancelling: boolean;
+  screeningResult: MarketScreeningResponse | null;
+  fallbackRecentDays: number;
+  screeningError: Error | null;
+  onStockClick: (code: string) => void;
+}
+
+function ScreeningContent({
+  onRunScreening,
+  screeningIsRunning,
+  screeningJob,
+  onCancelScreening,
+  isCancelling,
+  screeningResult,
+  fallbackRecentDays,
+  screeningError,
+  onStockClick,
+}: ScreeningContentProps) {
+  return (
+    <>
+      <div className="mb-3 flex justify-end">
+        <Button onClick={onRunScreening} disabled={screeningIsRunning}>
+          Run Screening
+        </Button>
+      </div>
+
+      <ScreeningJobProgress
+        job={screeningJob}
+        onCancel={screeningIsRunning ? onCancelScreening : undefined}
+        isCancelling={isCancelling}
+      />
+
+      <ScreeningSummary
+        summary={screeningResult?.summary}
+        markets={screeningResult?.markets || []}
+        recentDays={screeningResult?.recentDays || fallbackRecentDays}
+        referenceDate={screeningResult?.referenceDate}
+      />
+      <div className="flex-1 min-h-0">
+        <ScreeningTable
+          results={screeningResult?.results || []}
+          isLoading={!screeningResult && screeningIsRunning}
+          isFetching={screeningIsRunning}
+          error={screeningError}
+          onStockClick={onStockClick}
+        />
+      </div>
+    </>
+  );
+}
+
+interface RankingContentProps {
+  rankingData: MarketRankingResponse | undefined;
+  isRankingLoading: boolean;
+  rankingError: Error | null;
+  onStockClick: (code: string) => void;
+  rankingPeriodDays: number | undefined;
+}
+
+function RankingContent({
+  rankingData,
+  isRankingLoading,
+  rankingError,
+  onStockClick,
+  rankingPeriodDays,
+}: RankingContentProps) {
+  return (
+    <>
+      <RankingSummary data={rankingData} />
+      <RankingTable
+        rankings={rankingData?.rankings}
+        isLoading={isRankingLoading}
+        error={rankingError}
+        onStockClick={onStockClick}
+        periodDays={rankingPeriodDays}
+      />
+    </>
+  );
+}
 
 export function AnalysisPage() {
   const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
@@ -47,6 +135,9 @@ export function AnalysisPage() {
 
   const shouldFetchScreeningResult = screeningJobStatus.data?.status === 'completed';
   const screeningResultQuery = useScreeningResult(activeScreeningJobId, shouldFetchScreeningResult);
+  const screeningJobStatusError = screeningJobStatus.error;
+  const isStaleScreeningJob = screeningJobStatusError instanceof ApiError && screeningJobStatusError.status === 404;
+  const shouldResetStaleScreeningJobId = Boolean(activeScreeningJobId) && isStaleScreeningJob;
 
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
 
@@ -59,6 +150,11 @@ export function AnalysisPage() {
     if (!screeningResultQuery.data) return;
     setScreeningResult(screeningResultQuery.data);
   }, [screeningResultQuery.data, setScreeningResult]);
+
+  useEffect(() => {
+    if (!shouldResetStaleScreeningJobId) return;
+    setActiveScreeningJobId(null);
+  }, [shouldResetStaleScreeningJobId, setActiveScreeningJobId]);
 
   const handleRunScreening = useCallback(async () => {
     const job = await runScreeningJob.mutateAsync(screeningParams);
@@ -83,7 +179,7 @@ export function AnalysisPage() {
   const screeningIsRunning =
     runScreeningJob.isPending || screeningStatus === 'pending' || screeningStatus === 'running';
   const screeningError = (runScreeningJob.error ??
-    screeningJobStatus.error ??
+    (isStaleScreeningJob ? null : screeningJobStatusError) ??
     screeningResultQuery.error) as Error | null;
 
   return (
@@ -125,46 +221,27 @@ export function AnalysisPage() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           {activeSubTab === 'screening' ? (
-            <>
-              <div className="mb-3 flex justify-end">
-                <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
-                  Run Screening
-                </Button>
-              </div>
-
-              <ScreeningJobProgress
-                job={screeningJob}
-                onCancel={screeningIsRunning ? handleCancelScreening : undefined}
-                isCancelling={cancelScreeningJob.isPending}
-              />
-
-              <ScreeningSummary
-                summary={screeningResult?.summary}
-                markets={screeningResult?.markets || []}
-                recentDays={screeningResult?.recentDays || (screeningParams.recentDays ?? 0)}
-                referenceDate={screeningResult?.referenceDate}
-              />
-              <ScreeningTable
-                results={screeningResult?.results || []}
-                isLoading={!screeningResult && screeningIsRunning}
-                isFetching={screeningIsRunning}
-                error={screeningError}
-                onStockClick={handleStockClick}
-              />
-            </>
+            <ScreeningContent
+              onRunScreening={() => void handleRunScreening()}
+              screeningIsRunning={screeningIsRunning}
+              screeningJob={screeningJob}
+              onCancelScreening={handleCancelScreening}
+              isCancelling={cancelScreeningJob.isPending}
+              screeningResult={screeningResult}
+              fallbackRecentDays={screeningParams.recentDays ?? 0}
+              screeningError={screeningError}
+              onStockClick={handleStockClick}
+            />
           ) : (
-            <>
-              <RankingSummary data={rankingQuery.data} />
-              <RankingTable
-                rankings={rankingQuery.data?.rankings}
-                isLoading={rankingQuery.isLoading}
-                error={rankingQuery.error}
-                onStockClick={handleStockClick}
-                periodDays={rankingParams.periodDays}
-              />
-            </>
+            <RankingContent
+              rankingData={rankingQuery.data}
+              isRankingLoading={rankingQuery.isLoading}
+              rankingError={rankingQuery.error as Error | null}
+              onStockClick={handleStockClick}
+              rankingPeriodDays={rankingParams.periodDays}
+            />
           )}
         </div>
       </div>

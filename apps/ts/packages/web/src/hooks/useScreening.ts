@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiGet, apiPost } from '@/lib/api-client';
+import { ApiError, apiGet, apiPost } from '@/lib/api-client';
 import type {
   MarketScreeningResponse,
   ScreeningJobRequest,
@@ -66,6 +66,10 @@ export function useScreeningJobStatus(jobId: string | null) {
       return fetchScreeningJobStatus(jobId);
     },
     enabled: !!jobId,
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 2;
+    },
     refetchInterval: (query) => {
       const status = query.state.data?.status;
       if (status === 'running' || status === 'pending') return 2000;
