@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ScreeningResultItem } from '@/types/screening';
 import { ScreeningTable } from './ScreeningTable';
@@ -38,5 +39,16 @@ describe('ScreeningTable', () => {
   it('shows updating indicator while refetching', () => {
     render(<ScreeningTable results={mockResults} isLoading={false} isFetching error={null} onStockClick={vi.fn()} />);
     expect(screen.getByText('Updating...')).toBeInTheDocument();
+  });
+
+  it('calls onStockClick when a row is clicked', async () => {
+    const user = userEvent.setup();
+    const onStockClick = vi.fn();
+
+    render(<ScreeningTable results={mockResults} isLoading={false} error={null} onStockClick={onStockClick} />);
+
+    await user.click(screen.getByText('7203'));
+
+    expect(onStockClick).toHaveBeenCalledWith('7203');
   });
 });

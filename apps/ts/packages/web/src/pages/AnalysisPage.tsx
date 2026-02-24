@@ -21,6 +21,7 @@ import {
   useScreeningJobStatus,
   useScreeningResult,
 } from '@/hooks/useScreening';
+import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import type { AnalysisSubTab } from '@/stores/analysisStore';
 import { useAnalysisStore } from '@/stores/analysisStore';
@@ -187,7 +188,6 @@ function AnalysisMainContent({
     </>
   );
 }
-
 export function AnalysisPage() {
   const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
   const screeningParams = useAnalysisStore((state) => state.screeningParams);
@@ -212,6 +212,9 @@ export function AnalysisPage() {
 
   const shouldFetchScreeningResult = screeningJobStatus.data?.status === 'completed';
   const screeningResultQuery = useScreeningResult(activeScreeningJobId, shouldFetchScreeningResult);
+  const screeningJobStatusError = screeningJobStatus.error;
+  const isStaleScreeningJob = screeningJobStatusError instanceof ApiError && screeningJobStatusError.status === 404;
+  const shouldResetStaleScreeningJobId = Boolean(activeScreeningJobId) && isStaleScreeningJob;
 
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
   const fundamentalRankingQuery = useFundamentalRanking(
@@ -228,6 +231,11 @@ export function AnalysisPage() {
     if (!screeningResultQuery.data) return;
     setScreeningResult(screeningResultQuery.data);
   }, [screeningResultQuery.data, setScreeningResult]);
+
+  useEffect(() => {
+    if (!shouldResetStaleScreeningJobId) return;
+    setActiveScreeningJobId(null);
+  }, [shouldResetStaleScreeningJobId, setActiveScreeningJobId]);
 
   const handleRunScreening = useCallback(async () => {
     const job = await runScreeningJob.mutateAsync(screeningParams);
@@ -252,7 +260,7 @@ export function AnalysisPage() {
   const screeningIsRunning =
     runScreeningJob.isPending || screeningStatus === 'pending' || screeningStatus === 'running';
   const screeningError = (runScreeningJob.error ??
-    screeningJobStatus.error ??
+    (isStaleScreeningJob ? null : screeningJobStatusError) ??
     screeningResultQuery.error) as Error | null;
 
   return (
@@ -295,7 +303,7 @@ export function AnalysisPage() {
         </div>
 
         {/* Main Content */}
-        <div className="flex-1 flex flex-col min-w-0">
+        <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <AnalysisMainContent
             activeSubTab={activeSubTab}
             handleRunScreening={handleRunScreening}
