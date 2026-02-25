@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 
-import type { SignalAttributionResult } from '@trading25/clients-ts/backtest';
+import type { SignalAttributionResult } from '@trading25/api-clients/backtest';
 import { CLI_NAME } from '../../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../../utils/error-handling.js';
 import { handleBacktestError } from '../error-handler.js';
@@ -84,7 +84,7 @@ ${CLI_NAME} backtest attribution results <job-id> --format json`,
       throw new CLIValidationError('job ID is required');
     }
 
-    const { BacktestClient } = await import('@trading25/clients-ts/backtest');
+    const { BacktestClient } = await import('@trading25/api-clients/backtest');
     const client = new BacktestClient({ baseUrl: btUrl });
     const spinner = ora(`Fetching attribution result: ${jobId}`).start();
 

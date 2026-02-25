@@ -48,7 +48,7 @@ ${CLI_NAME} backtest attribution status <job-id> --format json`,
       throw new CLIValidationError('job ID is required');
     }
 
-    const { BacktestClient } = await import('@trading25/clients-ts/backtest');
+    const { BacktestClient } = await import('@trading25/api-clients/backtest');
     const client = new BacktestClient({ baseUrl: btUrl });
     const spinner = ora(`Fetching attribution job: ${jobId}`).start();
 

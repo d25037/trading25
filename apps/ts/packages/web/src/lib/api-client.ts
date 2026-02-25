@@ -8,7 +8,7 @@ import {
   extractErrorMessage as extractHttpErrorMessage,
   HttpRequestError,
   requestJson,
-} from '@trading25/clients-ts/base/http-client';
+} from '@trading25/api-clients/base/http-client';
 
 /**
  * Custom API error class with status code and details

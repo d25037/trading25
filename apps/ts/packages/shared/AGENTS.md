@@ -57,7 +57,7 @@ Fundamentals計算もapps/bt/ APIに移行完了（Single Source of Truth原則�
 - **Fundamentals計算**: apps/bt/ API (`POST /api/fundamentals/compute`)
 
 ```typescript
-import { BacktestClient } from '@trading25/clients-ts/backtest';
+import { BacktestClient } from '@trading25/api-clients/backtest';
 const client = new BacktestClient();
 const data = await client.computeFundamentals({ symbol: '7203' });
 ```

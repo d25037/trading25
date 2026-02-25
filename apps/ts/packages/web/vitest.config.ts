@@ -36,10 +36,10 @@ export default defineConfig({
 		alias: [
 			{ find: /^@\//, replacement: `${import.meta.dirname}/src/` },
 			{
-				find: /^@trading25\/clients-ts\/(.*)$/,
-				replacement: `${import.meta.dirname}/../clients-ts/src/$1`,
+				find: /^@trading25\/api-clients\/(.*)$/,
+				replacement: `${import.meta.dirname}/../api-clients/src/$1`,
 			},
-			{ find: '@trading25/clients-ts', replacement: `${import.meta.dirname}/../clients-ts/src` },
+			{ find: '@trading25/api-clients', replacement: `${import.meta.dirname}/../api-clients/src` },
 			{
 				find: /^@trading25\/shared\/(.*)$/,
 				replacement: `${import.meta.dirname}/../shared/src/$1`,

@@ -19,7 +19,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 ## Repository Layout
 
 - `apps/bt` - Python 3.12 + FastAPI + vectorbt + typer CLI
-- `apps/ts` - Bun workspace（web / cli / shared / clients-ts）
+- `apps/ts` - Bun workspace（web / cli / shared / api-clients）
 - `contracts` - bt/ts 間の安定インターフェース（JSON Schema, OpenAPI baseline）
 - `docs` - ロードマップ、設計判断、監査レポート
   - `docs/bt-src-layering-guide.md` - `apps/bt/src` の 5層配置ガイド

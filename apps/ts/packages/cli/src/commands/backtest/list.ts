@@ -4,7 +4,7 @@
  * 戦略一覧表示コマンド
  */
 
-import { BacktestClient, type StrategyMetadata } from '@trading25/clients-ts/backtest';
+import { BacktestClient, type StrategyMetadata } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';

@@ -65,7 +65,7 @@
     }
   },
   "scripts": {
-    "build": "bun run bt:generate-types && bun run --filter @trading25/clients-ts build && tsc -p tsconfig.build.json",
+    "build": "bun run bt:generate-types && bun run --filter @trading25/api-clients build && tsc -p tsconfig.build.json",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
     "test": "bun test",
@@ -78,7 +78,7 @@
     "bt:check": "bun scripts/check-bt-types.ts"
   },
   "dependencies": {
-    "@trading25/clients-ts": "workspace:*",
+    "@trading25/api-clients": "workspace:*",
     "zod": "^4.1.5"
   },
   "devDependencies": {

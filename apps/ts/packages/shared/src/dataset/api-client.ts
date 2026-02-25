@@ -7,7 +7,7 @@ import {
   extractErrorMessage as extractTransportErrorMessage,
   HttpRequestError,
   requestJson,
-} from '@trading25/clients-ts/base/http-client';
+} from '@trading25/api-clients/base/http-client';
 import type {
   JQuantsDailyQuote,
   JQuantsDailyQuotesResponse,

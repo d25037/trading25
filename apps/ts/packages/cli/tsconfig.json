@@ -4,8 +4,8 @@
     "outDir": "./dist",
     "baseUrl": "./",
     "paths": {
-      "@trading25/clients-ts": ["../clients-ts/src"],
-      "@trading25/clients-ts/*": ["../clients-ts/src/*"],
+      "@trading25/api-clients": ["../api-clients/src"],
+      "@trading25/api-clients/*": ["../api-clients/src/*"],
       "@trading25/shared": ["../shared/src"],
       "@trading25/shared/*": ["../shared/src/*"]
     }

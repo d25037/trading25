@@ -23,7 +23,7 @@ packages/
   portfolio-db-ts/    # portfolio/watchlist DB 操作 (TS)
   analytics-ts/       # factor-regression / screening (TS)
   market-sync-ts/     # market 同期・検証 (TS)
-  clients-ts/         # bt/ts API クライアント (TS)
+  api-clients/         # bt/ts API クライアント (TS)
   market-db-py/       # market.db / dataset.db 読み取り (Python)
   dataset-io-py/      # snapshot/manifest 読み書き (Python)
   indicators-py/      # indicator 計算コアロジック (Python)
@@ -44,7 +44,7 @@ packages/
 | `packages/portfolio-db-ts` | `apps/ts/packages/portfolio-db-ts` | 4A で作成 |
 | `packages/analytics-ts` | 作成しない（削除方針） | 4B で方針転換 |
 | `packages/market-sync-ts` | 作成しない（削除方針） | 4B で方針転換 |
-| `packages/clients-ts` | `apps/ts/packages/clients-ts` | 4A で作成 |
+| `packages/api-clients` | `apps/ts/packages/api-clients` | 4A で作成 |
 | `packages/market-db-py` | `apps/bt/src/lib/market_db` | 4C Step1 で作成 |
 | `packages/dataset-io-py` | `apps/bt/src/lib/dataset_io` | 4C Step1 で作成 |
 | `packages/indicators-py` | 未着手 | 4C Step2 対象 |

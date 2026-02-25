@@ -2,7 +2,7 @@
  * Backtest CLI common error handler
  */
 
-import { BacktestApiError } from '@trading25/clients-ts/backtest';
+import { BacktestApiError } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 
 interface Logger {

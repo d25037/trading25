@@ -47,9 +47,9 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Run CLI entrypoint',
     steps: [{ command: ['packages/cli/src/index.ts'], withEnvFile: true }],
   },
-  'clients:build': {
-    description: 'Build clients-ts package',
-    steps: [{ command: ['run', '--filter', '@trading25/clients-ts', 'build'] }],
+  'api-clients:build': {
+    description: 'Build api-clients package',
+    steps: [{ command: ['run', '--filter', '@trading25/api-clients', 'build'] }],
   },
   'core:test': {
     description: 'Run package tests + CLI tests',
@@ -63,10 +63,10 @@ const TASKS: Record<string, TaskDefinition> = {
     steps: [{ command: ['scripts/check-coverage.ts'] }],
   },
   'packages:test': {
-    description: 'Run package tests (shared + clients-ts)',
+    description: 'Run package tests (shared + api-clients)',
     steps: [
       { command: ['run', '--filter', '@trading25/shared', 'test'] },
-      { command: ['run', '--filter', '@trading25/clients-ts', 'test'] },
+      { command: ['run', '--filter', '@trading25/api-clients', 'test'] },
     ],
   },
   'quality:check:fix': {
@@ -86,11 +86,11 @@ const TASKS: Record<string, TaskDefinition> = {
     steps: [{ command: ['x', 'biome', 'lint', '.', '--write'] }],
   },
   'quality:typecheck': {
-    description: 'Run full typecheck (root + clients-ts + web)',
+    description: 'Run full typecheck (root + api-clients + web)',
     steps: [
       { command: ['run', '--filter', '@trading25/shared', 'bt:generate-types'] },
       { task: 'quality:typecheck:root' },
-      { command: ['run', '--filter', '@trading25/clients-ts', 'typecheck'] },
+      { command: ['run', '--filter', '@trading25/api-clients', 'typecheck'] },
       { task: 'quality:typecheck:web' },
     ],
   },
@@ -124,7 +124,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'workspace:build': {
     description: 'Build all workspace packages',
-    steps: [{ task: 'clients:build' }, { task: 'shared:build' }, { task: 'web:build' }, { task: 'cli:build' }],
+    steps: [{ task: 'api-clients:build' }, { task: 'shared:build' }, { task: 'web:build' }, { task: 'cli:build' }],
   },
   'workspace:clean': {
     description: 'Clean dist/node_modules and lock files',
@@ -153,7 +153,7 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Run all workspace coverage tests',
     steps: [
       { command: ['run', '--filter', '@trading25/shared', 'test:coverage'] },
-      { command: ['run', '--filter', '@trading25/clients-ts', 'test:coverage'] },
+      { command: ['run', '--filter', '@trading25/api-clients', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/cli', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/web', 'test:coverage'] },
     ],
@@ -176,11 +176,11 @@ async function runShell(command: string): Promise<number> {
   if (command === 'workspace-clean') {
     await Promise.all([
       rm(resolve(ROOT, 'packages/cli/dist'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/clients-ts/dist'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/api-clients/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/shared/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/cli/node_modules'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/clients-ts/node_modules'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/api-clients/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/shared/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'node_modules'), { recursive: true, force: true }),

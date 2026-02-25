@@ -81,7 +81,7 @@ export type {
   StrategyUpdateResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
-} from '@trading25/clients-ts/backtest';
+} from '@trading25/api-clients/backtest';
 
 // Frontend-specific types
 export type BacktestSubTab = 'runner' | 'results' | 'attribution' | 'strategies' | 'status' | 'dataset' | 'lab';

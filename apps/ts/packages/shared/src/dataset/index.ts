@@ -36,7 +36,7 @@ export {
   BatchExecutor,
   categorizeErrorType,
   createBatchExecutor,
-} from '@trading25/clients-ts/base/BatchExecutor';
+} from '@trading25/api-clients/base/BatchExecutor';
 export { ApiClient } from './api-client';
 // ===== CONFIGURATION =====
 export {

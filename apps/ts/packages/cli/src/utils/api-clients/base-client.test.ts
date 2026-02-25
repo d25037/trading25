@@ -24,7 +24,7 @@ class MockHttpRequestError extends Error {
   }
 }
 
-mock.module('@trading25/clients-ts/base/http-client', () => ({
+mock.module('@trading25/api-clients/base/http-client', () => ({
   HttpRequestError: MockHttpRequestError,
   requestJson: requestJsonMock,
 }));

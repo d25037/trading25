@@ -1,5 +1,5 @@
 {
-  "name": "@trading25/clients-ts",
+  "name": "@trading25/api-clients",
   "version": "0.0.1",
   "private": true,
   "type": "module",

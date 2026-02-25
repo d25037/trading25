@@ -1,4 +1,4 @@
-import { BacktestApiError } from '@trading25/clients-ts/backtest';
+import { BacktestApiError } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
@@ -37,7 +37,7 @@ ${CLI_NAME} backtest attribution cancel <job-id>`,
       throw new CLIValidationError('job ID is required');
     }
 
-    const { BacktestClient } = await import('@trading25/clients-ts/backtest');
+    const { BacktestClient } = await import('@trading25/api-clients/backtest');
     const client = new BacktestClient({ baseUrl: btUrl });
     const spinner = ora('Cancelling attribution job...').start();
 

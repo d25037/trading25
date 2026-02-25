@@ -11,7 +11,7 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
 - **`packages/shared/`** - JQuants API clients, shared API types, TA/FA utilities → [Shared AGENTS.md](./packages/shared/AGENTS.md)
 - **`packages/cli/`** - Gunshi CLI for dataset/portfolio/analysis → [CLI AGENTS.md](./packages/cli/AGENTS.md)
-- **`packages/clients-ts/`** - FastAPI client packages (backtest/JQuants)
+- **`packages/api-clients/`** - FastAPI client packages (backtest/JQuants)
 
 ## Critical Rules
 

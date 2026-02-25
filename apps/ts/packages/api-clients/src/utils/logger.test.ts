@@ -22,7 +22,7 @@ function restoreEnvironment(): void {
   });
 }
 
-describe('clients-ts logger', () => {
+describe('api-clients logger', () => {
   beforeEach(() => {
     loggerState.level = 'TRACE';
     loggerState.isBrowser = false;
@@ -82,7 +82,7 @@ describe('clients-ts logger', () => {
     errorSpy.mockRestore();
   });
 
-  test('ConsoleLogger delegates all methods to the clients-ts singleton logger', () => {
+  test('ConsoleLogger delegates all methods to the api-clients singleton logger', () => {
     const compatibilityLogger = new ConsoleLogger();
     const logSpy = spyOn(console, 'log').mockImplementation(() => {});
     const warnSpy = spyOn(console, 'warn').mockImplementation(() => {});
@@ -135,7 +135,7 @@ describe('clients-ts logger', () => {
     expect(loggerState.detectBrowser()).toBe(false);
 
     const detectionWarnings = warnSpy.mock.calls.filter(([message]) =>
-      String(message).includes('[clients-ts logger] Browser environment detection failed')
+      String(message).includes('[api-clients logger] Browser environment detection failed')
     );
     expect(detectionWarnings).toHaveLength(1);
     warnSpy.mockRestore();

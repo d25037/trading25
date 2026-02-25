@@ -2,7 +2,7 @@ import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 
-import type { SignalAttributionJobResponse, SignalAttributionRequest } from '@trading25/clients-ts/backtest';
+import type { SignalAttributionJobResponse, SignalAttributionRequest } from '@trading25/api-clients/backtest';
 import { CLI_NAME } from '../../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../../utils/error-handling.js';
 import { handleBacktestError } from '../error-handler.js';
@@ -221,7 +221,7 @@ ${CLI_NAME} backtest attribution run range_break_v5 --shapley-top-n 8 --shapley-
     const options = parseRunOptions(ctx.values as Record<string, unknown>);
     const request = buildRequest(options);
 
-    const { BacktestClient } = await import('@trading25/clients-ts/backtest');
+    const { BacktestClient } = await import('@trading25/api-clients/backtest');
     const client = new BacktestClient({ baseUrl: options.btUrl });
 
     const spinner = ora('Submitting signal attribution job...').start();
