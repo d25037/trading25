@@ -500,3 +500,63 @@ class DatasetDb(BaseDbAccess):
         stmt = select(func.count(func.distinct(ds_stock_data.c.code)))
         with self.engine.connect() as conn:
             return conn.execute(stmt).scalar() or 0
+
+    def get_stocks_with_margin_count(self) -> int:
+        """信用取引データを持つ銘柄数"""
+        stmt = select(func.count(func.distinct(margin_data.c.code)))
+        with self.engine.connect() as conn:
+            return conn.execute(stmt).scalar() or 0
+
+    def get_stocks_with_statements_count(self) -> int:
+        """財務データを持つ銘柄数"""
+        stmt = select(func.count(func.distinct(statements.c.code)))
+        with self.engine.connect() as conn:
+            return conn.execute(stmt).scalar() or 0
+
+    def get_fk_orphan_counts(self) -> dict[str, int]:
+        """stocks に紐づかない参照データ件数を取得"""
+        stock_data_join = ds_stock_data.outerjoin(ds_stocks, ds_stock_data.c.code == ds_stocks.c.code)
+        margin_join = margin_data.outerjoin(ds_stocks, margin_data.c.code == ds_stocks.c.code)
+        statements_join = statements.outerjoin(ds_stocks, statements.c.code == ds_stocks.c.code)
+
+        with self.engine.connect() as conn:
+            stock_data_orphans = (
+                conn.execute(
+                    select(func.count())
+                    .select_from(stock_data_join)
+                    .where(ds_stocks.c.code.is_(None))
+                ).scalar()
+                or 0
+            )
+            margin_data_orphans = (
+                conn.execute(
+                    select(func.count())
+                    .select_from(margin_join)
+                    .where(ds_stocks.c.code.is_(None))
+                ).scalar()
+                or 0
+            )
+            statements_orphans = (
+                conn.execute(
+                    select(func.count())
+                    .select_from(statements_join)
+                    .where(ds_stocks.c.code.is_(None))
+                ).scalar()
+                or 0
+            )
+        return {
+            "stockDataOrphans": stock_data_orphans,
+            "marginDataOrphans": margin_data_orphans,
+            "statementsOrphans": statements_orphans,
+        }
+
+    def get_stocks_without_quotes_count(self) -> int:
+        """stock_data が1件もない銘柄数を取得"""
+        join_stmt = ds_stocks.outerjoin(ds_stock_data, ds_stocks.c.code == ds_stock_data.c.code)
+        stmt = (
+            select(func.count(func.distinct(ds_stocks.c.code)))
+            .select_from(join_stmt)
+            .where(ds_stock_data.c.code.is_(None))
+        )
+        with self.engine.connect() as conn:
+            return conn.execute(stmt).scalar() or 0

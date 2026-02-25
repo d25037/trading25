@@ -12345,6 +12345,71 @@
         ],
         "title": "DatasetCreateResponse"
       },
+      "DatasetDataCoverage": {
+        "properties": {
+          "totalStocks": {
+            "type": "integer",
+            "title": "Totalstocks",
+            "default": 0
+          },
+          "stocksWithQuotes": {
+            "type": "integer",
+            "title": "Stockswithquotes",
+            "default": 0
+          },
+          "stocksWithStatements": {
+            "type": "integer",
+            "title": "Stockswithstatements",
+            "default": 0
+          },
+          "stocksWithMargin": {
+            "type": "integer",
+            "title": "Stockswithmargin",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DatasetDataCoverage"
+      },
+      "DatasetExpectedRange": {
+        "properties": {
+          "min": {
+            "type": "integer",
+            "title": "Min"
+          },
+          "max": {
+            "type": "integer",
+            "title": "Max"
+          }
+        },
+        "type": "object",
+        "required": [
+          "min",
+          "max"
+        ],
+        "title": "DatasetExpectedRange"
+      },
+      "DatasetFkIntegrity": {
+        "properties": {
+          "stockDataOrphans": {
+            "type": "integer",
+            "title": "Stockdataorphans",
+            "default": 0
+          },
+          "marginDataOrphans": {
+            "type": "integer",
+            "title": "Margindataorphans",
+            "default": 0
+          },
+          "statementsOrphans": {
+            "type": "integer",
+            "title": "Statementsorphans",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DatasetFkIntegrity"
+      },
       "DatasetInfoResponse": {
         "properties": {
           "name": {
@@ -12365,6 +12430,12 @@
           },
           "snapshot": {
             "$ref": "#/components/schemas/DatasetSnapshot"
+          },
+          "stats": {
+            "$ref": "#/components/schemas/DatasetStats"
+          },
+          "validation": {
+            "$ref": "#/components/schemas/DatasetValidation"
           }
         },
         "type": "object",
@@ -12373,7 +12444,9 @@
           "path",
           "fileSize",
           "lastModified",
-          "snapshot"
+          "snapshot",
+          "stats",
+          "validation"
         ],
         "title": "DatasetInfoResponse"
       },
@@ -12531,6 +12604,30 @@
             "type": "string",
             "title": "Lastmodified",
             "description": "Last modified ISO datetime"
+          },
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset",
+            "description": "Preset name used to create dataset"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat",
+            "description": "Created datetime stored in dataset_info"
           }
         },
         "type": "object",
@@ -12589,20 +12686,34 @@
             "title": "Preset",
             "description": "Preset name used"
           },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat",
+            "description": "Dataset created datetime"
+          },
           "totalStocks": {
             "type": "integer",
             "title": "Totalstocks",
-            "description": "Number of stocks"
+            "description": "Number of stocks",
+            "default": 0
           },
           "stocksWithQuotes": {
             "type": "integer",
             "title": "Stockswithquotes",
-            "description": "Stocks with OHLCV data"
+            "description": "Stocks with OHLCV data",
+            "default": 0
           },
           "dateRange": {
             "anyOf": [
               {
-                "$ref": "#/components/schemas/src__server__schemas__dataset__DateRange"
+                "$ref": "#/components/schemas/DatasetSnapshotDateRange"
               },
               {
                 "type": "null"
@@ -12610,18 +12721,38 @@
             ]
           },
           "validation": {
-            "$ref": "#/components/schemas/DatasetValidation"
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetSnapshotValidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "DatasetSnapshot"
+      },
+      "DatasetSnapshotDateRange": {
+        "properties": {
+          "min": {
+            "type": "string",
+            "title": "Min"
+          },
+          "max": {
+            "type": "string",
+            "title": "Max"
           }
         },
         "type": "object",
         "required": [
-          "totalStocks",
-          "stocksWithQuotes",
-          "validation"
+          "min",
+          "max"
         ],
-        "title": "DatasetSnapshot"
+        "title": "DatasetSnapshotDateRange"
       },
-      "DatasetValidation": {
+      "DatasetSnapshotValidation": {
         "properties": {
           "isValid": {
             "type": "boolean",
@@ -12646,7 +12777,325 @@
         "required": [
           "isValid"
         ],
+        "title": "DatasetSnapshotValidation"
+      },
+      "DatasetStatementsFieldCoverage": {
+        "properties": {
+          "total": {
+            "type": "integer",
+            "title": "Total",
+            "default": 0
+          },
+          "totalFY": {
+            "type": "integer",
+            "title": "Totalfy",
+            "default": 0
+          },
+          "totalHalf": {
+            "type": "integer",
+            "title": "Totalhalf",
+            "default": 0
+          },
+          "hasExtendedFields": {
+            "type": "boolean",
+            "title": "Hasextendedfields",
+            "default": false
+          },
+          "hasCashFlowFields": {
+            "type": "boolean",
+            "title": "Hascashflowfields",
+            "default": false
+          },
+          "earningsPerShare": {
+            "type": "integer",
+            "title": "Earningspershare",
+            "default": 0
+          },
+          "profit": {
+            "type": "integer",
+            "title": "Profit",
+            "default": 0
+          },
+          "equity": {
+            "type": "integer",
+            "title": "Equity",
+            "default": 0
+          },
+          "nextYearForecastEps": {
+            "type": "integer",
+            "title": "Nextyearforecasteps",
+            "default": 0
+          },
+          "bps": {
+            "type": "integer",
+            "title": "Bps",
+            "default": 0
+          },
+          "sales": {
+            "type": "integer",
+            "title": "Sales",
+            "default": 0
+          },
+          "operatingProfit": {
+            "type": "integer",
+            "title": "Operatingprofit",
+            "default": 0
+          },
+          "ordinaryProfit": {
+            "type": "integer",
+            "title": "Ordinaryprofit",
+            "default": 0
+          },
+          "operatingCashFlow": {
+            "type": "integer",
+            "title": "Operatingcashflow",
+            "default": 0
+          },
+          "dividendFY": {
+            "type": "integer",
+            "title": "Dividendfy",
+            "default": 0
+          },
+          "forecastEps": {
+            "type": "integer",
+            "title": "Forecasteps",
+            "default": 0
+          },
+          "investingCashFlow": {
+            "type": "integer",
+            "title": "Investingcashflow",
+            "default": 0
+          },
+          "financingCashFlow": {
+            "type": "integer",
+            "title": "Financingcashflow",
+            "default": 0
+          },
+          "cashAndEquivalents": {
+            "type": "integer",
+            "title": "Cashandequivalents",
+            "default": 0
+          },
+          "totalAssets": {
+            "type": "integer",
+            "title": "Totalassets",
+            "default": 0
+          },
+          "sharesOutstanding": {
+            "type": "integer",
+            "title": "Sharesoutstanding",
+            "default": 0
+          },
+          "treasuryShares": {
+            "type": "integer",
+            "title": "Treasuryshares",
+            "default": 0
+          }
+        },
+        "type": "object",
+        "title": "DatasetStatementsFieldCoverage"
+      },
+      "DatasetStats": {
+        "properties": {
+          "totalStocks": {
+            "type": "integer",
+            "title": "Totalstocks",
+            "default": 0
+          },
+          "totalQuotes": {
+            "type": "integer",
+            "title": "Totalquotes",
+            "default": 0
+          },
+          "dateRange": {
+            "$ref": "#/components/schemas/DatasetStatsDateRange"
+          },
+          "hasMarginData": {
+            "type": "boolean",
+            "title": "Hasmargindata",
+            "default": false
+          },
+          "hasTOPIXData": {
+            "type": "boolean",
+            "title": "Hastopixdata",
+            "default": false
+          },
+          "hasSectorData": {
+            "type": "boolean",
+            "title": "Hassectordata",
+            "default": false
+          },
+          "hasStatementsData": {
+            "type": "boolean",
+            "title": "Hasstatementsdata",
+            "default": false
+          },
+          "statementsFieldCoverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetStatementsFieldCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "dateRange"
+        ],
+        "title": "DatasetStats"
+      },
+      "DatasetStatsDateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DatasetStatsDateRange"
+      },
+      "DatasetStockCountValidation": {
+        "properties": {
+          "preset": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Preset"
+          },
+          "expected": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetExpectedRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "actual": {
+            "type": "integer",
+            "title": "Actual",
+            "default": 0
+          },
+          "isWithinRange": {
+            "type": "boolean",
+            "title": "Iswithinrange",
+            "default": true
+          }
+        },
+        "type": "object",
+        "title": "DatasetStockCountValidation"
+      },
+      "DatasetValidation": {
+        "properties": {
+          "isValid": {
+            "type": "boolean",
+            "title": "Isvalid"
+          },
+          "errors": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Errors"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Warnings"
+          },
+          "details": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetValidationDetails"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "required": [
+          "isValid"
+        ],
         "title": "DatasetValidation"
+      },
+      "DatasetValidationDetails": {
+        "properties": {
+          "dateGapsCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dategapscount"
+          },
+          "fkIntegrity": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetFkIntegrity"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orphanStocksCount": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Orphanstockscount"
+          },
+          "stockCountValidation": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetStockCountValidation"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "dataCoverage": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/DatasetDataCoverage"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "type": "object",
+        "title": "DatasetValidationDetails"
       },
       "DateRange": {
         "properties": {

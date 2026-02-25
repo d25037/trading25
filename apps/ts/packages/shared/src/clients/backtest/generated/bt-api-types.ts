@@ -2984,6 +2984,54 @@ export interface components {
             /** Estimatedtime */
             estimatedTime?: string | null;
         };
+        /** DatasetDataCoverage */
+        DatasetDataCoverage: {
+            /**
+             * Totalstocks
+             * @default 0
+             */
+            totalStocks: number;
+            /**
+             * Stockswithquotes
+             * @default 0
+             */
+            stocksWithQuotes: number;
+            /**
+             * Stockswithstatements
+             * @default 0
+             */
+            stocksWithStatements: number;
+            /**
+             * Stockswithmargin
+             * @default 0
+             */
+            stocksWithMargin: number;
+        };
+        /** DatasetExpectedRange */
+        DatasetExpectedRange: {
+            /** Min */
+            min: number;
+            /** Max */
+            max: number;
+        };
+        /** DatasetFkIntegrity */
+        DatasetFkIntegrity: {
+            /**
+             * Stockdataorphans
+             * @default 0
+             */
+            stockDataOrphans: number;
+            /**
+             * Margindataorphans
+             * @default 0
+             */
+            marginDataOrphans: number;
+            /**
+             * Statementsorphans
+             * @default 0
+             */
+            statementsOrphans: number;
+        };
         /** DatasetInfoResponse */
         DatasetInfoResponse: {
             /** Name */
@@ -2995,6 +3043,8 @@ export interface components {
             /** Lastmodified */
             lastModified: string;
             snapshot: components["schemas"]["DatasetSnapshot"];
+            stats: components["schemas"]["DatasetStats"];
+            validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetJobResponse */
         DatasetJobResponse: {
@@ -3064,6 +3114,16 @@ export interface components {
              * @description Last modified ISO datetime
              */
             lastModified: string;
+            /**
+             * Preset
+             * @description Preset name used to create dataset
+             */
+            preset?: string | null;
+            /**
+             * Createdat
+             * @description Created datetime stored in dataset_info
+             */
+            createdAt?: string | null;
         };
         /** DatasetSampleResponse */
         DatasetSampleResponse: {
@@ -3086,17 +3146,211 @@ export interface components {
              */
             preset?: string | null;
             /**
+             * Createdat
+             * @description Dataset created datetime
+             */
+            createdAt?: string | null;
+            /**
              * Totalstocks
              * @description Number of stocks
+             * @default 0
              */
             totalStocks: number;
             /**
              * Stockswithquotes
              * @description Stocks with OHLCV data
+             * @default 0
              */
             stocksWithQuotes: number;
-            dateRange?: components["schemas"]["src__server__schemas__dataset__DateRange"] | null;
-            validation: components["schemas"]["DatasetValidation"];
+            dateRange?: components["schemas"]["DatasetSnapshotDateRange"] | null;
+            validation?: components["schemas"]["DatasetSnapshotValidation"] | null;
+        };
+        /** DatasetSnapshotDateRange */
+        DatasetSnapshotDateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
+        /** DatasetSnapshotValidation */
+        DatasetSnapshotValidation: {
+            /** Isvalid */
+            isValid: boolean;
+            /** Errors */
+            errors?: string[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /** DatasetStatementsFieldCoverage */
+        DatasetStatementsFieldCoverage: {
+            /**
+             * Total
+             * @default 0
+             */
+            total: number;
+            /**
+             * Totalfy
+             * @default 0
+             */
+            totalFY: number;
+            /**
+             * Totalhalf
+             * @default 0
+             */
+            totalHalf: number;
+            /**
+             * Hasextendedfields
+             * @default false
+             */
+            hasExtendedFields: boolean;
+            /**
+             * Hascashflowfields
+             * @default false
+             */
+            hasCashFlowFields: boolean;
+            /**
+             * Earningspershare
+             * @default 0
+             */
+            earningsPerShare: number;
+            /**
+             * Profit
+             * @default 0
+             */
+            profit: number;
+            /**
+             * Equity
+             * @default 0
+             */
+            equity: number;
+            /**
+             * Nextyearforecasteps
+             * @default 0
+             */
+            nextYearForecastEps: number;
+            /**
+             * Bps
+             * @default 0
+             */
+            bps: number;
+            /**
+             * Sales
+             * @default 0
+             */
+            sales: number;
+            /**
+             * Operatingprofit
+             * @default 0
+             */
+            operatingProfit: number;
+            /**
+             * Ordinaryprofit
+             * @default 0
+             */
+            ordinaryProfit: number;
+            /**
+             * Operatingcashflow
+             * @default 0
+             */
+            operatingCashFlow: number;
+            /**
+             * Dividendfy
+             * @default 0
+             */
+            dividendFY: number;
+            /**
+             * Forecasteps
+             * @default 0
+             */
+            forecastEps: number;
+            /**
+             * Investingcashflow
+             * @default 0
+             */
+            investingCashFlow: number;
+            /**
+             * Financingcashflow
+             * @default 0
+             */
+            financingCashFlow: number;
+            /**
+             * Cashandequivalents
+             * @default 0
+             */
+            cashAndEquivalents: number;
+            /**
+             * Totalassets
+             * @default 0
+             */
+            totalAssets: number;
+            /**
+             * Sharesoutstanding
+             * @default 0
+             */
+            sharesOutstanding: number;
+            /**
+             * Treasuryshares
+             * @default 0
+             */
+            treasuryShares: number;
+        };
+        /** DatasetStats */
+        DatasetStats: {
+            /**
+             * Totalstocks
+             * @default 0
+             */
+            totalStocks: number;
+            /**
+             * Totalquotes
+             * @default 0
+             */
+            totalQuotes: number;
+            dateRange: components["schemas"]["DatasetStatsDateRange"];
+            /**
+             * Hasmargindata
+             * @default false
+             */
+            hasMarginData: boolean;
+            /**
+             * Hastopixdata
+             * @default false
+             */
+            hasTOPIXData: boolean;
+            /**
+             * Hassectordata
+             * @default false
+             */
+            hasSectorData: boolean;
+            /**
+             * Hasstatementsdata
+             * @default false
+             */
+            hasStatementsData: boolean;
+            statementsFieldCoverage?: components["schemas"]["DatasetStatementsFieldCoverage"] | null;
+        };
+        /** DatasetStatsDateRange */
+        DatasetStatsDateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /** DatasetStockCountValidation */
+        DatasetStockCountValidation: {
+            /** Preset */
+            preset?: string | null;
+            expected?: components["schemas"]["DatasetExpectedRange"] | null;
+            /**
+             * Actual
+             * @default 0
+             */
+            actual: number;
+            /**
+             * Iswithinrange
+             * @default true
+             */
+            isWithinRange: boolean;
         };
         /** DatasetValidation */
         DatasetValidation: {
@@ -3106,6 +3360,17 @@ export interface components {
             errors?: string[];
             /** Warnings */
             warnings?: string[];
+            details?: components["schemas"]["DatasetValidationDetails"] | null;
+        };
+        /** DatasetValidationDetails */
+        DatasetValidationDetails: {
+            /** Dategapscount */
+            dateGapsCount?: number | null;
+            fkIntegrity?: components["schemas"]["DatasetFkIntegrity"] | null;
+            /** Orphanstockscount */
+            orphanStocksCount?: number | null;
+            stockCountValidation?: components["schemas"]["DatasetStockCountValidation"] | null;
+            dataCoverage?: components["schemas"]["DatasetDataCoverage"] | null;
         };
         /** DateRange */
         DateRange: {

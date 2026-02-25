@@ -86,6 +86,12 @@ function StatementsSchemaSection({ info }: { info: DatasetInfoResponse }) {
 }
 
 function ValidationSection({ info }: { info: DatasetInfoResponse }) {
+  const details = info.validation.details;
+  const hasStockCountValidation = !!details?.stockCountValidation;
+  const hasDateGapCount = typeof details?.dateGapsCount === 'number';
+  const hasOrphanStocksCount = typeof details?.orphanStocksCount === 'number';
+  const hasFkIntegrity = !!details?.fkIntegrity;
+
   return (
     <div>
       <h4 className="font-medium mb-2 flex items-center gap-1">
@@ -113,6 +119,42 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
             </li>
           ))}
         </ul>
+      )}
+      {(hasStockCountValidation || hasDateGapCount || hasOrphanStocksCount || hasFkIntegrity) && (
+        <div className="mt-2 grid grid-cols-2 gap-1 text-xs">
+          {hasStockCountValidation && details?.stockCountValidation && (
+            <>
+              <div className="text-muted-foreground">Stock count</div>
+              <div>
+                {details.stockCountValidation.actual.toLocaleString()} /{' '}
+                {details.stockCountValidation.expected
+                  ? `${details.stockCountValidation.expected.min.toLocaleString()}-${details.stockCountValidation.expected.max.toLocaleString()}`
+                  : 'N/A'}
+              </div>
+            </>
+          )}
+          {hasDateGapCount && (
+            <>
+              <div className="text-muted-foreground">Date gaps</div>
+              <div>{details?.dateGapsCount}</div>
+            </>
+          )}
+          {hasOrphanStocksCount && (
+            <>
+              <div className="text-muted-foreground">Stocks without quotes</div>
+              <div>{details?.orphanStocksCount?.toLocaleString() ?? 0}</div>
+            </>
+          )}
+          {hasFkIntegrity && details?.fkIntegrity && (
+            <>
+              <div className="text-muted-foreground">FK integrity</div>
+              <div>
+                stock:{details.fkIntegrity.stockDataOrphans} / margin:{details.fkIntegrity.marginDataOrphans} /
+                statements:{details.fkIntegrity.statementsOrphans}
+              </div>
+            </>
+          )}
+        </div>
       )}
       {info.validation.isValid && info.validation.warnings.length === 0 && (
         <p className="text-xs text-muted-foreground">問題なし</p>

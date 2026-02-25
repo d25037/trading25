@@ -8,8 +8,8 @@ import sqlite3
 import pytest
 from fastapi.testclient import TestClient
 
-from src.entrypoints.http.app import create_app
 from src.application.services.dataset_resolver import DatasetResolver
+from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture
@@ -75,6 +75,8 @@ def test_dataset_dir(tmp_path):
         INSERT INTO stock_data VALUES ('9984', '2024-01-04', 200, 210, 190, 205, 500, 1.0, NULL);
 
         INSERT INTO dataset_info VALUES ('preset', 'primeMarket', NULL);
+        INSERT INTO dataset_info VALUES ('created_at', '2026-01-01T00:00:00+00:00', NULL);
+        INSERT INTO dataset_info VALUES ('stock_count', '2', NULL);
     """)
     conn.close()
     return str(tmp_path)
@@ -95,15 +97,85 @@ class TestDatasetManagementRoutes:
         assert len(data) == 1
         assert data[0]["name"] == "test-market"
         assert data[0]["fileSize"] > 0
+        assert data[0]["preset"] == "primeMarket"
+        assert data[0]["createdAt"] == "2026-01-01T00:00:00+00:00"
+
+    def test_list_datasets_handles_missing_dataset_info_table(self, client: TestClient, test_dataset_dir: str) -> None:
+        broken_db_path = os.path.join(test_dataset_dir, "broken.db")
+        conn = sqlite3.connect(broken_db_path)
+        conn.executescript("""
+            CREATE TABLE stocks (
+                code TEXT PRIMARY KEY, company_name TEXT NOT NULL,
+                company_name_english TEXT, market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL, sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL, sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL, scale_category TEXT,
+                listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT
+            );
+            CREATE TABLE stock_data (
+                code TEXT NOT NULL, date TEXT NOT NULL,
+                open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL,
+                close REAL NOT NULL, volume INTEGER NOT NULL,
+                adjustment_factor REAL, created_at TEXT,
+                PRIMARY KEY (code, date)
+            );
+            CREATE TABLE topix_data (
+                date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL,
+                low REAL NOT NULL, close REAL NOT NULL, created_at TEXT
+            );
+            CREATE TABLE indices_data (
+                code TEXT NOT NULL, date TEXT NOT NULL,
+                open REAL, high REAL, low REAL, close REAL,
+                sector_name TEXT, created_at TEXT,
+                PRIMARY KEY (code, date)
+            );
+            CREATE TABLE margin_data (
+                code TEXT NOT NULL, date TEXT NOT NULL,
+                long_margin_volume REAL, short_margin_volume REAL,
+                PRIMARY KEY (code, date)
+            );
+            CREATE TABLE statements (
+                code TEXT NOT NULL, disclosed_date TEXT NOT NULL,
+                earnings_per_share REAL, profit REAL, equity REAL,
+                type_of_current_period TEXT, type_of_document TEXT,
+                next_year_forecast_earnings_per_share REAL,
+                bps REAL, sales REAL, operating_profit REAL,
+                ordinary_profit REAL, operating_cash_flow REAL,
+                dividend_fy REAL, forecast_dividend_fy REAL,
+                next_year_forecast_dividend_fy REAL,
+                payout_ratio REAL, forecast_payout_ratio REAL,
+                next_year_forecast_payout_ratio REAL, forecast_eps REAL,
+                investing_cash_flow REAL, financing_cash_flow REAL,
+                cash_and_equivalents REAL, total_assets REAL,
+                shares_outstanding REAL, treasury_shares REAL,
+                PRIMARY KEY (code, disclosed_date)
+            );
+        """)
+        conn.close()
+
+        resp = client.get("/api/dataset")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data) == 2
+        broken = next(item for item in data if item["name"] == "broken")
+        assert broken["preset"] is None
+        assert broken["createdAt"] is None
 
     def test_dataset_info(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/info")
         assert resp.status_code == 200
         data = resp.json()
         assert data["name"] == "test-market"
+        assert data["snapshot"]["createdAt"] == "2026-01-01T00:00:00+00:00"
         assert data["snapshot"]["totalStocks"] == 2
         assert data["snapshot"]["preset"] == "primeMarket"
         assert data["snapshot"]["validation"]["isValid"] is True
+        assert data["stats"]["totalStocks"] == 2
+        assert data["stats"]["totalQuotes"] == 2
+        assert data["stats"]["dateRange"]["from"] == "2024-01-04"
+        assert data["stats"]["dateRange"]["to"] == "2024-01-04"
+        assert data["validation"]["details"]["dataCoverage"]["stocksWithQuotes"] == 2
+        assert data["validation"]["details"]["stockCountValidation"]["isWithinRange"] is True
 
     def test_dataset_info_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/nonexistent/info")
