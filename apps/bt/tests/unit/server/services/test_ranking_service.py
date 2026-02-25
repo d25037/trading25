@@ -7,7 +7,18 @@ import sqlite3
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.application.services.ranking_service import RankingService
+from src.application.services.ranking_service import (
+    RankingService,
+    _ForecastValue,
+    _LatestFyRow,
+    _StatementRow,
+    _adjust_per_share_value,
+    _build_market_filter,
+    _calculate_eps_ratio,
+    _is_valid_share_count,
+    _normalize_period_label,
+    _to_nullable_float,
+)
 
 
 @pytest.fixture
@@ -76,11 +87,23 @@ def ranking_db(tmp_path):
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("46890", "Alt Prime", "APRIME", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("11110", "No Statement Prime", "NOSTMT", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
+    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("22220", "Zero Actual Prime", "ZEROACT", "prime", "P", "S17", "サービス", "S33", "サービス業", None, "2000-01-01", None, None))
+    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("99840", "テスト", "TEST", "standard", "S", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
 
     # 5日分のOHLCVデータ
     dates = ["2024-01-15", "2024-01-16", "2024-01-17", "2024-01-18", "2024-01-19"]
-    for code, base_v in [("72030", 2000000), ("67580", 1500000), ("83060", 1100000), ("46890", 900000), ("99840", 100000)]:
+    for code, base_v in [
+        ("72030", 2000000),
+        ("67580", 1500000),
+        ("83060", 1100000),
+        ("46890", 900000),
+        ("11110", 850000),
+        ("22220", 800000),
+        ("99840", 100000),
+    ]:
         for i, d in enumerate(dates):
             price = 2500.0 + i * 10 if code == "72030" else (13000.0 + i * 50 if code == "67580" else 500.0 + i * 5)
             vol = base_v + i * 10000
@@ -168,6 +191,16 @@ def ranking_db(tmp_path):
         VALUES (?,?,?,?,?)
         """,
         ("46890", "2024-08-18", "2Q", 95.0, 100.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        ("22220", "2024-05-20", 0.0, "FY", 60.0, 60.0, 100.0),
     )
 
     conn.commit()
@@ -267,46 +300,189 @@ class TestGetFundamentalRankings:
         result = service.get_fundamental_rankings()
         assert result.date == "2024-01-19"
         assert result.markets == ["prime"]
-        assert "forecastHigh" in result.rankings.model_dump()
-        assert "forecastLow" in result.rankings.model_dump()
-        assert "actualHigh" in result.rankings.model_dump()
-        assert "actualLow" in result.rankings.model_dump()
+        assert result.metricKey == "eps_forecast_to_actual"
+        assert "ratioHigh" in result.rankings.model_dump()
+        assert "ratioLow" in result.rankings.model_dump()
 
     def test_revised_forecast_is_prioritized(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        toyota = next((item for item in result.rankings.forecastHigh if item.code == "72030"), None)
+        toyota = next((item for item in result.rankings.ratioHigh if item.code == "72030"), None)
         assert toyota is not None
         assert toyota.source == "revised"
-        assert toyota.epsValue == 140.0
+        # forecast 140.0 / actual 100.0 = 1.4
+        assert toyota.epsValue == 1.4
         assert toyota.periodType == "1Q"
         assert toyota.disclosedDate == "2024-08-10"
 
     def test_fy_forecast_fallback_when_revision_missing(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        sony = next((item for item in result.rankings.forecastHigh if item.code == "67580"), None)
+        sony = next((item for item in result.rankings.ratioHigh if item.code == "67580"), None)
         assert sony is not None
         assert sony.source == "fy"
         assert sony.periodType == "FY"
         assert sony.disclosedDate == "2024-05-12"
-        # 220 * (200 / 250) = 176.0
-        assert sony.epsValue == 176.0
+        # forecast: 220 * (200 / 250) = 176.0
+        # actual: 200 * (200 / 250) = 160.0
+        # ratio: 176.0 / 160.0 = 1.1
+        assert sony.epsValue == 1.1
 
     def test_revised_quarter_uses_next_year_forecast_fallback(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        alt = next((item for item in result.rankings.forecastHigh if item.code == "46890"), None)
+        alt = next((item for item in result.rankings.ratioHigh if item.code == "46890"), None)
         assert alt is not None
         assert alt.source == "revised"
         assert alt.periodType == "2Q"
         assert alt.disclosedDate == "2024-08-18"
-        assert alt.epsValue == 95.0
+        # forecast 95.0 / actual 80.0 = 1.1875
+        assert alt.epsValue == 1.1875
 
-    def test_actual_high_low_ordering(self, service):
+    def test_ratio_high_low_ordering(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        assert result.rankings.actualHigh[0].epsValue >= result.rankings.actualHigh[1].epsValue
-        assert result.rankings.actualLow[0].epsValue <= result.rankings.actualLow[1].epsValue
+        assert result.rankings.ratioHigh[0].epsValue >= result.rankings.ratioHigh[1].epsValue
+        assert result.rankings.ratioLow[0].epsValue <= result.rankings.ratioLow[1].epsValue
 
     def test_market_filter_alias_prime_includes_numeric_codes(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=20)
-        market_codes = {item.marketCode for item in result.rankings.actualHigh}
+        market_codes = {item.marketCode for item in result.rankings.ratioHigh}
         assert "prime" in market_codes
         assert "0111" in market_codes
+
+    def test_skips_stocks_without_statements_and_invalid_ratio(self, service):
+        result = service.get_fundamental_rankings(markets="prime", limit=100)
+        codes = {item.code for item in result.rankings.ratioHigh}
+        assert "11110" not in codes
+        assert "22220" not in codes
+
+    def test_unsupported_metric_key_raises(self, service):
+        with pytest.raises(ValueError, match="Unsupported metricKey"):
+            service.get_fundamental_rankings(metric_key="roe_forecast_to_actual")
+
+    def test_no_data_raises_for_fundamental(self, tmp_path):
+        db_path = str(tmp_path / "empty_fundamental.db")
+        conn = sqlite3.connect(db_path)
+        conn.execute("""CREATE TABLE stocks (
+            code TEXT PRIMARY KEY, company_name TEXT, company_name_english TEXT,
+            market_code TEXT, market_name TEXT, sector_17_code TEXT, sector_17_name TEXT,
+            sector_33_code TEXT, sector_33_name TEXT, scale_category TEXT, listed_date TEXT,
+            created_at TEXT, updated_at TEXT)""")
+        conn.execute("""CREATE TABLE stock_data (
+            code TEXT, date TEXT, open REAL, high REAL, low REAL, close REAL,
+            volume INTEGER, adjustment_factor REAL, created_at TEXT, PRIMARY KEY (code, date))""")
+        conn.commit()
+        conn.close()
+
+        reader = MarketDbReader(db_path)
+        svc = RankingService(reader)
+        with pytest.raises(ValueError, match="No trading data"):
+            svc.get_fundamental_rankings()
+        reader.close()
+
+
+class _BadFloat:
+    def __float__(self) -> float:
+        raise TypeError("cannot cast")
+
+
+class TestRankingHelperBranches:
+    def test_module_level_helpers_edge_cases(self):
+        assert _build_market_filter([]) == ("", [])
+        assert _normalize_period_label(None) == ""
+        assert _is_valid_share_count(None) is False
+        assert _is_valid_share_count(0.0) is False
+        assert _adjust_per_share_value(10.128, None, 100.0) == 10.13
+        assert _to_nullable_float(_BadFloat()) is None
+        assert _calculate_eps_ratio(float("nan"), 1.0) is None
+        assert _calculate_eps_ratio(1.0, 0.0) is None
+        assert _calculate_eps_ratio(1e308, 2e-12) is None
+
+    def test_private_fundamental_helper_none_paths(self, service):
+        baseline_fallback = service._resolve_baseline_shares(
+            [
+                _StatementRow("X", "2024-05-01", "FY", 100.0, None, 120.0, 200.0),
+            ]
+        )
+        assert baseline_fallback == 200.0
+
+        baseline_none = service._resolve_baseline_shares(
+            [
+                _StatementRow("X", "2024-05-01", "FY", 100.0, None, 120.0, None),
+            ]
+        )
+        assert baseline_none is None
+
+        assert (
+            service._resolve_latest_actual_snapshot(
+                [_StatementRow("X", "2024-05-01", "FY", None, None, None, 100.0)],
+                baseline_shares=100.0,
+            )
+            is None
+        )
+
+        assert service._resolve_latest_fy_row(
+            [_StatementRow("X", "2024-08-01", "1Q", None, 120.0, None, 100.0)]
+        ) is None
+
+        assert service._resolve_latest_fy_forecast_snapshot(None, baseline_shares=100.0) is None
+        assert (
+            service._resolve_latest_fy_forecast_snapshot(
+                _LatestFyRow(
+                    disclosed_date="2024-05-01",
+                    period_type="FY",
+                    shares_outstanding=100.0,
+                    forecast_value=None,
+                ),
+                baseline_shares=100.0,
+            )
+            is None
+        )
+
+        revised_none = service._resolve_latest_revised_forecast_snapshot(
+            [
+                _StatementRow("X", "2024-05-01", "FY", 100.0, 120.0, 120.0, 100.0),
+                _StatementRow("X", "2024-04-01", "1Q", None, 130.0, None, 100.0),
+            ],
+            baseline_shares=100.0,
+            fy_disclosed_date="2024-05-01",
+        )
+        assert revised_none is None
+
+        assert (
+            service._resolve_latest_forecast_snapshot(
+                [_StatementRow("X", "2024-08-01", "1Q", None, 120.0, None, 100.0)],
+                baseline_shares=100.0,
+            )
+            is None
+        )
+
+        forecast = _ForecastValue(
+            value=1.0,
+            disclosed_date="2024-08-01",
+            period_type="1Q",
+            source="revised",
+        )
+        assert service._resolve_latest_ratio_snapshot(None, forecast) is None
+        assert (
+            service._resolve_latest_ratio_snapshot(
+                _ForecastValue(
+                    value=0.0,
+                    disclosed_date="2024-05-01",
+                    period_type="FY",
+                    source="fy",
+                ),
+                forecast,
+            )
+            is None
+        )
+
+
+class TestRankingDateEdgeCases:
+    def test_returns_empty_when_reference_dates_are_unavailable(self, service):
+        assert service._ranking_by_trading_value_average("2024-01-15", 3, 20, []) == []
+        assert service._ranking_by_price_change("2024-01-15", 20, [], "DESC") == []
+        assert service._ranking_by_price_change_from_days("2024-01-15", 3, 20, [], "DESC") == []
+
+    def test_period_high_low_paths_with_available_window(self, service):
+        high = service._ranking_by_period_high("2024-01-19", 2, 20, [])
+        low = service._ranking_by_period_low("2024-01-19", 2, 20, [])
+        assert isinstance(high, list)
+        assert isinstance(low, list)

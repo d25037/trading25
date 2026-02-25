@@ -16,10 +16,8 @@ const baseItem = {
 };
 
 const rankings: FundamentalRankings = {
-  forecastHigh: [{ ...baseItem, code: '7203', companyName: 'Toyota', epsValue: 500 }],
-  forecastLow: [{ ...baseItem, code: '6502', companyName: 'Toshiba', epsValue: -20 }],
-  actualHigh: [{ ...baseItem, code: '6758', companyName: 'Sony', epsValue: 450 }],
-  actualLow: [{ ...baseItem, code: '8306', companyName: 'MUFG', epsValue: -15 }],
+  ratioHigh: [{ ...baseItem, code: '7203', companyName: 'Toyota', epsValue: 1.5 }],
+  ratioLow: [{ ...baseItem, code: '6502', companyName: 'Toshiba', epsValue: 0.72 }],
 };
 
 describe('FundamentalRankingTable', () => {
@@ -31,14 +29,14 @@ describe('FundamentalRankingTable', () => {
   it('switches tab and renders selected rows', async () => {
     const user = userEvent.setup();
     render(<FundamentalRankingTable rankings={rankings} isLoading={false} error={null} onStockClick={vi.fn()} />);
-    await user.click(screen.getByRole('button', { name: 'Actual Low' }));
-    expect(screen.getByText('MUFG')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'Ratio Low' }));
+    expect(screen.getByText('Toshiba')).toBeInTheDocument();
   });
 
   it('shows empty state when no data', () => {
     render(
       <FundamentalRankingTable
-        rankings={{ forecastHigh: [], forecastLow: [], actualHigh: [], actualLow: [] }}
+        rankings={{ ratioHigh: [], ratioLow: [] }}
         isLoading={false}
         error={null}
         onStockClick={vi.fn()}

@@ -6473,7 +6473,7 @@
           "Analytics"
         ],
         "summary": "Get market fundamental rankings",
-        "description": "Get fundamental rankings including high/low stocks by latest forecast EPS and actual EPS.",
+        "description": "Get fundamental rankings by ratio (high/low). Use metricKey to select ratio metric (currently: eps_forecast_to_actual).",
         "operationId": "get_fundamental_ranking_api_analytics_fundamental_ranking_get",
         "parameters": [
           {
@@ -6496,6 +6496,16 @@
               "type": "string",
               "default": "prime",
               "title": "Markets"
+            }
+          },
+          {
+            "name": "metricKey",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "default": "eps_forecast_to_actual",
+              "title": "Metrickey"
             }
           }
         ],
@@ -14014,38 +14024,24 @@
       },
       "FundamentalRankings": {
         "properties": {
-          "forecastHigh": {
+          "ratioHigh": {
             "items": {
               "$ref": "#/components/schemas/FundamentalRankingItem"
             },
             "type": "array",
-            "title": "Forecasthigh"
+            "title": "Ratiohigh"
           },
-          "forecastLow": {
+          "ratioLow": {
             "items": {
               "$ref": "#/components/schemas/FundamentalRankingItem"
             },
             "type": "array",
-            "title": "Forecastlow"
-          },
-          "actualHigh": {
-            "items": {
-              "$ref": "#/components/schemas/FundamentalRankingItem"
-            },
-            "type": "array",
-            "title": "Actualhigh"
-          },
-          "actualLow": {
-            "items": {
-              "$ref": "#/components/schemas/FundamentalRankingItem"
-            },
-            "type": "array",
-            "title": "Actuallow"
+            "title": "Ratiolow"
           }
         },
         "type": "object",
         "title": "FundamentalRankings",
-        "description": "4種類のファンダメンタルランキング"
+        "description": "比率ベースのファンダメンタルランキング"
       },
       "FundamentalsComputeRequest": {
         "properties": {
@@ -16501,6 +16497,10 @@
             "type": "array",
             "title": "Markets"
           },
+          "metricKey": {
+            "type": "string",
+            "title": "Metrickey"
+          },
           "rankings": {
             "$ref": "#/components/schemas/FundamentalRankings"
           },
@@ -16513,6 +16513,7 @@
         "required": [
           "date",
           "markets",
+          "metricKey",
           "rankings",
           "lastUpdated"
         ],
@@ -22890,6 +22891,51 @@
         "title": "DateRange",
         "description": "分析期間"
       },
+      "src__server__schemas__indicators__OHLCVRecord": {
+        "properties": {
+          "date": {
+            "type": "string",
+            "title": "Date",
+            "description": "日付 (YYYY-MM-DD)"
+          },
+          "open": {
+            "type": "number",
+            "title": "Open",
+            "description": "始値"
+          },
+          "high": {
+            "type": "number",
+            "title": "High",
+            "description": "高値"
+          },
+          "low": {
+            "type": "number",
+            "title": "Low",
+            "description": "安値"
+          },
+          "close": {
+            "type": "number",
+            "title": "Close",
+            "description": "終値"
+          },
+          "volume": {
+            "type": "number",
+            "title": "Volume",
+            "description": "出来高"
+          }
+        },
+        "type": "object",
+        "required": [
+          "date",
+          "open",
+          "high",
+          "low",
+          "close",
+          "volume"
+        ],
+        "title": "OHLCVRecord",
+        "description": "OHLCVレコード"
+      },
       "src__server__schemas__db__DateRange": {
         "properties": {
           "min": {
@@ -22943,51 +22989,6 @@
           "max"
         ],
         "title": "DateRange"
-      },
-      "src__server__schemas__indicators__OHLCVRecord": {
-        "properties": {
-          "date": {
-            "type": "string",
-            "title": "Date",
-            "description": "日付 (YYYY-MM-DD)"
-          },
-          "open": {
-            "type": "number",
-            "title": "Open",
-            "description": "始値"
-          },
-          "high": {
-            "type": "number",
-            "title": "High",
-            "description": "高値"
-          },
-          "low": {
-            "type": "number",
-            "title": "Low",
-            "description": "安値"
-          },
-          "close": {
-            "type": "number",
-            "title": "Close",
-            "description": "終値"
-          },
-          "volume": {
-            "type": "number",
-            "title": "Volume",
-            "description": "出来高"
-          }
-        },
-        "type": "object",
-        "required": [
-          "date",
-          "open",
-          "high",
-          "low",
-          "close",
-          "volume"
-        ],
-        "title": "OHLCVRecord",
-        "description": "OHLCVレコード"
       }
     }
   },

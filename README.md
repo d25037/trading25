@@ -107,7 +107,7 @@ GET /api/analytics/screening/result/{job_id}
 ```bash
 GET /api/analytics/fundamental-ranking?markets=prime&limit=20
 ```
-- `fundamental-ranking` は `forecastHigh/forecastLow/actualHigh/actualLow` を返し、予想EPSは `revised > adjusted FY forecast > raw FY forecast` 優先で算出する
+- `fundamental-ranking` は `metricKey` と `rankings.ratioHigh` / `rankings.ratioLow` を返す。現在の `metricKey` は `eps_forecast_to_actual`（最新の予想EPS / 最新の実績EPS）で、予想EPSは `revised > adjusted FY forecast > raw FY forecast` 優先、実績EPSは最新 FY EPS（share補正）を採用する。将来の比率指標追加は `metricKey` で識別する
 
 ## Monorepo Commands (root)
 

@@ -61,19 +61,17 @@ class FundamentalRankingItem(BaseModel):
     sector33Name: str
     currentPrice: float
     volume: float
-    epsValue: float
+    epsValue: float  # latest forecast EPS / latest actual EPS
     disclosedDate: str
     periodType: str
     source: Literal["revised", "fy"]
 
 
 class FundamentalRankings(BaseModel):
-    """4種類のファンダメンタルランキング"""
+    """比率ベースのファンダメンタルランキング"""
 
-    forecastHigh: list[FundamentalRankingItem] = Field(default_factory=list)
-    forecastLow: list[FundamentalRankingItem] = Field(default_factory=list)
-    actualHigh: list[FundamentalRankingItem] = Field(default_factory=list)
-    actualLow: list[FundamentalRankingItem] = Field(default_factory=list)
+    ratioHigh: list[FundamentalRankingItem] = Field(default_factory=list)
+    ratioLow: list[FundamentalRankingItem] = Field(default_factory=list)
 
 
 class MarketFundamentalRankingResponse(BaseModel):
@@ -81,5 +79,6 @@ class MarketFundamentalRankingResponse(BaseModel):
 
     date: str
     markets: list[str]
+    metricKey: str
     rankings: FundamentalRankings
     lastUpdated: str

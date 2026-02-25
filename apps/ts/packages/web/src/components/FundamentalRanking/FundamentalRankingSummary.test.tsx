@@ -17,12 +17,11 @@ const baseItem = {
 const mockData: MarketFundamentalRankingResponse = {
   date: '2025-01-30',
   markets: ['prime', 'standard'],
+  metricKey: 'eps_forecast_to_actual',
   lastUpdated: '2025-01-30T12:00:00Z',
   rankings: {
-    forecastHigh: [{ ...baseItem, code: '7203', companyName: 'Toyota', epsValue: 520 }],
-    forecastLow: [{ ...baseItem, code: '6502', companyName: 'Toshiba', epsValue: -12 }],
-    actualHigh: [{ ...baseItem, code: '6758', companyName: 'Sony', epsValue: 480 }],
-    actualLow: [{ ...baseItem, code: '8306', companyName: 'MUFG', epsValue: -18 }],
+    ratioHigh: [{ ...baseItem, code: '7203', companyName: 'Toyota', epsValue: 1.48 }],
+    ratioLow: [{ ...baseItem, code: '6502', companyName: 'Toshiba', epsValue: 0.72 }],
   },
 };
 
@@ -36,13 +35,25 @@ describe('FundamentalRankingSummary', () => {
     render(<FundamentalRankingSummary data={mockData} />);
     expect(screen.getByText('2025-01-30')).toBeInTheDocument();
     expect(screen.getByText('prime, standard')).toBeInTheDocument();
+    expect(screen.getByText('Metric: eps_forecast_to_actual')).toBeInTheDocument();
   });
 
-  it('renders forecast and actual codes', () => {
+  it('renders high/low ratio codes', () => {
     render(<FundamentalRankingSummary data={mockData} />);
     expect(screen.getByText('7203')).toBeInTheDocument();
     expect(screen.getByText('6502')).toBeInTheDocument();
-    expect(screen.getByText('6758')).toBeInTheDocument();
-    expect(screen.getByText('8306')).toBeInTheDocument();
+  });
+
+  it('renders fallback values when ranking items are missing', () => {
+    const emptyData: MarketFundamentalRankingResponse = {
+      ...mockData,
+      rankings: {
+        ratioHigh: [],
+        ratioLow: [],
+      },
+    };
+
+    render(<FundamentalRankingSummary data={emptyData} />);
+    expect(screen.getAllByText('-').length).toBeGreaterThanOrEqual(2);
   });
 });
