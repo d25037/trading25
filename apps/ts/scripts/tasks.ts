@@ -88,6 +88,7 @@ const TASKS: Record<string, TaskDefinition> = {
   'quality:typecheck': {
     description: 'Run full typecheck (root + clients-ts + web)',
     steps: [
+      { command: ['run', '--filter', '@trading25/shared', 'bt:generate-types'] },
       { task: 'quality:typecheck:root' },
       { command: ['run', '--filter', '@trading25/clients-ts', 'typecheck'] },
       { task: 'quality:typecheck:web' },
