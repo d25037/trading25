@@ -2,13 +2,14 @@
 
 Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **117**
+Total paths: **118**
 
 ## /api/analytics
 
 | Path | Methods |
 |---|---|
 | `/api/analytics/factor-regression/{symbol}` | `GET` |
+| `/api/analytics/fundamental-ranking` | `GET` |
 | `/api/analytics/fundamentals/{symbol}` | `GET` |
 | `/api/analytics/portfolio-factor-regression/{portfolioId}` | `GET` |
 | `/api/analytics/ranking` | `GET` |
