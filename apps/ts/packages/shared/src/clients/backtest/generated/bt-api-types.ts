@@ -7927,12 +7927,21 @@ export interface components {
              */
             correlationId: string;
         };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
+        /**
+         * IndexMatch
+         * @description 指数マッチ結果
+         */
+        src__server__schemas__factor_regression__IndexMatch: {
+            /** Indexcode */
+            indexCode: string;
+            /** Indexname */
+            indexName: string;
+            /** Category */
+            category: string;
+            /** Rsquared */
+            rSquared: number;
+            /** Beta */
+            beta: number;
         };
         /**
          * DateRange
@@ -7952,27 +7961,18 @@ export interface components {
             max: string;
         };
         /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /** DateRange */
         src__server__schemas__dataset__DateRange: {
             /** Min */
             min: string;
             /** Max */
             max: string;
-        };
-        /**
-         * IndexMatch
-         * @description 指数マッチ結果
-         */
-        src__server__schemas__factor_regression__IndexMatch: {
-            /** Indexcode */
-            indexCode: string;
-            /** Indexname */
-            indexName: string;
-            /** Category */
-            category: string;
-            /** Rsquared */
-            rSquared: number;
-            /** Beta */
-            beta: number;
         };
         /**
          * OHLCVRecord

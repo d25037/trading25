@@ -22837,23 +22837,39 @@
         "title": "ErrorResponse",
         "type": "object"
       },
-      "src__server__schemas__portfolio_factor_regression__DateRange": {
+      "src__server__schemas__factor_regression__IndexMatch": {
         "properties": {
-          "from": {
+          "indexCode": {
             "type": "string",
-            "title": "From"
+            "title": "Indexcode"
           },
-          "to": {
+          "indexName": {
             "type": "string",
-            "title": "To"
+            "title": "Indexname"
+          },
+          "category": {
+            "type": "string",
+            "title": "Category"
+          },
+          "rSquared": {
+            "type": "number",
+            "title": "Rsquared"
+          },
+          "beta": {
+            "type": "number",
+            "title": "Beta"
           }
         },
         "type": "object",
         "required": [
-          "from",
-          "to"
+          "indexCode",
+          "indexName",
+          "category",
+          "rSquared",
+          "beta"
         ],
-        "title": "DateRange"
+        "title": "IndexMatch",
+        "description": "指数マッチ結果"
       },
       "src__server__schemas__factor_regression__DateRange": {
         "properties": {
@@ -22892,6 +22908,24 @@
         ],
         "title": "DateRange"
       },
+      "src__server__schemas__portfolio_factor_regression__DateRange": {
+        "properties": {
+          "from": {
+            "type": "string",
+            "title": "From"
+          },
+          "to": {
+            "type": "string",
+            "title": "To"
+          }
+        },
+        "type": "object",
+        "required": [
+          "from",
+          "to"
+        ],
+        "title": "DateRange"
+      },
       "src__server__schemas__dataset__DateRange": {
         "properties": {
           "min": {
@@ -22909,40 +22943,6 @@
           "max"
         ],
         "title": "DateRange"
-      },
-      "src__server__schemas__factor_regression__IndexMatch": {
-        "properties": {
-          "indexCode": {
-            "type": "string",
-            "title": "Indexcode"
-          },
-          "indexName": {
-            "type": "string",
-            "title": "Indexname"
-          },
-          "category": {
-            "type": "string",
-            "title": "Category"
-          },
-          "rSquared": {
-            "type": "number",
-            "title": "Rsquared"
-          },
-          "beta": {
-            "type": "number",
-            "title": "Beta"
-          }
-        },
-        "type": "object",
-        "required": [
-          "indexCode",
-          "indexName",
-          "category",
-          "rSquared",
-          "beta"
-        ],
-        "title": "IndexMatch",
-        "description": "指数マッチ結果"
       },
       "src__server__schemas__indicators__OHLCVRecord": {
         "properties": {
