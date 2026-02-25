@@ -8,6 +8,7 @@ import pandas as pd
 import pytest
 
 from src.domains.strategy.core.mixins.data_manager_mixin import DataManagerMixin
+from src.shared.models.signals import SignalParams
 
 
 def _ohlcv_df(start: str = "2020-01-01", periods: int = 4) -> pd.DataFrame:
@@ -155,3 +156,27 @@ class TestDataManagerMixinPaths:
         assert captured["include_statements_data"] is False
         assert any("include_margin_data=false" in msg for _lvl, msg in strategy.logs)
         assert any("include_statements_data=false" in msg for _lvl, msg in strategy.logs)
+
+    def test_load_multi_data_enables_forecast_revision_for_forecast_vs_actual_signal(
+        self, monkeypatch
+    ) -> None:
+        strategy = _DataManagerStrategy()
+        strategy._should_load_margin_data = lambda: False
+        strategy._should_load_statements_data = lambda: True
+        strategy.entry_filter_params = SignalParams()
+        strategy.entry_filter_params.fundamental.enabled = True
+        strategy.entry_filter_params.fundamental.forecast_eps_above_all_actuals.enabled = True
+
+        captured: dict[str, object] = {}
+
+        def fake_prepare_multi_data(**kwargs):
+            captured.update(kwargs)
+            return {"1111": {"daily": _ohlcv_df()}}
+
+        monkeypatch.setattr(
+            "src.domains.strategy.core.mixins.data_manager_mixin.prepare_multi_data",
+            fake_prepare_multi_data,
+        )
+
+        strategy.load_multi_data()
+        assert captured["include_forecast_revision"] is True

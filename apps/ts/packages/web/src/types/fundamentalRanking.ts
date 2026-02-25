@@ -13,4 +13,5 @@ export type {
 export interface FundamentalRankingParams {
   limit?: number;
   markets?: string;
+  forecastAboveAllActuals?: boolean;
 }

@@ -26,6 +26,7 @@ from .fundamental import (
     cfo_to_net_profit_ratio_threshold,
     is_expected_growth_dividend_per_share,
     is_expected_growth_eps,
+    is_forecast_eps_above_all_actuals,
     is_growing_cfo_yield,
     is_growing_dividend_per_share,
     is_growing_eps,
@@ -807,6 +808,29 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         category="fundamental",
         description="来期EPS成長率の閾値判定",
         param_key="fundamental.forward_eps_growth",
+        data_checker=lambda d: _has_statements_column(d, "EPS")
+        and _has_any_statements_column(d, "ForwardForecastEPS", "NextYearForecastEPS"),
+        data_requirements=["statements:EPS", "statements:ForwardForecastEPS"],
+    ),
+    # 23-0. 予想EPSが過去実績EPSの最大値を上回るシグナル
+    SignalDefinition(
+        name="予想EPS>過去実績EPS",
+        signal_func=is_forecast_eps_above_all_actuals,
+        enabled_checker=lambda p: p.fundamental.enabled
+        and p.fundamental.forecast_eps_above_all_actuals.enabled,
+        param_builder=lambda p, d: {
+            "actual_eps": d["statements_data"][
+                _select_forward_base_eps_column(p, d)
+            ],
+            "latest_forecast_eps": d["statements_data"][
+                _select_forward_forecast_eps_column(p, d)
+            ],
+        },
+        entry_purpose="最新予想EPSが過去実績EPSの最大値を更新した銘柄を選定",
+        exit_purpose="最新予想EPSが過去実績EPSの最大値を下回った銘柄を除外",
+        category="fundamental",
+        description="最新予想EPSが過去すべての実績EPSより大きい条件",
+        param_key="fundamental.forecast_eps_above_all_actuals",
         data_checker=lambda d: _has_statements_column(d, "EPS")
         and _has_any_statements_column(d, "ForwardForecastEPS", "NextYearForecastEPS"),
         data_requirements=["statements:EPS", "statements:ForwardForecastEPS"],

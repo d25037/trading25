@@ -247,6 +247,8 @@ export interface ApiFundamentalDataPoint {
   forecastEps?: number | null;
   /** Change rate from actual EPS to forecast EPS (%) */
   forecastEpsChangeRate?: number | null;
+  /** Whether latest forecast EPS exceeds all historical actual EPS values */
+  forecastEpsAboveAllHistoricalActuals?: boolean | null;
   /** Revised forecast EPS from latest quarterly statement (円) */
   revisedForecastEps?: number | null;
   /** Source period type of revised forecast (e.g. 1Q, 2Q, 3Q) */

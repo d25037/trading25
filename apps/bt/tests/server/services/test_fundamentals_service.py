@@ -1841,6 +1841,91 @@ class TestForecastEps:
         assert result is not None
         assert result.forecastEps == 604.0
 
+    def test_apply_forecast_eps_above_all_historical_actuals_true(
+        self, service: FundamentalsService
+    ):
+        metrics = FundamentalDataPoint(
+            date="2024-03-31",
+            disclosedDate="2024-05-15",
+            periodType="FY",
+            isConsolidated=True,
+            adjustedForecastEps=320.0,
+        )
+        data = [
+            FundamentalDataPoint(
+                date="2024-03-31",
+                disclosedDate="2024-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                adjustedEps=300.0,
+            ),
+            FundamentalDataPoint(
+                date="2023-03-31",
+                disclosedDate="2023-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                adjustedEps=260.0,
+            ),
+        ]
+
+        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+
+        assert result is not None
+        assert result.forecastEpsAboveAllHistoricalActuals is True
+
+    def test_apply_forecast_eps_above_all_historical_actuals_prefers_revised_forecast_from_fy_row(
+        self, service: FundamentalsService
+    ):
+        metrics = FundamentalDataPoint(
+            date="2024-12-31",
+            disclosedDate="2025-02-14",
+            periodType="FY",
+            isConsolidated=True,
+            adjustedForecastEps=305.0,
+        )
+        data = [
+            FundamentalDataPoint(
+                date="2024-03-31",
+                disclosedDate="2024-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                eps=300.0,
+                adjustedEps=310.0,
+                revisedForecastEps=315.0,
+            ),
+        ]
+
+        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+
+        assert result is not None
+        assert result.forecastEpsAboveAllHistoricalActuals is True
+
+    def test_apply_forecast_eps_above_all_historical_actuals_returns_none_without_actuals(
+        self, service: FundamentalsService
+    ):
+        metrics = FundamentalDataPoint(
+            date="2024-12-31",
+            disclosedDate="2025-02-14",
+            periodType="FY",
+            isConsolidated=True,
+            adjustedForecastEps=315.0,
+        )
+        data = [
+            FundamentalDataPoint(
+                date="2024-12-31",
+                disclosedDate="2025-02-14",
+                periodType="3Q",
+                isConsolidated=True,
+                adjustedEps=220.0,
+            ),
+        ]
+
+        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+
+        assert result is not None
+        assert result.forecastEpsAboveAllHistoricalActuals is None
+
+
 class TestFCFYield:
     """FCF Yield計算のテスト"""
 

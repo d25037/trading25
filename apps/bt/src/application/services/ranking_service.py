@@ -218,6 +218,7 @@ class RankingService:
         limit: int = 20,
         markets: str = "prime",
         metric_key: str = _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY,
+        forecast_above_all_actuals: bool = False,
     ) -> MarketFundamentalRankingResponse:
         """最新の予想EPS / 最新の実績EPS 比率ランキングを取得"""
         if metric_key != _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY:
@@ -260,6 +261,14 @@ class RankingService:
             baseline_shares = self._resolve_baseline_shares(statements)
             actual_snapshot = self._resolve_latest_actual_snapshot(statements, baseline_shares)
             forecast_snapshot = self._resolve_latest_forecast_snapshot(statements, baseline_shares)
+
+            if forecast_above_all_actuals:
+                if forecast_snapshot is None:
+                    continue
+                max_actual_eps = self._resolve_max_actual_eps(statements, baseline_shares)
+                if max_actual_eps is None or forecast_snapshot.value <= max_actual_eps:
+                    continue
+
             ratio_snapshot = self._resolve_latest_ratio_snapshot(actual_snapshot, forecast_snapshot)
 
             if ratio_snapshot is None:
@@ -361,6 +370,26 @@ class RankingService:
                 source="fy",
             )
         return None
+
+    def _resolve_max_actual_eps(
+        self,
+        rows: list[_StatementRow],
+        baseline_shares: float | None,
+    ) -> float | None:
+        max_value: float | None = None
+        for row in rows:
+            if row.period_type != "FY":
+                continue
+            adjusted = _adjust_per_share_value(
+                row.earnings_per_share,
+                row.shares_outstanding,
+                baseline_shares,
+            )
+            if adjusted is None:
+                continue
+            if max_value is None or adjusted > max_value:
+                max_value = adjusted
+        return max_value
 
     def _resolve_latest_fy_row(self, rows: list[_StatementRow]) -> _LatestFyRow | None:
         sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)

@@ -46,6 +46,7 @@ const baseMetrics: ApiFundamentalDataPoint = {
   tradingValueToMarketCapRatio: 8.33,
   forecastEps: 350,
   forecastEpsChangeRate: 16.7,
+  forecastEpsAboveAllHistoricalActuals: true,
   revisedForecastEps: null,
   revisedForecastSource: null,
   prevCashFlowOperating: null,
@@ -70,6 +71,7 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.getByText('1.50x')).toBeInTheDocument();
     expect(screen.getByText('8.33x')).toBeInTheDocument();
     expect(screen.getByText('(17.43x)')).toBeInTheDocument();
+    expect(screen.getByText('予想EPS > 過去実績EPS: true')).toBeInTheDocument();
   });
 
   it('uses 15-day label by default', () => {
@@ -159,5 +161,15 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.getByText('EPS')).toBeInTheDocument();
     expect(screen.getByText('PER')).toBeInTheDocument();
     expect(screen.queryByText('PBR')).not.toBeInTheDocument();
+  });
+
+  it('renders false in forecast-vs-historical marker when flag is false', () => {
+    const metrics: ApiFundamentalDataPoint = {
+      ...baseMetrics,
+      forecastEpsAboveAllHistoricalActuals: false,
+    };
+
+    render(<FundamentalsSummaryCard metrics={metrics} />);
+    expect(screen.getByText('予想EPS > 過去実績EPS: false')).toBeInTheDocument();
   });
 });

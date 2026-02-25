@@ -46,6 +46,25 @@ export function FundamentalsPanel({
       return Math.round(((forecastValue - actualValue) / Math.abs(actualValue)) * 100 * 100) / 100;
     };
 
+    const resolveForecastEpsAboveAllHistoricalActuals = (
+      forecastValue: number | null | undefined
+    ): boolean => {
+      if (forecastValue == null || !Number.isFinite(forecastValue)) return false;
+
+      const historicalActuals = data.data
+        .filter((item) => isFiscalYear(item.periodType))
+        .map((item) => item.adjustedEps ?? item.eps)
+        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
+
+      if (historicalActuals.length === 0) return false;
+
+      const historicalMaxActual = historicalActuals.reduce(
+        (maxValue, value) => (value > maxValue ? value : maxValue),
+        Number.NEGATIVE_INFINITY
+      );
+      return forecastValue > historicalMaxActual;
+    };
+
     // Start with FY data and merge enhanced fields from latestMetrics
     const revisedForecastEps = data.latestMetrics?.revisedForecastEps ?? fyData.revisedForecastEps ?? null;
     const revisedForecastSource = data.latestMetrics?.revisedForecastSource ?? fyData.revisedForecastSource ?? null;
@@ -75,6 +94,10 @@ export function FundamentalsPanel({
       cfoToNetProfitRatio: data.latestMetrics?.cfoToNetProfitRatio ?? fyData.cfoToNetProfitRatio ?? null,
       tradingValueToMarketCapRatio:
         data.latestMetrics?.tradingValueToMarketCapRatio ?? fyData.tradingValueToMarketCapRatio ?? null,
+      forecastEpsAboveAllHistoricalActuals:
+        data.latestMetrics?.forecastEpsAboveAllHistoricalActuals ??
+        fyData.forecastEpsAboveAllHistoricalActuals ??
+        null,
     };
 
     const displayActualEps = result.adjustedEps ?? result.eps ?? null;
@@ -105,6 +128,13 @@ export function FundamentalsPanel({
         forecastPayoutRatioChangeRate: payoutChangeRate,
       };
     }
+
+    result = {
+      ...result,
+      forecastEpsAboveAllHistoricalActuals:
+        result.forecastEpsAboveAllHistoricalActuals ??
+        resolveForecastEpsAboveAllHistoricalActuals(displayForecastEps),
+    };
 
     // Update with latest daily valuation (current stock price PER/PBR)
     const dailyValuation = data.dailyValuation;

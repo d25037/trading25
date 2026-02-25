@@ -110,6 +110,18 @@ def test_engine_should_include_forecast_revision_when_forward_payout_enabled():
     assert engine._should_include_forecast_revision() is True
 
 
+def test_engine_should_include_forecast_revision_when_forecast_vs_actual_enabled():
+    engine = object.__new__(ParameterOptimizationEngine)
+    entry = SignalParams()
+    entry.fundamental.enabled = True
+    entry.fundamental.forecast_eps_above_all_actuals.enabled = True
+    engine.base_entry_params = entry
+    engine.base_exit_params = SignalParams()
+    engine.parameter_ranges = {}
+
+    assert engine._should_include_forecast_revision() is True
+
+
 def test_engine_should_include_forecast_revision_when_grid_can_enable():
     engine = object.__new__(ParameterOptimizationEngine)
     entry = SignalParams()
@@ -123,6 +135,24 @@ def test_engine_should_include_forecast_revision_when_grid_can_enable():
                 "peg_ratio": {
                     "enabled": [False, True],
                     "threshold": [0.8, 1.2],
+                },
+            }
+        }
+    }
+
+    assert engine._should_include_forecast_revision() is True
+
+
+def test_engine_should_include_forecast_revision_when_grid_can_enable_forecast_vs_actual():
+    engine = object.__new__(ParameterOptimizationEngine)
+    engine.base_entry_params = SignalParams()
+    engine.base_exit_params = SignalParams()
+    engine.parameter_ranges = {
+        "entry_filter_params": {
+            "fundamental": {
+                "enabled": [False, True],
+                "forecast_eps_above_all_actuals": {
+                    "enabled": [False, True],
                 },
             }
         }

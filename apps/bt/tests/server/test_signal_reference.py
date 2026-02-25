@@ -81,6 +81,7 @@ class TestBuildSignalReference:
         keys = {s["key"] for s in result["signals"]}
         assert "fundamental_forward_dividend_growth" in keys
         assert "fundamental_dividend_per_share_growth" in keys
+        assert "fundamental_forecast_eps_above_all_actuals" in keys
         assert "fundamental_cfo_margin" in keys
         assert "fundamental_simple_fcf_margin" in keys
         assert "fundamental_cfo_to_net_profit_ratio" in keys
