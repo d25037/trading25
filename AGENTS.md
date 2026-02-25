@@ -25,6 +25,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - `market.db` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - DatasetDb の `statements` 読み取りは legacy snapshot（配当/配当性向の forecast 列欠落）でも `NULL` 補完で継続し、必須列 `code` / `disclosed_date` 欠落時はエラーにする
+- Dataset API `GET /api/dataset/{name}/info` の SoT は `snapshot` + `stats` + `validation`（`details.dataCoverage` / `details.fkIntegrity` / `details.stockCountValidation` 含む）とし、web 側は legacy `snapshot` 形式を正規化して後方互換を維持する
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
 - Screening 実行時のデータ SoT は `market.db`（`stock_data` / `topix_data` / `indices_data` / `stocks`）とし、dataset へのフォールバックを禁止する

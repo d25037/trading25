@@ -59,13 +59,119 @@ describe('useDatasets', () => {
 
 describe('useDatasetInfo', () => {
   it('fetches dataset info when name is provided', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ name: 'prime.db', rows: 100 });
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      name: 'prime.db',
+      path: '/tmp/prime.db',
+      fileSize: 100,
+      lastModified: '2026-01-01T00:00:00Z',
+      snapshot: {
+        preset: 'primeMarket',
+        totalStocks: 10,
+        stocksWithQuotes: 9,
+        dateRange: { min: '2025-01-01', max: '2025-12-31' },
+        validation: {
+          isValid: true,
+          errors: [],
+          warnings: [],
+        },
+      },
+    });
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDatasetInfo('prime.db'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/dataset/prime.db/info');
+    expect(result.current.data?.stats.totalStocks).toBe(10);
+    expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
+    expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(9);
+  });
+
+  it('passes through modern dataset info response', async () => {
+    const modern = {
+      name: 'modern.db',
+      path: '/tmp/modern.db',
+      fileSize: 200,
+      lastModified: '2026-01-02T00:00:00Z',
+      snapshot: {
+        preset: 'primeMarket',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      stats: {
+        totalStocks: 20,
+        totalQuotes: 100,
+        dateRange: { from: '2025-01-01', to: '2025-12-31' },
+        hasMarginData: true,
+        hasTOPIXData: true,
+        hasSectorData: true,
+        hasStatementsData: true,
+        statementsFieldCoverage: null,
+      },
+      validation: {
+        isValid: true,
+        errors: [],
+        warnings: [],
+        details: {
+          dataCoverage: {
+            totalStocks: 20,
+            stocksWithQuotes: 20,
+            stocksWithStatements: 20,
+            stocksWithMargin: 20,
+          },
+        },
+      },
+    };
+    vi.mocked(apiGet).mockResolvedValueOnce(modern);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetInfo('modern.db'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual(modern);
+  });
+
+  it('normalizes legacy response defaults when optional fields are missing', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      name: 'legacy.db',
+      path: '/tmp/legacy.db',
+      fileSize: 300,
+      lastModified: '2026-01-03T00:00:00Z',
+      snapshot: {},
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetInfo('legacy.db'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.stats.dateRange.from).toBe('-');
+    expect(result.current.data?.stats.dateRange.to).toBe('-');
+    expect(result.current.data?.stats.hasTOPIXData).toBe(true);
+    expect(result.current.data?.validation.isValid).toBe(true);
+    expect(result.current.data?.validation.details?.dataCoverage?.totalStocks).toBe(0);
+  });
+
+  it('maps legacy TOPIX warning to hasTOPIXData=false', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      name: 'legacy-topix.db',
+      path: '/tmp/legacy-topix.db',
+      fileSize: 400,
+      lastModified: '2026-01-04T00:00:00Z',
+      snapshot: {
+        totalStocks: 5,
+        stocksWithQuotes: 5,
+        validation: {
+          isValid: true,
+          errors: [],
+          warnings: ['No TOPIX data'],
+        },
+      },
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetInfo('legacy-topix.db'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.stats.hasTOPIXData).toBe(false);
   });
 
   it('does not fetch when name is null', () => {
@@ -93,6 +199,21 @@ describe('useDatasetJobStatus', () => {
 
     expect(result.current.fetchStatus).toBe('idle');
   });
+
+  it('keeps polling while status is running', async () => {
+    vi.mocked(apiGet).mockClear();
+    vi.mocked(apiGet)
+      .mockResolvedValueOnce({ jobId: 'job-1', status: 'running' })
+      .mockResolvedValueOnce({ jobId: 'job-1', status: 'completed' });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetJobStatus('job-1'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalled();
+
+    await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2), { timeout: 3500 });
+  }, 8000);
 });
 
 describe('useCreateDataset', () => {
@@ -149,6 +270,24 @@ describe('useResumeDataset', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/dataset/resume', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: datasetKeys.list() });
   });
+
+  it('logs error when resume fails', async () => {
+    vi.mocked(apiPost).mockRejectedValueOnce(new Error('Resume failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useResumeDataset(), { wrapper });
+
+    await act(async () => {
+      try {
+        await result.current.mutateAsync({ name: 'fail.db', preset: 'primeMarket' });
+      } catch {
+        // expected
+      }
+    });
+
+    const { logger } = await import('@/utils/logger');
+    expect(logger.error).toHaveBeenCalledWith('Failed to resume dataset', { error: 'Resume failed' });
+  });
 });
 
 describe('useDeleteDataset', () => {
@@ -165,6 +304,24 @@ describe('useDeleteDataset', () => {
 
     expect(apiDelete).toHaveBeenCalledWith('/api/dataset/prime.db');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: datasetKeys.list() });
+  });
+
+  it('logs error when delete fails', async () => {
+    vi.mocked(apiDelete).mockRejectedValueOnce(new Error('Delete failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDeleteDataset(), { wrapper });
+
+    await act(async () => {
+      try {
+        await result.current.mutateAsync('fail.db');
+      } catch {
+        // expected
+      }
+    });
+
+    const { logger } = await import('@/utils/logger');
+    expect(logger.error).toHaveBeenCalledWith('Failed to delete dataset', { error: 'Delete failed' });
   });
 });
 

@@ -18,12 +18,95 @@ export const datasetKeys = {
   job: (jobId: string) => [...datasetKeys.all, 'job', jobId] as const,
 };
 
+interface LegacyDatasetInfoResponse {
+  name: string;
+  path: string;
+  fileSize: number;
+  lastModified: string;
+  snapshot: {
+    preset?: string | null;
+    createdAt?: string | null;
+    totalStocks?: number;
+    stocksWithQuotes?: number;
+    dateRange?: {
+      from?: string;
+      to?: string;
+      min?: string;
+      max?: string;
+    } | null;
+    validation?: {
+      isValid?: boolean;
+      errors?: string[];
+      warnings?: string[];
+    };
+  };
+}
+
+function isDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): value is DatasetInfoResponse {
+  return 'stats' in value && 'validation' in value;
+}
+
+function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): DatasetInfoResponse {
+  if (isDatasetInfoResponse(value)) {
+    return value;
+  }
+
+  const snapshot = value.snapshot ?? {};
+  const validation = snapshot.validation ?? {
+    isValid: true,
+    errors: [],
+    warnings: [],
+  };
+  const dateRange = snapshot.dateRange ?? {};
+  const totalStocks = snapshot.totalStocks ?? 0;
+  const stocksWithQuotes = snapshot.stocksWithQuotes ?? 0;
+
+  return {
+    name: value.name,
+    path: value.path,
+    fileSize: value.fileSize,
+    lastModified: value.lastModified,
+    snapshot: {
+      preset: snapshot.preset ?? null,
+      createdAt: snapshot.createdAt ?? null,
+    },
+    stats: {
+      totalStocks,
+      totalQuotes: 0,
+      dateRange: {
+        from: dateRange.from ?? dateRange.min ?? '-',
+        to: dateRange.to ?? dateRange.max ?? '-',
+      },
+      hasMarginData: false,
+      hasTOPIXData: !(validation.warnings ?? []).includes('No TOPIX data'),
+      hasSectorData: false,
+      hasStatementsData: false,
+      statementsFieldCoverage: null,
+    },
+    validation: {
+      isValid: validation.isValid ?? true,
+      errors: validation.errors ?? [],
+      warnings: validation.warnings ?? [],
+      details: {
+        dataCoverage: {
+          totalStocks,
+          stocksWithQuotes,
+          stocksWithStatements: 0,
+          stocksWithMargin: 0,
+        },
+      },
+    },
+  };
+}
+
 function fetchDatasets(): Promise<DatasetListResponse> {
   return apiGet<DatasetListResponse>('/api/dataset');
 }
 
 function fetchDatasetInfo(name: string): Promise<DatasetInfoResponse> {
-  return apiGet<DatasetInfoResponse>(`/api/dataset/${encodeURIComponent(name)}/info`);
+  return apiGet<DatasetInfoResponse | LegacyDatasetInfoResponse>(`/api/dataset/${encodeURIComponent(name)}/info`).then(
+    normalizeDatasetInfoResponse
+  );
 }
 
 function fetchJobStatus(jobId: string): Promise<DatasetJobResponse> {

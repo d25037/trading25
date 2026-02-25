@@ -35,15 +35,7 @@ vi.mock('@/components/ui/dialog', () => ({
 }));
 
 vi.mock('@/components/ui/button', () => ({
-  Button: ({
-    children,
-    onClick,
-    disabled,
-  }: {
-    children: ReactNode;
-    onClick?: () => void;
-    disabled?: boolean;
-  }) => (
+  Button: ({ children, onClick, disabled }: { children: ReactNode; onClick?: () => void; disabled?: boolean }) => (
     <button type="button" onClick={onClick} disabled={disabled}>
       {children}
     </button>
@@ -153,7 +145,21 @@ describe('DatasetInfoDialog', () => {
         isValid: false,
         errors: ['missing quotes'],
         warnings: ['partial update'],
-        details: {},
+        details: {
+          dateGapsCount: 3,
+          orphanStocksCount: 2,
+          fkIntegrity: {
+            stockDataOrphans: 1,
+            marginDataOrphans: 0,
+            statementsOrphans: 4,
+          },
+          stockCountValidation: {
+            preset: 'quickTesting',
+            expected: { min: 20, max: 20 },
+            actual: 10,
+            isWithinRange: false,
+          },
+        },
       },
     };
 
@@ -161,5 +167,8 @@ describe('DatasetInfoDialog', () => {
 
     expect(screen.getByText('missing quotes')).toBeInTheDocument();
     expect(screen.getByText('partial update')).toBeInTheDocument();
+    expect(screen.getByText('Date gaps')).toBeInTheDocument();
+    expect(screen.getByText('Stocks without quotes')).toBeInTheDocument();
+    expect(screen.getByText('FK integrity')).toBeInTheDocument();
   });
 });
