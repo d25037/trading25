@@ -28,37 +28,38 @@ cd <repo-root>
 cp .env.example .env
 cd apps/ts
 bun install
-bun run dev
+bun run workspace:dev
 ```
 
-`bun run dev:full` は起動前に `bt:sync` を実行し、まず `apps/bt` ソースから OpenAPI を直接生成して型を再生成します（失敗時は `http://localhost:3002/openapi.json` 取得にフォールバック）。
+`bun run workspace:dev:sync` は起動前に `bt:sync` を実行し、まず `apps/bt` ソースから OpenAPI を直接生成して型を再生成します（失敗時は warning を出して `web:dev` を継続実行）。
+`main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
 
 ## Common Commands
 
 ```bash
 # Development
-bun run dev           # web 起動 (Vite :5173, /api -> :3002 proxy)
-bun run dev:web
-bun run dev:cli
-bun run dev:full      # bt:sync + dev:web
+bun run workspace:dev        # web 起動 (Vite :5173, /api -> :3002 proxy)
+bun run web:dev
+bun run cli:dev
+bun run workspace:dev:sync   # bt:sync + web:dev
 
 # Quality
-bun run lint
-bun run check:fix
-bun run typecheck:all
+bun run quality:lint
+bun run quality:check:fix
+bun run quality:typecheck
 
 # Tests
-bun run test
-bun run test:packages
-bun run test:apps
-bun run test:coverage
+bun run workspace:test
+bun run packages:test
+bun run apps:test
+bun run workspace:test:coverage
 bun run --filter @trading25/web e2e:smoke
 
 # Build
-bun run build
+bun run workspace:build
 ```
 
-`bun run dev:api` は FastAPI 起動コマンドへの案内表示のみで、API サーバー起動には使用しません。
+`bun run api:hint` は FastAPI 起動コマンドへの案内表示のみで、API サーバー起動には使用しません。
 
 ## API / Type Sync
 
@@ -76,32 +77,32 @@ bun run --filter @trading25/shared bt:sync
 
 ```bash
 # DB
-bun cli db sync
-bun cli db validate
-bun cli db stats
-bun cli db refresh
+bun run cli:run db sync
+bun run cli:run db validate
+bun run cli:run db stats
+bun run cli:run db refresh
 
 # Dataset
-bun cli dataset create prime.db --preset primeMarket
-bun cli dataset info prime.db
-bun cli dataset sample prime.db --size 100
-bun cli dataset search prime.db toyota
+bun run cli:run dataset create prime.db --preset primeMarket
+bun run cli:run dataset info prime.db
+bun run cli:run dataset sample prime.db --size 100
+bun run cli:run dataset search prime.db toyota
 
 # Analytics
-bun cli analysis roe 7203
-bun cli analysis ranking --limit 20
-bun cli analysis screening
-bun cli analysis factor-regression 7203
-bun cli analysis portfolio-factor-regression 1
+bun run cli:run analysis roe 7203
+bun run cli:run analysis ranking --limit 20
+bun run cli:run analysis screening
+bun run cli:run analysis factor-regression 7203
+bun run cli:run analysis portfolio-factor-regression 1
 
 # JQuants proxy fetch
-bun cli jquants auth status
-bun cli jquants fetch listed-info --date 2026-01-05
-bun cli jquants fetch daily-quotes 7203 --csv
+bun run cli:run jquants auth status
+bun run cli:run jquants fetch listed-info --date 2026-01-05
+bun run cli:run jquants fetch daily-quotes 7203 --csv
 
 # Backtest headless
-bun cli backtest run production/range_break_v5 --wait
-bun cli backtest results --format json
+bun run cli:run backtest run production/range_break_v5 --wait
+bun run cli:run backtest results --format json
 ```
 
 `portfolio` / `watchlist` の日常 CRUD は `packages/web` の Portfolio ページに移行済みです。

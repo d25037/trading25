@@ -132,14 +132,15 @@ uv run pyright src/              # 型チェック
 | `packages/clients-ts/` | FastAPI クライアント（backtest/JQuants） |
 
 ```bash
-bun dev                          # web 起動（FastAPI :3002 にプロキシ）
-bun dev:full                     # bt:sync + dev
-bun run test                     # テスト
-bun typecheck:all                # 型チェック
-bun lint && bun check:fix        # リント（Biome）
+bun run workspace:dev            # web 起動（FastAPI :3002 にプロキシ）
+bun run workspace:dev:sync       # bt:sync + web:dev（sync失敗時はwarningで継続）
+bun run workspace:test           # テスト
+bun run quality:typecheck        # 型チェック
+bun run quality:lint && bun run quality:check:fix  # リント（Biome）
 bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
-bun run cli backtest attribution run <strategy> --wait
+bun run cli:run backtest attribution run <strategy> --wait
 ```
+`main` ブランチでは `workspace:dev` を既定とし、`workspace:dev:sync` は OpenAPI 契約更新の確認が必要な場合のみ使う。
 
 - Backtest UI は `Attribution` サブタブ内に `Run` / `History` を持ち、進捗取得は 2 秒ポーリング
 - Backtest `Strategies` 画面の YAML Editor は `production` / `experimental` の編集を許可し、`Rename` / `Delete` は `experimental` のみ許可

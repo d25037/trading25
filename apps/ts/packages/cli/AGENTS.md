@@ -109,7 +109,7 @@ Uses `process.exitCode` for natural termination. Silent errors skip logging.
 ## Development
 
 ```bash
-bun run dev:cli        # Development mode
-bun run build:cli      # Compile to binary
-bun test               # Run tests
+bun run cli:dev                       # Development mode (from apps/ts)
+bun run cli:build                     # Compile CLI package (from apps/ts)
+bun run --filter @trading25/cli test  # Run tests
 ```

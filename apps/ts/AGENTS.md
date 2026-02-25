@@ -49,49 +49,49 @@ Root `tsconfig.json` は shared / cli を対象にし、web は別設定で型�
 
 ```bash
 # Development
-bun dev                     # Web only (FastAPI :3002 にプロキシ)
-bun dev:full                # bt:sync + dev (syncs bt types first)
-bun dev:web                 # Vite (port 5173)
+bun run workspace:dev       # Web only (FastAPI :3002 にプロキシ)
+bun run workspace:dev:sync  # bt:sync + web:dev (sync失敗時はwarningで継続)
+bun run web:dev             # Vite (port 5173)
 
 # Build & Test
-bun run build               # All packages
-bun run test                # All tests
-bun typecheck:all           # TypeScript checking
-bun lint && bun check:fix   # Code quality
+bun run workspace:build             # All packages
+bun run workspace:test              # All tests
+bun run quality:typecheck           # TypeScript checking
+bun run quality:lint && bun run quality:check:fix   # Code quality
 
 # Database & Dataset (requires API server for dataset commands)
-bun cli db sync             # Market data sync
-bun cli db validate         # Validate integrity
-bun cli dataset create prime.db --preset primeMarket
+bun run cli:run db sync             # Market data sync
+bun run cli:run db validate         # Validate integrity
+bun run cli:run dataset create prime.db --preset primeMarket
 
 # Analysis
-bun cli analysis roe 7203
-bun cli analysis ranking --limit 20
-bun cli analysis screening
-bun cli analysis factor-regression 7203
-bun cli analysis portfolio-factor-regression 1
+bun run cli:run analysis roe 7203
+bun run cli:run analysis ranking --limit 20
+bun run cli:run analysis screening
+bun run cli:run analysis factor-regression 7203
+bun run cli:run analysis portfolio-factor-regression 1
 
 # Portfolio
-bun cli portfolio create "My Portfolio"
-bun cli portfolio add-stock "My Portfolio" 7203 --quantity 100 --price 2500
+bun run cli:run portfolio create "My Portfolio"
+bun run cli:run portfolio add-stock "My Portfolio" 7203 --quantity 100 --price 2500
 
 # Watchlist
-bun cli watchlist create "Tech Stocks"
-bun cli watchlist add-stock "Tech Stocks" 7203
-bun cli watchlist show "Tech Stocks"
-bun cli watchlist list
+bun run cli:run watchlist create "Tech Stocks"
+bun run cli:run watchlist add-stock "Tech Stocks" 7203
+bun run cli:run watchlist show "Tech Stocks"
+bun run cli:run watchlist list
 
 # Backtest (requires trading25-bt backend on port 3002)
-bun cli backtest run <strategy.yaml>
-bun cli backtest cancel <job-id>
-bun cli backtest list
-bun cli backtest results <job-id>
+bun run cli:run backtest run <strategy.yaml>
+bun run cli:run backtest cancel <job-id>
+bun run cli:run backtest list
+bun run cli:run backtest results <job-id>
 
 # bt contract sync (serverless local generation first; HTTP fetch is fallback)
 bun run --filter @trading25/shared bt:sync  # Generate schema + generate types
 ```
 
-`bun dev:api` は FastAPI 起動コマンドへの案内表示であり、API サーバーの起動コマンドではない。
+`bun run api:hint` は FastAPI 起動コマンドへの案内表示であり、API サーバーの起動コマンドではない。
 
 ## CI
 
@@ -100,12 +100,12 @@ bun run --filter @trading25/shared bt:sync  # Generate schema + generate types
 **ランタイム**: ubuntu-latest, Bun 1.3.8
 
 **ステップ**:
-1. Lint (`bun run lint`)
+1. Lint (`bun run quality:lint`)
 2. bt OpenAPI 型生成 (`cd packages/shared && bun run bt:generate-types`)
 3. Build shared package (`bun run --filter @trading25/shared build`)
-4. Typecheck (`bun run typecheck:all`)
-5. Test with coverage (`bun run test:coverage`)
-6. Coverage threshold 検証 (`bun run check:coverage`)
+4. Typecheck (`bun run quality:typecheck`)
+5. Test with coverage (`bun run workspace:test:coverage`)
+6. Coverage threshold 検証 (`bun run coverage:check`)
 
 ## Technology Stack
 

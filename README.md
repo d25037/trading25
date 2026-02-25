@@ -41,22 +41,23 @@ cd <repo-root>
 cp .env.example .env
 cd apps/ts
 bun install
-bun run dev
+bun run workspace:dev
 ```
 
 `.env` の SoT はリポジトリルート（`<repo-root>/.env`）です。
 
-`bun run dev:full` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。
+`bun run workspace:dev:sync` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。`bt:sync` 失敗時は warning を出して `web:dev` を継続します。
+`main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
 
 ### 3) Signal Attribution（LOO + Shapley top-N）
 - Web: Backtest ページの `Attribution` サブタブで `Run` から実行し、`History` で保存済み JSON を閲覧
 - CLI:
 ```bash
 cd apps/ts
-bun run cli backtest attribution run <strategy> --wait
-bun run cli backtest attribution status <job-id>
-bun run cli backtest attribution results <job-id>
-bun run cli backtest attribution cancel <job-id>
+bun run cli:run backtest attribution run <strategy> --wait
+bun run cli:run backtest attribution status <job-id>
+bun run cli:run backtest attribution results <job-id>
+bun run cli:run backtest attribution cancel <job-id>
 ```
 - 保存先（XDG）: `~/.local/share/trading25/backtest/attribution/<strategy>/`
 - 補足: `portfolio/watchlist` 操作は CLI から web UI（Portfolio タブ）へ移行済み
@@ -89,7 +90,7 @@ Analysis は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成�
 - CLI:
 ```bash
 cd apps/ts
-bun run cli analysis screening --strategies production/forward_eps_driven --sort-by matchedDate
+bun run cli:run analysis screening --strategies production/forward_eps_driven --sort-by matchedDate
 ```
 - Screening API:
 ```bash
