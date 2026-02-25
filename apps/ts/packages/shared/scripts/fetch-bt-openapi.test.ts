@@ -63,7 +63,36 @@ describe('fetch-bt-openapi helpers', () => {
 
   test('normalizeOpenApiText canonicalizes JSON', () => {
     const normalized = normalizeOpenApiText('{"b":2,"a":1}');
-    expect(normalized).toBe('{\n  "b": 2,\n  "a": 1\n}\n');
+    expect(normalized).toBe('{\n  "a": 1,\n  "b": 2\n}\n');
+  });
+
+  test('normalizeOpenApiText sorts nested object keys recursively', () => {
+    const normalized = normalizeOpenApiText(
+      '{"paths":{"z":{"post":{}},"a":{"get":{}}},"components":{"schemas":{"B":{"type":"object"},"A":{"type":"object"}}}}',
+    );
+
+    expect(normalized).toBe(
+      '{\n'
+        + '  "components": {\n'
+        + '    "schemas": {\n'
+        + '      "A": {\n'
+        + '        "type": "object"\n'
+        + '      },\n'
+        + '      "B": {\n'
+        + '        "type": "object"\n'
+        + '      }\n'
+        + '    }\n'
+        + '  },\n'
+        + '  "paths": {\n'
+        + '    "a": {\n'
+        + '      "get": {}\n'
+        + '    },\n'
+        + '    "z": {\n'
+        + '      "post": {}\n'
+        + '    }\n'
+        + '  }\n'
+        + '}\n',
+    );
   });
 
   test('summarizeStderr returns last non-empty line or exit code', () => {

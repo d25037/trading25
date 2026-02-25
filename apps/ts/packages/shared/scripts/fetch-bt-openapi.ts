@@ -79,9 +79,27 @@ export function toMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
+function sortJsonValue(value: unknown): unknown {
+  if (Array.isArray(value)) {
+    return value.map((item) => sortJsonValue(item));
+  }
+
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) => a.localeCompare(b));
+    const sorted: Record<string, unknown> = {};
+    for (const [key, child] of entries) {
+      sorted[key] = sortJsonValue(child);
+    }
+    return sorted;
+  }
+
+  return value;
+}
+
 export function normalizeOpenApiText(text: string): string {
   const parsed = JSON.parse(text);
-  return `${JSON.stringify(parsed, null, 2)}\n`;
+  const sorted = sortJsonValue(parsed);
+  return `${JSON.stringify(sorted, null, 2)}\n`;
 }
 
 export function summarizeStderr(stderr: string, exitCode: number): string {
