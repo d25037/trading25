@@ -179,6 +179,7 @@ export type {
   DatasetListItem,
   DatasetListResponse,
   FundamentalRankingItem,
+  FundamentalRankingMetricKey,
   FundamentalRankingSource,
   FundamentalRankings,
   IndexDataPoint,

@@ -1,4 +1,4 @@
-import { ArrowDownCircle, ArrowUpCircle, TrendingDown, TrendingUp } from 'lucide-react';
+import { ArrowDownCircle, ArrowUpCircle, TrendingUp } from 'lucide-react';
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -14,18 +14,16 @@ interface FundamentalRankingTableProps {
   onStockClick: (code: string) => void;
 }
 
-type FundamentalRankingType = 'forecastHigh' | 'forecastLow' | 'actualHigh' | 'actualLow';
+type FundamentalRankingType = 'ratioHigh' | 'ratioLow';
 
 const rankingTabs: { id: FundamentalRankingType; label: string; icon: typeof TrendingUp }[] = [
-  { id: 'forecastHigh', label: 'Forecast High', icon: ArrowUpCircle },
-  { id: 'forecastLow', label: 'Forecast Low', icon: ArrowDownCircle },
-  { id: 'actualHigh', label: 'Actual High', icon: TrendingUp },
-  { id: 'actualLow', label: 'Actual Low', icon: TrendingDown },
+  { id: 'ratioHigh', label: 'Ratio High', icon: ArrowUpCircle },
+  { id: 'ratioLow', label: 'Ratio Low', icon: ArrowDownCircle },
 ];
 
-function formatEps(value: number): string {
+function formatRatio(value: number): string {
   if (!Number.isFinite(value)) return '-';
-  return value.toLocaleString('ja-JP', { maximumFractionDigits: 2 });
+  return `${value.toLocaleString('ja-JP', { maximumFractionDigits: 4 })}x`;
 }
 
 function FundamentalRankingRow({
@@ -45,7 +43,7 @@ function FundamentalRankingRow({
       <td className="p-2 truncate max-w-[180px]">{item.companyName}</td>
       <td className="p-2 truncate max-w-[100px] text-muted-foreground">{item.sector33Name}</td>
       <td className="p-2 text-right tabular-nums">{formatPriceJPY(item.currentPrice)}</td>
-      <td className="p-2 text-right tabular-nums">{formatEps(item.epsValue)}</td>
+      <td className="p-2 text-right tabular-nums">{formatRatio(item.epsValue)}</td>
       <td className="p-2 text-muted-foreground tabular-nums">
         {item.disclosedDate}
         <span className="ml-1 text-[10px] uppercase">{item.source}</span>
@@ -55,7 +53,7 @@ function FundamentalRankingRow({
 }
 
 export function FundamentalRankingTable({ rankings, isLoading, error, onStockClick }: FundamentalRankingTableProps) {
-  const [activeRankingType, setActiveRankingType] = useState<FundamentalRankingType>('forecastHigh');
+  const [activeRankingType, setActiveRankingType] = useState<FundamentalRankingType>('ratioHigh');
   const currentItems = rankings?.[activeRankingType] ?? [];
 
   return (
@@ -105,7 +103,7 @@ export function FundamentalRankingTable({ rankings, isLoading, error, onStockCli
                 <th className="text-left p-2">Company</th>
                 <th className="text-left p-2 w-24">Sector</th>
                 <th className="text-right p-2 w-24">Price</th>
-                <th className="text-right p-2 w-24">EPS</th>
+                <th className="text-right p-2 w-36">Forecast/Actual EPS</th>
                 <th className="text-left p-2 w-36">Disclosed</th>
               </tr>
             </thead>

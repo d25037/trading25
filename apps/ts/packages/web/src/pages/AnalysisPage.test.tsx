@@ -96,7 +96,7 @@ vi.mock('@/hooks/useRanking', () => ({
 
 vi.mock('@/hooks/useFundamentalRanking', () => ({
   useFundamentalRanking: () => ({
-    data: { rankings: { forecastHigh: [], forecastLow: [], actualHigh: [], actualLow: [] } },
+    data: { metricKey: 'eps_forecast_to_actual', rankings: { ratioHigh: [], ratioLow: [] } },
     isLoading: false,
     error: null,
   }),

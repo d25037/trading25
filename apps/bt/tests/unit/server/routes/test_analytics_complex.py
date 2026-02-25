@@ -286,34 +286,35 @@ class TestFundamentalRanking:
         data = resp.json()
         assert "date" in data
         assert "markets" in data
+        assert data["metricKey"] == "eps_forecast_to_actual"
         assert "rankings" in data
         assert "lastUpdated" in data
         rankings = data["rankings"]
-        assert "forecastHigh" in rankings
-        assert "forecastLow" in rankings
-        assert "actualHigh" in rankings
-        assert "actualLow" in rankings
+        assert "ratioHigh" in rankings
+        assert "ratioLow" in rankings
 
     def test_with_limit(self, analytics_client):
         resp = analytics_client.get("/api/analytics/fundamental-ranking?limit=1")
         assert resp.status_code == 200
         data = resp.json()
-        assert len(data["rankings"]["forecastHigh"]) <= 1
-        assert len(data["rankings"]["forecastLow"]) <= 1
-        assert len(data["rankings"]["actualHigh"]) <= 1
-        assert len(data["rankings"]["actualLow"]) <= 1
+        assert len(data["rankings"]["ratioHigh"]) <= 1
+        assert len(data["rankings"]["ratioLow"]) <= 1
 
     def test_item_shape(self, analytics_client):
         resp = analytics_client.get("/api/analytics/fundamental-ranking")
         assert resp.status_code == 200
         data = resp.json()
-        if data["rankings"]["forecastHigh"]:
-            item = data["rankings"]["forecastHigh"][0]
+        if data["rankings"]["ratioHigh"]:
+            item = data["rankings"]["ratioHigh"][0]
             assert "code" in item
             assert "companyName" in item
             assert "epsValue" in item
             assert "source" in item
             assert item["source"] in {"fy", "revised"}
+
+    def test_422_unsupported_metric_key(self, analytics_client):
+        resp = analytics_client.get("/api/analytics/fundamental-ranking?metricKey=roe_forecast_to_actual")
+        assert resp.status_code == 422
 
     def test_422_no_db(self):
         app = create_app()

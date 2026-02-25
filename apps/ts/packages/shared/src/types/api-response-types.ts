@@ -43,6 +43,7 @@ export interface MarketRankingResponse {
 export type RankingType = 'tradingValue' | 'gainers' | 'losers' | 'periodHigh' | 'periodLow';
 
 export type FundamentalRankingSource = 'revised' | 'fy';
+export type FundamentalRankingMetricKey = string;
 
 export interface FundamentalRankingItem {
   rank: number;
@@ -52,22 +53,21 @@ export interface FundamentalRankingItem {
   sector33Name: string;
   currentPrice: number;
   volume: number;
-  epsValue: number;
+  epsValue: number; // latest forecast EPS / latest actual EPS
   disclosedDate: string;
   periodType: string;
   source: FundamentalRankingSource;
 }
 
 export interface FundamentalRankings {
-  forecastHigh: FundamentalRankingItem[];
-  forecastLow: FundamentalRankingItem[];
-  actualHigh: FundamentalRankingItem[];
-  actualLow: FundamentalRankingItem[];
+  ratioHigh: FundamentalRankingItem[];
+  ratioLow: FundamentalRankingItem[];
 }
 
 export interface MarketFundamentalRankingResponse {
   date: string;
   markets: string[];
+  metricKey: FundamentalRankingMetricKey;
   rankings: FundamentalRankings;
   lastUpdated: string;
 }

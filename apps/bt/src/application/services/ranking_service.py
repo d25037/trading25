@@ -44,6 +44,7 @@ FUNDAMENTAL_BASE_COLUMNS = (
     "sd.close as current_price, sd.volume"
 )
 _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
+_SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
 
 @dataclass
@@ -82,6 +83,10 @@ def _normalize_period_label(period_type: str | None) -> str:
 
 def _round_eps(value: float) -> float:
     return round(value, 2)
+
+
+def _round_ratio(value: float) -> float:
+    return round(value, 4)
 
 
 def _is_valid_share_count(value: float | None) -> bool:
@@ -128,6 +133,21 @@ def _row_to_item(row: sqlite3.Row, rank: int, **extra: Any) -> RankingItem:
         volume=row["volume"],
         **{k: v for k, v in extra.items() if v is not None},
     )
+
+
+def _calculate_eps_ratio(
+    forecast_value: float,
+    actual_value: float,
+) -> float | None:
+    if not math.isfinite(forecast_value) or not math.isfinite(actual_value):
+        return None
+    if math.isclose(actual_value, 0.0, abs_tol=1e-12):
+        return None
+
+    ratio = forecast_value / actual_value
+    if not math.isfinite(ratio):
+        return None
+    return _round_ratio(ratio)
 
 
 class RankingService:
@@ -197,8 +217,12 @@ class RankingService:
         self,
         limit: int = 20,
         markets: str = "prime",
+        metric_key: str = _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY,
     ) -> MarketFundamentalRankingResponse:
-        """最新の実績EPS/予想EPSランキングを取得"""
+        """最新の予想EPS / 最新の実績EPS 比率ランキングを取得"""
+        if metric_key != _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY:
+            raise ValueError(f"Unsupported metricKey: {metric_key}")
+
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
         date_row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
         if date_row is None or date_row["max_date"] is None:
@@ -226,8 +250,7 @@ class RankingService:
                 )
             )
 
-        actual_candidates: list[FundamentalRankingItem] = []
-        forecast_candidates: list[FundamentalRankingItem] = []
+        ratio_candidates: list[FundamentalRankingItem] = []
         for stock in stock_rows:
             code = str(stock["code"])
             statements = statements_by_code.get(code)
@@ -237,32 +260,22 @@ class RankingService:
             baseline_shares = self._resolve_baseline_shares(statements)
             actual_snapshot = self._resolve_latest_actual_snapshot(statements, baseline_shares)
             forecast_snapshot = self._resolve_latest_forecast_snapshot(statements, baseline_shares)
+            ratio_snapshot = self._resolve_latest_ratio_snapshot(actual_snapshot, forecast_snapshot)
 
-            if actual_snapshot is not None:
-                actual_candidates.append(
-                    self._build_fundamental_item(stock, actual_snapshot)
-                )
-            if forecast_snapshot is not None:
-                forecast_candidates.append(
-                    self._build_fundamental_item(stock, forecast_snapshot)
-                )
+            if ratio_snapshot is None:
+                continue
+            ratio_candidates.append(self._build_fundamental_item(stock, ratio_snapshot))
+
+        ratio_high = self._rank_fundamental_items(ratio_candidates, limit, descending=True)
+        ratio_low = self._rank_fundamental_items(ratio_candidates, limit, descending=False)
 
         return MarketFundamentalRankingResponse(
             date=target_date,
             markets=requested_market_codes,
+            metricKey=metric_key,
             rankings=FundamentalRankings(
-                forecastHigh=self._rank_fundamental_items(
-                    forecast_candidates, limit, descending=True
-                ),
-                forecastLow=self._rank_fundamental_items(
-                    forecast_candidates, limit, descending=False
-                ),
-                actualHigh=self._rank_fundamental_items(
-                    actual_candidates, limit, descending=True
-                ),
-                actualLow=self._rank_fundamental_items(
-                    actual_candidates, limit, descending=False
-                ),
+                ratioHigh=ratio_high,
+                ratioLow=ratio_low,
             ),
             lastUpdated=_now_iso(),
         )
@@ -437,6 +450,28 @@ class RankingService:
         if revised is not None:
             return revised
         return self._resolve_latest_fy_forecast_snapshot(latest_fy_row, baseline_shares)
+
+    def _resolve_latest_ratio_snapshot(
+        self,
+        actual_snapshot: _ForecastValue | None,
+        forecast_snapshot: _ForecastValue | None,
+    ) -> _ForecastValue | None:
+        if actual_snapshot is None or forecast_snapshot is None:
+            return None
+
+        ratio = _calculate_eps_ratio(
+            forecast_value=forecast_snapshot.value,
+            actual_value=actual_snapshot.value,
+        )
+        if ratio is None:
+            return None
+
+        return _ForecastValue(
+            value=ratio,
+            disclosed_date=forecast_snapshot.disclosed_date,
+            period_type=forecast_snapshot.period_type,
+            source=forecast_snapshot.source,
+        )
 
     def _build_fundamental_item(
         self,

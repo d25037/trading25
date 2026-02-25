@@ -1609,7 +1609,7 @@ export interface paths {
         };
         /**
          * Get market fundamental rankings
-         * @description Get fundamental rankings including high/low stocks by latest forecast EPS and actual EPS.
+         * @description Get fundamental rankings by ratio (high/low). Use metricKey to select ratio metric (currently: eps_forecast_to_actual).
          */
         get: operations["get_fundamental_ranking_api_analytics_fundamental_ranking_get"];
         put?: never;
@@ -3788,17 +3788,13 @@ export interface components {
         };
         /**
          * FundamentalRankings
-         * @description 4種類のファンダメンタルランキング
+         * @description 比率ベースのファンダメンタルランキング
          */
         FundamentalRankings: {
-            /** Forecasthigh */
-            forecastHigh?: components["schemas"]["FundamentalRankingItem"][];
-            /** Forecastlow */
-            forecastLow?: components["schemas"]["FundamentalRankingItem"][];
-            /** Actualhigh */
-            actualHigh?: components["schemas"]["FundamentalRankingItem"][];
-            /** Actuallow */
-            actualLow?: components["schemas"]["FundamentalRankingItem"][];
+            /** Ratiohigh */
+            ratioHigh?: components["schemas"]["FundamentalRankingItem"][];
+            /** Ratiolow */
+            ratioLow?: components["schemas"]["FundamentalRankingItem"][];
         };
         /**
          * FundamentalsComputeRequest
@@ -5140,6 +5136,8 @@ export interface components {
             date: string;
             /** Markets */
             markets: string[];
+            /** Metrickey */
+            metricKey: string;
             rankings: components["schemas"]["FundamentalRankings"];
             /** Lastupdated */
             lastUpdated: string;
@@ -7953,27 +7951,6 @@ export interface components {
             /** To */
             to: string;
         };
-        /** DateRange */
-        src__server__schemas__db__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
-        /** DateRange */
-        src__server__schemas__portfolio_factor_regression__DateRange: {
-            /** From */
-            from: string;
-            /** To */
-            to: string;
-        };
-        /** DateRange */
-        src__server__schemas__dataset__DateRange: {
-            /** Min */
-            min: string;
-            /** Max */
-            max: string;
-        };
         /**
          * OHLCVRecord
          * @description OHLCVレコード
@@ -8009,6 +7986,27 @@ export interface components {
              * @description 出来高
              */
             volume: number;
+        };
+        /** DateRange */
+        src__server__schemas__db__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
+        };
+        /** DateRange */
+        src__server__schemas__portfolio_factor_regression__DateRange: {
+            /** From */
+            from: string;
+            /** To */
+            to: string;
+        };
+        /** DateRange */
+        src__server__schemas__dataset__DateRange: {
+            /** Min */
+            min: string;
+            /** Max */
+            max: string;
         };
     };
     responses: never;
@@ -12612,6 +12610,7 @@ export interface operations {
             query?: {
                 limit?: number;
                 markets?: string;
+                metricKey?: string;
             };
             header?: never;
             path?: never;
