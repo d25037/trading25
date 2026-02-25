@@ -1925,6 +1925,63 @@ class TestForecastEps:
         assert result is not None
         assert result.forecastEpsAboveAllHistoricalActuals is None
 
+    def test_apply_forecast_eps_above_all_historical_actuals_false_when_below_peak(
+        self, service: FundamentalsService
+    ):
+        metrics = FundamentalDataPoint(
+            date="2024-12-31",
+            disclosedDate="2025-02-14",
+            periodType="FY",
+            isConsolidated=True,
+            forecastEps=280.0,
+        )
+        data = [
+            FundamentalDataPoint(
+                date="2023-03-31",
+                disclosedDate="2023-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                eps=300.0,
+            ),
+            FundamentalDataPoint(
+                date="2024-03-31",
+                disclosedDate="2024-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                adjustedEps=290.0,
+            ),
+        ]
+
+        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+
+        assert result is not None
+        assert result.forecastEpsAboveAllHistoricalActuals is False
+
+    def test_apply_forecast_eps_above_all_historical_actuals_returns_none_for_nonfinite_forecast(
+        self, service: FundamentalsService
+    ):
+        metrics = FundamentalDataPoint(
+            date="2024-12-31",
+            disclosedDate="2025-02-14",
+            periodType="FY",
+            isConsolidated=True,
+            forecastEps=float("inf"),
+        )
+        data = [
+            FundamentalDataPoint(
+                date="2024-03-31",
+                disclosedDate="2024-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                adjustedEps=300.0,
+            ),
+        ]
+
+        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+
+        assert result is not None
+        assert result.forecastEpsAboveAllHistoricalActuals is None
+
 
 class TestFCFYield:
     """FCF Yield計算のテスト"""

@@ -159,3 +159,30 @@ def test_engine_should_include_forecast_revision_when_grid_can_enable_forecast_v
     }
 
     assert engine._should_include_forecast_revision() is True
+
+
+def test_engine_forecast_helpers_return_false_when_not_enabled():
+    params = SignalParams()
+    params.fundamental.enabled = False
+    params.fundamental.forecast_eps_above_all_actuals.enabled = True
+
+    engine = object.__new__(ParameterOptimizationEngine)
+    assert engine._is_forecast_signal_enabled(params) is False
+
+
+def test_engine_grid_forecast_helpers_return_false_for_non_dict_and_disabled_grid():
+    engine = object.__new__(ParameterOptimizationEngine)
+    engine.base_entry_params = SignalParams()
+    engine.base_exit_params = SignalParams()
+    engine.parameter_ranges = None
+    assert engine._grid_may_enable_forecast_signals() is False
+
+    engine.parameter_ranges = {
+        "entry_filter_params": {
+            "fundamental": {
+                "enabled": [False],
+                "forecast_eps_above_all_actuals": {"enabled": [True]},
+            }
+        }
+    }
+    assert engine._grid_may_enable_forecast_signals() is False

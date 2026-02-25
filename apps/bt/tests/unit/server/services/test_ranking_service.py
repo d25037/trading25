@@ -93,6 +93,8 @@ def ranking_db(tmp_path):
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("33330", "Peak Actual Prime", "PEAK", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("44440", "No Forecast Prime", "NOFC", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
+    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("99840", "テスト", "TEST", "standard", "S", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
 
     # 5日分のOHLCVデータ
@@ -105,6 +107,7 @@ def ranking_db(tmp_path):
         ("11110", 850000),
         ("22220", 800000),
         ("33330", 780000),
+        ("44440", 760000),
         ("99840", 100000),
     ]:
         for i, d in enumerate(dates):
@@ -224,6 +227,16 @@ def ranking_db(tmp_path):
         VALUES (?,?,?,?,?,?,?)
         """,
         ("33330", "2024-05-21", 200.0, "FY", 250.0, 250.0, 100.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        ("44440", "2024-05-22", 140.0, "FY", None, None, 100.0),
     )
 
     conn.commit()
@@ -389,6 +402,15 @@ class TestGetFundamentalRankings:
         filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
         assert "33330" not in filtered_codes
 
+    def test_filter_handles_stock_without_forecast_snapshot(self, service):
+        filtered = service.get_fundamental_rankings(
+            markets="prime",
+            limit=100,
+            forecast_above_all_actuals=True,
+        )
+        filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
+        assert "44440" not in filtered_codes
+
     def test_unsupported_metric_key_raises(self, service):
         with pytest.raises(ValueError, match="Unsupported metricKey"):
             service.get_fundamental_rankings(metric_key="roe_forecast_to_actual")
@@ -488,6 +510,23 @@ class TestRankingHelperBranches:
                 baseline_shares=100.0,
             )
             is None
+        )
+        assert (
+            service._resolve_max_actual_eps(
+                [_StatementRow("X", "2024-05-01", "FY", None, None, None, 100.0)],
+                baseline_shares=100.0,
+            )
+            is None
+        )
+        assert (
+            service._resolve_max_actual_eps(
+                [
+                    _StatementRow("X", "2023-05-01", "FY", 90.0, None, None, 100.0),
+                    _StatementRow("X", "2024-05-01", "FY", 110.0, None, None, 100.0),
+                ],
+                baseline_shares=100.0,
+            )
+            == 110.0
         )
 
         forecast = _ForecastValue(
