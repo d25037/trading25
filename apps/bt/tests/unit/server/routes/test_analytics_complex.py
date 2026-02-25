@@ -115,6 +115,10 @@ def analytics_db_path(tmp_path):
         "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
         ("67580", "ソニーグループ", "SONY", "prime", "プライム", "S17", "電気機器", "S33", "電気機器", "TOPIX Large70", "1958-12-01", None, None),
     )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+        ("33330", "ピーク実績銘柄", "PEAK", "prime", "プライム", "S17", "情報・通信業", "S33", "情報・通信業", "TOPIX Mid400", "1960-01-01", None, None),
+    )
 
     # 300営業日分のデータ生成
     dates = _generate_dates(300)
@@ -123,7 +127,7 @@ def analytics_db_path(tmp_path):
     import random
     random.seed(42)
 
-    for code, base_price in [("72030", 2500.0), ("67580", 13000.0)]:
+    for code, base_price in [("72030", 2500.0), ("67580", 13000.0), ("33330", 8000.0)]:
         price = base_price
         for d in dates:
             change = random.uniform(-0.02, 0.025)
@@ -201,6 +205,26 @@ def analytics_db_path(tmp_path):
         VALUES (?,?,?,?,?)
         """,
         ("67580", "2024-08-12", "Q1", 225.0, 200.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        ("33330", "2023-05-20", 300.0, "FY", 320.0, 320.0, 100.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        ("33330", "2024-05-20", 200.0, "FY", 250.0, 250.0, 100.0),
     )
 
     conn.commit()
@@ -311,6 +335,17 @@ class TestFundamentalRanking:
             assert "epsValue" in item
             assert "source" in item
             assert item["source"] in {"fy", "revised"}
+
+    def test_forecast_above_all_actuals_filter(self, analytics_client):
+        base_resp = analytics_client.get("/api/analytics/fundamental-ranking")
+        assert base_resp.status_code == 200
+        base_codes = {item["code"] for item in base_resp.json()["rankings"]["ratioHigh"]}
+        assert "33330" in base_codes
+
+        filtered_resp = analytics_client.get("/api/analytics/fundamental-ranking?forecastAboveAllActuals=true")
+        assert filtered_resp.status_code == 200
+        filtered_codes = {item["code"] for item in filtered_resp.json()["rankings"]["ratioHigh"]}
+        assert "33330" not in filtered_codes
 
     def test_422_unsupported_metric_key(self, analytics_client):
         resp = analytics_client.get("/api/analytics/fundamental-ranking?metricKey=roe_forecast_to_actual")

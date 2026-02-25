@@ -183,6 +183,10 @@ class FundamentalsService:
         data, latest_metrics = self._apply_share_adjustments(
             data, statements, latest_metrics
         )
+        latest_metrics = self._apply_forecast_eps_above_all_historical_actuals(
+            latest_metrics,
+            data,
+        )
 
         logger.debug(
             f"Fundamentals calculation complete: {len(data)} data points, "
@@ -1273,6 +1277,89 @@ class FundamentalsService:
                 "pbr": fy_pbr,
                 "eps": latest_fy.eps,
                 "bps": latest_fy.bps,
+            }
+        )
+
+    def _resolve_display_actual_eps(
+        self, point: FundamentalDataPoint
+    ) -> float | None:
+        """Resolve actual EPS used for historical comparisons."""
+        return (
+            point.adjustedEps
+            if point.adjustedEps is not None
+            else point.eps
+        )
+
+    def _resolve_display_forecast_eps(
+        self, point: FundamentalDataPoint
+    ) -> float | None:
+        """Resolve forecast EPS with priority aligned to frontend display."""
+        if point.revisedForecastEps is not None:
+            return point.revisedForecastEps
+        if point.adjustedForecastEps is not None:
+            return point.adjustedForecastEps
+        return point.forecastEps
+
+    def _calculate_forecast_eps_above_all_historical_actuals(
+        self,
+        metrics: FundamentalDataPoint,
+        data: list[FundamentalDataPoint],
+    ) -> bool | None:
+        """Calculate whether latest forecast EPS exceeds all historical FY actual EPS."""
+        forecast_eps = self._resolve_display_forecast_eps(metrics)
+        latest_fy_with_actual = next(
+            (
+                item
+                for item in data
+                if normalize_period_type(item.periodType) == "FY"
+                and self._has_actual_financial_data(item)
+            ),
+            None,
+        )
+
+        # Prefer revised forecast carried on latest FY row when available.
+        if latest_fy_with_actual is not None and latest_fy_with_actual.revisedForecastEps is not None:
+            forecast_eps = latest_fy_with_actual.revisedForecastEps
+        elif forecast_eps is None and latest_fy_with_actual is not None:
+            forecast_eps = self._resolve_display_forecast_eps(latest_fy_with_actual)
+
+        if forecast_eps is None or not math.isfinite(forecast_eps):
+            return None
+
+        historical_max_actual: float | None = None
+        for item in data:
+            if normalize_period_type(item.periodType) != "FY":
+                continue
+
+            actual_eps = self._resolve_display_actual_eps(item)
+            if actual_eps is None or not math.isfinite(actual_eps):
+                continue
+
+            if historical_max_actual is None or actual_eps > historical_max_actual:
+                historical_max_actual = actual_eps
+
+        if historical_max_actual is None:
+            return None
+
+        return forecast_eps > historical_max_actual
+
+    def _apply_forecast_eps_above_all_historical_actuals(
+        self,
+        metrics: FundamentalDataPoint | None,
+        data: list[FundamentalDataPoint],
+    ) -> FundamentalDataPoint | None:
+        """Attach forecast-vs-historical-actual EPS comparison to latest metrics."""
+        if metrics is None:
+            return None
+
+        comparison = self._calculate_forecast_eps_above_all_historical_actuals(
+            metrics,
+            data,
+        )
+        return FundamentalDataPoint(
+            **{
+                **metrics.model_dump(),
+                "forecastEpsAboveAllHistoricalActuals": comparison,
             }
         )
 

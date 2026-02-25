@@ -87,6 +87,36 @@ def is_expected_growth_eps(
     ).fillna(False)
 
 
+def is_forecast_eps_above_all_actuals(
+    actual_eps: pd.Series[float],
+    latest_forecast_eps: pd.Series[float],
+) -> pd.Series[bool]:
+    """
+    最新予想EPS > 過去すべての実績EPS シグナル
+
+    日次補完された実績EPS系列の過去最大値を計算し、
+    最新予想EPSがその値を上回る場合にTrueを返す。
+
+    Args:
+        actual_eps: 実績EPS（日次インデックスに補完済み想定）
+        latest_forecast_eps: 最新予想EPS（日次インデックスに補完済み想定）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+    """
+    actual = pd.to_numeric(actual_eps, errors="coerce")
+    forecast = pd.to_numeric(latest_forecast_eps, errors="coerce")
+    actual = actual.where(np.isfinite(actual), np.nan)
+    forecast = forecast.where(np.isfinite(forecast), np.nan)
+
+    historical_max_actual = actual.ffill().cummax()
+    return (
+        (forecast > historical_max_actual)
+        & forecast.notna()
+        & historical_max_actual.notna()
+    ).fillna(False)
+
+
 def is_expected_growth_dividend_per_share(
     dividend_fy: pd.Series[float],
     next_year_forecast_dividend_fy: pd.Series[float],

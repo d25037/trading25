@@ -261,6 +261,10 @@ export function FundamentalsSummaryCard({
             {metrics.isConsolidated ? '連結' : '単体'} / {metrics.accountingStandard || 'JGAAP'}
           </span>
         </div>
+        <div className="mt-1">
+          予想EPS &gt; 過去実績EPS:{' '}
+          {metrics.forecastEpsAboveAllHistoricalActuals === true ? 'true' : 'false'}
+        </div>
         {metrics.stockPrice && <div className="mt-1">株価 @ 開示日: {metrics.stockPrice.toLocaleString()}円</div>}
       </div>
     </div>

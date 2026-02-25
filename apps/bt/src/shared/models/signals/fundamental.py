@@ -88,6 +88,14 @@ class FundamentalSignalParams(BaseSignalParams):
             description="条件（above=閾値以上、below=閾値以下）",
         )
 
+    class ForecastEPSAboveAllActualsParams(BaseModel):
+        """最新予想EPSが過去すべての実績EPSより大きいシグナルパラメータ"""
+
+        enabled: bool = Field(
+            default=False,
+            description="最新予想EPS > 過去実績EPSシグナル有効",
+        )
+
     class ForwardDividendGrowthParams(BaseModel):
         """Forward 1株配当成長率シグナル（来期予想配当 vs 当期配当）"""
 
@@ -471,6 +479,10 @@ class FundamentalSignalParams(BaseSignalParams):
     # 成長率系
     forward_eps_growth: ForwardEPSParams = Field(
         default_factory=ForwardEPSParams, description="Forward EPS成長率シグナル"
+    )
+    forecast_eps_above_all_actuals: ForecastEPSAboveAllActualsParams = Field(
+        default_factory=ForecastEPSAboveAllActualsParams,
+        description="最新予想EPSが過去すべての実績EPSより大きいシグナル",
     )
     forward_dividend_growth: ForwardDividendGrowthParams = Field(
         default_factory=ForwardDividendGrowthParams,

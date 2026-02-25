@@ -56,6 +56,10 @@ def _is_forecast_signal_enabled(side_params: dict[str, Any]) -> bool:
     if isinstance(forward, dict) and bool(forward.get("enabled", False)):
         return True
 
+    forecast_vs_actual = fundamental.get("forecast_eps_above_all_actuals")
+    if isinstance(forecast_vs_actual, dict) and bool(forecast_vs_actual.get("enabled", False)):
+        return True
+
     peg = fundamental.get("peg_ratio")
     if isinstance(peg, dict) and bool(peg.get("enabled", False)):
         return True

@@ -7,6 +7,7 @@ describe('FundamentalRankingFilters', () => {
   const defaultParams: FundamentalRankingParams = {
     markets: 'prime',
     limit: 20,
+    forecastAboveAllActuals: false,
   };
 
   it('renders filter card with title', () => {
@@ -17,5 +18,10 @@ describe('FundamentalRankingFilters', () => {
   it('renders limit control', () => {
     render(<FundamentalRankingFilters params={defaultParams} onChange={vi.fn()} />);
     expect(screen.getByText('Results per ranking')).toBeInTheDocument();
+  });
+
+  it('renders eps condition control', () => {
+    render(<FundamentalRankingFilters params={defaultParams} onChange={vi.fn()} />);
+    expect(screen.getByText('EPS Condition')).toBeInTheDocument();
   });
 });

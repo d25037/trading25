@@ -312,6 +312,7 @@ class ParameterOptimizationEngine:
             fundamental.enabled
             and (
                 fundamental.forward_eps_growth.enabled
+                or fundamental.forecast_eps_above_all_actuals.enabled
                 or fundamental.peg_ratio.enabled
                 or fundamental.forward_dividend_growth.enabled
                 or fundamental.forward_payout_ratio.enabled
@@ -350,6 +351,7 @@ class ParameterOptimizationEngine:
 
             for signal_name in (
                 "forward_eps_growth",
+                "forecast_eps_above_all_actuals",
                 "peg_ratio",
                 "forward_dividend_growth",
                 "forward_payout_ratio",

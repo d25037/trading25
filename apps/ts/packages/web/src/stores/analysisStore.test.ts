@@ -90,10 +90,12 @@ describe('analysisStore', () => {
       ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
       markets: 'prime,standard',
       limit: 50,
+      forecastAboveAllActuals: true,
     });
 
     const state = useAnalysisStore.getState();
     expect(state.fundamentalRankingParams.markets).toBe('prime,standard');
     expect(state.fundamentalRankingParams.limit).toBe(50);
+    expect(state.fundamentalRankingParams.forecastAboveAllActuals).toBe(true);
   });
 });

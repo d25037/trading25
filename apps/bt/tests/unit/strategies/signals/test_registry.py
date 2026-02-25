@@ -187,6 +187,19 @@ class TestSignalRegistry:
         assert "statements:EPS" in sig.data_requirements
         assert "statements:ForwardForecastEPS" in sig.data_requirements
 
+    def test_forecast_eps_above_all_actuals_registered(self) -> None:
+        """forecast_eps_above_all_actualsがレジストリに登録されていること"""
+        matches = [
+            s
+            for s in SIGNAL_REGISTRY
+            if s.param_key == "fundamental.forecast_eps_above_all_actuals"
+        ]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "予想EPS>過去実績EPS"
+        assert "statements:EPS" in sig.data_requirements
+        assert "statements:ForwardForecastEPS" in sig.data_requirements
+
     def test_eps_growth_registered(self) -> None:
         """eps_growth（実績ベース）がレジストリに登録されていること"""
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.eps_growth"]
@@ -384,6 +397,28 @@ class TestFundamentalAdjustedSelection:
         built = sig.param_builder(params, {"statements_data": df})
         assert built["eps"].equals(df["AdjustedEPS"])
         assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
+
+    def test_forecast_eps_above_all_actuals_uses_forward_columns(self) -> None:
+        params = SignalParams()
+        params.fundamental.forecast_eps_above_all_actuals.enabled = True
+
+        df = pd.DataFrame(
+            {
+                "EPS": [1.0],
+                "AdjustedEPS": [0.8],
+                "ForwardBaseEPS": [1.1],
+                "AdjustedForwardBaseEPS": [0.9],
+                "NextYearForecastEPS": [2.0],
+                "AdjustedNextYearForecastEPS": [1.6],
+                "ForwardForecastEPS": [1.7],
+                "AdjustedForwardForecastEPS": [1.4],
+            }
+        )
+
+        sig = self._get_signal("fundamental.forecast_eps_above_all_actuals")
+        built = sig.param_builder(params, {"statements_data": df})
+        assert built["actual_eps"].equals(df["AdjustedForwardBaseEPS"])
+        assert built["latest_forecast_eps"].equals(df["AdjustedForwardForecastEPS"])
 
     def test_forward_eps_growth_prefers_forward_columns_when_available(self) -> None:
         params = SignalParams()

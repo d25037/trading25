@@ -7,6 +7,7 @@ function fetchFundamentalRanking(params: FundamentalRankingParams): Promise<Mark
   return apiGet<MarketFundamentalRankingResponse>('/api/analytics/fundamental-ranking', {
     limit: params.limit,
     markets: params.markets,
+    forecastAboveAllActuals: params.forecastAboveAllActuals,
   });
 }
 

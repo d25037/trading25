@@ -105,6 +105,10 @@ async def get_fundamental_ranking(
     limit: int = Query(20, ge=1, le=100),
     markets: str = Query("prime"),
     metricKey: str = Query("eps_forecast_to_actual"),
+    forecastAboveAllActuals: bool = Query(
+        False,
+        description="If true, return only stocks whose latest forecast EPS is greater than all historical actual EPS.",
+    ),
 ) -> MarketFundamentalRankingResponse:
     """ファンダメンタルランキングを取得"""
     from src.application.services.ranking_service import RankingService
@@ -115,7 +119,12 @@ async def get_fundamental_ranking(
 
     service = RankingService(reader)
     try:
-        return service.get_fundamental_rankings(limit=limit, markets=markets, metric_key=metricKey)
+        return service.get_fundamental_rankings(
+            limit=limit,
+            markets=markets,
+            metric_key=metricKey,
+            forecast_above_all_actuals=forecastAboveAllActuals,
+        )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
     except Exception as e:

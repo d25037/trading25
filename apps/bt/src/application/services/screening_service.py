@@ -1329,6 +1329,7 @@ class ScreeningService:
                 return False
             return bool(
                 fundamental.forward_eps_growth.enabled
+                or fundamental.forecast_eps_above_all_actuals.enabled
                 or fundamental.peg_ratio.enabled
                 or fundamental.forward_dividend_growth.enabled
                 or fundamental.forward_payout_ratio.enabled

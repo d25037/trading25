@@ -129,6 +129,10 @@ class FundamentalDataPoint(BaseModel):
     forecastEpsChangeRate: float | None = Field(
         None, description="Forecast EPS change rate (%)"
     )
+    forecastEpsAboveAllHistoricalActuals: bool | None = Field(
+        None,
+        description="Whether latest forecast EPS is greater than all historical actual EPS values",
+    )
 
     # Revised forecast (from latest Q)
     revisedForecastEps: float | None = Field(
