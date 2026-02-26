@@ -604,11 +604,11 @@ class TestRuntimeEvaluationHelpers:
         assert service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
 
         entry.fundamental.forward_payout_ratio.enabled = False
-        entry.fundamental.forecast_eps_above_all_actuals.enabled = True
+        entry.fundamental.forecast_eps_above_recent_fy_actuals.enabled = True
         assert service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
 
         entry.fundamental.enabled = False
-        entry.fundamental.forecast_eps_above_all_actuals.enabled = False
+        entry.fundamental.forecast_eps_above_recent_fy_actuals.enabled = False
         assert not service._should_include_forecast_revision(entry, exit_)  # noqa: SLF001
 
     def test_build_result_item_and_best_strategy_helpers(self):

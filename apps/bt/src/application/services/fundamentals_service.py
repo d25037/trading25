@@ -100,6 +100,7 @@ class FundamentalsService:
                 symbol=request.symbol,
                 data=[],
                 tradingValuePeriod=request.trading_value_period,
+                forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
             )
 
@@ -130,6 +131,7 @@ class FundamentalsService:
                 data=[],
                 dailyValuation=daily_valuation if daily_valuation else None,
                 tradingValuePeriod=request.trading_value_period,
+                forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
             )
 
@@ -183,9 +185,10 @@ class FundamentalsService:
         data, latest_metrics = self._apply_share_adjustments(
             data, statements, latest_metrics
         )
-        latest_metrics = self._apply_forecast_eps_above_all_historical_actuals(
+        latest_metrics = self._apply_forecast_eps_above_recent_fy_actuals(
             latest_metrics,
             data,
+            request.forecast_eps_lookback_fy_count,
         )
 
         logger.debug(
@@ -200,6 +203,7 @@ class FundamentalsService:
             latestMetrics=latest_metrics,
             dailyValuation=daily_valuation if daily_valuation else None,
             tradingValuePeriod=request.trading_value_period,
+            forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
             lastUpdated=datetime.now().isoformat(),
         )
 
@@ -1300,22 +1304,63 @@ class FundamentalsService:
             return point.adjustedForecastEps
         return point.forecastEps
 
-    def _calculate_forecast_eps_above_all_historical_actuals(
+    def _collect_recent_fy_actual_eps_values(
         self,
-        metrics: FundamentalDataPoint,
         data: list[FundamentalDataPoint],
-    ) -> bool | None:
-        """Calculate whether latest forecast EPS exceeds all historical FY actual EPS."""
-        forecast_eps = self._resolve_display_forecast_eps(metrics)
-        latest_fy_with_actual = next(
+        lookback_fy_count: int,
+    ) -> list[float]:
+        """Collect recent FY actual EPS values for lookback comparison."""
+        if lookback_fy_count < 1:
+            raise ValueError("lookback_fy_count must be >= 1")
+
+        fy_rows = sorted(
             (
                 item
                 for item in data
                 if normalize_period_type(item.periodType) == "FY"
-                and self._has_actual_financial_data(item)
+                and self._resolve_display_actual_eps(item) is not None
             ),
-            None,
+            key=lambda item: (item.date, item.disclosedDate),
+            reverse=True,
         )
+
+        recent_values: list[float] = []
+        seen_period_ends: set[str] = set()
+        for item in fy_rows:
+            # 同一FY内の複数開示は最新開示のみ採用
+            if item.date in seen_period_ends:
+                continue
+
+            actual_eps = self._resolve_display_actual_eps(item)
+            if actual_eps is None or not math.isfinite(actual_eps):
+                continue
+
+            seen_period_ends.add(item.date)
+            recent_values.append(actual_eps)
+            if len(recent_values) >= lookback_fy_count:
+                break
+
+        return recent_values
+
+    def _calculate_forecast_eps_above_recent_fy_actuals(
+        self,
+        metrics: FundamentalDataPoint,
+        data: list[FundamentalDataPoint],
+        lookback_fy_count: int,
+    ) -> bool | None:
+        """Calculate whether latest forecast EPS exceeds recent FY actual EPS window."""
+        forecast_eps = self._resolve_display_forecast_eps(metrics)
+        fy_rows = sorted(
+            (
+                item
+                for item in data
+                if normalize_period_type(item.periodType) == "FY"
+                and self._resolve_display_actual_eps(item) is not None
+            ),
+            key=lambda item: (item.date, item.disclosedDate),
+            reverse=True,
+        )
+        latest_fy_with_actual = fy_rows[0] if fy_rows else None
 
         # Prefer revised forecast carried on latest FY row when available.
         if latest_fy_with_actual is not None and latest_fy_with_actual.revisedForecastEps is not None:
@@ -1326,39 +1371,35 @@ class FundamentalsService:
         if forecast_eps is None or not math.isfinite(forecast_eps):
             return None
 
-        historical_max_actual: float | None = None
-        for item in data:
-            if normalize_period_type(item.periodType) != "FY":
-                continue
-
-            actual_eps = self._resolve_display_actual_eps(item)
-            if actual_eps is None or not math.isfinite(actual_eps):
-                continue
-
-            if historical_max_actual is None or actual_eps > historical_max_actual:
-                historical_max_actual = actual_eps
-
-        if historical_max_actual is None:
+        recent_actual_eps_values = self._collect_recent_fy_actual_eps_values(
+            data,
+            lookback_fy_count,
+        )
+        if len(recent_actual_eps_values) < lookback_fy_count:
             return None
 
-        return forecast_eps > historical_max_actual
+        return forecast_eps > max(recent_actual_eps_values)
 
-    def _apply_forecast_eps_above_all_historical_actuals(
+    def _apply_forecast_eps_above_recent_fy_actuals(
         self,
         metrics: FundamentalDataPoint | None,
         data: list[FundamentalDataPoint],
+        lookback_fy_count: int,
     ) -> FundamentalDataPoint | None:
-        """Attach forecast-vs-historical-actual EPS comparison to latest metrics."""
+        """Attach forecast-vs-recent-FY-actual EPS comparison to latest metrics."""
         if metrics is None:
             return None
 
-        comparison = self._calculate_forecast_eps_above_all_historical_actuals(
+        comparison = self._calculate_forecast_eps_above_recent_fy_actuals(
             metrics,
             data,
+            lookback_fy_count,
         )
         return FundamentalDataPoint(
             **{
                 **metrics.model_dump(),
+                "forecastEpsAboveRecentFyActuals": comparison,
+                # Backward compatibility for existing consumers
                 "forecastEpsAboveAllHistoricalActuals": comparison,
             }
         )

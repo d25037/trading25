@@ -184,6 +184,14 @@ class TestForecastRevisionHelpers:
             {
                 "fundamental": {
                     "enabled": True,
+                    "forecast_eps_above_recent_fy_actuals": {"enabled": True},
+                }
+            }
+        ) is True
+        assert _is_forecast_signal_enabled(
+            {
+                "fundamental": {
+                    "enabled": True,
                     "forecast_eps_above_all_actuals": {"enabled": True},
                 }
             }
@@ -207,7 +215,7 @@ class TestForecastRevisionHelpers:
             exit_trigger_params={
                 "fundamental": {
                     "enabled": True,
-                    "forecast_eps_above_all_actuals": {"enabled": True},
+                    "forecast_eps_above_recent_fy_actuals": {"enabled": True},
                 }
             },
         )
@@ -430,7 +438,7 @@ class TestBatchExecutionPaths:
                 entry_filter_params={
                     "fundamental": {
                         "enabled": True,
-                        "forecast_eps_above_all_actuals": {"enabled": True},
+                        "forecast_eps_above_recent_fy_actuals": {"enabled": True},
                     }
                 },
                 exit_trigger_params={},

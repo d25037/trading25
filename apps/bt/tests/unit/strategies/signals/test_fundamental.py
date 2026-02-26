@@ -13,7 +13,7 @@ from src.domains.strategy.signals.fundamental import (
     cfo_yield_threshold,
     is_expected_growth_dividend_per_share,
     is_expected_growth_eps,
-    is_forecast_eps_above_all_actuals,
+    is_forecast_eps_above_recent_fy_actuals,
     is_growing_cfo_yield,
     is_growing_dividend_per_share,
     is_growing_eps,
@@ -371,26 +371,102 @@ class TestIsExpectedGrowthEps:
         assert signal.tolist() == [False, False, True]
 
 
-class TestIsForecastEpsAboveAllActuals:
-    """is_forecast_eps_above_all_actuals() のテスト"""
+class TestIsForecastEpsAboveRecentFYActuals:
+    """is_forecast_eps_above_recent_fy_actuals() のテスト"""
 
-    def test_returns_true_only_when_forecast_exceeds_historical_max(self):
+    def test_returns_true_only_when_forecast_exceeds_recent_fy_window_max(self):
         dates = pd.date_range("2024-01-01", periods=6, freq="D")
         actual_eps = pd.Series([100.0, 100.0, 120.0, 120.0, 110.0, 110.0], index=dates)
         forecast_eps = pd.Series([110.0, 130.0, 119.0, 121.0, 125.0, 120.0], index=dates)
 
-        signal = is_forecast_eps_above_all_actuals(actual_eps, forecast_eps)
+        signal = is_forecast_eps_above_recent_fy_actuals(
+            actual_eps,
+            forecast_eps,
+            lookback_fy_count=2,
+        )
 
-        assert signal.tolist() == [True, True, False, True, True, False]
+        assert signal.tolist() == [False, False, False, True, True, False]
 
     def test_handles_nan_and_inf_as_invalid(self):
         dates = pd.date_range("2024-01-01", periods=4, freq="D")
         actual_eps = pd.Series([100.0, np.nan, 110.0, np.inf], index=dates)
         forecast_eps = pd.Series([120.0, 130.0, np.nan, 140.0], index=dates)
 
-        signal = is_forecast_eps_above_all_actuals(actual_eps, forecast_eps)
+        signal = is_forecast_eps_above_recent_fy_actuals(
+            actual_eps,
+            forecast_eps,
+            lookback_fy_count=1,
+        )
 
         assert signal.tolist() == [True, True, False, True]
+
+    def test_returns_false_until_lookback_window_is_ready(self):
+        dates = pd.date_range("2024-01-01", periods=5, freq="D")
+        actual_eps = pd.Series([80.0, 80.0, 95.0, 95.0, 100.0], index=dates)
+        forecast_eps = pd.Series([120.0, 120.0, 120.0, 120.0, 120.0], index=dates)
+
+        signal = is_forecast_eps_above_recent_fy_actuals(
+            actual_eps,
+            forecast_eps,
+            lookback_fy_count=3,
+        )
+
+        assert signal.tolist() == [False, False, False, False, True]
+
+    def test_uses_release_marker_to_count_fy_events_even_when_eps_is_flat(self):
+        dates = pd.date_range("2024-01-01", periods=6, freq="D")
+        actual_eps = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0, 100.0], index=dates)
+        forecast_eps = pd.Series([101.0, 101.0, 101.0, 101.0, 101.0, 101.0], index=dates)
+        release_marker = pd.Series(
+            [
+                "2023-05-10",
+                "2023-05-10",
+                "2024-05-10",
+                "2024-05-10",
+                "2025-05-10",
+                "2025-05-10",
+            ],
+            index=dates,
+        )
+
+        signal = is_forecast_eps_above_recent_fy_actuals(
+            actual_eps,
+            forecast_eps,
+            lookback_fy_count=2,
+            fy_release_marker=release_marker,
+        )
+
+        assert signal.tolist() == [False, False, True, True, True, True]
+
+    def test_fy_period_key_prevents_double_counting_multiple_disclosures_in_same_fy(self):
+        dates = pd.date_range("2024-01-01", periods=6, freq="D")
+        actual_eps = pd.Series([100.0, 100.0, 100.0, 100.0, 100.0, 100.0], index=dates)
+        forecast_eps = pd.Series([101.0, 101.0, 101.0, 101.0, 101.0, 101.0], index=dates)
+        release_marker = pd.Series(
+            [
+                "2023-05-10",
+                "2023-05-10",
+                "2024-05-10",
+                "2024-08-10",
+                "2024-11-10",
+                "2024-11-10",
+            ],
+            index=dates,
+        )
+        fy_period_key = pd.Series(
+            ["2023", "2023", "2024", "2024", "2024", "2024"],
+            index=dates,
+        )
+
+        signal = is_forecast_eps_above_recent_fy_actuals(
+            actual_eps,
+            forecast_eps,
+            lookback_fy_count=3,
+            fy_release_marker=release_marker,
+            fy_period_key=fy_period_key,
+        )
+
+        assert signal.tolist() == [False, False, False, False, False, False]
 
 
 class TestIsExpectedGrowthDividendPerShare:
@@ -2612,14 +2688,25 @@ class TestFundamentalSignalParamsConfig:
         assert params.forward_dividend_growth.threshold == 0.08
         assert params.forward_dividend_growth.condition == "above"
 
-    def test_forecast_eps_above_all_actuals_field_exists(self):
-        """forecast_eps_above_all_actualsフィールドが正しくパースされること"""
+    def test_forecast_eps_above_recent_fy_actuals_field_exists(self):
+        """forecast_eps_above_recent_fy_actualsフィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
         params = FundamentalSignalParams(
-            forecast_eps_above_all_actuals={"enabled": True}
+            forecast_eps_above_recent_fy_actuals={"enabled": True}
         )
-        assert params.forecast_eps_above_all_actuals.enabled is True
+        assert params.forecast_eps_above_recent_fy_actuals.enabled is True
+        assert params.forecast_eps_above_recent_fy_actuals.lookback_fy_count == 3
+
+    def test_forecast_eps_above_recent_fy_actuals_accepts_legacy_key(self):
+        """legacy key でも新フィールドへマッピングされること"""
+        from src.shared.models.signals.fundamental import FundamentalSignalParams
+
+        params = FundamentalSignalParams(
+            forecast_eps_above_all_actuals={"enabled": True, "lookback_fy_count": 5}
+        )
+        assert params.forecast_eps_above_recent_fy_actuals.enabled is True
+        assert params.forecast_eps_above_recent_fy_actuals.lookback_fy_count == 5
 
     def test_eps_growth_field_exists(self):
         """eps_growth（実績ベース）フィールドが正しくパースされること"""

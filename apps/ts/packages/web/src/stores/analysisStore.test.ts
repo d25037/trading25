@@ -90,12 +90,14 @@ describe('analysisStore', () => {
       ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
       markets: 'prime,standard',
       limit: 50,
-      forecastAboveAllActuals: true,
+      forecastAboveRecentFyActuals: true,
+      forecastLookbackFyCount: 5,
     });
 
     const state = useAnalysisStore.getState();
     expect(state.fundamentalRankingParams.markets).toBe('prime,standard');
     expect(state.fundamentalRankingParams.limit).toBe(50);
-    expect(state.fundamentalRankingParams.forecastAboveAllActuals).toBe(true);
+    expect(state.fundamentalRankingParams.forecastAboveRecentFyActuals).toBe(true);
+    expect(state.fundamentalRankingParams.forecastLookbackFyCount).toBe(5);
   });
 });

@@ -38,7 +38,7 @@ from .fundamental_valuation import (
 from .fundamental_growth import (
     is_expected_growth_dividend_per_share,
     is_expected_growth_eps,
-    is_forecast_eps_above_all_actuals,
+    is_forecast_eps_above_recent_fy_actuals,
     is_growing_dividend_per_share,
     is_growing_eps,
     is_growing_profit,
@@ -81,7 +81,7 @@ __all__ = [
     # 成長率系
     "is_growing_eps",
     "is_expected_growth_eps",
-    "is_forecast_eps_above_all_actuals",
+    "is_forecast_eps_above_recent_fy_actuals",
     "is_expected_growth_dividend_per_share",
     "is_growing_profit",
     "is_growing_sales",

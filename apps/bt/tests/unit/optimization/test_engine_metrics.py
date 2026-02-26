@@ -114,7 +114,7 @@ def test_engine_should_include_forecast_revision_when_forecast_vs_actual_enabled
     engine = object.__new__(ParameterOptimizationEngine)
     entry = SignalParams()
     entry.fundamental.enabled = True
-    entry.fundamental.forecast_eps_above_all_actuals.enabled = True
+    entry.fundamental.forecast_eps_above_recent_fy_actuals.enabled = True
     engine.base_entry_params = entry
     engine.base_exit_params = SignalParams()
     engine.parameter_ranges = {}
@@ -151,7 +151,7 @@ def test_engine_should_include_forecast_revision_when_grid_can_enable_forecast_v
         "entry_filter_params": {
             "fundamental": {
                 "enabled": [False, True],
-                "forecast_eps_above_all_actuals": {
+                "forecast_eps_above_recent_fy_actuals": {
                     "enabled": [False, True],
                 },
             }
@@ -164,7 +164,7 @@ def test_engine_should_include_forecast_revision_when_grid_can_enable_forecast_v
 def test_engine_forecast_helpers_return_false_when_not_enabled():
     params = SignalParams()
     params.fundamental.enabled = False
-    params.fundamental.forecast_eps_above_all_actuals.enabled = True
+    params.fundamental.forecast_eps_above_recent_fy_actuals.enabled = True
 
     engine = object.__new__(ParameterOptimizationEngine)
     assert engine._is_forecast_signal_enabled(params) is False
@@ -181,7 +181,7 @@ def test_engine_grid_forecast_helpers_return_false_for_non_dict_and_disabled_gri
         "entry_filter_params": {
             "fundamental": {
                 "enabled": [False],
-                "forecast_eps_above_all_actuals": {"enabled": [True]},
+                "forecast_eps_above_recent_fy_actuals": {"enabled": [True]},
             }
         }
     }

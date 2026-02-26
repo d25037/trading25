@@ -283,6 +283,20 @@ def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
             )
 
     _build_forward_eps_columns(df)
+    # 開示イベント判定用に開示日を明示列として保持する
+    df["DisclosedDate"] = pd.to_datetime(df.index)
+    period_types = (
+        df["TypeOfCurrentPeriod"].map(normalize_period_type)
+        if "TypeOfCurrentPeriod" in df.columns
+        else pd.Series("FY", index=df.index)
+    )
+    # 同一FY内の複数開示を1イベントとして扱うためのFY期別キー
+    df["FYPeriodKey"] = (
+        pd.Series(df.index, index=df.index)
+        .dt.strftime("%Y")
+        .where(period_types == "FY")
+        .ffill()
+    )
 
     df["ROE"] = _calc_roe(df)
     df["ROA"] = _calc_roa(df)

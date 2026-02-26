@@ -94,6 +94,7 @@ class TestGetFundamentals:
                 "to": "2024-12-31",
                 "periodType": "FY",
                 "tradingValuePeriod": 20,
+                "forecastEpsLookbackFyCount": 5,
             },
         )
         assert resp.status_code == 200
@@ -102,6 +103,7 @@ class TestGetFundamentals:
         assert call_args.to_date == "2024-12-31"
         assert call_args.period_type == "FY"
         assert call_args.trading_value_period == 20
+        assert call_args.forecast_eps_lookback_fy_count == 5
 
     @patch("src.entrypoints.http.routes.analytics_jquants.fundamentals_service")
     def test_default_params(self, mock_service: MagicMock, client: TestClient) -> None:
@@ -114,6 +116,7 @@ class TestGetFundamentals:
         assert call_args.period_type == "all"
         assert call_args.prefer_consolidated is True
         assert call_args.trading_value_period == 15
+        assert call_args.forecast_eps_lookback_fy_count == 3
 
     @patch("src.entrypoints.http.routes.analytics_jquants.fundamentals_service")
     def test_prefer_consolidated_false(self, mock_service: MagicMock, client: TestClient) -> None:

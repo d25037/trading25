@@ -126,6 +126,15 @@ export function FundamentalsSummaryCard({
   const displayDividendFy = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
   const displayForecastDividendFy =
     metrics.adjustedForecastDividendFy ?? metrics.forecastDividendFy ?? null;
+  const forecastEpsAboveRecentFyActuals =
+    metrics.forecastEpsAboveRecentFyActuals ?? metrics.forecastEpsAboveAllHistoricalActuals;
+  const forecastEpsLookbackFyCount = metrics.forecastEpsLookbackFyCount ?? 3;
+  const forecastEpsAboveRecentFyActualsLabel =
+    forecastEpsAboveRecentFyActuals == null
+      ? '-'
+      : forecastEpsAboveRecentFyActuals
+        ? 'true'
+        : 'false';
   const visibleMetricOrder = metricOrder.filter((metricId) => metricVisibility[metricId]);
 
   const renderMetric = (metricId: FundamentalMetricId) => {
@@ -262,8 +271,8 @@ export function FundamentalsSummaryCard({
           </span>
         </div>
         <div className="mt-1">
-          予想EPS &gt; 過去実績EPS:{' '}
-          {metrics.forecastEpsAboveAllHistoricalActuals === true ? 'true' : 'false'}
+          予想EPS &gt; 直近FY{forecastEpsLookbackFyCount}実績EPS:{' '}
+          {forecastEpsAboveRecentFyActualsLabel}
         </div>
         {metrics.stockPrice && <div className="mt-1">株価 @ 開示日: {metrics.stockPrice.toLocaleString()}円</div>}
       </div>

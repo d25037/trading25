@@ -165,7 +165,7 @@ class TestDataManagerMixinPaths:
         strategy._should_load_statements_data = lambda: True
         strategy.entry_filter_params = SignalParams()
         strategy.entry_filter_params.fundamental.enabled = True
-        strategy.entry_filter_params.fundamental.forecast_eps_above_all_actuals.enabled = True
+        strategy.entry_filter_params.fundamental.forecast_eps_above_recent_fy_actuals.enabled = True
 
         captured: dict[str, object] = {}
 

@@ -236,6 +236,16 @@ def ranking_db(tmp_path):
         )
         VALUES (?,?,?,?,?,?,?)
         """,
+        ("33330", "2024-11-21", 210.0, "FY", 260.0, 260.0, 100.0),
+    )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
         ("44440", "2024-05-22", 140.0, "FY", None, None, 100.0),
     )
 
@@ -389,7 +399,7 @@ class TestGetFundamentalRankings:
         assert "11110" not in codes
         assert "22220" not in codes
 
-    def test_filters_forecast_above_all_actuals(self, service):
+    def test_filters_forecast_above_recent_fy_actuals(self, service):
         unfiltered = service.get_fundamental_rankings(markets="prime", limit=100)
         unfiltered_codes = {item.code for item in unfiltered.rankings.ratioHigh}
         assert "33330" in unfiltered_codes
@@ -397,16 +407,39 @@ class TestGetFundamentalRankings:
         filtered = service.get_fundamental_rankings(
             markets="prime",
             limit=100,
-            forecast_above_all_actuals=True,
+            forecast_above_recent_fy_actuals=True,
+            forecast_lookback_fy_count=2,
         )
         filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
+        assert "33330" not in filtered_codes
+
+    def test_forecast_filter_with_lookback_1_keeps_recent_fy_breakout(self, service):
+        filtered = service.get_fundamental_rankings(
+            markets="prime",
+            limit=100,
+            forecast_above_recent_fy_actuals=True,
+            forecast_lookback_fy_count=1,
+        )
+        filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
+        assert "33330" in filtered_codes
+
+    def test_forecast_filter_counts_unique_fy_years_not_fy_disclosures(self, service):
+        filtered = service.get_fundamental_rankings(
+            markets="prime",
+            limit=100,
+            forecast_above_recent_fy_actuals=True,
+            forecast_lookback_fy_count=2,
+        )
+        filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
+        # 33330 has two FY disclosures in 2024, but lookback=2 should count 2024+2023.
         assert "33330" not in filtered_codes
 
     def test_filter_handles_stock_without_forecast_snapshot(self, service):
         filtered = service.get_fundamental_rankings(
             markets="prime",
             limit=100,
-            forecast_above_all_actuals=True,
+            forecast_above_recent_fy_actuals=True,
+            forecast_lookback_fy_count=1,
         )
         filtered_codes = {item.code for item in filtered.rankings.ratioHigh}
         assert "44440" not in filtered_codes
@@ -512,19 +545,21 @@ class TestRankingHelperBranches:
             is None
         )
         assert (
-            service._resolve_max_actual_eps(
+            service._resolve_recent_actual_eps_max(
                 [_StatementRow("X", "2024-05-01", "FY", None, None, None, 100.0)],
                 baseline_shares=100.0,
+                lookback_fy_count=1,
             )
             is None
         )
         assert (
-            service._resolve_max_actual_eps(
+            service._resolve_recent_actual_eps_max(
                 [
                     _StatementRow("X", "2023-05-01", "FY", 90.0, None, None, 100.0),
                     _StatementRow("X", "2024-05-01", "FY", 110.0, None, None, 100.0),
                 ],
                 baseline_shares=100.0,
+                lookback_fy_count=2,
             )
             == 110.0
         )
