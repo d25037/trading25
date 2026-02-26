@@ -46,9 +46,9 @@ def get_execution_config(
 
 
 def get_template_notebook_path(execution_config: dict[str, Any]) -> Path:
-    """テンプレートNotebookのパスを取得"""
+    """Marimoテンプレートのパスを取得"""
     template_path = execution_config.get(
-        "template_notebook", "notebooks/templates/strategy_analysis_template.ipynb"
+        "template_notebook", "notebooks/templates/marimo/strategy_analysis.py"
     )
     return Path(template_path)
 

@@ -64,7 +64,7 @@ def _build_optimization_job_response(job_id: str) -> OptimizationJobResponse:
         worst_score=job.worst_score,
         worst_params=job.worst_params,
         total_combinations=job.total_combinations,
-        notebook_path=job.notebook_path,
+        html_path=job.html_path,
     )
 
 

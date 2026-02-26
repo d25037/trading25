@@ -19,7 +19,7 @@ console = Console()
 
 def list_strategies() -> None:
     """
-    List available strategies by category (formerly execute-notebook list-strategies)
+    List available strategies by category.
     """
     config_loader = ConfigLoader()
     categorized_strategies = config_loader.get_available_strategies()
@@ -64,7 +64,7 @@ def list_strategies() -> None:
 
 def validate_strategy(strategy: str) -> None:
     """
-    Validate strategy configuration (formerly execute-notebook validate)
+    Validate strategy configuration.
 
     Args:
         strategy: Strategy name to validate
@@ -87,7 +87,7 @@ def validate_strategy(strategy: str) -> None:
 
 def cleanup_notebooks(days: int = 7, output_dir: Optional[str] = None) -> None:
     """
-    Cleanup old HTML/Notebook files (formerly execute-notebook cleanup)
+    Cleanup old HTML files.
 
     Args:
         days: Delete files older than N days
@@ -113,8 +113,8 @@ def cleanup_notebooks(days: int = 7, output_dir: Optional[str] = None) -> None:
         cutoff_date = datetime.now() - timedelta(days=days)
         deleted_count = 0
 
-        # Find and delete old HTML and notebook files
-        for pattern in ["*.html", "*.ipynb"]:
+        # Find and delete old HTML files
+        for pattern in ["*.html"]:
             for file_path in target_dir.rglob(pattern):
                 # Verify path is within output directory
                 file_resolved = file_path.resolve()

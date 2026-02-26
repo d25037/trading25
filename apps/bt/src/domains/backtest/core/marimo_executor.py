@@ -175,9 +175,7 @@ class MarimoExecutor:
                 strategy_dir_path = f"backtest/{strategy_name}"
             else:
                 strategy_dir_path = ""
-            base_filename = (
-                output_filename.replace(".ipynb", "").replace(".html", "")
-            )
+            base_filename = output_filename.replace(".html", "")
 
         strategy_output_dir = self.output_dir / strategy_dir_path
         strategy_output_dir.mkdir(parents=True, exist_ok=True)

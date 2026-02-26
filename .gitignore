@@ -24,9 +24,6 @@ htmlcov/
 **/playwright-report/
 **/test-results/
 
-# === Jupyter ===
-.ipynb_checkpoints/
-
 # === OS / Editor ===
 **/.DS_Store
 .idea/
@@ -59,7 +56,6 @@ htmlcov/
 !/.codex/**
 
 # === apps/bt ===
-apps/bt/notebooks/generated/
 apps/bt/.db
 apps/bt/**/*.csv
 apps/bt/**/*.xlsx

@@ -290,7 +290,7 @@ def test_optimize_success_returns_best_result(monkeypatch):
     assert result.best_params == {"id": 2}
     assert result.best_score == 0.9
     assert result.best_portfolio == "best-portfolio"
-    assert result.notebook_path == "/tmp/result.html"
+    assert result.html_path == "/tmp/result.html"
 
     best_strategy = FakeStrategy.instances[-1]
     assert best_strategy.multi_data_dict == {"1301": {"close": []}}

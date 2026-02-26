@@ -251,8 +251,8 @@ class ParameterOptimizationEngine:
             max_allocation=best_shared_config.max_allocation,
         )
 
-        # 8. 可視化Notebook生成
-        notebook_path = self._generate_visualization_notebook(
+        # 8. 可視化HTML生成
+        html_path = self._generate_visualization_notebook(
             sorted_results, combinations
         )
 
@@ -263,7 +263,7 @@ class ParameterOptimizationEngine:
             best_portfolio=best_portfolio,  # 再構築したportfolio
             all_results=sorted_results,
             scoring_weights=self.optimization_config["scoring_weights"],
-            notebook_path=notebook_path,
+            html_path=html_path,
         )
 
     def _prefetch_data(
@@ -615,14 +615,14 @@ class ParameterOptimizationEngine:
         self, sorted_results: List[Dict], combinations: List[Dict]
     ) -> str:
         """
-        可視化Notebook生成
+        可視化HTML生成
 
         Args:
             sorted_results: 複合スコア順にソートされた最適化結果
             combinations: パラメータ組み合わせリスト
 
         Returns:
-            str: 生成されたNotebookのパス
+            str: 生成されたHTMLのパス
         """
         from datetime import datetime
 
@@ -648,7 +648,7 @@ class ParameterOptimizationEngine:
         # ディレクトリ作成
         output_dir.mkdir(parents=True, exist_ok=True)
 
-        # Notebook生成（ベース名を使用）
+        # HTML生成（ベース名を使用）
         result = generate_optimization_notebook(
             results=sorted_results,
             output_path=output_path,

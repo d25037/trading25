@@ -15,7 +15,7 @@ def _success_payload() -> dict[str, object]:
         "worst_score": 0.1,
         "worst_params": {"period": 5},
         "total_combinations": 9,
-        "notebook_path": "/tmp/result.ipynb",
+        "html_path": "/tmp/result.html",
     }
 
 
@@ -34,7 +34,7 @@ def test_execute_optimization_sync_extracts_best_and_worst(monkeypatch):
                     {"score": 1.0, "params": {"period": 20}},
                     {"score": 0.2, "params": {"period": 5}},
                 ],
-                notebook_path="/tmp/result.ipynb",
+                html_path="/tmp/result.html",
             )
 
     monkeypatch.setattr("src.domains.optimization.engine.ParameterOptimizationEngine", _FakeEngine)
@@ -46,7 +46,7 @@ def test_execute_optimization_sync_extracts_best_and_worst(monkeypatch):
     assert payload["worst_score"] == 0.2
     assert payload["worst_params"] == {"period": 5}
     assert payload["total_combinations"] == 2
-    assert payload["notebook_path"] == "/tmp/result.ipynb"
+    assert payload["html_path"] == "/tmp/result.html"
 
 
 def test_execute_optimization_sync_handles_empty_all_results(monkeypatch):
@@ -61,7 +61,7 @@ def test_execute_optimization_sync_handles_empty_all_results(monkeypatch):
                 best_score=0.0,
                 best_params={},
                 all_results=[],
-                notebook_path="",
+                html_path="",
             )
 
     monkeypatch.setattr("src.domains.optimization.engine.ParameterOptimizationEngine", _FakeEngine)
@@ -73,7 +73,7 @@ def test_execute_optimization_sync_handles_empty_all_results(monkeypatch):
     assert payload["worst_score"] is None
     assert payload["worst_params"] is None
     assert payload["total_combinations"] == 0
-    assert payload["notebook_path"] is None
+    assert payload["html_path"] is None
 
 
 @pytest.mark.asyncio
@@ -112,7 +112,7 @@ async def test_run_optimization_success_sets_job_fields(monkeypatch):
         worst_score=None,
         worst_params=None,
         total_combinations=None,
-        notebook_path=None,
+        html_path=None,
     )
     statuses: list[str] = []
     events: list[str] = []
@@ -150,7 +150,7 @@ async def test_run_optimization_success_sets_job_fields(monkeypatch):
     assert job.worst_score == 0.1
     assert job.worst_params == {"period": 5}
     assert job.total_combinations == 9
-    assert job.notebook_path == "/tmp/result.ipynb"
+    assert job.html_path == "/tmp/result.html"
 
 
 @pytest.mark.asyncio

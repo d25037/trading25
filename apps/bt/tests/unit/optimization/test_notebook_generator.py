@@ -185,13 +185,13 @@ class TestNotebookGeneratorMarimo:
         mock_executor_class.return_value = mock_executor
 
         # execute_notebookのモック戻り値を設定
-        output_path = tmp_path / "notebooks/generated/optimization/test_strategy/test_output.html"
+        output_path = tmp_path / "optimization/test_strategy/test_output.html"
         mock_executor.execute_notebook.return_value = output_path
 
         # Notebook生成実行
         result_path = generate_optimization_notebook(
             results=sample_optimization_results,
-            output_path=str(tmp_path / "test_output.ipynb"),
+            output_path=str(tmp_path / "test_output.html"),
             strategy_name="test_strategy",
             parameter_ranges=sample_parameter_ranges,
             scoring_weights=sample_scoring_weights,
@@ -235,9 +235,9 @@ class TestNotebookGeneratorMarimo:
         mock_executor = MagicMock()
         mock_executor_class.return_value = mock_executor
 
-        output_dir = tmp_path / "notebooks/generated/optimization/test_strategy"
+        output_dir = tmp_path / "optimization/test_strategy"
         output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / "test_output.ipynb"
+        output_path = output_dir / "test_output.html"
         mock_executor.execute_notebook.return_value = output_path
 
         # Notebook生成実行
@@ -275,7 +275,7 @@ class TestNotebookGeneratorMarimo:
         mock_executor = MagicMock()
         mock_executor_class.return_value = mock_executor
 
-        output_path = tmp_path / "test_output.ipynb"
+        output_path = tmp_path / "test_output.html"
         mock_executor.execute_notebook.return_value = output_path
 
         generate_optimization_notebook(
@@ -316,7 +316,7 @@ class TestNotebookGeneratorMarimo:
             "Marimo execution failed"
         )
 
-        output_path = tmp_path / "test_output.ipynb"
+        output_path = tmp_path / "test_output.html"
 
         # エラーが伝播することを確認
         with pytest.raises(Exception, match="Marimo execution failed"):

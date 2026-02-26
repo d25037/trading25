@@ -75,7 +75,7 @@ class OptimizationService:
                 job.worst_score = result.get("worst_score")
                 job.worst_params = result.get("worst_params")
                 job.total_combinations = result.get("total_combinations")
-                job.notebook_path = result.get("notebook_path")
+                job.html_path = result.get("html_path")
 
             await self._manager.update_job_status(
                 job_id,
@@ -124,7 +124,7 @@ class OptimizationService:
         worst_result = opt_result.all_results[-1] if opt_result.all_results else None
         worst_score = worst_result.get("score") if worst_result else None
         worst_params = worst_result.get("params") if worst_result else None
-        notebook_path = opt_result.notebook_path if opt_result.notebook_path else None
+        html_path = opt_result.html_path if opt_result.html_path else None
 
         return {
             "best_score": best_score,
@@ -132,7 +132,7 @@ class OptimizationService:
             "worst_score": worst_score,
             "worst_params": worst_params,
             "total_combinations": total_combinations,
-            "notebook_path": notebook_path,
+            "html_path": html_path,
         }
 
 

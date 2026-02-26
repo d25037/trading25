@@ -68,8 +68,8 @@ def run_optimization(
         # 最適パラメータ詳細表示
         _display_best_params(result)
 
-        # Notebookパス表示
-        _display_notebook_path(result)
+        # HTMLパス表示
+        _display_html_path(result)
 
         # 成功終了
         console.print()
@@ -210,20 +210,20 @@ def _display_best_params(result):
     console.print()
 
 
-def _display_notebook_path(result):
+def _display_html_path(result):
     """
-    可視化Notebookパスを表示
+    可視化HTMLパスを表示
 
     Args:
         result: OptimizationResult
     """
     console.print()
     console.print("=" * 60, style="bold cyan")
-    console.print("📊 可視化Notebook生成完了", style="bold cyan")
+    console.print("📊 可視化HTML生成完了", style="bold cyan")
     console.print("=" * 60, style="bold cyan")
     console.print()
 
-    console.print(f"  📓 {result.notebook_path}", style="green")
+    console.print(f"  📓 {result.html_path}", style="green")
     console.print()
 
 

@@ -17,7 +17,7 @@ const baseJob: OptimizationJobResponse = {
   worst_score: 0.12,
   worst_params: { period: 5, threshold: 0.9 },
   total_combinations: 9,
-  notebook_path: null,
+  html_path: null,
 };
 
 function createJob(overrides: Partial<OptimizationJobResponse>): OptimizationJobResponse {

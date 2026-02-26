@@ -112,12 +112,12 @@ class TestFilenameValidation:
             # Should not raise
             executor._validate_filename("test_output.html", ".html")
 
-    def test_valid_ipynb_filename(self):
-        """正常なipynbファイル名"""
+    def test_invalid_ipynb_filename_for_html(self):
+        """ipynb拡張子はHTML出力として無効"""
         with tempfile.TemporaryDirectory() as tmpdir:
             executor = MarimoExecutor(output_dir=tmpdir)
-            # Should not raise
-            executor._validate_filename("test_output.ipynb", ".ipynb")
+            with pytest.raises(ValueError, match="不正な"):
+                executor._validate_filename("test_output.ipynb", ".html")
 
     def test_invalid_filename_path_traversal(self):
         """パストラバーサル文字を含むファイル名"""

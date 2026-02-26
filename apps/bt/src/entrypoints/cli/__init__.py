@@ -72,7 +72,7 @@ def backtest_command(
     """
     バックテスト実行
 
-    戦略Notebookを実行してバックテストを行います。
+    Marimoテンプレートを実行してバックテストを行います。
     --optimize フラグでパラメータ最適化モードに切り替えます。
 
     Examples:
@@ -130,7 +130,7 @@ def cleanup_command(
     output_dir: str = typer.Option(None, "--output-dir", help="対象ディレクトリ"),
 ):
     """
-    古いNotebookファイルをクリーンアップ
+    古いHTMLファイルをクリーンアップ
 
     Examples:
         uv run bt cleanup

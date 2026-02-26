@@ -6351,6 +6351,18 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "html_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "結果HTMLパス",
+            "title": "Html Path"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -6367,18 +6379,6 @@
             ],
             "description": "ステータスメッセージ",
             "title": "Message"
-          },
-          "notebook_path": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "description": "結果Notebookパス",
-            "title": "Notebook Path"
           },
           "progress": {
             "anyOf": [

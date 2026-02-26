@@ -134,13 +134,13 @@ if signal_def.data_checker and not signal_def.data_checker(data_sources):
 
 ### 修正前
 
-- Notebook: `notebooks/generated/bnf_mean_reversion_v3/all_20251010_061423.ipynb`
+- HTML: `~/.local/share/trading25/backtest/results/bnf_mean_reversion_v3/all_20251010_061423.html`
 - β値フィルター設定: `min_beta: 2.0, max_beta: 3.0`
 - トレード数: **2,444件**（フィルターが効いていない）
 
 ### 修正後
 
-- Notebook: `notebooks/generated/bnf_mean_reversion_v3/all_20251010_062017.ipynb`
+- HTML: `~/.local/share/trading25/backtest/results/bnf_mean_reversion_v3/all_20251010_062017.html`
 - β値フィルター設定: `min_beta: 2.0, max_beta: 3.0`
 - トレード数: **1件**（フィルターが正しく機能！）
 
