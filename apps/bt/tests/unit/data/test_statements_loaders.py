@@ -313,6 +313,56 @@ class TestLoadStatementsDataPeriodType:
         assert result.loc["2024-07-30", "ForwardForecastEPS"] == 100.0
         mock_logger.warning.assert_called_once()
 
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.DatasetAPIClient")
+    @patch("src.infrastructure.data_access.loaders.statements_loaders.extract_dataset_name")
+    def test_include_forecast_revision_uses_shared_baseline_shares(
+        self, mock_extract, mock_client_class
+    ):
+        """base/revision を同じ baseline shares で調整すること"""
+        mock_extract.return_value = "test_dataset"
+        self.daily_index = pd.date_range("2024-01-01", "2024-01-05")
+
+        fy_only_df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-01-01")],
+                "typeOfCurrentPeriod": ["FY"],
+                "earningsPerShare": [90.0],
+                "nextYearForecastEarningsPerShare": [120.0],
+                "sharesOutstanding": [100.0],
+                "profit": [1000.0],
+                "equity": [5000.0],
+            }
+        ).set_index("disclosedDate")
+        all_period_df = pd.DataFrame(
+            {
+                "disclosedDate": [pd.Timestamp("2024-01-03")],
+                "typeOfCurrentPeriod": ["1Q"],
+                "forecastEps": [150.0],
+                "sharesOutstanding": [300.0],
+                "profit": [300.0],
+                "equity": [5200.0],
+            }
+        ).set_index("disclosedDate")
+
+        mock_client = MagicMock()
+        mock_client.get_statements.side_effect = [fy_only_df, all_period_df]
+        mock_client.__enter__ = MagicMock(return_value=mock_client)
+        mock_client.__exit__ = MagicMock(return_value=False)
+        mock_client_class.return_value = mock_client
+
+        result = load_statements_data(
+            dataset="test.db",
+            stock_code="7203",
+            daily_index=self.daily_index,
+            period_type="FY",
+            include_forecast_revision=True,
+        )
+
+        # 共通 baseline=300 (latest quarter from revision_df) を base_df 側にも適用
+        assert result.loc["2024-01-02", "AdjustedForwardBaseEPS"] == pytest.approx(30.0)
+        assert result.loc["2024-01-02", "AdjustedForwardForecastEPS"] == pytest.approx(40.0)
+        assert result.loc["2024-01-05", "AdjustedForwardForecastEPS"] == pytest.approx(150.0)
+
 
 class TestTransformStatementsAdjusted:
     def test_adjusted_uses_latest_quarter_shares(self):

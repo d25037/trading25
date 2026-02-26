@@ -21,6 +21,7 @@ from .margin_loaders import load_margin_data, transform_margin_df
 from .statements_loaders import (
     load_statements_data,
     merge_forward_forecast_revision,
+    resolve_shared_baseline_shares,
     transform_statements_df,
 )
 from .stock_loaders import load_stock_data
@@ -265,14 +266,19 @@ def load_multiple_statements_data(
                 except (ConnectionError, RuntimeError, BatchAPIError) as e:
                     logger.warning(f"財務諸表四半期修正バッチ取得失敗、FYのみで続行: {e}")
         for code, df in batch_data.items():
-            df = transform_statements_df(df)
+            revision_raw_df = revision_batch.get(code) if should_merge_forecast_revision else None
+            shared_baseline_shares = resolve_shared_baseline_shares(df, revision_raw_df)
+            df = transform_statements_df(df, baseline_shares=shared_baseline_shares)
             reindexed = df.reindex(daily_index, method="ffill")
             if (
                 should_merge_forecast_revision
                 and code in revision_batch
                 and not revision_batch[code].empty
             ):
-                revision_df = transform_statements_df(revision_batch[code])
+                revision_df = transform_statements_df(
+                    revision_batch[code],
+                    baseline_shares=shared_baseline_shares,
+                )
                 revision_reindexed = revision_df.reindex(daily_index, method="ffill")
                 reindexed = merge_forward_forecast_revision(
                     reindexed,

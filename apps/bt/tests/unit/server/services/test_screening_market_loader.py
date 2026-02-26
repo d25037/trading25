@@ -84,6 +84,31 @@ def test_load_market_multi_data_attaches_statements(monkeypatch: pytest.MonkeyPa
     assert warnings == ["attached"]
 
 
+def test_load_market_multi_data_skips_attach_when_daily_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._load_daily_by_code",
+        lambda *_args, **_kwargs: {"7203": pd.DataFrame()},
+    )
+
+    called = {"attach": False}
+
+    def _attach(*_args, **_kwargs):
+        called["attach"] = True
+        return []
+
+    monkeypatch.setattr("src.application.services.screening_market_loader._attach_statements", _attach)
+
+    result, warnings = load_market_multi_data(
+        DummyReader(),
+        ["72030"],
+        include_statements_data=True,
+    )
+
+    assert result == {}
+    assert warnings == []
+    assert called["attach"] is False
+
+
 def test_load_market_topix_data_builds_filtered_dataframe() -> None:
     reader = DummyReader(
         rows=[
@@ -99,9 +124,43 @@ def test_load_market_topix_data_builds_filtered_dataframe() -> None:
     assert len(df) == 2
 
 
+def test_load_market_topix_data_without_filters() -> None:
+    reader = DummyReader(
+        rows=[
+            {"date": "2026-01-01", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.5},
+        ]
+    )
+    _ = load_market_topix_data(reader)
+    sql, params = reader.calls[0]
+    assert "WHERE" not in sql
+    assert params == ()
+
+
 def test_load_market_sector_indices_handles_operational_error() -> None:
     reader = DummyReader(error=sqlite3.OperationalError("missing index table"))
     assert load_market_sector_indices(reader) == {}
+
+
+def test_load_market_sector_indices_without_date_filters() -> None:
+    reader = DummyReader(
+        rows=[
+            {
+                "code": "0010",
+                "date": "2026-01-01",
+                "open": 100.0,
+                "high": 101.0,
+                "low": 99.0,
+                "close": 100.5,
+                "sector_name": "食料品",
+                "category": "",
+            },
+        ]
+    )
+    result = load_market_sector_indices(reader)
+    sql, params = reader.calls[0]
+    assert "WHERE" not in sql
+    assert params == ()
+    assert "食料品" in result
 
 
 def test_load_market_sector_indices_filters_by_category_and_name() -> None:
@@ -177,6 +236,19 @@ def test_load_daily_by_code_with_date_filters() -> None:
     assert len(data["7203"]) == 2
 
 
+def test_load_daily_by_code_without_date_filters() -> None:
+    reader = DummyReader(
+        rows=[
+            {"code": "7203", "date": "2026-01-01", "open": 1.0, "high": 1.1, "low": 0.9, "close": 1.0, "volume": 100},
+        ]
+    )
+    _ = _load_daily_by_code(reader, ["7203"], start_date=None, end_date=None)
+    sql, params = reader.calls[0]
+    assert "date >= ?" not in sql
+    assert "date <= ?" not in sql
+    assert params == ("7203",)
+
+
 def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch) -> None:
     index = pd.to_datetime(["2026-01-01"])
     result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
@@ -197,6 +269,41 @@ def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch
         include_forecast_revision=False,
     )
     assert any("statements table is missing" in warning for warning in warnings)
+
+
+def test_attach_statements_returns_empty_when_no_codes() -> None:
+    warnings = _attach_statements(
+        DummyReader(),
+        {},
+        {},
+        start_date=None,
+        end_date=None,
+        period_type="FY",
+        include_forecast_revision=False,
+    )
+    assert warnings == []
+
+
+def test_attach_statements_reraises_unexpected_operational_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = pd.to_datetime(["2026-01-01"])
+    result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
+    daily_index = {"7203": index}
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._query_statements_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("permission denied")),
+    )
+
+    with pytest.raises(sqlite3.OperationalError):
+        _attach_statements(
+            DummyReader(),
+            result,
+            daily_index,
+            start_date=None,
+            end_date=None,
+            period_type="FY",
+            include_forecast_revision=False,
+        )
 
 
 def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -240,7 +347,10 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
         return revision_rows if kwargs.get("period_type") == "all" else base_rows
 
     monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", _query)
-    monkeypatch.setattr("src.application.services.screening_market_loader.transform_statements_df", lambda df: df)
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader.transform_statements_df",
+        lambda df, **_kwargs: df,
+    )
     monkeypatch.setattr(
         "src.application.services.screening_market_loader.merge_forward_forecast_revision",
         lambda base, _revision: base.assign(merged=True),
@@ -267,6 +377,66 @@ def test_attach_statements_merges_revision(monkeypatch: pytest.MonkeyPatch) -> N
         call.get("period_type") == "all" and call.get("actual_only") is False
         for call in query_calls
     )
+
+
+def test_attach_statements_skips_merge_when_revision_missing(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    result = {"7203": {"daily": pd.DataFrame({"Close": [1.0, 1.1]}, index=index)}}
+    daily_index = {"7203": index}
+    base_rows = [
+        {
+            "code": "7203",
+            "disclosed_date": "2026-01-01",
+            "earnings_per_share": 1.0,
+            "profit": 1.0,
+            "equity": 1.0,
+            "type_of_current_period": "FY",
+            "type_of_document": "Annual",
+            "next_year_forecast_earnings_per_share": 2.0,
+            "bps": 3.0,
+            "sales": 4.0,
+            "operating_profit": 5.0,
+            "ordinary_profit": 6.0,
+            "operating_cash_flow": 7.0,
+            "dividend_fy": 8.0,
+            "forecast_dividend_fy": 8.5,
+            "next_year_forecast_dividend_fy": 9.0,
+            "payout_ratio": 30.0,
+            "forecast_payout_ratio": 32.0,
+            "next_year_forecast_payout_ratio": 34.0,
+            "forecast_eps": 9.0,
+            "investing_cash_flow": 10.0,
+            "financing_cash_flow": 11.0,
+            "cash_and_equivalents": 12.0,
+            "total_assets": 13.0,
+            "shares_outstanding": 14.0,
+            "treasury_shares": 15.0,
+        }
+    ]
+
+    def _query(_reader, _codes, **kwargs):
+        if kwargs.get("period_type") == "all":
+            return []
+        return base_rows
+
+    monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", _query)
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader.merge_forward_forecast_revision",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(AssertionError("must not merge")),
+    )
+
+    warnings = _attach_statements(
+        DummyReader(),
+        result,
+        daily_index,
+        start_date=None,
+        end_date=None,
+        period_type="FY",
+        include_forecast_revision=True,
+    )
+
+    assert warnings == []
+    assert "statements_daily" in result["7203"]
 
 
 def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -307,7 +477,7 @@ def test_attach_statements_collects_transform_error(monkeypatch: pytest.MonkeyPa
     monkeypatch.setattr("src.application.services.screening_market_loader._query_statements_rows", lambda *_args, **_kwargs: rows)
     monkeypatch.setattr(
         "src.application.services.screening_market_loader.transform_statements_df",
-        lambda _df: (_ for _ in ()).throw(ValueError("transform failed")),
+        lambda _df, **_kwargs: (_ for _ in ()).throw(ValueError("transform failed")),
     )
 
     warnings = _attach_statements(
@@ -340,6 +510,24 @@ def test_query_statements_rows_builds_filters() -> None:
     assert "earnings_per_share IS NOT NULL" in sql
     assert params[0:3] == ("7203", "2026-01-01", "2026-01-31")
     assert "1Q" in params and "Q1" in params
+
+
+def test_query_statements_rows_without_optional_filters() -> None:
+    reader = DummyReader()
+    _query_statements_rows(
+        reader,
+        ["7203"],
+        start_date=None,
+        end_date=None,
+        period_type="all",
+        actual_only=False,
+    )
+    sql, params = reader.calls[0]
+    assert "disclosed_date >= ?" not in sql
+    assert "disclosed_date <= ?" not in sql
+    assert "type_of_current_period IN" not in sql
+    assert "earnings_per_share IS NOT NULL" not in sql
+    assert params == ("7203",)
 
 
 @pytest.mark.parametrize(

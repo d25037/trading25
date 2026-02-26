@@ -326,6 +326,58 @@ class TestLoadMultipleStatementsData:
 
     @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
     @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
+    def test_include_forecast_revision_uses_shared_baseline_shares(
+        self,
+        mock_get_client,
+        mock_extract,
+    ):
+        mock_extract.return_value = "testds"
+        daily_index = pd.date_range("2025-01-01", "2025-01-05")
+
+        client = MagicMock()
+        client.get_statements_batch.side_effect = [
+            {
+                "7203": pd.DataFrame(
+                    {
+                        "disclosedDate": [pd.Timestamp("2025-01-01")],
+                        "typeOfCurrentPeriod": ["FY"],
+                        "earningsPerShare": [90.0],
+                        "nextYearForecastEarningsPerShare": [120.0],
+                        "sharesOutstanding": [100.0],
+                        "profit": [1000.0],
+                        "equity": [5000.0],
+                    }
+                ).set_index("disclosedDate")
+            },
+            {
+                "7203": pd.DataFrame(
+                    {
+                        "disclosedDate": [pd.Timestamp("2025-01-03")],
+                        "typeOfCurrentPeriod": ["1Q"],
+                        "forecastEps": [150.0],
+                        "sharesOutstanding": [300.0],
+                        "profit": [300.0],
+                        "equity": [5200.0],
+                    }
+                ).set_index("disclosedDate")
+            },
+        ]
+        mock_get_client.return_value = _mock_context_manager(client)
+
+        result = load_multiple_statements_data(
+            dataset="testds",
+            stock_codes=["7203"],
+            daily_index=daily_index,
+            statements_column="AdjustedForwardForecastEPS",
+            period_type="FY",
+            include_forecast_revision=True,
+        )
+
+        assert result.loc["2025-01-02", "7203"] == pytest.approx(40.0)
+        assert result.loc["2025-01-05", "7203"] == pytest.approx(150.0)
+
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.extract_dataset_name")
+    @patch("src.infrastructure.data_access.loaders.multi_asset_loaders.get_dataset_client")
     def test_revision_fetch_skipped_when_period_type_not_fy(
         self,
         mock_get_client,

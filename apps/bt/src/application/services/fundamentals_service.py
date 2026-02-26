@@ -18,6 +18,10 @@ from src.infrastructure.external_api.jquants_client import JQuantsAPIClient, JQu
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.shared.models.types import normalize_period_type
 from src.shared.utils.financial import calc_market_cap_scalar
+from src.shared.utils.share_adjustment import (
+    is_valid_share_count,
+    resolve_latest_quarterly_baseline_shares,
+)
 from src.entrypoints.http.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
@@ -235,29 +239,11 @@ class FundamentalsService:
 
         Falls back to the latest disclosure of any period type if no quarterly data exists.
         """
-        quarterly_types = ("1Q", "2Q", "3Q")
-
-        def _find_latest_shares(
-            require_quarterly: bool,
-        ) -> float | None:
-            latest_disclosed: str | None = None
-            latest_shares: float | None = None
-            for stmt in statements:
-                if require_quarterly:
-                    period_type = normalize_period_type(stmt.CurPerType)
-                    if period_type not in quarterly_types:
-                        continue
-                shares = stmt.ShOutFY
-                if shares is None or shares == 0:
-                    continue
-                if latest_disclosed is None or stmt.DiscDate > latest_disclosed:
-                    latest_disclosed = stmt.DiscDate
-                    latest_shares = shares
-            return latest_shares
-
-        return _find_latest_shares(require_quarterly=True) or _find_latest_shares(
-            require_quarterly=False
-        )
+        snapshots = [
+            (stmt.CurPerType, stmt.DiscDate, stmt.ShOutFY)
+            for stmt in statements
+        ]
+        return resolve_latest_quarterly_baseline_shares(snapshots)
 
     def _compute_adjusted_value(
         self,
@@ -268,14 +254,12 @@ class FundamentalsService:
         """Compute adjusted value using share count ratio."""
         if (
             value is None
-            or current_shares is None
-            or base_shares is None
-            or current_shares == 0
-            or base_shares == 0
+            or not is_valid_share_count(current_shares)
+            or not is_valid_share_count(base_shares)
         ):
             return None
-        if math.isnan(current_shares) or math.isnan(base_shares):
-            return None
+        assert current_shares is not None
+        assert base_shares is not None
         # Adjust to baseline share count (latest quarterly disclosure) so splits reduce historical EPS/BPS.
         adjusted = value * (current_shares / base_shares)
         return self._round_or_none(adjusted)
@@ -1614,7 +1598,17 @@ class FundamentalsService:
         if q_forecast is None:
             return
 
-        rounded_q_forecast = round(q_forecast, 2)
+        baseline_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
+        adjusted_q_forecast = self._compute_adjusted_value(
+            q_forecast,
+            latest_q.ShOutFY,
+            baseline_shares,
+        )
+        rounded_q_forecast = (
+            adjusted_q_forecast
+            if adjusted_q_forecast is not None
+            else round(q_forecast, 2)
+        )
 
         # Annotate when Q forecast differs from FY forecast
         if latest_fy.forecastEps is None or rounded_q_forecast != latest_fy.forecastEps:

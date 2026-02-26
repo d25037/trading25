@@ -114,6 +114,7 @@ uv run pyright src/              # 型チェック
 - `/api/optimize/jobs/{id}` は `best_score` / `total_combinations` に加えて `best_params` / `worst_score` / `worst_params` を返し、最適化ジョブ結果カードで best/worst 条件を比較表示できる
 - `forward_eps_growth` / `peg_ratio` は FY実績EPSを分母に固定し、`period_type=FY` でも必要時のみ追加取得した四半期 FEPS 修正を forecast 側へ反映する
 - Fundamental signal は `forecast_eps_above_recent_fy_actuals`（最新予想EPS > 直近FY X回の実績EPS最大値）をサポートし、`lookback_fy_count` で比較年数を指定できる。forecast revision 読み込み（screening/lab/optimization/backtest）を有効化する
+- statements の share-adjusted per-share 指標（EPS/BPS/配当/forecast）は latest quarterly baseline shares を共通SoTとし、forecast revision 併用時も `base_df`/`revision_df` を同一 baseline で調整する。fundamentals/ranking も同じ基準解決を使い、比較軸の不整合を防ぐ
 - Fundamental signal system は `cfo_margin` / `simple_fcf_margin`（売上高比マージン判定）をサポートし、`OperatingCashFlow` / `InvestingCashFlow` / `Sales` をデータ要件とする
 - Fundamental signal は `cfo_to_net_profit_ratio`（営業CF/純利益）をサポートし、`consecutive_periods` 判定は比率値同値時でも開示更新（OperatingCashFlow/Profit）を起点に連続判定する
 - Fundamentals は EPS に加えて `dividend_fy` / `forecast_dividend_fy` と `payout_ratio` / `forecast_payout_ratio`（実績/予想）を SoT とし、Charts の Fundamentals panel と Backtest Signal system（`forward_dividend_growth` / `dividend_per_share_growth` / `payout_ratio` / `forward_payout_ratio`）で同一指標を使う。配当性向は API 返却時に percent 単位へ正規化し、decimal スケール値（例: 0.283）を 28.3% として扱う
