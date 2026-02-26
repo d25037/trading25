@@ -30,8 +30,12 @@ async def _create_job(
     *,
     name: str = "dataset",
     preset: str = "quickTesting",
+    resume: bool = False,
+    timeout_minutes: int = 35,
 ):
-    job = await manager.create_job(DatasetJobData(name=name, preset=preset))
+    job = await manager.create_job(
+        DatasetJobData(name=name, preset=preset, resume=resume, timeout_minutes=timeout_minutes)
+    )
     assert job is not None
     return job
 
@@ -352,6 +356,66 @@ async def test_build_dataset_handles_empty_stock_rows_and_progress_mod10(monkeyp
     writer = DummyWriter.instances[-1]
     assert writer.stock_data_calls == 0
     assert writer.closed is True
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_resume_skips_existing_stock_data_codes(monkeypatch, isolated_dataset_manager):
+    job = await _create_job(isolated_dataset_manager, preset="quick", resume=True)
+    resolver = MagicMock()
+    resolver.get_db_path.return_value = "/tmp/resume.db"
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    class DummyWriter:
+        def __init__(self, db_path: str):
+            return None
+
+        def upsert_stocks(self, rows):
+            return len(rows)
+
+        def set_dataset_info(self, key: str, value: str):
+            return None
+
+        def get_existing_stock_data_codes(self):
+            return {"1111"}
+
+        def upsert_stock_data(self, rows):
+            return len(rows)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
+
+    fetched_codes: list[str] = []
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [
+                _master_row("11110", "A"),
+                _master_row("22220", "B"),
+            ]
+        if path == "/equities/bars/daily":
+            code = params.get("code") if params else None
+            if code is not None:
+                fetched_codes.append(str(code))
+            return [_daily_bar_row()]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    result = await _build_dataset(job, resolver, client)
+    assert result.success is True
+    assert fetched_codes == ["22220"]
+    assert result.processedStocks == 1
 
 
 @pytest.mark.asyncio
@@ -732,6 +796,32 @@ async def test_start_dataset_build_marks_failed_on_timeout(monkeypatch, isolated
     assert stored is not None
     assert stored.status == JobStatus.FAILED
     assert stored.error == "Dataset build timed out after 35 minutes"
+
+
+@pytest.mark.asyncio
+async def test_start_dataset_build_marks_failed_on_custom_timeout(monkeypatch, isolated_dataset_manager):
+    data = DatasetJobData(name="timeout-custom", preset="quickTesting", timeout_minutes=90)
+    resolver = MagicMock()
+    client = AsyncMock()
+    timeout_values: list[int] = []
+
+    async def fake_wait_for(coro, timeout):
+        coro.close()
+        timeout_values.append(timeout)
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(dataset_builder_service.asyncio, "wait_for", fake_wait_for)
+
+    job = await start_dataset_build(data, resolver, client)
+    assert job is not None
+    assert job.task is not None
+    await job.task
+
+    stored = isolated_dataset_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status == JobStatus.FAILED
+    assert stored.error == "Dataset build timed out after 90 minutes"
+    assert timeout_values == [90 * 60]
 
 
 @pytest.mark.asyncio

@@ -167,7 +167,7 @@ describe('DatasetCreateForm', () => {
         name: 'quickTesting.db',
         preset: 'quickTesting',
         overwrite: false,
-        timeoutMinutes: 30,
+        timeoutMinutes: 35,
       },
       expect.any(Object)
     );
@@ -188,7 +188,7 @@ describe('DatasetCreateForm', () => {
       {
         name: 'quickTesting.db',
         preset: 'quickTesting',
-        timeoutMinutes: 30,
+        timeoutMinutes: 35,
       },
       expect.any(Object)
     );

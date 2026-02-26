@@ -66,7 +66,7 @@ export function DatasetList() {
   const handleResume = (item: DatasetListItem) => {
     if (!item.preset) return;
     resumeDataset.mutate(
-      { name: item.name, preset: item.preset, timeoutMinutes: 30 },
+      { name: item.name, preset: item.preset },
       {
         onSuccess: (resp) => {
           setActiveDatasetJobId(resp.jobId);

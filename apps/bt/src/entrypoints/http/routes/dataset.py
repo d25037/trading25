@@ -234,7 +234,12 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
             detail=f'Dataset "{name_stem}" already exists. Use overwrite=true to replace.',
         )
 
-    data = DatasetJobData(name=name_stem, preset=body.preset, overwrite=body.overwrite)
+    data = DatasetJobData(
+        name=name_stem,
+        preset=body.preset,
+        overwrite=body.overwrite,
+        timeout_minutes=body.timeoutMinutes,
+    )
     job = await start_dataset_build(data, resolver, jquants_client)
     if job is None:
         raise HTTPException(status_code=409, detail="Another dataset build job is already running")
@@ -279,7 +284,12 @@ async def resume_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
     if not os.path.exists(db_path):
         raise HTTPException(status_code=404, detail=f'Dataset "{name_stem}" not found')
 
-    data = DatasetJobData(name=name_stem, preset=body.preset, resume=True)
+    data = DatasetJobData(
+        name=name_stem,
+        preset=body.preset,
+        resume=True,
+        timeout_minutes=body.timeoutMinutes,
+    )
     job = await start_dataset_build(data, resolver, jquants_client)
     if job is None:
         raise HTTPException(status_code=409, detail="Another dataset build job is already running")

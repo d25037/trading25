@@ -13,20 +13,29 @@ export class DatasetClient extends BaseApiClient {
   /**
    * Start a dataset creation job
    */
-  async startDatasetCreate(name: string, preset: DatasetPreset, overwrite = false): Promise<DatasetCreateJobResponse> {
+  async startDatasetCreate(
+    name: string,
+    preset: DatasetPreset,
+    overwrite = false,
+    timeoutMinutes?: number
+  ): Promise<DatasetCreateJobResponse> {
     return this.request<DatasetCreateJobResponse>('/api/dataset', {
       method: 'POST',
-      body: JSON.stringify({ name, preset, overwrite }),
+      body: JSON.stringify({ name, preset, overwrite, ...(timeoutMinutes !== undefined ? { timeoutMinutes } : {}) }),
     });
   }
 
   /**
    * Start a dataset resume job (fetch missing data for existing dataset)
    */
-  async startDatasetResume(name: string, preset: DatasetPreset): Promise<DatasetCreateJobResponse> {
+  async startDatasetResume(
+    name: string,
+    preset: DatasetPreset,
+    timeoutMinutes?: number
+  ): Promise<DatasetCreateJobResponse> {
     return this.request<DatasetCreateJobResponse>('/api/dataset/resume', {
       method: 'POST',
-      body: JSON.stringify({ name, preset }),
+      body: JSON.stringify({ name, preset, ...(timeoutMinutes !== undefined ? { timeoutMinutes } : {}) }),
     });
   }
 

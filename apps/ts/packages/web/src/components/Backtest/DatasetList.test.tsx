@@ -173,7 +173,6 @@ describe('DatasetList', () => {
       {
         name: 'alpha.db',
         preset: 'primeMarket',
-        timeoutMinutes: 30,
       },
       expect.objectContaining({
         onSuccess: expect.any(Function),

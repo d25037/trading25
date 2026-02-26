@@ -124,3 +124,28 @@ class DatasetWriter(BaseDbAccess):
     def get_stock_data_count(self) -> int:
         with self.engine.connect() as conn:
             return conn.execute(select(func.count()).select_from(ds_stock_data)).scalar() or 0
+
+    def get_existing_stock_data_codes(self) -> set[str]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(ds_stock_data.c.code).distinct()).fetchall()
+        return {str(row[0]) for row in rows if row and row[0] is not None}
+
+    def has_topix_data(self) -> bool:
+        with self.engine.connect() as conn:
+            count = conn.execute(select(func.count()).select_from(ds_topix_data)).scalar() or 0
+        return count > 0
+
+    def get_existing_index_codes(self) -> set[str]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(ds_indices_data.c.code).distinct()).fetchall()
+        return {str(row[0]) for row in rows if row and row[0] is not None}
+
+    def get_existing_margin_codes(self) -> set[str]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(margin_data.c.code).distinct()).fetchall()
+        return {str(row[0]) for row in rows if row and row[0] is not None}
+
+    def get_existing_statement_codes(self) -> set[str]:
+        with self.engine.connect() as conn:
+            rows = conn.execute(select(statements.c.code).distinct()).fetchall()
+        return {str(row[0]) for row in rows if row and row[0] is not None}

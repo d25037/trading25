@@ -357,8 +357,8 @@ EXAMPLES:
     try {
       spinner.text = isResume ? 'Starting dataset resume job...' : 'Starting dataset creation job...';
       const createResponse = isResume
-        ? await datasetClient.startDatasetResume(output, normalizedPreset)
-        : await datasetClient.startDatasetCreate(output, normalizedPreset, overwrite ?? false);
+        ? await datasetClient.startDatasetResume(output, normalizedPreset, timeoutMinutes)
+        : await datasetClient.startDatasetCreate(output, normalizedPreset, overwrite ?? false, timeoutMinutes);
 
       logDebug(isDebug, `Job ID: ${createResponse.jobId}, Estimated: ${createResponse.estimatedTime || 'unknown'}`);
 
