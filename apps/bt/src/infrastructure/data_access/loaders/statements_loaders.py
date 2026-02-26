@@ -15,6 +15,10 @@ from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodTy
 from src.infrastructure.data_access.clients import get_dataset_client
 from src.infrastructure.data_access.loaders.utils import extract_dataset_name
 from src.shared.models.types import normalize_period_type
+from src.shared.utils.share_adjustment import (
+    is_valid_share_count,
+    resolve_latest_quarterly_baseline_shares,
+)
 
 # Backward-compatible symbol for tests patching module-local DatasetAPIClient.
 DatasetAPIClient = get_dataset_client
@@ -110,39 +114,71 @@ _FORWARD_FORECAST_COLUMNS = [
 ]
 
 
-def _resolve_baseline_shares(df: pd.DataFrame) -> float | None:
-    """Resolve baseline shares from the latest quarterly disclosure within range."""
-    if df.empty or "SharesOutstanding" not in df.columns:
-        return None
-
-    df_sorted = df.sort_index()
-    shares = df_sorted["SharesOutstanding"]
-
-    if "TypeOfCurrentPeriod" in df_sorted.columns:
-        period_types = df_sorted["TypeOfCurrentPeriod"].map(normalize_period_type)
-        quarterly_mask = period_types.isin(["1Q", "2Q", "3Q"])
-        quarterly_valid = quarterly_mask & shares.notna() & (shares != 0)
-        if quarterly_valid.any():
-            latest_idx = shares[quarterly_valid].index.max()
-            return float(shares.loc[latest_idx])
-
-    # Fallback: latest disclosure with shares (any period type)
-    valid_any = shares.notna() & (shares != 0)
-    if valid_any.any():
-        latest_idx = shares[valid_any].index.max()
-        return float(shares.loc[latest_idx])
-
+def _resolve_first_available_column(
+    df: pd.DataFrame,
+    candidates: tuple[str, ...],
+) -> str | None:
+    for column in candidates:
+        if column in df.columns:
+            return column
     return None
+
+
+def _resolve_shares_column(df: pd.DataFrame) -> str | None:
+    return _resolve_first_available_column(df, ("SharesOutstanding", "sharesOutstanding"))
+
+
+def _resolve_period_column(df: pd.DataFrame) -> str | None:
+    return _resolve_first_available_column(
+        df,
+        ("TypeOfCurrentPeriod", "typeOfCurrentPeriod"),
+    )
+
+
+def _iter_share_snapshots(df: pd.DataFrame):
+    if df.empty:
+        return
+    shares_column = _resolve_shares_column(df)
+    if shares_column is None:
+        return
+    period_column = _resolve_period_column(df)
+    df_sorted = df.sort_index()
+    for disclosed_date, row in df_sorted.iterrows():
+        period_type = row.get(period_column) if period_column is not None else None
+        yield (period_type, disclosed_date, row.get(shares_column))
+
+
+def _resolve_baseline_shares(df: pd.DataFrame) -> float | None:
+    """Resolve baseline shares from latest quarterly disclosure within range."""
+    snapshots = list(_iter_share_snapshots(df) or [])
+    if not snapshots:
+        return None
+    return resolve_latest_quarterly_baseline_shares(snapshots)
+
+
+def resolve_shared_baseline_shares(
+    base_df: pd.DataFrame,
+    revision_df: pd.DataFrame | None = None,
+) -> float | None:
+    """Resolve one baseline shares value shared by base/revision statement frames."""
+    snapshots = list(_iter_share_snapshots(base_df) or [])
+    if revision_df is not None and not revision_df.empty:
+        snapshots.extend(list(_iter_share_snapshots(revision_df) or []))
+    if not snapshots:
+        return None
+    return resolve_latest_quarterly_baseline_shares(snapshots)
 
 
 def _compute_adjusted_series(
     raw: pd.Series, shares: pd.Series, baseline_shares: float | None
 ) -> pd.Series:
     """Compute adjusted series using share count ratio, fallback to raw when not possible."""
-    if baseline_shares is None or baseline_shares == 0 or pd.isna(baseline_shares):
+    if not is_valid_share_count(baseline_shares):
         return raw
+    assert baseline_shares is not None
+    baseline = float(baseline_shares)
     mask = raw.notna() & shares.notna() & (shares != 0)
-    adjusted = raw.where(~mask, raw * (shares / baseline_shares))
+    adjusted = raw.where(~mask, raw * (shares / baseline))
     return adjusted
 
 
@@ -260,7 +296,10 @@ def merge_forward_forecast_revision(
     return merged
 
 
-def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
+def transform_statements_df(
+    df: pd.DataFrame,
+    baseline_shares: float | None = None,
+) -> pd.DataFrame:
     """Batch/個別共用: APIレスポンスDataFrameをVectorBT形式に変換
 
     カラム名のリネーム、数値型変換、派生指標(ROE/ROA/OperatingMargin)計算、
@@ -272,12 +311,14 @@ def transform_statements_df(df: pd.DataFrame) -> pd.DataFrame:
             df[col] = pd.to_numeric(df[col], errors="coerce")
 
     # Share-based adjustments (baseline within the available date range)
-    baseline_shares = _resolve_baseline_shares(df)
+    resolved_baseline_shares = (
+        baseline_shares if is_valid_share_count(baseline_shares) else _resolve_baseline_shares(df)
+    )
     shares = df["SharesOutstanding"] if "SharesOutstanding" in df.columns else None
     for raw_col, adjusted_col in _ADJUSTED_COLUMN_MAP.items():
         if raw_col in df.columns:
             df[adjusted_col] = (
-                _compute_adjusted_series(df[raw_col], shares, baseline_shares)
+                _compute_adjusted_series(df[raw_col], shares, resolved_baseline_shares)
                 if shares is not None
                 else df[raw_col]
             )
@@ -378,13 +419,18 @@ def load_statements_data(
             f"with period_type: {period_type}"
         )
 
+    shared_baseline_shares = resolve_shared_baseline_shares(df, revision_df)
+
     # カラム名統一・数値変換・派生指標計算
-    df = transform_statements_df(df)
+    df = transform_statements_df(df, baseline_shares=shared_baseline_shares)
 
     # 決算データを日次インデックスに前方補完（次の決算発表まで値を継続）
     df = df.reindex(daily_index).ffill()
     if revision_df is not None and not revision_df.empty:
-        revision_daily = transform_statements_df(revision_df).reindex(daily_index).ffill()
+        revision_daily = transform_statements_df(
+            revision_df,
+            baseline_shares=shared_baseline_shares,
+        ).reindex(daily_index).ffill()
         df = merge_forward_forecast_revision(df, revision_daily)
 
     logger.debug(f"財務諸表データ読み込み成功: {stock_code} (period_type={period_type})")

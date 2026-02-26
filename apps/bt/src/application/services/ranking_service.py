@@ -24,6 +24,10 @@ from src.entrypoints.http.schemas.ranking import (
     Rankings,
 )
 from src.shared.models.types import normalize_period_type
+from src.shared.utils.share_adjustment import (
+    is_valid_share_count as _is_valid_share_count_shared,
+    resolve_latest_quarterly_baseline_shares,
+)
 
 
 def _now_iso() -> str:
@@ -90,11 +94,7 @@ def _round_ratio(value: float) -> float:
 
 
 def _is_valid_share_count(value: float | None) -> bool:
-    if value is None:
-        return False
-    if value == 0:
-        return False
-    return not math.isnan(value)
+    return _is_valid_share_count_shared(value)
 
 
 def _adjust_per_share_value(
@@ -329,23 +329,11 @@ class RankingService:
         return self._reader.query(sql, (date, *market_params))
 
     def _resolve_baseline_shares(self, rows: list[_StatementRow]) -> float | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
-        quarterly = [
-            row.shares_outstanding
-            for row in sorted_rows
-            if row.period_type in _QUARTER_PERIODS and _is_valid_share_count(row.shares_outstanding)
+        snapshots = [
+            (row.period_type, row.disclosed_date, row.shares_outstanding)
+            for row in rows
         ]
-        if quarterly:
-            return quarterly[0]
-
-        fallback = [
-            row.shares_outstanding
-            for row in sorted_rows
-            if _is_valid_share_count(row.shares_outstanding)
-        ]
-        if fallback:
-            return fallback[0]
-        return None
+        return resolve_latest_quarterly_baseline_shares(snapshots)
 
     def _resolve_latest_actual_snapshot(
         self,

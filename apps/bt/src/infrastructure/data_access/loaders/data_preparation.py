@@ -30,6 +30,7 @@ from .multi_asset_loaders import (
 from .statements_loaders import (
     load_statements_data,
     merge_forward_forecast_revision,
+    resolve_shared_baseline_shares,
     transform_statements_df,
 )
 from .stock_loaders import get_available_stocks, load_stock_data
@@ -340,7 +341,19 @@ def prepare_multi_data(
                         )
             for stock_code, stmt_df in statements_batch.items():
                 if stock_code in result and not stmt_df.empty:
-                    stmt_df = transform_statements_df(stmt_df)
+                    revision_raw_df = (
+                        revision_batch.get(stock_code)
+                        if should_merge_forecast_revision
+                        else None
+                    )
+                    shared_baseline_shares = resolve_shared_baseline_shares(
+                        stmt_df,
+                        revision_raw_df,
+                    )
+                    stmt_df = transform_statements_df(
+                        stmt_df,
+                        baseline_shares=shared_baseline_shares,
+                    )
                     stock_data = result[stock_code]["daily"]
                     daily_index = pd.DatetimeIndex(stock_data.index)
                     stmt_reindexed = stmt_df.reindex(daily_index, method="ffill")
@@ -349,7 +362,10 @@ def prepare_multi_data(
                         and stock_code in revision_batch
                         and not revision_batch[stock_code].empty
                     ):
-                        revision_df = transform_statements_df(revision_batch[stock_code])
+                        revision_df = transform_statements_df(
+                            revision_batch[stock_code],
+                            baseline_shares=shared_baseline_shares,
+                        )
                         revision_reindexed = revision_df.reindex(
                             daily_index, method="ffill"
                         )

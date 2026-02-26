@@ -15,6 +15,7 @@ from loguru import logger
 from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
 from src.infrastructure.data_access.loaders.statements_loaders import (
     merge_forward_forecast_revision,
+    resolve_shared_baseline_shares,
     transform_statements_df,
 )
 from src.infrastructure.db.market.market_reader import MarketDbReader
@@ -316,11 +317,18 @@ def _attach_statements(
             continue
 
         try:
-            base_daily = transform_statements_df(base_df).reindex(daily_index).ffill()
+            revision_df = revision_map.get(code) if should_merge_forecast_revision else None
+            shared_baseline_shares = resolve_shared_baseline_shares(base_df, revision_df)
+            base_daily = transform_statements_df(
+                base_df,
+                baseline_shares=shared_baseline_shares,
+            ).reindex(daily_index).ffill()
             if should_merge_forecast_revision:
-                revision_df = revision_map.get(code)
                 if revision_df is not None and not revision_df.empty:
-                    revision_daily = transform_statements_df(revision_df).reindex(daily_index).ffill()
+                    revision_daily = transform_statements_df(
+                        revision_df,
+                        baseline_shares=shared_baseline_shares,
+                    ).reindex(daily_index).ffill()
                     base_daily = merge_forward_forecast_revision(base_daily, revision_daily)
             result.setdefault(code, {})["statements_daily"] = base_daily
         except Exception as e:  # noqa: BLE001 - screening should continue
