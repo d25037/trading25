@@ -468,6 +468,127 @@ async def test_build_dataset_topix_rows_true_and_false_branches(
 
 
 @pytest.mark.asyncio
+async def test_build_dataset_fetches_sector_indices_from_catalog(monkeypatch, isolated_dataset_manager):
+    job = await _create_job(isolated_dataset_manager, preset="indices")
+    resolver = MagicMock()
+    resolver.get_db_path.return_value = "/tmp/indices.db"
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=True,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    monkeypatch.setattr(dataset_builder_service, "get_index_catalog_codes", lambda: {"0040", "0050", "0500"})
+
+    class DummyWriter:
+        instances: list["DummyWriter"] = []
+
+        def __init__(self, db_path: str):
+            self.indices_calls = 0
+            DummyWriter.instances.append(self)
+
+        def upsert_stocks(self, rows):
+            return len(rows)
+
+        def set_dataset_info(self, key: str, value: str):
+            return None
+
+        def upsert_stock_data(self, rows):
+            return len(rows)
+
+        def upsert_indices_data(self, rows):
+            self.indices_calls += 1
+            return len(rows)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        if path == "/indices/bars/daily":
+            code = params.get("code") if params else None
+            if code in {"0040", "0050"}:
+                return [{"Date": "2026-01-01", "Code": code, "O": 1, "H": 2, "L": 1, "C": 2}]
+            return []
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    result = await _build_dataset(job, resolver, client)
+    assert result.success is True
+    writer = DummyWriter.instances[-1]
+    assert writer.indices_calls == 2
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_skips_incomplete_ohlcv_rows_without_failing_stock(monkeypatch, isolated_dataset_manager):
+    job = await _create_job(isolated_dataset_manager, preset="ohlcv")
+    resolver = MagicMock()
+    resolver.get_db_path.return_value = "/tmp/ohlcv.db"
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    class DummyWriter:
+        instances: list["DummyWriter"] = []
+
+        def __init__(self, db_path: str):
+            self.stock_data_rows = 0
+            DummyWriter.instances.append(self)
+
+        def upsert_stocks(self, rows):
+            return len(rows)
+
+        def set_dataset_info(self, key: str, value: str):
+            return None
+
+        def upsert_stock_data(self, rows):
+            self.stock_data_rows += len(rows)
+            return len(rows)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [
+                _daily_bar_row(),
+                {"Date": "2026-01-02", "O": None, "H": 2, "L": 1, "C": 2, "Vo": 100},
+            ]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    result = await _build_dataset(job, resolver, client)
+    assert result.success is True
+    assert result.processedStocks == 1
+    assert result.warnings is not None
+    assert any("Skipped incomplete OHLCV rows" in warning for warning in result.warnings)
+    writer = DummyWriter.instances[-1]
+    assert writer.stock_data_rows == 1
+
+
+@pytest.mark.asyncio
 async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="statements")
     resolver = MagicMock()
