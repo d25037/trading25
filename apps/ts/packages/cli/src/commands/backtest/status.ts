@@ -4,7 +4,7 @@
  * bt サーバーステータス確認コマンド
  */
 
-import { BacktestClient } from '@trading25/clients-ts/backtest';
+import { BacktestClient } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';

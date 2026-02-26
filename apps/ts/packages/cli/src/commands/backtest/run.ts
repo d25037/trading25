@@ -56,7 +56,7 @@ ${CLI_NAME} backtest run range_break_v5 --no-wait`,
     }
 
     // Dynamic import to avoid circular dependencies
-    const { BacktestClient } = await import('@trading25/clients-ts/backtest');
+    const { BacktestClient } = await import('@trading25/api-clients/backtest');
 
     const client = new BacktestClient({ baseUrl: btUrl });
 

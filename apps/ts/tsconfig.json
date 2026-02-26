@@ -29,8 +29,8 @@
 
     "baseUrl": "./",
     "paths": {
-      "@trading25/clients-ts": ["packages/clients-ts/src"],
-      "@trading25/clients-ts/*": ["packages/clients-ts/src/*"],
+      "@trading25/api-clients": ["packages/api-clients/src"],
+      "@trading25/api-clients/*": ["packages/api-clients/src/*"],
       "@trading25/shared": ["packages/shared/src"],
       "@trading25/shared/*": ["packages/shared/src/*"],
       "@trading25/web": ["packages/web/src"],

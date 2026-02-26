@@ -3,7 +3,7 @@
  * Generator-based streaming to optimize memory usage for large datasets
  */
 
-import { type BatchExecutor, createBatchExecutor } from '@trading25/clients-ts/base/BatchExecutor';
+import { type BatchExecutor, createBatchExecutor } from '@trading25/api-clients/base/BatchExecutor';
 import { resolveDatasetConcurrency } from '../backend-concurrency';
 import type { ApiClient } from '../api-client';
 import type { DateRange, MarginData, ProgressCallback, StockData } from '../types';

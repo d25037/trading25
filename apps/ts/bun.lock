@@ -22,7 +22,7 @@
         "trading25": "./dist/index.js",
       },
       "dependencies": {
-        "@trading25/clients-ts": "workspace:*",
+        "@trading25/api-clients": "workspace:*",
         "@trading25/shared": "workspace:*",
         "chalk": "^5.3.0",
         "gunshi": "^0.27.0",
@@ -33,8 +33,8 @@
         "@gunshi/docs": "^0.27.0",
       },
     },
-    "packages/clients-ts": {
-      "name": "@trading25/clients-ts",
+    "packages/api-clients": {
+      "name": "@trading25/api-clients",
       "version": "0.0.1",
       "dependencies": {
         "zod": "^4.1.5",
@@ -44,7 +44,7 @@
       "name": "@trading25/shared",
       "version": "0.0.1",
       "dependencies": {
-        "@trading25/clients-ts": "workspace:*",
+        "@trading25/api-clients": "workspace:*",
         "zod": "^4.1.5",
       },
       "devDependencies": {
@@ -63,7 +63,7 @@
         "@radix-ui/react-switch": "^1.2.5",
         "@tanstack/react-query": "^5.85.0",
         "@tanstack/react-router": "^1.132.21",
-        "@trading25/clients-ts": "workspace:*",
+        "@trading25/api-clients": "workspace:*",
         "@trading25/shared": "workspace:*",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -424,7 +424,7 @@
 
     "@trading25/cli": ["@trading25/cli@workspace:packages/cli"],
 
-    "@trading25/clients-ts": ["@trading25/clients-ts@workspace:packages/clients-ts"],
+    "@trading25/api-clients": ["@trading25/api-clients@workspace:packages/api-clients"],
 
     "@trading25/shared": ["@trading25/shared@workspace:packages/shared"],
 

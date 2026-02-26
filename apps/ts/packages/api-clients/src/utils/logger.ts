@@ -16,7 +16,7 @@ function reportBrowserDetectionError(error: unknown): void {
   }
   hasReportedBrowserDetectionError = true;
   console.warn(
-    `[clients-ts logger] Browser environment detection failed; defaulting to server logger mode: ${error instanceof Error ? error.message : String(error)}`
+    `[api-clients logger] Browser environment detection failed; defaulting to server logger mode: ${error instanceof Error ? error.message : String(error)}`
   );
 }
 

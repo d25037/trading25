@@ -10,7 +10,7 @@
 | `packages/web` | React 19 + Vite フロントエンド | Active |
 | `packages/cli` | Gunshi CLI（db/dataset/jquants/backtest/analysis の運用・自動化） | Active |
 | `packages/shared` | 共有ロジック、DBアクセス、型公開、`bt:sync` | Active |
-| `packages/clients-ts` | FastAPI クライアント（backtest/JQuants） | Active |
+| `packages/api-clients` | FastAPI クライアント（backtest/JQuants） | Active |
 
 旧 `packages/api`（Hono）は撤去済みです。
 

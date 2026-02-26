@@ -3,7 +3,7 @@
  * are compatible with OpenAPI-generated types from trading25-bt.
  *
  * If this file fails to compile (tsc --noEmit), it means the canonical manual types
- * in @trading25/clients-ts/backtest and the bt OpenAPI spec have drifted apart.
+ * in @trading25/api-clients/backtest and the bt OpenAPI spec have drifted apart.
  *
  * This file is never executed at runtime — it only participates in type checking.
  *
@@ -69,7 +69,7 @@ import type {
   StrategyUpdateResponse as ManualStrategyUpdateResponse,
   StrategyValidationRequest as ManualStrategyValidationRequest,
   StrategyValidationResponse as ManualStrategyValidationResponse,
-} from '@trading25/clients-ts/backtest';
+} from '@trading25/api-clients/backtest';
 import type { components } from './bt-api-types.js';
 
 type Schemas = components['schemas'];

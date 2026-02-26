@@ -4,7 +4,7 @@
   "type": "module",
   "workspaces": [
     "packages/cli",
-    "packages/clients-ts",
+    "packages/api-clients",
     "packages/shared",
     "packages/web"
   ],
@@ -14,7 +14,7 @@
     "cli:build": "bun scripts/tasks.ts cli:build",
     "cli:dev": "bun scripts/tasks.ts cli:dev",
     "cli:run": "bun scripts/tasks.ts cli:run",
-    "clients:build": "bun scripts/tasks.ts clients:build",
+    "api-clients:build": "bun scripts/tasks.ts api-clients:build",
     "core:test": "bun scripts/tasks.ts core:test",
     "coverage:check": "bun scripts/tasks.ts coverage:check",
     "packages:test": "bun scripts/tasks.ts packages:test",

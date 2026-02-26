@@ -41,7 +41,7 @@ mock.module('chalk', () => {
   };
 });
 
-mock.module('@trading25/clients-ts/backtest', () => ({
+mock.module('@trading25/api-clients/backtest', () => ({
   BacktestApiError: MockBacktestApiError,
 }));
 

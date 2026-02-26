@@ -1,4 +1,4 @@
-import { HttpRequestError, requestJson } from '@trading25/clients-ts/base/http-client';
+import { HttpRequestError, requestJson } from '@trading25/api-clients/base/http-client';
 
 export type QueryPrimitive = string | number | boolean | undefined;
 
