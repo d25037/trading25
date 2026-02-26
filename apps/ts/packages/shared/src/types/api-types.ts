@@ -247,7 +247,12 @@ export interface ApiFundamentalDataPoint {
   forecastEps?: number | null;
   /** Change rate from actual EPS to forecast EPS (%) */
   forecastEpsChangeRate?: number | null;
+  /** Whether latest forecast EPS exceeds recent FY actual EPS values (lookback window) */
+  forecastEpsAboveRecentFyActuals?: boolean | null;
+  /** Lookback FY count used for forecast-vs-actual EPS comparison */
+  forecastEpsLookbackFyCount?: number;
   /** Whether latest forecast EPS exceeds all historical actual EPS values */
+  /** @deprecated Use forecastEpsAboveRecentFyActuals */
   forecastEpsAboveAllHistoricalActuals?: boolean | null;
   /** Revised forecast EPS from latest quarterly statement (円) */
   revisedForecastEps?: number | null;
@@ -280,6 +285,8 @@ export interface ApiFundamentalsResponse {
   dailyValuation?: ApiDailyValuationDataPoint[];
   /** Rolling average period used for trading value to market cap ratio (days) */
   tradingValuePeriod: number;
+  /** Lookback FY count used for forecast-vs-actual EPS comparison */
+  forecastEpsLookbackFyCount: number;
   /** Last updated timestamp */
   lastUpdated: string;
 }

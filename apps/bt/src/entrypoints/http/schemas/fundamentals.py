@@ -33,6 +33,12 @@ class FundamentalsComputeRequest(BaseModel):
         le=250,
         description="Rolling period (days) for market cap to trading value ratio",
     )
+    forecast_eps_lookback_fy_count: int = Field(
+        default=3,
+        ge=1,
+        le=20,
+        description="Lookback FY count for forecast EPS vs recent actual EPS comparison",
+    )
 
 
 class FundamentalDataPoint(BaseModel):
@@ -129,9 +135,13 @@ class FundamentalDataPoint(BaseModel):
     forecastEpsChangeRate: float | None = Field(
         None, description="Forecast EPS change rate (%)"
     )
+    forecastEpsAboveRecentFyActuals: bool | None = Field(
+        None,
+        description="Whether latest forecast EPS is greater than recent FY actual EPS values (lookback window)",
+    )
     forecastEpsAboveAllHistoricalActuals: bool | None = Field(
         None,
-        description="Whether latest forecast EPS is greater than all historical actual EPS values",
+        description="Deprecated: use forecastEpsAboveRecentFyActuals",
     )
 
     # Revised forecast (from latest Q)
@@ -183,5 +193,9 @@ class FundamentalsComputeResponse(BaseModel):
     )
     tradingValuePeriod: int = Field(
         ..., description="Rolling period used for market cap to trading value ratio"
+    )
+    forecastEpsLookbackFyCount: int = Field(
+        default=3,
+        description="Lookback FY count used for forecast EPS comparison indicator",
     )
     lastUpdated: str = Field(..., description="Last updated timestamp (ISO 8601)")

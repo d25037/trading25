@@ -312,7 +312,7 @@ class ParameterOptimizationEngine:
             fundamental.enabled
             and (
                 fundamental.forward_eps_growth.enabled
-                or fundamental.forecast_eps_above_all_actuals.enabled
+                or fundamental.forecast_eps_above_recent_fy_actuals.enabled
                 or fundamental.peg_ratio.enabled
                 or fundamental.forward_dividend_growth.enabled
                 or fundamental.forward_payout_ratio.enabled
@@ -351,6 +351,8 @@ class ParameterOptimizationEngine:
 
             for signal_name in (
                 "forward_eps_growth",
+                "forecast_eps_above_recent_fy_actuals",
+                # Backward compatibility for legacy key
                 "forecast_eps_above_all_actuals",
                 "peg_ratio",
                 "forward_dividend_growth",
@@ -360,7 +362,10 @@ class ParameterOptimizationEngine:
                 if not isinstance(signal_cfg, dict):
                     continue
 
-                signal_enabled = bool(getattr(base_fundamental, signal_name).enabled)
+                base_signal = getattr(base_fundamental, signal_name, None)
+                signal_enabled = bool(
+                    getattr(base_signal, "enabled", False)
+                )
                 if not signal_enabled:
                     signal_enabled_values = signal_cfg.get("enabled")
                     if isinstance(signal_enabled_values, list):

@@ -20,10 +20,18 @@ const LIMIT_OPTIONS = [
 const EPS_FILTER_OPTIONS = [
   { value: 'all', label: 'All stocks' },
   {
-    value: 'forecastAboveAllActuals',
-    label: 'Latest Forecast EPS > All Actual EPS',
+    value: 'forecastAboveRecentFyActuals',
+    label: 'Latest Forecast EPS > Recent FY Actual EPS',
   },
 ] as const;
+
+const LOOKBACK_FY_COUNT_OPTIONS = [
+  { value: 1, label: '1 FY' },
+  { value: 2, label: '2 FY' },
+  { value: 3, label: '3 FY' },
+  { value: 5, label: '5 FY' },
+  { value: 10, label: '10 FY' },
+];
 
 interface FundamentalRankingFiltersProps {
   params: FundamentalRankingParams;
@@ -34,7 +42,9 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
   const updateParam = <K extends keyof FundamentalRankingParams>(key: K, value: FundamentalRankingParams[K]) => {
     onChange({ ...params, [key]: value });
   };
-  const epsFilterValue = params.forecastAboveAllActuals ? 'forecastAboveAllActuals' : 'all';
+  const forecastFilterEnabled = params.forecastAboveRecentFyActuals ?? params.forecastAboveAllActuals ?? false;
+  const epsFilterValue = forecastFilterEnabled ? 'forecastAboveRecentFyActuals' : 'all';
+  const lookbackFyCount = params.forecastLookbackFyCount ?? 3;
 
   return (
     <Card className="glass-panel">
@@ -54,7 +64,7 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
           </Label>
           <Select
             value={epsFilterValue}
-            onValueChange={(value) => updateParam('forecastAboveAllActuals', value === 'forecastAboveAllActuals')}
+            onValueChange={(value) => updateParam('forecastAboveRecentFyActuals', value === 'forecastAboveRecentFyActuals')}
           >
             <SelectTrigger id="fundamental-ranking-eps-condition" className="h-8 text-xs">
               <SelectValue />
@@ -68,6 +78,13 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
             </SelectContent>
           </Select>
         </div>
+        <NumberSelect
+          value={lookbackFyCount}
+          onChange={(v) => updateParam('forecastLookbackFyCount', v)}
+          options={LOOKBACK_FY_COUNT_OPTIONS}
+          id="fundamental-ranking-lookback-fy-count"
+          label="Recent FY lookback"
+        />
         <NumberSelect
           value={params.limit || 20}
           onChange={(v) => updateParam('limit', v)}

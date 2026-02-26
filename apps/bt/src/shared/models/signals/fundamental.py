@@ -4,7 +4,7 @@
 
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import AliasChoices, BaseModel, Field
 
 from src.shared.models.types import StatementsPeriodType
 
@@ -88,12 +88,18 @@ class FundamentalSignalParams(BaseSignalParams):
             description="条件（above=閾値以上、below=閾値以下）",
         )
 
-    class ForecastEPSAboveAllActualsParams(BaseModel):
-        """最新予想EPSが過去すべての実績EPSより大きいシグナルパラメータ"""
+    class ForecastEPSAboveRecentFYActualsParams(BaseModel):
+        """最新予想EPSが直近FY実績EPSを上回るシグナルパラメータ"""
 
         enabled: bool = Field(
             default=False,
-            description="最新予想EPS > 過去実績EPSシグナル有効",
+            description="最新予想EPS > 直近FY実績EPSシグナル有効",
+        )
+        lookback_fy_count: int = Field(
+            default=3,
+            ge=1,
+            le=20,
+            description="比較対象に使う直近FY実績EPSの回数（年数）",
         )
 
     class ForwardDividendGrowthParams(BaseModel):
@@ -480,9 +486,13 @@ class FundamentalSignalParams(BaseSignalParams):
     forward_eps_growth: ForwardEPSParams = Field(
         default_factory=ForwardEPSParams, description="Forward EPS成長率シグナル"
     )
-    forecast_eps_above_all_actuals: ForecastEPSAboveAllActualsParams = Field(
-        default_factory=ForecastEPSAboveAllActualsParams,
-        description="最新予想EPSが過去すべての実績EPSより大きいシグナル",
+    forecast_eps_above_recent_fy_actuals: ForecastEPSAboveRecentFYActualsParams = Field(
+        default_factory=ForecastEPSAboveRecentFYActualsParams,
+        description="最新予想EPSが直近FY実績EPSの最大値より大きいシグナル",
+        validation_alias=AliasChoices(
+            "forecast_eps_above_recent_fy_actuals",
+            "forecast_eps_above_all_actuals",
+        ),
     )
     forward_dividend_growth: ForwardDividendGrowthParams = Field(
         default_factory=ForwardDividendGrowthParams,

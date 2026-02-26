@@ -46,7 +46,8 @@ const baseMetrics: ApiFundamentalDataPoint = {
   tradingValueToMarketCapRatio: 8.33,
   forecastEps: 350,
   forecastEpsChangeRate: 16.7,
-  forecastEpsAboveAllHistoricalActuals: true,
+  forecastEpsAboveRecentFyActuals: true,
+  forecastEpsLookbackFyCount: 3,
   revisedForecastEps: null,
   revisedForecastSource: null,
   prevCashFlowOperating: null,
@@ -71,7 +72,7 @@ describe('FundamentalsSummaryCard', () => {
     expect(screen.getByText('1.50x')).toBeInTheDocument();
     expect(screen.getByText('8.33x')).toBeInTheDocument();
     expect(screen.getByText('(17.43x)')).toBeInTheDocument();
-    expect(screen.getByText('予想EPS > 過去実績EPS: true')).toBeInTheDocument();
+    expect(screen.getByText('予想EPS > 直近FY3実績EPS: true')).toBeInTheDocument();
   });
 
   it('uses 15-day label by default', () => {
@@ -166,10 +167,21 @@ describe('FundamentalsSummaryCard', () => {
   it('renders false in forecast-vs-historical marker when flag is false', () => {
     const metrics: ApiFundamentalDataPoint = {
       ...baseMetrics,
-      forecastEpsAboveAllHistoricalActuals: false,
+      forecastEpsAboveRecentFyActuals: false,
     };
 
     render(<FundamentalsSummaryCard metrics={metrics} />);
-    expect(screen.getByText('予想EPS > 過去実績EPS: false')).toBeInTheDocument();
+    expect(screen.getByText('予想EPS > 直近FY3実績EPS: false')).toBeInTheDocument();
+  });
+
+  it('renders "-" in forecast-vs-historical marker when flag is unknown', () => {
+    const metrics: ApiFundamentalDataPoint = {
+      ...baseMetrics,
+      forecastEpsAboveRecentFyActuals: null,
+      forecastEpsAboveAllHistoricalActuals: null,
+    };
+
+    render(<FundamentalsSummaryCard metrics={metrics} />);
+    expect(screen.getByText('予想EPS > 直近FY3実績EPS: -')).toBeInTheDocument();
   });
 });

@@ -336,16 +336,22 @@ class TestFundamentalRanking:
             assert "source" in item
             assert item["source"] in {"fy", "revised"}
 
-    def test_forecast_above_all_actuals_filter(self, analytics_client):
+    def test_forecast_above_recent_fy_actuals_filter(self, analytics_client):
         base_resp = analytics_client.get("/api/analytics/fundamental-ranking")
         assert base_resp.status_code == 200
         base_codes = {item["code"] for item in base_resp.json()["rankings"]["ratioHigh"]}
         assert "33330" in base_codes
 
-        filtered_resp = analytics_client.get("/api/analytics/fundamental-ranking?forecastAboveAllActuals=true")
+        filtered_resp = analytics_client.get(
+            "/api/analytics/fundamental-ranking?forecastAboveRecentFyActuals=true&forecastLookbackFyCount=2"
+        )
         assert filtered_resp.status_code == 200
         filtered_codes = {item["code"] for item in filtered_resp.json()["rankings"]["ratioHigh"]}
         assert "33330" not in filtered_codes
+
+    def test_legacy_forecast_above_all_actuals_param_still_supported(self, analytics_client):
+        filtered_resp = analytics_client.get("/api/analytics/fundamental-ranking?forecastAboveAllActuals=true")
+        assert filtered_resp.status_code == 200
 
     def test_422_unsupported_metric_key(self, analytics_client):
         resp = analytics_client.get("/api/analytics/fundamental-ranking?metricKey=roe_forecast_to_actual")

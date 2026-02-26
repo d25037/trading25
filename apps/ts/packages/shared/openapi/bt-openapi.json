@@ -2571,8 +2571,20 @@
                 "type": "null"
               }
             ],
-            "description": "Whether latest forecast EPS is greater than all historical actual EPS values",
+            "description": "Deprecated: use forecastEpsAboveRecentFyActuals",
             "title": "Forecastepsaboveallhistoricalactuals"
+          },
+          "forecastEpsAboveRecentFyActuals": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Whether latest forecast EPS is greater than recent FY actual EPS values (lookback window)",
+            "title": "Forecastepsaboverecentfyactuals"
           },
           "forecastEpsChangeRate": {
             "anyOf": [
@@ -2950,6 +2962,14 @@
       "FundamentalsComputeRequest": {
         "description": "Request body for fundamentals computation.",
         "properties": {
+          "forecast_eps_lookback_fy_count": {
+            "default": 3,
+            "description": "Lookback FY count for forecast EPS vs recent actual EPS comparison",
+            "maximum": 20,
+            "minimum": 1,
+            "title": "Forecast Eps Lookback Fy Count",
+            "type": "integer"
+          },
           "from_date": {
             "anyOf": [
               {
@@ -3053,6 +3073,12 @@
             },
             "title": "Data",
             "type": "array"
+          },
+          "forecastEpsLookbackFyCount": {
+            "default": 3,
+            "description": "Lookback FY count used for forecast EPS comparison indicator",
+            "title": "Forecastepslookbackfycount",
+            "type": "integer"
           },
           "lastUpdated": {
             "description": "Last updated timestamp (ISO 8601)",
@@ -11956,15 +11982,35 @@
             }
           },
           {
-            "description": "If true, return only stocks whose latest forecast EPS is greater than all historical actual EPS.",
+            "description": "If true, return only stocks whose latest forecast EPS is greater than the max actual EPS in recent FY lookback window.",
             "in": "query",
-            "name": "forecastAboveAllActuals",
+            "name": "forecastAboveRecentFyActuals",
             "required": false,
             "schema": {
-              "default": false,
-              "description": "If true, return only stocks whose latest forecast EPS is greater than all historical actual EPS.",
-              "title": "Forecastaboveallactuals",
-              "type": "boolean"
+              "anyOf": [
+                {
+                  "type": "boolean"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "If true, return only stocks whose latest forecast EPS is greater than the max actual EPS in recent FY lookback window.",
+              "title": "Forecastaboverecentfyactuals"
+            }
+          },
+          {
+            "description": "Lookback FY count used by forecastAboveRecentFyActuals filter.",
+            "in": "query",
+            "name": "forecastLookbackFyCount",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "Lookback FY count used by forecastAboveRecentFyActuals filter.",
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Forecastlookbackfycount",
+              "type": "integer"
             }
           }
         ],
@@ -12110,6 +12156,20 @@
               "maximum": 250,
               "minimum": 1,
               "title": "Tradingvalueperiod",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Lookback FY count for forecast EPS vs recent actual EPS comparison",
+            "in": "query",
+            "name": "forecastEpsLookbackFyCount",
+            "required": false,
+            "schema": {
+              "default": 3,
+              "description": "Lookback FY count for forecast EPS vs recent actual EPS comparison",
+              "maximum": 20,
+              "minimum": 1,
+              "title": "Forecastepslookbackfycount",
               "type": "integer"
             }
           }

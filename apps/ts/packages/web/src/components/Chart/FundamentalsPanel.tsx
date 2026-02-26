@@ -1,3 +1,4 @@
+import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
 import { useMemo } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import {
@@ -13,18 +14,70 @@ interface FundamentalsPanelProps {
   symbol: string | null;
   enabled?: boolean;
   tradingValuePeriod?: number;
+  forecastEpsLookbackFyCount?: number;
   metricOrder?: FundamentalMetricId[];
   metricVisibility?: Record<FundamentalMetricId, boolean>;
+}
+
+function resolveChangeRate(
+  actualValue: number | null | undefined,
+  forecastValue: number | null | undefined
+): number | null {
+  if (actualValue == null || forecastValue == null || actualValue === 0) return null;
+  return Math.round(((forecastValue - actualValue) / Math.abs(actualValue)) * 100 * 100) / 100;
+}
+
+function getSortedFiscalYearRows(rows: ApiFundamentalDataPoint[]): ApiFundamentalDataPoint[] {
+  return [...rows]
+    .filter((item) => isFiscalYear(item.periodType))
+    .sort((a, b) => {
+      if (a.date === b.date) return b.disclosedDate.localeCompare(a.disclosedDate);
+      return b.date.localeCompare(a.date);
+    });
+}
+
+function collectRecentFiscalYearActualEps(rows: ApiFundamentalDataPoint[], lookbackFyCount: number): number[] {
+  const recentActuals: number[] = [];
+  const seenPeriodEnds = new Set<string>();
+
+  for (const row of rows) {
+    if (seenPeriodEnds.has(row.date)) continue;
+    const value = row.adjustedEps ?? row.eps;
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    seenPeriodEnds.add(row.date);
+    recentActuals.push(value);
+    if (recentActuals.length >= lookbackFyCount) break;
+  }
+
+  return recentActuals;
+}
+
+function resolveForecastEpsAboveRecentFyActuals(
+  rows: ApiFundamentalDataPoint[],
+  forecastValue: number | null | undefined,
+  lookbackFyCount: number
+): boolean | null {
+  if (forecastValue == null || !Number.isFinite(forecastValue)) return null;
+
+  const recentActuals = collectRecentFiscalYearActualEps(getSortedFiscalYearRows(rows), lookbackFyCount);
+  if (recentActuals.length < lookbackFyCount) return null;
+
+  return forecastValue > Math.max(...recentActuals);
 }
 
 export function FundamentalsPanel({
   symbol,
   enabled = true,
   tradingValuePeriod = 15,
+  forecastEpsLookbackFyCount = 3,
   metricOrder = DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   metricVisibility = DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
 }: FundamentalsPanelProps) {
-  const { data, isLoading, error } = useFundamentals(symbol, { enabled, tradingValuePeriod });
+  const { data, isLoading, error } = useFundamentals(symbol, {
+    enabled,
+    tradingValuePeriod,
+    forecastEpsLookbackFyCount,
+  });
 
   // Get the latest FY (full year) data with actual financial data for summary card
   // Then update PER/PBR/stockPrice with latest daily valuation for current prices
@@ -37,33 +90,6 @@ export function FundamentalsPanel({
     const fyData = data.data.find((d) => isFiscalYear(d.periodType) && hasActualFinancialData(d));
 
     if (!fyData) return undefined;
-
-    const resolveChangeRate = (
-      actualValue: number | null | undefined,
-      forecastValue: number | null | undefined
-    ): number | null => {
-      if (actualValue == null || forecastValue == null || actualValue === 0) return null;
-      return Math.round(((forecastValue - actualValue) / Math.abs(actualValue)) * 100 * 100) / 100;
-    };
-
-    const resolveForecastEpsAboveAllHistoricalActuals = (
-      forecastValue: number | null | undefined
-    ): boolean => {
-      if (forecastValue == null || !Number.isFinite(forecastValue)) return false;
-
-      const historicalActuals = data.data
-        .filter((item) => isFiscalYear(item.periodType))
-        .map((item) => item.adjustedEps ?? item.eps)
-        .filter((value): value is number => typeof value === 'number' && Number.isFinite(value));
-
-      if (historicalActuals.length === 0) return false;
-
-      const historicalMaxActual = historicalActuals.reduce(
-        (maxValue, value) => (value > maxValue ? value : maxValue),
-        Number.NEGATIVE_INFINITY
-      );
-      return forecastValue > historicalMaxActual;
-    };
 
     // Start with FY data and merge enhanced fields from latestMetrics
     const revisedForecastEps = data.latestMetrics?.revisedForecastEps ?? fyData.revisedForecastEps ?? null;
@@ -94,10 +120,13 @@ export function FundamentalsPanel({
       cfoToNetProfitRatio: data.latestMetrics?.cfoToNetProfitRatio ?? fyData.cfoToNetProfitRatio ?? null,
       tradingValueToMarketCapRatio:
         data.latestMetrics?.tradingValueToMarketCapRatio ?? fyData.tradingValueToMarketCapRatio ?? null,
-      forecastEpsAboveAllHistoricalActuals:
+      forecastEpsAboveRecentFyActuals:
+        data.latestMetrics?.forecastEpsAboveRecentFyActuals ??
         data.latestMetrics?.forecastEpsAboveAllHistoricalActuals ??
+        fyData.forecastEpsAboveRecentFyActuals ??
         fyData.forecastEpsAboveAllHistoricalActuals ??
         null,
+      forecastEpsLookbackFyCount: data.forecastEpsLookbackFyCount ?? 3,
     };
 
     const displayActualEps = result.adjustedEps ?? result.eps ?? null;
@@ -131,9 +160,13 @@ export function FundamentalsPanel({
 
     result = {
       ...result,
-      forecastEpsAboveAllHistoricalActuals:
-        result.forecastEpsAboveAllHistoricalActuals ??
-        resolveForecastEpsAboveAllHistoricalActuals(displayForecastEps),
+      forecastEpsAboveRecentFyActuals:
+        result.forecastEpsAboveRecentFyActuals ??
+        resolveForecastEpsAboveRecentFyActuals(
+          data.data,
+          displayForecastEps,
+          result.forecastEpsLookbackFyCount ?? 3
+        ),
     };
 
     // Update with latest daily valuation (current stock price PER/PBR)
