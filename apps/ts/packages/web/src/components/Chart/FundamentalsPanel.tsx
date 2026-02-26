@@ -1,3 +1,4 @@
+import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
 import { useMemo } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import {
@@ -16,6 +17,52 @@ interface FundamentalsPanelProps {
   forecastEpsLookbackFyCount?: number;
   metricOrder?: FundamentalMetricId[];
   metricVisibility?: Record<FundamentalMetricId, boolean>;
+}
+
+function resolveChangeRate(
+  actualValue: number | null | undefined,
+  forecastValue: number | null | undefined
+): number | null {
+  if (actualValue == null || forecastValue == null || actualValue === 0) return null;
+  return Math.round(((forecastValue - actualValue) / Math.abs(actualValue)) * 100 * 100) / 100;
+}
+
+function getSortedFiscalYearRows(rows: ApiFundamentalDataPoint[]): ApiFundamentalDataPoint[] {
+  return [...rows]
+    .filter((item) => isFiscalYear(item.periodType))
+    .sort((a, b) => {
+      if (a.date === b.date) return b.disclosedDate.localeCompare(a.disclosedDate);
+      return b.date.localeCompare(a.date);
+    });
+}
+
+function collectRecentFiscalYearActualEps(rows: ApiFundamentalDataPoint[], lookbackFyCount: number): number[] {
+  const recentActuals: number[] = [];
+  const seenPeriodEnds = new Set<string>();
+
+  for (const row of rows) {
+    if (seenPeriodEnds.has(row.date)) continue;
+    const value = row.adjustedEps ?? row.eps;
+    if (typeof value !== 'number' || !Number.isFinite(value)) continue;
+    seenPeriodEnds.add(row.date);
+    recentActuals.push(value);
+    if (recentActuals.length >= lookbackFyCount) break;
+  }
+
+  return recentActuals;
+}
+
+function resolveForecastEpsAboveRecentFyActuals(
+  rows: ApiFundamentalDataPoint[],
+  forecastValue: number | null | undefined,
+  lookbackFyCount: number
+): boolean | null {
+  if (forecastValue == null || !Number.isFinite(forecastValue)) return null;
+
+  const recentActuals = collectRecentFiscalYearActualEps(getSortedFiscalYearRows(rows), lookbackFyCount);
+  if (recentActuals.length < lookbackFyCount) return null;
+
+  return forecastValue > Math.max(...recentActuals);
 }
 
 export function FundamentalsPanel({
@@ -43,47 +90,6 @@ export function FundamentalsPanel({
     const fyData = data.data.find((d) => isFiscalYear(d.periodType) && hasActualFinancialData(d));
 
     if (!fyData) return undefined;
-
-    const resolveChangeRate = (
-      actualValue: number | null | undefined,
-      forecastValue: number | null | undefined
-    ): number | null => {
-      if (actualValue == null || forecastValue == null || actualValue === 0) return null;
-      return Math.round(((forecastValue - actualValue) / Math.abs(actualValue)) * 100 * 100) / 100;
-    };
-
-    const resolveForecastEpsAboveRecentFyActuals = (
-      forecastValue: number | null | undefined,
-      lookbackFyCount: number
-    ): boolean | null => {
-      if (forecastValue == null || !Number.isFinite(forecastValue)) return null;
-
-      const fyRows = [...data.data]
-        .filter((item) => isFiscalYear(item.periodType))
-        .sort((a, b) => {
-          if (a.date === b.date) return b.disclosedDate.localeCompare(a.disclosedDate);
-          return b.date.localeCompare(a.date);
-        });
-
-      const recentActuals: number[] = [];
-      const seenPeriodEnds = new Set<string>();
-      for (const row of fyRows) {
-        if (seenPeriodEnds.has(row.date)) continue;
-        const value = row.adjustedEps ?? row.eps;
-        if (typeof value !== 'number' || !Number.isFinite(value)) continue;
-        seenPeriodEnds.add(row.date);
-        recentActuals.push(value);
-        if (recentActuals.length >= lookbackFyCount) break;
-      }
-
-      if (recentActuals.length < lookbackFyCount) return null;
-
-      const recentMaxActual = recentActuals.reduce(
-        (maxValue, value) => (value > maxValue ? value : maxValue),
-        Number.NEGATIVE_INFINITY
-      );
-      return forecastValue > recentMaxActual;
-    };
 
     // Start with FY data and merge enhanced fields from latestMetrics
     const revisedForecastEps = data.latestMetrics?.revisedForecastEps ?? fyData.revisedForecastEps ?? null;
@@ -157,6 +163,7 @@ export function FundamentalsPanel({
       forecastEpsAboveRecentFyActuals:
         result.forecastEpsAboveRecentFyActuals ??
         resolveForecastEpsAboveRecentFyActuals(
+          data.data,
           displayForecastEps,
           result.forecastEpsLookbackFyCount ?? 3
         ),
