@@ -47,6 +47,7 @@
     "gunshi": "0.27.0"
   },
   "overrides": {
-    "@redocly/openapi-core": "1.34.5"
+    "@redocly/openapi-core": "1.34.5",
+    "rollup": "4.59.0"
   }
 }
