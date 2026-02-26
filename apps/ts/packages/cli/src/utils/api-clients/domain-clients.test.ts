@@ -196,7 +196,7 @@ describe('Domain API clients', () => {
     const client = new DatasetClient('http://localhost:3002');
     bindRequest(client);
 
-    await client.startDatasetCreate('dataset-v2', 'primeMarket', true);
+    await client.startDatasetCreate('dataset-v2', 'primeMarket', true, 90);
     expect(getLastCall()).toEqual({
       endpoint: '/api/dataset',
       options: {
@@ -205,11 +205,12 @@ describe('Domain API clients', () => {
           name: 'dataset-v2',
           preset: 'primeMarket',
           overwrite: true,
+          timeoutMinutes: 90,
         }),
       },
     });
 
-    await client.startDatasetResume('dataset-v2', 'primeMarket');
+    await client.startDatasetResume('dataset-v2', 'primeMarket', 120);
     expect(getLastCall()).toEqual({
       endpoint: '/api/dataset/resume',
       options: {
@@ -217,6 +218,7 @@ describe('Domain API clients', () => {
         body: JSON.stringify({
           name: 'dataset-v2',
           preset: 'primeMarket',
+          timeoutMinutes: 120,
         }),
       },
     });

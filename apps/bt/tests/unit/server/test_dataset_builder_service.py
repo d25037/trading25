@@ -175,6 +175,7 @@ def test_dataset_job_data() -> None:
     d = DatasetJobData(name="test", preset="quickTesting")
     assert d.overwrite is False
     assert d.resume is False
+    assert d.timeout_minutes == 35
 
 
 def test_dataset_job_data_resume() -> None:

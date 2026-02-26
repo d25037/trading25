@@ -14,7 +14,7 @@ export function DatasetCreateForm() {
   const [selectedPreset, setSelectedPreset] = useState('quickTesting');
   const [filename, setFilename] = useState('quickTesting.db');
   const [overwrite, setOverwrite] = useState(false);
-  const [timeoutMinutes, setTimeoutMinutes] = useState(30);
+  const [timeoutMinutes, setTimeoutMinutes] = useState(35);
 
   const { activeDatasetJobId, setActiveDatasetJobId } = useBacktestStore();
   const createDataset = useCreateDataset();

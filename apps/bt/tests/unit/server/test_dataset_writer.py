@@ -100,3 +100,60 @@ def test_upsert_indices_data(writer: DatasetWriter) -> None:
          "low": 990, "close": 1005, "created_at": "2024-01-04"},
     ])
     assert count == 1
+
+
+def test_upsert_empty_rows_return_zero(writer: DatasetWriter) -> None:
+    assert writer.upsert_stock_data([]) == 0
+    assert writer.upsert_topix_data([]) == 0
+    assert writer.upsert_indices_data([]) == 0
+    assert writer.upsert_margin_data([]) == 0
+    assert writer.upsert_statements([]) == 0
+
+
+def test_existing_code_helpers_and_topix_presence(writer: DatasetWriter) -> None:
+    assert writer.get_existing_stock_data_codes() == set()
+    assert writer.get_existing_index_codes() == set()
+    assert writer.get_existing_margin_codes() == set()
+    assert writer.get_existing_statement_codes() == set()
+    assert writer.has_topix_data() is False
+
+    writer.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-01-04",
+            "open": 100,
+            "high": 110,
+            "low": 90,
+            "close": 105,
+            "volume": 1000,
+            "created_at": "2024-01-04",
+        },
+        {
+            "code": "9984",
+            "date": "2024-01-04",
+            "open": 200,
+            "high": 210,
+            "low": 190,
+            "close": 205,
+            "volume": 2000,
+            "created_at": "2024-01-04",
+        },
+    ])
+    writer.upsert_topix_data([
+        {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2480, "close": 2510, "created_at": "2024-01-04"},
+    ])
+    writer.upsert_indices_data([
+        {"code": "0040", "date": "2024-01-04", "open": 1000, "high": 1010, "low": 990, "close": 1005},
+    ])
+    writer.upsert_margin_data([
+        {"code": "7203", "date": "2024-01-04", "long_margin_volume": 50000, "short_margin_volume": 30000},
+    ])
+    writer.upsert_statements([
+        {"code": "7203", "disclosed_date": "2024-03-15", "earnings_per_share": 250.0},
+    ])
+
+    assert writer.get_existing_stock_data_codes() == {"7203", "9984"}
+    assert writer.has_topix_data() is True
+    assert writer.get_existing_index_codes() == {"0040"}
+    assert writer.get_existing_margin_codes() == {"7203"}
+    assert writer.get_existing_statement_codes() == {"7203"}

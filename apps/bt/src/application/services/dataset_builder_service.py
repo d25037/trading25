@@ -32,6 +32,7 @@ class DatasetJobData:
     preset: str
     overwrite: bool = False
     resume: bool = False
+    timeout_minutes: int = 35
 
 
 @dataclass
@@ -60,17 +61,19 @@ async def start_dataset_build(
     if job is None:
         return None
 
+    timeout_minutes = max(1, data.timeout_minutes)
+
     async def _run() -> None:
         try:
             result = await asyncio.wait_for(
                 _build_dataset(job, resolver, jquants_client),
-                timeout=35 * 60,
+                timeout=timeout_minutes * 60,
             )
             if dataset_job_manager.is_cancelled(job.job_id):
                 return
             dataset_job_manager.complete_job(job.job_id, result)
         except asyncio.TimeoutError:
-            dataset_job_manager.fail_job(job.job_id, "Dataset build timed out after 35 minutes")
+            dataset_job_manager.fail_job(job.job_id, f"Dataset build timed out after {timeout_minutes} minutes")
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -119,6 +122,7 @@ async def _build_dataset(
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
     writer = DatasetWriter(db_path)
+    resume_mode = job.data.resume
 
     try:
         # 銘柄データ書き込み
@@ -129,11 +133,22 @@ async def _build_dataset(
         writer.set_dataset_info("stock_count", str(len(filtered)))
 
         # Step 3: 株価データ取得
-        progress("stock_data", 2, _TOTAL_STAGES, "Fetching stock price data...")
+        stocks_for_ohlcv = filtered
+        if resume_mode:
+            existing_codes = writer.get_existing_stock_data_codes()
+            stocks_for_ohlcv = [
+                stock for stock in filtered if normalize_stock_code(stock.get("Code", "")) not in existing_codes
+            ]
+        progress(
+            "stock_data",
+            2,
+            _TOTAL_STAGES,
+            f"Fetching stock price data ({len(stocks_for_ohlcv)}/{len(filtered)} targets)...",
+        )
         processed = 0
         empty_ohlcv_codes: list[str] = []
         incomplete_ohlcv_codes: list[tuple[str, int, int]] = []
-        for i, stock in enumerate(filtered):
+        for i, stock in enumerate(stocks_for_ohlcv):
             if job.cancelled.is_set():
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
             code5 = stock.get("Code", "")
@@ -164,7 +179,7 @@ async def _build_dataset(
                     empty_ohlcv_codes.append(code4)
                 processed += 1
                 if (i + 1) % 10 == 0:
-                    progress("stock_data", 2, _TOTAL_STAGES, f"Stock data: {i + 1}/{len(filtered)}")
+                    progress("stock_data", 2, _TOTAL_STAGES, f"Stock data: {i + 1}/{len(stocks_for_ohlcv)}")
             except Exception as e:
                 warnings.append(f"Stock {code4}: {e}")
 
@@ -187,31 +202,52 @@ async def _build_dataset(
 
         # Step 4: TOPIX
         if preset.include_topix:
-            progress("topix", 3, _TOTAL_STAGES, "Fetching TOPIX data...")
+            should_fetch_topix = True
+            if resume_mode:
+                should_fetch_topix = not writer.has_topix_data()
+            progress(
+                "topix",
+                3,
+                _TOTAL_STAGES,
+                "Fetching TOPIX data..." if should_fetch_topix else "TOPIX data already exists, skipping fetch",
+            )
             if not job.cancelled.is_set():
-                try:
-                    topix = await jquants_client.get_paginated("/indices/bars/daily/topix")
-                    topix_rows = [
-                        {
-                            "date": d.get("Date", ""),
-                            "open": d.get("O", 0),
-                            "high": d.get("H", 0),
-                            "low": d.get("L", 0),
-                            "close": d.get("C", 0),
-                            "created_at": datetime.now(UTC).isoformat(),
-                        }
-                        for d in topix
-                    ]
-                    if topix_rows:
-                        await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
-                except Exception as e:
-                    warnings.append(f"TOPIX: {e}")
+                if should_fetch_topix:
+                    try:
+                        topix = await jquants_client.get_paginated("/indices/bars/daily/topix")
+                        topix_rows = [
+                            {
+                                "date": d.get("Date", ""),
+                                "open": d.get("O", 0),
+                                "high": d.get("H", 0),
+                                "low": d.get("L", 0),
+                                "close": d.get("C", 0),
+                                "created_at": datetime.now(UTC).isoformat(),
+                            }
+                            for d in topix
+                        ]
+                        if topix_rows:
+                            await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
+                    except Exception as e:
+                        warnings.append(f"TOPIX: {e}")
 
         # Step 5: セクター指数
         if preset.include_sector_indices:
-            progress("indices", 4, _TOTAL_STAGES, "Fetching sector index data...")
+            existing_index_codes: set[str] = set()
+            if resume_mode:
+                existing_index_codes = writer.get_existing_index_codes()
             target_index_codes = sorted(
                 code for code in get_index_catalog_codes() if _is_sector_index_code(code)
+            )
+            if existing_index_codes:
+                target_index_codes = [
+                    code for code in target_index_codes if _normalize_index_code(code) not in existing_index_codes
+                ]
+            progress(
+                "indices",
+                4,
+                _TOTAL_STAGES,
+                f"Fetching sector index data ({len(target_index_codes)} targets)...",
             )
             for code in target_index_codes:
                 if job.cancelled.is_set():
@@ -226,8 +262,21 @@ async def _build_dataset(
 
         # Step 6: 財務諸表
         if preset.include_statements:
-            progress("statements", 5, _TOTAL_STAGES, "Fetching financial statements...")
-            for stock in filtered:
+            stocks_for_statements = filtered
+            if resume_mode:
+                existing_statement_codes = writer.get_existing_statement_codes()
+                stocks_for_statements = [
+                    stock
+                    for stock in filtered
+                    if normalize_stock_code(stock.get("Code", "")) not in existing_statement_codes
+                ]
+            progress(
+                "statements",
+                5,
+                _TOTAL_STAGES,
+                f"Fetching financial statements ({len(stocks_for_statements)}/{len(filtered)} targets)...",
+            )
+            for stock in stocks_for_statements:
                 if job.cancelled.is_set():
                     break
                 code5 = stock.get("Code", "")
@@ -242,8 +291,21 @@ async def _build_dataset(
 
         # Step 7: 信用取引
         if preset.include_margin:
-            progress("margin", 6, _TOTAL_STAGES, "Fetching margin data...")
-            for stock in filtered:
+            stocks_for_margin = filtered
+            if resume_mode:
+                existing_margin_codes = writer.get_existing_margin_codes()
+                stocks_for_margin = [
+                    stock
+                    for stock in filtered
+                    if normalize_stock_code(stock.get("Code", "")) not in existing_margin_codes
+                ]
+            progress(
+                "margin",
+                6,
+                _TOTAL_STAGES,
+                f"Fetching margin data ({len(stocks_for_margin)}/{len(filtered)} targets)...",
+            )
+            for stock in stocks_for_margin:
                 if job.cancelled.is_set():
                     break
                 code5 = stock.get("Code", "")

@@ -63,9 +63,12 @@ def test_create_dataset_success(client: TestClient) -> None:
 
     with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = mock_job
-        resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
+        resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting", "timeoutMinutes": 90})
 
     assert resp.status_code == 202
+    mock_start.assert_awaited_once()
+    data_arg: DatasetJobData = mock_start.await_args.args[0]
+    assert data_arg.timeout_minutes == 90
     data = resp.json()
     assert data["jobId"] == "test-job-id"
     assert data["status"] == "pending"
@@ -108,9 +111,16 @@ def test_resume_dataset_success(client: TestClient) -> None:
 
         with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
             mock_start.return_value = mock_job
-            resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
+            resp = client.post(
+                "/api/dataset/resume",
+                json={"name": "test", "preset": "quickTesting", "timeoutMinutes": 90},
+            )
 
         assert resp.status_code == 202
+        mock_start.assert_awaited_once()
+        data_arg: DatasetJobData = mock_start.await_args.args[0]
+        assert data_arg.resume is True
+        assert data_arg.timeout_minutes == 90
         data = resp.json()
         assert data["jobId"] == "resume-job-id"
         assert data["message"] == "Dataset resume job started"
