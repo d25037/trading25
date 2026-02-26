@@ -187,16 +187,16 @@ class TestSignalRegistry:
         assert "statements:EPS" in sig.data_requirements
         assert "statements:ForwardForecastEPS" in sig.data_requirements
 
-    def test_forecast_eps_above_all_actuals_registered(self) -> None:
-        """forecast_eps_above_all_actualsがレジストリに登録されていること"""
+    def test_forecast_eps_above_recent_fy_actuals_registered(self) -> None:
+        """forecast_eps_above_recent_fy_actualsがレジストリに登録されていること"""
         matches = [
             s
             for s in SIGNAL_REGISTRY
-            if s.param_key == "fundamental.forecast_eps_above_all_actuals"
+            if s.param_key == "fundamental.forecast_eps_above_recent_fy_actuals"
         ]
         assert len(matches) == 1
         sig = matches[0]
-        assert sig.name == "予想EPS>過去実績EPS"
+        assert sig.name == "予想EPS>直近FY実績EPS"
         assert "statements:EPS" in sig.data_requirements
         assert "statements:ForwardForecastEPS" in sig.data_requirements
 
@@ -398,9 +398,9 @@ class TestFundamentalAdjustedSelection:
         assert built["eps"].equals(df["AdjustedEPS"])
         assert built["next_year_forecast_eps"].equals(df["AdjustedNextYearForecastEPS"])
 
-    def test_forecast_eps_above_all_actuals_uses_forward_columns(self) -> None:
+    def test_forecast_eps_above_recent_fy_actuals_uses_forward_columns(self) -> None:
         params = SignalParams()
-        params.fundamental.forecast_eps_above_all_actuals.enabled = True
+        params.fundamental.forecast_eps_above_recent_fy_actuals.enabled = True
 
         df = pd.DataFrame(
             {
@@ -412,13 +412,18 @@ class TestFundamentalAdjustedSelection:
                 "AdjustedNextYearForecastEPS": [1.6],
                 "ForwardForecastEPS": [1.7],
                 "AdjustedForwardForecastEPS": [1.4],
+                "DisclosedDate": [pd.Timestamp("2025-05-10")],
+                "FYPeriodKey": ["2025"],
             }
         )
 
-        sig = self._get_signal("fundamental.forecast_eps_above_all_actuals")
+        sig = self._get_signal("fundamental.forecast_eps_above_recent_fy_actuals")
         built = sig.param_builder(params, {"statements_data": df})
         assert built["actual_eps"].equals(df["AdjustedForwardBaseEPS"])
         assert built["latest_forecast_eps"].equals(df["AdjustedForwardForecastEPS"])
+        assert built["lookback_fy_count"] == 3
+        assert built["fy_release_marker"].equals(df["DisclosedDate"])
+        assert built["fy_period_key"].equals(df["FYPeriodKey"])
 
     def test_forward_eps_growth_prefers_forward_columns_when_available(self) -> None:
         params = SignalParams()

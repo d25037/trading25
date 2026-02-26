@@ -7,7 +7,8 @@ describe('FundamentalRankingFilters', () => {
   const defaultParams: FundamentalRankingParams = {
     markets: 'prime',
     limit: 20,
-    forecastAboveAllActuals: false,
+    forecastAboveRecentFyActuals: false,
+    forecastLookbackFyCount: 3,
   };
 
   it('renders filter card with title', () => {
@@ -23,5 +24,10 @@ describe('FundamentalRankingFilters', () => {
   it('renders eps condition control', () => {
     render(<FundamentalRankingFilters params={defaultParams} onChange={vi.fn()} />);
     expect(screen.getByText('EPS Condition')).toBeInTheDocument();
+  });
+
+  it('renders lookback control', () => {
+    render(<FundamentalRankingFilters params={defaultParams} onChange={vi.fn()} />);
+    expect(screen.getByText('Recent FY lookback')).toBeInTheDocument();
   });
 });

@@ -13,5 +13,8 @@ export type {
 export interface FundamentalRankingParams {
   limit?: number;
   markets?: string;
+  forecastAboveRecentFyActuals?: boolean;
+  forecastLookbackFyCount?: number;
+  /** @deprecated Use forecastAboveRecentFyActuals */
   forecastAboveAllActuals?: boolean;
 }

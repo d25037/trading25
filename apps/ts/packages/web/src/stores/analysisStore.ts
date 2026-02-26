@@ -24,7 +24,8 @@ export const DEFAULT_RANKING_PARAMS: RankingParams = {
 export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
   markets: 'prime',
   limit: 20,
-  forecastAboveAllActuals: false,
+  forecastAboveRecentFyActuals: false,
+  forecastLookbackFyCount: 3,
 };
 
 interface AnalysisState {

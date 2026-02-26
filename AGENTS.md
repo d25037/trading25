@@ -113,13 +113,13 @@ uv run pyright src/              # 型チェック
 - Optimization HTML（`notebooks/templates/marimo/optimization_analysis.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
 - `/api/optimize/jobs/{id}` は `best_score` / `total_combinations` に加えて `best_params` / `worst_score` / `worst_params` を返し、最適化ジョブ結果カードで best/worst 条件を比較表示できる
 - `forward_eps_growth` / `peg_ratio` は FY実績EPSを分母に固定し、`period_type=FY` でも必要時のみ追加取得した四半期 FEPS 修正を forecast 側へ反映する
-- Fundamental signal は `forecast_eps_above_all_actuals`（最新予想EPS > 過去すべての実績EPS）をサポートし、forecast revision 読み込み（screening/lab/optimization/backtest）を有効化する
+- Fundamental signal は `forecast_eps_above_recent_fy_actuals`（最新予想EPS > 直近FY X回の実績EPS最大値）をサポートし、`lookback_fy_count` で比較年数を指定できる。forecast revision 読み込み（screening/lab/optimization/backtest）を有効化する
 - Fundamental signal system は `cfo_margin` / `simple_fcf_margin`（売上高比マージン判定）をサポートし、`OperatingCashFlow` / `InvestingCashFlow` / `Sales` をデータ要件とする
 - Fundamental signal は `cfo_to_net_profit_ratio`（営業CF/純利益）をサポートし、`consecutive_periods` 判定は比率値同値時でも開示更新（OperatingCashFlow/Profit）を起点に連続判定する
 - Fundamentals は EPS に加えて `dividend_fy` / `forecast_dividend_fy` と `payout_ratio` / `forecast_payout_ratio`（実績/予想）を SoT とし、Charts の Fundamentals panel と Backtest Signal system（`forward_dividend_growth` / `dividend_per_share_growth` / `payout_ratio` / `forward_payout_ratio`）で同一指標を使う。配当性向は API 返却時に percent 単位へ正規化し、decimal スケール値（例: 0.283）を 28.3% として扱う
 - fundamentals 最新値の forecast EPS は同一期末内で `DiscDate` が新しい開示を優先し、旧開示値の逆転表示を防ぐ
-- Charts Fundamentals panel は `forecastEpsAboveAllHistoricalActuals`（最新予想EPS > 過去すべての実績EPS）を latest metrics で返し、frontend は true/false 表示を行う
-- `/api/analytics/fundamental-ranking` は `market.db`（`statements`/`stocks`/`stock_data`）を SoT とし、`metricKey` と `rankings.ratioHigh` / `rankings.ratioLow` を返す。現在の `metricKey` は `eps_forecast_to_actual`（最新の予想EPS / 最新の実績EPS）で、予想EPSは `revised(四半期) > adjusted FY forecast > raw FY forecast`、実績EPSは最新 FY EPS（share補正）を採用する。`forecastAboveAllActuals=true` で「最新予想EPS > 過去すべての実績EPS」条件を追加フィルタできる。将来の比率指標追加は `metricKey` で識別する
+- Charts Fundamentals panel は `forecastEpsAboveRecentFyActuals`（最新予想EPS > 直近FY X回の実績EPS最大値）を latest metrics で返し、`forecastEpsLookbackFyCount` に応じた true/false を表示する（旧 `forecastEpsAboveAllHistoricalActuals` は互換フィールド）
+- `/api/analytics/fundamental-ranking` は `market.db`（`statements`/`stocks`/`stock_data`）を SoT とし、`metricKey` と `rankings.ratioHigh` / `rankings.ratioLow` を返す。現在の `metricKey` は `eps_forecast_to_actual`（最新の予想EPS / 最新の実績EPS）で、予想EPSは `revised(四半期) > adjusted FY forecast > raw FY forecast`、実績EPSは最新 FY EPS（share補正）を採用する。`forecastAboveRecentFyActuals=true` と `forecastLookbackFyCount` で「最新予想EPS > 直近FY X回の実績EPS最大値」条件を追加フィルタできる（旧 `forecastAboveAllActuals` も互換）。将来の比率指標追加は `metricKey` で識別する
 - Strategy group 再振り分けは `/api/strategies/{strategy_name}/move`（`target_category`: `production` / `experimental` / `legacy`）を SoT とし、web の `Backtest > Strategies` から実行する
 
 主要技術: Python 3.12, vectorbt, pydantic, FastAPI, pandas, ruff, pyright, pytest

@@ -56,6 +56,7 @@ class _StatementRow:
     forecast_eps: float | None
     next_year_forecast_earnings_per_share: float | None
     shares_outstanding: float | None
+    fy_cycle_key: str | None = None
 
 
 @dataclass
@@ -119,6 +120,19 @@ def _to_nullable_float(value: Any) -> float | None:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _resolve_fy_cycle_key(disclosed_date: str) -> str:
+    """Resolve FY cycle key used for lookback counting.
+
+    market.db statements currently lacks period-end columns, so disclosed year
+    is used as an FY-year proxy to avoid over-counting multiple disclosures
+    within the same fiscal year.
+    """
+    try:
+        return datetime.fromisoformat(disclosed_date).strftime("%Y")
+    except ValueError:
+        return disclosed_date
 
 
 def _row_to_item(row: sqlite3.Row, rank: int, **extra: Any) -> RankingItem:
@@ -218,11 +232,19 @@ class RankingService:
         limit: int = 20,
         markets: str = "prime",
         metric_key: str = _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY,
-        forecast_above_all_actuals: bool = False,
+        forecast_above_recent_fy_actuals: bool = False,
+        forecast_lookback_fy_count: int = 3,
+        # Backward compatibility for legacy caller
+        forecast_above_all_actuals: bool | None = None,
     ) -> MarketFundamentalRankingResponse:
         """最新の予想EPS / 最新の実績EPS 比率ランキングを取得"""
         if metric_key != _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY:
             raise ValueError(f"Unsupported metricKey: {metric_key}")
+        if forecast_lookback_fy_count < 1:
+            raise ValueError("forecast_lookback_fy_count must be >= 1")
+
+        if forecast_above_all_actuals is not None and not forecast_above_recent_fy_actuals:
+            forecast_above_recent_fy_actuals = forecast_above_all_actuals
 
         requested_market_codes, query_market_codes = resolve_market_codes(markets)
         date_row = self._reader.query_one("SELECT MAX(date) as max_date FROM stock_data")
@@ -248,6 +270,7 @@ class RankingService:
                         row["next_year_forecast_earnings_per_share"]
                     ),
                     shares_outstanding=_to_nullable_float(row["shares_outstanding"]),
+                    fy_cycle_key=_resolve_fy_cycle_key(str(row["disclosed_date"])),
                 )
             )
 
@@ -262,11 +285,18 @@ class RankingService:
             actual_snapshot = self._resolve_latest_actual_snapshot(statements, baseline_shares)
             forecast_snapshot = self._resolve_latest_forecast_snapshot(statements, baseline_shares)
 
-            if forecast_above_all_actuals:
+            if forecast_above_recent_fy_actuals:
                 if forecast_snapshot is None:
                     continue
-                max_actual_eps = self._resolve_max_actual_eps(statements, baseline_shares)
-                if max_actual_eps is None or forecast_snapshot.value <= max_actual_eps:
+                recent_max_actual_eps = self._resolve_recent_actual_eps_max(
+                    statements,
+                    baseline_shares,
+                    forecast_lookback_fy_count,
+                )
+                if (
+                    recent_max_actual_eps is None
+                    or forecast_snapshot.value <= recent_max_actual_eps
+                ):
                     continue
 
             ratio_snapshot = self._resolve_latest_ratio_snapshot(actual_snapshot, forecast_snapshot)
@@ -371,14 +401,24 @@ class RankingService:
             )
         return None
 
-    def _resolve_max_actual_eps(
+    def _resolve_recent_actual_eps_max(
         self,
         rows: list[_StatementRow],
         baseline_shares: float | None,
+        lookback_fy_count: int,
     ) -> float | None:
-        max_value: float | None = None
-        for row in rows:
+        if lookback_fy_count < 1:
+            raise ValueError("lookback_fy_count must be >= 1")
+
+        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
+        recent_values: list[float] = []
+        seen_cycles: set[str] = set()
+
+        for row in sorted_rows:
             if row.period_type != "FY":
+                continue
+            cycle_key = row.fy_cycle_key or row.disclosed_date
+            if cycle_key in seen_cycles:
                 continue
             adjusted = _adjust_per_share_value(
                 row.earnings_per_share,
@@ -387,9 +427,14 @@ class RankingService:
             )
             if adjusted is None:
                 continue
-            if max_value is None or adjusted > max_value:
-                max_value = adjusted
-        return max_value
+            seen_cycles.add(cycle_key)
+            recent_values.append(adjusted)
+            if len(recent_values) >= lookback_fy_count:
+                break
+
+        if len(recent_values) < lookback_fy_count:
+            return None
+        return max(recent_values)
 
     def _resolve_latest_fy_row(self, rows: list[_StatementRow]) -> _LatestFyRow | None:
         sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)

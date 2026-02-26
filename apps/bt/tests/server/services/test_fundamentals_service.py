@@ -1841,7 +1841,7 @@ class TestForecastEps:
         assert result is not None
         assert result.forecastEps == 604.0
 
-    def test_apply_forecast_eps_above_all_historical_actuals_true(
+    def test_apply_forecast_eps_above_recent_fy_actuals_true(
         self, service: FundamentalsService
     ):
         metrics = FundamentalDataPoint(
@@ -1868,12 +1868,16 @@ class TestForecastEps:
             ),
         ]
 
-        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+        result = service._apply_forecast_eps_above_recent_fy_actuals(
+            metrics,
+            data,
+            lookback_fy_count=2,
+        )
 
         assert result is not None
-        assert result.forecastEpsAboveAllHistoricalActuals is True
+        assert result.forecastEpsAboveRecentFyActuals is True
 
-    def test_apply_forecast_eps_above_all_historical_actuals_prefers_revised_forecast_from_fy_row(
+    def test_apply_forecast_eps_above_recent_fy_actuals_prefers_revised_forecast_from_fy_row(
         self, service: FundamentalsService
     ):
         metrics = FundamentalDataPoint(
@@ -1895,12 +1899,16 @@ class TestForecastEps:
             ),
         ]
 
-        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+        result = service._apply_forecast_eps_above_recent_fy_actuals(
+            metrics,
+            data,
+            lookback_fy_count=1,
+        )
 
         assert result is not None
-        assert result.forecastEpsAboveAllHistoricalActuals is True
+        assert result.forecastEpsAboveRecentFyActuals is True
 
-    def test_apply_forecast_eps_above_all_historical_actuals_returns_none_without_actuals(
+    def test_apply_forecast_eps_above_recent_fy_actuals_returns_none_without_actuals(
         self, service: FundamentalsService
     ):
         metrics = FundamentalDataPoint(
@@ -1920,12 +1928,16 @@ class TestForecastEps:
             ),
         ]
 
-        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+        result = service._apply_forecast_eps_above_recent_fy_actuals(
+            metrics,
+            data,
+            lookback_fy_count=1,
+        )
 
         assert result is not None
-        assert result.forecastEpsAboveAllHistoricalActuals is None
+        assert result.forecastEpsAboveRecentFyActuals is None
 
-    def test_apply_forecast_eps_above_all_historical_actuals_false_when_below_peak(
+    def test_apply_forecast_eps_above_recent_fy_actuals_false_when_below_peak(
         self, service: FundamentalsService
     ):
         metrics = FundamentalDataPoint(
@@ -1952,12 +1964,16 @@ class TestForecastEps:
             ),
         ]
 
-        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+        result = service._apply_forecast_eps_above_recent_fy_actuals(
+            metrics,
+            data,
+            lookback_fy_count=2,
+        )
 
         assert result is not None
-        assert result.forecastEpsAboveAllHistoricalActuals is False
+        assert result.forecastEpsAboveRecentFyActuals is False
 
-    def test_apply_forecast_eps_above_all_historical_actuals_returns_none_for_nonfinite_forecast(
+    def test_apply_forecast_eps_above_recent_fy_actuals_returns_none_for_nonfinite_forecast(
         self, service: FundamentalsService
     ):
         metrics = FundamentalDataPoint(
@@ -1977,10 +1993,43 @@ class TestForecastEps:
             ),
         ]
 
-        result = service._apply_forecast_eps_above_all_historical_actuals(metrics, data)
+        result = service._apply_forecast_eps_above_recent_fy_actuals(
+            metrics,
+            data,
+            lookback_fy_count=1,
+        )
 
         assert result is not None
-        assert result.forecastEpsAboveAllHistoricalActuals is None
+        assert result.forecastEpsAboveRecentFyActuals is None
+
+    def test_apply_forecast_eps_above_recent_fy_actuals_returns_none_when_lookback_insufficient(
+        self, service: FundamentalsService
+    ):
+        metrics = FundamentalDataPoint(
+            date="2024-03-31",
+            disclosedDate="2024-05-15",
+            periodType="FY",
+            isConsolidated=True,
+            adjustedForecastEps=320.0,
+        )
+        data = [
+            FundamentalDataPoint(
+                date="2024-03-31",
+                disclosedDate="2024-05-15",
+                periodType="FY",
+                isConsolidated=True,
+                adjustedEps=300.0,
+            ),
+        ]
+
+        result = service._apply_forecast_eps_above_recent_fy_actuals(
+            metrics,
+            data,
+            lookback_fy_count=2,
+        )
+
+        assert result is not None
+        assert result.forecastEpsAboveRecentFyActuals is None
 
 
 class TestFCFYield:

@@ -27,16 +27,21 @@ describe('useFundamentals', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
       tradingValuePeriod: 15,
+      forecastEpsLookbackFyCount: 3,
     });
   });
 
   it('uses custom trading value period', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({ roe: 10, per: 15 });
     const { wrapper } = createTestWrapper();
-    const { result } = renderHook(() => useFundamentals('7203', { tradingValuePeriod: 30 }), { wrapper });
+    const { result } = renderHook(
+      () => useFundamentals('7203', { tradingValuePeriod: 30, forecastEpsLookbackFyCount: 5 }),
+      { wrapper }
+    );
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
       tradingValuePeriod: 30,
+      forecastEpsLookbackFyCount: 5,
     });
   });
 
@@ -47,6 +52,7 @@ describe('useFundamentals', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
       tradingValuePeriod: 15,
+      forecastEpsLookbackFyCount: 3,
     });
   });
 
@@ -57,6 +63,7 @@ describe('useFundamentals', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/analytics/fundamentals/7203', {
       tradingValuePeriod: 1,
+      forecastEpsLookbackFyCount: 3,
     });
   });
 

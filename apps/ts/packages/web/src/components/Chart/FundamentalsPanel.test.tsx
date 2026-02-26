@@ -37,7 +37,11 @@ describe('FundamentalsPanel', () => {
 
     render(<FundamentalsPanel symbol="7203" enabled={false} />);
 
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', {
+      enabled: false,
+      tradingValuePeriod: 15,
+      forecastEpsLookbackFyCount: 3,
+    });
   });
 
   it('forwards custom tradingValuePeriod to useFundamentals and summary card', () => {
@@ -69,7 +73,11 @@ describe('FundamentalsPanel', () => {
 
     render(<FundamentalsPanel symbol="7203" tradingValuePeriod={30} />);
 
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 30 });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', {
+      enabled: true,
+      tradingValuePeriod: 30,
+      forecastEpsLookbackFyCount: 3,
+    });
     expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 30 });
   });
 
@@ -144,7 +152,7 @@ describe('FundamentalsPanel', () => {
           prevCashAndEquivalents: 450,
           cfoToNetProfitRatio: 0.45,
           tradingValueToMarketCapRatio: 33.333333,
-          forecastEpsAboveAllHistoricalActuals: true,
+          forecastEpsAboveRecentFyActuals: true,
         },
         dailyValuation: [{ per: 18, pbr: 1.4, close: 2500, marketCap: 1000000000 }],
         tradingValuePeriod: 20,
@@ -174,7 +182,7 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.stockPrice).toBe(2500);
     expect(metrics?.cfoToNetProfitRatio).toBe(0.45);
     expect(metrics?.tradingValueToMarketCapRatio).toBeCloseTo(33.333333, 5);
-    expect(metrics?.forecastEpsAboveAllHistoricalActuals).toBe(true);
+    expect(metrics?.forecastEpsAboveRecentFyActuals).toBe(true);
     expect(mockSummaryCard.mock.calls.at(-1)?.[0]).toMatchObject({ tradingValuePeriod: 20 });
   });
 
@@ -219,7 +227,7 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.revisedForecastEps).toBe(604);
     expect(metrics?.revisedForecastSource).toBe('1Q');
     expect(metrics?.forecastEpsChangeRate).toBe(504);
-    expect(metrics?.forecastEpsAboveAllHistoricalActuals).toBe(true);
+    expect(metrics?.forecastEpsAboveRecentFyActuals).toBeNull();
   });
 
   it('falls back when latestMetrics is missing and adjusted EPS cannot compute change rate', () => {
@@ -258,6 +266,6 @@ describe('FundamentalsPanel', () => {
     expect(metrics?.per).toBeUndefined();
     expect(metrics?.pbr).toBeUndefined();
     expect(metrics?.stockPrice).toBeUndefined();
-    expect(metrics?.forecastEpsAboveAllHistoricalActuals).toBe(false);
+    expect(metrics?.forecastEpsAboveRecentFyActuals).toBeNull();
   });
 });

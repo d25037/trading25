@@ -138,6 +138,12 @@ async def get_fundamentals(
         le=250,
         description="Rolling average period in days for trading value to market cap ratio",
     ),
+    forecastEpsLookbackFyCount: int = Query(
+        3,
+        ge=1,
+        le=20,
+        description="Lookback FY count for forecast EPS vs recent actual EPS comparison",
+    ),
 ) -> FundamentalsComputeResponse:
     """ファンダメンタルズ分析指標を取得"""
     req = FundamentalsComputeRequest(
@@ -147,6 +153,7 @@ async def get_fundamentals(
         period_type=periodType,
         prefer_consolidated=preferConsolidated,
         trading_value_period=tradingValuePeriod,
+        forecast_eps_lookback_fy_count=forecastEpsLookbackFyCount,
     )
     loop = asyncio.get_event_loop()
     result = await loop.run_in_executor(

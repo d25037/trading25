@@ -23,12 +23,22 @@ describe('useFundamentalRanking', () => {
   it('fetches fundamental ranking data when enabled', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({ rankings: {} });
     const { wrapper } = createTestWrapper();
-    const params = { limit: 20, markets: 'prime', forecastAboveAllActuals: true };
+    const params = {
+      limit: 20,
+      markets: 'prime',
+      forecastAboveRecentFyActuals: true,
+      forecastLookbackFyCount: 5,
+    };
     const { result } = renderHook(() => useFundamentalRanking(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith(
       '/api/analytics/fundamental-ranking',
-      expect.objectContaining({ limit: 20, markets: 'prime', forecastAboveAllActuals: true })
+      expect.objectContaining({
+        limit: 20,
+        markets: 'prime',
+        forecastAboveRecentFyActuals: true,
+        forecastLookbackFyCount: 5,
+      })
     );
   });
 
