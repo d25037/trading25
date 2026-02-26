@@ -18,7 +18,7 @@ class ExecutionConfig(BaseModel):
     """実行設定"""
 
     template_notebook: str = Field(
-        default="notebooks/templates/marimo/strategy_analysis.py",
+        default="notebooks/templates/strategy_analysis.py",
         description="Marimoテンプレートパス",
     )
     output_directory: str | None = Field(

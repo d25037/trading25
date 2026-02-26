@@ -207,7 +207,7 @@ class TestNotebookGeneratorMarimo:
         call_args = mock_executor.execute_notebook.call_args
         assert (
             call_args.kwargs["template_path"]
-            == "notebooks/templates/marimo/optimization_analysis.py"
+            == "notebooks/templates/optimization_analysis.py"
         )
         assert call_args.kwargs["strategy_name"] is None
 

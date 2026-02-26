@@ -68,7 +68,7 @@ def run_backtest(strategy: str) -> None:
         from src.domains.backtest.core.marimo_executor import MarimoExecutor
 
         executor = MarimoExecutor(str(executor_output_dir))
-        template_path = "notebooks/templates/marimo/strategy_analysis.py"
+        template_path = "notebooks/templates/strategy_analysis.py"
 
         # Execute with progress spinner
         html_path, elapsed_time = _execute_with_progress(

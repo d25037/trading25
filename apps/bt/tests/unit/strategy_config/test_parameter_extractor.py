@@ -88,7 +88,7 @@ class TestGetTemplateNotebookPath:
 
     def test_default_path(self) -> None:
         result = get_template_notebook_path({})
-        assert result == Path("notebooks/templates/strategy_analysis_template.ipynb")
+        assert result == Path("notebooks/templates/strategy_analysis.py")
 
 
 class TestGetOutputDirectory:
