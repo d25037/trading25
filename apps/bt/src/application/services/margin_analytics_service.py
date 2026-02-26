@@ -21,7 +21,7 @@ from src.entrypoints.http.schemas.analytics_margin import (
     MarginVolumeRatioData,
     MarginVolumeRatioResponse,
 )
-from src.application.services.indicator_service import (
+from src.domains.analytics.margin_metrics import (
     compute_margin_flow_pressure,
     compute_margin_long_pressure,
     compute_margin_turnover_days,

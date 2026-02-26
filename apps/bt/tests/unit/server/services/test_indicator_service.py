@@ -10,18 +10,22 @@ import pandas as pd
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.application.services.indicator_service import (
+from src.application.services.indicator_service import IndicatorService
+from src.domains.analytics.margin_metrics import (
+    compute_margin_flow_pressure,
+    compute_margin_long_pressure,
+    compute_margin_turnover_days,
+    compute_margin_volume_ratio,
+)
+from src.domains.strategy.indicators.indicator_registry import (
     INDICATOR_REGISTRY,
-    _compute_relative_ohlc_column,
     _make_key,
     _multi_series_to_records,
     _series_to_records,
+)
+from src.domains.strategy.indicators.relative_ohlcv import (
+    _compute_relative_ohlc_column,
     calculate_relative_ohlcv,
-    compute_margin_long_pressure,
-    compute_margin_flow_pressure,
-    compute_margin_turnover_days,
-    compute_margin_volume_ratio,
-    IndicatorService,
 )
 
 

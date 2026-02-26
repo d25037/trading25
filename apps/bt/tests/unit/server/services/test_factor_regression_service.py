@@ -7,13 +7,18 @@ import sqlite3
 
 import pytest
 
+import src.domains.analytics.regression_core as regression_core
 from src.infrastructure.db.market.market_reader import MarketDbReader
-from src.application.services.factor_regression_service import (
+from src.domains.analytics.regression_core import (
     DailyReturn,
+    align_returns as _align_returns,
+    calculate_daily_returns as _calculate_daily_returns,
+    calculate_weighted_portfolio_returns as _calculate_weighted_portfolio_returns,
+    find_best_matches as _find_best_matches,
+    ols_regression as _ols_regression,
+)
+from src.application.services.factor_regression_service import (
     FactorRegressionService,
-    _align_returns,
-    _calculate_daily_returns,
-    _ols_regression,
 )
 
 
@@ -82,6 +87,76 @@ class TestAlignReturns:
         index = [DailyReturn("2024-01-02", 0.005)]
         dates, _, _ = _align_returns(stock, index)
         assert dates == []
+
+
+class TestFindBestMatches:
+    def _build_dates(self, n: int) -> list[str]:
+        return [f"2024-01-{i + 1:02d}" for i in range(n)]
+
+    def test_basic_sort_and_filter(self):
+        dates = self._build_dates(35)
+        residuals = [0.001 * (i + 1) for i in range(35)]
+        residual_dates = dates
+        indices_returns = {
+            "A": [DailyReturn(date=d, ret=0.001 * (i + 1)) for i, d in enumerate(dates)],
+            "B": [DailyReturn(date=d, ret=0.002 * (i + 1)) for i, d in enumerate(dates[:20])],
+        }
+        index_names = {"A": ("Alpha", "sector33"), "B": ("Beta", "sector33")}
+
+        matches = _find_best_matches(
+            residuals=residuals,
+            residual_dates=residual_dates,
+            indices_returns=indices_returns,
+            category_codes=["A", "B", "MISSING"],
+            index_names=index_names,
+            top_n=3,
+        )
+
+        assert len(matches) == 1
+        assert matches[0].code == "A"
+        assert matches[0].name == "Alpha"
+        assert matches[0].category == "sector33"
+
+    def test_handles_missing_residual_map_entry_and_regression_error(self, monkeypatch):
+        dates = self._build_dates(31)
+        residuals = [0.001 * (i + 1) for i in range(30)]
+        indices_returns = {"A": [DailyReturn(date=d, ret=0.001) for d in dates]}
+        index_names = {"A": ("Alpha", "sector33")}
+
+        def _raise_value_error(y, x):  # noqa: ARG001
+            raise ValueError("boom")
+
+        monkeypatch.setattr(regression_core, "ols_regression", _raise_value_error)
+        matches = _find_best_matches(
+            residuals=residuals,
+            residual_dates=dates,
+            indices_returns=indices_returns,
+            category_codes=["A"],
+            index_names=index_names,
+            top_n=3,
+        )
+        assert matches == []
+
+
+class TestCalculateWeightedPortfolioReturns:
+    def test_weighted_average_by_available_symbols(self):
+        stock_returns_map = {
+            "AAA": [DailyReturn("2024-01-01", 0.01), DailyReturn("2024-01-02", 0.03)],
+            "BBB": [DailyReturn("2024-01-02", 0.01)],
+        }
+        weight_map = {"AAA": 0.6, "BBB": 0.4}
+
+        result = _calculate_weighted_portfolio_returns(stock_returns_map, weight_map)
+
+        assert [x.date for x in result] == ["2024-01-01", "2024-01-02"]
+        assert result[0].ret == pytest.approx(0.01)
+        assert result[1].ret == pytest.approx((0.6 * 0.03 + 0.4 * 0.01) / 1.0)
+
+    def test_skips_dates_with_no_weighted_components(self):
+        stock_returns_map = {"AAA": [DailyReturn("2024-01-01", 0.02)]}
+        weight_map = {"BBB": 1.0}
+        result = _calculate_weighted_portfolio_returns(stock_returns_map, weight_map)
+        assert result == []
 
 
 @pytest.fixture

@@ -7,14 +7,25 @@ Hono MarketRankingService 互換。
 
 from __future__ import annotations
 
-import math
 import sqlite3
-from dataclasses import dataclass
 from datetime import UTC, datetime
-from typing import Any, Literal
+from typing import Any
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_code_alias import resolve_market_codes
+from src.domains.analytics.fundamental_ranking import (
+    FundamentalItem,
+    FundamentalRankingCalculator,
+    ForecastValue as _ForecastValue,
+    LatestFyRow as _LatestFyRow,
+    StatementRow as _StatementRow,
+    adjust_per_share_value as _adjust_per_share_value,
+    calculate_eps_ratio as _calculate_eps_ratio,
+    is_valid_share_count as _is_valid_share_count,
+    normalize_period_label as _normalize_period_label,
+    resolve_fy_cycle_key as _resolve_fy_cycle_key,
+    to_nullable_float as _to_nullable_float,
+)
 from src.entrypoints.http.schemas.ranking import (
     FundamentalRankingItem,
     FundamentalRankings,
@@ -22,11 +33,6 @@ from src.entrypoints.http.schemas.ranking import (
     MarketRankingResponse,
     RankingItem,
     Rankings,
-)
-from src.shared.models.types import normalize_period_type
-from src.shared.utils.share_adjustment import (
-    is_valid_share_count as _is_valid_share_count_shared,
-    resolve_latest_quarterly_baseline_shares,
 )
 
 
@@ -51,90 +57,6 @@ _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
 
-@dataclass
-class _StatementRow:
-    code: str
-    disclosed_date: str
-    period_type: str
-    earnings_per_share: float | None
-    forecast_eps: float | None
-    next_year_forecast_earnings_per_share: float | None
-    shares_outstanding: float | None
-    fy_cycle_key: str | None = None
-
-
-@dataclass
-class _ForecastValue:
-    value: float
-    disclosed_date: str
-    period_type: str
-    source: Literal["revised", "fy"]
-
-
-@dataclass
-class _LatestFyRow:
-    disclosed_date: str
-    period_type: str
-    shares_outstanding: float | None
-    forecast_value: float | None
-
-
-def _normalize_period_label(period_type: str | None) -> str:
-    normalized = normalize_period_type(period_type)
-    if normalized is None:
-        return ""
-    return normalized
-
-
-def _round_eps(value: float) -> float:
-    return round(value, 2)
-
-
-def _round_ratio(value: float) -> float:
-    return round(value, 4)
-
-
-def _is_valid_share_count(value: float | None) -> bool:
-    return _is_valid_share_count_shared(value)
-
-
-def _adjust_per_share_value(
-    raw_value: float | None,
-    current_shares: float | None,
-    baseline_shares: float | None,
-) -> float | None:
-    if raw_value is None:
-        return None
-    if not (_is_valid_share_count(current_shares) and _is_valid_share_count(baseline_shares)):
-        return _round_eps(raw_value)
-    assert current_shares is not None
-    assert baseline_shares is not None
-    adjusted = raw_value * (current_shares / baseline_shares)
-    return _round_eps(adjusted)
-
-
-def _to_nullable_float(value: Any) -> float | None:
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _resolve_fy_cycle_key(disclosed_date: str) -> str:
-    """Resolve FY cycle key used for lookback counting.
-
-    market.db statements currently lacks period-end columns, so disclosed year
-    is used as an FY-year proxy to avoid over-counting multiple disclosures
-    within the same fiscal year.
-    """
-    try:
-        return datetime.fromisoformat(disclosed_date).strftime("%Y")
-    except ValueError:
-        return disclosed_date
-
-
 def _row_to_item(row: sqlite3.Row, rank: int, **extra: Any) -> RankingItem:
     """DB行をRankingItemに変換"""
     return RankingItem(
@@ -149,26 +71,12 @@ def _row_to_item(row: sqlite3.Row, rank: int, **extra: Any) -> RankingItem:
     )
 
 
-def _calculate_eps_ratio(
-    forecast_value: float,
-    actual_value: float,
-) -> float | None:
-    if not math.isfinite(forecast_value) or not math.isfinite(actual_value):
-        return None
-    if math.isclose(actual_value, 0.0, abs_tol=1e-12):
-        return None
-
-    ratio = forecast_value / actual_value
-    if not math.isfinite(ratio):
-        return None
-    return _round_ratio(ratio)
-
-
 class RankingService:
     """マーケットランキングサービス"""
 
     def __init__(self, reader: MarketDbReader) -> None:
         self._reader = reader
+        self._fundamental_calculator = FundamentalRankingCalculator()
 
     def get_rankings(
         self,
@@ -274,7 +182,7 @@ class RankingService:
                 )
             )
 
-        ratio_candidates: list[FundamentalRankingItem] = []
+        ratio_candidates: list[FundamentalItem] = []
         for stock in stock_rows:
             code = str(stock["code"])
             statements = statements_by_code.get(code)
@@ -359,35 +267,14 @@ class RankingService:
         return self._reader.query(sql, (date, *market_params))
 
     def _resolve_baseline_shares(self, rows: list[_StatementRow]) -> float | None:
-        snapshots = [
-            (row.period_type, row.disclosed_date, row.shares_outstanding)
-            for row in rows
-        ]
-        return resolve_latest_quarterly_baseline_shares(snapshots)
+        return self._fundamental_calculator.resolve_baseline_shares(rows)
 
     def _resolve_latest_actual_snapshot(
         self,
         rows: list[_StatementRow],
         baseline_shares: float | None,
     ) -> _ForecastValue | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
-        for row in sorted_rows:
-            if row.period_type != "FY":
-                continue
-            adjusted = _adjust_per_share_value(
-                row.earnings_per_share,
-                row.shares_outstanding,
-                baseline_shares,
-            )
-            if adjusted is None:
-                continue
-            return _ForecastValue(
-                value=adjusted,
-                disclosed_date=row.disclosed_date,
-                period_type=row.period_type,
-                source="fy",
-            )
-        return None
+        return self._fundamental_calculator.resolve_latest_actual_snapshot(rows, baseline_shares)
 
     def _resolve_recent_actual_eps_max(
         self,
@@ -395,72 +282,23 @@ class RankingService:
         baseline_shares: float | None,
         lookback_fy_count: int,
     ) -> float | None:
-        if lookback_fy_count < 1:
-            raise ValueError("lookback_fy_count must be >= 1")
-
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
-        recent_values: list[float] = []
-        seen_cycles: set[str] = set()
-
-        for row in sorted_rows:
-            if row.period_type != "FY":
-                continue
-            cycle_key = row.fy_cycle_key or row.disclosed_date
-            if cycle_key in seen_cycles:
-                continue
-            adjusted = _adjust_per_share_value(
-                row.earnings_per_share,
-                row.shares_outstanding,
-                baseline_shares,
-            )
-            if adjusted is None:
-                continue
-            seen_cycles.add(cycle_key)
-            recent_values.append(adjusted)
-            if len(recent_values) >= lookback_fy_count:
-                break
-
-        if len(recent_values) < lookback_fy_count:
-            return None
-        return max(recent_values)
+        return self._fundamental_calculator.resolve_recent_actual_eps_max(
+            rows,
+            baseline_shares,
+            lookback_fy_count,
+        )
 
     def _resolve_latest_fy_row(self, rows: list[_StatementRow]) -> _LatestFyRow | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
-        for row in sorted_rows:
-            if row.period_type != "FY":
-                continue
-            forecast_value = (
-                row.next_year_forecast_earnings_per_share
-                if row.next_year_forecast_earnings_per_share is not None
-                else row.forecast_eps
-            )
-            return _LatestFyRow(
-                disclosed_date=row.disclosed_date,
-                period_type=row.period_type,
-                shares_outstanding=row.shares_outstanding,
-                forecast_value=forecast_value,
-            )
-        return None
+        return self._fundamental_calculator.resolve_latest_fy_row(rows)
 
     def _resolve_latest_fy_forecast_snapshot(
         self,
         fy_row: _LatestFyRow | None,
         baseline_shares: float | None,
     ) -> _ForecastValue | None:
-        if fy_row is None:
-            return None
-        adjusted = _adjust_per_share_value(
-            fy_row.forecast_value,
-            fy_row.shares_outstanding,
+        return self._fundamental_calculator.resolve_latest_fy_forecast_snapshot(
+            fy_row,
             baseline_shares,
-        )
-        if adjusted is None:
-            return None
-        return _ForecastValue(
-            value=adjusted,
-            disclosed_date=fy_row.disclosed_date,
-            period_type=fy_row.period_type,
-            source="fy",
         )
 
     def _resolve_latest_revised_forecast_snapshot(
@@ -469,106 +307,68 @@ class RankingService:
         baseline_shares: float | None,
         fy_disclosed_date: str,
     ) -> _ForecastValue | None:
-        sorted_rows = sorted(rows, key=lambda row: row.disclosed_date, reverse=True)
-        for row in sorted_rows:
-            if row.period_type not in _QUARTER_PERIODS:
-                continue
-            if row.disclosed_date <= fy_disclosed_date:
-                continue
-            raw_revised = (
-                row.forecast_eps
-                if row.forecast_eps is not None
-                else row.next_year_forecast_earnings_per_share
-            )
-            adjusted = _adjust_per_share_value(
-                raw_revised,
-                row.shares_outstanding,
-                baseline_shares,
-            )
-            if adjusted is None:
-                continue
-            return _ForecastValue(
-                value=adjusted,
-                disclosed_date=row.disclosed_date,
-                period_type=row.period_type,
-                source="revised",
-            )
-        return None
+        return self._fundamental_calculator.resolve_latest_revised_forecast_snapshot(
+            rows,
+            baseline_shares,
+            fy_disclosed_date,
+        )
 
     def _resolve_latest_forecast_snapshot(
         self,
         rows: list[_StatementRow],
         baseline_shares: float | None,
     ) -> _ForecastValue | None:
-        latest_fy_row = self._resolve_latest_fy_row(rows)
-        if latest_fy_row is None:
-            return None
-
-        revised = self._resolve_latest_revised_forecast_snapshot(
+        return self._fundamental_calculator.resolve_latest_forecast_snapshot(
             rows,
             baseline_shares,
-            latest_fy_row.disclosed_date,
         )
-        if revised is not None:
-            return revised
-        return self._resolve_latest_fy_forecast_snapshot(latest_fy_row, baseline_shares)
 
     def _resolve_latest_ratio_snapshot(
         self,
         actual_snapshot: _ForecastValue | None,
         forecast_snapshot: _ForecastValue | None,
     ) -> _ForecastValue | None:
-        if actual_snapshot is None or forecast_snapshot is None:
-            return None
-
-        ratio = _calculate_eps_ratio(
-            forecast_value=forecast_snapshot.value,
-            actual_value=actual_snapshot.value,
-        )
-        if ratio is None:
-            return None
-
-        return _ForecastValue(
-            value=ratio,
-            disclosed_date=forecast_snapshot.disclosed_date,
-            period_type=forecast_snapshot.period_type,
-            source=forecast_snapshot.source,
+        return self._fundamental_calculator.resolve_latest_ratio_snapshot(
+            actual_snapshot,
+            forecast_snapshot,
         )
 
     def _build_fundamental_item(
         self,
         stock_row: sqlite3.Row,
         snapshot: _ForecastValue,
-    ) -> FundamentalRankingItem:
-        return FundamentalRankingItem(
-            rank=0,
-            code=str(stock_row["code"]),
-            companyName=str(stock_row["company_name"]),
-            marketCode=str(stock_row["market_code"]),
-            sector33Name=str(stock_row["sector_33_name"]),
-            currentPrice=float(stock_row["current_price"]),
-            volume=float(stock_row["volume"]),
-            epsValue=snapshot.value,
-            disclosedDate=snapshot.disclosed_date,
-            periodType=snapshot.period_type,
-            source=snapshot.source,
-        )
+    ) -> FundamentalItem:
+        return self._fundamental_calculator.build_fundamental_item(stock_row, snapshot)
 
     def _rank_fundamental_items(
         self,
-        items: list[FundamentalRankingItem],
+        items: list[FundamentalItem],
         limit: int,
         *,
         descending: bool,
     ) -> list[FundamentalRankingItem]:
-        if descending:
-            sorted_items = sorted(items, key=lambda item: (-item.epsValue, item.code))
-        else:
-            sorted_items = sorted(items, key=lambda item: (item.epsValue, item.code))
-
+        sorted_items = self._fundamental_calculator.rank_fundamental_items(
+            items,
+            limit,
+            descending=descending,
+        )
         ranked: list[FundamentalRankingItem] = []
-        for index, item in enumerate(sorted_items[:limit], start=1):
-            ranked.append(item.model_copy(update={"rank": index}))
+        for index, item in enumerate(sorted_items, start=1):
+            ranked.append(
+                FundamentalRankingItem(
+                    rank=index,
+                    code=item.code,
+                    companyName=item.company_name,
+                    marketCode=item.market_code,
+                    sector33Name=item.sector_33_name,
+                    currentPrice=item.current_price,
+                    volume=item.volume,
+                    epsValue=item.eps_value,
+                    disclosedDate=item.disclosed_date,
+                    periodType=item.period_type,
+                    source=item.source,
+                )
+            )
         return ranked
 
     def _get_trading_date_before(self, date: str, offset: int) -> str | None:

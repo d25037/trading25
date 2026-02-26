@@ -12,11 +12,9 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.application.services.indicator_service import (
-    IndicatorService,
-    calculate_relative_ohlcv,
-    compute_margin_volume_ratio,
-)
+from src.application.services.indicator_service import IndicatorService
+from src.domains.analytics.margin_metrics import compute_margin_volume_ratio
+from src.domains.strategy.indicators.relative_ohlcv import calculate_relative_ohlcv
 
 
 # ===== Fixtures =====

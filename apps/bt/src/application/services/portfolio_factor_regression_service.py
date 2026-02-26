@@ -13,6 +13,14 @@ from datetime import UTC, datetime
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
+from src.domains.analytics.regression_core import (
+    DailyReturn,
+    align_returns,
+    calculate_daily_returns,
+    calculate_weighted_portfolio_returns,
+    find_best_matches,
+    ols_regression,
+)
 from src.entrypoints.http.schemas.portfolio_factor_regression import (
     DateRange,
     ExcludedStock,
@@ -26,12 +34,7 @@ from src.application.services.factor_regression_service import (
     CATEGORY_SECTOR33,
     CATEGORY_STYLE,
     CATEGORY_TOPIX,
-    DailyReturn,
     TOPIX_CODE,
-    _align_returns,
-    _calculate_daily_returns,
-    _find_best_matches,
-    _ols_regression,
 )
 
 
@@ -99,7 +102,7 @@ class PortfolioFactorRegressionService:
         for sw in weights:
             prices = self._reader.get_stock_prices_by_date(sw.code)
             if len(prices) >= 2:
-                stock_returns_map[sw.code] = _calculate_daily_returns(prices)
+                stock_returns_map[sw.code] = calculate_daily_returns(prices)
             else:
                 excluded.append(
                     ExcludedStock(
@@ -114,7 +117,7 @@ class PortfolioFactorRegressionService:
             raise ValueError("No valid stocks with sufficient data for analysis")
 
         # 加重平均ポートフォリオリターンを計算
-        portfolio_returns = self._calculate_portfolio_returns(
+        portfolio_returns = calculate_weighted_portfolio_returns(
             stock_returns_map, {w.code: w.weight for w in weights if w.code in included_codes}
         )
 
@@ -125,10 +128,10 @@ class PortfolioFactorRegressionService:
                 "SELECT date, close FROM topix_data ORDER BY date"
             )
         ]
-        topix_returns = _calculate_daily_returns(topix_prices)
+        topix_returns = calculate_daily_returns(topix_prices)
 
         # アライメント
-        dates, aligned_port, aligned_topix = _align_returns(portfolio_returns, topix_returns)
+        dates, aligned_port, aligned_topix = align_returns(portfolio_returns, topix_returns)
 
         if len(dates) < min_data_points:
             raise ValueError(
@@ -143,7 +146,7 @@ class PortfolioFactorRegressionService:
             aligned_topix = aligned_topix[start:]
 
         # Stage 1: 市場回帰
-        market_reg = _ols_regression(aligned_port, aligned_topix)
+        market_reg = ols_regression(aligned_port, aligned_topix)
 
         # 全指数リターン・カテゴリを一括取得
         indices_returns, index_names = self._load_indices_returns()
@@ -183,37 +186,6 @@ class PortfolioFactorRegressionService:
             excludedStocks=excluded,
         )
 
-    def _calculate_portfolio_returns(
-        self,
-        stock_returns_map: dict[str, list[DailyReturn]],
-        weight_map: dict[str, float],
-    ) -> list[DailyReturn]:
-        """加重平均ポートフォリオリターンを計算"""
-        # 全日付を収集
-        all_dates: set[str] = set()
-        for rets in stock_returns_map.values():
-            all_dates.update(r.date for r in rets)
-        sorted_dates = sorted(all_dates)
-
-        # 各銘柄の return map
-        return_maps: dict[str, dict[str, float]] = {}
-        for code, rets in stock_returns_map.items():
-            return_maps[code] = {r.date: r.ret for r in rets}
-
-        portfolio_returns: list[DailyReturn] = []
-        for date in sorted_dates:
-            weighted_ret = 0.0
-            total_weight = 0.0
-            for code, weight in weight_map.items():
-                ret = return_maps.get(code, {}).get(date)
-                if ret is not None:
-                    weighted_ret += weight * ret
-                    total_weight += weight
-            if total_weight > 0:
-                portfolio_returns.append(DailyReturn(date=date, ret=weighted_ret / total_weight))
-
-        return portfolio_returns
-
     def _load_indices_returns(
         self,
     ) -> tuple[dict[str, list[DailyReturn]], dict[str, tuple[str, str]]]:
@@ -239,7 +211,7 @@ class PortfolioFactorRegressionService:
         indices_returns: dict[str, list[DailyReturn]] = {}
         for code, prices in prices_by_code.items():
             if len(prices) >= 2:
-                indices_returns[code] = _calculate_daily_returns(prices)
+                indices_returns[code] = calculate_daily_returns(prices)
 
         return indices_returns, index_names
 
@@ -262,14 +234,14 @@ class PortfolioFactorRegressionService:
         index_names: dict[str, tuple[str, str]],
     ) -> list[IndexMatch]:
         """残差ファクターマッチング → IndexMatch（簡易形式）"""
-        raw_matches = _find_best_matches(
+        raw_matches = find_best_matches(
             residuals, dates, indices_returns, category_codes, index_names
         )
         return [
             IndexMatch(
-                code=m.indexCode,
-                name=m.indexName,
-                rSquared=m.rSquared,
+                code=m.code,
+                name=m.name,
+                rSquared=m.r_squared,
             )
             for m in raw_matches
         ]

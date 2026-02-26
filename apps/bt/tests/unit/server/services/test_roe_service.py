@@ -2,13 +2,27 @@
 ROE Service Unit Tests
 """
 
-
-from src.application.services.roe_service import (
-    _calculate_single_roe,
-    _normalize_period_type,
-    _is_quarterly,
-    _should_prefer,
+from src.domains.fundamentals.roe import (
+    calculate_single_roe as _calculate_single_roe,
+    is_quarterly as _is_quarterly,
+    normalize_period_type as _normalize_period_type,
+    should_prefer as _should_prefer,
 )
+from src.application.services.roe_service import (
+    _to_response_item,
+)
+
+
+def _as_response(stmt, annualize=True, prefer_consolidated=True, min_equity=1000):
+    result = _calculate_single_roe(
+        stmt,
+        annualize=annualize,
+        prefer_consolidated=prefer_consolidated,
+        min_equity=min_equity,
+    )
+    return None if result is None else _to_response_item(result)
+
+
 
 
 class TestNormalizePeriodType:
@@ -55,7 +69,7 @@ class TestCalculateSingleROE:
             "NP": 250000,
             "Eq": 1500000,
         }
-        result = _calculate_single_roe(stmt)
+        result = _as_response(stmt)
         assert result is not None
         assert abs(result.roe - 16.6667) < 0.01
         assert result.metadata.code == "7203"
@@ -72,7 +86,7 @@ class TestCalculateSingleROE:
             "NP": 50000,
             "Eq": 1500000,
         }
-        result = _calculate_single_roe(stmt, annualize=True)
+        result = _as_response(stmt, annualize=True)
         assert result is not None
         # 50000 * 4 / 1500000 * 100 = 13.33%
         assert abs(result.roe - 13.3333) < 0.01
@@ -88,7 +102,7 @@ class TestCalculateSingleROE:
             "NP": 100000,
             "Eq": 1500000,
         }
-        result = _calculate_single_roe(stmt, annualize=True)
+        result = _as_response(stmt, annualize=True)
         assert result is not None
         # 100000 * 2 / 1500000 * 100 = 13.33%
         assert abs(result.roe - 13.3333) < 0.01
@@ -103,7 +117,7 @@ class TestCalculateSingleROE:
             "NP": 50000,
             "Eq": 1500000,
         }
-        result = _calculate_single_roe(stmt, annualize=False)
+        result = _as_response(stmt, annualize=False)
         assert result is not None
         # 50000 / 1500000 * 100 = 3.33%
         assert abs(result.roe - 3.3333) < 0.01
@@ -120,7 +134,7 @@ class TestCalculateSingleROE:
             "NCNP": 50000,
             "NCEq": 500000,
         }
-        result = _calculate_single_roe(stmt, prefer_consolidated=True)
+        result = _as_response(stmt, prefer_consolidated=True)
         assert result is not None
         assert abs(result.roe - 10.0) < 0.01
 
@@ -134,7 +148,7 @@ class TestCalculateSingleROE:
             "NP": 500,
             "Eq": 100,
         }
-        result = _calculate_single_roe(stmt, min_equity=1000)
+        result = _as_response(stmt, min_equity=1000)
         assert result is None
 
     def test_zero_equity(self):
@@ -147,7 +161,7 @@ class TestCalculateSingleROE:
             "NP": 50000,
             "Eq": 0,
         }
-        result = _calculate_single_roe(stmt)
+        result = _as_response(stmt)
         assert result is None
 
     def test_missing_profit(self):
@@ -159,7 +173,7 @@ class TestCalculateSingleROE:
             "DocType": "Consolidated",
             "Eq": 1500000,
         }
-        result = _calculate_single_roe(stmt)
+        result = _as_response(stmt)
         assert result is None
 
     def test_accounting_standard_ifrs(self):
@@ -172,7 +186,7 @@ class TestCalculateSingleROE:
             "NP": 250000,
             "Eq": 1500000,
         }
-        result = _calculate_single_roe(stmt)
+        result = _as_response(stmt)
         assert result is not None
         assert result.metadata.accountingStandard == "IFRS"
 

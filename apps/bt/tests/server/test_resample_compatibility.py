@@ -16,10 +16,8 @@ from typing import Any
 import numpy as np
 import pandas as pd
 
-from src.application.services.indicator_service import (
-    IndicatorService,
-    calculate_relative_ohlcv,
-)
+from src.application.services.indicator_service import IndicatorService
+from src.domains.strategy.indicators.relative_ohlcv import calculate_relative_ohlcv
 
 
 # ===== ゴールデンデータ定義 =====

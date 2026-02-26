@@ -16,6 +16,12 @@ from sqlalchemy import Row
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
+from src.domains.analytics.regression_core import (
+    DailyReturn,
+    align_returns,
+    calculate_daily_returns,
+    ols_regression,
+)
 from src.entrypoints.http.schemas.portfolio_performance import (
     BenchmarkResult,
     BenchmarkTimeSeriesPoint,
@@ -24,11 +30,6 @@ from src.entrypoints.http.schemas.portfolio_performance import (
     PerformanceSummary,
     PortfolioPerformanceResponse,
     TimeSeriesPoint,
-)
-from src.application.services.factor_regression_service import (
-    _align_returns,
-    _calculate_daily_returns,
-    _ols_regression,
 )
 
 
@@ -174,7 +175,7 @@ class PortfolioPerformanceService:
             code4 = item.code  # type: ignore[union-attr]
             prices = self._reader.get_stock_prices_by_date(code4)
             if len(prices) >= 2:
-                returns = _calculate_daily_returns(prices)
+                returns = calculate_daily_returns(prices)
                 daily_returns_by_code[code4] = [(dr.date, dr.ret) for dr in returns]
 
         if not daily_returns_by_code:
@@ -257,13 +258,10 @@ class PortfolioPerformanceService:
         if len(bench_prices) < 2:
             return None
 
-        bench_returns = _calculate_daily_returns(bench_prices)
-        port_returns_dr = [
-            type("DR", (), {"date": d, "ret": r})()
-            for d, r in portfolio_daily
-        ]
+        bench_returns = calculate_daily_returns(bench_prices)
+        port_returns_dr = [DailyReturn(date=d, ret=r) for d, r in portfolio_daily]
 
-        dates, aligned_port, aligned_bench = _align_returns(port_returns_dr, bench_returns)  # type: ignore[arg-type]
+        dates, aligned_port, aligned_bench = align_returns(port_returns_dr, bench_returns)
 
         if len(dates) < 30:
             return None
@@ -276,7 +274,7 @@ class PortfolioPerformanceService:
             aligned_bench = aligned_bench[start:]
 
         # OLS 回帰
-        reg = _ols_regression(aligned_port, aligned_bench)
+        reg = ols_regression(aligned_port, aligned_bench)
 
         # Correlation
         n = len(aligned_port)

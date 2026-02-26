@@ -21,12 +21,12 @@ from src.entrypoints.http.schemas.indicators import (
     OHLCVResampleRequest,
     OHLCVResampleResponse,
 )
-from src.application.services.indicator_service import (
-    IndicatorService,
+from src.application.services.indicator_service import IndicatorService
+from src.domains.strategy.indicators.indicator_registry import (
     _clean_value,
     _format_date,
-    calculate_relative_ohlcv,
 )
+from src.domains.strategy.indicators.relative_ohlcv import calculate_relative_ohlcv
 
 router = APIRouter(tags=["OHLCV"])
 

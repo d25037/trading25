@@ -10,15 +10,16 @@ import pandas as pd
 import pytest
 
 from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
-from src.entrypoints.http.schemas.fundamentals import (
-    DailyValuationDataPoint,
-    FundamentalDataPoint,
-    FundamentalsComputeRequest,
-)
+from src.entrypoints.http.schemas.fundamentals import FundamentalsComputeRequest
 from src.shared.models.types import normalize_period_type
+from src.domains.fundamentals import (
+    DailyValuationDataPoint,
+    FYDataPoint,
+    FundamentalDataPoint,
+    FundamentalsCalculator,
+)
 from src.application.services.fundamentals_service import (
     FundamentalsService,
-    FYDataPoint,
     fundamentals_service,
 )
 
@@ -63,7 +64,7 @@ class TestMetricCalculations:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     @pytest.fixture
     def sample_statement(self) -> JQuantsStatement:
@@ -296,7 +297,7 @@ class TestHelperMethods:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_round_or_none(self, service: FundamentalsService):
         """数値の丸め処理"""
@@ -502,7 +503,7 @@ class TestFilterStatements:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     @pytest.fixture
     def statements(self) -> list[JQuantsStatement]:
@@ -592,7 +593,7 @@ class TestDailyValuation:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     @staticmethod
     def _data_point(
@@ -1185,7 +1186,7 @@ class TestComputeAdjustedValue:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_none_value(self, service: FundamentalsService):
         assert service._compute_adjusted_value(None, 100.0, 200.0) is None
@@ -1253,7 +1254,7 @@ class TestAnnualizeQuarterlyProfit:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_q1_annualization(self, service: FundamentalsService):
         """1Q: 4倍"""
@@ -1290,7 +1291,7 @@ class TestForecastEps:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_get_forecast_eps_fy_consolidated(self, service: FundamentalsService):
         """FYの場合はNxFEPSが優先"""
@@ -2037,7 +2038,7 @@ class TestFCFYield:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_calculate_fcf_yield(self, service: FundamentalsService):
         """正常なFCF Yield計算"""
@@ -2105,7 +2106,7 @@ class TestCFOYield:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_calculate_cfo_yield(self, service: FundamentalsService):
         """正常なCFO Yield計算"""
@@ -2173,7 +2174,7 @@ class TestHasActualFinancialData:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_has_actual_data_with_roe(self, service: FundamentalsService):
         """ROEがある場合"""
@@ -2386,7 +2387,7 @@ class TestHasValidValuationMetrics:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_valid_eps_only(self, service: FundamentalsService):
         """EPSのみ有効"""
@@ -2414,7 +2415,7 @@ class TestPreviousPeriodCashFlow:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     @pytest.fixture
     def statements(self) -> list[JQuantsStatement]:
@@ -2512,7 +2513,7 @@ class TestCalculateDailyValuation:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     @staticmethod
     def _statement_base() -> dict[str, object]:
@@ -2708,7 +2709,7 @@ class TestDividendPerShare:
 
     @pytest.fixture
     def service(self):
-        return FundamentalsService()
+        return FundamentalsCalculator()
 
     def test_calculate_all_metrics_sets_dividend(self, service: FundamentalsService):
         stmt = JQuantsStatement(
