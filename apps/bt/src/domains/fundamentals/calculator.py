@@ -19,7 +19,6 @@ from .models import (
     DailyValuationDataPoint,
     EMPTY_PREV_CASH_FLOW,
     FYDataPoint,
-    DailyValuationDataPoint,
     FundamentalDataPoint,
 )
 
