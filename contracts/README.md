@@ -46,7 +46,7 @@ bun run --filter @trading25/shared bt:sync
 
 - 検査: `scripts/check-dep-direction.sh`
 - allowlist: `scripts/dep-direction-allowlist.txt`
-- 参照: `docs/reports/dependency-audit-phase1b.md`
+- 参照: `docs/archive/reports/dependency-audit-phase1b.md`
 
 ## Files
 

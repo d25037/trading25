@@ -37,4 +37,4 @@ parent: null
 - `README.md` の Governance セクションから triage runbook への導線を追加。
 
 ## 補足
-- 背景: `docs/reports/public-repo-readiness-audit-2026-02-20.md` の Medium 対応。
+- 背景: `docs/archive/reports/public-repo-readiness-audit-2026-02-20.md` の Medium 対応。

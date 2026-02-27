@@ -35,4 +35,4 @@ parent: null
 - テンプレート値はローカル開発向けのプレースホルダ/localhost のみを使用し、本番 URL・実鍵は未記載。
 
 ## 補足
-- 背景: `docs/reports/public-repo-readiness-audit-2026-02-20.md` の Low 対応。
+- 背景: `docs/archive/reports/public-repo-readiness-audit-2026-02-20.md` の Low 対応。

@@ -109,4 +109,4 @@
 | `apps/bt/tests/server/test_indicator_golden.py` | 精度比較テスト (15テスト) |
 | `apps/bt/scripts/measure_indicator_latency.py` | レイテンシ計測 |
 | `apps/bt/src/utils/indicators.py` | ATR Support修正 |
-| `docs/reports/phase2_5_verification_report.md` | 本レポート |
+| `docs/archive/reports/phase2_5_verification_report.md` | 本レポート |

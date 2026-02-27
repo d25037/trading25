@@ -34,4 +34,4 @@ parent: null
 - CI への secret scan 常時組み込みは `ts-132` へ継続。
 
 ## 補足
-- 背景: `docs/reports/public-repo-readiness-audit-2026-02-20.md` の High 対応。
+- 背景: `docs/archive/reports/public-repo-readiness-audit-2026-02-20.md` の High 対応。

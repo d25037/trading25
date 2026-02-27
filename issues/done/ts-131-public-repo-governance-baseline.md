@@ -36,4 +36,4 @@ private -> public 移行前に、公開リポジトリとして必須のガバ�
 - `README.md` に Governance セクションを追加し、上記文書への導線を整備。
 
 ## 補足
-- 背景: `docs/reports/public-repo-readiness-audit-2026-02-20.md` の High/Medium 対応。
+- 背景: `docs/archive/reports/public-repo-readiness-audit-2026-02-20.md` の High/Medium 対応。

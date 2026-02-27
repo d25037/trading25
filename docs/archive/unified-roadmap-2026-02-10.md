@@ -59,7 +59,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 - **ステータス**: 条件付き承認
 - **提案**: Phase 3C で FastAPI が market.db / dataset.db / portfolio.db に直接アクセスする
 - **前提条件（全て充足）**:
-  - [x] Phase 2B（FastAPI 事前調査）完了 — [監査レポート](../reports/phase2b-endpoint-audit.md) 参照
+  - [x] Phase 2B（FastAPI 事前調査）完了 — [監査レポート](./reports/phase2b-endpoint-audit.md) 参照
   - [x] AGENTS.md の「直接 DB 禁止」ルールの更新（Phase 3C 開始時に実施）
 - **元ドキュメント**: `docs/archive/hono-to-fastapi-migration-roadmap.md`
 
@@ -143,7 +143,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - [x] **Phase 0** (2026-02-02): bt-018〜021 解消、API client/CLI 整理
 - [x] **Phase 1** (2026-02-02): Indicator API 構築（11 種テクニカル + 3 種信用指標）
 - [x] **Phase 2** (2026-02-02): apps/ts/web の API 移行（useBtIndicators/useBtMarginIndicators）
-- [x] **Phase 2.5**: 並走検証完了（[検証レポート](../reports/phase2_5_verification_report.md)）
+- [x] **Phase 2.5**: 並走検証完了（[検証レポート](./reports/phase2_5_verification_report.md)）
 - [x] **Phase 3** (2026-02-03): apps/ts/shared/src/ta/ 段階的廃止
   - 削除: sma, ema, rsi, macd, ppo, bollinger, atr, atr-support, n-bar-support, volume-comparison, trading-value-ma, margin-pressure-indicators, margin-volume-ratio
   - 残存: relative/, timeframe/, utils.ts
@@ -174,7 +174,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - [x] 依存方向違反のチェック機構追加（CI or lint rule）
 
 **成果物**:
-- [`docs/reports/dependency-audit-phase1b.md`](../reports/dependency-audit-phase1b.md) — 監査レポート（bt→ts 15件準拠、ts→bt 39件分類済み）
+- [`docs/archive/reports/dependency-audit-phase1b.md`](./reports/dependency-audit-phase1b.md) — 監査レポート（bt→ts 15件準拠、ts→bt 39件分類済み）
 - `scripts/dep-direction-allowlist.txt` — 許可ファイル一覧（permanent 3件 + phase3-removal 36件）
 - `scripts/check-dep-direction.sh` — CI チェックスクリプト（違反検出 + staleness check）
 - `scripts/lint.sh` に統合済み（既存 lint の前に実行）
@@ -221,7 +221,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 *元: hono-to-fastapi-migration-roadmap.md Phase 0*
 
 - [x] OpenAPI 固定（Hono の openapi.json を `contracts/hono-openapi-baseline.json` として凍結）
-- [x] 既存 FastAPI エンドポイント vs Hono エンドポイント監査 — [`docs/reports/phase2b-endpoint-audit.md`](../reports/phase2b-endpoint-audit.md)
+- [x] 既存 FastAPI エンドポイント vs Hono エンドポイント監査 — [`docs/archive/reports/phase2b-endpoint-audit.md`](./reports/phase2b-endpoint-audit.md)
 - [x] 例外レスポンスフォーマット統一（Hono 互換 6 フィールド + correlation ID ミドルウェア）
 - [x] FastAPI 側の既存エンドポイント一覧整理、競合パス明確化（重複: `/api/health` のみ）
 
@@ -236,7 +236,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 **成果物**:
 - [`contracts/README.md`](../../contracts/README.md) — ガバナンスルール・バージョニング方針・snapshot 方針
 - [`contracts/hono-openapi-baseline.json`](../../contracts/hono-openapi-baseline.json) — Hono OpenAPI 凍結ベースライン
-- [`docs/reports/phase2b-endpoint-audit.md`](../reports/phase2b-endpoint-audit.md) — エンドポイント監査レポート（Hono 90 + FastAPI 41）
+- [`docs/archive/reports/phase2b-endpoint-audit.md`](./reports/phase2b-endpoint-audit.md) — エンドポイント監査レポート（Hono 90 + FastAPI 41）
 - 統一エラーレスポンス（Hono 互換 6 フィールド + correlation ID ミドルウェア）
 - ts-116 解消（OptimizationHtmlFile 型を bt OpenAPI に追加）
 - ADR-003 条件付き承認
