@@ -8,25 +8,31 @@ function normalizeLookbackFyCount(value: number | undefined): number {
   return Math.min(20, Math.max(1, Math.trunc(value)));
 }
 
-function fetchFundamentalRanking(params: FundamentalRankingParams): Promise<MarketFundamentalRankingResponse> {
-  const forecastAboveRecentFyActuals = params.forecastAboveRecentFyActuals ?? params.forecastAboveAllActuals ?? false;
-  const forecastLookbackFyCount = normalizeLookbackFyCount(params.forecastLookbackFyCount);
+function resolveForecastFilterEnabled(params: FundamentalRankingParams): boolean {
+  return params.forecastAboveRecentFyActuals ?? params.forecastAboveAllActuals ?? false;
+}
 
-  return apiGet<MarketFundamentalRankingResponse>('/api/analytics/fundamental-ranking', {
+function fetchFundamentalRanking(params: FundamentalRankingParams): Promise<MarketFundamentalRankingResponse> {
+  const forecastAboveRecentFyActuals = resolveForecastFilterEnabled(params);
+  const forecastLookbackFyCount = forecastAboveRecentFyActuals
+    ? normalizeLookbackFyCount(params.forecastLookbackFyCount)
+    : undefined;
+
+  const query = {
     limit: params.limit,
     markets: params.markets,
     forecastAboveRecentFyActuals,
     forecastLookbackFyCount,
-  });
+  };
+
+  logger.debug('Fetching fundamental ranking data', { query });
+  return apiGet<MarketFundamentalRankingResponse>('/api/analytics/fundamental-ranking', query);
 }
 
 export function useFundamentalRanking(params: FundamentalRankingParams, enabled = true) {
   return useQuery({
     queryKey: ['fundamental-ranking', params],
-    queryFn: () => {
-      logger.debug('Fetching fundamental ranking data', { params });
-      return fetchFundamentalRanking(params);
-    },
+    queryFn: () => fetchFundamentalRanking(params),
     enabled,
     staleTime: 60 * 1000, // 1 minute
     gcTime: 5 * 60 * 1000, // 5 minutes
