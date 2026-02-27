@@ -110,7 +110,7 @@ uv run pyright src/              # 型チェック
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
 - Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
 - Lab `optimize`（Optuna）は開始時に OHLCV/benchmark を1回プリフェッチして trial 間で再利用し、`pruning=true` 時は第1段階バックテストの暫定スコアで早期枝刈りを行う
-- Optimization HTML（`notebooks/templates/marimo/optimization_analysis.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
+- Optimization HTML（`notebooks/templates/optimization_analysis.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
 - `/api/optimize/jobs/{id}` は `best_score` / `total_combinations` に加えて `best_params` / `worst_score` / `worst_params` を返し、最適化ジョブ結果カードで best/worst 条件を比較表示できる
 - `forward_eps_growth` / `peg_ratio` は FY実績EPSを分母に固定し、`period_type=FY` でも必要時のみ追加取得した四半期 FEPS 修正を forecast 側へ反映する
 - Fundamental signal は `forecast_eps_above_recent_fy_actuals`（最新予想EPS > 直近FY X回の実績EPS最大値）をサポートし、`lookback_fy_count` で比較年数を指定できる。forecast revision 読み込み（screening/lab/optimization/backtest）を有効化する

@@ -36,9 +36,7 @@ def imports():
 def load_parameters(mo, json, sys, Path):
     # プロジェクトルートをパスに追加
     _project_root = Path.cwd()
-    if _project_root.name == "marimo":
-        _project_root = _project_root.parent.parent.parent
-    elif _project_root.name == "templates":
+    if _project_root.name == "templates":
         _project_root = _project_root.parent.parent
     elif _project_root.name == "notebooks":
         _project_root = _project_root.parent

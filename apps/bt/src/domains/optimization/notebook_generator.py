@@ -100,7 +100,7 @@ def _generate_with_marimo(
     """
     from src.domains.backtest.core.marimo_executor import MarimoExecutor
 
-    template_path = "notebooks/templates/marimo/optimization_analysis.py"
+    template_path = "notebooks/templates/optimization_analysis.py"
 
     # パラメータ準備
     parameters = {
