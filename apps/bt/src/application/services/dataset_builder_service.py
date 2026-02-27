@@ -8,8 +8,11 @@ GenericJobManager を使用してバックグラウンドビルドを管理す�
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -23,6 +26,7 @@ from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.entrypoints.http.schemas.job import JobProgress
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.market.dataset_db import DatasetDb
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 
 
@@ -49,6 +53,89 @@ class DatasetResult:
 dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResult] = GenericJobManager()
 _TOTAL_STAGES = 7
 _WARNING_SAMPLE_SIZE = 5
+
+
+def _manifest_path_for_db(db_path: str) -> Path:
+    db_file = Path(db_path)
+    return db_file.with_name(f"{db_file.stem}.manifest.v1.json")
+
+
+def _sha256_of_file(path: Path) -> str:
+    hasher = hashlib.sha256()
+    with path.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1024 * 1024), b""):
+            hasher.update(chunk)
+    return hasher.hexdigest()
+
+
+def _build_logical_checksum_payload(
+    *,
+    counts: dict[str, int],
+    coverage: dict[str, int],
+    date_range: dict[str, str] | None,
+) -> str:
+    payload = {
+        "counts": counts,
+        "coverage": coverage,
+        "dateRange": date_range,
+    }
+    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
+
+
+def _write_dataset_manifest(
+    *,
+    db_path: str,
+    dataset_name: str,
+    preset_name: str,
+    manifest_path: Path | None = None,
+) -> str:
+    db_file = Path(db_path)
+    if not db_file.exists():
+        raise FileNotFoundError(f"dataset db not found: {db_file}")
+
+    db = DatasetDb(str(db_file))
+
+    try:
+        counts = db.get_table_counts()
+        date_range = db.get_date_range()
+        coverage = {
+            "totalStocks": db.get_stock_count(),
+            "stocksWithQuotes": db.get_stocks_with_quotes_count(),
+            "stocksWithStatements": db.get_stocks_with_statements_count(),
+            "stocksWithMargin": db.get_stocks_with_margin_count(),
+        }
+    finally:
+        db.close()
+
+    manifest = {
+        "schemaVersion": 1,
+        "generatedAt": datetime.now(UTC).isoformat(),
+        "dataset": {
+            "name": dataset_name,
+            "preset": preset_name,
+            "dbFile": db_file.name,
+        },
+        "counts": counts,
+        "coverage": coverage,
+        "checksums": {
+            "datasetDbSha256": _sha256_of_file(db_file),
+            "logicalSha256": _build_logical_checksum_payload(
+                counts=counts,
+                coverage=coverage,
+                date_range=date_range,
+            ),
+        },
+    }
+    if date_range is not None:
+        manifest["dateRange"] = {
+            "min": date_range.get("min"),
+            "max": date_range.get("max"),
+        }
+
+    output_path = manifest_path or _manifest_path_for_db(db_path)
+    output_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
+    return str(output_path)
 
 
 async def start_dataset_build(
@@ -123,6 +210,8 @@ async def _build_dataset(
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
     writer = DatasetWriter(db_path)
     resume_mode = job.data.resume
+    success_result: DatasetResult | None = None
+    manifest_path = _manifest_path_for_db(db_path)
 
     try:
         # 銘柄データ書き込み
@@ -326,8 +415,9 @@ async def _build_dataset(
                 except Exception as e:
                     warnings.append(f"Margin {code4}: {e}")
 
-        progress("complete", _TOTAL_STAGES, _TOTAL_STAGES, "Dataset build complete!")
-        return DatasetResult(
+        writer.set_dataset_info("manifest_path", str(manifest_path))
+        writer.set_dataset_info("manifest_schema_version", "1")
+        success_result = DatasetResult(
             success=True,
             totalStocks=len(filtered),
             processedStocks=processed,
@@ -337,6 +427,18 @@ async def _build_dataset(
         )
     finally:
         writer.close()
+
+    if success_result is None:
+        raise RuntimeError("dataset build result was not prepared")
+
+    _write_dataset_manifest(
+        db_path=db_path,
+        dataset_name=name,
+        preset_name=preset_name,
+        manifest_path=manifest_path,
+    )
+    progress("complete", _TOTAL_STAGES, _TOTAL_STAGES, "Dataset build complete!")
+    return success_result
 
 
 def _sample_text(values: list[str]) -> str:
