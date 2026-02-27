@@ -23,7 +23,7 @@ def pdb(tmp_path: Path) -> PortfolioDb:
 
 class TestPortfolioDbSchema:
     def test_schema_version(self, pdb: PortfolioDb) -> None:
-        assert pdb.get_schema_version() == "1.1.0"
+        assert pdb.get_schema_version() == "1.2.0"
 
     def test_tables_created(self, pdb: PortfolioDb) -> None:
         from sqlalchemy import text
@@ -40,6 +40,118 @@ class TestPortfolioDbSchema:
         assert "watchlists" in tables
         assert "watchlist_items" in tables
         assert "portfolio_metadata" in tables
+        assert "jobs" in tables
+
+
+class TestJobMetadata:
+    def test_upsert_and_get_job_row(self, pdb: PortfolioDb) -> None:
+        pdb.upsert_job(
+            job_id="job-1",
+            job_type="backtest",
+            strategy_name="strat-a",
+            status="running",
+            progress=0.3,
+            message="in progress",
+            error=None,
+            created_at="2026-02-27T00:00:00",
+            started_at="2026-02-27T00:01:00",
+            completed_at=None,
+            result_json=None,
+            raw_result_json='{"a":1}',
+            html_path="/tmp/result.html",
+            dataset_name="dataset-a",
+            execution_time=None,
+            best_score=None,
+            best_params_json=None,
+            worst_score=None,
+            worst_params_json=None,
+            total_combinations=None,
+            updated_at="2026-02-27T00:01:00",
+        )
+        row = pdb.get_job_row("job-1")
+        assert row is not None
+        assert row.job_type == "backtest"
+        assert row.strategy_name == "strat-a"
+        assert row.progress == 0.3
+
+    def test_list_job_rows_filters_types(self, pdb: PortfolioDb) -> None:
+        pdb.upsert_job(
+            job_id="job-1",
+            job_type="backtest",
+            strategy_name="strat-a",
+            status="completed",
+            progress=1.0,
+            message=None,
+            error=None,
+            created_at="2026-02-27T00:00:00",
+            started_at=None,
+            completed_at="2026-02-27T00:01:00",
+            result_json=None,
+            raw_result_json=None,
+            html_path=None,
+            dataset_name=None,
+            execution_time=None,
+            best_score=None,
+            best_params_json=None,
+            worst_score=None,
+            worst_params_json=None,
+            total_combinations=None,
+            updated_at="2026-02-27T00:01:00",
+        )
+        pdb.upsert_job(
+            job_id="job-2",
+            job_type="screening",
+            strategy_name="strat-b",
+            status="completed",
+            progress=1.0,
+            message=None,
+            error=None,
+            created_at="2026-02-27T00:02:00",
+            started_at=None,
+            completed_at="2026-02-27T00:03:00",
+            result_json=None,
+            raw_result_json=None,
+            html_path=None,
+            dataset_name=None,
+            execution_time=None,
+            best_score=None,
+            best_params_json=None,
+            worst_score=None,
+            worst_params_json=None,
+            total_combinations=None,
+            updated_at="2026-02-27T00:03:00",
+        )
+
+        rows = pdb.list_job_rows(limit=10, job_types={"screening"})
+        assert len(rows) == 1
+        assert rows[0].job_id == "job-2"
+
+    def test_delete_jobs(self, pdb: PortfolioDb) -> None:
+        pdb.upsert_job(
+            job_id="job-1",
+            job_type="backtest",
+            strategy_name="strat-a",
+            status="completed",
+            progress=1.0,
+            message=None,
+            error=None,
+            created_at="2026-02-27T00:00:00",
+            started_at=None,
+            completed_at="2026-02-27T00:01:00",
+            result_json=None,
+            raw_result_json=None,
+            html_path=None,
+            dataset_name=None,
+            execution_time=None,
+            best_score=None,
+            best_params_json=None,
+            worst_score=None,
+            worst_params_json=None,
+            total_combinations=None,
+            updated_at="2026-02-27T00:01:00",
+        )
+        assert pdb.delete_jobs(["job-1"]) == 1
+        assert pdb.get_job_row("job-1") is None
 
 
 # ===== Portfolio CRUD =====

@@ -2,11 +2,11 @@
 SQLAlchemy Core Table Definitions
 
 Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
-19 テーブルを 3 つの MetaData に分離定義する。
+20 テーブルを 3 つの MetaData に分離定義する。
 
 - market_meta: market.db（7 テーブル）
 - dataset_meta: dataset.db（7 テーブル — stocks 等は market と共通定義を再利用）
-- portfolio_meta: portfolio.db（5 テーブル）
+- portfolio_meta: portfolio.db（6 テーブル）
 
 銘柄コード: DB 内は 4桁統一（Drizzle stockCode() と同一ルール）。
 """
@@ -297,7 +297,7 @@ Index("idx_statements_date", statements.c.disclosed_date)
 Index("idx_statements_code", statements.c.code)
 
 # ===========================================================================
-# portfolio.db (5 tables)
+# portfolio.db (6 tables)
 # ===========================================================================
 
 # --- portfolio_metadata ---
@@ -378,3 +378,33 @@ watchlist_items = Table(
 )
 Index("idx_watchlist_items_watchlist_id", watchlist_items.c.watchlist_id)
 Index("idx_watchlist_items_code", watchlist_items.c.code)
+
+# --- jobs ---
+jobs = Table(
+    "jobs",
+    portfolio_meta,
+    Column("job_id", Text, primary_key=True),
+    Column("job_type", Text, nullable=False),
+    Column("strategy_name", Text, nullable=False),
+    Column("status", Text, nullable=False),
+    Column("progress", REAL),
+    Column("message", Text),
+    Column("error", Text),
+    Column("created_at", Text, nullable=False),
+    Column("started_at", Text),
+    Column("completed_at", Text),
+    Column("result_json", Text),
+    Column("raw_result_json", Text),
+    Column("html_path", Text),
+    Column("dataset_name", Text),
+    Column("execution_time", REAL),
+    Column("best_score", REAL),
+    Column("best_params_json", Text),
+    Column("worst_score", REAL),
+    Column("worst_params_json", Text),
+    Column("total_combinations", Integer),
+    Column("updated_at", Text, nullable=False),
+)
+Index("idx_jobs_created_at", jobs.c.created_at)
+Index("idx_jobs_status", jobs.c.status)
+Index("idx_jobs_job_type", jobs.c.job_type)

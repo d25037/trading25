@@ -129,6 +129,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         except Exception as e:
             logger.warning(f"PortfolioDb の初期化に失敗: {e}")
     app.state.portfolio_db = portfolio_db
+    job_manager.set_portfolio_db(portfolio_db)
+    screening_job_manager.set_portfolio_db(portfolio_db)
 
     app.state.dataset_base_path = settings.dataset_base_path
 
@@ -158,6 +160,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         market_db.close()
     if portfolio_db is not None:
         portfolio_db.close()
+    job_manager.set_portfolio_db(None)
+    screening_job_manager.set_portfolio_db(None)
 
     # Phase 3D: DatasetResolver shutdown
     if dataset_resolver is not None:
