@@ -13,8 +13,6 @@ from typing import Any
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.domains.fundamentals.roe import (
     calculate_single_roe as _calculate_single_roe_domain,
-    is_quarterly as _is_quarterly,
-    normalize_period_type as _normalize_period_type,
     should_prefer as _should_prefer,
 )
 from src.entrypoints.http.schemas.analytics_roe import (

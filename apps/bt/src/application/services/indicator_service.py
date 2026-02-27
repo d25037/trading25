@@ -25,12 +25,8 @@ from src.domains.strategy.indicators.indicator_registry import (
     INDICATOR_REGISTRY,
     _clean_value,
     _format_date,
-    _make_key,
-    _multi_series_to_records,
-    _series_to_records,
 )
 from src.domains.strategy.indicators.relative_ohlcv import (
-    _compute_relative_ohlc_column,
     calculate_relative_ohlcv,
 )
 
