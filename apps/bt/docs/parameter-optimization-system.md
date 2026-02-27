@@ -2,14 +2,14 @@
 
 ## 概要
 
-戦略のハイパーパラメータを自動最適化し、インタラクティブな3D可視化Notebookを生成するシステム。
+戦略のハイパーパラメータを自動最適化し、インタラクティブな3D可視化HTMLを生成するシステム。
 
 **設計方針**:
 - ✅ **既存アーキテクチャを完全保持**: YAML完全制御・SignalParams構造を一切変更しない
 - ✅ **YAML形式でパラメータグリッド定義**: 再利用性・管理性重視
 - ✅ **既存default.yaml活用**: 新ディレクトリ不要・共通設定を継承
 - ✅ **CLI並列処理**: リアルタイム進捗出力・高速化
-- ✅ **インタラクティブ可視化**: 3D散布図・ヒートマップ等を含むNotebook自動生成
+- ✅ **インタラクティブ可視化**: 3D散布図・ヒートマップ等を含むHTML自動生成
 
 ---
 
@@ -28,9 +28,9 @@
    │  └─ Kelly配分バックテスト（最終評価）
    └─ リアルタイム進捗出力
    ↓
-3. 最適化結果Notebook生成
+3. 最適化結果HTML生成
    ├─ 複合スコアリングランキング順ソート
-   ├─ 3D可視化Notebook自動生成
+   ├─ 3D可視化HTML自動生成
    └─ インタラクティブ分析環境
 ```
 
@@ -143,7 +143,7 @@ parameter_ranges:
 - **最適化設定**: `config/default.yaml`の`parameter_optimization`セクションから読み込み
 - **共通設定**: `config/default.yaml`の`shared_config`セクションから読み込み
 - **出力ファイル** (戦略別ディレクトリ + タイムスタンプ):
-  - 可視化Notebook: `notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb`
+  - 可視化HTML: `~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html`
 
 
 ### テンプレート
@@ -167,8 +167,8 @@ parameter_ranges:
 **注意**:
 - ファイル名を`{戦略名}_grid.yaml`の形式にすることで、自動的に戦略設定が推測されます
 - 最適化設定（method, n_jobs, scoring_weights等）は`config/default.yaml`で管理
-- 可視化Notebookは`notebooks/generated/optimization/{戦略名}/`に自動生成されます（タイムスタンプ付き）
-- 生成されたNotebookには3D散布図、ヒートマップ、パラメータ相関等が含まれます
+- 可視化HTMLは`~/.local/share/trading25/backtest/optimization/{戦略名}/`に自動生成されます（タイムスタンプ付き）
+- 生成されたHTMLには3D散布図、ヒートマップ、パラメータ相関等が含まれます
 
 ---
 
@@ -228,13 +228,13 @@ uv run bt optimize range_break_v6 \
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 可視化Notebook生成中...
+📊 可視化HTML生成中...
 
-✅ 可視化Notebook生成完了!
-  📓 notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb
+✅ 可視化HTML生成完了!
+  📓 ~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html
 
 次のステップ:
-  jupyter lab notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb
+  open ~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html
 ```
 
 ## 3. 実装詳細
@@ -250,7 +250,7 @@ src/
 │   ├── engine.py  # 最適化エンジン
 │   ├── param_builder.py  # SignalParams動的構築
 │   ├── evaluator.py  # 評価指標計算
-│   └── notebook_generator.py  # 可視化Notebook自動生成
+│   └── notebook_generator.py  # 可視化HTML自動生成
 config/
 └── optimization/  # パラメータグリッド定義（新規）
     ├── template_grid.yaml
@@ -317,8 +317,8 @@ class ParameterOptimizer:
             **base_strategy_config.get("exit_trigger_params", {})
         )
 
-        # 出力Notebookパス（規約ベース自動生成）
-        self.output_notebook_path = self._generate_notebook_path(strategy_name)
+        # 出力HTMLパス（規約ベース自動生成）
+        self.output_html_path = self._generate_html_path(strategy_name)
 
     def optimize(self) -> OptimizationResult:
         """
@@ -340,14 +340,14 @@ class ParameterOptimizer:
             reverse=True  # 降順（スコア高い順）
         )
 
-        # 4. 可視化Notebook生成
-        notebook_path = self._generate_visualization_notebook(sorted_results)
+        # 4. 可視化HTML生成
+        html_path = self._generate_visualization_notebook(sorted_results)
 
         return OptimizationResult(
             best_params=sorted_results[0]["params"],
             best_score=sorted_results[0]["score"],
             all_results=sorted_results,
-            notebook_path=notebook_path
+            html_path=html_path
         )
 
     def _load_default_config(self) -> Dict:
@@ -397,38 +397,38 @@ class ParameterOptimizer:
             f"Searched: {candidates}"
         )
 
-    def _generate_notebook_path(self, strategy_name: str) -> str:
+    def _generate_html_path(self, strategy_name: str) -> str:
         """
-        戦略名から可視化Notebookパスを生成（戦略別ディレクトリ + タイムスタンプ）
+        戦略名から可視化HTMLパスを生成（戦略別ディレクトリ + タイムスタンプ）
 
         Args:
             strategy_name: 戦略名
 
         Returns:
-            str: 可視化Notebookのパス
+            str: 可視化HTMLのパス
 
         出力形式:
-            notebooks/generated/optimization/{strategy_name}/{timestamp}.ipynb
+            ~/.local/share/trading25/backtest/optimization/{strategy_name}/{timestamp}.html
 
         例:
-            range_break_v6 → notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb
+            range_break_v6 → ~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html
         """
         from datetime import datetime
 
-        output_dir = f"notebooks/generated/optimization/{strategy_name}"
+        output_dir = f"~/.local/share/trading25/backtest/optimization/{strategy_name}"
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-        return f"{output_dir}/{timestamp}.ipynb"
+        return f"{output_dir}/{timestamp}.html"
 
     def _generate_visualization_notebook(self, sorted_results: List[Dict]) -> str:
         """
-        最適化結果から可視化Notebookを自動生成
+        最適化結果から可視化HTMLを自動生成
 
         Args:
             sorted_results: 複合スコア順にソートされた最適化結果
 
         Returns:
-            str: 生成されたNotebookのパス
+            str: 生成されたHTMLのパス
 
         生成される可視化:
             - 複合スコアランキング表（上位20件）
@@ -440,15 +440,15 @@ class ParameterOptimizer:
         """
         from .notebook_generator import generate_optimization_notebook
 
-        notebook_path = generate_optimization_notebook(
+        html_path = generate_optimization_notebook(
             results=sorted_results,
-            output_path=self.output_notebook_path,
+            output_path=self.output_html_path,
             strategy_name=self.strategy_name,
             parameter_ranges=self.parameter_ranges,
             scoring_weights=self.optimization["scoring_weights"]
         )
 
-        return notebook_path
+        return html_path
 
     def _generate_combinations(self) -> List[Dict]:
         """パラメータ組み合わせ生成"""
@@ -669,9 +669,9 @@ def build_signal_params(
   - `engine.py`（最適化エンジン）
   - `param_builder.py`（SignalParams動的構築）
   - `evaluator.py`（評価指標計算）
-  - `notebook_generator.py`（可視化Notebook自動生成）
+  - `notebook_generator.py`（可視化HTML自動生成）
 - `config/optimization/`（新規ディレクトリ）
-- `notebooks/generated/optimization/`（可視化Notebook出力先・戦略別サブディレクトリ）
+- `~/.local/share/trading25/backtest/optimization/`（可視化HTML出力先・戦略別サブディレクトリ）
 - `docs/parameter-optimization-system.md`（このドキュメント）
 
 ---
@@ -841,7 +841,7 @@ default:
 | **共通設定管理** | 既存default.yamlを活用（新ディレクトリ不要） |
 | **並列処理** | ProcessPoolExecutor（高速化） |
 | **リアルタイム出力** | 進捗・評価指標をリアルタイム表示 |
-| **可視化** | 3D散布図・ヒートマップ等のインタラクティブNotebook自動生成 |
+| **可視化** | 3D散布図・ヒートマップ等のインタラクティブHTML自動生成 |
 | **破壊的変更** | ゼロ（完全な後方互換性） |
 
 ### 次のステップ
@@ -850,7 +850,7 @@ default:
 2. パラメータグリッドYAML形式の最終決定
 3. 最適化エンジン実装
 4. CLIコマンド実装
-5. 可視化Notebook自動生成機能実装
+5. 可視化HTML自動生成機能実装
 6. テスト・検証
 
 ---

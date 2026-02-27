@@ -2,7 +2,7 @@
 
 ## 📊 概要
 
-**統一Signalsシステム**ベースの高速戦略バックテストプラットフォーム。VectorBTによる100倍以上の高速化と、柔軟なYAML設定システム、Jupyter Notebook実行環境を組み合わせた次世代投資戦略ツールです。
+**統一Signalsシステム**ベースの高速戦略バックテストプラットフォーム。VectorBTによる100倍以上の高速化と、柔軟なYAML設定システム、MarimoベースのHTML実行環境を組み合わせた次世代投資戦略ツールです。
 
 ## 🚀 主要特徴
 
@@ -13,7 +13,7 @@
 
 ### **高速実行システム**
 - **VectorBT基盤**: 100倍以上の高速化実現
-- **Papermill実行**: Jupyter Notebook自動実行システム
+- **Marimo実行**: Pythonテンプレートを静的HTMLとして自動生成
 - **マルチアセット対応**: 大規模ポートフォリオ一括処理
 
 ### **柔軟な設定システム**
@@ -71,7 +71,7 @@ uv run bt backtest range_break --output-dir custom_results
 uv run bt validate sma_cross
 ```
 
-### **古いNotebook削除**
+### **古いHTML削除**
 ```bash
 uv run bt cleanup --days 7
 ```
@@ -144,7 +144,7 @@ src/strategies/signals/
 3. **戦略実行**: 各戦略固有のエントリー・エグジットロジック実行
 4. **シグナル統合**: SignalProcessorによるエントリー（AND）・エグジット（OR）結合
 5. **VectorBTバックテスト**: 高速ベクトル化バックテスト実行
-6. **結果出力**: Notebook形式での詳細分析結果生成
+6. **結果出力**: HTML形式での詳細分析結果生成
 
 ### **パフォーマンス最適化**
 - **VectorBT基盤**: 全データ一括処理による100倍以上高速化
@@ -196,7 +196,7 @@ src/strategies/signals/
 ### **新戦略追加**
 1. `src/strategies/implementations/` に戦略クラス実装
 2. `config/strategies/` に設定YAMLファイル作成
-3. `src/notebook_runner/strategy_factory.py` に戦略登録
+3. `src/domains/strategy/core/factory.py` に戦略登録
 4. テストケース作成・動作確認
 
 ### **新シグナル追加**
@@ -209,4 +209,4 @@ src/strategies/signals/
 
 ## 🎯 まとめ
 
-trading25-btは**統一Signalsシステム**により、高速・柔軟・拡張可能な戦略バックテストプラットフォームを実現しています。VectorBTの高速化、YAML設定の柔軟性、Jupyter Notebookの分析力を組み合わせ、プロフェッショナルな投資戦略開発をサポートします。
+trading25-btは**統一Signalsシステム**により、高速・柔軟・拡張可能な戦略バックテストプラットフォームを実現しています。VectorBTの高速化、YAML設定の柔軟性、MarimoによるHTML分析出力を組み合わせ、プロフェッショナルな投資戦略開発をサポートします。

@@ -43,7 +43,6 @@ class JobInfo:
         self.worst_score: float | None = None
         self.worst_params: dict[str, Any] | None = None
         self.total_combinations: int | None = None
-        self.notebook_path: str | None = None
 
 
 class JobManager:

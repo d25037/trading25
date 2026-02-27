@@ -28,7 +28,7 @@ class OptimizationJobResponse(BaseJobResponse):
     worst_score: float | None = Field(default=None, description="最悪スコア")
     worst_params: dict[str, Any] | None = Field(default=None, description="最悪スコア時のパラメータ")
     total_combinations: int | None = Field(default=None, description="パラメータ組み合わせ総数")
-    notebook_path: str | None = Field(default=None, description="結果Notebookパス")
+    html_path: str | None = Field(default=None, description="結果HTMLパス")
 
 
 class OptimizationGridConfig(BaseModel):

@@ -33,7 +33,7 @@ class TestBuildOptimizationJobResponse:
         mock_job.worst_score = 0.12
         mock_job.worst_params = {"period": 5, "threshold": 0.9}
         mock_job.total_combinations = 100
-        mock_job.notebook_path = "/path/to/notebook"
+        mock_job.html_path = "/path/to/result.html"
         mock_job_manager.get_job.return_value = mock_job
 
         response = _build_optimization_job_response("test-123")

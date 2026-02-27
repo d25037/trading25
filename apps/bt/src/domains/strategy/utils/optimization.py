@@ -27,7 +27,7 @@ class OptimizationResult(NamedTuple):
     best_portfolio: Any
     all_results: list[dict[str, Any]]
     scoring_weights: dict[str, float]
-    notebook_path: str = ""  # 可視化Notebookパス（オプション）
+    html_path: str = ""  # 可視化HTMLパス（オプション）
 
 
 @dataclass

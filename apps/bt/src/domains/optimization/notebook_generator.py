@@ -1,7 +1,7 @@
 """
-パラメータ最適化結果の可視化Notebook自動生成
+パラメータ最適化結果の可視化HTML自動生成
 
-最適化結果から可視化Notebookを生成します（Marimo実行方式）
+最適化結果から可視化HTMLを生成します（Marimo実行方式）
 """
 
 import json
@@ -24,11 +24,11 @@ def generate_optimization_notebook(
     _skip_path_validation: bool = False,  # テスト用（非公開パラメータ）
 ) -> str:
     """
-    最適化結果から可視化Notebookを自動生成（Marimo実行方式）
+    最適化結果から可視化HTMLを自動生成（Marimo実行方式）
 
     Args:
         results: 最適化結果リスト（スコア順ソート済み）
-        output_path: 出力Notebookパス
+        output_path: 出力HTMLパス
         strategy_name: 戦略名
         parameter_ranges: パラメータ範囲定義
         scoring_weights: スコアリング重み
@@ -39,7 +39,7 @@ def generate_optimization_notebook(
 
     実装方式:
         1. 結果データをJSONファイルとして保存
-        2. テンプレートnotebookをMarimoで実行
+        2. テンプレートスクリプトをMarimoで実行
         3. 実行済みHTMLを生成（データはJSONから読み込み）
 
     生成される可視化:
@@ -65,7 +65,7 @@ def generate_optimization_notebook(
     # 出力ファイル名を指定して実行
     output_filename = os.path.basename(output_path)
 
-    logger.info(f"最適化結果Notebook生成開始: {strategy_name}")
+    logger.info(f"最適化結果HTML生成開始: {strategy_name}")
     logger.debug(f"出力先: {output_dir}/{output_filename}")
     logger.debug(f"結果データJSON: {json_path}")
 
@@ -93,7 +93,7 @@ def _generate_with_marimo(
     n_combinations: int,
 ) -> str:
     """
-    Marimoを使用して最適化結果Notebookを生成
+    Marimoを使用して最適化結果HTMLを生成
 
     Returns:
         html_path - 生成されたHTMLファイルのパス
@@ -128,15 +128,15 @@ def _generate_with_marimo(
             output_filename=html_filename,
         )
 
-        logger.info(f"最適化結果Notebook生成完了 (Marimo): {html_path}")
+        logger.info(f"最適化結果HTML生成完了 (Marimo): {html_path}")
         return str(html_path)
 
     except Exception as e:
-        logger.error(f"Marimo Notebook生成エラー: {e}")
+        logger.error(f"Marimo HTML生成エラー: {e}")
         raise
 
     finally:
-        # Notebook生成後はJSONファイル不要なので削除
+        # HTML生成後はJSONファイル不要なので削除
         if os.path.exists(json_path):
             os.remove(json_path)
             logger.debug(f"一時JSONファイル削除: {json_path}")
@@ -204,7 +204,7 @@ def _validate_output_path(output_path: str) -> Path:
     セキュリティチェック:
         1. パス正規化とパストラバーサル検出
         2. 許可ディレクトリ内かチェック
-        3. ファイル名の妥当性検証（.ipynb/.html拡張子）
+        3. ファイル名の妥当性検証（.html拡張子）
     """
     # 1. パス正規化
     output_path_obj = Path(output_path).resolve()
@@ -229,8 +229,8 @@ def _validate_output_path(output_path: str) -> Path:
 
     # 3. ファイル名検証
     filename = output_path_obj.name
-    if not re.match(r"^[a-zA-Z0-9._-]+\.(ipynb|html)$", filename):
-        raise ValueError(f"不正なファイル名です（英数字・記号・.ipynb/.html拡張子のみ許可）: {filename}")
+    if not re.match(r"^[a-zA-Z0-9._-]+\.html$", filename):
+        raise ValueError(f"不正なファイル名です（英数字・記号・.html拡張子のみ許可）: {filename}")
 
     # 4. パストラバーサル文字列の追加チェック
     dangerous_patterns = ["..", "~", "//"]

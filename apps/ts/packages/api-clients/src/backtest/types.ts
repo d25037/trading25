@@ -326,7 +326,7 @@ export interface OptimizationJobResponse {
   worst_score: number | null;
   worst_params: Record<string, unknown> | null;
   total_combinations: number | null;
-  notebook_path: string | null;
+  html_path: string | null;
 }
 
 export interface OptimizationGridConfig {

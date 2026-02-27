@@ -2,13 +2,13 @@
 
 ## 概要
 
-戦略のハイパーパラメータ（SMA期間、RSI閾値、ボリンジャーバンド幅等）を自動最適化し、インタラクティブな可視化Notebookを生成するシステム。
+戦略のハイパーパラメータ（SMA期間、RSI閾値、ボリンジャーバンド幅等）を自動最適化し、インタラクティブな可視化HTMLを生成するシステム。
 
 **新システムの特徴**:
 - ✅ **YAML完全制御**: グリッドYAMLによるパラメータ範囲定義・再利用性重視
 - ✅ **CLI並列処理**: リアルタイム進捗出力・高速化
 - ✅ **2段階Kelly基準評価**: 初回等分配 → Kelly基準資金配分 → Kelly配分バックテスト（リスク調整）
-- ✅ **インタラクティブ可視化**: 3D散布図・ヒートマップ等を含むNotebook自動生成
+- ✅ **インタラクティブ可視化**: 3D散布図・ヒートマップ等を含むHTML自動生成
 - ✅ **複合スコアリング**: 複数指標（Sharpe/Calmar/Total Return）を正規化・重み付けして総合評価
 
 ---
@@ -46,9 +46,9 @@
    │  └─ Kelly配分バックテスト（最終評価）
    └─ リアルタイム進捗出力
    ↓
-3. 最適化結果Notebook生成
+3. 最適化結果HTML生成
    ├─ 複合スコアリングランキング順ソート
-   ├─ 3D可視化Notebook自動生成
+   ├─ 3D可視化HTML自動生成
    └─ インタラクティブ分析環境
 ```
 
@@ -184,7 +184,7 @@ parameter_ranges:
 - **最適化設定**: `config/default.yaml`の`parameter_optimization`セクションから読み込み
 - **共通設定**: `config/default.yaml`の`shared_config`セクションから読み込み
 - **出力ファイル** (戦略別ディレクトリ + タイムスタンプ):
-  - 可視化Notebook: `notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb`
+  - 可視化HTML: `~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html`
 
 ---
 
@@ -243,13 +243,13 @@ uv run bt optimize range_break_v6
 
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
-📊 可視化Notebook生成中...
+📊 可視化HTML生成中...
 
-✅ 可視化Notebook生成完了!
-  📓 notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb
+✅ 可視化HTML生成完了!
+  📓 ~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html
 
 次のステップ:
-  jupyter lab notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb
+  open ~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html
 ```
 
 ---
@@ -472,11 +472,11 @@ uv run bt optimize range_break_v6
 
 ---
 
-## 可視化Notebook
+## 可視化HTML
 
 ### 自動生成される可視化内容
 
-最適化完了後、以下の内容を含むインタラクティブNotebookが自動生成されます：
+最適化完了後、以下の内容を含むインタラクティブHTMLが自動生成されます：
 
 1. **複合スコアランキング表**（上位20件）
 2. **3D散布図**（パラメータ vs スコア）
@@ -495,8 +495,8 @@ uv run bt optimize range_break_v6
 ### 使い方
 
 ```bash
-# 可視化Notebookを開く
-jupyter lab notebooks/generated/optimization/range_break_v6/20250112_143052.ipynb
+# 可視化HTMLを開く
+open ~/.local/share/trading25/backtest/optimization/range_break_v6/20250112_143052.html
 ```
 
 ---
@@ -756,7 +756,7 @@ max_allocation: 0.5   # 最大配分率（50%）
 1. **グリッドYAML作成**: `config/optimization/{strategy_name}_grid.yaml`
 2. **パラメータ範囲定義**: 常識的な範囲で設定
 3. **最適化実行**: `uv run bt optimize {strategy_name}`
-4. **結果分析**: ランキング確認・可視化Notebook確認
+4. **結果分析**: ランキング確認・可視化HTML確認
 5. **検証**: Test期間でパフォーマンス確認（今後実装予定）
 6. **実運用**: 最適パラメータで本番運用
 
@@ -768,7 +768,7 @@ max_allocation: 0.5   # 最大配分率（50%）
 | **2段階Kelly基準評価** | リスク調整後の安定配分で評価 |
 | **複合スコアリング** | リスク・リターン・ドローダウンをバランス良く評価 |
 | **CLI並列処理** | 高速化・リアルタイム進捗表示 |
-| **可視化Notebook自動生成** | インタラクティブ分析環境 |
+| **可視化HTML自動生成** | インタラクティブ分析環境 |
 | **責任分離** | 戦略構造定義とパラメータ最適化を分離 |
 
 ---

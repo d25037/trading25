@@ -807,7 +807,7 @@ def test_runtime_wrapper_methods_delegate(monkeypatch):
     )
     monkeypatch.setattr(
         "src.domains.strategy.runtime.loader.get_template_notebook_path",
-        lambda _execution: Path("/tmp/template.ipynb"),
+        lambda _execution: Path("/tmp/template.py"),
     )
     monkeypatch.setattr(
         "src.domains.strategy.runtime.loader.get_output_directory",
@@ -827,7 +827,7 @@ def test_runtime_wrapper_methods_delegate(monkeypatch):
     assert loader.get_available_strategies() == {"experimental": ["demo"]}
     assert loader.get_strategy_metadata()[0].name == "experimental/demo"
     assert loader.validate_strategy_config(strategy_config) is True
-    assert loader.get_template_notebook_path(strategy_config) == Path("/tmp/template.ipynb")
+    assert loader.get_template_notebook_path(strategy_config) == Path("/tmp/template.py")
     assert loader.get_output_directory(strategy_config) == Path("/tmp/output")
     assert loader.extract_entry_filter_params(strategy_config) == {"entry": True}
     assert loader.extract_exit_trigger_params(strategy_config) == {"exit": True}
