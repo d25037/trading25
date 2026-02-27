@@ -12,15 +12,25 @@ interface NumberSelectProps {
   options: NumberOption[];
   id: string;
   label: string;
+  disabled?: boolean;
+  description?: string;
 }
 
-export function NumberSelect({ value, onChange, options, id, label }: NumberSelectProps) {
+export function NumberSelect({
+  value,
+  onChange,
+  options,
+  id,
+  label,
+  disabled = false,
+  description,
+}: NumberSelectProps) {
   return (
     <div className="space-y-2">
       <Label htmlFor={id} className="text-xs">
         {label}
       </Label>
-      <Select value={String(value)} onValueChange={(v) => onChange(Number(v))}>
+      <Select value={String(value)} onValueChange={(v) => onChange(Number(v))} disabled={disabled}>
         <SelectTrigger id={id} className="h-8 text-xs">
           <SelectValue />
         </SelectTrigger>
@@ -32,6 +42,7 @@ export function NumberSelect({ value, onChange, options, id, label }: NumberSele
           ))}
         </SelectContent>
       </Select>
+      {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
     </div>
   );
 }

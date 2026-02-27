@@ -45,6 +45,11 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
   const forecastFilterEnabled = params.forecastAboveRecentFyActuals ?? params.forecastAboveAllActuals ?? false;
   const epsFilterValue = forecastFilterEnabled ? 'forecastAboveRecentFyActuals' : 'all';
   const lookbackFyCount = params.forecastLookbackFyCount ?? 3;
+  const selectedMarkets = params.markets || 'prime';
+  const selectedLimit = params.limit || 20;
+  const lookbackDescription = forecastFilterEnabled
+    ? undefined
+    : 'Enabled only when EPS Condition is "Latest Forecast EPS > Recent FY Actual EPS".';
 
   return (
     <Card className="glass-panel">
@@ -53,7 +58,7 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
       </CardHeader>
       <CardContent className="space-y-4">
         <MarketsSelect
-          value={params.markets || 'prime'}
+          value={selectedMarkets}
           onChange={(v) => updateParam('markets', v)}
           options={FUNDAMENTAL_RANKING_MARKET_OPTIONS}
           id="fundamental-ranking-markets"
@@ -64,7 +69,9 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
           </Label>
           <Select
             value={epsFilterValue}
-            onValueChange={(value) => updateParam('forecastAboveRecentFyActuals', value === 'forecastAboveRecentFyActuals')}
+            onValueChange={(value) =>
+              updateParam('forecastAboveRecentFyActuals', value === 'forecastAboveRecentFyActuals')
+            }
           >
             <SelectTrigger id="fundamental-ranking-eps-condition" className="h-8 text-xs">
               <SelectValue />
@@ -84,9 +91,11 @@ export function FundamentalRankingFilters({ params, onChange }: FundamentalRanki
           options={LOOKBACK_FY_COUNT_OPTIONS}
           id="fundamental-ranking-lookback-fy-count"
           label="Recent FY lookback"
+          disabled={!forecastFilterEnabled}
+          description={lookbackDescription}
         />
         <NumberSelect
-          value={params.limit || 20}
+          value={selectedLimit}
           onChange={(v) => updateParam('limit', v)}
           options={LIMIT_OPTIONS}
           id="fundamental-ranking-limit"
