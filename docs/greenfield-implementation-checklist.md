@@ -35,7 +35,7 @@
 - [ ] `apps/bt` で layers を明確化する（`domains/application/infrastructure/entrypoints`）。
 - [ ] middleware/order/error format を固定する（`RequestLogger -> CorrelationId -> CORS`）。
 - [ ] OpenAPI 生成と ts 型同期パイプラインを固定する（`bt:sync` を標準運用化）。
-- [ ] `jobs` テーブル（queue metadata）を定義する。
+- [x] `jobs` テーブル（queue metadata）を定義する。
 - [ ] `portfolio/watchlist/settings` と `jobs` の OLTP スキーマを整備する。
 - [ ] 最小 worker runtime（`enqueue -> run -> status`）を用意する。
 - [ ] artifact 保存先とメタ情報保存方式を定義する。
@@ -188,4 +188,3 @@
 - [ ] worker の cancel/retry 実装が後回し
 - [ ] Golden dataset が未整備で回帰検知不能
 - [ ] web/cli で API 呼び出し実装が二重管理
-

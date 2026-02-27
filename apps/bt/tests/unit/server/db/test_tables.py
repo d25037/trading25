@@ -23,6 +23,7 @@ from src.infrastructure.db.market.tables import (
     ds_topix_data,
     index_master,
     indices_data,
+    jobs,
     market_statements,
     margin_data,
     market_meta,
@@ -313,15 +314,15 @@ class TestDatasetDbContract:
 
 
 # ===========================================================================
-# portfolio-db-schema-v1.json 契約テスト
+# portfolio-db-schema-v2.json 契約テスト
 # ===========================================================================
 
 class TestPortfolioDbContract:
-    """portfolio.db テーブル定義が portfolio-db-schema-v1.json と一致"""
+    """portfolio.db テーブル定義が portfolio-db-schema-v2.json と一致"""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
-        self.contract = _load_contract("portfolio-db-schema-v1.json")
+        self.contract = _load_contract("portfolio-db-schema-v2.json")
         self.tables = self.contract["properties"]["tables"]["properties"]
         self.defs = self.contract["$defs"]
 
@@ -488,8 +489,18 @@ class TestPortfolioDbContract:
     def test_watchlist_items_fk(self) -> None:
         self._verify_foreign_keys(watchlist_items, "watchlist_items")
 
-    def test_portfolio_meta_has_5_tables(self) -> None:
-        assert len(portfolio_meta.tables) == 5
+    # --- jobs ---
+    def test_jobs_columns(self) -> None:
+        self._verify_columns(jobs, "jobs")
+
+    def test_jobs_pk(self) -> None:
+        self._verify_primary_key(jobs, "jobs")
+
+    def test_jobs_indexes(self) -> None:
+        self._verify_indexes(jobs, "jobs")
+
+    def test_portfolio_meta_has_6_tables(self) -> None:
+        assert len(portfolio_meta.tables) == 6
 
 
 # ===========================================================================

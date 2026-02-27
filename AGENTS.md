@@ -19,7 +19,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
 - **FastAPI** が唯一のバックエンド
 - **bt** は SQLite に直接アクセス（`contracts/` スキーマ準拠、SQLAlchemy Core 使用）
   - **market.db**: 読み書き（SQLAlchemy Core）
-  - **portfolio.db**: CRUD（SQLAlchemy Core）
+  - **portfolio.db**: portfolio/watchlist CRUD + jobs metadata 永続化（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
 - `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
 - `market.db` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
@@ -52,6 +52,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
 - **バージョニング**: additive (minor) / breaking (major) → 新版ファイル作成
 - **命名規則**: `{domain}-{purpose}-v{N}.schema.json`
 - **現行追加契約**: `fundamentals-metrics-v2.schema.json`（fundamentals API 指標拡張、`bookToMarket` を削除）
+- **portfolio DB 契約 SoT**: `portfolio-db-schema-v2.json`（`jobs` テーブルを含む）
 - **アーカイブ**: `hono-openapi-baseline.json`（Phase 3 移行 baseline、参照用に保持）
 
 ## エラーレスポンス

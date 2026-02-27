@@ -15,6 +15,7 @@ from sqlalchemy import Row, delete, func, insert, outerjoin, select, update
 from src.infrastructure.db.market.base import BaseDbAccess
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.infrastructure.db.market.tables import (
+    jobs,
     portfolio_items,
     portfolio_meta,
     portfolio_metadata,
@@ -34,7 +35,7 @@ class PortfolioDb(BaseDbAccess):
     def _ensure_schema(self) -> None:
         """Drizzle 互換テーブル作成（IF NOT EXISTS）"""
         portfolio_meta.create_all(self.engine, checkfirst=True)
-        self._set_metadata("schema_version", "1.1.0")
+        self._set_metadata("schema_version", "1.2.0")
 
     def _now(self) -> str:
         return datetime.now().isoformat()  # noqa: DTZ005
@@ -58,6 +59,95 @@ class PortfolioDb(BaseDbAccess):
 
     def get_schema_version(self) -> str:
         return self._get_metadata("schema_version") or "unknown"
+
+    # ===== Job Metadata =====
+
+    def upsert_job(
+        self,
+        *,
+        job_id: str,
+        job_type: str,
+        strategy_name: str,
+        status: str,
+        progress: float | None,
+        message: str | None,
+        error: str | None,
+        created_at: str,
+        started_at: str | None,
+        completed_at: str | None,
+        result_json: str | None,
+        raw_result_json: str | None,
+        html_path: str | None,
+        dataset_name: str | None,
+        execution_time: float | None,
+        best_score: float | None,
+        best_params_json: str | None,
+        worst_score: float | None,
+        worst_params_json: str | None,
+        total_combinations: int | None,
+        updated_at: str,
+    ) -> None:
+        with self.engine.begin() as conn:
+            conn.execute(
+                insert(jobs)
+                .values(
+                    job_id=job_id,
+                    job_type=job_type,
+                    strategy_name=strategy_name,
+                    status=status,
+                    progress=progress,
+                    message=message,
+                    error=error,
+                    created_at=created_at,
+                    started_at=started_at,
+                    completed_at=completed_at,
+                    result_json=result_json,
+                    raw_result_json=raw_result_json,
+                    html_path=html_path,
+                    dataset_name=dataset_name,
+                    execution_time=execution_time,
+                    best_score=best_score,
+                    best_params_json=best_params_json,
+                    worst_score=worst_score,
+                    worst_params_json=worst_params_json,
+                    total_combinations=total_combinations,
+                    updated_at=updated_at,
+                )
+                .prefix_with("OR REPLACE")
+            )
+
+    def get_job_row(self, job_id: str) -> Row[Any] | None:
+        with self.engine.connect() as conn:
+            return conn.execute(
+                select(jobs).where(jobs.c.job_id == job_id)
+            ).fetchone()
+
+    def list_job_rows(
+        self,
+        *,
+        limit: int = 50,
+        job_types: set[str] | None = None,
+    ) -> list[Row[Any]]:
+        if job_types is not None and len(job_types) == 0:
+            return []
+
+        stmt = select(jobs)
+        if job_types is not None:
+            stmt = stmt.where(jobs.c.job_type.in_(sorted(job_types)))
+        stmt = stmt.order_by(jobs.c.created_at.desc()).limit(limit)
+
+        with self.engine.connect() as conn:
+            return list(conn.execute(stmt).fetchall())
+
+    def delete_jobs(self, job_ids: list[str]) -> int:
+        if not job_ids:
+            return 0
+
+        with self.engine.begin() as conn:
+            result = conn.execute(
+                delete(jobs).where(jobs.c.job_id.in_(job_ids))
+            )
+            return int(result.rowcount or 0)
 
     # ===== Portfolio CRUD =====
 
