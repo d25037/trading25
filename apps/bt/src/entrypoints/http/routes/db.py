@@ -77,7 +77,11 @@ def get_db_stats(request: Request) -> MarketStatsResponse:
 )
 def get_db_validate(request: Request) -> MarketValidationResponse:
     market_db = _get_market_db(request)
-    return db_validation_service.validate_market_db(market_db)
+    time_series_store = getattr(request.app.state, "market_time_series_store", None)
+    return db_validation_service.validate_market_db(
+        market_db,
+        time_series_store=time_series_store,
+    )
 
 
 # --- Sync ---

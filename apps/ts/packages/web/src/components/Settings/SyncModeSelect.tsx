@@ -9,10 +9,10 @@ interface SyncModeSelectProps {
 }
 
 const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }[] = [
-  { value: 'auto', label: 'Auto', description: 'Detect based on database state' },
-  { value: 'initial', label: 'Initial', description: 'Full sync (2 years, ~552 API calls)' },
-  { value: 'incremental', label: 'Incremental', description: 'Update only new data' },
-  { value: 'indices-only', label: 'Indices Only', description: 'Sync indices only (~52 API calls)' },
+  { value: 'auto', label: 'Auto', description: 'Detect initial/incremental from DuckDB SoT state' },
+  { value: 'initial', label: 'Initial', description: 'Rebuild DuckDB SoT from scratch' },
+  { value: 'incremental', label: 'Incremental', description: 'Backfill missing dates and append latest market data' },
+  { value: 'indices-only', label: 'Indices Only', description: 'Resync index series only (indices_data)' },
 ];
 
 export function SyncModeSelect({ value, onChange, disabled }: SyncModeSelectProps) {

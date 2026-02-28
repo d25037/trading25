@@ -18,7 +18,10 @@ from loguru import logger
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
-from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
+from src.infrastructure.db.market.time_series_store import (
+    MarketTimeSeriesStore,
+    TimeSeriesInspection,
+)
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
     normalize_stock_code,
@@ -271,8 +274,15 @@ class IncrementalSyncStrategy:
             # NOTE:
             # stock_data が一部日付で取りこぼされると topix_data より遅れる場合があるため、
             # 増分同期の基準日は stock_data の最新日を優先する。
-            last_topix_date = ctx.market_db.get_latest_trading_date()
-            last_stock_date = ctx.market_db.get_latest_stock_data_date()
+            inspection = _inspect_time_series(ctx)
+            last_topix_date = (
+                inspection.topix_max if inspection and inspection.topix_max else ctx.market_db.get_latest_trading_date()
+            )
+            last_stock_date = (
+                inspection.stock_max
+                if inspection and inspection.stock_max
+                else ctx.market_db.get_latest_stock_data_date()
+            )
             last_date = last_stock_date or last_topix_date
             params: dict[str, Any] = {}
             if last_date:
@@ -348,7 +358,11 @@ class IncrementalSyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             known_master_codes = await _seed_index_master_from_catalog(ctx)
-            latest_index_dates = ctx.market_db.get_latest_indices_data_dates()
+            latest_index_dates = (
+                dict(inspection.latest_indices_dates)
+                if inspection and inspection.latest_indices_dates
+                else ctx.market_db.get_latest_indices_data_dates()
+            )
             target_codes = sorted(
                 get_index_catalog_codes()
                 | set(latest_index_dates.keys())
@@ -523,7 +537,7 @@ async def _sync_fundamentals_initial(
 
     await _index_statement_rows(ctx)
 
-    latest_disclosed = await asyncio.to_thread(ctx.market_db.get_latest_statement_disclosed_date)
+    latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     now_iso = datetime.now(UTC).isoformat()
 
     await asyncio.to_thread(
@@ -578,7 +592,7 @@ async def _sync_fundamentals_incremental(
 
     anchor = (
         ctx.market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
-        or ctx.market_db.get_latest_statement_disclosed_date()
+        or _get_latest_statement_disclosed_date(ctx)
     )
     date_targets = _build_incremental_date_targets(anchor, previous_failed_dates)
 
@@ -615,7 +629,7 @@ async def _sync_fundamentals_incremental(
             failed_dates.append(disclosed_date)
             errors.append(f"Fundamentals date {disclosed_date}: {e}")
 
-    statement_codes = await asyncio.to_thread(ctx.market_db.get_statement_codes)
+    statement_codes = _get_statement_codes(ctx)
     missing_prime_codes = sorted(set(prime_codes) - set(statement_codes))
     code_targets = _collect_unique_codes(previous_failed_codes + missing_prime_codes)
 
@@ -651,7 +665,7 @@ async def _sync_fundamentals_incremental(
 
     await _index_statement_rows(ctx)
 
-    latest_disclosed = await asyncio.to_thread(ctx.market_db.get_latest_statement_disclosed_date)
+    latest_disclosed = _get_latest_statement_disclosed_date(ctx)
     now_iso = datetime.now(UTC).isoformat()
     await asyncio.to_thread(
         ctx.market_db.set_sync_metadata,
@@ -860,6 +874,30 @@ def _build_incremental_date_targets(anchor: str | None, retry_dates: list[str]) 
             current += timedelta(days=1)
 
     return targets
+
+
+def _inspect_time_series(ctx: SyncContext) -> TimeSeriesInspection | None:
+    if ctx.time_series_store is None:
+        return None
+    try:
+        return ctx.time_series_store.inspect()
+    except Exception as e:  # noqa: BLE001 - inspection failure should not block sync
+        logger.warning("Failed to inspect time-series store during sync: {}", e)
+        return None
+
+
+def _get_latest_statement_disclosed_date(ctx: SyncContext) -> str | None:
+    inspection = _inspect_time_series(ctx)
+    if inspection and inspection.latest_statement_disclosed_date:
+        return inspection.latest_statement_disclosed_date
+    return ctx.market_db.get_latest_statement_disclosed_date()
+
+
+def _get_statement_codes(ctx: SyncContext) -> set[str]:
+    inspection = _inspect_time_series(ctx)
+    if inspection and inspection.statement_codes:
+        return set(inspection.statement_codes)
+    return ctx.market_db.get_statement_codes()
 
 
 def get_strategy(resolved_mode: str) -> SyncStrategy:

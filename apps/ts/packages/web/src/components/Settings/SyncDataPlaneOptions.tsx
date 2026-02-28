@@ -12,9 +12,9 @@ interface SyncDataPlaneOptionsProps {
 }
 
 const DATA_BACKEND_OPTIONS: { value: SyncDataBackend; label: string; description: string }[] = [
-  { value: 'default', label: 'Server Default', description: 'Use backend from backend env settings' },
-  { value: 'duckdb-parquet', label: 'DuckDB + Parquet', description: 'Phase 2 data plane backend' },
-  { value: 'sqlite', label: 'SQLite (Legacy)', description: 'Write to sqlite market.db only' },
+  { value: 'default', label: 'Server Default', description: 'Use backend configured on FastAPI (DuckDB SoT by default)' },
+  { value: 'duckdb-parquet', label: 'DuckDB + Parquet', description: 'Primary SoT for market time-series' },
+  { value: 'sqlite', label: 'SQLite Compatibility', description: 'Legacy fallback only (not recommended for SoT)' },
 ];
 
 export function SyncDataPlaneOptions({
@@ -54,8 +54,8 @@ export function SyncDataPlaneOptions({
             <Label htmlFor="sync-sqlite-mirror">SQLite Mirror</Label>
             <p className="text-xs text-muted-foreground">
               {backend === 'default'
-                ? 'Server default is used unless backend is explicitly overridden.'
-                : 'Also write synced rows to sqlite market.db for compatibility.'}
+                ? 'Mirror behavior follows FastAPI server defaults when backend is not overridden.'
+                : 'Also mirror writes to sqlite market.db for compatibility only.'}
             </p>
           </div>
           <Switch

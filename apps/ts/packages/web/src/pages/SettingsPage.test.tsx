@@ -68,7 +68,13 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto' },
+      {
+        mode: 'auto',
+        dataPlane: {
+          backend: 'duckdb-parquet',
+          sqliteMirror: false,
+        },
+      },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -79,13 +85,11 @@ describe('SettingsPage', () => {
     expect(mockCancelSyncState.mutate).toHaveBeenCalledWith('job-1');
   });
 
-  it('sends data plane override when backend is explicitly selected', async () => {
+  it('sends duckdb data plane override by default and allows sqlite mirror override', async () => {
     const user = userEvent.setup();
 
     render(<SettingsPage />);
 
-    await user.click(screen.getByRole('combobox', { name: 'Data Backend' }));
-    await user.click(screen.getByRole('option', { name: /DuckDB \+ Parquet/i }));
     await user.click(screen.getByRole('switch', { name: 'SQLite Mirror' }));
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
@@ -94,7 +98,7 @@ describe('SettingsPage', () => {
         mode: 'auto',
         dataPlane: {
           backend: 'duckdb-parquet',
-          sqliteMirror: false,
+          sqliteMirror: true,
         },
       },
       expect.objectContaining({
@@ -109,6 +113,29 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByRole('button', { name: /Starting.../i })).toBeInTheDocument();
+  });
+
+  it('sends selected sync mode', async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Sync Mode' }));
+    await user.click(screen.getByRole('option', { name: /Incremental Backfill/i }));
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
+      {
+        mode: 'incremental',
+        dataPlane: {
+          backend: 'duckdb-parquet',
+          sqliteMirror: false,
+        },
+      },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
   });
 
   it('shows sync error message when start sync fails', () => {

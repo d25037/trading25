@@ -345,6 +345,7 @@ class TestMarketDbAnalyticsAndValidation:
         ])
 
         assert market_db.get_missing_stock_data_dates() == ["2024-01-15"]
+        assert market_db.get_missing_stock_data_dates_count() == 1
         events = market_db.get_adjustment_events()
         assert len(events) == 2
         assert {event["eventType"] for event in events} == {"stock_split", "reverse_split"}
