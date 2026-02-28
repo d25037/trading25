@@ -53,3 +53,18 @@ def test_create_time_series_store_returns_none_without_targets(tmp_path: Path) -
     )
 
     assert store is None
+
+
+def test_create_time_series_store_can_disable_sqlite_fallback(tmp_path: Path) -> None:
+    market_db = MarketDb(str(tmp_path / "market.db"), read_only=False)
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+        sqlite_mirror=False,
+        market_db=market_db,
+        allow_sqlite_fallback=False,
+    )
+
+    assert store is None
+    market_db.close()

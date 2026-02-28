@@ -430,6 +430,7 @@ def create_time_series_store(
     parquet_dir: str,
     sqlite_mirror: bool,
     market_db: MarketDb | None,
+    allow_sqlite_fallback: bool = True,
 ) -> MarketTimeSeriesStore | None:
     """設定に応じて時系列ストアを組み立てる。"""
     stores: list[MarketTimeSeriesStore] = []
@@ -451,7 +452,7 @@ def create_time_series_store(
         stores.append(SqliteMirrorTimeSeriesStore(market_db))
         logger.info("Market time-series sqlite mirror enabled")
 
-    if not stores and market_db is not None:
+    if not stores and market_db is not None and allow_sqlite_fallback:
         # 最低限の後方互換として SQLite のみを利用
         logger.warning("Falling back to SQLite-only market time-series store")
         stores.append(SqliteMirrorTimeSeriesStore(market_db))

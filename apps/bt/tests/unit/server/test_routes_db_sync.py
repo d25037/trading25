@@ -119,6 +119,24 @@ class TestSyncRoutes:
             assert mock_start.await_args.kwargs["time_series_store"] is default_store
             assert mock_start.await_args.kwargs["close_time_series_store"] is False
 
+    def test_sync_start_duckdb_only_returns_422_when_backend_unavailable(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+        ):
+            mock_create_store.return_value = None
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "dataPlane": {"backend": "duckdb-parquet", "sqliteMirror": False}},
+            )
+
+            assert resp.status_code == 422
+            body = resp.json()
+            assert body["error"] == "Unprocessable Entity"
+            assert "DuckDB backend is unavailable" in body["message"]
+            assert mock_start.await_count == 0
+
     def test_sync_conflict(self, client: TestClient) -> None:
         with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
             mock_start.return_value = None  # Active job exists

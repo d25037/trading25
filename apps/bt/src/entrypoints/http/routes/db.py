@@ -101,7 +101,7 @@ def _resolve_time_series_store(
     timeseries_base = Path(settings.market_timeseries_dir)
     resolved_backend = settings.market_timeseries_backend if data_plane.backend == "default" else data_plane.backend
 
-    if data_plane.backend == "sqlite":
+    if resolved_backend == "sqlite":
         resolved_sqlite_mirror = True
     elif data_plane.sqliteMirror is None:
         resolved_sqlite_mirror = settings.market_timeseries_sqlite_mirror
@@ -120,7 +120,17 @@ def _resolve_time_series_store(
         parquet_dir=str(timeseries_base / "parquet"),
         sqlite_mirror=resolved_sqlite_mirror,
         market_db=market_db,
+        allow_sqlite_fallback=resolved_sqlite_mirror,
     )
+    requires_duckdb = resolved_backend in {"duckdb", "duckdb-parquet", "dual"} and not resolved_sqlite_mirror
+    if requires_duckdb and store is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "DuckDB backend is unavailable for this request. "
+                "Install duckdb or enable sqliteMirror."
+            ),
+        )
     return store, store is not None
 
 
