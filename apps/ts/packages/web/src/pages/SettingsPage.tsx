@@ -10,8 +10,8 @@ import type { StartSyncRequest, SyncDataBackend, SyncMode } from '@/types/sync';
 
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
-  const [dataBackend, setDataBackend] = useState<SyncDataBackend>('default');
-  const [sqliteMirror, setSqliteMirror] = useState(true);
+  const [dataBackend, setDataBackend] = useState<SyncDataBackend>('duckdb-parquet');
+  const [sqliteMirror, setSqliteMirror] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   const startSync = useStartSync();
@@ -50,7 +50,9 @@ export function SettingsPage() {
             <Database className="h-5 w-5" />
             <CardTitle>Database Sync</CardTitle>
           </div>
-          <CardDescription>Synchronize market data from JQuants API</CardDescription>
+          <CardDescription>
+            Synchronize J-Quants market data into DuckDB SoT. Use incremental to resume interrupted syncs.
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <SyncModeSelect value={syncMode} onChange={setSyncMode} disabled={isRunning || startSync.isPending} />

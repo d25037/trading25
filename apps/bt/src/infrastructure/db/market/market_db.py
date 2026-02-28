@@ -177,6 +177,27 @@ class MarketDb(BaseDbAccess):
             if row[0]
         }
 
+    def get_statement_non_null_counts(self, columns: list[str]) -> dict[str, int]:
+        """statements 指定カラムの非NULL件数を返す。"""
+        if not columns:
+            return {}
+
+        available = {column.name for column in market_statements.columns}
+        counts: dict[str, int] = {}
+
+        with self.engine.connect() as conn:
+            for column in columns:
+                if column not in available:
+                    counts[column] = 0
+                    continue
+
+                stmt = select(func.count()).select_from(market_statements).where(
+                    getattr(market_statements.c, column).isnot(None)
+                )
+                counts[column] = int(conn.execute(stmt).scalar() or 0)
+
+        return counts
+
     def get_prime_codes(self) -> set[str]:
         """stocks から Prime 銘柄コードを取得（legacy 表記も吸収）"""
         with self.engine.connect() as conn:
@@ -491,18 +512,37 @@ class MarketDb(BaseDbAccess):
 
     # --- Validate (Phase 3D-2) ---
 
-    def get_missing_stock_data_dates(self) -> list[str]:
-        """TOPIX 日付のうち stock_data に存在しない日付"""
+    def get_missing_stock_data_dates(self, *, limit: int = 100) -> list[str]:
+        """TOPIX 日付のうち stock_data に存在しない日付（新しい順）"""
+        if limit <= 0:
+            return []
+
         with self.engine.connect() as conn:
             rows = conn.execute(
                 text("""
                     SELECT t.date FROM topix_data t
                     WHERE t.date NOT IN (SELECT DISTINCT date FROM stock_data)
                     ORDER BY t.date DESC
-                    LIMIT 100
-                """)
+                    LIMIT :limit
+                """),
+                {"limit": int(limit)},
             ).fetchall()
         return [r[0] for r in rows]
+
+    def get_missing_stock_data_dates_count(self) -> int:
+        """TOPIX 日付のうち stock_data に存在しない日付の総数"""
+        with self.engine.connect() as conn:
+            row = conn.execute(
+                text("""
+                    SELECT COUNT(*) FROM (
+                        SELECT t.date FROM topix_data t
+                        WHERE t.date NOT IN (SELECT DISTINCT date FROM stock_data)
+                    ) missing
+                """)
+            ).fetchone()
+        if row is None:
+            return 0
+        return int(row[0] or 0)
 
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]:
         """adjustment_factor != 1.0 のイベント"""

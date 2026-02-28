@@ -9,6 +9,7 @@ from zoneinfo import ZoneInfo
 import pytest
 
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
@@ -196,6 +197,52 @@ class DummyMarketDb:
         self.metadata[key] = value
 
     def ensure_schema(self) -> None:
+        return None
+
+
+class DummyTimeSeriesStore:
+    def __init__(
+        self,
+        market_db: DummyMarketDb,
+        inspection: TimeSeriesInspection,
+    ) -> None:
+        self._market_db = market_db
+        self._inspection = inspection
+
+    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
+        return self._market_db.upsert_topix_data(rows)
+
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+        return self._market_db.upsert_stock_data(rows)
+
+    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
+        return self._market_db.upsert_indices_data(rows)
+
+    def publish_statements(self, rows: list[dict[str, Any]]) -> int:
+        return self._market_db.upsert_statements(rows)
+
+    def index_topix_data(self) -> None:
+        return None
+
+    def index_stock_data(self) -> None:
+        return None
+
+    def index_indices_data(self) -> None:
+        return None
+
+    def index_statements(self) -> None:
+        return None
+
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> TimeSeriesInspection:
+        del missing_stock_dates_limit, statement_non_null_columns
+        return self._inspection
+
+    def close(self) -> None:
         return None
 
 
@@ -549,6 +596,47 @@ async def test_incremental_sync_uses_stock_data_anchor_when_topix_is_ahead() -> 
     assert topix_calls
     # topix_data ではなく stock_data の最新日（2026-02-06）を基準に差分取得する
     assert topix_calls[0][1] == {"from": "20260206"}
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_uses_timeseries_inspection_anchor_when_sqlite_is_stale() -> None:
+    market_db = DummyMarketDb(
+        latest_trading_date=None,
+        latest_stock_data_date=None,
+        latest_indices_data_dates={},
+    )
+    client = DummyClient()
+    store = DummyTimeSeriesStore(
+        market_db=market_db,
+        inspection=TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_max="20260206",
+            stock_max="20260206",
+            latest_indices_dates={"0000": "20260206"},
+            latest_statement_disclosed_date="2026-02-06",
+            statement_codes={"7203"},
+        ),
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        time_series_store=store,  # type: ignore[arg-type]
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    topix_calls = [c for c in client.calls if c[0] == "/indices/bars/daily/topix"]
+    assert topix_calls
+    assert topix_calls[0][1] == {"from": "20260206"}
+    assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-10"} for path, params in client.calls)
+    assert any(
+        path == "/indices/bars/daily" and params == {"code": "0000", "from": "20260206"}
+        for path, params in client.calls
+    )
 
 
 @pytest.mark.asyncio

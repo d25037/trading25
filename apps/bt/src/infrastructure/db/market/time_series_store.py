@@ -9,7 +9,7 @@ Phase 2 Data Plane:
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Protocol, cast
 
@@ -30,6 +30,13 @@ class MarketTimeSeriesStore(Protocol):
     def index_stock_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
     def index_statements(self) -> None: ...
+
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> "TimeSeriesInspection": ...
 
     def close(self) -> None: ...
 
@@ -64,6 +71,49 @@ class SqliteMirrorTimeSeriesStore:
     def index_statements(self) -> None:
         return None
 
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> "TimeSeriesInspection":
+        basic_stats = self._market_db.get_stats()
+        topix_range = self._market_db.get_topix_date_range() or {}
+        stock_range = self._market_db.get_stock_data_date_range() or {}
+        indices_range = self._market_db.get_indices_data_range() or {}
+        latest_indices_dates = self._market_db.get_latest_indices_data_dates()
+        statement_codes = self._market_db.get_statement_codes()
+        latest_statement = self._market_db.get_latest_statement_disclosed_date()
+        statement_non_null = self._market_db.get_statement_non_null_counts(
+            statement_non_null_columns or []
+        )
+        missing_stock_dates_count = self._market_db.get_missing_stock_data_dates_count()
+
+        missing_stock_dates: list[str] = []
+        if missing_stock_dates_limit > 0:
+            missing_stock_dates = self._market_db.get_missing_stock_data_dates(
+                limit=missing_stock_dates_limit
+            )
+
+        return TimeSeriesInspection(
+            source="sqlite-mirror",
+            topix_count=int(topix_range.get("count") or 0),
+            topix_min=topix_range.get("min"),
+            topix_max=topix_range.get("max"),
+            stock_count=int(stock_range.get("count") or 0),
+            stock_min=stock_range.get("min"),
+            stock_max=stock_range.get("max"),
+            stock_date_count=int(stock_range.get("dateCount") or 0),
+            missing_stock_dates=missing_stock_dates,
+            missing_stock_dates_count=missing_stock_dates_count,
+            indices_count=int(indices_range.get("dataCount") or 0),
+            latest_indices_dates=latest_indices_dates,
+            statements_count=int(basic_stats.get("statements") or 0),
+            latest_statement_disclosed_date=latest_statement,
+            statement_codes=statement_codes,
+            statement_non_null_counts=statement_non_null,
+        )
+
     def close(self) -> None:
         return None
 
@@ -73,6 +123,28 @@ class _TableSpec:
     table_name: str
     parquet_name: str
     order_by: str
+
+
+@dataclass
+class TimeSeriesInspection:
+    """同期/検証のための時系列データ面スナップショット。"""
+
+    source: str
+    topix_count: int = 0
+    topix_min: str | None = None
+    topix_max: str | None = None
+    stock_count: int = 0
+    stock_min: str | None = None
+    stock_max: str | None = None
+    stock_date_count: int = 0
+    missing_stock_dates: list[str] = field(default_factory=list)
+    missing_stock_dates_count: int = 0
+    indices_count: int = 0
+    latest_indices_dates: dict[str, str] = field(default_factory=dict)
+    statements_count: int = 0
+    latest_statement_disclosed_date: str | None = None
+    statement_codes: set[str] = field(default_factory=set)
+    statement_non_null_counts: dict[str, int] = field(default_factory=dict)
 
 
 class DuckDbParquetTimeSeriesStore:
@@ -355,6 +427,135 @@ class DuckDbParquetTimeSeriesStore:
     def index_statements(self) -> None:
         self._export_if_dirty("statements")
 
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> TimeSeriesInspection:
+        topix_row_raw = self._conn.execute(
+            "SELECT COUNT(*) AS count, MIN(date) AS min_date, MAX(date) AS max_date FROM topix_data"
+        ).fetchone()
+        stock_row_raw = self._conn.execute(
+            """
+            SELECT
+                COUNT(*) AS count,
+                MIN(date) AS min_date,
+                MAX(date) AS max_date,
+                COUNT(DISTINCT date) AS date_count
+            FROM stock_data
+            """
+        ).fetchone()
+        indices_count_row = self._conn.execute("SELECT COUNT(*) FROM indices_data").fetchone()
+        indices_count = int(indices_count_row[0] or 0) if indices_count_row else 0
+        indices_rows = self._conn.execute(
+            """
+            SELECT code, MAX(date) AS max_date
+            FROM indices_data
+            GROUP BY code
+            """
+        ).fetchall()
+        statements_row_raw = self._conn.execute(
+            """
+            SELECT
+                COUNT(*) AS count,
+                MAX(disclosed_date) AS max_disclosed
+            FROM statements
+            """
+        ).fetchone()
+        missing_count_row = self._conn.execute(
+            """
+            SELECT COUNT(*)
+            FROM topix_data t
+            LEFT JOIN (SELECT DISTINCT date FROM stock_data) s ON t.date = s.date
+            WHERE s.date IS NULL
+            """
+        ).fetchone()
+        statement_codes_rows = self._conn.execute(
+            "SELECT DISTINCT code FROM statements WHERE code IS NOT NULL"
+        ).fetchall()
+        topix_row = topix_row_raw if topix_row_raw is not None else (0, None, None)
+        stock_row = stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
+        statements_row = statements_row_raw if statements_row_raw is not None else (0, None)
+        missing_stock_dates_count = int(missing_count_row[0] or 0) if missing_count_row else 0
+
+        missing_stock_dates: list[str] = []
+        if missing_stock_dates_limit > 0:
+            missing_rows = self._conn.execute(
+                """
+                SELECT t.date
+                FROM topix_data t
+                LEFT JOIN (SELECT DISTINCT date FROM stock_data) s ON t.date = s.date
+                WHERE s.date IS NULL
+                ORDER BY t.date DESC
+                LIMIT ?
+                """,
+                [missing_stock_dates_limit],
+            ).fetchall()
+            missing_stock_dates = [str(row[0]) for row in missing_rows if row and row[0]]
+
+        statement_non_null_counts = self._duckdb_statement_non_null_counts(
+            statement_non_null_columns or []
+        )
+
+        latest_indices_dates = {
+            str(row[0]): str(row[1])
+            for row in indices_rows
+            if row and row[0] and row[1]
+        }
+        statement_codes = {
+            str(row[0])
+            for row in statement_codes_rows
+            if row and row[0]
+        }
+
+        return TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=int(topix_row[0] or 0),
+            topix_min=cast(str | None, topix_row[1]),
+            topix_max=cast(str | None, topix_row[2]),
+            stock_count=int(stock_row[0] or 0),
+            stock_min=cast(str | None, stock_row[1]),
+            stock_max=cast(str | None, stock_row[2]),
+            stock_date_count=int(stock_row[3] or 0),
+            missing_stock_dates=missing_stock_dates,
+            missing_stock_dates_count=missing_stock_dates_count,
+            indices_count=indices_count,
+            latest_indices_dates=latest_indices_dates,
+            statements_count=int(statements_row[0] or 0),
+            latest_statement_disclosed_date=cast(str | None, statements_row[1]),
+            statement_codes=statement_codes,
+            statement_non_null_counts=statement_non_null_counts,
+        )
+
+    def _duckdb_statement_non_null_counts(self, columns: list[str]) -> dict[str, int]:
+        if not columns:
+            return {}
+
+        existing = {
+            str(row[1])
+            for row in self._conn.execute("PRAGMA table_info('statements')").fetchall()
+            if row and len(row) > 1
+        }
+        counts: dict[str, int] = {}
+
+        for column in columns:
+            if column not in existing:
+                counts[column] = 0
+                continue
+
+            escaped = self._quote_identifier(column)
+            count_row = self._conn.execute(
+                f"SELECT COUNT(*) FROM statements WHERE {escaped} IS NOT NULL"
+            ).fetchone()
+            counts[column] = int(count_row[0] or 0) if count_row else 0
+
+        return counts
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        return '"' + identifier.replace('"', '""') + '"'
+
     def _export_if_dirty(self, table_name: str) -> None:
         if table_name not in self._dirty_tables:
             return
@@ -405,6 +606,21 @@ class CompositeTimeSeriesStore:
 
     def index_statements(self) -> None:
         self._index_all("index_statements")
+
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> TimeSeriesInspection:
+        inspections = [
+            store.inspect(
+                missing_stock_dates_limit=missing_stock_dates_limit,
+                statement_non_null_columns=statement_non_null_columns,
+            )
+            for store in self._stores
+        ]
+        return _merge_inspections(inspections)
 
     def close(self) -> None:
         for store in self._stores:
@@ -462,3 +678,76 @@ def create_time_series_store(
     if len(stores) == 1:
         return stores[0]
     return CompositeTimeSeriesStore(stores)
+
+
+def _merge_inspections(inspections: list[TimeSeriesInspection]) -> TimeSeriesInspection:
+    if not inspections:
+        return TimeSeriesInspection(source="none")
+
+    primary = max(inspections, key=_inspection_priority)
+
+    merged = TimeSeriesInspection(
+        source=primary.source,
+        topix_count=primary.topix_count,
+        topix_min=primary.topix_min,
+        topix_max=primary.topix_max,
+        stock_count=primary.stock_count,
+        stock_min=primary.stock_min,
+        stock_max=primary.stock_max,
+        stock_date_count=primary.stock_date_count,
+        missing_stock_dates=list(primary.missing_stock_dates),
+        missing_stock_dates_count=max(
+            primary.missing_stock_dates_count,
+            len(primary.missing_stock_dates),
+        ),
+        indices_count=primary.indices_count,
+        latest_indices_dates=dict(primary.latest_indices_dates),
+        statements_count=primary.statements_count,
+        latest_statement_disclosed_date=primary.latest_statement_disclosed_date,
+        statement_codes=set(primary.statement_codes),
+        statement_non_null_counts=dict(primary.statement_non_null_counts),
+    )
+
+    for inspection in inspections:
+        for code, date in inspection.latest_indices_dates.items():
+            current = merged.latest_indices_dates.get(code)
+            if current is None or date > current:
+                merged.latest_indices_dates[code] = date
+
+        merged.statement_codes |= inspection.statement_codes
+        merged.missing_stock_dates_count = max(
+            merged.missing_stock_dates_count,
+            inspection.missing_stock_dates_count,
+            len(inspection.missing_stock_dates),
+        )
+
+        for column, count in inspection.statement_non_null_counts.items():
+            merged.statement_non_null_counts[column] = max(
+                merged.statement_non_null_counts.get(column, 0),
+                count,
+            )
+
+        if (
+            merged.latest_statement_disclosed_date is None
+            or (
+                inspection.latest_statement_disclosed_date
+                and inspection.latest_statement_disclosed_date
+                > merged.latest_statement_disclosed_date
+            )
+        ):
+            merged.latest_statement_disclosed_date = inspection.latest_statement_disclosed_date
+
+    merged.statements_count = max(merged.statements_count, len(merged.statement_codes))
+    return merged
+
+
+def _inspection_priority(inspection: TimeSeriesInspection) -> tuple[int, int, int]:
+    is_duckdb = 1 if "duckdb" in inspection.source else 0
+    non_empty_tables = int(inspection.stock_count > 0) + int(inspection.topix_count > 0)
+    volume = (
+        inspection.stock_count
+        + inspection.topix_count
+        + inspection.indices_count
+        + inspection.statements_count
+    )
+    return (is_duckdb, non_empty_tables, volume)
