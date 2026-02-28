@@ -5,7 +5,9 @@ subagentsを用いてそれぞれのプロジェクトを横断的に把握し�
 ## データフロー・ポート割り当て
 
 ```
-JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db / datasets)
+JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
+                     │               ├─ DuckDB + Parquet (market time-series)
+                     │               └─ SQLite (portfolio/jobs/datasets, market mirror optional)
                      ↓
                   ts/web (:5173)
                   ts/cli
@@ -21,6 +23,8 @@ JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db
   - **market.db**: 読み書き（SQLAlchemy Core）
   - **portfolio.db**: portfolio/watchlist CRUD + jobs metadata 永続化（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
+- market 時系列 Data Plane は DuckDB + Parquet を主系とし、`MARKET_TIMESERIES_SQLITE_MIRROR` で SQLite mirror を併用できる
+- `POST /api/db/sync` は `dataPlane`（`backend`, `sqliteMirror`）の実行時 override を受け付け、web/cli から指定可能
 - `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
 - `market.db` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
@@ -157,6 +161,7 @@ bun run cli:run backtest attribution run <strategy> --wait
 - Charts の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
 - Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする
+- `db sync` は CLI オプション `--data-backend` / `--sqlite-mirror` / `--no-sqlite-mirror` を提供し、web `Settings > Database Sync` でも同等の実行 UI を提供する
 
 主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 

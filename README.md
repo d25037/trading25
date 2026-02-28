@@ -5,7 +5,9 @@ FastAPI バックエンド（`apps/bt`）と TypeScript クライアント（`ap
 ## Current Architecture
 
 ```
-JQUANTS API ──→ FastAPI (:3002) ──→ SQLite (market.db / portfolio.db / datasets)
+JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
+                     │               ├─ DuckDB + Parquet (market time-series)
+                     │               └─ SQLite (portfolio/jobs/datasets, market mirror optional)
                      ↓
                   ts/web (:5173, /api proxy)
                   ts/cli
@@ -48,6 +50,16 @@ bun run workspace:dev
 
 `bun run workspace:dev:sync` を使うと、起動前に `bt:sync`（OpenAPI 取得と型生成）を実行します。`bt:sync` 失敗時は warning を出して `web:dev` を継続します。
 `main` ブランチでは `workspace:dev` を既定にし、`workspace:dev:sync` は契約更新確認が必要な時だけ使う運用を推奨します。
+
+### 2.1) Market Sync Data Plane 実行オプション
+
+- Web: `Settings > Database Sync` で `Data Backend` と `SQLite Mirror` を指定して同期実行可能
+- CLI:
+```bash
+cd apps/ts
+bun run cli:run db sync --data-backend duckdb-parquet --no-sqlite-mirror
+bun run cli:run db sync --data-backend sqlite
+```
 
 ### 3) Signal Attribution（LOO + Shapley top-N）
 - Web: Backtest ページの `Attribution` サブタブで `Run` から実行し、`History` で保存済み JSON を閲覧

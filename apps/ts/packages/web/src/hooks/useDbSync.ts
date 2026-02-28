@@ -1,11 +1,11 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
-import type { CancelJobResponse, CreateSyncJobResponse, SyncJobResponse, SyncMode } from '@/types/sync';
+import type { CancelJobResponse, CreateSyncJobResponse, StartSyncRequest, SyncJobResponse } from '@/types/sync';
 import { logger } from '@/utils/logger';
 
 // Fetch functions
-function startSync(mode: SyncMode): Promise<CreateSyncJobResponse> {
-  return apiPost<CreateSyncJobResponse>('/api/db/sync', { mode });
+function startSync(request: StartSyncRequest): Promise<CreateSyncJobResponse> {
+  return apiPost<CreateSyncJobResponse>('/api/db/sync', request);
 }
 
 function fetchJobStatus(jobId: string): Promise<SyncJobResponse> {

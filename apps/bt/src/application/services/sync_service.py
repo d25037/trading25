@@ -15,6 +15,7 @@ from loguru import logger
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_strategies import (
@@ -52,6 +53,8 @@ async def start_sync(
     mode: SyncMode,
     market_db: MarketDb,
     jquants_client: JQuantsAsyncClient,
+    time_series_store: MarketTimeSeriesStore | None = None,
+    close_time_series_store: bool = False,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
     market_db.ensure_schema()
@@ -75,6 +78,7 @@ async def start_sync(
         ctx = SyncContext(
             client=jquants_client,
             market_db=market_db,
+            time_series_store=time_series_store,
             cancelled=job.cancelled,
             on_progress=on_progress,
         )
@@ -90,6 +94,12 @@ async def start_sync(
         except Exception as e:
             logger.exception(f"Sync job {job.job_id} failed: {e}")
             sync_job_manager.fail_job(job.job_id, str(e))
+        finally:
+            if close_time_series_store and time_series_store is not None:
+                try:
+                    await asyncio.to_thread(time_series_store.close)
+                except Exception as e:  # pragma: no cover - close失敗はログのみ
+                    logger.warning(f"Failed to close time-series store for job {job.job_id}: {e}")
 
     task = asyncio.create_task(_run())
     job.task = task

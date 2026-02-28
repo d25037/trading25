@@ -178,6 +178,7 @@ export interface IndexDataResponse {
 // ===== SYNC TYPES =====
 
 export type SyncMode = 'auto' | 'initial' | 'incremental' | 'indices-only';
+export type SyncDataBackend = 'default' | 'duckdb-parquet' | 'sqlite';
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface JobProgress {
@@ -222,6 +223,16 @@ export interface CancelJobResponse {
   success: boolean;
   jobId: string;
   message: string;
+}
+
+export interface SyncDataPlaneOptions {
+  backend?: SyncDataBackend;
+  sqliteMirror?: boolean;
+}
+
+export interface StartSyncRequest {
+  mode: SyncMode;
+  dataPlane?: SyncDataPlaneOptions;
 }
 
 // ===== DATASET TYPES =====

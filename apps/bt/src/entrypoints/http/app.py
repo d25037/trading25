@@ -7,6 +7,7 @@ trading25-bt バックテストAPIサーバー
 import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import AsyncGenerator
 
 from fastapi import FastAPI, HTTPException, Request
@@ -30,6 +31,10 @@ from sqlalchemy.exc import SQLAlchemyError
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
+from src.infrastructure.db.market.time_series_store import (
+    MarketTimeSeriesStore,
+    create_time_series_store,
+)
 from src.application.services.backtest_attribution_service import backtest_attribution_service
 from src.application.services.backtest_service import backtest_service
 from src.application.services.job_manager import job_manager
@@ -121,6 +126,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"MarketDb の初期化に失敗: {e}")
     app.state.market_db = market_db
 
+    # Phase 2: market data plane (DuckDB + Parquet, optional SQLite mirror)
+    market_time_series_store: MarketTimeSeriesStore | None = None
+    try:
+        timeseries_base = settings.market_timeseries_dir
+        market_time_series_store = create_time_series_store(
+            backend=settings.market_timeseries_backend,
+            duckdb_path=str((Path(timeseries_base) / "market.duckdb")),
+            parquet_dir=str((Path(timeseries_base) / "parquet")),
+            sqlite_mirror=settings.market_timeseries_sqlite_mirror,
+            market_db=market_db,
+        )
+    except Exception as e:
+        logger.warning(f"Market time-series store の初期化に失敗: {e}")
+    app.state.market_time_series_store = market_time_series_store
+
     portfolio_db: PortfolioDb | None = None
     if settings.portfolio_db_path:
         try:
@@ -158,6 +178,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Phase 3C: SQLAlchemy DB shutdown
     if market_db is not None:
         market_db.close()
+    market_time_series_store = getattr(app.state, "market_time_series_store", None)
+    if market_time_series_store is not None:
+        market_time_series_store.close()
     if portfolio_db is not None:
         portfolio_db.close()
     job_manager.set_portfolio_db(None)

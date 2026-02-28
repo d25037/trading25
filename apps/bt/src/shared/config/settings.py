@@ -51,6 +51,17 @@ class Settings(BaseModel):
     # market.db (Phase 3B-2a)
     market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
 
+    # market time-series data plane (Phase 2)
+    market_timeseries_backend: str = Field(
+        default="duckdb-parquet",
+        alias="MARKET_TIMESERIES_BACKEND",
+    )
+    market_timeseries_dir: str = Field(default="", alias="MARKET_TIMESERIES_DIR")
+    market_timeseries_sqlite_mirror: bool = Field(
+        default=True,
+        alias="MARKET_TIMESERIES_SQLITE_MIRROR",
+    )
+
     # portfolio.db (Phase 3C)
     portfolio_db_path: str = Field(default="", alias="PORTFOLIO_DB_PATH")
 
@@ -64,6 +75,8 @@ class Settings(BaseModel):
         data_dir = _default_data_dir()
         if not self.market_db_path:
             self.market_db_path = str(Path(data_dir) / "market.db")
+        if not self.market_timeseries_dir:
+            self.market_timeseries_dir = str(Path(data_dir) / "market-timeseries")
         if not self.portfolio_db_path:
             self.portfolio_db_path = str(Path(data_dir) / "portfolio.db")
         if not self.dataset_base_path:

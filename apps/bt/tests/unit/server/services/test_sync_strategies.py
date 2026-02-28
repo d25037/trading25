@@ -105,7 +105,17 @@ class DummyMarketDb:
         }
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        self.topix_rows.extend(rows)
+        upserted = {
+            str(row["date"]): dict(row)
+            for row in self.topix_rows
+            if row.get("date")
+        }
+        for row in rows:
+            row_date = str(row.get("date", "")).strip()
+            if not row_date:
+                continue
+            upserted[row_date] = dict(row)
+        self.topix_rows = list(upserted.values())
         return len(rows)
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
@@ -116,7 +126,18 @@ class DummyMarketDb:
         return len(rows)
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        self.stock_rows.extend(rows)
+        upserted = {
+            (str(row["code"]), str(row["date"])): dict(row)
+            for row in self.stock_rows
+            if row.get("code") and row.get("date")
+        }
+        for row in rows:
+            code = str(row.get("code", "")).strip()
+            row_date = str(row.get("date", "")).strip()
+            if not code or not row_date:
+                continue
+            upserted[(code, row_date)] = dict(row)
+        self.stock_rows = list(upserted.values())
         return len(rows)
 
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> int:
@@ -149,7 +170,26 @@ class DummyMarketDb:
         return len(rows)
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
-        self.statements_rows.extend(rows)
+        upserted: dict[tuple[str, str], dict[str, Any]] = {
+            (str(row["code"]), str(row["disclosed_date"])): dict(row)
+            for row in self.statements_rows
+            if row.get("code") and row.get("disclosed_date")
+        }
+        for row in rows:
+            code = str(row.get("code", "")).strip()
+            disclosed_date = str(row.get("disclosed_date", "")).strip()
+            if not code or not disclosed_date:
+                continue
+            key = (code, disclosed_date)
+            existing = upserted.get(key, {})
+            merged = dict(existing)
+            for column, value in row.items():
+                if value is not None:
+                    merged[column] = value
+                elif column not in merged:
+                    merged[column] = value
+            upserted[key] = merged
+        self.statements_rows = list(upserted.values())
         return len(rows)
 
     def set_sync_metadata(self, key: str, value: str) -> None:
@@ -1431,6 +1471,43 @@ def test_convert_indices_data_rows_skips_missing_code_when_no_fallback() -> None
         code=None,
     )
     assert rows == []
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_repeated_run_keeps_idempotent_rows() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = datetime.now(
+        ZoneInfo("Asia/Tokyo")
+    ).date().isoformat()
+    client = DummyClient()
+    strategy = IncrementalSyncStrategy()
+
+    ctx = SyncContext(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result_first = await strategy.execute(ctx)
+    assert result_first.success is True
+
+    stock_keys_first = sorted(
+        (str(row["code"]), str(row["date"]))
+        for row in market_db.stock_rows
+    )
+    topix_dates_first = sorted(str(row["date"]) for row in market_db.topix_rows)
+    indices_keys_first = sorted(
+        (str(row["code"]), str(row["date"]))
+        for row in market_db.indices_rows
+    )
+
+    result_second = await strategy.execute(ctx)
+    assert result_second.success is True
+
+    assert sorted((str(row["code"]), str(row["date"])) for row in market_db.stock_rows) == stock_keys_first
+    assert sorted(str(row["date"]) for row in market_db.topix_rows) == topix_dates_first
+    assert sorted((str(row["code"]), str(row["date"])) for row in market_db.indices_rows) == indices_keys_first
 
 
 @pytest.mark.asyncio

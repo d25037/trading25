@@ -21,13 +21,19 @@ afterEach(() => {
 
 describe('useDbSync hooks', () => {
   it('useStartSync starts a sync job', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'abc', mode: 'full' });
+    vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'abc', mode: 'initial' });
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useStartSync(), { wrapper });
     await act(async () => {
-      await result.current.mutateAsync('full' as never);
+      await result.current.mutateAsync({
+        mode: 'initial',
+        dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+      });
     });
-    expect(apiPost).toHaveBeenCalledWith('/api/db/sync', { mode: 'full' });
+    expect(apiPost).toHaveBeenCalledWith('/api/db/sync', {
+      mode: 'initial',
+      dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+    });
   });
 
   it('useSyncJobStatus fetches job status', async () => {
