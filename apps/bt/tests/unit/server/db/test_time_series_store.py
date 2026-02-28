@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
+
 from src.infrastructure.db.market.market_db import MarketDb
 from src.infrastructure.db.market.time_series_store import create_time_series_store
 
@@ -55,7 +57,20 @@ def test_create_time_series_store_returns_none_without_targets(tmp_path: Path) -
     assert store is None
 
 
-def test_create_time_series_store_can_disable_sqlite_fallback(tmp_path: Path) -> None:
+def test_create_time_series_store_can_disable_sqlite_fallback(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class _UnavailableDuckDbStore:
+        def __init__(self, *, duckdb_path: str, parquet_dir: str) -> None:
+            del duckdb_path, parquet_dir
+            raise RuntimeError("duckdb unavailable")
+
+    monkeypatch.setattr(
+        "src.infrastructure.db.market.time_series_store.DuckDbParquetTimeSeriesStore",
+        _UnavailableDuckDbStore,
+    )
+
     market_db = MarketDb(str(tmp_path / "market.db"), read_only=False)
     store = create_time_series_store(
         backend="duckdb-parquet",

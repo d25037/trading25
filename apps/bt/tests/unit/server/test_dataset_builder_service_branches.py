@@ -390,12 +390,14 @@ async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
     job_first = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
     first_result = await _build_dataset(job_first, resolver, client)
     assert first_result.success is True
+    isolated_dataset_manager.complete_job(job_first.job_id, first_result)
     first_manifest_path = tmp_path / "repro.manifest.v1.json"
     first_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
 
     job_second = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
     second_result = await _build_dataset(job_second, resolver, client)
     assert second_result.success is True
+    isolated_dataset_manager.complete_job(job_second.job_id, second_result)
     second_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
 
     assert first_manifest["checksums"]["logicalSha256"] == second_manifest["checksums"]["logicalSha256"]
