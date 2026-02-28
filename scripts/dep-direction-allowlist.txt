@@ -63,3 +63,5 @@ apps/ts/packages/api-clients/src/backtest/BacktestClient.ts
 apps/ts/packages/api-clients/src/backtest/BacktestClient.test.ts
 apps/ts/packages/api-clients/src/backtest/index.ts
 apps/ts/packages/api-clients/src/backtest/types.ts
+# PR #148: analytics client tests assert FastAPI base URL (:3002)
+apps/ts/packages/api-clients/src/analytics/AnalyticsClient.test.ts
