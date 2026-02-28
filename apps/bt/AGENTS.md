@@ -18,7 +18,7 @@
 ## 🛡️ 本番環境対応・信頼性強化
 
 ### API接続管理
-**詳細**: `.claude/skills/api-architecture/SKILL.md`
+**詳細**: `../../.codex/skills/bt-api-architecture/SKILL.md`
 - **統一APIクライアント**: `src/infrastructure/external_api/` によるREST API（localhost:3002）経由データアクセス
 - **リソース管理**: HTTPセッション管理・リトライ機構・タイムアウト設定・エラーハンドリング
 - **旧実装削除**: `src/data/database.py` は削除済み（SQLite直接アクセス廃止）
@@ -44,7 +44,7 @@
 - **包括的テストスイート**: unit/integration/security 各テストカテゴリ完備
 
 ## 🎯 統一Signalsシステム
-**詳細**: `.claude/skills/signal-system/SKILL.md`
+**詳細**: `../../.codex/skills/bt-signal-system/SKILL.md`
 
 ### 概念統一の原則
 - **Entry Filters（絞り込み）**: 基本エントリー条件を**AND条件で絞り込む**（`entry_filter_params`）
@@ -159,7 +159,7 @@ uv sync
 ```
 
 ### バックテストCLI（bt コマンド）
-**詳細**: `.claude/skills/cli-commands/SKILL.md`
+**詳細**: `../../.codex/skills/bt-cli-commands/SKILL.md`
 
 ```bash
 # バックテスト実行
@@ -198,15 +198,15 @@ uv run pytest tests/
 ## 詳細情報
 
 ### Skills（on-demand loading）
-- **Agent System**: `.claude/skills/agent-system/SKILL.md`（戦略自動生成・最適化）
-- **API Architecture**: `.claude/skills/api-architecture/SKILL.md`
-- **Signal System**: `.claude/skills/signal-system/SKILL.md`
-- **CLI Commands**: `.claude/skills/cli-commands/SKILL.md`
-- **Optimization**: `.claude/skills/optimization/SKILL.md`
-- **Strategy Config**: `.claude/skills/strategy-config/SKILL.md`
+- **Agent System**: `../../.codex/skills/bt-agent-system/SKILL.md`（戦略自動生成・最適化）
+- **API Architecture**: `../../.codex/skills/bt-api-architecture/SKILL.md`
+- **Signal System**: `../../.codex/skills/bt-signal-system/SKILL.md`
+- **CLI Commands**: `../../.codex/skills/bt-cli-commands/SKILL.md`
+- **Optimization**: `../../.codex/skills/bt-optimization/SKILL.md`
+- **Strategy Config**: `../../.codex/skills/bt-strategy-config/SKILL.md`
 
 ### User-Level Skills
-ユーザーレベルのスキル（`~/.claude/skills/`）も利用可能:
+ユーザーレベルのスキル（`~/.codex/skills/`）も利用可能:
 - **`local-issues`** — ファイルベースのIssue管理。`issues/` ディレクトリ内のMarkdownファイルでIssueを管理する。操作: open, list, show, edit, start, close, wontfix, deps, summary。Issueの作成・更新・クローズ時はこのスキルのフォーマットに従うこと。
 - **`ask-codex`** — Plan mode でプラン確定前に Codex CLI へ評価を依頼する。
 

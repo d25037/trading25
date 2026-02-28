@@ -168,9 +168,9 @@ bun run cli:run backtest attribution run <strategy> --wait
 ## Skills ガバナンス
 
 - プロジェクト正本のスキルは `/.codex/skills` に配置する
-- `apps/ts/.claude/skills` と `apps/bt/.claude/skills` は legacy 参照用（read-only）
+- `apps/ts/.claude` と `apps/bt/.claude` は廃止し、モノレポ正本の `/.codex/skills` のみを参照する
 - 参照生成: `scripts/skills/refresh_skill_references.py`
-- 監査: `scripts/skills/audit_skills.py --strict-legacy`
+- 監査: `scripts/skills/audit_skills.py --strict-legacy`（legacy ディレクトリ再混入の検知）
 
 ## CI
 

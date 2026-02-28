@@ -4,7 +4,6 @@
 from __future__ import annotations
 
 import argparse
-import os
 import re
 import subprocess
 import sys
@@ -18,8 +17,8 @@ BANNED_PATTERNS = [
 ]
 
 LEGACY_DIRS = (
-    "apps/ts/.claude/skills",
-    "apps/bt/.claude/skills",
+    "apps/ts/.claude",
+    "apps/bt/.claude",
 )
 
 
@@ -48,29 +47,9 @@ def run(cmd: list[str], cwd: Path, check: bool = True) -> subprocess.CompletedPr
     return subprocess.run(cmd, cwd=cwd, text=True, capture_output=True, check=check)
 
 
-def changed_files(repo_root: Path) -> list[str]:
-    base_ref = os.getenv("GITHUB_BASE_REF")
-
-    if base_ref:
-        candidate = ["git", "diff", "--name-only", f"origin/{base_ref}...HEAD"]
-        result = run(candidate, cwd=repo_root, check=False)
-        if result.returncode == 0:
-            return [line for line in result.stdout.splitlines() if line.strip()]
-
-    if os.getenv("GITHUB_EVENT_NAME") == "push":
-        result = run(["git", "diff", "--name-only", "HEAD~1...HEAD"], cwd=repo_root, check=False)
-        if result.returncode == 0:
-            return [line for line in result.stdout.splitlines() if line.strip()]
-
-    staged = run(["git", "diff", "--name-only", "--cached"], cwd=repo_root, check=False)
-    unstaged = run(["git", "diff", "--name-only"], cwd=repo_root, check=False)
-    files = set(staged.stdout.splitlines()) | set(unstaged.stdout.splitlines())
-    return [line for line in sorted(files) if line.strip()]
-
-
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--strict-legacy", action="store_true", help="Fail if legacy files (except LEGACY.md) changed")
+    parser.add_argument("--strict-legacy", action="store_true", help="Fail if legacy skill directories exist")
     args = parser.parse_args()
 
     repo_root = Path(__file__).resolve().parents[2]
@@ -108,11 +87,9 @@ def main() -> int:
             errors.append(refresh.stderr.strip())
 
     if args.strict_legacy:
-        changed = changed_files(repo_root)
-        for path in changed:
-            if any(path.startswith(prefix) for prefix in LEGACY_DIRS):
-                if Path(path).name != "LEGACY.md":
-                    errors.append(f"Legacy skill file modified (read-only violation): {path}")
+        for legacy_dir in LEGACY_DIRS:
+            if (repo_root / legacy_dir).exists():
+                errors.append(f"Legacy skill directory must not exist: {legacy_dir}")
 
     if errors:
         print("Skill audit failed:")

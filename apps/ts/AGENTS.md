@@ -137,7 +137,7 @@ Customize with `XDG_DATA_HOME` environment variable.
 
 ## Skills
 
-Project-specific skills are defined in `.claude/skills/*/SKILL.md`. Refer to these for domain-specific guidance.
+Project-specific skills are defined in `../../.codex/skills/*/SKILL.md`. Refer to these for domain-specific guidance.
 
 ### API エンドポイント参照
 
@@ -145,7 +145,7 @@ APIエンドポイントの確認・デバッグ時は **`api-endpoints` skill**
 
 ### User-Level Skills
 
-ユーザーレベルのスキル（`~/.claude/skills/`）も利用可能:
+ユーザーレベルのスキル（`~/.codex/skills/`）も利用可能:
 
 - **`local-issues`** — ファイルベースのIssue管理。`issues/` ディレクトリ内のMarkdownファイルでIssueを管理する。操作: open, list, show, edit, start, close, wontfix, deps, summary。Issueの作成・更新・クローズ時はこのスキルのフォーマットに従うこと。
 - **`ask-codex`** — Plan mode でプラン確定前に Codex CLI へ評価を依頼する。

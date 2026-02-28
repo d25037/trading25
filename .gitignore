@@ -54,6 +54,8 @@ htmlcov/
 **/.claude/settings.json
 .mcp.json
 .agent/
+apps/**/.claude/
+apps/**/.agents/
 **/.codex/
 !/.codex/
 !/.codex/**
