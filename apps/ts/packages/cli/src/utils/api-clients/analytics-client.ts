@@ -1,121 +1,86 @@
-import { BaseApiClient, toQueryString } from './base-client.js';
-import type {
-  FactorRegressionResponse,
-  MarketRankingResponse,
-  MarketScreeningResponse,
-  PortfolioFactorRegressionResponse,
-  ROEResponse,
-  ScreeningJobResponse,
-} from './types.js';
+import {
+  AnalyticsClient as SharedAnalyticsClient,
+  type FactorRegressionParams,
+  type FactorRegressionResponse,
+  type MarketRankingParams,
+  type MarketRankingResponse,
+  type MarketScreeningResponse,
+  type PortfolioFactorRegressionParams,
+  type PortfolioFactorRegressionResponse,
+  type ROEParams,
+  type ROEResponse,
+  type ScreeningJobRequest,
+  type ScreeningJobResponse,
+} from '@trading25/api-clients/analytics';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 
-export class AnalyticsClient extends BaseApiClient {
-  /**
-   * Get market rankings (trading value, gainers, losers)
-   */
-  async getMarketRanking(params: {
-    date?: string;
-    limit?: number;
-    markets?: string;
-    lookbackDays?: number;
-  }): Promise<MarketRankingResponse> {
-    const query = toQueryString({
-      date: params.date,
-      limit: params.limit,
-      markets: params.markets,
-      lookbackDays: params.lookbackDays,
-    });
-    const url = `/api/analytics/ranking${query ? `?${query}` : ''}`;
-    return this.request<MarketRankingResponse>(url);
+export class AnalyticsClient extends SharedAnalyticsClient {
+  constructor(baseUrl: string) {
+    super({ baseUrl });
   }
 
-  /**
-   * Create screening job
-   */
-  async createScreeningJob(params: {
-    markets?: string;
-    strategies?: string;
-    recentDays?: number;
-    date?: string;
-    sortBy?: 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
-    order?: 'asc' | 'desc';
-    limit?: number;
-  }): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>('/api/analytics/screening/jobs', {
-      method: 'POST',
-      body: JSON.stringify(params),
-    });
+  private async withCliErrorHandling<T>(operation: () => Promise<T>): Promise<T> {
+    try {
+      return await operation();
+    } catch (error) {
+      throw this.mapCliError(error);
+    }
   }
 
-  /**
-   * Get screening job status
-   */
-  async getScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
+  private mapCliError(error: unknown): Error {
+    if (error instanceof HttpRequestError && error.kind === 'http') {
+      const body = error.body as { message?: unknown } | undefined;
+      if (body && typeof body.message === 'string' && body.message.trim().length > 0) {
+        return new Error(body.message);
+      }
+      return new Error(`HTTP error! status: ${error.status ?? 'unknown'}`);
+    }
+
+    const message = error instanceof HttpRequestError ? error.message : error instanceof Error ? error.message : '';
+    if (message.includes('fetch failed') || message.includes('ECONNREFUSED')) {
+      return new Error(
+        'Cannot connect to API server. Please ensure bt FastAPI is running with "uv run bt server --port 3002"'
+      );
+    }
+
+    if (message) {
+      return new Error(message);
+    }
+
+    return new Error('Unknown error occurred');
   }
 
-  /**
-   * Cancel screening job
-   */
-  async cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
-    return this.request<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`, {
-      method: 'POST',
-    });
+  override getMarketRanking(params: MarketRankingParams = {}): Promise<MarketRankingResponse> {
+    return this.withCliErrorHandling(() => super.getMarketRanking(params));
   }
 
-  /**
-   * Get completed screening result
-   */
-  async getScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
-    return this.request<MarketScreeningResponse>(`/api/analytics/screening/result/${encodeURIComponent(jobId)}`);
+  override createScreeningJob(params: ScreeningJobRequest): Promise<ScreeningJobResponse> {
+    return this.withCliErrorHandling(() => super.createScreeningJob(params));
   }
 
-  /**
-   * Calculate ROE from financial statements
-   */
-  async getROE(params: {
-    code?: string;
-    date?: string;
-    annualize?: boolean;
-    preferConsolidated?: boolean;
-    minEquity?: number;
-    sortBy?: 'roe' | 'code' | 'date';
-    limit?: number;
-  }): Promise<ROEResponse> {
-    const query = toQueryString({
-      code: params.code,
-      date: params.date,
-      annualize: params.annualize,
-      preferConsolidated: params.preferConsolidated,
-      minEquity: params.minEquity,
-      sortBy: params.sortBy,
-      limit: params.limit,
-    });
-    const url = `/api/analytics/roe${query ? `?${query}` : ''}`;
-    return this.request<ROEResponse>(url);
+  override getScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
+    return this.withCliErrorHandling(() => super.getScreeningJobStatus(jobId));
   }
 
-  /**
-   * Perform factor regression analysis for risk decomposition
-   */
-  async getFactorRegression(params: { symbol: string; lookbackDays?: number }): Promise<FactorRegressionResponse> {
-    const query = toQueryString({
-      lookbackDays: params.lookbackDays,
-    });
-    const url = `/api/analytics/factor-regression/${params.symbol}${query ? `?${query}` : ''}`;
-    return this.request<FactorRegressionResponse>(url);
+  override cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
+    return this.withCliErrorHandling(() => super.cancelScreeningJob(jobId));
   }
 
-  /**
-   * Perform factor regression analysis for a portfolio
-   */
-  async getPortfolioFactorRegression(params: {
-    portfolioId: number;
-    lookbackDays?: number;
-  }): Promise<PortfolioFactorRegressionResponse> {
-    const query = toQueryString({
-      lookbackDays: params.lookbackDays,
-    });
-    const url = `/api/analytics/portfolio-factor-regression/${params.portfolioId}${query ? `?${query}` : ''}`;
-    return this.request<PortfolioFactorRegressionResponse>(url);
+  override getScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
+    return this.withCliErrorHandling(() => super.getScreeningResult(jobId));
+  }
+
+  override getROE(params: ROEParams): Promise<ROEResponse> {
+    return this.withCliErrorHandling(() => super.getROE(params));
+  }
+
+  override getFactorRegression(params: FactorRegressionParams): Promise<FactorRegressionResponse> {
+    return this.withCliErrorHandling(() => super.getFactorRegression(params));
+  }
+
+  override getPortfolioFactorRegression(
+    params: PortfolioFactorRegressionParams
+  ): Promise<PortfolioFactorRegressionResponse> {
+    return this.withCliErrorHandling(() => super.getPortfolioFactorRegression(params));
   }
 }

@@ -1,5 +1,6 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiGet, apiPost } from '@/lib/api-client';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import type {
   MarketScreeningResponse,
   ScreeningJobRequest,
@@ -15,19 +16,19 @@ export const screeningKeys = {
 };
 
 function runScreeningJob(request: ScreeningJobRequest): Promise<ScreeningJobResponse> {
-  return apiPost<ScreeningJobResponse>('/api/analytics/screening/jobs', request);
+  return analyticsClient.createScreeningJob(request);
 }
 
 function fetchScreeningJobStatus(jobId: string): Promise<ScreeningJobResponse> {
-  return apiGet<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}`);
+  return analyticsClient.getScreeningJobStatus(jobId);
 }
 
 function fetchScreeningResult(jobId: string): Promise<MarketScreeningResponse> {
-  return apiGet<MarketScreeningResponse>(`/api/analytics/screening/result/${encodeURIComponent(jobId)}`);
+  return analyticsClient.getScreeningResult(jobId);
 }
 
 function cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
-  return apiPost<ScreeningJobResponse>(`/api/analytics/screening/jobs/${encodeURIComponent(jobId)}/cancel`);
+  return analyticsClient.cancelScreeningJob(jobId);
 }
 
 function toJobRequest(params: ScreeningParams): ScreeningJobRequest {
@@ -67,7 +68,7 @@ export function useScreeningJobStatus(jobId: string | null) {
     },
     enabled: !!jobId,
     retry: (failureCount, error) => {
-      if (error instanceof ApiError && error.status === 404) return false;
+      if (error instanceof HttpRequestError && error.kind === 'http' && error.status === 404) return false;
       return failureCount < 2;
     },
     refetchInterval: (query) => {

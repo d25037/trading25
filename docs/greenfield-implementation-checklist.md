@@ -89,6 +89,7 @@
 - [ ] fundamentals ranking/signal の計算 SoT を `src/domains` 側へ集約する。
 - [ ] market filter 同義語（legacy/current）を API 入力境界で統一する。
 - [ ] web/cli で同一 typed client を使うように重複呼び出しを削減する。
+  - 2026-02-28 着手: `@trading25/api-clients/analytics` を新設し、screening/fundamental-ranking を web/cli 共通 client へ移行開始。
 
 ### Validation
 

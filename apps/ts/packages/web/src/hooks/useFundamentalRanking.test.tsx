@@ -1,14 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { useFundamentalRanking } from './useFundamentalRanking';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
+vi.mock('@/lib/analytics-client', () => ({
+  analyticsClient: {
+    getFundamentalRanking: vi.fn(),
+  },
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -21,7 +20,7 @@ afterEach(() => {
 
 describe('useFundamentalRanking', () => {
   it('fetches fundamental ranking data when enabled', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ rankings: {} });
+    vi.mocked(analyticsClient.getFundamentalRanking).mockResolvedValueOnce({ rankings: {} } as never);
     const { wrapper } = createTestWrapper();
     const params = {
       limit: 20,
@@ -31,8 +30,7 @@ describe('useFundamentalRanking', () => {
     };
     const { result } = renderHook(() => useFundamentalRanking(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/fundamental-ranking',
+    expect(analyticsClient.getFundamentalRanking).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: 20,
         markets: 'prime',
@@ -49,7 +47,7 @@ describe('useFundamentalRanking', () => {
   });
 
   it('omits lookback parameter when forecast filter is disabled', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ rankings: {} });
+    vi.mocked(analyticsClient.getFundamentalRanking).mockResolvedValueOnce({ rankings: {} } as never);
     const { wrapper } = createTestWrapper();
     const params = {
       limit: 20,
@@ -59,16 +57,14 @@ describe('useFundamentalRanking', () => {
     };
     const { result } = renderHook(() => useFundamentalRanking(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/fundamental-ranking',
+    expect(analyticsClient.getFundamentalRanking).toHaveBeenCalledWith(
       expect.objectContaining({
         limit: 20,
         markets: 'prime',
         forecastAboveRecentFyActuals: false,
       })
     );
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/fundamental-ranking',
+    expect(analyticsClient.getFundamentalRanking).toHaveBeenCalledWith(
       expect.not.objectContaining({
         forecastLookbackFyCount: 10,
       })
@@ -76,7 +72,7 @@ describe('useFundamentalRanking', () => {
   });
 
   it('uses default lookback count when filter is enabled and lookback is missing', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ rankings: {} });
+    vi.mocked(analyticsClient.getFundamentalRanking).mockResolvedValueOnce({ rankings: {} } as never);
     const { wrapper } = createTestWrapper();
 
     const { result } = renderHook(
@@ -85,8 +81,7 @@ describe('useFundamentalRanking', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/fundamental-ranking',
+    expect(analyticsClient.getFundamentalRanking).toHaveBeenCalledWith(
       expect.objectContaining({
         markets: 'prime',
         forecastAboveRecentFyActuals: true,
@@ -96,7 +91,7 @@ describe('useFundamentalRanking', () => {
   });
 
   it('clamps lookback count to supported range when filter is enabled', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ rankings: {} });
+    vi.mocked(analyticsClient.getFundamentalRanking).mockResolvedValueOnce({ rankings: {} } as never);
     const { wrapper } = createTestWrapper();
 
     const { result } = renderHook(
@@ -113,8 +108,7 @@ describe('useFundamentalRanking', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/fundamental-ranking',
+    expect(analyticsClient.getFundamentalRanking).toHaveBeenCalledWith(
       expect.objectContaining({
         markets: 'prime',
         forecastAboveRecentFyActuals: true,
@@ -124,7 +118,7 @@ describe('useFundamentalRanking', () => {
   });
 
   it('supports legacy forecastAboveAllActuals flag when new flag is absent', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ rankings: {} });
+    vi.mocked(analyticsClient.getFundamentalRanking).mockResolvedValueOnce({ rankings: {} } as never);
     const { wrapper } = createTestWrapper();
 
     const { result } = renderHook(
@@ -141,8 +135,7 @@ describe('useFundamentalRanking', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/fundamental-ranking',
+    expect(analyticsClient.getFundamentalRanking).toHaveBeenCalledWith(
       expect.objectContaining({
         markets: 'prime',
         forecastAboveRecentFyActuals: true,
