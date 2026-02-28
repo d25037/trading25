@@ -1,14 +1,17 @@
 import { Database, Loader2 } from 'lucide-react';
 import { useState } from 'react';
+import { SyncDataPlaneOptions } from '@/components/Settings/SyncDataPlaneOptions';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useCancelSync, useStartSync, useSyncJobStatus } from '@/hooks/useDbSync';
-import type { SyncMode } from '@/types/sync';
+import type { StartSyncRequest, SyncDataBackend, SyncMode } from '@/types/sync';
 
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
+  const [dataBackend, setDataBackend] = useState<SyncDataBackend>('default');
+  const [sqliteMirror, setSqliteMirror] = useState(true);
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
 
   const startSync = useStartSync();
@@ -18,7 +21,14 @@ export function SettingsPage() {
   const isRunning = jobStatus?.status === 'pending' || jobStatus?.status === 'running';
 
   const handleStartSync = () => {
-    startSync.mutate(syncMode, {
+    const request: StartSyncRequest = { mode: syncMode };
+    if (dataBackend === 'duckdb-parquet') {
+      request.dataPlane = { backend: dataBackend, sqliteMirror };
+    } else if (dataBackend === 'sqlite') {
+      request.dataPlane = { backend: dataBackend };
+    }
+
+    startSync.mutate(request, {
       onSuccess: (data) => setActiveJobId(data.jobId),
     });
   };
@@ -44,6 +54,13 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <SyncModeSelect value={syncMode} onChange={setSyncMode} disabled={isRunning || startSync.isPending} />
+          <SyncDataPlaneOptions
+            backend={dataBackend}
+            sqliteMirror={sqliteMirror}
+            onBackendChange={setDataBackend}
+            onSqliteMirrorChange={setSqliteMirror}
+            disabled={isRunning || startSync.isPending}
+          />
 
           <Button onClick={handleStartSync} disabled={isRunning || startSync.isPending} className="w-full">
             {startSync.isPending ? (

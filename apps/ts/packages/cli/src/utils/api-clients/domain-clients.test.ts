@@ -179,6 +179,21 @@ describe('Domain API clients', () => {
       },
     });
 
+    await client.startSync({
+      mode: 'incremental',
+      dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+    });
+    expect(getLastCall()).toEqual({
+      endpoint: '/api/db/sync',
+      options: {
+        method: 'POST',
+        body: JSON.stringify({
+          mode: 'incremental',
+          dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+        }),
+      },
+    });
+
     await client.getSyncJobStatus('sync-job-1');
     expect(getLastCall()).toEqual({
       endpoint: '/api/db/sync/jobs/sync-job-1',

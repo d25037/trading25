@@ -130,6 +130,20 @@ class MarketValidationResponse(BaseModel):
 # --- Sync ---
 
 
+SyncModeLiteral = Literal["auto", "initial", "incremental", "indices-only"]
+SyncDataBackendLiteral = Literal["default", "duckdb-parquet", "sqlite"]
+
+
+class SyncDataPlaneRequest(BaseModel):
+    backend: SyncDataBackendLiteral = "default"
+    sqliteMirror: bool | None = None
+
+
+class SyncRequest(BaseModel):
+    mode: SyncModeLiteral = "auto"
+    dataPlane: SyncDataPlaneRequest | None = None
+
+
 class SyncProgress(BaseModel):
     stage: str
     current: int

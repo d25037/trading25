@@ -68,7 +68,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      'auto',
+      { mode: 'auto' },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -77,6 +77,30 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('button', { name: /Cancel/i }));
     expect(mockCancelSyncState.mutate).toHaveBeenCalledWith('job-1');
+  });
+
+  it('sends data plane override when backend is explicitly selected', async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole('combobox', { name: 'Data Backend' }));
+    await user.click(screen.getByRole('option', { name: /DuckDB \+ Parquet/i }));
+    await user.click(screen.getByRole('switch', { name: 'SQLite Mirror' }));
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
+      {
+        mode: 'auto',
+        dataPlane: {
+          backend: 'duckdb-parquet',
+          sqliteMirror: false,
+        },
+      },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
   });
 
   it('shows starting state while request is in progress', () => {

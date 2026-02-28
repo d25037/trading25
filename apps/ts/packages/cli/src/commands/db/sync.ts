@@ -9,6 +9,7 @@ import ora from 'ora';
 import { ApiClient, type SyncJobResponse, type SyncMode } from '../../utils/api-client.js';
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError, DB_TIPS, handleCommandError } from '../../utils/error-handling.js';
+import { buildStartSyncRequest, SyncRequestValidationError } from './sync-request.js';
 
 /**
  * Polling interval in milliseconds
@@ -193,6 +194,18 @@ export const syncCommand = define({
       type: 'boolean',
       description: 'Force incremental update only',
     },
+    'data-backend': {
+      type: 'string',
+      description: 'Time-series data backend (default | duckdb-parquet | sqlite)',
+    },
+    'sqlite-mirror': {
+      type: 'boolean',
+      description: 'Enable SQLite mirror writes (only for default/duckdb backend)',
+    },
+    'no-sqlite-mirror': {
+      type: 'boolean',
+      description: 'Disable SQLite mirror writes (only for default/duckdb backend)',
+    },
     debug: {
       type: 'boolean',
       description: 'Enable debug logging',
@@ -211,26 +224,44 @@ ${CLI_NAME} db sync --init-indices
 # Force incremental update only
 ${CLI_NAME} db sync --update
 
+# Run with DuckDB + Parquet only (disable sqlite mirror)
+${CLI_NAME} db sync --data-backend duckdb-parquet --no-sqlite-mirror
+
+# Run with legacy SQLite only backend
+${CLI_NAME} db sync --data-backend sqlite
+
 # Enable debug logging
 ${CLI_NAME} db sync --debug
   `.trim(),
   run: async (ctx) => {
-    const { init, 'init-indices': initIndices, update, debug } = ctx.values;
+    const {
+      init,
+      'init-indices': initIndices,
+      update,
+      'data-backend': dataBackend,
+      'sqlite-mirror': sqliteMirror,
+      'no-sqlite-mirror': noSqliteMirror,
+      debug,
+    } = ctx.values;
     const spinner = ora('Initializing market sync...').start();
     const mode = determineSyncMode(init, update, initIndices);
 
-    if (debug) {
-      console.log(chalk.gray(`[DEBUG] Using API endpoint for sync`));
-      console.log(chalk.gray(`[DEBUG] Mode: ${mode}`));
-    }
-
     try {
+      const startRequest = buildStartSyncRequest(mode, dataBackend, sqliteMirror, noSqliteMirror);
+      if (debug) {
+        console.log(chalk.gray(`[DEBUG] Using API endpoint for sync`));
+        console.log(chalk.gray(`[DEBUG] Mode: ${mode}`));
+        if (startRequest.dataPlane) {
+          console.log(chalk.gray(`[DEBUG] Data plane: ${JSON.stringify(startRequest.dataPlane)}`));
+        }
+      }
+
       const apiClient = new ApiClient();
       const databaseClient = apiClient.database;
 
       // Start sync job
       spinner.text = 'Starting sync job...';
-      const createResponse = await databaseClient.startSync(mode);
+      const createResponse = await databaseClient.startSync(startRequest);
 
       if (debug) {
         console.log(chalk.gray(`[DEBUG] Job ID: ${createResponse.jobId}`));
@@ -245,6 +276,13 @@ ${CLI_NAME} db sync --debug
       // Handle result
       handleJobResult(job, mode, spinner);
     } catch (error) {
+      if (error instanceof SyncRequestValidationError) {
+        handleCommandError(new CLIError(error.message, 1, true, { cause: error }), spinner, {
+          failMessage: 'Sync failed',
+          debug,
+          tips: DB_TIPS.sync,
+        });
+      }
       handleCommandError(error, spinner, {
         failMessage: 'Sync failed',
         debug,

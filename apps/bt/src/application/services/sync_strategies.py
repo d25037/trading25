@@ -18,6 +18,7 @@ from loguru import logger
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
     normalize_stock_code,
@@ -25,6 +26,10 @@ from src.infrastructure.db.market.query_helpers import (
 )
 from src.entrypoints.http.schemas.db import SyncResult
 from src.application.services.fins_summary_mapper import convert_fins_summary_rows
+from src.application.services.ingestion_pipeline import (
+    run_ingestion_batch,
+    validate_rows_required_fields,
+)
 from src.application.services.index_master_catalog import (
     build_index_master_seed_rows,
     get_index_catalog_codes,
@@ -38,6 +43,7 @@ class SyncContext:
     market_db: MarketDb
     cancelled: asyncio.Event
     on_progress: Callable[[str, int, int, str], None]
+    time_series_store: MarketTimeSeriesStore | None = None
 
 
 class SyncStrategy(Protocol):
@@ -77,7 +83,12 @@ class IndicesOnlySyncStrategy:
                 try:
                     data = await ctx.client.get_paginated("/indices/bars/daily", params={"code": code})
                     total_calls += 1
-                    rows = _convert_indices_data_rows(data, code)
+                    rows = validate_rows_required_fields(
+                        _convert_indices_data_rows(data, code),
+                        required_fields=("code", "date"),
+                        dedupe_keys=("code", "date"),
+                        stage="indices_data",
+                    )
                     if rows:
                         await _upsert_indices_rows_with_master_backfill(
                             ctx,
@@ -87,6 +98,8 @@ class IndicesOnlySyncStrategy:
                 except Exception as e:
                     errors.append(f"Index {code}: {e}")
                     logger.warning(f"Index {code} sync error: {e}")
+
+            await _index_indices_rows(ctx)
 
             return SyncResult(
                 success=len(errors) == 0,
@@ -120,21 +133,21 @@ class InitialSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            topix_data = await ctx.client.get_paginated("/indices/bars/daily/topix")
+            topix_batch = await run_ingestion_batch(
+                stage="topix",
+                fetch=lambda: ctx.client.get_paginated("/indices/bars/daily/topix"),
+                normalize=_convert_topix_rows,
+                validate=lambda rows: validate_rows_required_fields(
+                    rows,
+                    required_fields=("date", "open", "high", "low", "close"),
+                    dedupe_keys=("date",),
+                    stage="topix",
+                ),
+                publish=lambda rows: _publish_topix_rows(ctx, rows),
+                index=lambda _rows: _index_topix_rows(ctx),
+            )
             total_calls += 1
-            topix_rows = [
-                {
-                    "date": d.get("Date", ""),
-                    "open": d.get("O", 0),
-                    "high": d.get("H", 0),
-                    "low": d.get("L", 0),
-                    "close": d.get("C", 0),
-                    "created_at": datetime.now(UTC).isoformat(),
-                }
-                for d in topix_data
-            ]
-            if topix_rows:
-                await asyncio.to_thread(ctx.market_db.upsert_topix_data, topix_rows)
+            topix_rows = topix_batch.rows
             dates_processed = len(topix_rows)
 
             # Step 2: 銘柄マスタ
@@ -175,12 +188,20 @@ class InitialSyncStrategy:
                 if i % 50 == 0:
                     ctx.on_progress("stock_data", 3, 6, f"Fetching stock data: {i}/{len(trading_dates)} dates...")
                 try:
-                    data = await ctx.client.get_paginated("/equities/bars/daily", params={"date": date})
+                    batch = await run_ingestion_batch(
+                        stage="stock_data",
+                        fetch=lambda date=date: ctx.client.get_paginated("/equities/bars/daily", params={"date": date}),
+                        normalize=_convert_stock_data_rows,
+                        validate=lambda rows: validate_rows_required_fields(
+                            rows,
+                            required_fields=("code", "date", "open", "high", "low", "close", "volume"),
+                            dedupe_keys=("code", "date"),
+                            stage="stock_data",
+                        ),
+                        publish=lambda rows: _publish_stock_data_rows(ctx, rows),
+                    )
                     total_calls += 1
-                    rows = _convert_stock_data_rows(data)
-                    if rows:
-                        await asyncio.to_thread(ctx.market_db.upsert_stock_data, rows)
-                        stocks_updated += len(rows)
+                    stocks_updated += batch.published_count
                     consecutive_failures = 0
                 except Exception:
                     failed_dates.append(date)
@@ -188,6 +209,8 @@ class InitialSyncStrategy:
                     if consecutive_failures >= 5:
                         errors.append(f"Too many consecutive failures at {date}")
                         break
+
+            await _index_stock_data_rows(ctx)
 
             # Step 5: 指数データ
             ctx.on_progress("indices", 4, 6, "Fetching index data...")
@@ -256,21 +279,21 @@ class IncrementalSyncStrategy:
                 # J-Quants は YYYYMMDD 形式が安定しているため、既存データ形式（YYYY-MM-DD / YYYYMMDD）を吸収する
                 params["from"] = _to_jquants_date_param(last_date)
 
-            topix_data = await ctx.client.get_paginated("/indices/bars/daily/topix", params=params)
+            topix_batch = await run_ingestion_batch(
+                stage="topix",
+                fetch=lambda: ctx.client.get_paginated("/indices/bars/daily/topix", params=params),
+                normalize=_convert_topix_rows,
+                validate=lambda rows: validate_rows_required_fields(
+                    rows,
+                    required_fields=("date", "open", "high", "low", "close"),
+                    dedupe_keys=("date",),
+                    stage="topix",
+                ),
+                publish=lambda rows: _publish_topix_rows(ctx, rows),
+                index=lambda _rows: _index_topix_rows(ctx),
+            )
             total_calls += 1
-            topix_rows = [
-                {
-                    "date": d.get("Date", ""),
-                    "open": d.get("O", 0),
-                    "high": d.get("H", 0),
-                    "low": d.get("L", 0),
-                    "close": d.get("C", 0),
-                    "created_at": datetime.now(UTC).isoformat(),
-                }
-                for d in topix_data
-            ]
-            if topix_rows:
-                await asyncio.to_thread(ctx.market_db.upsert_topix_data, topix_rows)
+            topix_rows = topix_batch.rows
 
             # Step 2: 銘柄マスタ更新
             ctx.on_progress("stocks", 1, 5, "Updating stock master...")
@@ -300,14 +323,24 @@ class IncrementalSyncStrategy:
                 if ctx.cancelled.is_set():
                     return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
                 try:
-                    data = await ctx.client.get_paginated("/equities/bars/daily", params={"date": date})
+                    batch = await run_ingestion_batch(
+                        stage="stock_data",
+                        fetch=lambda date=date: ctx.client.get_paginated("/equities/bars/daily", params={"date": date}),
+                        normalize=_convert_stock_data_rows,
+                        validate=lambda rows: validate_rows_required_fields(
+                            rows,
+                            required_fields=("code", "date", "open", "high", "low", "close", "volume"),
+                            dedupe_keys=("code", "date"),
+                            stage="stock_data",
+                        ),
+                        publish=lambda rows: _publish_stock_data_rows(ctx, rows),
+                    )
                     total_calls += 1
-                    rows = _convert_stock_data_rows(data)
-                    if rows:
-                        await asyncio.to_thread(ctx.market_db.upsert_stock_data, rows)
-                        stocks_updated += len(rows)
+                    stocks_updated += batch.published_count
                 except Exception as e:
                     errors.append(f"Date {date}: {e}")
+
+            await _index_stock_data_rows(ctx)
 
             # Step 4: 指数データ（増分）
             ctx.on_progress("indices", 3, 5, "Fetching incremental index data...")
@@ -335,7 +368,12 @@ class IncrementalSyncStrategy:
                     data = await ctx.client.get_paginated("/indices/bars/daily", params=params)
                     total_calls += 1
 
-                    rows = _convert_indices_data_rows(data, code)
+                    rows = validate_rows_required_fields(
+                        _convert_indices_data_rows(data, code),
+                        required_fields=("code", "date"),
+                        dedupe_keys=("code", "date"),
+                        stage="indices_data",
+                    )
                     if last_index_date:
                         rows = [r for r in rows if _is_date_after(r["date"], last_index_date)]
 
@@ -391,7 +429,12 @@ class IncrementalSyncStrategy:
                         params={"date": _to_jquants_date_param(index_date)},
                     )
                     total_calls += 1
-                    rows = _convert_indices_data_rows(data, None)
+                    rows = validate_rows_required_fields(
+                        _convert_indices_data_rows(data, None),
+                        required_fields=("code", "date"),
+                        dedupe_keys=("code", "date"),
+                        stage="indices_data",
+                    )
                     if rows:
                         await _upsert_indices_rows_with_master_backfill(
                             ctx,
@@ -402,6 +445,8 @@ class IncrementalSyncStrategy:
                 except Exception as e:
                     errors.append(f"Index date {index_date}: {e}")
                     logger.warning("Index date {} incremental sync error: {}", index_date, e)
+
+            await _index_indices_rows(ctx)
 
             # Step 5: Prime fundamentals（増分: date 指定 + 欠損補完）
             ctx.on_progress("fundamentals", 4, 5, "Fetching incremental Prime fundamentals...")
@@ -464,13 +509,19 @@ async def _sync_fundamentals_initial(
         try:
             data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
             api_calls += page_calls
-            rows = convert_fins_summary_rows(data, default_code=code)
+            rows = validate_rows_required_fields(
+                convert_fins_summary_rows(data, default_code=code),
+                required_fields=("code", "disclosed_date"),
+                dedupe_keys=("code", "disclosed_date"),
+                stage="fundamentals",
+            )
             if rows:
-                await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
-                updated += len(rows)
+                updated += await _publish_statement_rows(ctx, rows)
         except Exception as e:
             failed_codes.append(code)
             errors.append(f"Fundamentals code {code}: {e}")
+
+    await _index_statement_rows(ctx)
 
     latest_disclosed = await asyncio.to_thread(ctx.market_db.get_latest_statement_disclosed_date)
     now_iso = datetime.now(UTC).isoformat()
@@ -552,9 +603,14 @@ async def _sync_fundamentals_incremental(
             api_calls += page_calls
             rows = convert_fins_summary_rows(data)
             rows = [row for row in rows if row.get("code") in prime_code_set]
+            rows = validate_rows_required_fields(
+                rows,
+                required_fields=("code", "disclosed_date"),
+                dedupe_keys=("code", "disclosed_date"),
+                stage="fundamentals",
+            )
             if rows:
-                await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
-                updated += len(rows)
+                updated += await _publish_statement_rows(ctx, rows)
         except Exception as e:
             failed_dates.append(disclosed_date)
             errors.append(f"Fundamentals date {disclosed_date}: {e}")
@@ -581,12 +637,19 @@ async def _sync_fundamentals_incremental(
             api_calls += page_calls
             rows = convert_fins_summary_rows(data, default_code=code)
             rows = [row for row in rows if row.get("code") in prime_code_set]
+            rows = validate_rows_required_fields(
+                rows,
+                required_fields=("code", "disclosed_date"),
+                dedupe_keys=("code", "disclosed_date"),
+                stage="fundamentals",
+            )
             if rows:
-                await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
-                updated += len(rows)
+                updated += await _publish_statement_rows(ctx, rows)
         except Exception as e:
             failed_codes.append(code)
             errors.append(f"Fundamentals code {code}: {e}")
+
+    await _index_statement_rows(ctx)
 
     latest_disclosed = await asyncio.to_thread(ctx.market_db.get_latest_statement_disclosed_date)
     now_iso = datetime.now(UTC).isoformat()
@@ -835,7 +898,80 @@ async def _upsert_indices_rows_with_master_backfill(
         if discovery_log:
             logger.warning(discovery_log, len(missing_master_rows))
 
-    await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+    await _publish_indices_rows(ctx, rows)
+
+
+async def _publish_topix_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    if ctx.time_series_store is None:
+        return await asyncio.to_thread(ctx.market_db.upsert_topix_data, rows)
+    return await asyncio.to_thread(ctx.time_series_store.publish_topix_data, rows)
+
+
+async def _publish_stock_data_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    if ctx.time_series_store is None:
+        return await asyncio.to_thread(ctx.market_db.upsert_stock_data, rows)
+    return await asyncio.to_thread(ctx.time_series_store.publish_stock_data, rows)
+
+
+async def _publish_indices_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    if ctx.time_series_store is None:
+        return await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
+    return await asyncio.to_thread(ctx.time_series_store.publish_indices_data, rows)
+
+
+async def _publish_statement_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    if ctx.time_series_store is None:
+        return await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
+    return await asyncio.to_thread(ctx.time_series_store.publish_statements, rows)
+
+
+async def _index_topix_rows(ctx: SyncContext) -> None:
+    if ctx.time_series_store is None:
+        return
+    await asyncio.to_thread(ctx.time_series_store.index_topix_data)
+
+
+async def _index_stock_data_rows(ctx: SyncContext) -> None:
+    if ctx.time_series_store is None:
+        return
+    await asyncio.to_thread(ctx.time_series_store.index_stock_data)
+
+
+async def _index_indices_rows(ctx: SyncContext) -> None:
+    if ctx.time_series_store is None:
+        return
+    await asyncio.to_thread(ctx.time_series_store.index_indices_data)
+
+
+async def _index_statement_rows(ctx: SyncContext) -> None:
+    if ctx.time_series_store is None:
+        return
+    await asyncio.to_thread(ctx.time_series_store.index_statements)
+
+
+def _convert_topix_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    created_at = datetime.now(UTC).isoformat()
+    rows: list[dict[str, Any]] = []
+    for d in data:
+        rows.append(
+            {
+                "date": d.get("Date", d.get("date", "")),
+                "open": d.get("O", d.get("open")),
+                "high": d.get("H", d.get("high")),
+                "low": d.get("L", d.get("low")),
+                "close": d.get("C", d.get("close")),
+                "created_at": created_at,
+            }
+        )
+    return rows
 
 
 def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:

@@ -5,6 +5,7 @@ import type {
   MarketRefreshResponse,
   MarketStatsResponse,
   MarketValidationResponse,
+  StartSyncRequest,
   SyncJobResponse,
   SyncMode,
 } from './types.js';
@@ -37,10 +38,11 @@ export class DatabaseClient extends BaseApiClient {
   /**
    * Start a database sync job
    */
-  async startSync(mode: SyncMode = 'auto'): Promise<CreateSyncJobResponse> {
+  async startSync(request: StartSyncRequest | SyncMode = 'auto'): Promise<CreateSyncJobResponse> {
+    const payload: StartSyncRequest = typeof request === 'string' ? { mode: request } : request;
     return this.request<CreateSyncJobResponse>('/api/db/sync', {
       method: 'POST',
-      body: JSON.stringify({ mode }),
+      body: JSON.stringify(payload),
     });
   }
 

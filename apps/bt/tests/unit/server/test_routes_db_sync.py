@@ -47,6 +47,9 @@ def client(market_db_path: str):
 
 class TestSyncRoutes:
     def test_sync_start(self, client: TestClient) -> None:
+        default_store = MagicMock()
+        client.app.state.market_time_series_store = default_store
+
         with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
             mock_job = MagicMock()
             mock_job.job_id = "test-job-123"
@@ -60,12 +63,119 @@ class TestSyncRoutes:
             assert data["jobId"] == "test-job-123"
             assert data["mode"] == "incremental"
             assert data["status"] == "pending"
+            assert mock_start.await_count == 1
+            assert mock_start.await_args.kwargs["time_series_store"] is default_store
+            assert mock_start.await_args.kwargs["close_time_series_store"] is False
+
+    def test_sync_start_with_data_plane_override(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+        ):
+            override_store = MagicMock()
+            mock_create_store.return_value = override_store
+
+            mock_job = MagicMock()
+            mock_job.job_id = "test-job-override"
+            mock_job.data.resolved_mode = "incremental"
+            mock_job.cancelled = MagicMock()
+            mock_start.return_value = mock_job
+
+            resp = client.post(
+                "/api/db/sync",
+                json={
+                    "mode": "incremental",
+                    "dataPlane": {"backend": "duckdb-parquet", "sqliteMirror": False},
+                },
+            )
+
+            assert resp.status_code == 202
+            assert mock_create_store.call_count == 1
+            assert mock_start.await_count == 1
+            assert mock_start.await_args.kwargs["time_series_store"] is override_store
+            assert mock_start.await_args.kwargs["close_time_series_store"] is True
+
+    def test_sync_start_with_default_data_plane_uses_app_store(self, client: TestClient) -> None:
+        default_store = MagicMock()
+        client.app.state.market_time_series_store = default_store
+
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+        ):
+            mock_job = MagicMock()
+            mock_job.job_id = "test-job-default"
+            mock_job.data.resolved_mode = "incremental"
+            mock_job.cancelled = MagicMock()
+            mock_start.return_value = mock_job
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "dataPlane": {"backend": "default", "sqliteMirror": True}},
+            )
+
+            assert resp.status_code == 202
+            assert mock_create_store.call_count == 0
+            assert mock_start.await_args.kwargs["time_series_store"] is default_store
+            assert mock_start.await_args.kwargs["close_time_series_store"] is False
+
+    def test_sync_start_duckdb_only_returns_422_when_backend_unavailable(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+        ):
+            mock_create_store.return_value = None
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "dataPlane": {"backend": "duckdb-parquet", "sqliteMirror": False}},
+            )
+
+            assert resp.status_code == 422
+            body = resp.json()
+            assert body["error"] == "Unprocessable Entity"
+            assert "DuckDB backend is unavailable" in body["message"]
+            assert mock_start.await_count == 0
 
     def test_sync_conflict(self, client: TestClient) -> None:
         with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
             mock_start.return_value = None  # Active job exists
             resp = client.post("/api/db/sync", json={"mode": "auto"})
             assert resp.status_code == 409
+
+    def test_sync_conflict_closes_override_store(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+        ):
+            override_store = MagicMock()
+            mock_create_store.return_value = override_store
+            mock_start.return_value = None
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "dataPlane": {"backend": "duckdb-parquet", "sqliteMirror": False}},
+            )
+
+            assert resp.status_code == 409
+            override_store.close.assert_called_once()
+
+    def test_sync_start_exception_closes_override_store(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start,
+            patch("src.entrypoints.http.routes.db.create_time_series_store") as mock_create_store,
+        ):
+            override_store = MagicMock()
+            mock_create_store.return_value = override_store
+            mock_start.side_effect = RuntimeError("sync exploded")
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "dataPlane": {"backend": "duckdb-parquet", "sqliteMirror": False}},
+            )
+
+            assert resp.status_code == 500
+            override_store.close.assert_called_once()
 
     def test_get_sync_job_not_found(self, client: TestClient) -> None:
         resp = client.get("/api/db/sync/jobs/nonexistent-id")

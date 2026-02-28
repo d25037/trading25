@@ -58,9 +58,9 @@
 
 ### Checklist
 
-- [ ] market 時系列の保存先を DuckDB + Parquet に切り分ける。
-- [ ] portfolio/jobs は SQLite 維持とし、責務境界をコードで固定する。
-- [ ] ingestion pipeline を `fetch -> normalize -> validate -> publish -> index` に分離する。
+- [x] market 時系列の保存先を DuckDB + Parquet に切り分ける。
+- [x] portfolio/jobs は SQLite 維持とし、責務境界をコードで固定する。
+- [x] ingestion pipeline を `fetch -> normalize -> validate -> publish -> index` に分離する。
 - [x] statements upsert の非NULL優先 merge を共通処理化する。
 - [x] 欠損 OHLCV の skip + warning 集約を標準化する。
 - [x] dataset snapshot manifest v1（counts/checksums/coverage/schemaVersion）を実装する。
@@ -74,8 +74,8 @@
 
 ### Exit Criteria
 
-- [ ] 日次同期を 2回連続実行して整合が崩れない（idempotent）。
-- [ ] dataset build の再実行で結果再現性が確認できる。
+- [x] 日次同期を 2回連続実行して整合が崩れない（idempotent）。
+- [x] dataset build の再実行で結果再現性が確認できる。
 
 ---
 

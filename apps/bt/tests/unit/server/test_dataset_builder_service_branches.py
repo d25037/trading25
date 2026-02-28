@@ -29,7 +29,10 @@ def isolated_dataset_manager(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
-    if request.node.name == "test_build_dataset_writes_manifest_v1":
+    if request.node.name in {
+        "test_build_dataset_writes_manifest_v1",
+        "test_build_dataset_rerun_keeps_logical_checksum_reproducible",
+    }:
         return
 
     def _fake_write_dataset_manifest(
@@ -353,6 +356,53 @@ async def test_build_dataset_writes_manifest_v1(monkeypatch, isolated_dataset_ma
     assert manifest["checksums"]["datasetDbSha256"]
     assert manifest["checksums"]["logicalSha256"]
     assert manifest["checksums"]["datasetDbSha256"] == hashlib.sha256(db_path.read_bytes()).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    resolver = MagicMock()
+    db_path = tmp_path / "repro.db"
+    resolver.get_db_path.return_value = str(db_path)
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    job_first = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
+    first_result = await _build_dataset(job_first, resolver, client)
+    assert first_result.success is True
+    isolated_dataset_manager.complete_job(job_first.job_id, first_result)
+    first_manifest_path = tmp_path / "repro.manifest.v1.json"
+    first_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
+
+    job_second = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
+    second_result = await _build_dataset(job_second, resolver, client)
+    assert second_result.success is True
+    isolated_dataset_manager.complete_job(job_second.job_id, second_result)
+    second_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
+
+    assert first_manifest["checksums"]["logicalSha256"] == second_manifest["checksums"]["logicalSha256"]
+    assert first_manifest["counts"] == second_manifest["counts"]
+    assert first_manifest["coverage"] == second_manifest["coverage"]
 
 
 @pytest.mark.asyncio

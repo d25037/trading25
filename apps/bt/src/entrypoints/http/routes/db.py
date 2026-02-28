@@ -11,19 +11,26 @@ POST   /api/db/stocks/refresh        — 銘柄データ再取得
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from loguru import logger
 
+from src.shared.config.settings import get_settings
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import MarketDb
+from src.infrastructure.db.market.time_series_store import (
+    MarketTimeSeriesStore,
+    create_time_series_store,
+)
 from src.entrypoints.http.schemas.db import (
     CreateSyncJobResponse,
     MarketStatsResponse,
     MarketValidationResponse,
     RefreshRequest,
     RefreshResponse,
+    SyncRequest,
     SyncJobResponse,
 )
 from src.entrypoints.http.schemas.job import CancelJobResponse, JobStatus
@@ -76,8 +83,64 @@ def get_db_validate(request: Request) -> MarketValidationResponse:
 # --- Sync ---
 
 
-class SyncRequest(BaseModel):
-    mode: SyncMode = Field(default=SyncMode.AUTO)
+def _resolve_time_series_store(
+    request: Request,
+    market_db: MarketDb,
+    body: SyncRequest,
+) -> tuple[MarketTimeSeriesStore | None, bool]:
+    """Sync request に応じた time-series store を解決する。"""
+    default_store = getattr(request.app.state, "market_time_series_store", None)
+    data_plane = body.dataPlane
+    if data_plane is None:
+        return default_store, False
+
+    if data_plane.backend == "default" and data_plane.sqliteMirror is None:
+        return default_store, False
+
+    settings = get_settings()
+    timeseries_base = Path(settings.market_timeseries_dir)
+    resolved_backend = settings.market_timeseries_backend if data_plane.backend == "default" else data_plane.backend
+
+    if resolved_backend == "sqlite":
+        resolved_sqlite_mirror = True
+    elif data_plane.sqliteMirror is None:
+        resolved_sqlite_mirror = settings.market_timeseries_sqlite_mirror
+    else:
+        resolved_sqlite_mirror = data_plane.sqliteMirror
+
+    if (
+        resolved_backend == settings.market_timeseries_backend
+        and resolved_sqlite_mirror == settings.market_timeseries_sqlite_mirror
+    ):
+        return default_store, False
+
+    store = create_time_series_store(
+        backend=resolved_backend,
+        duckdb_path=str(timeseries_base / "market.duckdb"),
+        parquet_dir=str(timeseries_base / "parquet"),
+        sqlite_mirror=resolved_sqlite_mirror,
+        market_db=market_db,
+        allow_sqlite_fallback=resolved_sqlite_mirror,
+    )
+    requires_duckdb = resolved_backend in {"duckdb", "duckdb-parquet", "dual"} and not resolved_sqlite_mirror
+    if requires_duckdb and store is None:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "DuckDB backend is unavailable for this request. "
+                "Install duckdb or enable sqliteMirror."
+            ),
+        )
+    return store, store is not None
+
+
+def _close_time_series_store_safely(store: MarketTimeSeriesStore | None) -> None:
+    if store is None:
+        return
+    try:
+        store.close()
+    except Exception as exc:
+        logger.warning("Failed to close override time-series store: {}", exc)
 
 
 @router.post(
@@ -89,9 +152,25 @@ class SyncRequest(BaseModel):
 async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
     market_db = _get_market_db(request)
     jquants_client = _get_jquants_client(request)
+    time_series_store, close_store_on_finish = _resolve_time_series_store(request, market_db, body)
+    sync_mode = SyncMode(body.mode)
 
-    job = await start_sync(body.mode, market_db, jquants_client)
+    try:
+        job = await start_sync(
+            sync_mode,
+            market_db,
+            jquants_client,
+            time_series_store=time_series_store,
+            close_time_series_store=close_store_on_finish,
+        )
+    except Exception:
+        if close_store_on_finish and time_series_store is not None:
+            _close_time_series_store_safely(time_series_store)
+        raise
+
     if job is None:
+        if close_store_on_finish and time_series_store is not None:
+            _close_time_series_store_safely(time_series_store)
         raise HTTPException(status_code=409, detail="Another sync job is already running")
 
     from src.application.services.sync_strategies import get_strategy
