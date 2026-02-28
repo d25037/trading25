@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, mock } from 'bun:test';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { AnalyticsClient } from './analytics-client.js';
 import { AuthClient } from './auth-client.js';
 import { DatabaseClient } from './database-client.js';
@@ -34,6 +35,25 @@ function getLastCall(): { endpoint: string; options?: RequestInit } {
   };
 }
 
+function getLastCallWithQuery(): { endpoint: string; options?: RequestInit; query?: unknown } {
+  const calls = requestMock.mock.calls as unknown[][];
+  const call = calls.at(-1);
+  if (!call) {
+    throw new Error('Expected request() to be called');
+  }
+
+  const [endpoint, options, query] = call;
+  if (typeof endpoint !== 'string') {
+    throw new Error('Expected endpoint argument to be a string');
+  }
+
+  return {
+    endpoint,
+    options: options as RequestInit | undefined,
+    query,
+  };
+}
+
 describe('Domain API clients', () => {
   beforeEach(() => {
     requestMock.mockClear();
@@ -49,9 +69,16 @@ describe('Domain API clients', () => {
       markets: 'prime,standard',
       lookbackDays: 15,
     });
-    expect(getLastCall()).toEqual({
-      endpoint: '/api/analytics/ranking?date=2026-02-01&limit=20&markets=prime%2Cstandard&lookbackDays=15',
+    expect(getLastCallWithQuery()).toEqual({
+      endpoint: '/api/analytics/ranking',
       options: undefined,
+      query: {
+        date: '2026-02-01',
+        limit: 20,
+        markets: 'prime,standard',
+        lookbackDays: 15,
+        periodDays: undefined,
+      },
     });
 
     await client.createScreeningJob({
@@ -106,23 +133,71 @@ describe('Domain API clients', () => {
       sortBy: 'roe',
       limit: 30,
     });
-    expect(getLastCall()).toEqual({
-      endpoint:
-        '/api/analytics/roe?code=7203&date=2026-01-31&annualize=true&preferConsolidated=true&minEquity=1000&sortBy=roe&limit=30',
+    expect(getLastCallWithQuery()).toEqual({
+      endpoint: '/api/analytics/roe',
       options: undefined,
+      query: {
+        code: '7203',
+        date: '2026-01-31',
+        annualize: true,
+        preferConsolidated: true,
+        minEquity: 1000,
+        sortBy: 'roe',
+        limit: 30,
+      },
     });
 
     await client.getFactorRegression({ symbol: '7203' });
-    expect(getLastCall()).toEqual({
+    expect(getLastCallWithQuery()).toEqual({
       endpoint: '/api/analytics/factor-regression/7203',
       options: undefined,
+      query: {
+        lookbackDays: undefined,
+      },
     });
 
     await client.getPortfolioFactorRegression({ portfolioId: 42, lookbackDays: 180 });
-    expect(getLastCall()).toEqual({
-      endpoint: '/api/analytics/portfolio-factor-regression/42?lookbackDays=180',
+    expect(getLastCallWithQuery()).toEqual({
+      endpoint: '/api/analytics/portfolio-factor-regression/42',
       options: undefined,
+      query: {
+        lookbackDays: 180,
+      },
     });
+  });
+
+  it('AnalyticsClient maps network errors to CLI-friendly message', async () => {
+    const client = new AnalyticsClient('http://localhost:3002');
+    bindRequest(client);
+    requestMock.mockRejectedValueOnce(new HttpRequestError('fetch failed', 'network'));
+
+    await expect(client.getMarketRanking({})).rejects.toThrow(
+      'Cannot connect to API server. Please ensure bt FastAPI is running with "uv run bt server --port 3002"'
+    );
+  });
+
+  it('AnalyticsClient maps HTTP error body message', async () => {
+    const client = new AnalyticsClient('http://localhost:3002');
+    bindRequest(client);
+    requestMock.mockRejectedValueOnce(new HttpRequestError('bad request', 'http', { status: 400, body: { message: 'invalid input' } }));
+
+    await expect(client.getMarketRanking({})).rejects.toThrow('invalid input');
+  });
+
+  it('AnalyticsClient maps HTTP error without body message to status message', async () => {
+    const client = new AnalyticsClient('http://localhost:3002');
+    bindRequest(client);
+    requestMock.mockRejectedValueOnce(new HttpRequestError('bad request', 'http', { status: 503, body: { detail: 'down' } }));
+
+    await expect(client.getMarketRanking({})).rejects.toThrow('HTTP error! status: 503');
+  });
+
+  it('AnalyticsClient passes through generic error message', async () => {
+    const client = new AnalyticsClient('http://localhost:3002');
+    bindRequest(client);
+    requestMock.mockRejectedValueOnce(new Error('unexpected failure'));
+
+    await expect(client.getMarketRanking({})).rejects.toThrow('unexpected failure');
   });
 
   it('AuthClient calls auth status endpoint', async () => {

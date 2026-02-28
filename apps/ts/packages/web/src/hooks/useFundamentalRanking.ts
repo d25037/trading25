@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from '@/types/fundamentalRanking';
 import { logger } from '@/utils/logger';
 
@@ -26,7 +26,7 @@ function fetchFundamentalRanking(params: FundamentalRankingParams): Promise<Mark
   };
 
   logger.debug('Fetching fundamental ranking data', { query });
-  return apiGet<MarketFundamentalRankingResponse>('/api/analytics/fundamental-ranking', query);
+  return analyticsClient.getFundamentalRanking(query);
 }
 
 export function useFundamentalRanking(params: FundamentalRankingParams, enabled = true) {

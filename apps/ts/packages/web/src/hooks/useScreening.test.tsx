@@ -1,24 +1,18 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
+import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { ApiError, apiGet, apiPost } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { logger } from '@/utils/logger';
 import { useCancelScreeningJob, useRunScreeningJob, useScreeningJobStatus, useScreeningResult } from './useScreening';
 
-vi.mock('@/lib/api-client', () => ({
-  ApiError: class ApiError extends Error {
-    constructor(
-      message: string,
-      public readonly status: number
-    ) {
-      super(message);
-      this.name = 'ApiError';
-    }
+vi.mock('@/lib/analytics-client', () => ({
+  analyticsClient: {
+    createScreeningJob: vi.fn(),
+    getScreeningJobStatus: vi.fn(),
+    getScreeningResult: vi.fn(),
+    cancelScreeningJob: vi.fn(),
   },
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -31,9 +25,10 @@ afterEach(() => {
 
 describe('useRunScreeningJob', () => {
   it('starts screening job and maps request params', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(analyticsClient.createScreeningJob).mockResolvedValueOnce({
       job_id: 'job-1',
       status: 'pending',
+      created_at: '2026-02-01T00:00:00Z',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -53,7 +48,7 @@ describe('useRunScreeningJob', () => {
       });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/analytics/screening/jobs', {
+    expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith({
       markets: 'prime',
       strategies: 'production/range_break_v15',
       recentDays: 10,
@@ -65,7 +60,7 @@ describe('useRunScreeningJob', () => {
   });
 
   it('logs error when starting screening job fails', async () => {
-    vi.mocked(apiPost).mockRejectedValueOnce(new Error('network'));
+    vi.mocked(analyticsClient.createScreeningJob).mockRejectedValueOnce(new Error('network'));
 
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useRunScreeningJob(), { wrapper });
@@ -85,10 +80,11 @@ describe('useRunScreeningJob', () => {
 
 describe('useScreeningJobStatus', () => {
   it('fetches screening job status', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({
+    vi.mocked(analyticsClient.getScreeningJobStatus).mockResolvedValueOnce({
       job_id: 'job-1',
       status: 'running',
       progress: 0.5,
+      created_at: '2026-02-01T00:00:00Z',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -99,7 +95,7 @@ describe('useScreeningJobStatus', () => {
     const { result } = renderHook(() => useScreeningJobStatus('job-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/analytics/screening/jobs/job-1');
+    expect(analyticsClient.getScreeningJobStatus).toHaveBeenCalledWith('job-1');
   });
 
   it('is disabled when jobId is null', () => {
@@ -109,7 +105,9 @@ describe('useScreeningJobStatus', () => {
   });
 
   it('does not retry when job status returns 404', async () => {
-    vi.mocked(apiGet).mockRejectedValue(new ApiError('not found', 404));
+    vi.mocked(analyticsClient.getScreeningJobStatus).mockRejectedValue(
+      new HttpRequestError('not found', 'http', { status: 404 })
+    );
 
     const { queryClient, wrapper } = createTestWrapper();
     queryClient.setDefaultOptions({
@@ -121,11 +119,13 @@ describe('useScreeningJobStatus', () => {
     const { result } = renderHook(() => useScreeningJobStatus('missing-job'), { wrapper });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(apiGet).toHaveBeenCalledTimes(1);
+    expect(analyticsClient.getScreeningJobStatus).toHaveBeenCalledTimes(1);
   });
 
   it('retries up to two times for non-404 errors', async () => {
-    vi.mocked(apiGet).mockRejectedValue(new ApiError('server error', 500));
+    vi.mocked(analyticsClient.getScreeningJobStatus).mockRejectedValue(
+      new HttpRequestError('server error', 'http', { status: 500 })
+    );
 
     const { queryClient, wrapper } = createTestWrapper();
     queryClient.setDefaultOptions({
@@ -137,13 +137,13 @@ describe('useScreeningJobStatus', () => {
     const { result } = renderHook(() => useScreeningJobStatus('job-500'), { wrapper });
 
     await waitFor(() => expect(result.current.isError).toBe(true));
-    expect(apiGet).toHaveBeenCalledTimes(3);
+    expect(analyticsClient.getScreeningJobStatus).toHaveBeenCalledTimes(3);
   });
 });
 
 describe('useScreeningResult', () => {
   it('fetches completed screening result', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({
+    vi.mocked(analyticsClient.getScreeningResult).mockResolvedValueOnce({
       results: [],
       summary: {
         totalStocksScreened: 0,
@@ -165,7 +165,7 @@ describe('useScreeningResult', () => {
     const { result } = renderHook(() => useScreeningResult('job-2', true), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/analytics/screening/result/job-2');
+    expect(analyticsClient.getScreeningResult).toHaveBeenCalledWith('job-2');
   });
 
   it('is disabled when explicit enabled flag is false', () => {
@@ -173,15 +173,16 @@ describe('useScreeningResult', () => {
     const { result } = renderHook(() => useScreeningResult('job-2', false), { wrapper });
 
     expect(result.current.fetchStatus).toBe('idle');
-    expect(apiGet).not.toHaveBeenCalled();
+    expect(analyticsClient.getScreeningResult).not.toHaveBeenCalled();
   });
 });
 
 describe('useCancelScreeningJob', () => {
   it('cancels screening job', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(analyticsClient.cancelScreeningJob).mockResolvedValueOnce({
       job_id: 'job-3',
       status: 'cancelled',
+      created_at: '2026-02-01T00:00:00Z',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -195,11 +196,11 @@ describe('useCancelScreeningJob', () => {
       await result.current.mutateAsync('job-3');
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/analytics/screening/jobs/job-3/cancel');
+    expect(analyticsClient.cancelScreeningJob).toHaveBeenCalledWith('job-3');
   });
 
   it('logs error when cancellation fails', async () => {
-    vi.mocked(apiPost).mockRejectedValueOnce(new Error('cancel failed'));
+    vi.mocked(analyticsClient.cancelScreeningJob).mockRejectedValueOnce(new Error('cancel failed'));
 
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useCancelScreeningJob(), { wrapper });

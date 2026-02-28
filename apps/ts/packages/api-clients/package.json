@@ -19,6 +19,14 @@
       "import": "./dist/backtest/index.js",
       "types": "./dist/backtest/index.d.ts"
     },
+    "./analytics": {
+      "import": "./dist/analytics/index.js",
+      "types": "./dist/analytics/index.d.ts"
+    },
+    "./analytics/*": {
+      "import": "./dist/analytics/*.js",
+      "types": "./dist/analytics/*.d.ts"
+    },
     "./backtest/*": {
       "import": "./dist/backtest/*.js",
       "types": "./dist/backtest/*.d.ts"

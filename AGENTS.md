@@ -139,7 +139,7 @@ uv run pyright src/              # 型チェック
 | `packages/web/` | React 19 + Vite フロントエンド |
 | `packages/shared/` | 共有ライブラリ（OpenAPI 生成型, JQuants, TA/FA指標） |
 | `packages/cli/` | Gunshi CLI（db/dataset/jquants/backtest/analysis の運用・自動化） |
-| `packages/api-clients/` | FastAPI クライアント（backtest/JQuants） |
+| `packages/api-clients/` | FastAPI クライアント（backtest/analytics/JQuants） |
 
 ```bash
 bun run workspace:dev            # web 起動（FastAPI :3002 にプロキシ）
