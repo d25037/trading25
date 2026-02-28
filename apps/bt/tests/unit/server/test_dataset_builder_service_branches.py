@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -23,6 +25,26 @@ def isolated_dataset_manager(monkeypatch):
     manager: GenericJobManager = GenericJobManager()
     monkeypatch.setattr(dataset_builder_service, "dataset_job_manager", manager)
     return manager
+
+
+@pytest.fixture(autouse=True)
+def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
+    if request.node.name == "test_build_dataset_writes_manifest_v1":
+        return
+
+    def _fake_write_dataset_manifest(
+        *,
+        db_path: str,
+        dataset_name: str,
+        preset_name: str,
+        manifest_path=None,
+    ) -> str:
+        del dataset_name, preset_name
+        if manifest_path is not None:
+            return str(manifest_path)
+        return str(dataset_builder_service._manifest_path_for_db(db_path))
+
+    monkeypatch.setattr(dataset_builder_service, "_write_dataset_manifest", _fake_write_dataset_manifest)
 
 
 async def _create_job(
@@ -288,6 +310,84 @@ async def test_build_dataset_returns_partial_result_when_cancelled_during_stock_
     assert result.processedStocks == 1
     assert result.errors == ["Cancelled"]
     assert DummyWriter.instances[-1].closed is True
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_writes_manifest_v1(monkeypatch, isolated_dataset_manager, tmp_path):
+    job = await _create_job(isolated_dataset_manager, preset="quick")
+    resolver = MagicMock()
+    db_path = tmp_path / "manifest.db"
+    resolver.get_db_path.return_value = str(db_path)
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    result = await _build_dataset(job, resolver, client)
+    assert result.success is True
+
+    manifest_path = tmp_path / "manifest.manifest.v1.json"
+    assert manifest_path.exists() is True
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["schemaVersion"] == 1
+    assert manifest["dataset"]["name"] == "dataset"
+    assert manifest["dataset"]["dbFile"] == "manifest.db"
+    assert manifest["counts"]["stocks"] == 1
+    assert manifest["coverage"]["stocksWithQuotes"] == 1
+    assert manifest["checksums"]["datasetDbSha256"]
+    assert manifest["checksums"]["logicalSha256"]
+    assert manifest["checksums"]["datasetDbSha256"] == hashlib.sha256(db_path.read_bytes()).hexdigest()
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_raises_when_manifest_generation_fails(monkeypatch, isolated_dataset_manager, tmp_path):
+    job = await _create_job(isolated_dataset_manager, preset="quick")
+    resolver = MagicMock()
+    resolver.get_db_path.return_value = str(tmp_path / "manifest-fail.db")
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    def _raise_manifest_error(*, db_path: str, dataset_name: str, preset_name: str, manifest_path=None) -> str:
+        del db_path, dataset_name, preset_name, manifest_path
+        raise RuntimeError("manifest failed")
+
+    monkeypatch.setattr(dataset_builder_service, "_write_dataset_manifest", _raise_manifest_error)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    with pytest.raises(RuntimeError, match="manifest failed"):
+        await _build_dataset(job, resolver, client)
 
 
 @pytest.mark.asyncio

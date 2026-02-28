@@ -15,16 +15,16 @@
 
 ### Checklist
 
-- [ ] 現行 SoT を固定する（`FastAPI only`, `OpenAPI contract`, `contracts/` ガバナンス）。
-- [ ] 移行対象機能を確定する（dataset / screening / backtest / optimize / fundamentals）。
-- [ ] 非機能要件を数値化する（screening p95, backtest runtime, build throughput）。
-- [ ] 成果物命名規約を確定する（artifact path, manifest schema version）。
-- [ ] 監視項目を確定する（logs, metrics, correlationId trace）。
+- [x] 現行 SoT を固定する（`FastAPI only`, `OpenAPI contract`, `contracts/` ガバナンス）。
+- [x] 移行対象機能を確定する（dataset / screening / backtest / optimize / fundamentals）。
+- [x] 非機能要件を数値化する（screening p95, backtest runtime, build throughput）。
+- [x] 成果物命名規約を確定する（artifact path, manifest schema version）。
+- [x] 監視項目を確定する（logs, metrics, correlationId trace）。
 
 ### Exit Criteria
 
-- [ ] プロジェクト憲章 1ページが合意されている。
-- [ ] 90日スコープ外の項目が明文化されている（意図的非採用）。
+- [x] プロジェクト憲章 1ページが合意されている。
+- [x] 90日スコープ外の項目が明文化されている（意図的非採用）。
 
 ---
 
@@ -32,25 +32,25 @@
 
 ### Checklist
 
-- [ ] `apps/bt` で layers を明確化する（`domains/application/infrastructure/entrypoints`）。
-- [ ] middleware/order/error format を固定する（`RequestLogger -> CorrelationId -> CORS`）。
-- [ ] OpenAPI 生成と ts 型同期パイプラインを固定する（`bt:sync` を標準運用化）。
+- [x] `apps/bt` で layers を明確化する（`domains/application/infrastructure/entrypoints`）。
+- [x] middleware/order/error format を固定する（`RequestLogger -> CorrelationId -> CORS`）。
+- [x] OpenAPI 生成と ts 型同期パイプラインを固定する（`bt:sync` を標準運用化）。
 - [x] `jobs` テーブル（queue metadata）を定義する。
-- [ ] `portfolio/watchlist/settings` と `jobs` の OLTP スキーマを整備する。
-- [ ] 最小 worker runtime（`enqueue -> run -> status`）を用意する。
-- [ ] artifact 保存先とメタ情報保存方式を定義する。
+- [x] `portfolio/watchlist/settings` と `jobs` の OLTP スキーマを整備する。
+- [x] 最小 worker runtime（`enqueue -> run -> status`）を用意する。
+- [x] artifact 保存先とメタ情報保存方式を定義する。
 
 ### Validation
 
-- [ ] `uv run ruff check src/`
-- [ ] `uv run pyright src/`
-- [ ] `bun run --filter @trading25/shared bt:sync`
-- [ ] API サーバ起動で `/doc` に契約が反映される。
+- [x] `uv run ruff check src/`
+- [x] `uv run pyright src/`
+- [x] `bun run --filter @trading25/shared bt:sync`
+- [x] API サーバ起動で `/doc` に契約が反映される。
 
 ### Exit Criteria
 
-- [ ] 非同期 job 1本（dummy で可）が create/status/cancel/result まで通る。
-- [ ] `x-correlation-id` が API/内部呼び出し/ログで追跡できる。
+- [x] 非同期 job 1本（dummy で可）が create/status/cancel/result まで通る。
+- [x] `x-correlation-id` が API/内部呼び出し/ログで追跡できる。
 
 ---
 
@@ -61,16 +61,16 @@
 - [ ] market 時系列の保存先を DuckDB + Parquet に切り分ける。
 - [ ] portfolio/jobs は SQLite 維持とし、責務境界をコードで固定する。
 - [ ] ingestion pipeline を `fetch -> normalize -> validate -> publish -> index` に分離する。
-- [ ] statements upsert の非NULL優先 merge を共通処理化する。
-- [ ] 欠損 OHLCV の skip + warning 集約を標準化する。
-- [ ] dataset snapshot manifest v1（counts/checksums/coverage/schemaVersion）を実装する。
-- [ ] `GET /api/dataset/{name}/info` を `snapshot + stats + validation` SoT に固定する。
+- [x] statements upsert の非NULL優先 merge を共通処理化する。
+- [x] 欠損 OHLCV の skip + warning 集約を標準化する。
+- [x] dataset snapshot manifest v1（counts/checksums/coverage/schemaVersion）を実装する。
+- [x] `GET /api/dataset/{name}/info` を `snapshot + stats + validation` SoT に固定する。
 
 ### Validation
 
-- [ ] dataset create/resume で既存データ再利用が機能する。
-- [ ] legacy snapshot 読み取りで必須列不足のみ fail し、他は null 補完で継続する。
-- [ ] 代表銘柄セットで data coverage / fk integrity が取得できる。
+- [x] dataset create/resume で既存データ再利用が機能する。
+- [x] legacy snapshot 読み取りで必須列不足のみ fail し、他は null 補完で継続する。
+- [x] 代表銘柄セットで data coverage / fk integrity が取得できる。
 
 ### Exit Criteria
 
