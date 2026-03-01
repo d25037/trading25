@@ -55,6 +55,7 @@ class OptunaOptimizer:
 
     # Backward-compatible alias.
     PARAM_RANGES = PARAM_RANGES
+    MIN_ACCEPTABLE_RETURN_RATIO = 0.95
 
     def __init__(
         self,
@@ -91,6 +92,8 @@ class OptunaOptimizer:
         self._shared_config: SharedConfig | None = None
         self._prefetched_multi_data: dict[str, dict[str, pd.DataFrame]] | None = None
         self._prefetched_benchmark_data: pd.DataFrame | None = None
+        self._baseline_score: float | None = None
+        self._baseline_total_return: float | None = None
 
     def _is_usage_targeted(self, usage_type: str) -> bool:
         """target_scope に基づき対象サイドか判定する。"""
@@ -172,6 +175,8 @@ class OptunaOptimizer:
             f"sampler={self.config.sampler}"
         )
 
+        self._evaluate_baseline_candidate(base_candidate)
+
         # サンプラー選択
         sampler = self._create_sampler()
         optuna_rt = cast(Any, optuna_runtime)
@@ -187,6 +192,13 @@ class OptunaOptimizer:
             pruner=self._create_pruner(),
             load_if_exists=True,
         )
+
+        base_trial_params = self._build_optuna_param_dict(
+            self.base_entry_params,
+            self.base_exit_params,
+        )
+        if base_trial_params:
+            study.enqueue_trial(base_trial_params)
 
         # Optunaコールバック（trial完了時に外部通知）
         callbacks = []
@@ -215,8 +227,7 @@ class OptunaOptimizer:
         )
 
         # 最良パラメータで戦略候補を構築
-        best_params = study.best_params
-        best_candidate = self._build_candidate_from_params(best_params)
+        best_candidate = self._resolve_best_candidate(study, base_candidate)
 
         logger.info(
             f"Optimization complete: best_score={study.best_value:.4f}, "
@@ -224,6 +235,150 @@ class OptunaOptimizer:
         )
 
         return best_candidate, study
+
+    def _resolve_best_candidate(
+        self,
+        study: optuna.Study,
+        base_candidate: StrategyCandidate,
+    ) -> StrategyCandidate:
+        """非退行ガードを適用した最良候補を返す。"""
+        if not study.best_trial:
+            return base_candidate
+
+        best_score = float(study.best_trial.value or 0.0)
+        if self._baseline_score is not None and best_score < self._baseline_score:
+            logger.warning(
+                "Optuna best score is below baseline; falling back to base strategy "
+                f"(best={best_score:.4f}, baseline={self._baseline_score:.4f})"
+            )
+            return base_candidate
+
+        best_return_raw = study.best_trial.user_attrs.get("total_return")
+        best_return = self._safe_metric(best_return_raw)
+        if (
+            self._baseline_total_return is not None
+            and self._baseline_total_return > 0.0
+            and best_return
+            < self._baseline_total_return * self.MIN_ACCEPTABLE_RETURN_RATIO
+        ):
+            logger.warning(
+                "Optuna best return is below acceptable baseline ratio; "
+                "falling back to base strategy "
+                f"(best={best_return:.4f}, baseline={self._baseline_total_return:.4f}, "
+                f"ratio={self.MIN_ACCEPTABLE_RETURN_RATIO:.2f})"
+            )
+            return base_candidate
+
+        return self._build_candidate_from_params(study.best_params)
+
+    def _evaluate_baseline_candidate(self, base_candidate: StrategyCandidate) -> None:
+        """ベース戦略を1回評価し、非退行ガードの基準値を保存する。"""
+        self._baseline_score = None
+        self._baseline_total_return = None
+
+        try:
+            entry_signal_params = SignalParams(**base_candidate.entry_filter_params)
+            exit_signal_params = SignalParams(**base_candidate.exit_trigger_params)
+            with data_access_mode_context("direct"):
+                if self._shared_config is not None:
+                    shared_config = self._shared_config
+                else:
+                    shared_config = SharedConfig(**(self.shared_config_dict or {}))
+                    self._shared_config = shared_config
+
+                strategy = YamlConfigurableStrategy(
+                    shared_config=shared_config,
+                    entry_filter_params=entry_signal_params,
+                    exit_trigger_params=exit_signal_params,
+                )
+
+                if self._prefetched_multi_data is not None:
+                    strategy.multi_data_dict = self._prefetched_multi_data
+                if self._prefetched_benchmark_data is not None:
+                    strategy.benchmark_data = self._prefetched_benchmark_data
+
+                _, portfolio, _, _, _ = strategy.run_optimized_backtest_kelly(
+                    kelly_fraction=shared_config.kelly_fraction,
+                    min_allocation=shared_config.min_allocation,
+                    max_allocation=shared_config.max_allocation,
+                )
+
+            sharpe, calmar, total_return = self._extract_metrics(portfolio)
+            self._baseline_total_return = total_return
+            self._baseline_score = self._calculate_weighted_score(
+                sharpe,
+                calmar,
+                total_return,
+            )
+            logger.info(
+                "Optuna baseline evaluated: "
+                f"score={self._baseline_score:.4f}, total_return={total_return:.4f}"
+            )
+        except Exception as e:
+            logger.warning(f"Failed to evaluate baseline strategy for guardrail: {e}")
+
+    def _build_optuna_param_dict(
+        self,
+        entry_params: dict[str, Any],
+        exit_params: dict[str, Any],
+    ) -> dict[str, Any]:
+        """ベース戦略パラメータを Optuna enqueue 用フォーマットへ変換する。"""
+        flattened: dict[str, Any] = {}
+        self._collect_optuna_params("entry", entry_params, flattened)
+        self._collect_optuna_params("exit", exit_params, flattened)
+        return flattened
+
+    def _collect_optuna_params(
+        self,
+        usage_type: str,
+        base_params: dict[str, Any],
+        flattened: dict[str, Any],
+    ) -> None:
+        for signal_name, params in base_params.items():
+            if not isinstance(params, dict):
+                continue
+            if not self._is_signal_optimization_allowed(signal_name, usage_type):
+                continue
+            ranges = self.PARAM_RANGES.get(signal_name, {})
+            self._collect_nested_optuna_params(
+                usage_type=usage_type,
+                signal_name=signal_name,
+                params=params,
+                ranges=ranges,
+                flattened=flattened,
+            )
+
+    def _collect_nested_optuna_params(
+        self,
+        usage_type: str,
+        signal_name: str,
+        params: dict[str, Any],
+        ranges: dict[str, tuple[float, float, ParamType]],
+        flattened: dict[str, Any],
+        prefix: str = "",
+    ) -> None:
+        for key, value in params.items():
+            param_name = f"{prefix}.{key}" if prefix else key
+            if key in CATEGORICAL_PARAMS or param_name in CATEGORICAL_PARAMS:
+                continue
+
+            if isinstance(value, dict):
+                self._collect_nested_optuna_params(
+                    usage_type=usage_type,
+                    signal_name=signal_name,
+                    params=value,
+                    ranges=ranges,
+                    flattened=flattened,
+                    prefix=param_name,
+                )
+                continue
+
+            if param_name not in ranges or isinstance(value, bool):
+                continue
+
+            suggest_suffix = param_name.replace(".", "__")
+            suggest_name = f"{usage_type}_{signal_name}_{suggest_suffix}"
+            flattened[suggest_name] = value
 
     def _load_base_strategy(
         self, base_strategy: str | StrategyCandidate
@@ -352,7 +507,11 @@ class OptunaOptimizer:
     @staticmethod
     def _safe_metric(value: Any) -> float:
         """NaN/Inf を安全に 0.0 へフォールバックする。"""
-        return float(value) if pd.notna(value) and np.isfinite(value) else 0.0
+        try:
+            scalar = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return scalar if np.isfinite(scalar) else 0.0
 
     def _extract_metrics(self, portfolio: Any) -> tuple[float, float, float]:
         """ポートフォリオから評価メトリクスを抽出する。"""
