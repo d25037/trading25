@@ -89,7 +89,8 @@
   - 2026-03-02 検証: `apps/bt/tests/unit/server/routes/test_backtest.py` で `result.html + *.metrics.json` 優先再解決と fallback の挙動を確認。
 - [x] optimize job に best/worst params と score を標準返却させる。
   - 2026-03-02 検証: `apps/bt/src/entrypoints/http/routes/optimize.py` / `apps/ts/packages/web/src/hooks/useOptimization.test.tsx` で `best_* / worst_* / total_combinations` を lifecycle テストで確認。
-- [ ] fundamentals ranking/signal の計算 SoT を `src/domains` 側へ集約する。
+- [x] fundamentals ranking/signal の計算 SoT を `src/domains` 側へ集約する。
+  - 2026-03-02 検証: fundamentals ranking は `src/domains/analytics/fundamental_ranking.py` を SoT とし、signal 評価は `src/domains/analytics/screening_requirements.py` / `screening_results.py` / `screening_evaluator.py` へ抽出。`test_screening_*` domain/service テストと `test_ranking_service.py` / `test_analytics_complex.py -k \"fundamental or ranking\"` で回帰確認。
 - [x] market filter 同義語（legacy/current）を API 入力境界で統一する。
   - 2026-03-02 継続: `/api/market/stocks` の `market` 入力で `prime/standard/growth` と `0111/0112/0113` を同義受理するよう route 境界を更新し、route/service テストで互換性を検証。
 - [x] web/cli で同一 typed client を使うように重複呼び出しを削減する。

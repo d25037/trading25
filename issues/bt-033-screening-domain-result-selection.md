@@ -1,12 +1,12 @@
 ---
 id: bt-033
 title: "Screening: result selection/sort 判定を domains へ抽出"
-status: open
+status: done
 priority: high
 labels: [screening, domains, refactor, bt]
 project: bt
 created: 2026-02-26
-updated: 2026-02-26
+updated: 2026-03-02
 depends_on: [bt-032]
 blocks: [bt-034]
 parent: null
@@ -30,7 +30,10 @@ parent: null
 - 既存 route/service の契約互換を維持した置換を行う
 
 ## 結果
-（完了後に記載）
+- `apps/bt/src/domains/analytics/screening_results.py` を追加し、`find_recent_match_date` / `pick_best_strategy` / `build_result_item` / `sort_results` を domain へ抽出。
+- `screening_service` の `_find_recent_match_date` / `_pick_best_strategy` / `_sort_results` / `_build_result_item` は domain 関数呼び出しに統一。
+- `apps/bt/tests/unit/domains/analytics/test_screening_results.py` で sort key/order/tie-break と null score 末尾維持を明示テスト化。
+- 既存の service/helper テストと route 側の fundamental/ranking 系テストを再実行し、レスポンス互換を確認。
 
 ## 補足
 - `sortBy=matchedDate` / `order=desc` の既定値互換を維持する
