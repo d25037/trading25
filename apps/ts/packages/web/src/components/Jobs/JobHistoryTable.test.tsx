@@ -101,13 +101,15 @@ describe('JobHistoryTable', () => {
   });
 
   it('uses default action labels and status icons', () => {
+    const jobs: MockJob[] = [
+      { id: 'job-running', status: 'running', name: 'Running' },
+      { id: 'job-cancelled', status: 'cancelled', name: 'Cancelled' },
+      { id: 'job-queued', status: 'queued', name: 'Queued' },
+    ];
+
     const { container } = render(
       <JobHistoryTable
-        jobs={[
-          { id: 'job-running', status: 'running', name: 'Running' },
-          { id: 'job-cancelled', status: 'cancelled', name: 'Cancelled' },
-          { id: 'job-queued', status: 'queued', name: 'Queued' },
-        ]}
+        jobs={jobs}
         isLoading={false}
         emptyMessage="No jobs"
         columns={columns}
@@ -130,10 +132,11 @@ describe('JobHistoryTable', () => {
   it('renders refresh action without title and respects refreshing state', async () => {
     const user = userEvent.setup();
     const onRefresh = vi.fn();
+    const jobs: MockJob[] = [{ id: 'job-1', status: 'pending', name: 'First' }];
 
     const { container } = render(
       <JobHistoryTable
-        jobs={[{ id: 'job-1', status: 'pending', name: 'First' }]}
+        jobs={jobs}
         isLoading={false}
         isRefreshing
         emptyMessage="No jobs"
