@@ -93,6 +93,44 @@ describe('AnalyticsClient', () => {
     );
   });
 
+  test('fundamentals and margin endpoints use expected paths', async () => {
+    fetchSpy.mockImplementation((() => Promise.resolve(createMockResponse({ ok: true }))) as typeof fetch);
+
+    await client.getFundamentals({
+      symbol: '7203',
+      tradingValuePeriod: 20,
+      forecastEpsLookbackFyCount: 5,
+    });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/fundamentals/7203?tradingValuePeriod=20&forecastEpsLookbackFyCount=5'
+    );
+
+    await client.getMarginPressureIndicators({ symbol: '7203', period: 15 });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/stocks/7203/margin-pressure?period=15'
+    );
+
+    await client.getMarginVolumeRatio({ symbol: '7203' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('http://localhost:3002/api/analytics/stocks/7203/margin-ratio');
+  });
+
+  test('sector stocks endpoint builds query parameters', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ stocks: [] }));
+
+    await client.getSectorStocks({
+      sector33Name: '輸送用機器',
+      markets: 'prime',
+      lookbackDays: 30,
+      sortBy: 'tradingValue',
+      sortOrder: 'desc',
+      limit: 10,
+    });
+
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe(
+      'http://localhost:3002/api/analytics/sector-stocks?sector33Name=%E8%BC%B8%E9%80%81%E7%94%A8%E6%A9%9F%E5%99%A8&markets=prime&lookbackDays=30&sortBy=tradingValue&sortOrder=desc&limit=10'
+    );
+  });
+
   test('factor regression endpoints use expected paths', async () => {
     fetchSpy.mockImplementation((() => Promise.resolve(createMockResponse({ ok: true }))) as typeof fetch);
 

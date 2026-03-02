@@ -88,14 +88,22 @@
 - [ ] optimize job に best/worst params と score を標準返却させる。
 - [ ] fundamentals ranking/signal の計算 SoT を `src/domains` 側へ集約する。
 - [ ] market filter 同義語（legacy/current）を API 入力境界で統一する。
-- [ ] web/cli で同一 typed client を使うように重複呼び出しを削減する。
+- [x] web/cli で同一 typed client を使うように重複呼び出しを削減する。
   - 2026-02-28 着手: `@trading25/api-clients/analytics` を新設し、screening/fundamental-ranking を web/cli 共通 client へ移行開始。
+  - 2026-02-28 継続: `@trading25/api-clients/backtest` を web 利用可能に拡張し、`useOptimization` / `useBtOHLCV` の API 呼び出しを shared client に移行。
+  - 2026-02-28 継続: `useBacktest` の core job 系（health/strategies/jobs/result/attribution/cancel）を shared `backtestClient` に移行。
+  - 2026-02-28 継続: `useBacktest` の残り（strategy CRUD / html artifacts / default config / signal reference）も shared `backtestClient` に移行。
+  - 2026-03-02 継続: CLI `backtest` / `backtest attribution` コマンドの `BacktestClient` 生成を `commands/backtest/client.ts` に集約。
+  - 2026-03-02 継続: web hooks の `ranking/factor-regression/portfolio-factor-regression/fundamentals/margin-pressure/margin-ratio/sector-stocks` を shared `analyticsClient` に統一し、`/api/analytics` 直叩きを撤廃。
 
 ### Validation
 
-- [ ] screening/backtest/optimize で create/status/result が全て通る。
+- [x] screening/backtest/optimize で create/status/result が全て通る。
 - [ ] web 2秒ポーリング（または SSE）で進捗と完了が表示される。
-- [ ] cli `--wait` で end-to-end が完走する。
+- [x] cli `--wait` で end-to-end が完走する。
+  - 2026-03-02 検証追加: `apps/ts/packages/cli/src/commands/analysis/screening.test.ts` で screening create/status/result 呼び出しを明示検証。
+  - 2026-03-02 検証追加: `apps/ts/packages/cli/src/commands/backtest/commands.test.ts` に `backtest run --wait` の health→create→status→結果表示までの E2E テストを追加。
+  - 2026-03-02 検証追加: `apps/ts/packages/web/src/hooks/useOptimization.test.tsx` に optimize create→status(best/worst params)→result artifact取得の lifecycle テストを追加。
 
 ### Exit Criteria
 

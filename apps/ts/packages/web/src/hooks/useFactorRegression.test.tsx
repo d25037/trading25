@@ -1,14 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { useFactorRegression } from './useFactorRegression';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
+vi.mock('@/lib/analytics-client', () => ({
+  analyticsClient: {
+    getFactorRegression: vi.fn(),
+  },
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -21,11 +20,11 @@ afterEach(() => {
 
 describe('useFactorRegression', () => {
   it('fetches factor regression data', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ factors: [] });
+    vi.mocked(analyticsClient.getFactorRegression).mockResolvedValueOnce({ factors: [] } as never);
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useFactorRegression('7203'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/analytics/factor-regression/7203', { lookbackDays: 252 });
+    expect(analyticsClient.getFactorRegression).toHaveBeenCalledWith({ symbol: '7203', lookbackDays: 252 });
   });
 
   it('is disabled when symbol is null', () => {
@@ -38,6 +37,6 @@ describe('useFactorRegression', () => {
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useFactorRegression('7203', { enabled: false }), { wrapper });
     expect(result.current.fetchStatus).toBe('idle');
-    expect(apiGet).not.toHaveBeenCalled();
+    expect(analyticsClient.getFactorRegression).not.toHaveBeenCalled();
   });
 });

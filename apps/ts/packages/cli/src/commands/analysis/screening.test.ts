@@ -220,6 +220,16 @@ describe('analysis screening command run', () => {
       )
     );
 
+    expect(createScreeningJobMock).toHaveBeenCalledTimes(1);
+    expect(createScreeningJobMock).toHaveBeenCalledWith({
+      markets: 'prime',
+      strategies: 'range_break_v15',
+      recentDays: 5,
+      date: '2026-01-31',
+      sortBy: 'matchedDate',
+      order: 'desc',
+      limit: 50,
+    });
     expect(getScreeningJobStatusMock).toHaveBeenCalledTimes(1);
     expect(getScreeningResultMock).toHaveBeenCalledTimes(1);
     expect(logSpy.mock.calls.some((call) => String(call[0] ?? '').includes('StockCode'))).toBe(true);
