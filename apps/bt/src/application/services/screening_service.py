@@ -1120,14 +1120,15 @@ class ScreeningService:
         stock: StockUniverseItem = aggregated_item["stock"]
         matched_date: str = aggregated_item["matchedDate"]
         matched_strategies: list[MatchedStrategyItem] = aggregated_item["matchedStrategies"]
-        return build_screening_result_item(stock, matched_date, matched_strategies)
+        result_payload = build_screening_result_item(stock, matched_date, matched_strategies)
+        return ScreeningResultItem.model_validate(result_payload)
 
     def _pick_best_strategy(
         self,
         matched_strategies: list[MatchedStrategyItem],
     ) -> MatchedStrategyItem:
         """最適戦略を決定する（score優先、nullは最後）。"""
-        return pick_best_strategy(matched_strategies)
+        return cast(MatchedStrategyItem, pick_best_strategy(matched_strategies))
 
     def _sort_results(
         self,

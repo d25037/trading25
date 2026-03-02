@@ -4,16 +4,13 @@ Screening result selection and sorting.
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any, Protocol
+from collections.abc import Callable, Sequence
+from typing import Any, Literal, Protocol, TypeVar
 
-from src.entrypoints.http.schemas.screening import (
-    MatchedStrategyItem,
-    ScreeningResultItem,
-    ScreeningSortBy,
-    SortOrder,
-)
 from src.shared.models.signals import Signals
+
+ScreeningSortBy = Literal["matchedDate", "stockCode", "bestStrategyScore", "matchStrategyCount"]
+SortOrder = Literal["asc", "desc"]
 
 
 class StockLike(Protocol):
@@ -34,6 +31,41 @@ class StockLike(Protocol):
     @property
     def sector_33_name(self) -> str | None:
         ...
+
+
+class MatchedStrategyLike(Protocol):
+    @property
+    def strategyName(self) -> str:
+        ...
+
+    @property
+    def matchedDate(self) -> str:
+        ...
+
+    @property
+    def strategyScore(self) -> float | None:
+        ...
+
+
+class ScreeningResultLike(Protocol):
+    @property
+    def stockCode(self) -> str:
+        ...
+
+    @property
+    def matchedDate(self) -> str:
+        ...
+
+    @property
+    def bestStrategyScore(self) -> float | None:
+        ...
+
+    @property
+    def matchStrategyCount(self) -> int:
+        ...
+
+
+ResultRow = TypeVar("ResultRow", bound=ScreeningResultLike)
 
 
 def _default_format_date(value: Any) -> str:
@@ -61,7 +93,7 @@ def find_recent_match_date(
     return format_date(matched_index)
 
 
-def pick_best_strategy(matched_strategies: list[MatchedStrategyItem]) -> MatchedStrategyItem:
+def pick_best_strategy(matched_strategies: Sequence[MatchedStrategyLike]) -> MatchedStrategyLike:
     """Pick best strategy by score, fallback to latest matched date when all scores are null."""
     if not matched_strategies:
         raise ValueError("matched_strategies is empty")
@@ -82,8 +114,8 @@ def pick_best_strategy(matched_strategies: list[MatchedStrategyItem]) -> Matched
 def build_result_item(
     stock: StockLike,
     matched_date: str,
-    matched_strategies: list[MatchedStrategyItem],
-) -> ScreeningResultItem:
+    matched_strategies: Sequence[MatchedStrategyLike],
+) -> dict[str, Any]:
     """Build response item from per-stock aggregation."""
     sorted_strategies = sorted(
         matched_strategies,
@@ -95,24 +127,24 @@ def build_result_item(
     )
     best = pick_best_strategy(sorted_strategies)
 
-    return ScreeningResultItem(
-        stockCode=stock.code,
-        companyName=stock.company_name,
-        scaleCategory=stock.scale_category,
-        sector33Name=stock.sector_33_name,
-        matchedDate=matched_date,
-        bestStrategyName=best.strategyName,
-        bestStrategyScore=best.strategyScore,
-        matchStrategyCount=len(sorted_strategies),
-        matchedStrategies=sorted_strategies,
-    )
+    return {
+        "stockCode": stock.code,
+        "companyName": stock.company_name,
+        "scaleCategory": stock.scale_category,
+        "sector33Name": stock.sector_33_name,
+        "matchedDate": matched_date,
+        "bestStrategyName": best.strategyName,
+        "bestStrategyScore": best.strategyScore,
+        "matchStrategyCount": len(sorted_strategies),
+        "matchedStrategies": sorted_strategies,
+    }
 
 
 def sort_results(
-    results: list[ScreeningResultItem],
+    results: list[ResultRow],
     sort_by: ScreeningSortBy,
     order: SortOrder,
-) -> list[ScreeningResultItem]:
+) -> list[ResultRow]:
     """Sort screening results while keeping null scores always at tail."""
     if sort_by == "bestStrategyScore":
         if order == "asc":

@@ -67,9 +67,9 @@ def test_build_result_item_sorts_matched_strategies_by_score_desc() -> None:
 
     item = build_result_item(stock, "2026-01-03", matched)
 
-    assert item.stockCode == "7203"
-    assert item.bestStrategyName == "a"
-    assert [s.strategyName for s in item.matchedStrategies] == ["a", "c", "b"]
+    assert item["stockCode"] == "7203"
+    assert item["bestStrategyName"] == "a"
+    assert [s.strategyName for s in item["matchedStrategies"]] == ["a", "c", "b"]
 
 
 def test_sort_results_keeps_null_score_last_for_both_orders() -> None:
