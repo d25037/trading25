@@ -15,6 +15,7 @@ from loguru import logger
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.shared.observability.correlation import get_correlation_id
+from src.shared.observability.metrics import metrics_recorder
 from src.entrypoints.http.schemas.jquants import (
     ApiIndex,
     ApiIndicesResponse,
@@ -72,6 +73,7 @@ class JQuantsProxyService:
 
     @staticmethod
     def _log_cache_state(path: str, state: CacheState, key: str) -> None:
+        metrics_recorder.record_jquants_cache_state(path, str(state))
         logger.info(
             f"JQuants cache {state}: {path}",
             event="jquants_proxy_cache",

@@ -20,6 +20,7 @@ from sqlalchemy.exc import SQLAlchemyError
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsApiError
 from src.shared.observability.correlation import CORRELATION_ID_HEADER, get_correlation_id
+from src.shared.observability.metrics import metrics_recorder
 
 
 class RequestLoggerMiddleware(BaseHTTPMiddleware):
@@ -67,13 +68,17 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         status = response.status_code
         correlation_id = get_correlation_id()
 
+        metrics_recorder.record_request(method, path, status, elapsed_ms)
+
         log_kwargs = {
             "event": "request",
             "correlationId": correlation_id,
+            "jobId": self._extract_job_id(path),
             "method": method,
             "path": path,
             "status": status,
             "elapsed": elapsed_ms,
+            "errorRate": round(metrics_recorder.error_rate(), 4),
         }
 
         if status >= 500:
@@ -101,13 +106,17 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
 
         suffix = f" - {log_suffix}" if log_suffix else f" - {message}"
         log_msg = f"{method} {path} {status_code} {elapsed_ms}ms{suffix}"
+        metrics_recorder.record_request(method, path, status_code, elapsed_ms)
+
         log_kwargs = {
             "event": "request_error",
             "correlationId": correlation_id,
+            "jobId": self._extract_job_id(path),
             "method": method,
             "path": path,
             "status": status_code,
             "elapsed": elapsed_ms,
+            "errorRate": round(metrics_recorder.error_rate(), 4),
         }
         getattr(logger, log_level)(log_msg, **log_kwargs)
 
@@ -122,3 +131,11 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
         if correlation_id:
             response.headers[CORRELATION_ID_HEADER] = correlation_id
         return response
+
+    @staticmethod
+    def _extract_job_id(path: str) -> str | None:
+        segments = [segment for segment in path.split("/") if segment]
+        for idx, segment in enumerate(segments):
+            if segment == "jobs" and idx + 1 < len(segments):
+                return segments[idx + 1]
+        return None

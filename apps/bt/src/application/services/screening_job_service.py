@@ -18,6 +18,8 @@ from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobPayload, ScreeningJobRequest
 from src.application.services.job_manager import JobManager
 from src.application.services.screening_service import ScreeningService
+from src.shared.observability.correlation import get_correlation_id
+from src.shared.observability.metrics import metrics_recorder
 
 
 def _read_positive_int_env(name: str, default: int) -> int:
@@ -127,20 +129,48 @@ class ScreeningJobService:
             )
 
             elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
+            metrics_recorder.record_job_duration("screening", JobStatus.COMPLETED.value, elapsed_ms)
             logger.info(
-                f"Screening job completed: {job_id} ({elapsed_ms}ms)"
+                f"Screening job completed: {job_id} ({elapsed_ms}ms)",
+                event="job_lifecycle",
+                jobType="screening",
+                jobId=job_id,
+                status=JobStatus.COMPLETED.value,
+                durationMs=elapsed_ms,
+                correlationId=get_correlation_id(),
             )
 
         except asyncio.CancelledError:
+            elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
+            metrics_recorder.record_job_duration("screening", JobStatus.CANCELLED.value, elapsed_ms)
             await self._manager.update_job_status(
                 job_id,
                 JobStatus.CANCELLED,
                 message="Screening ジョブがキャンセルされました",
             )
+            logger.info(
+                f"Screening job cancelled: {job_id} ({elapsed_ms}ms)",
+                event="job_lifecycle",
+                jobType="screening",
+                jobId=job_id,
+                status=JobStatus.CANCELLED.value,
+                durationMs=elapsed_ms,
+                correlationId=get_correlation_id(),
+            )
             raise
 
         except Exception as exc:
-            logger.exception(f"Screening job failed: {job_id}")
+            elapsed_ms = round((perf_counter() - started_at) * 1000, 2)
+            metrics_recorder.record_job_duration("screening", JobStatus.FAILED.value, elapsed_ms)
+            logger.exception(
+                f"Screening job failed: {job_id}",
+                event="job_lifecycle",
+                jobType="screening",
+                jobId=job_id,
+                status=JobStatus.FAILED.value,
+                durationMs=elapsed_ms,
+                correlationId=get_correlation_id(),
+            )
             await self._manager.update_job_status(
                 job_id,
                 JobStatus.FAILED,

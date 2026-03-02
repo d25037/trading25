@@ -22,6 +22,7 @@ from src.application.services.sync_strategies import (
     SyncContext,
     get_strategy,
 )
+from src.shared.config.reliability import SYNC_JOB_TIMEOUT_MINUTES
 
 
 class SyncMode(str, Enum):
@@ -83,12 +84,12 @@ async def start_sync(
             on_progress=on_progress,
         )
         try:
-            result = await asyncio.wait_for(strategy.execute(ctx), timeout=35 * 60)
+            result = await asyncio.wait_for(strategy.execute(ctx), timeout=SYNC_JOB_TIMEOUT_MINUTES * 60)
             if sync_job_manager.is_cancelled(job.job_id):
                 return
             sync_job_manager.complete_job(job.job_id, result)
         except asyncio.TimeoutError:
-            sync_job_manager.fail_job(job.job_id, "Sync timed out after 35 minutes")
+            sync_job_manager.fail_job(job.job_id, f"Sync timed out after {SYNC_JOB_TIMEOUT_MINUTES} minutes")
         except asyncio.CancelledError:
             pass
         except Exception as e:
