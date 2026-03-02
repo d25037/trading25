@@ -5,6 +5,7 @@ import ora from 'ora';
 import type { SignalAttributionJobResponse, SignalAttributionRequest } from '@trading25/api-clients/backtest';
 import { CLI_NAME } from '../../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../../utils/error-handling.js';
+import { emitCommandOutput } from '../../../utils/job-command-output.js';
 import { createBacktestClient } from '../client.js';
 import { handleBacktestError } from '../error-handler.js';
 import { parseTableJsonFormat } from './format.js';
@@ -20,6 +21,7 @@ type RunOptions = {
   permutations: number;
   seed: number | null;
   format: 'table' | 'json';
+  output?: string;
   btUrl: string;
   debug: boolean;
 };
@@ -90,7 +92,9 @@ function parseRunOptions(values: Record<string, unknown>): RunOptions {
   const topN = parsePositiveInt(String(values['shapley-top-n'] ?? ''), 'shapleyTopN');
   const permutations = parsePositiveInt(String(values['shapley-permutations'] ?? ''), 'shapleyPermutations');
   const seed = parseOptionalInt(typeof values['random-seed'] === 'string' ? values['random-seed'] : undefined);
-  const format = parseTableJsonFormat(String(values.format ?? 'table'));
+  const json = values.json === true;
+  const format = json ? 'json' : parseTableJsonFormat(String(values.format ?? 'table'));
+  const output = typeof values.output === 'string' && values.output.trim().length > 0 ? values.output.trim() : undefined;
   const btUrl =
     typeof values['bt-url'] === 'string' && values['bt-url'].trim().length > 0
       ? values['bt-url']
@@ -104,6 +108,7 @@ function parseRunOptions(values: Record<string, unknown>): RunOptions {
     permutations,
     seed,
     format,
+    output,
     btUrl,
     debug,
   };
@@ -124,24 +129,31 @@ function updateWaitSpinner(spinner: ReturnType<typeof ora>, job: SignalAttributi
   spinner.text = `${message} ${progress}`;
 }
 
-function renderWaitResult(
+async function renderWaitResult(
   ctx: RunContext,
   spinner: ReturnType<typeof ora>,
   job: SignalAttributionJobResponse,
-  format: 'table' | 'json'
-): void {
+  format: 'table' | 'json',
+  output: string | undefined
+): Promise<void> {
   if (job.status === 'completed') {
     spinner.succeed('Signal attribution completed');
-    if (format === 'json') {
-      ctx.log(JSON.stringify(job, null, 2));
-      return;
-    }
-    printCompletedSummary(ctx, job);
+    await emitCommandOutput({
+      ctx,
+      payload: job,
+      options: { json: format === 'json', output },
+      renderTable: (payload) => printCompletedSummary(ctx, payload),
+    });
     return;
   }
 
   if (job.status === 'cancelled') {
     spinner.warn('Signal attribution was cancelled');
+    await emitCommandOutput({
+      ctx,
+      payload: job,
+      options: { json: format === 'json', output },
+    });
     return;
   }
 
@@ -149,18 +161,22 @@ function renderWaitResult(
   throw new CLIError(`Signal attribution failed: ${job.error ?? 'Unknown error'}`, 1, true);
 }
 
-function renderSubmitResult(
+async function renderSubmitResult(
   ctx: RunContext,
   spinner: ReturnType<typeof ora>,
   job: SignalAttributionJobResponse,
-  format: 'table' | 'json'
-): void {
+  format: 'table' | 'json',
+  output: string | undefined
+): Promise<void> {
   spinner.succeed(`Signal attribution submitted: ${job.job_id}`);
-  if (format === 'json') {
-    ctx.log(JSON.stringify(job, null, 2));
-    return;
-  }
-  ctx.log(chalk.dim(`Check status: ${CLI_NAME} backtest attribution status ${job.job_id}`));
+  await emitCommandOutput({
+    ctx,
+    payload: job,
+    options: { json: format === 'json', output },
+    renderTable: (payload) => {
+      ctx.log(chalk.dim(`Check status: ${CLI_NAME} backtest attribution status ${payload.job_id}`));
+    },
+  });
 }
 
 export const runCommand = define({
@@ -198,6 +214,15 @@ export const runCommand = define({
       description: 'Output format: table, json',
       default: 'table',
     },
+    json: {
+      type: 'boolean',
+      description: 'Print JSON payload',
+      default: false,
+    },
+    output: {
+      type: 'string',
+      description: 'Write JSON payload to file',
+    },
     'bt-url': {
       type: 'string',
       description: 'Backtest API server URL',
@@ -216,8 +241,11 @@ ${CLI_NAME} backtest attribution run range_break_v5
 # Run attribution without waiting
 ${CLI_NAME} backtest attribution run range_break_v5 --no-wait
 
-  # Run attribution with advanced parameters
-${CLI_NAME} backtest attribution run range_break_v5 --shapley-top-n 8 --shapley-permutations 256 --random-seed 42`,
+# Run attribution with advanced parameters
+${CLI_NAME} backtest attribution run range_break_v5 --shapley-top-n 8 --shapley-permutations 256 --random-seed 42
+
+# Emit JSON and save payload
+${CLI_NAME} backtest attribution run range_break_v5 --json --output ./artifacts/attribution-job.json`,
   run: async (ctx) => {
     const options = parseRunOptions(ctx.values as Record<string, unknown>);
     const request = buildRequest(options);
@@ -231,12 +259,12 @@ ${CLI_NAME} backtest attribution run range_break_v5 --shapley-top-n 8 --shapley-
           pollInterval: 2000,
           onProgress: (progressJob) => updateWaitSpinner(spinner, progressJob),
         });
-        renderWaitResult(ctx, spinner, job, options.format);
+        await renderWaitResult(ctx, spinner, job, options.format, options.output);
         return;
       }
 
       const job = await client.runSignalAttribution(request);
-      renderSubmitResult(ctx, spinner, job, options.format);
+      await renderSubmitResult(ctx, spinner, job, options.format, options.output);
     } catch (error) {
       if (error instanceof CLIError) {
         spinner.stop();

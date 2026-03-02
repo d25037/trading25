@@ -20,6 +20,20 @@ const mockResults: ScreeningResultItem[] = [
   },
 ];
 
+function createResult(index: number): ScreeningResultItem {
+  const code = String(1000 + index).padStart(4, '0');
+  return {
+    stockCode: code,
+    companyName: `Company ${index + 1}`,
+    sector33Name: '輸送用機器',
+    matchedDate: '2026-01-07',
+    bestStrategyName: 'range_break_v15',
+    bestStrategyScore: 1 + index / 100,
+    matchStrategyCount: 1,
+    matchedStrategies: [{ strategyName: 'range_break_v15', matchedDate: '2026-01-07', strategyScore: 1.0 }],
+  };
+}
+
 describe('ScreeningTable', () => {
   it('renders simplified columns without best strategy/score', () => {
     render(<ScreeningTable results={mockResults} isLoading={false} error={null} onStockClick={vi.fn()} />);
@@ -50,5 +64,13 @@ describe('ScreeningTable', () => {
     await user.click(screen.getByText('7203'));
 
     expect(onStockClick).toHaveBeenCalledWith('7203');
+  });
+
+  it('virtualizes rows when result count exceeds threshold', () => {
+    const results = Array.from({ length: 130 }, (_, index) => createResult(index));
+    render(<ScreeningTable results={results} isLoading={false} error={null} onStockClick={vi.fn()} />);
+
+    expect(screen.getByText('Company 1')).toBeInTheDocument();
+    expect(screen.queryByText('Company 130')).not.toBeInTheDocument();
   });
 });

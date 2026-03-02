@@ -10,6 +10,7 @@ import ora from 'ora';
 
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../utils/error-handling.js';
+import { emitCommandOutput } from '../../utils/job-command-output.js';
 import { createBacktestClient } from './client.js';
 import { handleBacktestError } from './error-handler.js';
 
@@ -27,6 +28,15 @@ export const runCommand = define({
       short: 'w',
       description: 'Wait for completion (default: true)',
       default: true,
+    },
+    json: {
+      type: 'boolean',
+      description: 'Print JSON payload',
+      default: false,
+    },
+    output: {
+      type: 'string',
+      description: 'Write JSON payload to file',
     },
     debug: {
       type: 'boolean',
@@ -47,10 +57,13 @@ ${CLI_NAME} backtest run range_break_v5
 ${CLI_NAME} backtest run production/range_break_v5
 
 # Run without waiting
-${CLI_NAME} backtest run range_break_v5 --no-wait`,
+${CLI_NAME} backtest run range_break_v5 --no-wait
+
+# Emit JSON and save payload
+${CLI_NAME} backtest run range_break_v5 --json --output ./artifacts/backtest-job.json`,
   // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: CLI command with health check, run modes, and result display
   run: async (ctx) => {
-    const { strategy, wait, debug, btUrl } = ctx.values;
+    const { strategy, wait, json, output, debug, btUrl } = ctx.values;
 
     if (!strategy) {
       throw new CLIValidationError('strategy name is required');
@@ -92,24 +105,35 @@ ${CLI_NAME} backtest run range_break_v5 --no-wait`,
 
         if (job.status === 'completed') {
           runSpinner.succeed('Backtest completed!');
+          await emitCommandOutput({
+            ctx,
+            payload: job,
+            options: { json, output },
+            renderTable: (payload) => {
+              ctx.log('');
+              ctx.log(chalk.green('=== Results ==='));
+              ctx.log(`Job ID: ${chalk.cyan(payload.job_id)}`);
 
-          ctx.log('');
-          ctx.log(chalk.green('=== Results ==='));
-          ctx.log(`Job ID: ${chalk.cyan(job.job_id)}`);
-
-          if (job.result) {
-            ctx.log(`Total Return: ${formatPercent(job.result.total_return)}`);
-            ctx.log(`Sharpe Ratio: ${chalk.yellow(job.result.sharpe_ratio.toFixed(2))}`);
-            ctx.log(`Calmar Ratio: ${chalk.yellow(job.result.calmar_ratio.toFixed(2))}`);
-            ctx.log(`Max Drawdown: ${formatPercent(job.result.max_drawdown, true)}`);
-            ctx.log(`Win Rate: ${formatPercent(job.result.win_rate)}`);
-            ctx.log(`Trade Count: ${chalk.cyan(job.result.trade_count)}`);
-            if (job.result.html_path) {
-              ctx.log(`HTML Report: ${chalk.gray(job.result.html_path)}`);
-            }
-          }
+              if (payload.result) {
+                ctx.log(`Total Return: ${formatPercent(payload.result.total_return)}`);
+                ctx.log(`Sharpe Ratio: ${chalk.yellow(payload.result.sharpe_ratio.toFixed(2))}`);
+                ctx.log(`Calmar Ratio: ${chalk.yellow(payload.result.calmar_ratio.toFixed(2))}`);
+                ctx.log(`Max Drawdown: ${formatPercent(payload.result.max_drawdown, true)}`);
+                ctx.log(`Win Rate: ${formatPercent(payload.result.win_rate)}`);
+                ctx.log(`Trade Count: ${chalk.cyan(payload.result.trade_count)}`);
+                if (payload.result.html_path) {
+                  ctx.log(`HTML Report: ${chalk.gray(payload.result.html_path)}`);
+                }
+              }
+            },
+          });
         } else if (job.status === 'cancelled') {
           runSpinner.warn('Backtest was cancelled');
+          await emitCommandOutput({
+            ctx,
+            payload: job,
+            options: { json, output },
+          });
         } else {
           runSpinner.fail(`Backtest failed: ${job.error ?? 'Unknown error'}`);
           throw new CLIError(`Backtest failed: ${job.error ?? 'Unknown error'}`, 1, true);
@@ -118,7 +142,14 @@ ${CLI_NAME} backtest run range_break_v5 --no-wait`,
         // Don't wait, just submit
         const job = await client.runBacktest({ strategy_name: strategy });
         runSpinner.succeed(`Backtest submitted: ${job.job_id}`);
-        ctx.log(chalk.gray(`Check status: ${CLI_NAME} backtest results ${job.job_id}`));
+        await emitCommandOutput({
+          ctx,
+          payload: job,
+          options: { json, output },
+          renderTable: (payload) => {
+            ctx.log(chalk.gray(`Check status: ${CLI_NAME} backtest results ${payload.job_id}`));
+          },
+        });
       }
     } catch (error) {
       if (error instanceof CLIError) {

@@ -1,6 +1,7 @@
 import { Loader2, TrendingUp } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
+import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import type { ScreeningResultItem } from '@/types/screening';
 import { formatDateShort } from '@/utils/formatters';
 
@@ -12,7 +13,18 @@ interface ScreeningTableProps {
   onStockClick: (code: string) => void;
 }
 
+const VIRTUALIZATION_THRESHOLD = 120;
+const SCREENING_ROW_HEIGHT = 36;
+const SCREENING_VIEWPORT_HEIGHT = 520;
+
 export function ScreeningTable({ results, isLoading, isFetching = false, error, onStockClick }: ScreeningTableProps) {
+  const shouldVirtualize = results.length >= VIRTUALIZATION_THRESHOLD;
+  const virtual = useVirtualizedRows(results, {
+    enabled: shouldVirtualize,
+    rowHeight: SCREENING_ROW_HEIGHT,
+    viewportHeight: SCREENING_VIEWPORT_HEIGHT,
+  });
+
   return (
     <Card className="glass-panel overflow-hidden flex flex-1 min-h-0 flex-col">
       <CardHeader className="border-b border-border/30 py-3">
@@ -29,7 +41,7 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
           )}
         </CardTitle>
       </CardHeader>
-      <CardContent className="p-0 flex-1 min-h-0 overflow-auto">
+      <CardContent className="p-0 flex-1 min-h-0 overflow-auto" onScroll={virtual.onScroll}>
         <DataStateWrapper
           isLoading={isLoading}
           error={error}
@@ -50,9 +62,14 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
               </tr>
             </thead>
             <tbody>
-              {results.map((result) => (
+              {shouldVirtualize && virtual.paddingTop > 0 && (
+                <tr>
+                  <td colSpan={6} className="p-0" style={{ height: virtual.paddingTop }} />
+                </tr>
+              )}
+              {virtual.visibleItems.map((result, offset) => (
                 <tr
-                  key={result.stockCode}
+                  key={`${result.stockCode}-${result.matchedDate}-${virtual.startIndex + offset}`}
                   className="border-b border-border/30 hover:bg-accent/30 cursor-pointer transition-colors"
                   onClick={() => onStockClick(result.stockCode)}
                 >
@@ -66,6 +83,11 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
                   </td>
                 </tr>
               ))}
+              {shouldVirtualize && virtual.paddingBottom > 0 && (
+                <tr>
+                  <td colSpan={6} className="p-0" style={{ height: virtual.paddingBottom }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </DataStateWrapper>

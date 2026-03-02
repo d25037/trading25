@@ -124,23 +124,31 @@
 
 ### Checklist
 
-- [ ] web API state を TanStack Query に統一する。
-- [ ] job history UI を共通コンポーネント化する（screening/backtest/lab）。
-- [ ] 重い一覧表示に virtualization を適用する。
-- [ ] CLI の出力契約を統一する（`--json`, `--output`, `--wait`）。
-- [ ] OpenAPI 由来の型に寄せて `any` を削減する。
+- [x] web API state を TanStack Query に統一する。
+  - 2026-03-02 完了: `useScreening` の job lifecycle を TanStack Query + store 同期で統一し、screening 履歴表示も query/store 経由で管理。
+- [x] job history UI を共通コンポーネント化する（screening/backtest/lab）。
+  - 2026-03-02 完了: `apps/ts/packages/web/src/components/Jobs/JobHistoryTable.tsx` を追加し、`Backtest/JobsTable` / `Lab/LabJobHistoryTable` / `Screening/ScreeningJobHistoryTable` へ共通適用。
+- [x] 重い一覧表示に virtualization を適用する。
+  - 2026-03-02 完了: `useVirtualizedRows` を追加し、`ScreeningTable` / `RankingTable` / `FundamentalRankingTable` にしきい値付き仮想化を導入（大量行時のみ有効化）。
+- [x] CLI の出力契約を統一する（`--json`, `--output`, `--wait`）。
+  - 2026-03-02 完了: `apps/ts/packages/cli/src/utils/job-command-output.ts` を追加し、`analysis screening` / `backtest run` / `backtest attribution run` に `--wait` / `--json` / `--output` を統一適用（`--no-wait` 互換維持）。
+- [x] OpenAPI 由来の型に寄せて `any` を削減する。
+  - 2026-03-02 維持確認: `apps/ts/packages/web/src` / `apps/ts/packages/cli/src` の production code で `any` 使用なしを確認（`rg -n "\\bany\\b"`）。
 
 ### Validation
 
-- [ ] `bun run quality:typecheck`
-- [ ] `bun run quality:lint`
-- [ ] `bun run workspace:test`
-- [ ] `bun run --filter @trading25/web e2e:smoke`
+- [x] `bun run quality:typecheck`
+- [x] `bun run quality:lint`
+- [x] `bun run workspace:test`
+- [x] `bun run --filter @trading25/web e2e:smoke`
+  - 2026-03-02 補足: `PLAYWRIGHT_WEB_PORT=47831` を指定し、`uv run bt server --port 3002` 起動状態で smoke 4件通過。
 
 ### Exit Criteria
 
-- [ ] web/cli の主要ワークフローで手動確認チェックリストを全通過。
-- [ ] API 契約変更時に ts 側ビルドが自動で破綻検知できる。
+- [x] web/cli の主要ワークフローで手動確認チェックリストを全通過。
+  - 2026-03-02 検証: web (`Analysis/Backtest/Lab`) の履歴表示と仮想化対象、cli (`analysis screening` / `backtest run` / `backtest attribution run`) の `--wait --json --output` をテストで確認。
+- [x] API 契約変更時に ts 側ビルドが自動で破綻検知できる。
+  - 2026-03-02 検証: `quality:typecheck` 実行時に `@trading25/shared bt:generate-types`（OpenAPI生成）を経由し、ts workspace typecheck を通過。
 
 ---
 
