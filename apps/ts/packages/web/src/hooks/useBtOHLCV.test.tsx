@@ -1,14 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiPost } from '@/lib/api-client';
+import { backtestClient } from '@/lib/backtest-client';
 import { createTestWrapper } from '@/test-utils';
 import { btOHLCVKeys, useBtOHLCV, useMultiTimeframeBtOHLCV } from './useBtOHLCV';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
+vi.mock('@/lib/backtest-client', () => ({
+  backtestClient: {
+    resampleOHLCV: vi.fn(),
+  },
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -31,7 +30,7 @@ const mockOHLCVResponse = {
 
 describe('useBtOHLCV', () => {
   it('fetches OHLCV data via apps/bt/ API', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce(mockOHLCVResponse);
+    vi.mocked(backtestClient.resampleOHLCV).mockResolvedValueOnce(mockOHLCVResponse as never);
     const { wrapper } = createTestWrapper();
 
     const { result } = renderHook(
@@ -46,7 +45,7 @@ describe('useBtOHLCV', () => {
 
     await waitFor(() => expect(result.current.data).not.toBeNull());
 
-    expect(apiPost).toHaveBeenCalledWith('/api/ohlcv/resample', {
+    expect(backtestClient.resampleOHLCV).toHaveBeenCalledWith({
       stock_code: '7203',
       source: 'market',
       timeframe: 'daily',
@@ -64,10 +63,10 @@ describe('useBtOHLCV', () => {
   });
 
   it('includes benchmark_code for relativeMode', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(backtestClient.resampleOHLCV).mockResolvedValueOnce({
       ...mockOHLCVResponse,
       benchmark_code: 'topix',
-    });
+    } as never);
     const { wrapper } = createTestWrapper();
 
     const { result } = renderHook(
@@ -82,7 +81,7 @@ describe('useBtOHLCV', () => {
 
     await waitFor(() => expect(result.current.data).not.toBeNull());
 
-    expect(apiPost).toHaveBeenCalledWith('/api/ohlcv/resample', {
+    expect(backtestClient.resampleOHLCV).toHaveBeenCalledWith({
       stock_code: '7203',
       source: 'market',
       timeframe: 'weekly',
@@ -106,7 +105,7 @@ describe('useBtOHLCV', () => {
 
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeNull();
-    expect(apiPost).not.toHaveBeenCalled();
+    expect(backtestClient.resampleOHLCV).not.toHaveBeenCalled();
   });
 
   it('is disabled when enabled=false', () => {
@@ -123,12 +122,12 @@ describe('useBtOHLCV', () => {
 
     expect(result.current.isLoading).toBe(false);
     expect(result.current.data).toBeNull();
-    expect(apiPost).not.toHaveBeenCalled();
+    expect(backtestClient.resampleOHLCV).not.toHaveBeenCalled();
   });
 
   it('returns error on API failure', async () => {
     const error = new Error('API Error');
-    vi.mocked(apiPost).mockRejectedValue(error);
+    vi.mocked(backtestClient.resampleOHLCV).mockRejectedValue(error);
     const { wrapper } = createTestWrapper();
 
     const { result } = renderHook(
@@ -160,7 +159,7 @@ describe('useMultiTimeframeBtOHLCV', () => {
       data: [{ date: '2025-01-31', open: 1000, high: 1300, low: 800, close: 1200, volume: 2000000 }],
     };
 
-    vi.mocked(apiPost)
+    vi.mocked(backtestClient.resampleOHLCV)
       .mockResolvedValueOnce(dailyResponse)
       .mockResolvedValueOnce(weeklyResponse)
       .mockResolvedValueOnce(monthlyResponse);
@@ -183,7 +182,7 @@ describe('useMultiTimeframeBtOHLCV', () => {
     expect(result.current.daily.data).toBeNull();
     expect(result.current.weekly.data).toBeNull();
     expect(result.current.monthly.data).toBeNull();
-    expect(apiPost).not.toHaveBeenCalled();
+    expect(backtestClient.resampleOHLCV).not.toHaveBeenCalled();
   });
 });
 

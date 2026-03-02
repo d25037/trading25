@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **118**
+Total paths: **119**
 
 ## /api/analytics
 
@@ -167,6 +167,7 @@ Total paths: **118**
 | `/api/optimize/html-files/{strategy}/{filename}` | `GET, DELETE` |
 | `/api/optimize/html-files/{strategy}/{filename}/rename` | `POST` |
 | `/api/optimize/jobs/{job_id}` | `GET` |
+| `/api/optimize/jobs/{job_id}/cancel` | `POST` |
 | `/api/optimize/jobs/{job_id}/stream` | `GET` |
 | `/api/optimize/run` | `POST` |
 

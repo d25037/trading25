@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ApiPortfolioFactorRegressionResponse } from '@trading25/shared/types/api-types';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 
 interface PortfolioFactorRegressionOptions {
   lookbackDays?: number;
@@ -10,7 +10,8 @@ function fetchPortfolioFactorRegression(
   portfolioId: number,
   options: PortfolioFactorRegressionOptions = {}
 ): Promise<ApiPortfolioFactorRegressionResponse> {
-  return apiGet<ApiPortfolioFactorRegressionResponse>(`/api/analytics/portfolio-factor-regression/${portfolioId}`, {
+  return analyticsClient.getPortfolioFactorRegression({
+    portfolioId,
     lookbackDays: options.lookbackDays,
   });
 }

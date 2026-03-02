@@ -194,7 +194,7 @@ export interface HealthResponse {
 }
 
 export interface BacktestClientConfig {
-  baseUrl: string;
+  baseUrl?: string;
   timeout?: number;
 }
 

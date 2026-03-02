@@ -53,6 +53,31 @@ export interface MarketRankingParams {
   periodDays?: number;
 }
 
+export interface FundamentalsParams {
+  symbol: string;
+  tradingValuePeriod?: number;
+  forecastEpsLookbackFyCount?: number;
+}
+
+export interface MarginPressureIndicatorsParams {
+  symbol: string;
+  period?: number;
+}
+
+export interface MarginVolumeRatioParams {
+  symbol: string;
+}
+
+export interface SectorStocksParams {
+  sector33Name?: string;
+  sector17Name?: string;
+  markets?: string;
+  lookbackDays?: number;
+  sortBy?: 'tradingValue' | 'changePercentage' | 'code';
+  sortOrder?: 'asc' | 'desc';
+  limit?: number;
+}
+
 // ===== FUNDAMENTAL RANKING TYPES =====
 
 export type FundamentalRankingSource = 'revised' | 'fy';

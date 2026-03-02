@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { logger } from '@/utils/logger';
 
 export interface SectorStockItem {
@@ -39,7 +39,7 @@ export interface SectorStocksParams {
 }
 
 function fetchSectorStocks(params: SectorStocksParams): Promise<SectorStocksResponse> {
-  return apiGet<SectorStocksResponse>('/api/analytics/sector-stocks', {
+  return analyticsClient.getSectorStocks<SectorStocksResponse>({
     sector33Name: params.sector33Name,
     sector17Name: params.sector17Name,
     markets: params.markets,

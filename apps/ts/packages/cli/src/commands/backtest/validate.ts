@@ -4,13 +4,13 @@
  * 戦略設定検証コマンド
  */
 
-import { BacktestClient } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../utils/error-handling.js';
+import { createBacktestClient } from './client.js';
 import { handleBacktestError } from './error-handler.js';
 
 export const validateCommand = define({
@@ -44,7 +44,7 @@ ${CLI_NAME} backtest validate production/range_break_v5`,
       throw new CLIValidationError('Strategy name is required');
     }
 
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
     const spinner = ora();
 
     try {

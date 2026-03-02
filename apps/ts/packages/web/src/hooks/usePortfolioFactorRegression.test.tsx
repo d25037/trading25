@@ -1,14 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { usePortfolioFactorRegression } from './usePortfolioFactorRegression';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
+vi.mock('@/lib/analytics-client', () => ({
+  analyticsClient: {
+    getPortfolioFactorRegression: vi.fn(),
+  },
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -21,11 +20,11 @@ afterEach(() => {
 
 describe('usePortfolioFactorRegression', () => {
   it('fetches portfolio factor regression data', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ factors: [] });
+    vi.mocked(analyticsClient.getPortfolioFactorRegression).mockResolvedValueOnce({ factors: [] } as never);
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => usePortfolioFactorRegression(1), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/analytics/portfolio-factor-regression/1', { lookbackDays: 252 });
+    expect(analyticsClient.getPortfolioFactorRegression).toHaveBeenCalledWith({ portfolioId: 1, lookbackDays: 252 });
   });
 
   it('is disabled when portfolioId is null', () => {

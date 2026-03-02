@@ -1,14 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { useRanking } from './useRanking';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
+vi.mock('@/lib/analytics-client', () => ({
+  analyticsClient: {
+    getMarketRanking: vi.fn(),
+  },
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -21,12 +20,12 @@ afterEach(() => {
 
 describe('useRanking', () => {
   it('fetches ranking data when enabled', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ items: [] });
+    vi.mocked(analyticsClient.getMarketRanking).mockResolvedValueOnce({ items: [] } as never);
     const { wrapper } = createTestWrapper();
     const params = { limit: 20 };
     const { result } = renderHook(() => useRanking(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/analytics/ranking', expect.objectContaining({ limit: 20 }));
+    expect(analyticsClient.getMarketRanking).toHaveBeenCalledWith(expect.objectContaining({ limit: 20 }));
   });
 
   it('is disabled when enabled is false', () => {

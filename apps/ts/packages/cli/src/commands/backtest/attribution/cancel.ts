@@ -5,6 +5,7 @@ import ora from 'ora';
 
 import { CLI_NAME } from '../../../utils/constants.js';
 import { CLIValidationError, handleCommandError } from '../../../utils/error-handling.js';
+import { createBacktestClient } from '../client.js';
 
 export const cancelCommand = define({
   name: 'cancel',
@@ -37,8 +38,7 @@ ${CLI_NAME} backtest attribution cancel <job-id>`,
       throw new CLIValidationError('job ID is required');
     }
 
-    const { BacktestClient } = await import('@trading25/api-clients/backtest');
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
     const spinner = ora('Cancelling attribution job...').start();
 
     try {

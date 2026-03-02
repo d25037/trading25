@@ -83,24 +83,40 @@
 
 ### Checklist
 
-- [ ] screening API を async job SoT に一本化する。
-- [ ] backtest API を artifact-first 再解決に統一する。
-- [ ] optimize job に best/worst params と score を標準返却させる。
-- [ ] fundamentals ranking/signal の計算 SoT を `src/domains` 側へ集約する。
-- [ ] market filter 同義語（legacy/current）を API 入力境界で統一する。
-- [ ] web/cli で同一 typed client を使うように重複呼び出しを削減する。
+- [x] screening API を async job SoT に一本化する。
+  - 2026-03-02 検証: `GET /api/analytics/screening` は 410 + 移行メッセージを返し、`POST/GET /api/analytics/screening/jobs*` と `GET /api/analytics/screening/result/{job_id}` を SoT とするルートテストを整備。
+- [x] backtest API を artifact-first 再解決に統一する。
+  - 2026-03-02 検証: `apps/bt/tests/unit/server/routes/test_backtest.py` で `result.html + *.metrics.json` 優先再解決と fallback の挙動を確認。
+- [x] optimize job に best/worst params と score を標準返却させる。
+  - 2026-03-02 検証: `apps/bt/src/entrypoints/http/routes/optimize.py` / `apps/ts/packages/web/src/hooks/useOptimization.test.tsx` で `best_* / worst_* / total_combinations` を lifecycle テストで確認。
+- [x] fundamentals ranking/signal の計算 SoT を `src/domains` 側へ集約する。
+  - 2026-03-02 検証: fundamentals ranking は `src/domains/analytics/fundamental_ranking.py` を SoT とし、signal 評価は `src/domains/analytics/screening_requirements.py` / `screening_results.py` / `screening_evaluator.py` へ抽出。`test_screening_*` domain/service テストと `test_ranking_service.py` / `test_analytics_complex.py -k \"fundamental or ranking\"` で回帰確認。
+- [x] market filter 同義語（legacy/current）を API 入力境界で統一する。
+  - 2026-03-02 継続: `/api/market/stocks` の `market` 入力で `prime/standard/growth` と `0111/0112/0113` を同義受理するよう route 境界を更新し、route/service テストで互換性を検証。
+- [x] web/cli で同一 typed client を使うように重複呼び出しを削減する。
   - 2026-02-28 着手: `@trading25/api-clients/analytics` を新設し、screening/fundamental-ranking を web/cli 共通 client へ移行開始。
+  - 2026-02-28 継続: `@trading25/api-clients/backtest` を web 利用可能に拡張し、`useOptimization` / `useBtOHLCV` の API 呼び出しを shared client に移行。
+  - 2026-02-28 継続: `useBacktest` の core job 系（health/strategies/jobs/result/attribution/cancel）を shared `backtestClient` に移行。
+  - 2026-02-28 継続: `useBacktest` の残り（strategy CRUD / html artifacts / default config / signal reference）も shared `backtestClient` に移行。
+  - 2026-03-02 継続: CLI `backtest` / `backtest attribution` コマンドの `BacktestClient` 生成を `commands/backtest/client.ts` に集約。
+  - 2026-03-02 継続: web hooks の `ranking/factor-regression/portfolio-factor-regression/fundamentals/margin-pressure/margin-ratio/sector-stocks` を shared `analyticsClient` に統一し、`/api/analytics` 直叩きを撤廃。
 
 ### Validation
 
-- [ ] screening/backtest/optimize で create/status/result が全て通る。
-- [ ] web 2秒ポーリング（または SSE）で進捗と完了が表示される。
-- [ ] cli `--wait` で end-to-end が完走する。
+- [x] screening/backtest/optimize で create/status/result が全て通る。
+- [x] web 2秒ポーリング（または SSE）で進捗と完了が表示される。
+- [x] cli `--wait` で end-to-end が完走する。
+  - 2026-03-02 検証追加: `apps/ts/packages/cli/src/commands/analysis/screening.test.ts` で screening create/status/result 呼び出しを明示検証。
+  - 2026-03-02 検証追加: `apps/ts/packages/cli/src/commands/backtest/commands.test.ts` に `backtest run --wait` の health→create→status→結果表示までの E2E テストを追加。
+  - 2026-03-02 検証追加: `apps/ts/packages/web/src/hooks/useOptimization.test.tsx` に optimize create→status(best/worst params)→result artifact取得の lifecycle テストを追加。
+  - 2026-03-02 検証追加: `useBacktest/useScreening/useOptimization` の status hook で `pending/running => refetchInterval=2000ms`, `completed => false` を明示テスト化。
 
 ### Exit Criteria
 
-- [ ] 主要3ジョブで cancel/retry/resume の挙動が確認できる。
-- [ ] 旧エンドポイント廃止時の互換メッセージ（410 等）が仕様通り出る。
+- [x] 主要3ジョブで cancel/retry/resume の挙動が確認できる。
+  - 2026-03-02 検証: screening/backtest 既存 cancel テストに加え、optimize に `POST /api/optimize/jobs/{job_id}/cancel` と web hook cancel/retry/resume lifecycle テストを追加。
+- [x] 旧エンドポイント廃止時の互換メッセージ（410 等）が仕様通り出る。
+  - 2026-03-02 検証: `apps/bt/tests/unit/server/routes/test_analytics_complex.py` で 410 応答の `status/error/message` を移行メッセージまで明示検証。
 
 ---
 

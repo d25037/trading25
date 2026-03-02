@@ -3,7 +3,10 @@ import type {
   AnalyticsClientConfig,
   FactorRegressionParams,
   FactorRegressionResponse,
+  FundamentalsParams,
   FundamentalRankingParams,
+  MarginPressureIndicatorsParams,
+  MarginVolumeRatioParams,
   MarketFundamentalRankingResponse,
   MarketRankingParams,
   MarketRankingResponse,
@@ -12,6 +15,7 @@ import type {
   PortfolioFactorRegressionResponse,
   ROEParams,
   ROEResponse,
+  SectorStocksParams,
   ScreeningJobRequest,
   ScreeningJobResponse,
 } from './types.js';
@@ -71,6 +75,35 @@ export class AnalyticsClient {
       forecastAboveRecentFyActuals: params.forecastAboveRecentFyActuals,
       forecastLookbackFyCount: params.forecastLookbackFyCount,
       forecastAboveAllActuals: params.forecastAboveAllActuals,
+    });
+  }
+
+  async getFundamentals<T>(params: FundamentalsParams): Promise<T> {
+    return this.request<T>(`/api/analytics/fundamentals/${encodeURIComponent(params.symbol)}`, undefined, {
+      tradingValuePeriod: params.tradingValuePeriod,
+      forecastEpsLookbackFyCount: params.forecastEpsLookbackFyCount,
+    });
+  }
+
+  async getMarginPressureIndicators<T>(params: MarginPressureIndicatorsParams): Promise<T> {
+    return this.request<T>(`/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-pressure`, undefined, {
+      period: params.period,
+    });
+  }
+
+  async getMarginVolumeRatio<T>(params: MarginVolumeRatioParams): Promise<T> {
+    return this.request<T>(`/api/analytics/stocks/${encodeURIComponent(params.symbol)}/margin-ratio`);
+  }
+
+  async getSectorStocks<T>(params: SectorStocksParams = {}): Promise<T> {
+    return this.request<T>('/api/analytics/sector-stocks', undefined, {
+      sector33Name: params.sector33Name,
+      sector17Name: params.sector17Name,
+      markets: params.markets,
+      lookbackDays: params.lookbackDays,
+      sortBy: params.sortBy,
+      sortOrder: params.sortOrder,
+      limit: params.limit,
     });
   }
 

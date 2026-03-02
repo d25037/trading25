@@ -37,19 +37,26 @@ from src.entrypoints.http.schemas.optimize import (
     OptimizationJobResponse,
     OptimizationRequest,
 )
-from src.application.services.job_manager import job_manager
+from src.application.services.job_manager import JobInfo, job_manager
 from src.application.services.optimization_service import optimization_service
 from src.application.services.sse_manager import sse_manager
 
 router = APIRouter(tags=["Optimization"])
+_OPTIMIZATION_JOB_TYPE = "optimization"
 
 
-def _build_optimization_job_response(job_id: str) -> OptimizationJobResponse:
-    """JobInfoからOptimizationJobResponseを構築"""
+def _get_optimization_job_or_404(job_id: str) -> JobInfo:
+    """最適化ジョブを取得、存在しなければ404。"""
     job = job_manager.get_job(job_id)
     if job is None:
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
+    if job.job_type != _OPTIMIZATION_JOB_TYPE:
+        raise HTTPException(status_code=400, detail=f"最適化ジョブではありません: {job.job_type}")
+    return job
 
+
+def _build_optimization_job_response_from_job(job: JobInfo) -> OptimizationJobResponse:
+    """JobInfoからOptimizationJobResponseを構築"""
     return OptimizationJobResponse(
         job_id=job.job_id,
         status=job.status,
@@ -66,6 +73,11 @@ def _build_optimization_job_response(job_id: str) -> OptimizationJobResponse:
         total_combinations=job.total_combinations,
         html_path=job.html_path,
     )
+
+
+def _build_optimization_job_response(job_id: str) -> OptimizationJobResponse:
+    """ジョブIDから最適化ジョブレスポンスを構築"""
+    return _build_optimization_job_response_from_job(_get_optimization_job_or_404(job_id))
 
 
 # ============================================
@@ -92,6 +104,23 @@ async def get_optimization_status(job_id: str) -> OptimizationJobResponse:
     return _build_optimization_job_response(job_id)
 
 
+@router.post("/api/optimize/jobs/{job_id}/cancel", response_model=OptimizationJobResponse)
+async def cancel_optimization_job(job_id: str) -> OptimizationJobResponse:
+    """最適化ジョブをキャンセル"""
+    _get_optimization_job_or_404(job_id)
+
+    cancelled_job = await job_manager.cancel_job(job_id)
+    if cancelled_job is None:
+        latest_job = job_manager.get_job(job_id)
+        status = latest_job.status if latest_job else "unknown"
+        raise HTTPException(
+            status_code=409,
+            detail=f"ジョブは既に終了しています（状態: {status}）",
+        )
+
+    return _build_optimization_job_response_from_job(cancelled_job)
+
+
 @router.get("/api/optimize/jobs/{job_id}/stream")
 async def stream_optimization_events(job_id: str) -> EventSourceResponse:
     """
@@ -100,9 +129,7 @@ async def stream_optimization_events(job_id: str) -> EventSourceResponse:
     Args:
         job_id: ジョブID
     """
-    job = job_manager.get_job(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
+    _get_optimization_job_or_404(job_id)
 
     return EventSourceResponse(sse_manager.job_event_generator(job_id))
 

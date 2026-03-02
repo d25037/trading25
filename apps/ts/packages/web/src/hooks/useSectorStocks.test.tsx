@@ -1,14 +1,13 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { useSectorStocks } from './useSectorStocks';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
+vi.mock('@/lib/analytics-client', () => ({
+  analyticsClient: {
+    getSectorStocks: vi.fn(),
+  },
 }));
 
 vi.mock('@/utils/logger', () => ({
@@ -21,15 +20,12 @@ afterEach(() => {
 
 describe('useSectorStocks', () => {
   it('fetches sector stocks when enabled', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ items: [] });
+    vi.mocked(analyticsClient.getSectorStocks).mockResolvedValueOnce({ items: [] } as never);
     const { wrapper } = createTestWrapper();
     const params = { sector33Name: '輸送用機器' };
     const { result } = renderHook(() => useSectorStocks(params, true), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/analytics/sector-stocks',
-      expect.objectContaining({ sector33Name: '輸送用機器' })
-    );
+    expect(analyticsClient.getSectorStocks).toHaveBeenCalledWith(expect.objectContaining({ sector33Name: '輸送用機器' }));
   });
 
   it('is disabled when enabled is false', () => {

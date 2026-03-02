@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { ApiError, apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import { backtestClient } from '@/lib/backtest-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import type {
   BacktestRequest,
@@ -43,23 +43,37 @@ import {
   useValidateStrategy,
 } from './useBacktest';
 
-vi.mock('@/lib/api-client', () => {
-  class MockApiError extends Error {
-    status: number;
-    constructor(message: string, status: number) {
-      super(message);
-      this.name = 'ApiError';
-      this.status = status;
-    }
-  }
-  return {
-    apiGet: vi.fn(),
-    apiPost: vi.fn(),
-    apiPut: vi.fn(),
-    apiDelete: vi.fn(),
-    ApiError: MockApiError,
-  };
-});
+vi.mock('@/lib/backtest-client', () => ({
+  backtestClient: {
+    healthCheck: vi.fn(),
+    listStrategies: vi.fn(),
+    getStrategy: vi.fn(),
+    listJobs: vi.fn(),
+    getJobStatus: vi.fn(),
+    getResult: vi.fn(),
+    runBacktest: vi.fn(),
+    runSignalAttribution: vi.fn(),
+    getSignalAttributionJob: vi.fn(),
+    getSignalAttributionResult: vi.fn(),
+    listAttributionArtifactFiles: vi.fn(),
+    getAttributionArtifactContent: vi.fn(),
+    listHtmlFiles: vi.fn(),
+    getHtmlFileContent: vi.fn(),
+    renameHtmlFile: vi.fn(),
+    deleteHtmlFile: vi.fn(),
+    updateStrategy: vi.fn(),
+    deleteStrategy: vi.fn(),
+    duplicateStrategy: vi.fn(),
+    renameStrategy: vi.fn(),
+    moveStrategy: vi.fn(),
+    validateStrategy: vi.fn(),
+    getDefaultConfig: vi.fn(),
+    updateDefaultConfig: vi.fn(),
+    getSignalReference: vi.fn(),
+    cancelJob: vi.fn(),
+    cancelSignalAttributionJob: vi.fn(),
+  },
+}));
 
 vi.mock('@/utils/logger', () => ({
   logger: {
@@ -108,37 +122,37 @@ describe('backtestKeys', () => {
 
 describe('useBacktestHealth', () => {
   it('fetches health status', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ status: 'ok' });
+    vi.mocked(backtestClient.healthCheck).mockResolvedValueOnce({ status: 'ok' } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useBacktestHealth(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/health');
+    expect(backtestClient.healthCheck).toHaveBeenCalledWith();
   });
 });
 
 describe('useStrategies', () => {
   it('fetches strategies list', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ strategies: [] });
+    vi.mocked(backtestClient.listStrategies).mockResolvedValueOnce({ strategies: [] } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useStrategies(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/strategies');
+    expect(backtestClient.listStrategies).toHaveBeenCalledWith();
   });
 });
 
 describe('useStrategy', () => {
   it('fetches strategy details when name is provided', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ name: 'test.yml', content: '' });
+    vi.mocked(backtestClient.getStrategy).mockResolvedValueOnce({ name: 'test.yml', content: '' } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useStrategy('test.yml'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/strategies/test.yml');
+    expect(backtestClient.getStrategy).toHaveBeenCalledWith('test.yml');
   });
 
   it('does not fetch when name is null', () => {
@@ -151,35 +165,35 @@ describe('useStrategy', () => {
 
 describe('useJobs', () => {
   it('fetches jobs with default limit', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce([]);
+    vi.mocked(backtestClient.listJobs).mockResolvedValueOnce([] as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useJobs(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/jobs?limit=50');
+    expect(backtestClient.listJobs).toHaveBeenCalledWith(50);
   });
 
   it('fetches jobs with custom limit', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce([]);
+    vi.mocked(backtestClient.listJobs).mockResolvedValueOnce([] as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useJobs(10), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/jobs?limit=10');
+    expect(backtestClient.listJobs).toHaveBeenCalledWith(10);
   });
 });
 
 describe('useJobStatus', () => {
   it('fetches job status when jobId is provided', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ job_id: 'j1', status: 'completed' });
+    vi.mocked(backtestClient.getJobStatus).mockResolvedValueOnce({ job_id: 'j1', status: 'completed' } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useJobStatus('j1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/jobs/j1');
+    expect(backtestClient.getJobStatus).toHaveBeenCalledWith('j1');
   });
 
   it('does not fetch when jobId is null', () => {
@@ -188,27 +202,45 @@ describe('useJobStatus', () => {
 
     expect(result.current.fetchStatus).toBe('idle');
   });
+
+  it('uses 2-second polling while pending/running and stops on completion', () => {
+    vi.mocked(backtestClient.getJobStatus).mockResolvedValueOnce({ job_id: 'job-poll', status: 'pending' } as never);
+
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useJobStatus('job-poll'), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: backtestKeys.job('job-poll') });
+    const refetchInterval = (query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval;
+
+    expect(typeof refetchInterval).toBe('function');
+    if (typeof refetchInterval === 'function') {
+      expect(refetchInterval({ state: { data: { status: 'pending' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'running' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
+      expect(refetchInterval({ state: { data: undefined } } as never)).toBe(false);
+    }
+  });
 });
 
 describe('useBacktestResult', () => {
   it('fetches backtest result with HTML', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ result: {} });
+    vi.mocked(backtestClient.getResult).mockResolvedValueOnce({ result: {} } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useBacktestResult('job-1', true), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/result/job-1?include_html=true');
+    expect(backtestClient.getResult).toHaveBeenCalledWith('job-1', true);
   });
 
   it('fetches backtest result without HTML', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ result: {} });
+    vi.mocked(backtestClient.getResult).mockResolvedValueOnce({ result: {} } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useBacktestResult('job-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/result/job-1');
+    expect(backtestClient.getResult).toHaveBeenCalledWith('job-1', false);
   });
 
   it('does not fetch when jobId is null', () => {
@@ -221,7 +253,10 @@ describe('useBacktestResult', () => {
 
 describe('signal attribution hooks', () => {
   it('runs signal attribution and invalidates attribution job cache', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'attr-1', status: 'pending' });
+    vi.mocked(backtestClient.runSignalAttribution).mockResolvedValueOnce({
+      job_id: 'attr-1',
+      status: 'pending',
+    } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -232,18 +267,21 @@ describe('signal attribution hooks', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/backtest/attribution/run', request);
+    expect(backtestClient.runSignalAttribution).toHaveBeenCalledWith(request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.attributionJob('attr-1') });
   });
 
   it('fetches attribution job status when jobId is provided', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ job_id: 'attr-1', status: 'completed' });
+    vi.mocked(backtestClient.getSignalAttributionJob).mockResolvedValueOnce({
+      job_id: 'attr-1',
+      status: 'completed',
+    } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useSignalAttributionJobStatus('attr-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/attribution/jobs/attr-1');
+    expect(backtestClient.getSignalAttributionJob).toHaveBeenCalledWith('attr-1');
   });
 
   it('does not fetch attribution job status when jobId is null', () => {
@@ -254,17 +292,23 @@ describe('signal attribution hooks', () => {
   });
 
   it('fetches attribution result when jobId is provided', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ job_id: 'attr-1', result: {} });
+    vi.mocked(backtestClient.getSignalAttributionResult).mockResolvedValueOnce({
+      job_id: 'attr-1',
+      result: {},
+    } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useSignalAttributionResult('attr-1'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/attribution/result/attr-1');
+    expect(backtestClient.getSignalAttributionResult).toHaveBeenCalledWith('attr-1');
   });
 
   it('cancels attribution job and invalidates job query', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'attr-1', status: 'cancelled' });
+    vi.mocked(backtestClient.cancelSignalAttributionJob).mockResolvedValueOnce({
+      job_id: 'attr-1',
+      status: 'cancelled',
+    } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -274,14 +318,14 @@ describe('signal attribution hooks', () => {
       await result.current.mutateAsync('attr-1');
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/backtest/attribution/jobs/attr-1/cancel');
+    expect(backtestClient.cancelSignalAttributionJob).toHaveBeenCalledWith('attr-1');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.attributionJob('attr-1') });
   });
 });
 
 describe('useRunBacktest', () => {
   it('runs backtest and invalidates job list', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'job-1', status: 'running' });
+    vi.mocked(backtestClient.runBacktest).mockResolvedValueOnce({ job_id: 'job-1', status: 'running' } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -293,14 +337,14 @@ describe('useRunBacktest', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/backtest/run', request);
+    expect(backtestClient.runBacktest).toHaveBeenCalledWith(request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.jobs() });
   });
 });
 
 describe('useCancelBacktest', () => {
   it('cancels backtest and invalidates queries', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ job_id: 'j1', status: 'cancelled' });
+    vi.mocked(backtestClient.cancelJob).mockResolvedValueOnce({ job_id: 'j1', status: 'cancelled' } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -310,14 +354,14 @@ describe('useCancelBacktest', () => {
       await result.current.mutateAsync('j1');
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/backtest/jobs/j1/cancel');
+    expect(backtestClient.cancelJob).toHaveBeenCalledWith('j1');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.job('j1') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.jobs() });
   });
 
   it('handles 409 conflict error gracefully', async () => {
-    const error409 = new ApiError('Conflict', 409);
-    vi.mocked(apiPost).mockRejectedValueOnce(error409);
+    const error409 = Object.assign(new Error('Conflict'), { status: 409 });
+    vi.mocked(backtestClient.cancelJob).mockRejectedValueOnce(error409);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -337,7 +381,7 @@ describe('useCancelBacktest', () => {
 
 describe('useUpdateStrategy', () => {
   it('updates strategy and invalidates caches', async () => {
-    vi.mocked(apiPut).mockResolvedValueOnce({ success: true });
+    vi.mocked(backtestClient.updateStrategy).mockResolvedValueOnce({ success: true } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -349,7 +393,7 @@ describe('useUpdateStrategy', () => {
       await result.current.mutateAsync({ name: 'test.yml', request });
     });
 
-    expect(apiPut).toHaveBeenCalledWith('/api/strategies/test.yml', request);
+    expect(backtestClient.updateStrategy).toHaveBeenCalledWith('test.yml', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('test.yml') });
   });
@@ -357,7 +401,7 @@ describe('useUpdateStrategy', () => {
 
 describe('useDeleteStrategy', () => {
   it('deletes strategy and clears cache', async () => {
-    vi.mocked(apiDelete).mockResolvedValueOnce({ success: true });
+    vi.mocked(backtestClient.deleteStrategy).mockResolvedValueOnce({ success: true } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -368,7 +412,7 @@ describe('useDeleteStrategy', () => {
       await result.current.mutateAsync('test.yml');
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/api/strategies/test.yml');
+    expect(backtestClient.deleteStrategy).toHaveBeenCalledWith('test.yml');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('test.yml') });
   });
@@ -376,7 +420,7 @@ describe('useDeleteStrategy', () => {
 
 describe('useDuplicateStrategy', () => {
   it('duplicates strategy and invalidates list', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ new_strategy_name: 'test-copy.yml' });
+    vi.mocked(backtestClient.duplicateStrategy).mockResolvedValueOnce({ new_strategy_name: 'test-copy.yml' } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -388,14 +432,14 @@ describe('useDuplicateStrategy', () => {
       await result.current.mutateAsync({ name: 'test.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/strategies/test.yml/duplicate', request);
+    expect(backtestClient.duplicateStrategy).toHaveBeenCalledWith('test.yml', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
   });
 });
 
 describe('useRenameStrategy', () => {
   it('renames strategy and updates cache', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ new_name: 'renamed.yml' });
+    vi.mocked(backtestClient.renameStrategy).mockResolvedValueOnce({ new_name: 'renamed.yml' } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -408,7 +452,7 @@ describe('useRenameStrategy', () => {
       await result.current.mutateAsync({ name: 'old.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/strategies/old.yml/rename', request);
+    expect(backtestClient.renameStrategy).toHaveBeenCalledWith('old.yml', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('old.yml') });
   });
@@ -416,10 +460,10 @@ describe('useRenameStrategy', () => {
 
 describe('useMoveStrategy', () => {
   it('moves strategy and updates cache', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(backtestClient.moveStrategy).mockResolvedValueOnce({
       new_strategy_name: 'production/old.yml',
       target_category: 'production',
-    });
+    } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -432,7 +476,7 @@ describe('useMoveStrategy', () => {
       await result.current.mutateAsync({ name: 'experimental/old.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/strategies/experimental%2Fold.yml/move', request);
+    expect(backtestClient.moveStrategy).toHaveBeenCalledWith('experimental/old.yml', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategies() });
     expect(removeSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('experimental/old.yml') });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.strategy('production/old.yml') });
@@ -441,7 +485,7 @@ describe('useMoveStrategy', () => {
 
 describe('useValidateStrategy', () => {
   it('validates strategy config', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ valid: true, errors: [] });
+    vi.mocked(backtestClient.validateStrategy).mockResolvedValueOnce({ valid: true, errors: [] } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useValidateStrategy(), { wrapper });
@@ -452,39 +496,40 @@ describe('useValidateStrategy', () => {
       await result.current.mutateAsync({ name: 'test.yml', request });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/strategies/test.yml/validate', request);
+    expect(backtestClient.validateStrategy).toHaveBeenCalledWith('test.yml', request);
   });
 });
 
 describe('useHtmlFiles', () => {
   it('fetches HTML files list', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ files: [] });
+    vi.mocked(backtestClient.listHtmlFiles).mockResolvedValueOnce({ files: [] } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useHtmlFiles('myStrategy'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/html-files?strategy=myStrategy&limit=100');
+    expect(backtestClient.listHtmlFiles).toHaveBeenCalledWith({ strategy: 'myStrategy', limit: 100 });
   });
 });
 
 describe('useAttributionArtifactFiles', () => {
   it('fetches attribution artifact file list', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ files: [] });
+    vi.mocked(backtestClient.listAttributionArtifactFiles).mockResolvedValueOnce({ files: [] } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useAttributionArtifactFiles('experimental/range_break_v18'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/backtest/attribution-files?strategy=experimental%2Frange_break_v18&limit=100'
-    );
+    expect(backtestClient.listAttributionArtifactFiles).toHaveBeenCalledWith({
+      strategy: 'experimental/range_break_v18',
+      limit: 100,
+    });
   });
 });
 
 describe('useAttributionArtifactContent', () => {
   it('fetches attribution artifact content', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ artifact: {} });
+    vi.mocked(backtestClient.getAttributionArtifactContent).mockResolvedValueOnce({ artifact: {} } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(
@@ -493,8 +538,9 @@ describe('useAttributionArtifactContent', () => {
     );
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/backtest/attribution-files/content?strategy=experimental%2Frange_break_v18&filename=attribution_20260112_120000_job-1.json'
+    expect(backtestClient.getAttributionArtifactContent).toHaveBeenCalledWith(
+      'experimental/range_break_v18',
+      'attribution_20260112_120000_job-1.json'
     );
   });
 
@@ -508,13 +554,13 @@ describe('useAttributionArtifactContent', () => {
 
 describe('useHtmlFileContent', () => {
   it('fetches HTML file content', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ content: '<html>' });
+    vi.mocked(backtestClient.getHtmlFileContent).mockResolvedValueOnce({ content: '<html>' } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useHtmlFileContent('strat', 'report.html'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/backtest/html-files/strat/report.html');
+    expect(backtestClient.getHtmlFileContent).toHaveBeenCalledWith('strat', 'report.html');
   });
 
   it('does not fetch when strategy or filename is null', () => {
@@ -527,11 +573,11 @@ describe('useHtmlFileContent', () => {
 
 describe('useRenameHtmlFile', () => {
   it('renames HTML file and invalidates cache', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({
+    vi.mocked(backtestClient.renameHtmlFile).mockResolvedValueOnce({
       old_filename: 'old.html',
       new_filename: 'new.html',
       strategy_name: 'strat',
-    });
+    } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -546,7 +592,7 @@ describe('useRenameHtmlFile', () => {
       });
     });
 
-    expect(apiPost).toHaveBeenCalledWith('/api/backtest/html-files/strat/old.html/rename', {
+    expect(backtestClient.renameHtmlFile).toHaveBeenCalledWith('strat', 'old.html', {
       new_filename: 'new.html',
     });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.htmlFiles() });
@@ -558,10 +604,10 @@ describe('useRenameHtmlFile', () => {
 
 describe('useDeleteHtmlFile', () => {
   it('deletes HTML file and invalidates cache', async () => {
-    vi.mocked(apiDelete).mockResolvedValueOnce({
+    vi.mocked(backtestClient.deleteHtmlFile).mockResolvedValueOnce({
       strategy_name: 'strat',
       filename: 'report.html',
-    });
+    } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -572,7 +618,7 @@ describe('useDeleteHtmlFile', () => {
       await result.current.mutateAsync({ strategy: 'strat', filename: 'report.html' });
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/api/backtest/html-files/strat/report.html');
+    expect(backtestClient.deleteHtmlFile).toHaveBeenCalledWith('strat', 'report.html');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.htmlFiles() });
     expect(removeSpy).toHaveBeenCalledWith({
       queryKey: backtestKeys.htmlFileContent('strat', 'report.html'),
@@ -582,13 +628,13 @@ describe('useDeleteHtmlFile', () => {
 
 describe('useDefaultConfig', () => {
   it('fetches default config', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ content: 'yaml: true' });
+    vi.mocked(backtestClient.getDefaultConfig).mockResolvedValueOnce({ content: 'yaml: true' } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDefaultConfig(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/config/default');
+    expect(backtestClient.getDefaultConfig).toHaveBeenCalledWith();
   });
 
   it('does not fetch when disabled', () => {
@@ -601,7 +647,7 @@ describe('useDefaultConfig', () => {
 
 describe('useUpdateDefaultConfig', () => {
   it('updates default config and invalidates cache', async () => {
-    vi.mocked(apiPut).mockResolvedValueOnce({ success: true });
+    vi.mocked(backtestClient.updateDefaultConfig).mockResolvedValueOnce({ success: true } as never);
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
@@ -613,19 +659,19 @@ describe('useUpdateDefaultConfig', () => {
       await result.current.mutateAsync(request);
     });
 
-    expect(apiPut).toHaveBeenCalledWith('/api/config/default', request);
+    expect(backtestClient.updateDefaultConfig).toHaveBeenCalledWith(request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: backtestKeys.defaultConfig() });
   });
 });
 
 describe('useSignalReference', () => {
   it('fetches signal reference data', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({ signals: [] });
+    vi.mocked(backtestClient.getSignalReference).mockResolvedValueOnce({ signals: [] } as never);
 
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useSignalReference(), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/signals/reference');
+    expect(backtestClient.getSignalReference).toHaveBeenCalledWith();
   });
 });

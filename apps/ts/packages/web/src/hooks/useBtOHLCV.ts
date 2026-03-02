@@ -10,11 +10,10 @@ import type {
   BtTimeframe,
   OHLCVRecord,
   OHLCVResampleRequest,
-  OHLCVResampleResponse,
 } from '@trading25/api-clients/backtest';
 import { useMemo } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { apiPost } from '@/lib/api-client';
+import { backtestClient } from '@/lib/backtest-client';
 import type { StockDataPoint } from '@/types/chart';
 
 // ===== Query Key Factory =====
@@ -88,7 +87,7 @@ export function useBtOHLCV({
         }),
       };
 
-      return apiPost<OHLCVResampleResponse>('/api/ohlcv/resample', request);
+      return backtestClient.resampleOHLCV(request);
     },
     enabled: enabled && !!stockCode,
     staleTime: 60_000,

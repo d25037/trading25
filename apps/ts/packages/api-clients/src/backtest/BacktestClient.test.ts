@@ -130,6 +130,29 @@ describe('BacktestClient', () => {
     expect(lastCall?.[1]?.method).toBe('POST');
   });
 
+  test('strategy CRUD methods call expected endpoints', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true, strategy_name: 'sma_cross' }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true, strategy_name: 'sma_cross' }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true, new_strategy_name: 'sma_cross_copy' }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true, new_name: 'sma_cross_new' }));
+
+    await client.updateStrategy('sma_cross', { config: { foo: 'bar' } });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/sma_cross');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('PUT');
+
+    await client.deleteStrategy('sma_cross');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/sma_cross');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('DELETE');
+
+    await client.duplicateStrategy('sma_cross', { new_name: 'sma_cross_copy' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/sma_cross/duplicate');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('POST');
+
+    await client.renameStrategy('sma_cross', { new_name: 'sma_cross_new' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/strategies/sma_cross/rename');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('POST');
+  });
+
   // Backtest endpoints
   test('runBacktest sends POST with request body', async () => {
     const job = {
@@ -255,6 +278,159 @@ describe('BacktestClient', () => {
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('include_html=true');
   });
 
+  test('runOptimization sends POST with request body', async () => {
+    const job = {
+      job_id: 'opt-1',
+      status: 'pending',
+      progress: null,
+      message: null,
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: null,
+      completed_at: null,
+      error: null,
+      best_score: null,
+      best_params: null,
+      worst_score: null,
+      worst_params: null,
+      total_combinations: null,
+      html_path: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const result = await client.runOptimization({ strategy_name: 'sma_cross' });
+    expect(result).toEqual(job);
+
+    const lastCall = fetchSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain('/api/optimize/run');
+    expect(lastCall?.[1]?.method).toBe('POST');
+  });
+
+  test('getOptimizationJobStatus calls correct endpoint', async () => {
+    const job = {
+      job_id: 'opt-1',
+      status: 'running',
+      progress: 0.5,
+      message: 'running',
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: '2024-01-01T00:00:01Z',
+      completed_at: null,
+      error: null,
+      best_score: null,
+      best_params: null,
+      worst_score: null,
+      worst_params: null,
+      total_combinations: null,
+      html_path: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const result = await client.getOptimizationJobStatus('opt-1');
+    expect(result).toEqual(job);
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/jobs/opt-1');
+  });
+
+  test('cancelOptimizationJob calls correct endpoint', async () => {
+    const job = {
+      job_id: 'opt-1',
+      status: 'cancelled',
+      progress: 1,
+      message: 'cancelled',
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: '2024-01-01T00:00:01Z',
+      completed_at: '2024-01-01T00:00:02Z',
+      error: null,
+      best_score: null,
+      best_params: null,
+      worst_score: null,
+      worst_params: null,
+      total_combinations: null,
+      html_path: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const result = await client.cancelOptimizationJob('opt-1');
+    expect(result).toEqual(job);
+
+    const lastCall = fetchSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain('/api/optimize/jobs/opt-1/cancel');
+    expect(lastCall?.[1]?.method).toBe('POST');
+  });
+
+  test('optimization grid config methods call expected endpoints', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ configs: [], total: 0 }));
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        strategy_name: 'Alpha',
+        content: 'params: {}',
+        param_count: 1,
+        combinations: 10,
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        success: true,
+        strategy_name: 'Alpha',
+        param_count: 1,
+        combinations: 10,
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true, strategy_name: 'Alpha' }));
+
+    await client.getOptimizationGridConfigs();
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs');
+
+    await client.getOptimizationGridConfig('Alpha Strategy');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs/Alpha%20Strategy');
+
+    await client.saveOptimizationGridConfig('Alpha', { content: 'param1: [1, 2, 3]' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs/Alpha');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('PUT');
+
+    await client.deleteOptimizationGridConfig('Alpha');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/grid-configs/Alpha');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('DELETE');
+  });
+
+  test('optimization HTML file methods call expected endpoints', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ files: [], total: 0 }));
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        strategy_name: 'strat',
+        filename: 'opt.html',
+        html_content: '<html></html>',
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        success: true,
+        strategy_name: 'strat',
+        old_filename: 'old.html',
+        new_filename: 'new.html',
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        success: true,
+        strategy_name: 'strat',
+        filename: 'opt.html',
+      })
+    );
+
+    await client.listOptimizationHtmlFiles({ strategy: 'strat', limit: 10 });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/html-files?strategy=strat&limit=10');
+
+    await client.getOptimizationHtmlFileContent('strat', 'opt.html');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/html-files/strat/opt.html');
+
+    await client.renameOptimizationHtmlFile('strat', 'old.html', { new_filename: 'new.html' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/html-files/strat/old.html/rename');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('POST');
+
+    await client.deleteOptimizationHtmlFile('strat', 'opt.html');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/html-files/strat/opt.html');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('DELETE');
+  });
+
   test('runSignalAttribution sends POST with request body', async () => {
     const job = {
       job_id: 'attr-1',
@@ -355,6 +531,81 @@ describe('BacktestClient', () => {
     const result = await client.getSignalAttributionResult('attr-1');
     expect(result).toEqual(resultData);
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/attribution/result/attr-1');
+  });
+
+  test('attribution artifact methods call expected endpoints', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ files: [], total: 0 }));
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        strategy_name: 'experimental/range_break_v18',
+        filename: 'attribution_20260112_120000_job-1.json',
+        artifact: {},
+      })
+    );
+
+    await client.listAttributionArtifactFiles({ strategy: 'experimental/range_break_v18', limit: 50 });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain(
+      '/api/backtest/attribution-files?strategy=experimental%2Frange_break_v18&limit=50'
+    );
+
+    await client.getAttributionArtifactContent('experimental/range_break_v18', 'attribution_20260112_120000_job-1.json');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain(
+      '/api/backtest/attribution-files/content?strategy=experimental%2Frange_break_v18&filename=attribution_20260112_120000_job-1.json'
+    );
+  });
+
+  test('backtest HTML/config/reference methods call expected endpoints', async () => {
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ files: [], total: 0 }));
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        strategy_name: 'strat',
+        filename: 'report.html',
+        html_content: '<html></html>',
+        metrics: null,
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        success: true,
+        strategy_name: 'strat',
+        old_filename: 'old.html',
+        new_filename: 'new.html',
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(
+      createMockResponse({
+        success: true,
+        strategy_name: 'strat',
+        filename: 'report.html',
+      })
+    );
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ content: 'default: true' }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ success: true }));
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ signals: [], categories: [], total: 0 }));
+
+    await client.listHtmlFiles({ strategy: 'strat', limit: 10 });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/html-files?strategy=strat&limit=10');
+
+    await client.getHtmlFileContent('strat', 'report.html');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/html-files/strat/report.html');
+
+    await client.renameHtmlFile('strat', 'old.html', { new_filename: 'new.html' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/html-files/strat/old.html/rename');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('POST');
+
+    await client.deleteHtmlFile('strat', 'report.html');
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/backtest/html-files/strat/report.html');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('DELETE');
+
+    await client.getDefaultConfig();
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/config/default');
+
+    await client.updateDefaultConfig({ content: 'default: false' });
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/config/default');
+    expect(fetchSpy.mock.calls.at(-1)?.[1]?.method).toBe('PUT');
+
+    await client.getSignalReference();
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/signals/reference');
   });
 
   test('runSignalAttributionAndWait polls until completion', async () => {
@@ -538,5 +789,13 @@ describe('BacktestClient', () => {
     const defaultClient = new BacktestClient();
     // Verify it doesn't throw when making requests
     expect(defaultClient).toBeDefined();
+  });
+
+  test('uses relative endpoint when baseUrl is empty', async () => {
+    const relativeClient = new BacktestClient({ baseUrl: '', timeout: 1000 });
+    fetchSpy.mockResolvedValueOnce(createMockResponse({ status: 'ok', service: 'bt', version: 'test' }));
+
+    await relativeClient.healthCheck();
+    expect(fetchSpy.mock.calls.at(-1)?.[0]).toBe('/api/health');
   });
 });

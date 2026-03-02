@@ -41,6 +41,8 @@ def market_alias_db(tmp_path):
         ("10020", "Numeric Prime", "0111"),
         ("10030", "Legacy Standard", "standard"),
         ("10040", "Numeric Standard", "0112"),
+        ("10050", "Legacy Growth", "growth"),
+        ("10060", "Numeric Growth", "0113"),
     ]
     for i, (code, company_name, market_code) in enumerate(stocks):
         conn.execute(
@@ -82,3 +84,15 @@ class TestGetAllStocksMarketCodeCompatibility:
         assert result is not None
         assert len(result) == 2
         assert {item.code for item in result} == {"10010", "10020"}
+
+    def test_growth_query_matches_legacy_and_numeric_growth(self, service):
+        result = service.get_all_stocks(market="growth", history_days=30)
+        assert result is not None
+        assert len(result) == 2
+        assert {item.code for item in result} == {"10050", "10060"}
+
+    def test_numeric_growth_query_also_matches_legacy_growth(self, service):
+        result = service.get_all_stocks(market="0113", history_days=30)
+        assert result is not None
+        assert len(result) == 2
+        assert {item.code for item in result} == {"10050", "10060"}

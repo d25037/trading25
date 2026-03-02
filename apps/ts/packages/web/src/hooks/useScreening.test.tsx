@@ -4,7 +4,13 @@ import { afterEach, describe, expect, it, vi } from 'vitest';
 import { analyticsClient } from '@/lib/analytics-client';
 import { createTestWrapper } from '@/test-utils';
 import { logger } from '@/utils/logger';
-import { useCancelScreeningJob, useRunScreeningJob, useScreeningJobStatus, useScreeningResult } from './useScreening';
+import {
+  screeningKeys,
+  useCancelScreeningJob,
+  useRunScreeningJob,
+  useScreeningJobStatus,
+  useScreeningResult,
+} from './useScreening';
 
 vi.mock('@/lib/analytics-client', () => ({
   analyticsClient: {
@@ -138,6 +144,32 @@ describe('useScreeningJobStatus', () => {
 
     await waitFor(() => expect(result.current.isError).toBe(true));
     expect(analyticsClient.getScreeningJobStatus).toHaveBeenCalledTimes(3);
+  });
+
+  it('uses 2-second polling while pending/running and stops on completion', () => {
+    vi.mocked(analyticsClient.getScreeningJobStatus).mockResolvedValueOnce({
+      job_id: 'job-poll',
+      status: 'pending',
+      created_at: '2026-02-01T00:00:00Z',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const { queryClient, wrapper } = createTestWrapper();
+    renderHook(() => useScreeningJobStatus('job-poll'), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: screeningKeys.job('job-poll') });
+    const refetchInterval = (query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval;
+
+    expect(typeof refetchInterval).toBe('function');
+    if (typeof refetchInterval === 'function') {
+      expect(refetchInterval({ state: { data: { status: 'pending' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'running' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
+      expect(refetchInterval({ state: { data: undefined } } as never)).toBe(false);
+    }
   });
 });
 

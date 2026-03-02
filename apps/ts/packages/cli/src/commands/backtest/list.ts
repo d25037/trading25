@@ -4,13 +4,14 @@
  * 戦略一覧表示コマンド
  */
 
-import { BacktestClient, type StrategyMetadata } from '@trading25/api-clients/backtest';
+import type { StrategyMetadata } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError } from '../../utils/error-handling.js';
+import { createBacktestClient } from './client.js';
 import { handleBacktestError } from './error-handler.js';
 
 export const listCommand = define({
@@ -49,7 +50,7 @@ ${CLI_NAME} backtest list --format json`,
   run: async (ctx) => {
     const { category, btUrl, format, debug: _debug } = ctx.values;
 
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
     const spinner = ora();
 
     try {
