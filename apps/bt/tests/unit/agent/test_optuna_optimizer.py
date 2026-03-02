@@ -254,6 +254,84 @@ class TestOptimizeFlow:
 
         assert mock_create_study.call_args.kwargs["pruner"] is mock_pruner.return_value
 
+    def test_optimize_falls_back_to_base_when_best_score_is_worse_than_baseline(self):
+        optimizer = _make_optimizer(n_trials=10)
+        study = MagicMock()
+        study.optimize.side_effect = lambda *args, **kwargs: None
+        study.best_trial = MagicMock()
+        study.best_trial.value = 0.4
+        study.best_trial.user_attrs = {"total_return": 0.25}
+        study.best_value = 0.4
+        study.best_params = {"entry_volume_threshold": 2.0}
+        study.trials = []
+
+        base_candidate = _make_candidate("base")
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=base_candidate),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
+            patch.object(optimizer, "_evaluate_baseline_candidate", return_value=None),
+            patch.object(optimizer, "_build_optuna_param_dict", return_value={}),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer._baseline_score = 0.8
+            optimizer._baseline_total_return = 0.2
+            best_candidate, _ = optimizer.optimize("demo_strategy", progress_callback=None)
+
+        assert best_candidate.strategy_id == "base"
+
+    def test_optimize_falls_back_to_base_when_return_guardrail_is_violated(self):
+        optimizer = _make_optimizer(n_trials=10)
+        study = MagicMock()
+        study.optimize.side_effect = lambda *args, **kwargs: None
+        study.best_trial = MagicMock()
+        study.best_trial.value = 1.2
+        study.best_trial.user_attrs = {"total_return": 0.05}
+        study.best_value = 1.2
+        study.best_params = {"entry_volume_threshold": 2.0}
+        study.trials = []
+
+        base_candidate = _make_candidate("base")
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=base_candidate),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
+            patch.object(optimizer, "_evaluate_baseline_candidate", return_value=None),
+            patch.object(optimizer, "_build_optuna_param_dict", return_value={}),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer._baseline_score = 1.0
+            optimizer._baseline_total_return = 0.1
+            best_candidate, _ = optimizer.optimize("demo_strategy", progress_callback=None)
+
+        assert best_candidate.strategy_id == "base"
+
+    def test_optimize_enqueues_base_trial_params_when_available(self):
+        optimizer = _make_optimizer(n_trials=10)
+        study = MagicMock()
+        study.optimize.side_effect = lambda *args, **kwargs: None
+        study.best_trial = MagicMock()
+        study.best_trial.value = 1.0
+        study.best_trial.user_attrs = {"total_return": 0.2}
+        study.best_value = 1.0
+        study.best_params = {"entry_volume_threshold": 2.0}
+        study.trials = []
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
+            patch.object(optimizer, "_evaluate_baseline_candidate", return_value=None),
+            patch.object(optimizer, "_build_optuna_param_dict", return_value={"entry_volume_threshold": 1.5}),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer.optimize("demo_strategy", progress_callback=None)
+
+        study.enqueue_trial.assert_called_once_with({"entry_volume_threshold": 1.5})
+
 
 class TestSampleParams:
     def test_samples_numeric_params(self):
