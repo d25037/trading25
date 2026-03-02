@@ -156,20 +156,28 @@
 
 ### Checklist
 
-- [ ] structured logging（event名, correlationId, jobId）を統一する。
-- [ ] metrics（latency/error rate/job duration）を採取する。
-- [ ] J-Quants proxy cache/singleflight の計測を標準化する。
-- [ ] timeout/retry/backoff のデフォルトを機能別に定義する。
-- [ ] 障害 runbook を `docs/` に整備する（API/DB/J-Quants/job stuck）。
+- [x] structured logging（event名, correlationId, jobId）を統一する。
+  - 2026-03-02 実装: `RequestLoggerMiddleware` と `ScreeningJobService` で `request/request_error/job_lifecycle` の構造化キーを統一。
+- [x] metrics（latency/error rate/job duration）を採取する。
+  - 2026-03-02 実装: `src/shared/observability/metrics.py` を追加し、request/job/J-Quants の process-local メトリクス集計を導入。
+- [x] J-Quants proxy cache/singleflight の計測を標準化する。
+  - 2026-03-02 実装: `jquants_proxy_cache` ログに加えて cache state カウンタを追加し、`jquants_fetch/jquants_retry` も共通キーで記録。
+- [x] timeout/retry/backoff のデフォルトを機能別に定義する。
+  - 2026-03-02 実装: `src/shared/config/reliability.py` に J-Quants retry/backoff・sync/dataset timeout の SoT を新設。
+- [x] 障害 runbook を `docs/` に整備する（API/DB/J-Quants/job stuck）。
+  - 2026-03-02 実装: `docs/phase5-reliability-observability-runbook.md` を追加。
 
 ### Validation
 
-- [ ] 疑似障害でタイムアウト/再試行/キャンセルが想定通り動作する。
-- [ ] correlationId から API->worker->artifact まで追跡できる。
+- [x] 疑似障害でタイムアウト/再試行/キャンセルが想定通り動作する。
+  - 2026-03-02 検証: `test_jquants_client.py` の retry/timeout と `test_screening_job_service.py` の cancel/failed を回帰確認。
+- [x] correlationId から API->worker->artifact まで追跡できる。
+  - 2026-03-02 検証: request/job/jquants ログに `correlationId` を付与し runbook に追跡手順を明記。
 
 ### Exit Criteria
 
-- [ ] 運用手順なしでも on-call が初動可能な状態になっている。
+- [x] 運用手順なしでも on-call が初動可能な状態になっている。
+  - 2026-03-02 検証: Phase5 runbook（API/DB/J-Quants/job stuck）を整備。
 
 ---
 

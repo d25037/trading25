@@ -14,7 +14,9 @@ import httpx
 from loguru import logger
 
 from src.infrastructure.external_api.clients.rate_limiter import RateLimiter
+from src.shared.config.reliability import JQUANTS_RETRY_POLICY
 from src.shared.observability.correlation import get_correlation_id
+from src.shared.observability.metrics import metrics_recorder
 
 
 class JQuantsApiError(Exception):
@@ -35,7 +37,7 @@ class JQuantsAsyncClient:
         timeout: リクエストタイムアウト（秒）
     """
 
-    MAX_RETRIES = 3
+    MAX_RETRIES = JQUANTS_RETRY_POLICY.max_retries
     RETRY_STATUSES = {429, 500, 502, 503, 504}
     BASE_URL = "https://api.jquants.com/v2"
 
@@ -85,19 +87,27 @@ class JQuantsAsyncClient:
         for attempt in range(self.MAX_RETRIES + 1):
             try:
                 await self._rate_limiter.acquire()
+                metrics_recorder.record_jquants_fetch(path)
                 logger.info(
                     f"JQuants fetch: {path}",
                     event="jquants_fetch",
                     endpoint=path,
                     attempt=attempt + 1,
+                    maxRetries=self.MAX_RETRIES,
                     correlationId=get_correlation_id(),
                 )
                 resp = await self._client.get(path, params=params)
                 if resp.status_code in self.RETRY_STATUSES and attempt < self.MAX_RETRIES:
-                    wait = 2**attempt
+                    wait = JQUANTS_RETRY_POLICY.backoff_seconds(attempt)
                     logger.warning(
                         f"JQuants API {path} returned {resp.status_code}, "
-                        f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})"
+                        f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})",
+                        event="jquants_retry",
+                        endpoint=path,
+                        status=resp.status_code,
+                        attempt=attempt + 1,
+                        backoffSeconds=wait,
+                        correlationId=get_correlation_id(),
                     )
                     await asyncio.sleep(wait)
                     continue
@@ -107,10 +117,16 @@ class JQuantsAsyncClient:
                 last_exc = e
                 if attempt >= self.MAX_RETRIES:
                     raise
-                wait = 2**attempt
+                wait = JQUANTS_RETRY_POLICY.backoff_seconds(attempt)
                 logger.warning(
                     f"JQuants API {path} timeout, "
-                    f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})"
+                    f"retrying in {wait}s (attempt {attempt + 1}/{self.MAX_RETRIES})",
+                    event="jquants_retry",
+                    endpoint=path,
+                    status=504,
+                    attempt=attempt + 1,
+                    backoffSeconds=wait,
+                    correlationId=get_correlation_id(),
                 )
                 await asyncio.sleep(wait)
         # unreachable, but satisfies type checker

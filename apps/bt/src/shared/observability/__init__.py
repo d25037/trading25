@@ -12,4 +12,7 @@ __all__ = [
     "get_correlation_id",
     "set_correlation_id",
     "reset_correlation_id",
+    "metrics_recorder",
 ]
+
+from src.shared.observability.metrics import metrics_recorder

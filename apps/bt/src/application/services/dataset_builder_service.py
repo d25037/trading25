@@ -28,6 +28,7 @@ from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncC
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 from src.infrastructure.db.market.dataset_db import DatasetDb
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.config.reliability import DATASET_BUILD_TIMEOUT_MINUTES
 
 
 @dataclass
@@ -36,7 +37,7 @@ class DatasetJobData:
     preset: str
     overwrite: bool = False
     resume: bool = False
-    timeout_minutes: int = 35
+    timeout_minutes: int = DATASET_BUILD_TIMEOUT_MINUTES
 
 
 @dataclass

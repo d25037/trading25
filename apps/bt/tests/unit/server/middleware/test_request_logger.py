@@ -193,3 +193,9 @@ class TestRequestLoggerErrorResponse:
             )
 
         assert response.headers.get("x-correlation-id") is None
+
+
+
+def test_extract_job_id_from_path() -> None:
+    assert RequestLoggerMiddleware._extract_job_id("/api/backtest/jobs/job-123") == "job-123"
+    assert RequestLoggerMiddleware._extract_job_id("/api/health") is None
