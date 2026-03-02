@@ -5,7 +5,7 @@
     "": {
       "name": "trading25",
       "dependencies": {
-        "gunshi": "0.27.0",
+        "gunshi": "0.29.2",
       },
       "devDependencies": {
         "@biomejs/biome": "^2.1.4",
@@ -32,7 +32,7 @@
         "@trading25/api-clients": "workspace:*",
         "@trading25/shared": "workspace:*",
         "chalk": "^5.3.0",
-        "gunshi": "^0.27.0",
+        "gunshi": "^0.29.2",
         "ora": "^9.3.0",
         "string-width": "^7.2.0",
       },
@@ -496,8 +496,6 @@
 
     "argparse": ["argparse@2.0.1", "", {}, "sha512-8+9WqebbFzpX9OR+Wa6O29asIogeRMzcGtAINdpMHHyAg10f05aSFVBbcEqGf/PXw1EjAZ+q2/bEBg3DvurK3Q=="],
 
-    "args-tokens": ["args-tokens@0.23.0", "", {}, "sha512-VZETsQmpEGO7A9adjfIOTyZuxKzurUas9kh1Hm0WGhFq8dOyw50P6OjiTwKyURwnmDabw0DbFjI+BUucJfCtnQ=="],
-
     "aria-hidden": ["aria-hidden@1.2.6", "", { "dependencies": { "tslib": "^2.0.0" } }, "sha512-ik3ZgC9dY/lYVVM++OISsaYDeg1tb0VtP5uL3ouh1koGOaUMDPpbFIei4JkFimWUFPn90sbMNMXQAIVOlnYKJA=="],
 
     "aria-query": ["aria-query@5.3.2", "", {}, "sha512-COROpnaoap1E2F000S62r6A60uHZnmlvomhfyT2DlTcrY1OrBKn2UhH7qn5wTC9zMvD0AY7csdPSNwKP+7WiQw=="],
@@ -652,7 +650,7 @@
 
     "graceful-fs": ["graceful-fs@4.2.11", "", {}, "sha512-RbJ5/jmFcNNCcDV5o9eTnBLJ/HszWV0P73bc+Ff4nS/rJj+YaS6IGyiOL0VoBYX+l1Wrl3k63h/KrH+nhJ0XvQ=="],
 
-    "gunshi": ["gunshi@0.27.0", "", { "dependencies": { "args-tokens": "^0.23.0" } }, "sha512-x4htNMezP3PnOW39ZsQlnijZAw5IONYO3whczfI+7H6LKE5Zgepdo1T+gN28g9wGfDlSuv6A9pAHI4otKNq3lA=="],
+    "gunshi": ["gunshi@0.29.2", "", {}, "sha512-tjyVt1vWWOnVUlY+kSqr7evRzl5xVq1ltzILkm7150zBL7VCHYX3OIUrkVOqx8N4fni+yuPrwBRPBl+2FW+C0w=="],
 
     "happy-dom": ["happy-dom@20.0.11", "", { "dependencies": { "@types/node": "^20.0.0", "@types/whatwg-mimetype": "^3.0.2", "whatwg-mimetype": "^3.0.0" } }, "sha512-QsCdAUHAmiDeKeaNojb1OHOPF7NjcWPBR7obdu3NwH2a/oyQaLg5d0aaCy/9My6CdPChYF07dvz5chaXBGaD4g=="],
 
