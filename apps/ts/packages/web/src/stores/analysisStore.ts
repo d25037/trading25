@@ -2,7 +2,7 @@ import { create } from 'zustand';
 import { createJSONStorage, persist } from 'zustand/middleware';
 import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
-import type { MarketScreeningResponse, ScreeningParams } from '@/types/screening';
+import type { MarketScreeningResponse, ScreeningJobResponse, ScreeningParams } from '@/types/screening';
 
 export type AnalysisSubTab = 'screening' | 'ranking' | 'fundamentalRanking';
 
@@ -35,12 +35,14 @@ interface AnalysisState {
   fundamentalRankingParams: FundamentalRankingParams;
   activeScreeningJobId: string | null;
   screeningResult: MarketScreeningResponse | null;
+  screeningJobHistory: ScreeningJobResponse[];
   setActiveSubTab: (tab: AnalysisSubTab) => void;
   setScreeningParams: (params: ScreeningParams) => void;
   setRankingParams: (params: RankingParams) => void;
   setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
   setActiveScreeningJobId: (jobId: string | null) => void;
   setScreeningResult: (result: MarketScreeningResponse | null) => void;
+  upsertScreeningJobHistory: (job: ScreeningJobResponse) => void;
 }
 
 export type AnalysisPersistedState = Pick<
@@ -51,6 +53,7 @@ export type AnalysisPersistedState = Pick<
   | 'fundamentalRankingParams'
   | 'activeScreeningJobId'
   | 'screeningResult'
+  | 'screeningJobHistory'
 >;
 
 export const createInitialAnalysisState = (): AnalysisPersistedState => ({
@@ -60,7 +63,14 @@ export const createInitialAnalysisState = (): AnalysisPersistedState => ({
   fundamentalRankingParams: DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   activeScreeningJobId: null,
   screeningResult: null,
+  screeningJobHistory: [],
 });
+
+const MAX_SCREENING_JOB_HISTORY = 30;
+
+function sortByCreatedAtDesc(a: ScreeningJobResponse, b: ScreeningJobResponse): number {
+  return new Date(b.created_at).getTime() - new Date(a.created_at).getTime();
+}
 
 export const useAnalysisStore = create<AnalysisState>()(
   persist(
@@ -72,6 +82,14 @@ export const useAnalysisStore = create<AnalysisState>()(
       setFundamentalRankingParams: (params) => set({ fundamentalRankingParams: params }),
       setActiveScreeningJobId: (jobId) => set({ activeScreeningJobId: jobId }),
       setScreeningResult: (result) => set({ screeningResult: result }),
+      upsertScreeningJobHistory: (job) =>
+        set((state) => {
+          const withoutCurrent = state.screeningJobHistory.filter((item) => item.job_id !== job.job_id);
+          const merged = [job, ...withoutCurrent].sort(sortByCreatedAtDesc);
+          return {
+            screeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
+          };
+        }),
     }),
     {
       name: 'trading25-analysis-store',
@@ -83,6 +101,7 @@ export const useAnalysisStore = create<AnalysisState>()(
         fundamentalRankingParams: state.fundamentalRankingParams,
         activeScreeningJobId: state.activeScreeningJobId,
         screeningResult: state.screeningResult,
+        screeningJobHistory: state.screeningJobHistory,
       }),
     }
   )

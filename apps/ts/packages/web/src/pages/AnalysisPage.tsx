@@ -8,6 +8,7 @@ import {
 } from '@/components/FundamentalRanking';
 import { RankingFilters, RankingSummary, RankingTable } from '@/components/Ranking';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
+import { ScreeningJobHistoryTable } from '@/components/Screening/ScreeningJobHistoryTable';
 import { ScreeningJobProgress } from '@/components/Screening/ScreeningJobProgress';
 import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
@@ -89,6 +90,8 @@ interface AnalysisMainContentProps {
   screeningJob: ScreeningJobResponse | null;
   handleCancelScreening: () => void;
   cancelScreeningPending: boolean;
+  screeningJobHistory: ScreeningJobResponse[];
+  onSelectScreeningJob: (job: ScreeningJobResponse) => void;
   screeningSummary: MarketScreeningResponse['summary'] | undefined;
   screeningMarkets: string[];
   screeningRecentDays: number;
@@ -113,6 +116,8 @@ function AnalysisMainContent({
   screeningJob,
   handleCancelScreening,
   cancelScreeningPending,
+  screeningJobHistory,
+  onSelectScreeningJob,
   screeningSummary,
   screeningMarkets,
   screeningRecentDays,
@@ -142,6 +147,13 @@ function AnalysisMainContent({
           job={screeningJob}
           onCancel={screeningIsRunning ? handleCancelScreening : undefined}
           isCancelling={cancelScreeningPending}
+        />
+
+        <ScreeningJobHistoryTable
+          jobs={screeningJobHistory}
+          isLoading={false}
+          selectedJobId={screeningJob?.job_id ?? null}
+          onSelectJob={onSelectScreeningJob}
         />
 
         <ScreeningSummary
@@ -195,12 +207,14 @@ export function AnalysisPage() {
   const fundamentalRankingParams = useAnalysisStore((state) => state.fundamentalRankingParams);
   const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
   const screeningResult = useAnalysisStore((state) => state.screeningResult);
+  const screeningJobHistory = useAnalysisStore((state) => state.screeningJobHistory);
   const setActiveSubTab = useAnalysisStore((state) => state.setActiveSubTab);
   const setScreeningParams = useAnalysisStore((state) => state.setScreeningParams);
   const setRankingParams = useAnalysisStore((state) => state.setRankingParams);
   const setFundamentalRankingParams = useAnalysisStore((state) => state.setFundamentalRankingParams);
   const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
   const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
+  const upsertScreeningJobHistory = useAnalysisStore((state) => state.upsertScreeningJobHistory);
 
   const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
@@ -233,6 +247,21 @@ export function AnalysisPage() {
   }, [screeningResultQuery.data, setScreeningResult]);
 
   useEffect(() => {
+    if (!runScreeningJob.data) return;
+    upsertScreeningJobHistory(runScreeningJob.data);
+  }, [runScreeningJob.data, upsertScreeningJobHistory]);
+
+  useEffect(() => {
+    if (!screeningJobStatus.data) return;
+    upsertScreeningJobHistory(screeningJobStatus.data);
+  }, [screeningJobStatus.data, upsertScreeningJobHistory]);
+
+  useEffect(() => {
+    if (!cancelScreeningJob.data) return;
+    upsertScreeningJobHistory(cancelScreeningJob.data);
+  }, [cancelScreeningJob.data, upsertScreeningJobHistory]);
+
+  useEffect(() => {
     if (!shouldResetStaleScreeningJobId) return;
     setActiveScreeningJobId(null);
   }, [shouldResetStaleScreeningJobId, setActiveScreeningJobId]);
@@ -240,7 +269,15 @@ export function AnalysisPage() {
   const handleRunScreening = useCallback(async () => {
     const job = await runScreeningJob.mutateAsync(screeningParams);
     setActiveScreeningJobId(job.job_id);
-  }, [runScreeningJob, screeningParams, setActiveScreeningJobId]);
+    upsertScreeningJobHistory(job);
+  }, [runScreeningJob, screeningParams, setActiveScreeningJobId, upsertScreeningJobHistory]);
+
+  const handleSelectScreeningJob = useCallback(
+    (job: ScreeningJobResponse) => {
+      setActiveScreeningJobId(job.job_id);
+    },
+    [setActiveScreeningJobId]
+  );
 
   const handleCancelScreening = useCallback(() => {
     if (!activeScreeningJobId) return;
@@ -311,6 +348,8 @@ export function AnalysisPage() {
             screeningJob={screeningJob}
             handleCancelScreening={handleCancelScreening}
             cancelScreeningPending={cancelScreeningJob.isPending}
+            screeningJobHistory={screeningJobHistory}
+            onSelectScreeningJob={handleSelectScreeningJob}
             screeningSummary={screeningResult?.summary}
             screeningMarkets={screeningResult?.markets || []}
             screeningRecentDays={screeningResult?.recentDays || (screeningParams.recentDays ?? 0)}

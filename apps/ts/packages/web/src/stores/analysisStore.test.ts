@@ -100,4 +100,41 @@ describe('analysisStore', () => {
     expect(state.fundamentalRankingParams.forecastAboveRecentFyActuals).toBe(true);
     expect(state.fundamentalRankingParams.forecastLookbackFyCount).toBe(5);
   });
+
+  it('upserts screening job history and keeps latest first', () => {
+    const { upsertScreeningJobHistory } = useAnalysisStore.getState();
+    upsertScreeningJobHistory({
+      job_id: 'job-1',
+      status: 'pending',
+      created_at: '2026-02-18T09:00:00Z',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+    upsertScreeningJobHistory({
+      job_id: 'job-2',
+      status: 'completed',
+      created_at: '2026-02-18T10:00:00Z',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+    upsertScreeningJobHistory({
+      job_id: 'job-1',
+      status: 'running',
+      created_at: '2026-02-18T09:00:00Z',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const state = useAnalysisStore.getState();
+    expect(state.screeningJobHistory).toHaveLength(2);
+    expect(state.screeningJobHistory[0]?.job_id).toBe('job-2');
+    expect(state.screeningJobHistory[1]?.job_id).toBe('job-1');
+    expect(state.screeningJobHistory[1]?.status).toBe('running');
+  });
 });

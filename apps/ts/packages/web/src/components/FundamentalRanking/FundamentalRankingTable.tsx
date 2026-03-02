@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
+import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { cn } from '@/lib/utils';
 import type { FundamentalRankingItem, FundamentalRankings } from '@/types/fundamentalRanking';
 import { formatPriceJPY } from '@/utils/formatters';
@@ -20,6 +21,10 @@ const rankingTabs: { id: FundamentalRankingType; label: string; icon: typeof Tre
   { id: 'ratioHigh', label: 'Ratio High', icon: ArrowUpCircle },
   { id: 'ratioLow', label: 'Ratio Low', icon: ArrowDownCircle },
 ];
+
+const VIRTUALIZATION_THRESHOLD = 120;
+const FUNDAMENTAL_ROW_HEIGHT = 36;
+const FUNDAMENTAL_VIEWPORT_HEIGHT = 520;
 
 function formatRatio(value: number): string {
   if (!Number.isFinite(value)) return '-';
@@ -55,6 +60,12 @@ function FundamentalRankingRow({
 export function FundamentalRankingTable({ rankings, isLoading, error, onStockClick }: FundamentalRankingTableProps) {
   const [activeRankingType, setActiveRankingType] = useState<FundamentalRankingType>('ratioHigh');
   const currentItems = rankings?.[activeRankingType] ?? [];
+  const shouldVirtualize = currentItems.length >= VIRTUALIZATION_THRESHOLD;
+  const virtual = useVirtualizedRows(currentItems, {
+    enabled: shouldVirtualize,
+    rowHeight: FUNDAMENTAL_ROW_HEIGHT,
+    viewportHeight: FUNDAMENTAL_VIEWPORT_HEIGHT,
+  });
 
   return (
     <Card className="glass-panel overflow-hidden flex-1">
@@ -86,7 +97,7 @@ export function FundamentalRankingTable({ rankings, isLoading, error, onStockCli
           </div>
         </div>
       </CardHeader>
-      <CardContent className="p-0 overflow-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+      <CardContent className="p-0 overflow-auto" style={{ maxHeight: 'calc(100vh - 280px)' }} onScroll={virtual.onScroll}>
         <DataStateWrapper
           isLoading={isLoading}
           error={error}
@@ -108,9 +119,23 @@ export function FundamentalRankingTable({ rankings, isLoading, error, onStockCli
               </tr>
             </thead>
             <tbody>
-              {currentItems.map((item) => (
-                <FundamentalRankingRow key={`${item.code}-${item.rank}`} item={item} onStockClick={onStockClick} />
+              {shouldVirtualize && virtual.paddingTop > 0 && (
+                <tr>
+                  <td colSpan={7} className="p-0" style={{ height: virtual.paddingTop }} />
+                </tr>
+              )}
+              {virtual.visibleItems.map((item, offset) => (
+                <FundamentalRankingRow
+                  key={`${item.code}-${item.rank}-${virtual.startIndex + offset}`}
+                  item={item}
+                  onStockClick={onStockClick}
+                />
               ))}
+              {shouldVirtualize && virtual.paddingBottom > 0 && (
+                <tr>
+                  <td colSpan={7} className="p-0" style={{ height: virtual.paddingBottom }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </DataStateWrapper>

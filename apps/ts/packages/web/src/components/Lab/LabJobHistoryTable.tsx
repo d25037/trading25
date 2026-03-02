@@ -1,6 +1,4 @@
-import { CheckCircle2, Clock, Loader2, RotateCw, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
 import type { JobStatus, LabJobResponse } from '@/types/backtest';
 
 interface LabJobHistoryTableProps {
@@ -10,22 +8,6 @@ interface LabJobHistoryTableProps {
   selectedJobId?: string | null;
   onSelectJob: (job: LabJobResponse) => void;
   onRefresh: () => void;
-}
-
-function StatusIcon({ status }: { status: JobStatus }) {
-  switch (status) {
-    case 'pending':
-      return <Clock className="h-4 w-4 text-yellow-500" />;
-    case 'running':
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-    case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case 'failed':
-    case 'cancelled':
-      return <XCircle className="h-4 w-4 text-red-500" />;
-    default:
-      return null;
-  }
 }
 
 function formatDate(dateString?: string): string {
@@ -52,56 +34,38 @@ export function LabJobHistoryTable({
   onSelectJob,
   onRefresh,
 }: LabJobHistoryTableProps) {
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center justify-between">
-        <h4 className="text-sm font-medium">Job History</h4>
-        <Button variant="outline" size="sm" onClick={onRefresh} disabled={isRefreshing}>
-          <RotateCw className={`h-3.5 w-3.5 ${isRefreshing ? 'animate-spin' : ''}`} />
-          Refresh
-        </Button>
-      </div>
+  const columns: JobHistoryColumn<LabJobResponse>[] = [
+    {
+      key: 'type',
+      header: 'Type',
+      render: (job) => <span className="text-xs uppercase">{job.lab_type ?? '-'}</span>,
+    },
+    {
+      key: 'strategy',
+      header: 'Strategy',
+      render: (job) => <span className="text-xs font-mono">{job.strategy_name ?? '-'}</span>,
+    },
+    {
+      key: 'createdAt',
+      header: 'Created',
+      render: (job) => <span className="text-sm">{formatDate(job.created_at)}</span>,
+    },
+  ];
 
-      {isLoading ? (
-        <div className="flex h-40 items-center justify-center">
-          <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
-        </div>
-      ) : !jobs || jobs.length === 0 ? (
-        <div className="flex h-40 items-center justify-center rounded-md border text-sm text-muted-foreground">
-          No lab jobs found
-        </div>
-      ) : (
-        <div className="rounded-md border">
-          <Table>
-            <TableHeader>
-              <TableRow>
-                <TableHead className="w-12">Status</TableHead>
-                <TableHead>Type</TableHead>
-                <TableHead>Strategy</TableHead>
-                <TableHead>Created</TableHead>
-                <TableHead className="w-24">Actions</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {jobs.map((job) => (
-                <TableRow key={job.job_id} className={selectedJobId === job.job_id ? 'bg-accent/50' : ''}>
-                  <TableCell>
-                    <StatusIcon status={job.status} />
-                  </TableCell>
-                  <TableCell className="text-xs uppercase">{job.lab_type ?? '-'}</TableCell>
-                  <TableCell className="text-xs font-mono">{job.strategy_name ?? '-'}</TableCell>
-                  <TableCell className="text-sm">{formatDate(job.created_at)}</TableCell>
-                  <TableCell>
-                    <Button variant="outline" size="sm" onClick={() => onSelectJob(job)}>
-                      {actionLabel(job.status)}
-                    </Button>
-                  </TableCell>
-                </TableRow>
-              ))}
-            </TableBody>
-          </Table>
-        </div>
-      )}
-    </div>
+  return (
+    <JobHistoryTable
+      jobs={jobs}
+      isLoading={isLoading}
+      isRefreshing={isRefreshing}
+      selectedJobId={selectedJobId}
+      title="Job History"
+      emptyMessage="No lab jobs found"
+      columns={columns}
+      getJobId={(job) => job.job_id}
+      getStatus={(job) => job.status as JobStatus}
+      getActionLabel={(job) => actionLabel(job.status)}
+      onSelectJob={onSelectJob}
+      onRefresh={onRefresh}
+    />
   );
 }

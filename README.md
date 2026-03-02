@@ -71,6 +71,8 @@ bun run cli:run backtest attribution status <job-id>
 bun run cli:run backtest attribution results <job-id>
 bun run cli:run backtest attribution cancel <job-id>
 ```
+- 非同期ジョブ系コマンド（`analysis screening`, `backtest run`, `backtest attribution run`）は
+  `--wait` / `--json` / `--output <path>` を共通サポート（`analysis screening` は `--no-wait` 互換を維持）
 - 保存先（XDG）: `~/.local/share/trading25/backtest/attribution/<strategy>/`
 - 補足: `portfolio/watchlist` 操作は CLI から web UI（Portfolio タブ）へ移行済み
 
@@ -114,6 +116,8 @@ GET /api/analytics/screening/result/{job_id}
 - リクエストは `markets`, `strategies`, `recentDays`, `date`, `sortBy`, `order`, `limit`
 - 既定ソートは `matchedDate desc`
 - CLI は完了待機が既定（`--no-wait` で job_id を返して終了）
+- Analysis の `Screening / Daily Ranking / Fundamental Ranking` 一覧は大量件数時に virtualization を適用し、
+  Screening/Backtest/Lab の job history UI は共通テーブルで統一
 - 旧 `rangeBreakFast/Slow`, `minBreakPercentage`, `minVolumeRatio` は廃止（後方互換なし）
 - 旧 `GET /api/analytics/screening` は 410（移行メッセージ返却）
 - Fundamental Ranking API:

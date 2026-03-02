@@ -3,6 +3,7 @@ import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
+import { useVirtualizedRows } from '@/hooks/useVirtualizedRows';
 import { cn } from '@/lib/utils';
 import type { RankingItem, Rankings, RankingType } from '@/types/ranking';
 import { formatPercentage, formatPriceJPY, formatTradingValue } from '@/utils/formatters';
@@ -22,6 +23,10 @@ const rankingTabs: { id: RankingType; label: string; icon: typeof DollarSign }[]
   { id: 'periodHigh', label: 'Period High', icon: ArrowUpCircle },
   { id: 'periodLow', label: 'Period Low', icon: ArrowDownCircle },
 ];
+
+const VIRTUALIZATION_THRESHOLD = 120;
+const RANKING_ROW_HEIGHT = 36;
+const RANKING_VIEWPORT_HEIGHT = 520;
 
 function RankingRow({
   item,
@@ -67,6 +72,13 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
   const currentItems = rankings?.[activeRankingType] ?? [];
   const showChange = activeRankingType !== 'tradingValue';
   const isPeriodType = activeRankingType === 'periodHigh' || activeRankingType === 'periodLow';
+  const shouldVirtualize = currentItems.length >= VIRTUALIZATION_THRESHOLD;
+  const virtual = useVirtualizedRows(currentItems, {
+    enabled: shouldVirtualize,
+    rowHeight: RANKING_ROW_HEIGHT,
+    viewportHeight: RANKING_VIEWPORT_HEIGHT,
+  });
+  const columnCount = showChange ? 7 : 6;
 
   // Dynamic label for period tabs
   const getTabLabel = (tab: (typeof rankingTabs)[number]) => {
@@ -108,7 +120,7 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
         </div>
       </CardHeader>
 
-      <CardContent className="p-0 overflow-auto" style={{ maxHeight: 'calc(100vh - 280px)' }}>
+      <CardContent className="p-0 overflow-auto" style={{ maxHeight: 'calc(100vh - 280px)' }} onScroll={virtual.onScroll}>
         <DataStateWrapper
           isLoading={isLoading}
           error={error}
@@ -130,14 +142,24 @@ export function RankingTable({ rankings, isLoading, error, onStockClick, periodD
               </tr>
             </thead>
             <tbody>
-              {currentItems.map((item) => (
+              {shouldVirtualize && virtual.paddingTop > 0 && (
+                <tr>
+                  <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingTop }} />
+                </tr>
+              )}
+              {virtual.visibleItems.map((item, offset) => (
                 <RankingRow
-                  key={`${item.code}-${item.rank}`}
+                  key={`${item.code}-${item.rank}-${virtual.startIndex + offset}`}
                   item={item}
                   onStockClick={onStockClick}
                   showChange={showChange}
                 />
               ))}
+              {shouldVirtualize && virtual.paddingBottom > 0 && (
+                <tr>
+                  <td colSpan={columnCount} className="p-0" style={{ height: virtual.paddingBottom }} />
+                </tr>
+              )}
             </tbody>
           </table>
         </DataStateWrapper>

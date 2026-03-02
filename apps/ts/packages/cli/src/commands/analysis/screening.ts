@@ -9,6 +9,7 @@ import ora from 'ora';
 import { ApiClient } from '../../utils/api-client.js';
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError } from '../../utils/error-handling.js';
+import { emitCommandOutput, resolveWaitFlag } from '../../utils/job-command-output.js';
 import { formatResults } from '../screening/output-formatter.js';
 
 interface ScreeningOptions {
@@ -20,7 +21,10 @@ interface ScreeningOptions {
   sortBy?: string;
   order?: string;
   limit?: string;
+  wait?: boolean;
   noWait?: boolean;
+  json?: boolean;
+  output?: string;
   debug?: boolean;
   verbose?: boolean;
 }
@@ -46,7 +50,7 @@ function printDebugConfig(options: ScreeningOptions): void {
   if (options.date) {
     console.log(chalk.gray(`  Reference Date: ${options.date}`));
   }
-  console.log(chalk.gray(`  Wait for completion: ${options.noWait ? 'no' : 'yes'}`));
+  console.log(chalk.gray(`  Wait for completion: ${options.wait ? 'yes' : 'no'}`));
 }
 
 /**
@@ -134,6 +138,8 @@ async function waitForJobCompletion(
  */
 async function executeMarketScreening(options: ScreeningOptions): Promise<void> {
   const apiClient = new ApiClient();
+  const outputCtx = { log: (message: string) => console.log(message) };
+  const outputFormat = options.json ? 'json' : ((options.format || 'table') as 'table' | 'json' | 'csv');
 
   if (options.debug) {
     printDebugConfig(options);
@@ -147,9 +153,16 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
   try {
     const job = await apiClient.analytics.createScreeningJob(buildApiParams(options));
 
-    if (options.noWait) {
+    if (!options.wait) {
       spinner.succeed(chalk.green(`Screening job submitted: ${job.job_id}`));
-      console.log(chalk.cyan(`Job ID: ${job.job_id}`));
+      await emitCommandOutput({
+        ctx: outputCtx,
+        payload: job,
+        options: { json: options.json, output: options.output },
+        renderTable: (payload) => {
+          console.log(chalk.cyan(`Job ID: ${payload.job_id}`));
+        },
+      });
       return;
     }
 
@@ -169,6 +182,15 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
     const response = await apiClient.analytics.getScreeningResult(job.job_id);
     spinner.succeed(chalk.green(`Screening completed: ${response.summary.matchCount} matches found`));
 
+    await emitCommandOutput({
+      ctx: outputCtx,
+      payload: response,
+      options: { json: options.json, output: options.output },
+    });
+    if (options.json) {
+      return;
+    }
+
     if (options.verbose) {
       printVerboseSummary(response);
     }
@@ -182,7 +204,7 @@ async function executeMarketScreening(options: ScreeningOptions): Promise<void> 
     console.log(chalk.white('━'.repeat(80)));
 
     await formatResults(response.results, {
-      format: (options.format || 'table') as 'table' | 'json' | 'csv',
+      format: outputFormat,
       verbose: options.verbose || false,
       debug: options.debug || false,
     });
@@ -261,10 +283,25 @@ export const screeningCommand = define({
       type: 'string',
       description: 'Limit number of results',
     },
+    wait: {
+      type: 'boolean',
+      short: 'w',
+      description: 'Wait for completion (default: true)',
+      default: true,
+    },
     noWait: {
       type: 'boolean',
-      description: 'Submit screening job and exit without waiting',
+      description: 'Deprecated alias for --no-wait',
       default: false,
+    },
+    json: {
+      type: 'boolean',
+      description: 'Print JSON payload',
+      default: false,
+    },
+    output: {
+      type: 'string',
+      description: 'Write JSON payload to file',
     },
     debug: {
       type: 'boolean',
@@ -292,7 +329,7 @@ ${CLI_NAME} analysis screening --date 2025-12-30 --markets prime,standard
 ${CLI_NAME} analysis screening --no-wait
 
 # JSON output with limit
-${CLI_NAME} analysis screening --format json --limit 100
+${CLI_NAME} analysis screening --json --limit 100
   `.trim(),
   run: async (ctx) => {
     const {
@@ -304,12 +341,19 @@ ${CLI_NAME} analysis screening --format json --limit 100
       sortBy,
       order,
       limit,
+      wait,
       noWait,
+      json,
+      output,
       debug,
       verbose,
     } = ctx.values;
 
     try {
+      const resolvedWait = resolveWaitFlag(
+        typeof wait === 'boolean' ? wait : undefined,
+        typeof noWait === 'boolean' ? noWait : undefined
+      );
       await executeMarketScreening({
         strategies,
         recentDays,
@@ -319,7 +363,9 @@ ${CLI_NAME} analysis screening --format json --limit 100
         sortBy,
         order,
         limit,
-        noWait,
+        wait: resolvedWait,
+        json,
+        output,
         debug,
         verbose,
       });

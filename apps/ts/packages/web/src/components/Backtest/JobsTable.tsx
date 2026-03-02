@@ -1,6 +1,4 @@
-import { CheckCircle2, Clock, Loader2, XCircle } from 'lucide-react';
-import { Button } from '@/components/ui/button';
-import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
 import type { BacktestJobResponse, JobStatus } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
 
@@ -9,21 +7,6 @@ interface JobsTableProps {
   isLoading: boolean;
   onSelectJob: (jobId: string) => void;
   selectedJobId?: string | null;
-}
-
-function StatusIcon({ status }: { status: JobStatus }) {
-  switch (status) {
-    case 'pending':
-      return <Clock className="h-4 w-4 text-yellow-500" />;
-    case 'running':
-      return <Loader2 className="h-4 w-4 animate-spin text-blue-500" />;
-    case 'completed':
-      return <CheckCircle2 className="h-4 w-4 text-green-500" />;
-    case 'failed':
-      return <XCircle className="h-4 w-4 text-red-500" />;
-    default:
-      return null;
-  }
 }
 
 function formatDate(dateString: string | null | undefined): string {
@@ -48,50 +31,38 @@ function returnColorClass(result: BacktestJobResponse['result']): string {
 }
 
 export function JobsTable({ jobs, isLoading, onSelectJob, selectedJobId }: JobsTableProps) {
-  if (isLoading) {
-    return (
-      <div className="flex items-center justify-center h-48">
-        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-      </div>
-    );
-  }
-
-  if (!jobs || jobs.length === 0) {
-    return <div className="flex items-center justify-center h-48 text-muted-foreground">No jobs found</div>;
-  }
+  const columns: JobHistoryColumn<BacktestJobResponse>[] = [
+    {
+      key: 'jobId',
+      header: 'Job ID',
+      render: (job) => <span className="font-mono text-xs">{job.job_id.slice(0, 8)}...</span>,
+    },
+    {
+      key: 'startedAt',
+      header: 'Started',
+      render: (job) => <span className="text-sm">{formatDate(job.started_at)}</span>,
+    },
+    {
+      key: 'totalReturn',
+      header: 'Return',
+      render: (job) => (
+        <span className={`text-sm ${returnColorClass(job.result)}`}>{formatReturn(job.result)}</span>
+      ),
+    },
+  ];
 
   return (
-    <div className="rounded-md border">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead className="w-12">Status</TableHead>
-            <TableHead>Job ID</TableHead>
-            <TableHead>Started</TableHead>
-            <TableHead>Return</TableHead>
-            <TableHead className="w-24">Actions</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {jobs.map((job) => (
-            <TableRow key={job.job_id} className={selectedJobId === job.job_id ? 'bg-accent/50' : ''}>
-              <TableCell>
-                <StatusIcon status={job.status} />
-              </TableCell>
-              <TableCell className="font-mono text-xs">{job.job_id.slice(0, 8)}...</TableCell>
-              <TableCell className="text-sm">{formatDate(job.started_at)}</TableCell>
-              <TableCell className={`text-sm ${returnColorClass(job.result)}`}>{formatReturn(job.result)}</TableCell>
-              <TableCell>
-                {job.status === 'completed' && (
-                  <Button variant="outline" size="sm" onClick={() => onSelectJob(job.job_id)}>
-                    View
-                  </Button>
-                )}
-              </TableCell>
-            </TableRow>
-          ))}
-        </TableBody>
-      </Table>
-    </div>
+    <JobHistoryTable
+      jobs={jobs}
+      isLoading={isLoading}
+      selectedJobId={selectedJobId}
+      emptyMessage="No jobs found"
+      columns={columns}
+      getJobId={(job) => job.job_id}
+      getStatus={(job) => job.status as JobStatus}
+      canSelectJob={(job) => job.status === 'completed'}
+      getActionLabel={() => 'View'}
+      onSelectJob={(job) => onSelectJob(job.job_id)}
+    />
   );
 }

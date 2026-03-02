@@ -157,6 +157,8 @@ bun run cli:run backtest attribution run <strategy> --wait
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、`Current` / `Saved` / `State` 要約を維持する。保存ブロックは YAML 構文エラー時のみとする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
 - `analysis screening`（web/cli）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
+- Analysis `Screening / Daily Ranking / Fundamental Ranking` の結果テーブルは大量件数時に virtualization を適用する
+- CLI 非同期ジョブ（`analysis screening` / `backtest run` / `backtest attribution run`）は `--wait` / `--json` / `--output` を共通サポートし、`analysis screening` は `--no-wait` 互換を維持する
 - Analysis 画面は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する
 - Charts の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
