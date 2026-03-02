@@ -39,6 +39,10 @@ function fetchOptimizationJobStatus(jobId: string): Promise<OptimizationJobRespo
   return backtestClient.getOptimizationJobStatus(jobId);
 }
 
+function cancelOptimizationJob(jobId: string): Promise<OptimizationJobResponse> {
+  return backtestClient.cancelOptimizationJob(jobId);
+}
+
 function fetchGridConfigs(): Promise<OptimizationGridListResponse> {
   return backtestClient.getOptimizationGridConfigs();
 }
@@ -113,6 +117,24 @@ export function useOptimizationJobStatus(jobId: string | null) {
       return false;
     },
     staleTime: 0,
+  });
+}
+
+/**
+ * Cancel optimization mutation
+ */
+export function useCancelOptimization() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (jobId: string) => cancelOptimizationJob(jobId),
+    onSuccess: (data, jobId) => {
+      logger.debug('Optimization cancelled', { jobId: data.job_id, status: data.status });
+      queryClient.invalidateQueries({ queryKey: optimizationKeys.job(jobId) });
+    },
+    onError: (error) => {
+      logger.error('Failed to cancel optimization', { error: error.message });
+    },
   });
 }
 

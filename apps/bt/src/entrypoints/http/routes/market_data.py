@@ -36,7 +36,10 @@ def _get_market_data_service(request: Request) -> MarketDataService:
 )
 def get_all_stocks(
     request: Request,
-    market: Literal["prime", "standard"] = Query(default="prime", description="市場コード"),
+    market: Literal["prime", "standard", "growth", "0111", "0112", "0113"] = Query(
+        default="prime",
+        description="市場コード（legacy/current 同義語対応: prime/standard/growth, 0111/0112/0113）",
+    ),
     history_days: int = Query(default=300, ge=1, le=1000, description="履歴日数"),
 ) -> list[MarketStockData]:
     service = _get_market_data_service(request)

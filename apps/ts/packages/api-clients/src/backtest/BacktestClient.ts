@@ -325,6 +325,12 @@ export class BacktestClient {
     return this.request<OptimizationJobResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}`);
   }
 
+  async cancelOptimizationJob(jobId: string): Promise<OptimizationJobResponse> {
+    return this.request<OptimizationJobResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}/cancel`, {
+      method: 'POST',
+    });
+  }
+
   async getOptimizationGridConfigs(): Promise<OptimizationGridListResponse> {
     return this.request<OptimizationGridListResponse>('/api/optimize/grid-configs');
   }

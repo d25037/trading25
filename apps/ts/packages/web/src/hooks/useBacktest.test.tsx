@@ -202,6 +202,24 @@ describe('useJobStatus', () => {
 
     expect(result.current.fetchStatus).toBe('idle');
   });
+
+  it('uses 2-second polling while pending/running and stops on completion', () => {
+    vi.mocked(backtestClient.getJobStatus).mockResolvedValueOnce({ job_id: 'job-poll', status: 'pending' } as never);
+
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useJobStatus('job-poll'), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: backtestKeys.job('job-poll') });
+    const refetchInterval = (query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval;
+
+    expect(typeof refetchInterval).toBe('function');
+    if (typeof refetchInterval === 'function') {
+      expect(refetchInterval({ state: { data: { status: 'pending' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'running' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
+      expect(refetchInterval({ state: { data: undefined } } as never)).toBe(false);
+    }
+  });
 });
 
 describe('useBacktestResult', () => {

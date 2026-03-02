@@ -329,6 +329,33 @@ describe('BacktestClient', () => {
     expect(fetchSpy.mock.calls.at(-1)?.[0]).toContain('/api/optimize/jobs/opt-1');
   });
 
+  test('cancelOptimizationJob calls correct endpoint', async () => {
+    const job = {
+      job_id: 'opt-1',
+      status: 'cancelled',
+      progress: 1,
+      message: 'cancelled',
+      created_at: '2024-01-01T00:00:00Z',
+      started_at: '2024-01-01T00:00:01Z',
+      completed_at: '2024-01-01T00:00:02Z',
+      error: null,
+      best_score: null,
+      best_params: null,
+      worst_score: null,
+      worst_params: null,
+      total_combinations: null,
+      html_path: null,
+    };
+    fetchSpy.mockResolvedValueOnce(createMockResponse(job));
+
+    const result = await client.cancelOptimizationJob('opt-1');
+    expect(result).toEqual(job);
+
+    const lastCall = fetchSpy.mock.calls.at(-1);
+    expect(lastCall?.[0]).toContain('/api/optimize/jobs/opt-1/cancel');
+    expect(lastCall?.[1]?.method).toBe('POST');
+  });
+
   test('optimization grid config methods call expected endpoints', async () => {
     fetchSpy.mockResolvedValueOnce(createMockResponse({ configs: [], total: 0 }));
     fetchSpy.mockResolvedValueOnce(

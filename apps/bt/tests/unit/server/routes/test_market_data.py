@@ -47,6 +47,37 @@ class TestGetAllStocks:
         # standard にはデータなし
         assert len(data) == 0
 
+    def test_200_numeric_prime_alias_matches_legacy(self, client_with_market_db):
+        """current market code 0111 は legacy prime と同義"""
+        legacy = client_with_market_db.get("/api/market/stocks?market=prime")
+        numeric = client_with_market_db.get("/api/market/stocks?market=0111")
+        assert legacy.status_code == 200
+        assert numeric.status_code == 200
+        assert numeric.json() == legacy.json()
+
+    def test_200_numeric_standard_alias_matches_legacy(self, client_with_market_db):
+        """current market code 0112 は legacy standard と同義"""
+        legacy = client_with_market_db.get("/api/market/stocks?market=standard")
+        numeric = client_with_market_db.get("/api/market/stocks?market=0112")
+        assert legacy.status_code == 200
+        assert numeric.status_code == 200
+        assert numeric.json() == legacy.json()
+
+    def test_growth_aliases_are_accepted(self, client_with_market_db):
+        """growth / 0113 も API 入力境界で同義に扱われる"""
+        legacy = client_with_market_db.get("/api/market/stocks?market=growth")
+        numeric = client_with_market_db.get("/api/market/stocks?market=0113")
+        assert legacy.status_code == numeric.status_code
+        assert legacy.status_code in (200, 404)
+        if legacy.status_code == 404:
+            legacy_payload = legacy.json()
+            numeric_payload = numeric.json()
+            assert numeric_payload["status"] == legacy_payload["status"] == "error"
+            assert numeric_payload["error"] == legacy_payload["error"]
+            assert numeric_payload["message"] == legacy_payload["message"]
+        else:
+            assert numeric.json() == legacy.json()
+
     def test_422_invalid_market(self, client_with_market_db):
         """無効な market パラメータ"""
         resp = client_with_market_db.get("/api/market/stocks?market=invalid")

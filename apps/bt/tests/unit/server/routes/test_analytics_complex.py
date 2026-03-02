@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
+from src.entrypoints.http.routes.analytics_complex import _SCREENING_DEPRECATED_MESSAGE
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 
@@ -444,6 +445,10 @@ class TestScreening:
     def test_legacy_get_returns_410(self, analytics_client):
         resp = analytics_client.get("/api/analytics/screening")
         assert resp.status_code == 410
+        payload = resp.json()
+        assert payload["status"] == "error"
+        assert payload["error"] == "Error 410"
+        assert payload["message"] == _SCREENING_DEPRECATED_MESSAGE
 
     def test_create_job_202(self, analytics_client):
         with (

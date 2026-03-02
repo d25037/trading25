@@ -4,6 +4,7 @@ import { backtestClient } from '@/lib/backtest-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import type { OptimizationGridSaveRequest, OptimizationRequest } from '@/types/backtest';
 import {
+  useCancelOptimization,
   optimizationKeys,
   useDeleteOptimizationGrid,
   useDeleteOptimizationHtmlFile,
@@ -21,6 +22,7 @@ vi.mock('@/lib/backtest-client', () => ({
   backtestClient: {
     runOptimization: vi.fn(),
     getOptimizationJobStatus: vi.fn(),
+    cancelOptimizationJob: vi.fn(),
     getOptimizationGridConfigs: vi.fn(),
     getOptimizationGridConfig: vi.fn(),
     saveOptimizationGridConfig: vi.fn(),
@@ -115,6 +117,27 @@ describe('useOptimizationJobStatus', () => {
     expect(result.current.fetchStatus).toBe('idle');
   });
 
+  it('uses 2-second polling while pending/running and stops on completion', () => {
+    vi.mocked(backtestClient.getOptimizationJobStatus).mockResolvedValueOnce({
+      job_id: 'opt-poll',
+      status: 'pending',
+    } as never);
+
+    const { queryClient, wrapper } = createWrapper();
+    renderHook(() => useOptimizationJobStatus('opt-poll'), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: optimizationKeys.job('opt-poll') });
+    const refetchInterval = (query?.options as { refetchInterval?: unknown } | undefined)?.refetchInterval;
+
+    expect(typeof refetchInterval).toBe('function');
+    if (typeof refetchInterval === 'function') {
+      expect(refetchInterval({ state: { data: { status: 'pending' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'running' } } } as never)).toBe(2000);
+      expect(refetchInterval({ state: { data: { status: 'completed' } } } as never)).toBe(false);
+      expect(refetchInterval({ state: { data: undefined } } as never)).toBe(false);
+    }
+  });
+
   it('covers create/status/result lifecycle for optimize jobs', async () => {
     vi.mocked(backtestClient.runOptimization).mockResolvedValueOnce({
       job_id: 'opt-e2e-1',
@@ -168,6 +191,93 @@ describe('useOptimizationJobStatus', () => {
       strategy: 'production/range_break_v5',
       limit: 10,
     });
+  });
+
+  it('covers cancel/retry/resume lifecycle for optimize jobs', async () => {
+    vi.mocked(backtestClient.runOptimization)
+      .mockResolvedValueOnce({
+        job_id: 'opt-retry-1',
+        status: 'pending',
+      } as never)
+      .mockResolvedValueOnce({
+        job_id: 'opt-retry-2',
+        status: 'pending',
+      } as never);
+    vi.mocked(backtestClient.cancelOptimizationJob).mockResolvedValueOnce({
+      job_id: 'opt-retry-1',
+      status: 'cancelled',
+      message: 'cancelled by user',
+    } as never);
+    vi.mocked(backtestClient.getOptimizationJobStatus).mockResolvedValueOnce({
+      job_id: 'opt-retry-2',
+      status: 'completed',
+      best_score: 0.9,
+      best_params: { lookback_days: 40 },
+      worst_score: -0.4,
+      worst_params: { lookback_days: 5 },
+      total_combinations: 24,
+    } as never);
+
+    const { wrapper } = createWrapper();
+    const runHook = renderHook(() => useRunOptimization(), { wrapper });
+    const cancelHook = renderHook(() => useCancelOptimization(), { wrapper });
+
+    await act(async () => {
+      await runHook.result.current.mutateAsync({ strategy_name: 'production/range_break_v5' } as OptimizationRequest);
+    });
+    await act(async () => {
+      await cancelHook.result.current.mutateAsync('opt-retry-1');
+    });
+    let retriedJob: { job_id: string };
+    await act(async () => {
+      retriedJob = (await runHook.result.current.mutateAsync({
+        strategy_name: 'production/range_break_v5',
+      } as OptimizationRequest)) as { job_id: string };
+    });
+
+    const statusHook = renderHook(() => useOptimizationJobStatus(retriedJob.job_id), { wrapper });
+    await waitFor(() => expect(statusHook.result.current.isSuccess).toBe(true));
+
+    expect(vi.mocked(backtestClient.runOptimization).mock.calls.length).toBeGreaterThanOrEqual(2);
+    expect(backtestClient.cancelOptimizationJob).toHaveBeenCalledWith('opt-retry-1');
+    expect(backtestClient.getOptimizationJobStatus).toHaveBeenCalledWith('opt-retry-2');
+  });
+});
+
+describe('useCancelOptimization', () => {
+  it('cancels optimization job and invalidates job query', async () => {
+    vi.mocked(backtestClient.cancelOptimizationJob).mockResolvedValueOnce({
+      job_id: 'opt-cancel-1',
+      status: 'cancelled',
+      message: 'cancelled by user',
+    } as never);
+
+    const { queryClient, wrapper } = createWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useCancelOptimization(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync('opt-cancel-1');
+    });
+
+    expect(backtestClient.cancelOptimizationJob).toHaveBeenCalledWith('opt-cancel-1');
+    expect(invalidateSpy).toHaveBeenCalledWith({
+      queryKey: optimizationKeys.job('opt-cancel-1'),
+    });
+  });
+
+  it('logs error when cancellation fails', async () => {
+    vi.mocked(backtestClient.cancelOptimizationJob).mockRejectedValueOnce(new Error('cancel failed'));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useCancelOptimization(), { wrapper });
+    const { logger } = await import('@/utils/logger');
+
+    await act(async () => {
+      await expect(result.current.mutateAsync('opt-cancel-1')).rejects.toThrow('cancel failed');
+    });
+
+    expect(logger.error).toHaveBeenCalledWith('Failed to cancel optimization', { error: 'cancel failed' });
   });
 });
 
