@@ -22,7 +22,7 @@
     "@trading25/shared": "workspace:*",
     "chalk": "^5.3.0",
     "gunshi": "^0.27.0",
-    "ora": "^8.0.0",
+    "ora": "^9.3.0",
     "string-width": "^7.2.0"
   },
   "devDependencies": {
