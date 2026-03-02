@@ -4,13 +4,14 @@
  * バックテスト結果表示コマンド
  */
 
-import { BacktestClient, type BacktestJobResponse } from '@trading25/api-clients/backtest';
+import type { BacktestJobResponse } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError } from '../../utils/error-handling.js';
+import { createBacktestClient } from './client.js';
 import { handleBacktestError } from './error-handler.js';
 
 export const resultsCommand = define({
@@ -57,7 +58,7 @@ ${CLI_NAME} backtest results --format json`,
   run: async (ctx) => {
     const { jobId, limit, btUrl, format, debug: _debug } = ctx.values;
 
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
     const spinner = ora();
 
     try {

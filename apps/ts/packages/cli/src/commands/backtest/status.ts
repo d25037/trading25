@@ -4,12 +4,12 @@
  * bt サーバーステータス確認コマンド
  */
 
-import { BacktestClient } from '@trading25/api-clients/backtest';
 import chalk from 'chalk';
 import { define } from 'gunshi';
 import ora from 'ora';
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError } from '../../utils/error-handling.js';
+import { createBacktestClient } from './client.js';
 import { handleBacktestError } from './error-handler.js';
 
 export const statusCommand = define({
@@ -34,7 +34,7 @@ ${CLI_NAME} backtest status --bt-url http://localhost:3002`,
   run: async (ctx) => {
     const { btUrl, debug } = ctx.values;
 
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
     const spinner = ora();
 
     try {

@@ -2,7 +2,7 @@
  * TanStack Query hooks for Optimization API
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import { backtestClient } from '@/lib/backtest-client';
 import type {
   HtmlFileDeleteResponse,
   HtmlFileRenameRequest,
@@ -32,45 +32,38 @@ export const optimizationKeys = {
 
 // Fetch functions
 function runOptimization(request: OptimizationRequest): Promise<OptimizationJobResponse> {
-  return apiPost<OptimizationJobResponse>('/api/optimize/run', request);
+  return backtestClient.runOptimization(request);
 }
 
 function fetchOptimizationJobStatus(jobId: string): Promise<OptimizationJobResponse> {
-  return apiGet<OptimizationJobResponse>(`/api/optimize/jobs/${encodeURIComponent(jobId)}`);
+  return backtestClient.getOptimizationJobStatus(jobId);
 }
 
 function fetchGridConfigs(): Promise<OptimizationGridListResponse> {
-  return apiGet<OptimizationGridListResponse>('/api/optimize/grid-configs');
+  return backtestClient.getOptimizationGridConfigs();
 }
 
 function fetchGridConfig(strategy: string): Promise<OptimizationGridConfig> {
-  return apiGet<OptimizationGridConfig>(`/api/optimize/grid-configs/${encodeURIComponent(strategy)}`);
+  return backtestClient.getOptimizationGridConfig(strategy);
 }
 
 function saveGridConfig(strategy: string, request: OptimizationGridSaveRequest): Promise<OptimizationGridSaveResponse> {
-  return apiPut<OptimizationGridSaveResponse>(`/api/optimize/grid-configs/${encodeURIComponent(strategy)}`, request);
+  return backtestClient.saveOptimizationGridConfig(strategy, request);
 }
 
 function deleteGridConfig(strategy: string): Promise<{ success: boolean; strategy_name: string }> {
-  return apiDelete<{ success: boolean; strategy_name: string }>(
-    `/api/optimize/grid-configs/${encodeURIComponent(strategy)}`
-  );
+  return backtestClient.deleteOptimizationGridConfig(strategy);
 }
 
 function fetchOptimizationHtmlFiles(strategy?: string, limit = 100): Promise<OptimizationHtmlFileListResponse> {
-  const params = new URLSearchParams();
-  if (strategy) params.append('strategy', strategy);
-  params.append('limit', limit.toString());
-  return apiGet<OptimizationHtmlFileListResponse>(`/api/optimize/html-files?${params.toString()}`);
+  return backtestClient.listOptimizationHtmlFiles({ strategy, limit });
 }
 
 function fetchOptimizationHtmlFileContent(
   strategy: string,
   filename: string
 ): Promise<OptimizationHtmlFileContentResponse> {
-  return apiGet<OptimizationHtmlFileContentResponse>(
-    `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
-  );
+  return backtestClient.getOptimizationHtmlFileContent(strategy, filename);
 }
 
 function renameOptimizationHtmlFile(
@@ -78,16 +71,11 @@ function renameOptimizationHtmlFile(
   filename: string,
   request: HtmlFileRenameRequest
 ): Promise<HtmlFileRenameResponse> {
-  return apiPost<HtmlFileRenameResponse>(
-    `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
-    request
-  );
+  return backtestClient.renameOptimizationHtmlFile(strategy, filename, request);
 }
 
 function deleteOptimizationHtmlFile(strategy: string, filename: string): Promise<HtmlFileDeleteResponse> {
-  return apiDelete<HtmlFileDeleteResponse>(
-    `/api/optimize/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
-  );
+  return backtestClient.deleteOptimizationHtmlFile(strategy, filename);
 }
 
 // Hooks

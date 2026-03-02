@@ -5,6 +5,7 @@ import ora from 'ora';
 import type { SignalAttributionResult } from '@trading25/api-clients/backtest';
 import { CLI_NAME } from '../../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../../utils/error-handling.js';
+import { createBacktestClient } from '../client.js';
 import { handleBacktestError } from '../error-handler.js';
 import { parseTableJsonFormat } from './format.js';
 
@@ -84,8 +85,7 @@ ${CLI_NAME} backtest attribution results <job-id> --format json`,
       throw new CLIValidationError('job ID is required');
     }
 
-    const { BacktestClient } = await import('@trading25/api-clients/backtest');
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
     const spinner = ora(`Fetching attribution result: ${jobId}`).start();
 
     try {

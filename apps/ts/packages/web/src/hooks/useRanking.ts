@@ -1,10 +1,10 @@
 import { useQuery } from '@tanstack/react-query';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
 import { logger } from '@/utils/logger';
 
 function fetchRanking(params: RankingParams): Promise<MarketRankingResponse> {
-  return apiGet<MarketRankingResponse>('/api/analytics/ranking', {
+  return analyticsClient.getMarketRanking({
     date: params.date,
     limit: params.limit,
     markets: params.markets,

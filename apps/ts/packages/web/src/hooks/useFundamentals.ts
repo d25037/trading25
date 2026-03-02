@@ -1,6 +1,6 @@
 import { useQuery } from '@tanstack/react-query';
 import type { ApiFundamentalsResponse } from '@trading25/shared/types/api-types';
-import { apiGet } from '@/lib/api-client';
+import { analyticsClient } from '@/lib/analytics-client';
 
 function normalizeTradingValuePeriod(period: number): number {
   if (!Number.isFinite(period)) return 15;
@@ -17,7 +17,8 @@ function fetchFundamentals(
   tradingValuePeriod: number,
   forecastEpsLookbackFyCount: number
 ): Promise<ApiFundamentalsResponse> {
-  return apiGet<ApiFundamentalsResponse>(`/api/analytics/fundamentals/${symbol}`, {
+  return analyticsClient.getFundamentals<ApiFundamentalsResponse>({
+    symbol,
     tradingValuePeriod,
     forecastEpsLookbackFyCount,
   });

@@ -10,6 +10,7 @@ import ora from 'ora';
 
 import { CLI_NAME } from '../../utils/constants.js';
 import { CLIError, CLIValidationError } from '../../utils/error-handling.js';
+import { createBacktestClient } from './client.js';
 import { handleBacktestError } from './error-handler.js';
 
 export const runCommand = define({
@@ -55,10 +56,7 @@ ${CLI_NAME} backtest run range_break_v5 --no-wait`,
       throw new CLIValidationError('strategy name is required');
     }
 
-    // Dynamic import to avoid circular dependencies
-    const { BacktestClient } = await import('@trading25/api-clients/backtest');
-
-    const client = new BacktestClient({ baseUrl: btUrl });
+    const client = createBacktestClient(btUrl);
 
     // Check server health
     const spinner = ora('Connecting to backtest server...').start();

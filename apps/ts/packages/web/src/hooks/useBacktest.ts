@@ -2,7 +2,7 @@
  * TanStack Query hooks for Backtest API
  */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { ApiError, apiDelete, apiGet, apiPost, apiPut } from '@/lib/api-client';
+import { backtestClient } from '@/lib/backtest-client';
 import type {
   AttributionArtifactContentResponse,
   AttributionArtifactListResponse,
@@ -62,75 +62,62 @@ export const backtestKeys = {
 
 // Fetch functions
 function fetchHealth(): Promise<HealthResponse> {
-  return apiGet<HealthResponse>('/api/health');
+  return backtestClient.healthCheck();
 }
 
 function fetchStrategies(): Promise<StrategyListResponse> {
-  return apiGet<StrategyListResponse>('/api/strategies');
+  return backtestClient.listStrategies();
 }
 
 function fetchStrategy(name: string): Promise<StrategyDetailResponse> {
-  return apiGet<StrategyDetailResponse>(`/api/strategies/${encodeURIComponent(name)}`);
+  return backtestClient.getStrategy(name);
 }
 
 function fetchJobs(limit = 50): Promise<BacktestJobResponse[]> {
-  return apiGet<BacktestJobResponse[]>(`/api/backtest/jobs?limit=${limit}`);
+  return backtestClient.listJobs(limit);
 }
 
 function fetchJobStatus(jobId: string): Promise<BacktestJobResponse> {
-  return apiGet<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}`);
+  return backtestClient.getJobStatus(jobId);
 }
 
 function fetchResult(jobId: string, includeHtml = false): Promise<BacktestResultResponse> {
-  const params = includeHtml ? '?include_html=true' : '';
-  return apiGet<BacktestResultResponse>(`/api/backtest/result/${encodeURIComponent(jobId)}${params}`);
+  return backtestClient.getResult(jobId, includeHtml);
 }
 
 function runBacktest(request: BacktestRequest): Promise<BacktestJobResponse> {
-  return apiPost<BacktestJobResponse>('/api/backtest/run', request);
+  return backtestClient.runBacktest(request);
 }
 
 function runSignalAttribution(request: SignalAttributionRequest): Promise<SignalAttributionJobResponse> {
-  return apiPost<SignalAttributionJobResponse>('/api/backtest/attribution/run', request);
+  return backtestClient.runSignalAttribution(request);
 }
 
 function fetchSignalAttributionJobStatus(jobId: string): Promise<SignalAttributionJobResponse> {
-  return apiGet<SignalAttributionJobResponse>(`/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}`);
+  return backtestClient.getSignalAttributionJob(jobId);
 }
 
 function fetchSignalAttributionResult(jobId: string): Promise<SignalAttributionResultResponse> {
-  return apiGet<SignalAttributionResultResponse>(`/api/backtest/attribution/result/${encodeURIComponent(jobId)}`);
+  return backtestClient.getSignalAttributionResult(jobId);
 }
 
 function fetchAttributionArtifactFiles(strategy?: string, limit = 100): Promise<AttributionArtifactListResponse> {
-  const params = new URLSearchParams();
-  if (strategy) params.append('strategy', strategy);
-  params.append('limit', limit.toString());
-  return apiGet<AttributionArtifactListResponse>(`/api/backtest/attribution-files?${params.toString()}`);
+  return backtestClient.listAttributionArtifactFiles({ strategy, limit });
 }
 
 function fetchAttributionArtifactContent(
   strategy: string,
   filename: string
 ): Promise<AttributionArtifactContentResponse> {
-  const params = new URLSearchParams({
-    strategy,
-    filename,
-  });
-  return apiGet<AttributionArtifactContentResponse>(`/api/backtest/attribution-files/content?${params.toString()}`);
+  return backtestClient.getAttributionArtifactContent(strategy, filename);
 }
 
 function fetchHtmlFiles(strategy?: string, limit = 100): Promise<HtmlFileListResponse> {
-  const params = new URLSearchParams();
-  if (strategy) params.append('strategy', strategy);
-  params.append('limit', limit.toString());
-  return apiGet<HtmlFileListResponse>(`/api/backtest/html-files?${params.toString()}`);
+  return backtestClient.listHtmlFiles({ strategy, limit });
 }
 
 function fetchHtmlFileContent(strategy: string, filename: string): Promise<HtmlFileContentResponse> {
-  return apiGet<HtmlFileContentResponse>(
-    `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
-  );
+  return backtestClient.getHtmlFileContent(strategy, filename);
 }
 
 function renameHtmlFile(
@@ -138,16 +125,11 @@ function renameHtmlFile(
   filename: string,
   request: HtmlFileRenameRequest
 ): Promise<HtmlFileRenameResponse> {
-  return apiPost<HtmlFileRenameResponse>(
-    `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}/rename`,
-    request
-  );
+  return backtestClient.renameHtmlFile(strategy, filename, request);
 }
 
 function deleteHtmlFile(strategy: string, filename: string): Promise<HtmlFileDeleteResponse> {
-  return apiDelete<HtmlFileDeleteResponse>(
-    `/api/backtest/html-files/${encodeURIComponent(strategy)}/${encodeURIComponent(filename)}`
-  );
+  return backtestClient.deleteHtmlFile(strategy, filename);
 }
 
 // Hooks
@@ -338,7 +320,17 @@ export function useAttributionArtifactContent(strategy: string | null, filename:
 // ============================================
 
 function cancelJob(jobId: string): Promise<BacktestJobResponse> {
-  return apiPost<BacktestJobResponse>(`/api/backtest/jobs/${encodeURIComponent(jobId)}/cancel`);
+  return backtestClient.cancelJob(jobId);
+}
+
+function hasStatusCode(error: unknown, status: number): boolean {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'status' in error &&
+    typeof (error as { status?: unknown }).status === 'number' &&
+    (error as { status: number }).status === status
+  );
 }
 
 /**
@@ -360,7 +352,7 @@ export function useCancelBacktest() {
     },
     onError: (error) => {
       // 409 Conflict: job already completed/failed — refetch to get latest state
-      if (error instanceof ApiError && error.status === 409) {
+      if (hasStatusCode(error, 409)) {
         logger.debug('Cancel rejected (job already terminal), refreshing state');
         queryClient.invalidateQueries({ queryKey: backtestKeys.jobs() });
         return;
@@ -371,7 +363,7 @@ export function useCancelBacktest() {
 }
 
 function cancelSignalAttribution(jobId: string): Promise<SignalAttributionJobResponse> {
-  return apiPost<SignalAttributionJobResponse>(`/api/backtest/attribution/jobs/${encodeURIComponent(jobId)}/cancel`);
+  return backtestClient.cancelSignalAttributionJob(jobId);
 }
 
 export function useCancelSignalAttribution() {
@@ -387,7 +379,7 @@ export function useCancelSignalAttribution() {
       queryClient.invalidateQueries({ queryKey: backtestKeys.attributionJob(data.job_id) });
     },
     onError: (error, jobId) => {
-      if (error instanceof ApiError && error.status === 409) {
+      if (hasStatusCode(error, 409)) {
         logger.debug('Cancel rejected (attribution job already terminal), refreshing state');
         queryClient.invalidateQueries({ queryKey: backtestKeys.attributionJob(jobId) });
         return;
@@ -402,27 +394,27 @@ export function useCancelSignalAttribution() {
 // ============================================
 
 function updateStrategy(name: string, request: StrategyUpdateRequest): Promise<StrategyUpdateResponse> {
-  return apiPut<StrategyUpdateResponse>(`/api/strategies/${encodeURIComponent(name)}`, request);
+  return backtestClient.updateStrategy(name, request);
 }
 
 function deleteStrategy(name: string): Promise<StrategyDeleteResponse> {
-  return apiDelete<StrategyDeleteResponse>(`/api/strategies/${encodeURIComponent(name)}`);
+  return backtestClient.deleteStrategy(name);
 }
 
 function duplicateStrategy(name: string, request: StrategyDuplicateRequest): Promise<StrategyDuplicateResponse> {
-  return apiPost<StrategyDuplicateResponse>(`/api/strategies/${encodeURIComponent(name)}/duplicate`, request);
+  return backtestClient.duplicateStrategy(name, request);
 }
 
 function renameStrategy(name: string, request: StrategyRenameRequest): Promise<StrategyRenameResponse> {
-  return apiPost<StrategyRenameResponse>(`/api/strategies/${encodeURIComponent(name)}/rename`, request);
+  return backtestClient.renameStrategy(name, request);
 }
 
 function moveStrategy(name: string, request: StrategyMoveRequest): Promise<StrategyMoveResponse> {
-  return apiPost<StrategyMoveResponse>(`/api/strategies/${encodeURIComponent(name)}/move`, request);
+  return backtestClient.moveStrategy(name, request);
 }
 
 function validateStrategy(name: string, request: StrategyValidationRequest): Promise<StrategyValidationResponse> {
-  return apiPost<StrategyValidationResponse>(`/api/strategies/${encodeURIComponent(name)}/validate`, request);
+  return backtestClient.validateStrategy(name, request);
 }
 
 /**
@@ -629,11 +621,11 @@ export function useDeleteHtmlFile() {
 // ============================================
 
 function fetchDefaultConfig(): Promise<DefaultConfigResponse> {
-  return apiGet<DefaultConfigResponse>('/api/config/default');
+  return backtestClient.getDefaultConfig();
 }
 
 function updateDefaultConfig(request: DefaultConfigUpdateRequest): Promise<DefaultConfigUpdateResponse> {
-  return apiPut<DefaultConfigUpdateResponse>('/api/config/default', request);
+  return backtestClient.updateDefaultConfig(request);
 }
 
 /**
@@ -674,7 +666,7 @@ export function useUpdateDefaultConfig() {
 // ============================================
 
 function fetchSignalReference(): Promise<SignalReferenceResponse> {
-  return apiGet<SignalReferenceResponse>('/api/signals/reference');
+  return backtestClient.getSignalReference();
 }
 
 /**
