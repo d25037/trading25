@@ -39,6 +39,38 @@ def round4(value: float) -> float:
     return round(value, 4)
 
 
+def redact_local_path(path: Path) -> str:
+    resolved = path.resolve()
+    home = Path.home().resolve()
+    if resolved == home or home in resolved.parents:
+        return f"$HOME/{resolved.relative_to(home).as_posix()}"
+
+    tmp = Path("/tmp")
+    private_tmp = Path("/private/tmp")
+    if resolved == private_tmp or private_tmp in resolved.parents:
+        return f"$TMPDIR/{resolved.relative_to(private_tmp).as_posix()}"
+    if resolved == tmp or tmp in resolved.parents:
+        return f"$TMPDIR/{resolved.relative_to(tmp).as_posix()}"
+
+    return resolved.as_posix()
+
+
+def redact_local_path_string(value: str) -> str:
+    if not value.startswith("/"):
+        return value
+    return redact_local_path(Path(value))
+
+
+def redact_local_paths_in_payload(payload: Any) -> Any:
+    if isinstance(payload, dict):
+        return {key: redact_local_paths_in_payload(value) for key, value in payload.items()}
+    if isinstance(payload, list):
+        return [redact_local_paths_in_payload(value) for value in payload]
+    if isinstance(payload, str):
+        return redact_local_path_string(payload)
+    return payload
+
+
 def configure_logging() -> None:
     # Reduce verbose signal debug logs during baseline collection.
     logger.remove()
@@ -183,6 +215,7 @@ def run_smoke_cycle(
         sleep_seconds=1.0,
         timeout_seconds=timeout_seconds,
     )
+    screening_status_payload = redact_local_paths_in_payload(screening_status_payload)
     screening_elapsed = time.perf_counter() - screening_started
     screening_status = str(screening_status_payload.get("status"))
 
@@ -190,7 +223,7 @@ def run_smoke_cycle(
     if screening_status == "completed":
         screening_result = client.get(f"/api/analytics/screening/result/{screening_job_id}")
         screening_result.raise_for_status()
-        screening_summary = screening_result.json().get("summary", {})
+        screening_summary = redact_local_paths_in_payload(screening_result.json().get("summary", {}))
     else:
         failures.append(
             RunFailure(
@@ -225,6 +258,7 @@ def run_smoke_cycle(
         sleep_seconds=2.0,
         timeout_seconds=timeout_seconds,
     )
+    backtest_status_payload = redact_local_paths_in_payload(backtest_status_payload)
     backtest_elapsed = time.perf_counter() - backtest_started
     backtest_status = str(backtest_status_payload.get("status"))
 
@@ -233,7 +267,7 @@ def run_smoke_cycle(
     if backtest_status == "completed":
         backtest_result = client.get(f"/api/backtest/result/{backtest_job_id}")
         backtest_result.raise_for_status()
-        payload = backtest_result.json()
+        payload = redact_local_paths_in_payload(backtest_result.json())
         backtest_summary = payload.get("summary", {})
         raw_exec = payload.get("execution_time")
         if isinstance(raw_exec, int | float):
@@ -308,7 +342,7 @@ def main() -> int:
         return 1
 
     data_snapshot = {
-        "marketDbPath": str(market_db),
+        "marketDbPath": redact_local_path(market_db),
         "marketDbSizeBytes": market_db.stat().st_size,
         "tableCounts": query_counts(market_db),
     }
@@ -383,7 +417,7 @@ def main() -> int:
                 "rowsPerRun": args.throughput_rows,
             },
             "dataSnapshot": data_snapshot,
-            "runtimeRoot": str(runtime_root),
+            "runtimeRoot": redact_local_path(runtime_root),
         },
         "samples": cycles,
         "summary": {

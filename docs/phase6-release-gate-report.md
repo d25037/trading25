@@ -25,8 +25,8 @@ Phase 6 のリリースゲートとして、以下を実装した。
 
 ## 2. Performance Baseline
 
-計測データ: [`docs/phase6-performance-baseline.json`](/Users/shinjiroaso/.codex/worktrees/0804/trading25/docs/phase6-performance-baseline.json)
-本番相当 smoke baseline: [`docs/phase6-production-smoke-baseline.json`](/Users/shinjiroaso/.codex/worktrees/0804/trading25/docs/phase6-production-smoke-baseline.json)
+計測データ: [`docs/phase6-performance-baseline.json`](./phase6-performance-baseline.json)
+本番相当 smoke baseline: [`docs/phase6-production-smoke-baseline.json`](./phase6-production-smoke-baseline.json)
 
 測定方法:
 - warmup 1 回 + 本計測 3 回
@@ -63,6 +63,6 @@ Phase 6 のリリースゲートとして、以下を実装した。
 ## 4. 既知制約と次アクション
 
 - 本番相当データ量での smoke/perf baseline は bt-035 で実施済み
-  - [`issues/done/bt-035-phase6-production-scale-smoke-and-baseline.md`](/Users/shinjiroaso/.codex/worktrees/0804/trading25/issues/done/bt-035-phase6-production-scale-smoke-and-baseline.md)
+  - [`issues/done/bt-035-phase6-production-scale-smoke-and-baseline.md`](../issues/done/bt-035-phase6-production-scale-smoke-and-baseline.md)
 - job duration メトリクスは screening 以外（backtest/optimize）に未展開
-  - [`issues/bt-036-phase6-extend-job-duration-metrics.md`](/Users/shinjiroaso/.codex/worktrees/0804/trading25/issues/bt-036-phase6-extend-job-duration-metrics.md)
+  - [`issues/bt-036-phase6-extend-job-duration-metrics.md`](../issues/bt-036-phase6-extend-job-duration-metrics.md)

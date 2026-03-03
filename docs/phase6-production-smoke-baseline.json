@@ -17,7 +17,7 @@
       "rowsPerRun": 50000
     },
     "dataSnapshot": {
-      "marketDbPath": "/Users/shinjiroaso/.local/share/trading25/market.db",
+      "marketDbPath": "$HOME/.local/share/trading25/market.db",
       "marketDbSizeBytes": 258846720,
       "tableCounts": {
         "stocks": 4455,
@@ -27,7 +27,7 @@
         "statements": 70556
       }
     },
-    "runtimeRoot": "/private/tmp/trading25-phase6-runtime"
+    "runtimeRoot": "$TMPDIR/trading25-phase6-runtime"
   },
   "samples": [
     {
@@ -79,7 +79,7 @@
           "max_drawdown": 30.815849366832193,
           "win_rate": 38.24884792626728,
           "trade_count": 655,
-          "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132202.html"
+          "html_path": "$TMPDIR/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132202.html"
         },
         "executionTime": 28.8021137714386,
         "statusPayload": {
@@ -99,7 +99,7 @@
             "max_drawdown": 30.815849366832193,
             "win_rate": 38.24884792626728,
             "trade_count": 655,
-            "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132202.html"
+            "html_path": "$TMPDIR/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132202.html"
           }
         }
       },
@@ -154,7 +154,7 @@
           "max_drawdown": 30.815849366832193,
           "win_rate": 38.24884792626728,
           "trade_count": 655,
-          "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132239.html"
+          "html_path": "$TMPDIR/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132239.html"
         },
         "executionTime": 28.671249866485596,
         "statusPayload": {
@@ -174,7 +174,7 @@
             "max_drawdown": 30.815849366832193,
             "win_rate": 38.24884792626728,
             "trade_count": 655,
-            "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132239.html"
+            "html_path": "$TMPDIR/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132239.html"
           }
         }
       },
@@ -229,7 +229,7 @@
           "max_drawdown": 30.815849366832193,
           "win_rate": 38.24884792626728,
           "trade_count": 655,
-          "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132316.html"
+          "html_path": "$TMPDIR/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132316.html"
         },
         "executionTime": 31.899738788604736,
         "statusPayload": {
@@ -249,7 +249,7 @@
             "max_drawdown": 30.815849366832193,
             "win_rate": 38.24884792626728,
             "trade_count": 655,
-            "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132316.html"
+            "html_path": "$TMPDIR/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132316.html"
           }
         }
       },

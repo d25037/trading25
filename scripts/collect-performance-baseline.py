@@ -127,7 +127,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> int:
     args = parse_args()
     repo_root = Path(__file__).resolve().parents[1]
-    bt_project = repo_root / "apps/bt"
+    bt_project = Path("apps/bt")
 
     workloads: dict[str, list[str]] = {
         "screening": [
@@ -156,7 +156,10 @@ def main() -> int:
             "--project",
             str(bt_project),
             "pytest",
-            str(bt_project / "tests/unit/server/test_dataset_builder_service_branches.py::test_build_dataset_writes_manifest_v1"),
+            str(
+                bt_project
+                / "tests/unit/server/test_dataset_builder_service_branches.py::test_build_dataset_writes_manifest_v1"
+            ),
             "--maxfail=1",
             "-q",
         ],

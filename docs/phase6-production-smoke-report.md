@@ -25,11 +25,11 @@
 - run count:
   - warmup なし、連続 3 run（同一条件）
 - runtime artifact:
-  - `/tmp/trading25-phase6-runtime`
+  - `$TMPDIR/trading25-phase6-runtime`
 
 ## 計測結果
 
-計測 JSON: [`docs/phase6-production-smoke-baseline.json`](/Users/shinjiroaso/.codex/worktrees/0804/trading25/docs/phase6-production-smoke-baseline.json)
+計測 JSON: [`docs/phase6-production-smoke-baseline.json`](./phase6-production-smoke-baseline.json)
 
 | workload | median | p95 |
 |---|---:|---:|
@@ -40,7 +40,7 @@
 ## 再現コマンド
 
 ```bash
-UV_CACHE_DIR=/tmp/uv-cache \
+UV_CACHE_DIR="${TMPDIR:-/tmp}/uv-cache" \
 uv run --project apps/bt python scripts/collect-production-smoke-baseline.py \
   --runs 3 \
   --output docs/phase6-production-smoke-baseline.json
