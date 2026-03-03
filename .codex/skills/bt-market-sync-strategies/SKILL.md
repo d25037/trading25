@@ -32,6 +32,9 @@ description: bt の market 同期（initial/incremental/indices-only）と J-Qua
 - 取引日カレンダーは `indices/bars/daily/topix` を SoT として扱う。
 - `/fins/summary` は pagination を前提にし、date 指定と code 指定を使い分ける。
 - OHLCV 欠損行は `build_stock_data_row` で skip し、warning を集約する。
+- stage ごとに `Bulk+REST hybrid` を動的選択し、予測外部request数の小さい手法を採用する（bulk 失敗時は stage 単位で REST fallback）。
+- `totalApiCalls` は pagination 内部ページ数に加えて `/bulk/list`・`/bulk/get`・signed URL download を実カウントする。
+- `incremental` で DuckDB inspection が空（topix/stock/indices）かつアンカー不在のときは cold-start bootstrap を選ぶ。
 
 ## Guardrails
 
