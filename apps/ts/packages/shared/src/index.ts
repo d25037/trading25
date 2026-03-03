@@ -192,6 +192,7 @@ export type {
   MarketFundamentalRankingResponse,
   MarketRankingResponse,
   MarketScreeningResponse,
+  MarketStatsResponse,
   MarketValidationResponse,
   MatchedStrategyItem,
   PresetInfo,

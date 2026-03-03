@@ -22,11 +22,15 @@ const mockCancelSyncState = {
 };
 
 const mockUseSyncJobStatus = vi.fn();
+const mockUseDbStats = vi.fn();
+const mockUseDbValidation = vi.fn();
 
 vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
   useCancelSync: () => mockCancelSyncState,
   useSyncJobStatus: (jobId: string | null) => mockUseSyncJobStatus(jobId),
+  useDbStats: () => mockUseDbStats(),
+  useDbValidation: () => mockUseDbValidation(),
 }));
 
 beforeEach(() => {
@@ -54,6 +58,27 @@ beforeEach(() => {
       error: null,
     };
   });
+  mockUseDbStats.mockReturnValue({
+    data: {
+      initialized: true,
+      lastSync: '2026-02-28T02:29:45.768793+00:00',
+      timeSeriesSource: 'duckdb-parquet',
+      stockData: { dateRange: { min: '2024-01-01', max: '2026-02-27' } },
+      topix: { dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+      indices: { dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+    },
+    isLoading: false,
+    error: null,
+  });
+  mockUseDbValidation.mockReturnValue({
+    data: {
+      status: 'warning',
+      stockData: { missingDatesCount: 12 },
+      failedDatesCount: 3,
+    },
+    isLoading: false,
+    error: null,
+  });
   mockStartSyncState.mutate.mockImplementation((_, options) => {
     options?.onSuccess?.({ jobId: 'job-1', status: 'running', mode: 'auto' });
   });
@@ -68,13 +93,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      {
-        mode: 'auto',
-        dataPlane: {
-          backend: 'duckdb-parquet',
-          sqliteMirror: false,
-        },
-      },
+      { mode: 'auto' },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -85,22 +104,15 @@ describe('SettingsPage', () => {
     expect(mockCancelSyncState.mutate).toHaveBeenCalledWith('job-1');
   });
 
-  it('sends duckdb data plane override by default and allows sqlite mirror override', async () => {
+  it('starts sync request without legacy sqlite data-plane override', async () => {
     const user = userEvent.setup();
 
     render(<SettingsPage />);
 
-    await user.click(screen.getByRole('switch', { name: 'SQLite Mirror' }));
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      {
-        mode: 'auto',
-        dataPlane: {
-          backend: 'duckdb-parquet',
-          sqliteMirror: true,
-        },
-      },
+      { mode: 'auto' },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -125,13 +137,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      {
-        mode: 'incremental',
-        dataPlane: {
-          backend: 'duckdb-parquet',
-          sqliteMirror: false,
-        },
-      },
+      { mode: 'incremental' },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -144,5 +150,15 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Sync failed')).toBeInTheDocument();
+  });
+
+  it('renders market db snapshot from stats/validate', () => {
+    render(<SettingsPage />);
+
+    expect(screen.getByText('DuckDB Snapshot')).toBeInTheDocument();
+    expect(screen.getByText('Stock Data Latest:')).toBeInTheDocument();
+    expect(screen.getAllByText('2026-02-27').length).toBeGreaterThan(0);
+    expect(screen.getByText('Missing Stock Dates:')).toBeInTheDocument();
+    expect(screen.getByText('12')).toBeInTheDocument();
   });
 });

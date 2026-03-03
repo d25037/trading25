@@ -7,7 +7,7 @@ FastAPI バックエンド（`apps/bt`）と TypeScript クライアント（`ap
 ```
 JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
                      │               ├─ DuckDB + Parquet (market time-series)
-                     │               └─ SQLite (portfolio/jobs/datasets, market mirror optional)
+                     │               └─ SQLite (portfolio/jobs/datasets metadata)
                      ↓
                   ts/web (:5173, /api proxy)
                   ts/cli
@@ -53,12 +53,12 @@ bun run workspace:dev
 
 ### 2.1) Market Sync Data Plane 実行オプション
 
-- Web: `Settings > Database Sync` で `Data Backend` と `SQLite Mirror` を指定して同期実行可能
+- Web: `Settings > Database Sync` で DuckDB SoT 同期を実行し、`DuckDB Snapshot`（`/api/db/stats`, `/api/db/validate`）を確認可能
 - CLI:
 ```bash
 cd apps/ts
-bun run cli:run db sync --data-backend duckdb-parquet --no-sqlite-mirror
-bun run cli:run db sync --data-backend sqlite
+bun run cli:run db sync
+bun run cli:run db sync --data-backend duckdb-parquet
 ```
 
 ### 3) Signal Attribution（LOO + Shapley top-N）

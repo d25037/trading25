@@ -77,15 +77,16 @@ _SIGNAL_STATEMENT_COLUMNS = sorted(
 
 def validate_market_db(
     market_db: MarketDb,
-    time_series_store: MarketTimeSeriesStore | None = None,
+    *,
+    time_series_store: MarketTimeSeriesStore,
 ) -> MarketValidationResponse:
-    """market.db の整合性検証"""
+    """DuckDB 時系列 SoT を基準とした整合性検証。"""
     initialized = market_db.is_initialized()
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
     last_refresh = market_db.get_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"])
 
     basic = market_db.get_stats()
-    inspection = _resolve_time_series_inspection(market_db, basic, time_series_store)
+    inspection = _resolve_time_series_inspection(time_series_store)
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)
     latest_disclosed = inspection.latest_statement_disclosed_date
@@ -206,6 +207,7 @@ def validate_market_db(
         initialized=initialized,
         lastSync=last_sync,
         lastStocksRefresh=last_refresh,
+        timeSeriesSource=inspection.source,
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data_val,
@@ -226,44 +228,11 @@ def validate_market_db(
 
 
 def _resolve_time_series_inspection(
-    market_db: MarketDb,
-    basic_stats: dict[str, int],
-    time_series_store: MarketTimeSeriesStore | None,
+    time_series_store: MarketTimeSeriesStore,
 ) -> TimeSeriesInspection:
-    if time_series_store is not None:
-        try:
-            return time_series_store.inspect(
-                missing_stock_dates_limit=100,
-                statement_non_null_columns=_SIGNAL_STATEMENT_COLUMNS,
-            )
-        except Exception:
-            # 検証は継続し、SQLite統計へフォールバックする
-            pass
-
-    topix_range = market_db.get_topix_date_range() or {}
-    stock_range = market_db.get_stock_data_date_range() or {}
-    indices_range = market_db.get_indices_data_range() or {}
-    statement_codes = market_db.get_statement_codes()
-
-    return TimeSeriesInspection(
-        source="sqlite-market-db",
-        topix_count=int(topix_range.get("count") or 0),
-        topix_min=topix_range.get("min"),
-        topix_max=topix_range.get("max"),
-        stock_count=int(stock_range.get("count") or 0),
-        stock_min=stock_range.get("min"),
-        stock_max=stock_range.get("max"),
-        stock_date_count=int(stock_range.get("dateCount") or 0),
-        missing_stock_dates=market_db.get_missing_stock_data_dates(limit=100),
-        missing_stock_dates_count=market_db.get_missing_stock_data_dates_count(),
-        indices_count=int(indices_range.get("dataCount") or 0),
-        latest_indices_dates=market_db.get_latest_indices_data_dates(),
-        statements_count=int(basic_stats.get("statements", 0)),
-        latest_statement_disclosed_date=market_db.get_latest_statement_disclosed_date(),
-        statement_codes=statement_codes,
-        statement_non_null_counts=market_db.get_statement_non_null_counts(
-            _SIGNAL_STATEMENT_COLUMNS
-        ),
+    return time_series_store.inspect(
+        missing_stock_dates_limit=100,
+        statement_non_null_columns=_SIGNAL_STATEMENT_COLUMNS,
     )
 
 

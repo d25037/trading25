@@ -196,15 +196,7 @@ export const syncCommand = define({
     },
     'data-backend': {
       type: 'string',
-      description: 'Time-series data backend (default | duckdb-parquet | sqlite)',
-    },
-    'sqlite-mirror': {
-      type: 'boolean',
-      description: 'Enable SQLite mirror writes (only for default/duckdb backend)',
-    },
-    'no-sqlite-mirror': {
-      type: 'boolean',
-      description: 'Disable SQLite mirror writes (only for default/duckdb backend)',
+      description: 'Time-series data backend (duckdb-parquet only)',
     },
     debug: {
       type: 'boolean',
@@ -224,11 +216,8 @@ ${CLI_NAME} db sync --init-indices
 # Force incremental update only
 ${CLI_NAME} db sync --update
 
-# Run with DuckDB + Parquet only (disable sqlite mirror)
-${CLI_NAME} db sync --data-backend duckdb-parquet --no-sqlite-mirror
-
-# Run with legacy SQLite only backend
-${CLI_NAME} db sync --data-backend sqlite
+# Explicitly run with DuckDB + Parquet backend
+${CLI_NAME} db sync --data-backend duckdb-parquet
 
 # Enable debug logging
 ${CLI_NAME} db sync --debug
@@ -239,15 +228,13 @@ ${CLI_NAME} db sync --debug
       'init-indices': initIndices,
       update,
       'data-backend': dataBackend,
-      'sqlite-mirror': sqliteMirror,
-      'no-sqlite-mirror': noSqliteMirror,
       debug,
     } = ctx.values;
     const spinner = ora('Initializing market sync...').start();
     const mode = determineSyncMode(init, update, initIndices);
 
     try {
-      const startRequest = buildStartSyncRequest(mode, dataBackend, sqliteMirror, noSqliteMirror);
+      const startRequest = buildStartSyncRequest(mode, dataBackend);
       if (debug) {
         console.log(chalk.gray(`[DEBUG] Using API endpoint for sync`));
         console.log(chalk.gray(`[DEBUG] Mode: ${mode}`));

@@ -178,7 +178,7 @@ export interface IndexDataResponse {
 // ===== SYNC TYPES =====
 
 export type SyncMode = 'auto' | 'initial' | 'incremental' | 'indices-only';
-export type SyncDataBackend = 'default' | 'duckdb-parquet' | 'sqlite';
+export type SyncDataBackend = 'duckdb-parquet';
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
 export interface JobProgress {
@@ -227,7 +227,6 @@ export interface CancelJobResponse {
 
 export interface SyncDataPlaneOptions {
   backend?: SyncDataBackend;
-  sqliteMirror?: boolean;
 }
 
 export interface StartSyncRequest {
@@ -411,11 +410,52 @@ export interface IntegrityIssue {
   count: number;
 }
 
+export interface MarketStatsResponse {
+  initialized: boolean;
+  lastSync: string | null;
+  timeSeriesSource: string;
+  databaseSize: number;
+  topix: {
+    count: number;
+    dateRange: { min: string; max: string } | null;
+  };
+  stocks: {
+    total: number;
+    byMarket: Record<string, number>;
+  };
+  stockData: {
+    count: number;
+    dateCount: number;
+    dateRange: { min: string; max: string } | null;
+    averageStocksPerDay: number;
+  };
+  indices: {
+    masterCount: number;
+    dataCount: number;
+    dateCount: number;
+    dateRange: { min: string; max: string } | null;
+    byCategory: Record<string, number>;
+  };
+  fundamentals: {
+    count: number;
+    uniqueStockCount: number;
+    latestDisclosedDate: string | null;
+    primeCoverage: {
+      primeStocks: number;
+      coveredStocks: number;
+      missingStocks: number;
+      coverageRatio: number;
+    };
+  };
+  lastUpdated: string;
+}
+
 export interface MarketValidationResponse {
   status: 'healthy' | 'warning' | 'error';
   initialized: boolean;
   lastSync: string | null;
   lastStocksRefresh: string | null;
+  timeSeriesSource: string;
   topix: {
     count: number;
     dateRange: { min: string; max: string } | null;

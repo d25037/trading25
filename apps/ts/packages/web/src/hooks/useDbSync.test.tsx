@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
-import { useCancelSync, useStartSync, useSyncJobStatus } from './useDbSync';
+import { useCancelSync, useDbStats, useDbValidation, useStartSync, useSyncJobStatus } from './useDbSync';
 
 vi.mock('@/lib/api-client', () => ({
   apiGet: vi.fn(),
@@ -27,12 +27,12 @@ describe('useDbSync hooks', () => {
     await act(async () => {
       await result.current.mutateAsync({
         mode: 'initial',
-        dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+        dataPlane: { backend: 'duckdb-parquet' },
       });
     });
     expect(apiPost).toHaveBeenCalledWith('/api/db/sync', {
       mode: 'initial',
-      dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+      dataPlane: { backend: 'duckdb-parquet' },
     });
   });
 
@@ -60,5 +60,21 @@ describe('useDbSync hooks', () => {
     });
     expect(apiDelete).toHaveBeenCalledWith('/api/db/sync/jobs/abc');
     expect(spy).toHaveBeenCalledWith({ queryKey: ['sync-job', 'abc'] });
+  });
+
+  it('useDbStats fetches db stats', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ initialized: true });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useDbStats(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/db/stats');
+  });
+
+  it('useDbValidation fetches db validation', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ status: 'healthy' });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useDbValidation(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/db/validate');
   });
 });

@@ -126,16 +126,14 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             logger.warning(f"MarketDb の初期化に失敗: {e}")
     app.state.market_db = market_db
 
-    # Phase 2: market data plane (DuckDB + Parquet, optional SQLite mirror)
+    # Phase 2: market data plane (DuckDB + Parquet SoT)
     market_time_series_store: MarketTimeSeriesStore | None = None
     try:
         timeseries_base = settings.market_timeseries_dir
         market_time_series_store = create_time_series_store(
-            backend=settings.market_timeseries_backend,
+            backend="duckdb-parquet",
             duckdb_path=str((Path(timeseries_base) / "market.duckdb")),
             parquet_dir=str((Path(timeseries_base) / "parquet")),
-            sqlite_mirror=settings.market_timeseries_sqlite_mirror,
-            market_db=market_db,
         )
     except Exception as e:
         logger.warning(f"Market time-series store の初期化に失敗: {e}")

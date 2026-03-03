@@ -9,6 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
+from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import MarketDb
 
 
@@ -75,10 +76,48 @@ def market_db_path(tmp_path):
     return db_path
 
 
+def _build_time_series_store(inspection: TimeSeriesInspection):
+    class _Store:
+        def inspect(
+            self,
+            *,
+            missing_stock_dates_limit: int = 0,
+            statement_non_null_columns: list[str] | None = None,
+        ) -> TimeSeriesInspection:
+            del missing_stock_dates_limit, statement_non_null_columns
+            return inspection
+
+        def close(self) -> None:
+            return None
+
+    return _Store()
+
+
 @pytest.fixture
 def client(market_db_path: str):
     app = create_app()
     app.state.market_db = MarketDb(market_db_path, read_only=False)
+    app.state.market_time_series_store = _build_time_series_store(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=3,
+            topix_min="2024-01-04",
+            topix_max="2024-01-06",
+            stock_count=3,
+            stock_min="2024-01-04",
+            stock_max="2024-01-05",
+            stock_date_count=2,
+            missing_stock_dates=["2024-01-06"],
+            missing_stock_dates_count=1,
+            indices_count=1,
+            indices_min="2024-01-04",
+            indices_max="2024-01-04",
+            indices_date_count=1,
+            latest_indices_dates={"0010": "2024-01-04"},
+            statements_count=0,
+            statement_codes=set(),
+        )
+    )
     return TestClient(app, raise_server_exceptions=False)
 
 
@@ -145,6 +184,9 @@ class TestDbValidateRoute:
         conn.close()
         app = create_app()
         app.state.market_db = MarketDb(db_path, read_only=False)
+        app.state.market_time_series_store = _build_time_series_store(
+            TimeSeriesInspection(source="duckdb-parquet")
+        )
         client = TestClient(app, raise_server_exceptions=False)
         resp = client.get("/api/db/validate")
         assert resp.status_code == 200

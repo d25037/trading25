@@ -1,6 +1,13 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
-import type { CancelJobResponse, CreateSyncJobResponse, StartSyncRequest, SyncJobResponse } from '@/types/sync';
+import type {
+  CancelJobResponse,
+  CreateSyncJobResponse,
+  MarketStatsResponse,
+  MarketValidationResponse,
+  StartSyncRequest,
+  SyncJobResponse,
+} from '@/types/sync';
 import { logger } from '@/utils/logger';
 
 // Fetch functions
@@ -14,6 +21,14 @@ function fetchJobStatus(jobId: string): Promise<SyncJobResponse> {
 
 function cancelJob(jobId: string): Promise<CancelJobResponse> {
   return apiDelete<CancelJobResponse>(`/api/db/sync/jobs/${jobId}`);
+}
+
+function fetchDbStats(): Promise<MarketStatsResponse> {
+  return apiGet<MarketStatsResponse>('/api/db/stats');
+}
+
+function fetchDbValidation(): Promise<MarketValidationResponse> {
+  return apiGet<MarketValidationResponse>('/api/db/validate');
 }
 
 // Hooks
@@ -59,5 +74,23 @@ export function useCancelSync() {
     onError: (error) => {
       logger.error('Failed to cancel sync', { error: error.message });
     },
+  });
+}
+
+export function useDbStats() {
+  return useQuery({
+    queryKey: ['db-stats'],
+    queryFn: fetchDbStats,
+    refetchInterval: 30_000,
+    staleTime: 5_000,
+  });
+}
+
+export function useDbValidation() {
+  return useQuery({
+    queryKey: ['db-validation'],
+    queryFn: fetchDbValidation,
+    refetchInterval: 30_000,
+    staleTime: 5_000,
   });
 }

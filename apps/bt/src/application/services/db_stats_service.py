@@ -7,7 +7,9 @@ GET /api/db/stats のビジネスロジック。
 from __future__ import annotations
 
 from datetime import UTC, datetime
+from pathlib import Path
 
+from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
 from src.entrypoints.http.schemas.db import (
     DateRange,
@@ -21,26 +23,43 @@ from src.entrypoints.http.schemas.db import (
 )
 
 
-def get_market_stats(market_db: MarketDb) -> MarketStatsResponse:
-    """market.db の統計情報を取得"""
+def _resolve_duckdb_size_bytes(time_series_store: MarketTimeSeriesStore) -> int:
+    duckdb_path = getattr(time_series_store, "_duckdb_path", None)
+    if not isinstance(duckdb_path, Path):
+        return 0
+    try:
+        return int(duckdb_path.stat().st_size) if duckdb_path.exists() else 0
+    except OSError:
+        return 0
+
+
+def get_market_stats(
+    market_db: MarketDb,
+    *,
+    time_series_store: MarketTimeSeriesStore,
+) -> MarketStatsResponse:
+    """DuckDB 時系列 SoT と market metadata を統合した統計情報を返す。"""
     initialized = market_db.is_initialized()
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
+    inspection = time_series_store.inspect()
 
-    # Stats
+    # Metadata / reference data (SQLite)
     basic = market_db.get_stats()
-    topix_range = market_db.get_topix_date_range()
-    stock_data_range = market_db.get_stock_data_date_range()
     by_market = market_db.get_stock_count_by_market()
-    indices_info = market_db.get_indices_data_range()
-    statement_codes = market_db.get_statement_codes()
-    latest_disclosed_date = market_db.get_latest_statement_disclosed_date()
-    prime_coverage_info = market_db.get_prime_statement_coverage(limit_missing=0)
-    db_size = market_db.get_db_file_size()
+    statement_codes = set(inspection.statement_codes)
+    latest_disclosed_date = inspection.latest_statement_disclosed_date
+    prime_codes = market_db.get_prime_codes()
+    prime_count = len(prime_codes)
+    covered_count = len(prime_codes & statement_codes)
+    missing_count = len(prime_codes - statement_codes)
+    coverage_ratio = round(covered_count / prime_count, 4) if prime_count > 0 else 0.0
 
     # Topix
     topix = TopixStats(
-        count=topix_range["count"] if topix_range else 0,
-        dateRange=DateRange(min=topix_range["min"], max=topix_range["max"]) if topix_range else None,
+        count=inspection.topix_count,
+        dateRange=DateRange(min=inspection.topix_min, max=inspection.topix_max)
+        if inspection.topix_min and inspection.topix_max
+        else None,
     )
 
     # Stocks
@@ -51,37 +70,46 @@ def get_market_stats(market_db: MarketDb) -> MarketStatsResponse:
 
     # Stock data
     stock_data = StockDataStats(
-        count=stock_data_range["count"] if stock_data_range else 0,
-        dateCount=stock_data_range["dateCount"] if stock_data_range else 0,
-        dateRange=DateRange(min=stock_data_range["min"], max=stock_data_range["max"]) if stock_data_range else None,
-        averageStocksPerDay=stock_data_range["averageStocksPerDay"] if stock_data_range else 0,
+        count=inspection.stock_count,
+        dateCount=inspection.stock_date_count,
+        dateRange=DateRange(min=inspection.stock_min, max=inspection.stock_max)
+        if inspection.stock_min and inspection.stock_max
+        else None,
+        averageStocksPerDay=(
+            round(inspection.stock_count / inspection.stock_date_count, 2)
+            if inspection.stock_date_count > 0
+            else 0.0
+        ),
     )
 
     # Indices
     indices = IndicesStats(
-        masterCount=indices_info["masterCount"] if indices_info else 0,
-        dataCount=indices_info["dataCount"] if indices_info else 0,
-        dateCount=indices_info["dateCount"] if indices_info else 0,
-        dateRange=DateRange(**indices_info["dateRange"]) if indices_info and indices_info.get("dateRange") else None,
-        byCategory=indices_info["byCategory"] if indices_info else {},
+        masterCount=basic.get("index_master", 0),
+        dataCount=inspection.indices_count,
+        dateCount=inspection.indices_date_count,
+        dateRange=DateRange(min=inspection.indices_min, max=inspection.indices_max)
+        if inspection.indices_min and inspection.indices_max
+        else None,
+        byCategory={},
     )
 
     fundamentals = FundamentalsStats(
-        count=basic.get("statements", 0),
+        count=inspection.statements_count,
         uniqueStockCount=len(statement_codes),
         latestDisclosedDate=latest_disclosed_date,
         primeCoverage=PrimeCoverage(
-            primeStocks=prime_coverage_info.get("primeCount", 0),
-            coveredStocks=prime_coverage_info.get("coveredCount", 0),
-            missingStocks=prime_coverage_info.get("missingCount", 0),
-            coverageRatio=prime_coverage_info.get("coverageRatio", 0),
+            primeStocks=prime_count,
+            coveredStocks=covered_count,
+            missingStocks=missing_count,
+            coverageRatio=coverage_ratio,
         ),
     )
 
     return MarketStatsResponse(
         initialized=initialized,
         lastSync=last_sync,
-        databaseSize=db_size,
+        timeSeriesSource=inspection.source,
+        databaseSize=_resolve_duckdb_size_bytes(time_series_store),
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data,

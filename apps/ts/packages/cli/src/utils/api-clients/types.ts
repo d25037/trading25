@@ -232,6 +232,7 @@ export interface PortfolioItemDeletedResponse {
 export interface MarketStatsResponse {
   initialized: boolean;
   lastSync: string | null;
+  timeSeriesSource: string;
   databaseSize: number;
   topix: {
     count: number;

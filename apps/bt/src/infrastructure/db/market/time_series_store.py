@@ -1,11 +1,4 @@
-"""Market time-series storage split (DuckDB + Parquet).
-
-Phase 2 Data Plane:
-- market 時系列: DuckDB + Parquet
-- portfolio/jobs metadata: SQLite
-
-互換期間中は SQLite mirror を有効化できる。
-"""
+"""Market time-series storage (DuckDB + Parquet SoT)."""
 
 from __future__ import annotations
 
@@ -14,9 +7,6 @@ from pathlib import Path
 from typing import Any, Protocol, cast
 
 from loguru import logger
-
-from src.infrastructure.db.market.market_db import MarketDb
-
 
 class MarketTimeSeriesStore(Protocol):
     """時系列 publish/index インターフェース。"""
@@ -41,83 +31,6 @@ class MarketTimeSeriesStore(Protocol):
     def close(self) -> None: ...
 
 
-class SqliteMirrorTimeSeriesStore:
-    """互換用 SQLite mirror。"""
-
-    def __init__(self, market_db: MarketDb) -> None:
-        self._market_db = market_db
-
-    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_topix_data(rows)
-
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_stock_data(rows)
-
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_indices_data(rows)
-
-    def publish_statements(self, rows: list[dict[str, Any]]) -> int:
-        return self._market_db.upsert_statements(rows)
-
-    def index_topix_data(self) -> None:
-        return None
-
-    def index_stock_data(self) -> None:
-        return None
-
-    def index_indices_data(self) -> None:
-        return None
-
-    def index_statements(self) -> None:
-        return None
-
-    def inspect(
-        self,
-        *,
-        missing_stock_dates_limit: int = 0,
-        statement_non_null_columns: list[str] | None = None,
-    ) -> "TimeSeriesInspection":
-        basic_stats = self._market_db.get_stats()
-        topix_range = self._market_db.get_topix_date_range() or {}
-        stock_range = self._market_db.get_stock_data_date_range() or {}
-        indices_range = self._market_db.get_indices_data_range() or {}
-        latest_indices_dates = self._market_db.get_latest_indices_data_dates()
-        statement_codes = self._market_db.get_statement_codes()
-        latest_statement = self._market_db.get_latest_statement_disclosed_date()
-        statement_non_null = self._market_db.get_statement_non_null_counts(
-            statement_non_null_columns or []
-        )
-        missing_stock_dates_count = self._market_db.get_missing_stock_data_dates_count()
-
-        missing_stock_dates: list[str] = []
-        if missing_stock_dates_limit > 0:
-            missing_stock_dates = self._market_db.get_missing_stock_data_dates(
-                limit=missing_stock_dates_limit
-            )
-
-        return TimeSeriesInspection(
-            source="sqlite-mirror",
-            topix_count=int(topix_range.get("count") or 0),
-            topix_min=topix_range.get("min"),
-            topix_max=topix_range.get("max"),
-            stock_count=int(stock_range.get("count") or 0),
-            stock_min=stock_range.get("min"),
-            stock_max=stock_range.get("max"),
-            stock_date_count=int(stock_range.get("dateCount") or 0),
-            missing_stock_dates=missing_stock_dates,
-            missing_stock_dates_count=missing_stock_dates_count,
-            indices_count=int(indices_range.get("dataCount") or 0),
-            latest_indices_dates=latest_indices_dates,
-            statements_count=int(basic_stats.get("statements") or 0),
-            latest_statement_disclosed_date=latest_statement,
-            statement_codes=statement_codes,
-            statement_non_null_counts=statement_non_null,
-        )
-
-    def close(self) -> None:
-        return None
-
-
 @dataclass
 class _TableSpec:
     table_name: str
@@ -140,6 +53,9 @@ class TimeSeriesInspection:
     missing_stock_dates: list[str] = field(default_factory=list)
     missing_stock_dates_count: int = 0
     indices_count: int = 0
+    indices_min: str | None = None
+    indices_max: str | None = None
+    indices_date_count: int = 0
     latest_indices_dates: dict[str, str] = field(default_factory=dict)
     statements_count: int = 0
     latest_statement_disclosed_date: str | None = None
@@ -446,8 +362,16 @@ class DuckDbParquetTimeSeriesStore:
             FROM stock_data
             """
         ).fetchone()
-        indices_count_row = self._conn.execute("SELECT COUNT(*) FROM indices_data").fetchone()
-        indices_count = int(indices_count_row[0] or 0) if indices_count_row else 0
+        indices_row_raw = self._conn.execute(
+            """
+            SELECT
+                COUNT(*) AS count,
+                MIN(date) AS min_date,
+                MAX(date) AS max_date,
+                COUNT(DISTINCT date) AS date_count
+            FROM indices_data
+            """
+        ).fetchone()
         indices_rows = self._conn.execute(
             """
             SELECT code, MAX(date) AS max_date
@@ -476,6 +400,7 @@ class DuckDbParquetTimeSeriesStore:
         ).fetchall()
         topix_row = topix_row_raw if topix_row_raw is not None else (0, None, None)
         stock_row = stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
+        indices_row = indices_row_raw if indices_row_raw is not None else (0, None, None, 0)
         statements_row = statements_row_raw if statements_row_raw is not None else (0, None)
         missing_stock_dates_count = int(missing_count_row[0] or 0) if missing_count_row else 0
 
@@ -520,7 +445,10 @@ class DuckDbParquetTimeSeriesStore:
             stock_date_count=int(stock_row[3] or 0),
             missing_stock_dates=missing_stock_dates,
             missing_stock_dates_count=missing_stock_dates_count,
-            indices_count=indices_count,
+            indices_count=int(indices_row[0] or 0),
+            indices_min=cast(str | None, indices_row[1]),
+            indices_max=cast(str | None, indices_row[2]),
+            indices_date_count=int(indices_row[3] or 0),
             latest_indices_dates=latest_indices_dates,
             statements_count=int(statements_row[0] or 0),
             latest_statement_disclosed_date=cast(str | None, statements_row[1]),
@@ -577,177 +505,24 @@ class DuckDbParquetTimeSeriesStore:
         self._conn.close()
 
 
-class CompositeTimeSeriesStore:
-    """複数 backend へ同時 publish するストア。"""
-
-    def __init__(self, stores: list[MarketTimeSeriesStore]) -> None:
-        self._stores = stores
-
-    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_all("publish_topix_data", rows)
-
-    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_all("publish_stock_data", rows)
-
-    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_all("publish_indices_data", rows)
-
-    def publish_statements(self, rows: list[dict[str, Any]]) -> int:
-        return self._publish_all("publish_statements", rows)
-
-    def index_topix_data(self) -> None:
-        self._index_all("index_topix_data")
-
-    def index_stock_data(self) -> None:
-        self._index_all("index_stock_data")
-
-    def index_indices_data(self) -> None:
-        self._index_all("index_indices_data")
-
-    def index_statements(self) -> None:
-        self._index_all("index_statements")
-
-    def inspect(
-        self,
-        *,
-        missing_stock_dates_limit: int = 0,
-        statement_non_null_columns: list[str] | None = None,
-    ) -> TimeSeriesInspection:
-        inspections = [
-            store.inspect(
-                missing_stock_dates_limit=missing_stock_dates_limit,
-                statement_non_null_columns=statement_non_null_columns,
-            )
-            for store in self._stores
-        ]
-        return _merge_inspections(inspections)
-
-    def close(self) -> None:
-        for store in self._stores:
-            store.close()
-
-    def _publish_all(self, method_name: str, rows: list[dict[str, Any]]) -> int:
-        published = 0
-        for store in self._stores:
-            method = cast(Any, getattr(store, method_name))
-            published = method(rows)
-        return published
-
-    def _index_all(self, method_name: str) -> None:
-        for store in self._stores:
-            method = cast(Any, getattr(store, method_name))
-            method()
-
-
 def create_time_series_store(
     *,
     backend: str,
     duckdb_path: str,
     parquet_dir: str,
-    sqlite_mirror: bool,
-    market_db: MarketDb | None,
-    allow_sqlite_fallback: bool = True,
 ) -> MarketTimeSeriesStore | None:
-    """設定に応じて時系列ストアを組み立てる。"""
-    stores: list[MarketTimeSeriesStore] = []
-
+    """設定に応じて DuckDB 時系列ストアを組み立てる。"""
     normalized_backend = backend.strip().lower()
-    if normalized_backend in {"duckdb", "duckdb-parquet", "dual"}:
-        try:
-            stores.append(
-                DuckDbParquetTimeSeriesStore(
-                    duckdb_path=duckdb_path,
-                    parquet_dir=parquet_dir,
-                )
-            )
-            logger.info("Market time-series backend enabled: duckdb-parquet")
-        except RuntimeError as exc:
-            logger.warning("DuckDB backend is unavailable: {}", exc)
-
-    if sqlite_mirror and market_db is not None:
-        stores.append(SqliteMirrorTimeSeriesStore(market_db))
-        logger.info("Market time-series sqlite mirror enabled")
-
-    if not stores and market_db is not None and allow_sqlite_fallback:
-        # 最低限の後方互換として SQLite のみを利用
-        logger.warning("Falling back to SQLite-only market time-series store")
-        stores.append(SqliteMirrorTimeSeriesStore(market_db))
-
-    if not stores:
+    if normalized_backend not in {"duckdb", "duckdb-parquet"}:
+        logger.warning("Unsupported market time-series backend: {}", backend)
         return None
-    if len(stores) == 1:
-        return stores[0]
-    return CompositeTimeSeriesStore(stores)
-
-
-def _merge_inspections(inspections: list[TimeSeriesInspection]) -> TimeSeriesInspection:
-    if not inspections:
-        return TimeSeriesInspection(source="none")
-
-    primary = max(inspections, key=_inspection_priority)
-
-    merged = TimeSeriesInspection(
-        source=primary.source,
-        topix_count=primary.topix_count,
-        topix_min=primary.topix_min,
-        topix_max=primary.topix_max,
-        stock_count=primary.stock_count,
-        stock_min=primary.stock_min,
-        stock_max=primary.stock_max,
-        stock_date_count=primary.stock_date_count,
-        missing_stock_dates=list(primary.missing_stock_dates),
-        missing_stock_dates_count=max(
-            primary.missing_stock_dates_count,
-            len(primary.missing_stock_dates),
-        ),
-        indices_count=primary.indices_count,
-        latest_indices_dates=dict(primary.latest_indices_dates),
-        statements_count=primary.statements_count,
-        latest_statement_disclosed_date=primary.latest_statement_disclosed_date,
-        statement_codes=set(primary.statement_codes),
-        statement_non_null_counts=dict(primary.statement_non_null_counts),
-    )
-
-    for inspection in inspections:
-        for code, date in inspection.latest_indices_dates.items():
-            current = merged.latest_indices_dates.get(code)
-            if current is None or date > current:
-                merged.latest_indices_dates[code] = date
-
-        merged.statement_codes |= inspection.statement_codes
-        merged.missing_stock_dates_count = max(
-            merged.missing_stock_dates_count,
-            inspection.missing_stock_dates_count,
-            len(inspection.missing_stock_dates),
+    try:
+        store = DuckDbParquetTimeSeriesStore(
+            duckdb_path=duckdb_path,
+            parquet_dir=parquet_dir,
         )
-
-        for column, count in inspection.statement_non_null_counts.items():
-            merged.statement_non_null_counts[column] = max(
-                merged.statement_non_null_counts.get(column, 0),
-                count,
-            )
-
-        if (
-            merged.latest_statement_disclosed_date is None
-            or (
-                inspection.latest_statement_disclosed_date
-                and inspection.latest_statement_disclosed_date
-                > merged.latest_statement_disclosed_date
-            )
-        ):
-            merged.latest_statement_disclosed_date = inspection.latest_statement_disclosed_date
-
-    merged.statements_count = max(merged.statements_count, len(merged.statement_codes))
-    return merged
-
-
-def _inspection_priority(inspection: TimeSeriesInspection) -> tuple[int, int, int]:
-    is_duckdb = 1 if "duckdb" in inspection.source else 0
-    non_empty_tables = int(inspection.stock_count > 0) + int(inspection.topix_count > 0)
-    volume = (
-        inspection.stock_count
-        + inspection.topix_count
-        + inspection.indices_count
-        + inspection.statements_count
-    )
-    return (is_duckdb, non_empty_tables, volume)
+    except Exception as exc:  # noqa: BLE001 - backend初期化失敗を呼び出し側で扱う
+        logger.warning("DuckDB backend is unavailable: {}", exc)
+        return None
+    logger.info("Market time-series backend enabled: duckdb-parquet")
+    return store

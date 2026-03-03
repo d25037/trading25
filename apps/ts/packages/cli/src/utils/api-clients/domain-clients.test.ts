@@ -256,7 +256,7 @@ describe('Domain API clients', () => {
 
     await client.startSync({
       mode: 'incremental',
-      dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+      dataPlane: { backend: 'duckdb-parquet' },
     });
     expect(getLastCall()).toEqual({
       endpoint: '/api/db/sync',
@@ -264,7 +264,7 @@ describe('Domain API clients', () => {
         method: 'POST',
         body: JSON.stringify({
           mode: 'incremental',
-          dataPlane: { backend: 'duckdb-parquet', sqliteMirror: false },
+          dataPlane: { backend: 'duckdb-parquet' },
         }),
       },
     });

@@ -8,6 +8,8 @@ export type {
   CreateSyncJobResponse,
   JobProgress,
   JobStatus,
+  MarketStatsResponse,
+  MarketValidationResponse,
   StartSyncRequest,
   SyncDataBackend,
   SyncDataPlaneOptions,

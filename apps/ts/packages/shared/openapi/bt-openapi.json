@@ -5663,6 +5663,11 @@
             ],
             "title": "Lastsync"
           },
+          "timeSeriesSource": {
+            "default": "duckdb-parquet",
+            "title": "Timeseriessource",
+            "type": "string"
+          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
@@ -5785,6 +5790,11 @@
               }
             ],
             "title": "Lastsync"
+          },
+          "timeSeriesSource": {
+            "default": "duckdb-parquet",
+            "title": "Timeseriessource",
+            "type": "string"
           },
           "lastUpdated": {
             "title": "Lastupdated",
@@ -11121,25 +11131,12 @@
       "SyncDataPlaneRequest": {
         "properties": {
           "backend": {
-            "default": "default",
+            "default": "duckdb-parquet",
             "enum": [
-              "default",
-              "duckdb-parquet",
-              "sqlite"
+              "duckdb-parquet"
             ],
             "title": "Backend",
             "type": "string"
-          },
-          "sqliteMirror": {
-            "anyOf": [
-              {
-                "type": "boolean"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Sqlitemirror"
           }
         },
         "title": "SyncDataPlaneRequest",

@@ -64,6 +64,7 @@ class FundamentalsStats(BaseModel):
 class MarketStatsResponse(BaseModel):
     initialized: bool
     lastSync: str | None = None
+    timeSeriesSource: str = "duckdb-parquet"
     databaseSize: int
     topix: TopixStats
     stocks: StockStats
@@ -111,6 +112,7 @@ class MarketValidationResponse(BaseModel):
     initialized: bool
     lastSync: str | None = None
     lastStocksRefresh: str | None = None
+    timeSeriesSource: str = "duckdb-parquet"
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
@@ -131,12 +133,11 @@ class MarketValidationResponse(BaseModel):
 
 
 SyncModeLiteral = Literal["auto", "initial", "incremental", "indices-only"]
-SyncDataBackendLiteral = Literal["default", "duckdb-parquet", "sqlite"]
+SyncDataBackendLiteral = Literal["duckdb-parquet"]
 
 
 class SyncDataPlaneRequest(BaseModel):
-    backend: SyncDataBackendLiteral = "default"
-    sqliteMirror: bool | None = None
+    backend: SyncDataBackendLiteral = "duckdb-parquet"
 
 
 class SyncRequest(BaseModel):
