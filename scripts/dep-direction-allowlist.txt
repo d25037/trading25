@@ -31,8 +31,6 @@ apps/ts/packages/web/src/types/backtest.ts
 # Vite proxy config (localhost:3002 reference)
 apps/ts/packages/web/vite.config.ts
 
-# CLI api-client (localhost:3002 default)
-apps/ts/packages/cli/src/utils/api-client.ts
 # PR #150: web BacktestClient re-export keeps bt endpoint/client references centralized
 apps/ts/packages/web/src/lib/backtest-client.ts
 
@@ -40,27 +38,6 @@ apps/ts/packages/web/src/lib/backtest-client.ts
 apps/ts/packages/shared/src/dataset/api-client.ts
 apps/ts/packages/shared/src/ta/__fixtures__/fetch-margin-data.ts
 apps/ts/packages/shared/src/ta/__fixtures__/fetch-test-data.ts
-
-# CLI backtest commands (BT_API_URL reference)
-apps/ts/packages/cli/src/commands/backtest/run.ts
-apps/ts/packages/cli/src/commands/backtest/cancel.ts
-apps/ts/packages/cli/src/commands/backtest/list.ts
-apps/ts/packages/cli/src/commands/backtest/results.ts
-apps/ts/packages/cli/src/commands/backtest/status.ts
-apps/ts/packages/cli/src/commands/backtest/validate.ts
-apps/ts/packages/cli/src/commands/backtest/error-handler.ts
-apps/ts/packages/cli/src/commands/backtest/client.ts
-apps/ts/packages/cli/src/commands/backtest/commands.test.ts
-# PR #26: attribution subcommands (use BacktestClient/BT_API_URL)
-apps/ts/packages/cli/src/commands/backtest/attribution/run.ts
-apps/ts/packages/cli/src/commands/backtest/attribution/status.ts
-apps/ts/packages/cli/src/commands/backtest/attribution/results.ts
-apps/ts/packages/cli/src/commands/backtest/attribution/cancel.ts
-apps/ts/packages/cli/src/commands/backtest/attribution/commands.test.ts
-# PR #85: CLI coverage tests that intentionally reference bt endpoint/client strings
-apps/ts/packages/cli/src/commands/backtest/error-handler.test.ts
-apps/ts/packages/cli/src/utils/api-clients/base-client.test.ts
-apps/ts/packages/cli/src/utils/api-clients/domain-clients.test.ts
 
 # Canonical client package (Phase 4A)
 apps/ts/packages/api-clients/src/backtest/BacktestClient.ts

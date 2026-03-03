@@ -1,6 +1,6 @@
 # Trading25 TypeScript Workspace
 
-`apps/ts` は trading25 のフロントエンド/CLI/共有ライブラリを管理する Bun workspace です。
+`apps/ts` は trading25 のフロントエンド/共有ライブラリを管理する Bun workspace です。
 バックエンド実行ロジックは `apps/bt` の FastAPI (`http://localhost:3002`) に統一されています。
 
 ## Package Layout
@@ -8,7 +8,6 @@
 | Package | Role | Status |
 |---|---|---|
 | `packages/web` | React 19 + Vite フロントエンド | Active |
-| `packages/cli` | Gunshi CLI（db/dataset/jquants/backtest/analysis の運用・自動化） | Active |
 | `packages/shared` | 共有ロジック、DBアクセス、型公開、`bt:sync` | Active |
 | `packages/api-clients` | FastAPI クライアント（backtest/JQuants） | Active |
 
@@ -40,7 +39,6 @@ bun run workspace:dev
 # Development
 bun run workspace:dev        # web 起動 (Vite :5173, /api -> :3002 proxy)
 bun run web:dev
-bun run cli:dev
 bun run workspace:dev:sync   # bt:sync + web:dev
 
 # Quality
@@ -64,7 +62,6 @@ bun run workspace:build
 ## API / Type Sync
 
 - Web は `/api` を `http://localhost:3002` にプロキシ
-- CLI の既定 API URL は `http://localhost:3002`（`API_BASE_URL` で上書き可）
 - API ドキュメントは FastAPI 側 `http://localhost:3002/doc`
 - `bt:sync` はサーバー起動不要（`apps/bt` ソースから OpenAPI 生成）。生成不能時のみ FastAPI 取得にフォールバック
 - スキーマ変更時は以下を実行
@@ -73,36 +70,10 @@ bun run workspace:build
 bun run --filter @trading25/shared bt:sync
 ```
 
-## CLI Examples
+## CLI Usage
 
-```bash
-# DB
-bun run cli:run db sync
-bun run cli:run db validate
-bun run cli:run db stats
-bun run cli:run db refresh
-
-# Dataset
-bun run cli:run dataset create prime.db --preset primeMarket
-bun run cli:run dataset info prime.db
-
-# Analytics
-bun run cli:run analysis ranking --limit 20
-bun run cli:run analysis screening
-bun run cli:run analysis factor-regression 7203
-bun run cli:run analysis portfolio-factor-regression 1
-
-# JQuants proxy fetch
-bun run cli:run jquants auth status
-bun run cli:run jquants fetch listed-info --date 2026-01-05
-bun run cli:run jquants fetch daily-quotes 7203 --csv
-
-# Backtest headless
-bun run cli:run backtest run production/range_break_v5 --wait
-bun run cli:run backtest results --format json
-```
-
-`portfolio` / `watchlist` の日常 CRUD は `packages/web` の Portfolio ページに移行済みです。
+運用用CLIは `apps/bt` の `bt` コマンドに統合済みです。
+`apps/ts` からの headless 運用は廃止しました。
 
 ## Environment Variables
 

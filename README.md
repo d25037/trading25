@@ -10,7 +10,6 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
                      │               └─ SQLite (portfolio/jobs/datasets metadata)
                      ↓
                   ts/web (:5173, /api proxy)
-                  ts/cli
 ```
 
 - バックエンドは `apps/bt` の FastAPI に一本化済み
@@ -21,7 +20,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 ## Repository Layout
 
 - `apps/bt` - Python 3.12 + FastAPI + vectorbt + typer CLI
-- `apps/ts` - Bun workspace（web / cli / shared / api-clients）
+- `apps/ts` - Bun workspace（web / shared / api-clients）
 - `contracts` - bt/ts 間の安定インターフェース（JSON Schema, OpenAPI baseline）
 - `docs` - ロードマップ、設計判断、監査レポート
   - `docs/bt-src-layering-guide.md` - `apps/bt/src` の 5層配置ガイド
@@ -54,27 +53,11 @@ bun run workspace:dev
 ### 2.1) Market Sync Data Plane 実行オプション
 
 - Web: `Settings > Database Sync` で DuckDB SoT 同期を実行し、`DuckDB Snapshot`（`/api/db/stats`, `/api/db/validate`）を確認可能
-- CLI:
-```bash
-cd apps/ts
-bun run cli:run db sync
-bun run cli:run db sync --data-backend duckdb-parquet
-```
 
 ### 3) Signal Attribution（LOO + Shapley top-N）
 - Web: Backtest ページの `Attribution` サブタブで `Run` から実行し、`History` で保存済み JSON を閲覧
-- CLI:
-```bash
-cd apps/ts
-bun run cli:run backtest attribution run <strategy> --wait
-bun run cli:run backtest attribution status <job-id>
-bun run cli:run backtest attribution results <job-id>
-bun run cli:run backtest attribution cancel <job-id>
-```
-- 非同期ジョブ系コマンド（`analysis screening`, `backtest run`, `backtest attribution run`）は
-  `--wait` / `--json` / `--output <path>` を共通サポート（`analysis screening` は `--no-wait` 互換を維持）
 - 保存先（XDG）: `~/.local/share/trading25/backtest/attribution/<strategy>/`
-- 補足: `portfolio/watchlist` 操作は CLI から web UI（Portfolio タブ）へ移行済み
+- 補足: `portfolio/watchlist` 操作は web UI（Portfolio タブ）を正規導線とする
 
 ### 4) Lab（fundamental 制約付き生成/進化/最適化/改善）
 ```bash
@@ -101,11 +84,6 @@ uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mod
 Analysis は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成です。
 
 - Web: Analysis > Screening で production 戦略を動的選択（未選択=全production）
-- CLI:
-```bash
-cd apps/ts
-bun run cli:run analysis screening --strategies production/forward_eps_driven --sort-by matchedDate
-```
 - Screening API:
 ```bash
 POST /api/analytics/screening/jobs
@@ -115,7 +93,6 @@ GET /api/analytics/screening/result/{job_id}
 ```
 - リクエストは `markets`, `strategies`, `recentDays`, `date`, `sortBy`, `order`, `limit`
 - 既定ソートは `matchedDate desc`
-- CLI は完了待機が既定（`--no-wait` で job_id を返して終了）
 - Analysis の `Screening / Daily Ranking / Fundamental Ranking` 一覧は大量件数時に virtualization を適用し、
   Screening/Backtest/Lab の job history UI は共通テーブルで統一
 - 旧 `rangeBreakFast/Slow`, `minBreakPercentage`, `minVolumeRatio` は廃止（後方互換なし）

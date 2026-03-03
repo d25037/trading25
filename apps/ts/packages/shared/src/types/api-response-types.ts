@@ -1,7 +1,7 @@
 /**
  * Centralized API Response Types
  *
- * Single source of truth for API response types shared between packages/web, packages/cli, and packages/api-clients.
+ * Single source of truth for API response types shared between packages/web and packages/api-clients.
  */
 
 // ===== RANKING TYPES =====

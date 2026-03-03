@@ -29,34 +29,16 @@ const TASKS: Record<string, TaskDefinition> = {
     steps: [{ shell: "echo 'Use: uv run bt server --port 3002'" }],
   },
   'apps:test': {
-    description: 'Run app tests (cli + web)',
-    steps: [
-      { command: ['run', '--filter', '@trading25/cli', 'test'] },
-      { command: ['run', '--filter', '@trading25/web', 'test'] },
-    ],
-  },
-  'cli:build': {
-    description: 'Build CLI package',
-    steps: [{ command: ['run', '--filter', '@trading25/cli', 'build'] }],
-  },
-  'cli:dev': {
-    description: 'Run CLI in watch mode',
-    steps: [{ command: ['run', '--filter', '@trading25/cli', 'dev'], withEnvFile: true }],
-  },
-  'cli:run': {
-    description: 'Run CLI entrypoint',
-    steps: [{ command: ['packages/cli/src/index.ts'], withEnvFile: true }],
+    description: 'Run app tests (web)',
+    steps: [{ command: ['run', '--filter', '@trading25/web', 'test'] }],
   },
   'api-clients:build': {
     description: 'Build api-clients package',
     steps: [{ command: ['run', '--filter', '@trading25/api-clients', 'build'] }],
   },
   'core:test': {
-    description: 'Run package tests + CLI tests',
-    steps: [
-      { task: 'packages:test' },
-      { command: ['run', '--filter', '@trading25/cli', 'test'] },
-    ],
+    description: 'Run package tests',
+    steps: [{ task: 'packages:test' }],
   },
   'coverage:check': {
     description: 'Check coverage thresholds',
@@ -124,7 +106,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'workspace:build': {
     description: 'Build all workspace packages',
-    steps: [{ task: 'api-clients:build' }, { task: 'shared:build' }, { task: 'web:build' }, { task: 'cli:build' }],
+    steps: [{ task: 'api-clients:build' }, { task: 'shared:build' }, { task: 'web:build' }],
   },
   'workspace:clean': {
     description: 'Clean dist/node_modules and lock files',
@@ -154,7 +136,6 @@ const TASKS: Record<string, TaskDefinition> = {
     steps: [
       { command: ['run', '--filter', '@trading25/shared', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/api-clients', 'test:coverage'] },
-      { command: ['run', '--filter', '@trading25/cli', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/web', 'test:coverage'] },
     ],
   },
@@ -175,11 +156,9 @@ async function runBun(args: string[], options: { withEnvFile?: boolean } = {}): 
 async function runShell(command: string): Promise<number> {
   if (command === 'workspace-clean') {
     await Promise.all([
-      rm(resolve(ROOT, 'packages/cli/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/api-clients/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/shared/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/dist'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/cli/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/api-clients/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/shared/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/node_modules'), { recursive: true, force: true }),

@@ -180,8 +180,8 @@ uv run bt server --port 3002 --reload
 ```
 
 ### ポートフォリオCLI
-`apps/bt` の `portfolio` コマンドは廃止済み。ポートフォリオ操作は `apps/ts/packages/cli` の
-`bun cli portfolio ...` を使用する。
+`apps/bt` の `portfolio` コマンドは廃止済み。ポートフォリオ操作は `apps/ts/packages/web` の
+Portfolio UI から実行する。
 
 ### 開発・検証
 ```bash
