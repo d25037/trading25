@@ -2,7 +2,7 @@
 
 `apps/bt` は trading25 の単一バックエンドです。  
 FastAPI サーバー（`:3002`）と Python CLI（`bt`）を提供します。  
-ユーザー向け一次CLIは `apps/ts/packages/cli` で、`apps/bt` のCLIは実行基盤・運用向けユーティリティとして位置付けます。
+運用向けCLIは `apps/bt` の `bt` コマンドに統一されています。
 
 ## Responsibilities
 
@@ -73,11 +73,9 @@ uv run pytest tests
 
 ## Integration with apps/ts
 
-- ユーザー向け一次CLIは `apps/ts/packages/cli`（Gunshi CLI）
-- `apps/bt` の `bt` CLI は実行基盤・運用向け
-- ポートフォリオ操作は `apps/ts/packages/cli`（`bun cli portfolio ...`）を使用
+- 運用向けCLIは `apps/bt` の `bt` コマンド
+- ポートフォリオ操作は `apps/ts/packages/web` から実行
 - `apps/ts/packages/web` は `/api` を FastAPI (`:3002`) にプロキシ
-- `apps/ts/packages/cli` は FastAPI API を直接呼び出し
 - OpenAPI 変更時は `apps/ts` で `bun run --filter @trading25/shared bt:sync` を実行
 
 ## Tech Stack

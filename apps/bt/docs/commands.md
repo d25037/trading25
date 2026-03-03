@@ -1,8 +1,7 @@
 # CLIコマンドリファレンス
 
-このドキュメントは `apps/bt` の `bt` CLI（実行基盤・運用向け）を扱います。
-ユーザー向け一次CLIは `apps/ts/packages/cli`（Gunshi CLI）です。
-ポートフォリオ操作は `bun cli portfolio ...` を利用してください。
+このドキュメントは `apps/bt` の `bt` CLI を扱います。
+ポートフォリオ操作は `apps/ts/packages/web` の Portfolio UI を利用してください。
 実行は `uv run` 経由を推奨します。
 
 ## bt（バックテスト）

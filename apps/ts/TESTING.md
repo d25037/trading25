@@ -62,19 +62,6 @@ bun run test:ui         # Interactive UI
 bun run test:coverage   # With coverage
 ```
 
-### CLI Package (`packages/cli/`)
-
-Tests command-line interface:
-- **Commands**: auth-status, stock, quote, margin
-- **Error Handling**: Network failures, authentication errors
-- **Output Formatting**: Console output validation
-
-```bash
-cd packages/cli
-bun run test                # Watch mode
-bun run test:coverage   # With coverage
-```
-
 ## Test Structure
 
 ### Mock Data & Type-Safe Testing
@@ -88,8 +75,6 @@ import { mockListedInfo, mockJQuantsConfig } from '../test-utils/fixtures';
 // Frontend package  
 import { mockEngineStatus, mockFetch } from './test-utils/mocks';
 
-// CLI package
-import { mockChalk } from './test-utils/mocks';
 ```
 
 ### Type-Safe Test Utilities
@@ -126,17 +111,6 @@ it('should render chart components', async () => {
 });
 ```
 
-**CLI Command Testing:**
-```typescript
-it('should display authentication status', async () => {
-  mockJQuantsClient.getAuthStatus.mockReturnValue(mockAuthStatus);
-  
-  await action(); // Simulate command execution
-  
-  expect(mockConsole.log).toHaveBeenCalledWith(expect.stringContaining('Authentication Status'));
-});
-```
-
 **Technical Analysis Testing:**
 ```typescript
 import { loadToyotaData } from '../__fixtures__/toyota-data-loader';
@@ -166,7 +140,6 @@ it('should convert daily to weekly OHLC', () => {
 
 - **Shared**: >90% - Core business logic
 - **Frontend**: >85% - UI components and API endpoints  
-- **CLI**: >80% - Command handlers and error scenarios
 
 ## Configuration
 

@@ -7,9 +7,11 @@ export type {
   CancelJobResponse,
   CreateSyncJobResponse,
   JobProgress,
+  MarketRefreshResponse,
   JobStatus,
   MarketStatsResponse,
   MarketValidationResponse,
+  RefreshStockResult,
   StartSyncRequest,
   SyncDataBackend,
   SyncDataPlaneOptions,
@@ -17,3 +19,7 @@ export type {
   SyncJobResult,
   SyncMode,
 } from '@trading25/shared/types/api-response-types';
+
+export interface RefreshStocksRequest {
+  codes: string[];
+}

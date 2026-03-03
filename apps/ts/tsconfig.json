@@ -33,10 +33,9 @@
       "@trading25/api-clients/*": ["packages/api-clients/src/*"],
       "@trading25/shared": ["packages/shared/src"],
       "@trading25/shared/*": ["packages/shared/src/*"],
-      "@trading25/web": ["packages/web/src"],
-      "@trading25/cli": ["packages/cli/src"]
+      "@trading25/web": ["packages/web/src"]
     }
   },
-  "include": ["packages/shared/src/**/*", "packages/cli/src/**/*", "node_modules/bun-types/**/*.d.ts"],
+  "include": ["packages/shared/src/**/*", "node_modules/bun-types/**/*.d.ts"],
   "exclude": ["node_modules", "**/dist", "**/*.disabled/**", "**/examples.disabled/**"]
 }

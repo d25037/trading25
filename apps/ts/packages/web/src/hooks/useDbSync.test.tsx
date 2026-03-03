@@ -2,7 +2,7 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
-import { useCancelSync, useDbStats, useDbValidation, useStartSync, useSyncJobStatus } from './useDbSync';
+import { useCancelSync, useDbStats, useDbValidation, useRefreshStocks, useStartSync, useSyncJobStatus } from './useDbSync';
 
 vi.mock('@/lib/api-client', () => ({
   apiGet: vi.fn(),
@@ -76,5 +76,30 @@ describe('useDbSync hooks', () => {
     const { result } = renderHook(() => useDbValidation(), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/db/validate');
+  });
+
+  it('useRefreshStocks posts request and invalidates db queries', async () => {
+    vi.mocked(apiPost).mockResolvedValueOnce({
+      totalStocks: 1,
+      successCount: 1,
+      failedCount: 0,
+      totalApiCalls: 1,
+      totalRecordsStored: 10,
+      results: [{ code: '7203', success: true, recordsFetched: 10, recordsStored: 10 }],
+      errors: [],
+      lastUpdated: '2026-03-03T00:00:00Z',
+    });
+
+    const { queryClient, wrapper } = createTestWrapper();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+    const { result } = renderHook(() => useRefreshStocks(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({ codes: ['7203'] });
+    });
+
+    expect(apiPost).toHaveBeenCalledWith('/api/db/stocks/refresh', { codes: ['7203'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
+    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-validation'] });
   });
 });

@@ -1,11 +1,25 @@
-import { Database, Loader2 } from 'lucide-react';
+import { Database, Loader2, RotateCcw } from 'lucide-react';
 import { useState } from 'react';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { useCancelSync, useDbStats, useDbValidation, useStartSync, useSyncJobStatus } from '@/hooks/useDbSync';
-import type { MarketStatsResponse, MarketValidationResponse, StartSyncRequest, SyncMode } from '@/types/sync';
+import {
+  useCancelSync,
+  useDbStats,
+  useDbValidation,
+  useRefreshStocks,
+  useStartSync,
+  useSyncJobStatus,
+} from '@/hooks/useDbSync';
+import type {
+  MarketRefreshResponse,
+  MarketStatsResponse,
+  MarketValidationResponse,
+  StartSyncRequest,
+  SyncMode,
+} from '@/types/sync';
 
 function formatTimestamp(value?: string | null): string {
   if (!value) return 'n/a';
@@ -118,13 +132,92 @@ function SnapshotStatus({
   );
 }
 
+function parseStockCodes(value: string): string[] {
+  const tokens = value
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const unique = new Set<string>();
+  for (const token of tokens) {
+    if (/^\d{4}$/.test(token)) {
+      unique.add(token);
+    }
+  }
+  return [...unique];
+}
+
+function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-3">
+        <div>
+          <span className="text-muted-foreground">Total Stocks:</span>
+          <span className="ml-2 font-medium">{result.totalStocks}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Success:</span>
+          <span className="ml-2 font-medium text-green-500">{result.successCount}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Failed:</span>
+          <span className="ml-2 font-medium text-red-500">{result.failedCount}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">API Calls:</span>
+          <span className="ml-2 font-medium">{result.totalApiCalls}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Records Stored:</span>
+          <span className="ml-2 font-medium">{result.totalRecordsStored}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Updated:</span>
+          <span className="ml-2 font-medium">{formatTimestamp(result.lastUpdated)}</span>
+        </div>
+      </div>
+
+      <div className="max-h-56 overflow-auto rounded-md border">
+        <table className="w-full text-xs">
+          <thead className="bg-muted/40 sticky top-0">
+            <tr>
+              <th className="px-2 py-1 text-left">Code</th>
+              <th className="px-2 py-1 text-left">Status</th>
+              <th className="px-2 py-1 text-right">Fetched</th>
+              <th className="px-2 py-1 text-right">Stored</th>
+              <th className="px-2 py-1 text-left">Error</th>
+            </tr>
+          </thead>
+          <tbody>
+            {result.results.map((item) => (
+              <tr key={item.code} className="border-t">
+                <td className="px-2 py-1 font-medium">{item.code}</td>
+                <td className={`px-2 py-1 ${item.success ? 'text-green-500' : 'text-red-500'}`}>
+                  {item.success ? 'ok' : 'failed'}
+                </td>
+                <td className="px-2 py-1 text-right">{item.recordsFetched}</td>
+                <td className="px-2 py-1 text-right">{item.recordsStored}</td>
+                <td className="px-2 py-1">{item.error ?? '-'}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: settings page coordinates sync and refresh sections
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
   const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [refreshCodesInput, setRefreshCodesInput] = useState('');
+  const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
+  const [refreshResult, setRefreshResult] = useState<MarketRefreshResponse | null>(null);
 
   const startSync = useStartSync();
   const { data: jobStatus, isLoading: isPolling } = useSyncJobStatus(activeJobId);
   const cancelSync = useCancelSync();
+  const refreshStocks = useRefreshStocks();
   const { data: dbStats, isLoading: isStatsLoading, error: statsError } = useDbStats();
   const { data: dbValidation, isLoading: isValidationLoading, error: validationError } = useDbValidation();
 
@@ -141,6 +234,29 @@ export function SettingsPage() {
     if (activeJobId) {
       cancelSync.mutate(activeJobId);
     }
+  };
+
+  const handleRefreshStocks = () => {
+    setRefreshResult(null);
+    const codes = parseStockCodes(refreshCodesInput);
+    if (codes.length === 0) {
+      setRefreshInputError('Enter at least one 4-digit stock code (comma/space/newline separated).');
+      return;
+    }
+    if (codes.length > 50) {
+      setRefreshInputError('Maximum 50 stock codes are allowed.');
+      return;
+    }
+
+    setRefreshInputError(null);
+    refreshStocks.mutate(
+      { codes },
+      {
+        onSuccess: (data) => {
+          setRefreshResult(data);
+        },
+      }
+    );
   };
 
   return (
@@ -166,6 +282,48 @@ export function SettingsPage() {
           {startSync.error && (
             <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{startSync.error.message}</div>
           )}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <RotateCcw className="h-5 w-5" />
+            <CardTitle>Stock Refresh (Recovery)</CardTitle>
+          </div>
+          <CardDescription>
+            Re-fetch specific market.db stock series when individual symbols are corrupted or stale.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <Input
+            placeholder="e.g. 7203, 6758, 9984"
+            value={refreshCodesInput}
+            onChange={(e) => {
+              setRefreshCodesInput(e.target.value);
+              setRefreshInputError(null);
+            }}
+            disabled={refreshStocks.isPending}
+          />
+          <p className="text-xs text-muted-foreground">
+            Accepts comma/space/newline separated 4-digit codes, up to 50 at once.
+          </p>
+          <Button onClick={handleRefreshStocks} disabled={refreshStocks.isPending} className="w-full">
+            {refreshStocks.isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Refreshing...
+              </>
+            ) : (
+              'Refresh Stocks'
+            )}
+          </Button>
+
+          {refreshInputError && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshInputError}</div>}
+          {refreshStocks.error && (
+            <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshStocks.error.message}</div>
+          )}
+          {refreshResult && <RefreshResultTable result={refreshResult} />}
         </CardContent>
       </Card>
 

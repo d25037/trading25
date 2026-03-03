@@ -1,7 +1,7 @@
 /**
  * Centralized API Response Types
  *
- * Single source of truth for API response types shared between packages/web, packages/cli, and packages/api-clients.
+ * Single source of truth for API response types shared between packages/web and packages/api-clients.
  */
 
 // ===== RANKING TYPES =====
@@ -479,5 +479,24 @@ export interface MarketValidationResponse {
   integrityIssues: IntegrityIssue[];
   integrityIssuesCount: number;
   recommendations: string[];
+  lastUpdated: string;
+}
+
+export interface RefreshStockResult {
+  code: string;
+  success: boolean;
+  recordsFetched: number;
+  recordsStored: number;
+  error?: string | null;
+}
+
+export interface MarketRefreshResponse {
+  totalStocks: number;
+  successCount: number;
+  failedCount: number;
+  totalApiCalls: number;
+  totalRecordsStored: number;
+  results: RefreshStockResult[];
+  errors: string[];
   lastUpdated: string;
 }
