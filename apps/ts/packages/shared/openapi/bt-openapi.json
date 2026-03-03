@@ -5663,11 +5663,6 @@
             ],
             "title": "Lastsync"
           },
-          "timeSeriesSource": {
-            "default": "duckdb-parquet",
-            "title": "Timeseriessource",
-            "type": "string"
-          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
@@ -5677,6 +5672,11 @@
           },
           "stocks": {
             "$ref": "#/components/schemas/StockStats"
+          },
+          "timeSeriesSource": {
+            "default": "duckdb-parquet",
+            "title": "Timeseriessource",
+            "type": "string"
           },
           "topix": {
             "$ref": "#/components/schemas/TopixStats"
@@ -5791,11 +5791,6 @@
             ],
             "title": "Lastsync"
           },
-          "timeSeriesSource": {
-            "default": "duckdb-parquet",
-            "title": "Timeseriessource",
-            "type": "string"
-          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
@@ -5833,6 +5828,11 @@
             "default": 0,
             "title": "Stocksneedingrefreshcount",
             "type": "integer"
+          },
+          "timeSeriesSource": {
+            "default": "duckdb-parquet",
+            "title": "Timeseriessource",
+            "type": "string"
           },
           "topix": {
             "$ref": "#/components/schemas/TopixStats"
@@ -11131,10 +11131,8 @@
       "SyncDataPlaneRequest": {
         "properties": {
           "backend": {
+            "const": "duckdb-parquet",
             "default": "duckdb-parquet",
-            "enum": [
-              "duckdb-parquet"
-            ],
             "title": "Backend",
             "type": "string"
           }
