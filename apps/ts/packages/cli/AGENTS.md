@@ -15,8 +15,8 @@ Gunshi CLI for JQuants API, dataset management, and portfolio operations.
 | `jquants auth` | Token refresh, status check |
 | `jquants fetch` | Raw API data fetching |
 | `db` | Market data sync, validate, refresh |
-| `dataset` | Create, validate, info, sample, search |
-| `analysis` | ROE, ranking, screening, factor-regression, portfolio-factor-regression |
+| `dataset` | Create, validate, info |
+| `analysis` | Ranking, screening, factor-regression, portfolio-factor-regression |
 | `portfolio` | Create, list, show, add/remove stocks |
 | `watchlist` | Create, list, show, delete, add/remove stocks |
 | `backtest` (`bt`) | Run strategies, cancel jobs, check results via trading25-bt backend |
@@ -27,7 +27,7 @@ Gunshi CLI for JQuants API, dataset management, and portfolio operations.
 src/
 ├── index.ts              # Entry point
 ├── commands/
-│   ├── analysis/         # ROE, ranking, screening
+│   ├── analysis/         # ranking, screening
 │   ├── db/               # sync, validate, refresh
 │   ├── dataset/          # create, validate, info
 │   ├── jquants/          # auth/, fetch/

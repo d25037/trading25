@@ -231,8 +231,10 @@ def server_command(
 
 # ラボサブコマンド登録
 from src.entrypoints.cli.lab import lab_app  # noqa: E402
+from src.entrypoints.cli.jquants import jquants_app  # noqa: E402
 
 app.add_typer(lab_app, name="lab")
+app.add_typer(jquants_app, name="jquants")
 
 
 if __name__ == "__main__":

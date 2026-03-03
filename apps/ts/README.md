@@ -85,11 +85,8 @@ bun run cli:run db refresh
 # Dataset
 bun run cli:run dataset create prime.db --preset primeMarket
 bun run cli:run dataset info prime.db
-bun run cli:run dataset sample prime.db --size 100
-bun run cli:run dataset search prime.db toyota
 
 # Analytics
-bun run cli:run analysis roe 7203
 bun run cli:run analysis ranking --limit 20
 bun run cli:run analysis screening
 bun run cli:run analysis factor-regression 7203

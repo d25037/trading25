@@ -65,7 +65,6 @@ bun run cli:run db validate         # Validate integrity
 bun run cli:run dataset create prime.db --preset primeMarket
 
 # Analysis
-bun run cli:run analysis roe 7203
 bun run cli:run analysis ranking --limit 20
 bun run cli:run analysis screening
 bun run cli:run analysis factor-regression 7203

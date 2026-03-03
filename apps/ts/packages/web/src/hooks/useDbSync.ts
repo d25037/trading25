@@ -3,8 +3,10 @@ import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import type {
   CancelJobResponse,
   CreateSyncJobResponse,
+  MarketRefreshResponse,
   MarketStatsResponse,
   MarketValidationResponse,
+  RefreshStocksRequest,
   StartSyncRequest,
   SyncJobResponse,
 } from '@/types/sync';
@@ -29,6 +31,10 @@ function fetchDbStats(): Promise<MarketStatsResponse> {
 
 function fetchDbValidation(): Promise<MarketValidationResponse> {
   return apiGet<MarketValidationResponse>('/api/db/validate');
+}
+
+function refreshStocks(request: RefreshStocksRequest): Promise<MarketRefreshResponse> {
+  return apiPost<MarketRefreshResponse>('/api/db/stocks/refresh', request);
 }
 
 // Hooks
@@ -92,5 +98,24 @@ export function useDbValidation() {
     queryFn: fetchDbValidation,
     refetchInterval: 30_000,
     staleTime: 5_000,
+  });
+}
+
+export function useRefreshStocks() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: refreshStocks,
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['db-stats'] });
+      queryClient.invalidateQueries({ queryKey: ['db-validation'] });
+      logger.debug('Stock refresh completed', {
+        totalStocks: data.totalStocks,
+        successCount: data.successCount,
+        failedCount: data.failedCount,
+      });
+    },
+    onError: (error) => {
+      logger.error('Failed to refresh stocks', { error: error.message });
+    },
   });
 }

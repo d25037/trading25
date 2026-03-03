@@ -481,3 +481,22 @@ export interface MarketValidationResponse {
   recommendations: string[];
   lastUpdated: string;
 }
+
+export interface RefreshStockResult {
+  code: string;
+  success: boolean;
+  recordsFetched: number;
+  recordsStored: number;
+  error?: string | null;
+}
+
+export interface MarketRefreshResponse {
+  totalStocks: number;
+  successCount: number;
+  failedCount: number;
+  totalApiCalls: number;
+  totalRecordsStored: number;
+  results: RefreshStockResult[];
+  errors: string[];
+  lastUpdated: string;
+}

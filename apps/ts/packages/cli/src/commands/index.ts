@@ -30,7 +30,7 @@ export const subCommands = {
   }),
   dataset: lazy(async () => (await import('./dataset/index.js')).datasetCommand, {
     name: 'dataset',
-    description: 'Dataset management - create, info, sample, search',
+    description: 'Dataset management - create, info',
   }),
   jquants: lazy(async () => (await import('./jquants/index.js')).jquantsCommand, {
     name: 'jquants',

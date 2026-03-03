@@ -67,7 +67,7 @@ async function main(): Promise<void> {
     }),
     dataset: lazy(async () => mainCommand, {
       name: 'dataset',
-      description: 'Dataset management - create, info, sample, search',
+      description: 'Dataset management - create, info',
     }),
     analysis: lazy(async () => mainCommand, {
       name: 'analysis',
