@@ -39,6 +39,80 @@ jobs:
       - name: Typecheck
         run: ./scripts/typecheck.sh
 
+  contract-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/ts)
+        run: bun install --frozen-lockfile
+        working-directory: apps/ts
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Run contract sync checks
+        run: ./scripts/check-contract-sync.sh
+
+  golden-dataset-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Run golden dataset regression tests
+        run: ./scripts/test-golden-regression.sh
+
+  coverage-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: "1.3.8"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/ts)
+        run: bun install --frozen-lockfile
+        working-directory: apps/ts
+      - name: Install deps (apps/bt)
+        run: uv sync --locked
+        working-directory: apps/bt
+      - name: Run coverage gate
+        run: ./scripts/coverage-gate.sh
+        env:
+          CI_DEPS_READY: "1"
+
   package-unit-tests:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -137,6 +211,9 @@ jobs:
     timeout-minutes: 45
     needs:
       - quality
+      - contract-tests
+      - golden-dataset-regression
+      - coverage-gate
       - package-unit-tests
       - app-integration-tests
       - secret-scan

@@ -1,0 +1,294 @@
+{
+  "generatedAt": "2026-03-03T04:23:49.101487+00:00",
+  "runs": 3,
+  "conditions": {
+    "screening": {
+      "markets": "prime",
+      "strategies": "range_break_v15",
+      "recentDays": 20,
+      "sortBy": "matchedDate",
+      "order": "desc",
+      "limit": 200
+    },
+    "backtest": {
+      "strategy": "production/range_break_v15"
+    },
+    "datasetBuildThroughput": {
+      "rowsPerRun": 50000
+    },
+    "dataSnapshot": {
+      "marketDbPath": "/Users/shinjiroaso/.local/share/trading25/market.db",
+      "marketDbSizeBytes": 258846720,
+      "tableCounts": {
+        "stocks": 4455,
+        "stock_data": 1660958,
+        "topix_data": 2443,
+        "indices_data": 176750,
+        "statements": 70556
+      }
+    },
+    "runtimeRoot": "/private/tmp/trading25-phase6-runtime"
+  },
+  "samples": [
+    {
+      "run": 1,
+      "screening": {
+        "jobId": "1595ad43-3b76-46c0-8d4c-a05fb91932cb",
+        "status": "completed",
+        "elapsedSeconds": 7.7609,
+        "summary": {
+          "totalStocksScreened": 1601,
+          "matchCount": 19,
+          "skippedCount": 0,
+          "byStrategy": {
+            "range_break_v15": 19
+          },
+          "strategiesEvaluated": [
+            "range_break_v15"
+          ],
+          "strategiesWithoutBacktestMetrics": [],
+          "warnings": []
+        },
+        "statusPayload": {
+          "job_id": "1595ad43-3b76-46c0-8d4c-a05fb91932cb",
+          "status": "completed",
+          "progress": 1.0,
+          "message": "Screening ジョブが完了しました",
+          "created_at": "2026-03-03T13:21:54.488796",
+          "started_at": "2026-03-03T13:21:54.490213",
+          "completed_at": "2026-03-03T13:22:02.247521",
+          "error": null,
+          "markets": "prime",
+          "strategies": "range_break_v15",
+          "recentDays": 20,
+          "referenceDate": null,
+          "sortBy": "matchedDate",
+          "order": "desc",
+          "limit": 200
+        }
+      },
+      "backtest": {
+        "jobId": "3e9fad0a-7f1c-491c-b857-a29e439685cf",
+        "status": "completed",
+        "elapsedSeconds": 30.0874,
+        "summary": {
+          "total_return": 1551.3126126937761,
+          "sharpe_ratio": 1.4961973424110286,
+          "sortino_ratio": 2.234008022314172,
+          "calmar_ratio": 1.6895164774732003,
+          "max_drawdown": 30.815849366832193,
+          "win_rate": 38.24884792626728,
+          "trade_count": 655,
+          "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132202.html"
+        },
+        "executionTime": 28.8021137714386,
+        "statusPayload": {
+          "job_id": "3e9fad0a-7f1c-491c-b857-a29e439685cf",
+          "status": "completed",
+          "progress": 1.0,
+          "message": "バックテスト完了",
+          "created_at": "2026-03-03T13:22:02.250548",
+          "started_at": "2026-03-03T13:22:02.250920",
+          "completed_at": "2026-03-03T13:22:31.092945",
+          "error": null,
+          "result": {
+            "total_return": 1551.3126126937761,
+            "sharpe_ratio": 1.4961973424110286,
+            "sortino_ratio": 2.234008022314172,
+            "calmar_ratio": 1.6895164774732003,
+            "max_drawdown": 30.815849366832193,
+            "win_rate": 38.24884792626728,
+            "trade_count": 655,
+            "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132202.html"
+          }
+        }
+      },
+      "healthStatus": 200
+    },
+    {
+      "run": 2,
+      "screening": {
+        "jobId": "29c2f5ef-ad25-4172-b7e1-1cad1d750631",
+        "status": "completed",
+        "elapsedSeconds": 7.3466,
+        "summary": {
+          "totalStocksScreened": 1601,
+          "matchCount": 19,
+          "skippedCount": 0,
+          "byStrategy": {
+            "range_break_v15": 19
+          },
+          "strategiesEvaluated": [
+            "range_break_v15"
+          ],
+          "strategiesWithoutBacktestMetrics": [],
+          "warnings": []
+        },
+        "statusPayload": {
+          "job_id": "29c2f5ef-ad25-4172-b7e1-1cad1d750631",
+          "status": "completed",
+          "progress": 1.0,
+          "message": "Screening ジョブが完了しました",
+          "created_at": "2026-03-03T13:22:32.341239",
+          "started_at": "2026-03-03T13:22:32.342966",
+          "completed_at": "2026-03-03T13:22:39.685446",
+          "error": null,
+          "markets": "prime",
+          "strategies": "range_break_v15",
+          "recentDays": 20,
+          "referenceDate": null,
+          "sortBy": "matchedDate",
+          "order": "desc",
+          "limit": 200
+        }
+      },
+      "backtest": {
+        "jobId": "9a0fa141-8560-43b5-96d7-4c870d307678",
+        "status": "completed",
+        "elapsedSeconds": 30.0962,
+        "summary": {
+          "total_return": 1551.3126126937761,
+          "sharpe_ratio": 1.4961973424110286,
+          "sortino_ratio": 2.234008022314172,
+          "calmar_ratio": 1.6895164774732003,
+          "max_drawdown": 30.815849366832193,
+          "win_rate": 38.24884792626728,
+          "trade_count": 655,
+          "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132239.html"
+        },
+        "executionTime": 28.671249866485596,
+        "statusPayload": {
+          "job_id": "9a0fa141-8560-43b5-96d7-4c870d307678",
+          "status": "completed",
+          "progress": 1.0,
+          "message": "バックテスト完了",
+          "created_at": "2026-03-03T13:22:39.687541",
+          "started_at": "2026-03-03T13:22:39.687842",
+          "completed_at": "2026-03-03T13:23:08.386704",
+          "error": null,
+          "result": {
+            "total_return": 1551.3126126937761,
+            "sharpe_ratio": 1.4961973424110286,
+            "sortino_ratio": 2.234008022314172,
+            "calmar_ratio": 1.6895164774732003,
+            "max_drawdown": 30.815849366832193,
+            "win_rate": 38.24884792626728,
+            "trade_count": 655,
+            "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132239.html"
+          }
+        }
+      },
+      "healthStatus": 200
+    },
+    {
+      "run": 3,
+      "screening": {
+        "jobId": "8dac4360-1e0b-4791-8e34-8639f163439a",
+        "status": "completed",
+        "elapsedSeconds": 7.11,
+        "summary": {
+          "totalStocksScreened": 1601,
+          "matchCount": 19,
+          "skippedCount": 0,
+          "byStrategy": {
+            "range_break_v15": 19
+          },
+          "strategiesEvaluated": [
+            "range_break_v15"
+          ],
+          "strategiesWithoutBacktestMetrics": [],
+          "warnings": []
+        },
+        "statusPayload": {
+          "job_id": "8dac4360-1e0b-4791-8e34-8639f163439a",
+          "status": "completed",
+          "progress": 1.0,
+          "message": "Screening ジョブが完了しました",
+          "created_at": "2026-03-03T13:23:09.785945",
+          "started_at": "2026-03-03T13:23:09.787522",
+          "completed_at": "2026-03-03T13:23:16.893635",
+          "error": null,
+          "markets": "prime",
+          "strategies": "range_break_v15",
+          "recentDays": 20,
+          "referenceDate": null,
+          "sortBy": "matchedDate",
+          "order": "desc",
+          "limit": 200
+        }
+      },
+      "backtest": {
+        "jobId": "13dc407b-f6d1-4a55-8dba-7074ba8231ce",
+        "status": "completed",
+        "elapsedSeconds": 32.0844,
+        "summary": {
+          "total_return": 1551.3126126937761,
+          "sharpe_ratio": 1.4961973424110286,
+          "sortino_ratio": 2.234008022314172,
+          "calmar_ratio": 1.6895164774732003,
+          "max_drawdown": 30.815849366832193,
+          "win_rate": 38.24884792626728,
+          "trade_count": 655,
+          "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132316.html"
+        },
+        "executionTime": 31.899738788604736,
+        "statusPayload": {
+          "job_id": "13dc407b-f6d1-4a55-8dba-7074ba8231ce",
+          "status": "completed",
+          "progress": 1.0,
+          "message": "バックテスト完了",
+          "created_at": "2026-03-03T13:23:16.895966",
+          "started_at": "2026-03-03T13:23:16.896231",
+          "completed_at": "2026-03-03T13:23:48.818744",
+          "error": null,
+          "result": {
+            "total_return": 1551.3126126937761,
+            "sharpe_ratio": 1.4961973424110286,
+            "sortino_ratio": 2.234008022314172,
+            "calmar_ratio": 1.6895164774732003,
+            "max_drawdown": 30.815849366832193,
+            "win_rate": 38.24884792626728,
+            "trade_count": 655,
+            "html_path": "/private/tmp/trading25-phase6-runtime/backtest/results/range_break_v15/primeExTopix500_20260303_132316.html"
+          }
+        }
+      },
+      "healthStatus": 200
+    }
+  ],
+  "summary": {
+    "screening": {
+      "samplesSeconds": [
+        7.7609,
+        7.3466,
+        7.11
+      ],
+      "medianSeconds": 7.3466,
+      "p95Seconds": 7.7609
+    },
+    "backtest": {
+      "samplesSeconds": [
+        30.0874,
+        30.0962,
+        32.0844
+      ],
+      "medianSeconds": 30.0962,
+      "p95Seconds": 32.0844
+    },
+    "datasetBuildThroughputRowsPerMinute": {
+      "samples": [
+        69369040.9435,
+        86427831.3661,
+        83935944.4265
+      ],
+      "median": 83935944.4265,
+      "p95": 86427831.3661
+    }
+  },
+  "failures": [],
+  "notes": [
+    "Screening/backtest are measured via in-process FastAPI job endpoints using market.db + production strategy config.",
+    "Backtest artifacts are written under runtimeRoot to avoid mutating the source data directory.",
+    "datasetBuildThroughputRowsPerMinute is synthetic build_stock_data_row throughput."
+  ]
+}
