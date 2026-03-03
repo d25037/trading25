@@ -1,0 +1,79 @@
+{
+  "generatedAt": "2026-03-02T09:09:00.571801+00:00",
+  "runs": 3,
+  "workloads": {
+    "screening": {
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "apps/bt",
+        "pytest",
+        "apps/bt/tests/unit/server/services/test_screening_service.py",
+        "--maxfail=1",
+        "-q"
+      ],
+      "samplesSeconds": [
+        2.6281,
+        2.8662,
+        2.8104
+      ],
+      "medianSeconds": 2.8104,
+      "p95Seconds": 2.8662
+    },
+    "backtest": {
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "apps/bt",
+        "pytest",
+        "apps/bt/tests/unit/server/routes/test_backtest.py",
+        "--maxfail=1",
+        "-q"
+      ],
+      "samplesSeconds": [
+        4.4801,
+        4.8002,
+        4.8533
+      ],
+      "medianSeconds": 4.8002,
+      "p95Seconds": 4.8533
+    },
+    "dataset_build": {
+      "command": [
+        "uv",
+        "run",
+        "--project",
+        "apps/bt",
+        "pytest",
+        "apps/bt/tests/unit/server/test_dataset_builder_service_branches.py::test_build_dataset_writes_manifest_v1",
+        "--maxfail=1",
+        "-q"
+      ],
+      "samplesSeconds": [
+        2.9228,
+        2.7708,
+        2.5983
+      ],
+      "medianSeconds": 2.7708,
+      "p95Seconds": 2.9228
+    }
+  },
+  "datasetBuildThroughputRowsPerMinute": {
+    "rowsPerRun": 50000,
+    "samples": [
+      64568430.8582,
+      59706591.1112,
+      60007600.5689
+    ],
+    "median": 60007600.5689,
+    "p95": 64568430.8582
+  },
+  "failures": [],
+  "notes": [
+    "Each workload executes one warmup run before measurement samples.",
+    "screening/backtest/build are measured on deterministic unit-test workloads.",
+    "dataset throughput is synthetic stock_data row transformation throughput."
+  ]
+}

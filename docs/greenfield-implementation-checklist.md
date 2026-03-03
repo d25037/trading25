@@ -185,21 +185,30 @@
 
 ### Checklist
 
-- [ ] contract tests を CI 必須にする。
-- [ ] Golden dataset 回帰テストを CI 必須にする。
-- [ ] coverage gate（bt 70%+, ts 既存基準）を満たす。
-- [ ] performance baseline（screening/backtest/build）を記録する。
-- [ ] 移行完了ドキュメントを作成する（差分、制約、次フェーズ課題）。
+- [x] contract tests を CI 必須にする。
+  - 2026-03-02 実装: `.github/workflows/ci.yml` に `contract-tests` を追加し、`scripts/check-contract-sync.sh` で OpenAPI snapshot/型生成差分と `verify-openapi-compat.py` を検証。
+- [x] Golden dataset 回帰テストを CI 必須にする。
+  - 2026-03-02 実装: `.github/workflows/ci.yml` に `golden-dataset-regression` を追加し、`scripts/test-golden-regression.sh` で `test_indicator_golden.py` / `test_resample_compatibility.py` を専用実行。
+- [x] coverage gate（bt 70%+, ts 既存基準）を満たす。
+  - 2026-03-02 実装: `.github/workflows/ci.yml` に `coverage-gate` を追加し、`scripts/coverage-gate.sh` で `bt: coverage report --fail-under=70` と `ts: workspace:test:coverage + coverage:check` を固定。
+- [x] performance baseline（screening/backtest/build）を記録する。
+  - 2026-03-02 実装: `scripts/collect-performance-baseline.py` を追加し、`docs/phase6-performance-baseline.json` に warmup+3回計測結果を記録。
+- [x] 移行完了ドキュメントを作成する（差分、制約、次フェーズ課題）。
+  - 2026-03-02 実装: `docs/phase6-release-gate-report.md` を追加。
 
 ### Validation
 
 - [ ] `.github/workflows/ci.yml` の required checks を全緑にする。
-- [ ] 本番相当データ量の smoke run を 1サイクル通す。
+  - 2026-03-02 注記: ローカル実装完了。GitHub Actions 上の全緑確認は PR 実行待ち。
+- [x] 本番相当データ量の smoke run を 1サイクル通す。
+  - 2026-03-03 実測: `scripts/collect-production-smoke-baseline.py --runs 3` を実行し、`docs/phase6-production-smoke-baseline.json` に screening/backtest/build throughput baseline を追記。
 
 ### Exit Criteria
 
-- [ ] 「同一入力で同一結果」が主要ユースケースで再現できる。
-- [ ] 既知制約と次アクションが `issues/` に登録済み。
+- [x] 「同一入力で同一結果」が主要ユースケースで再現できる。
+  - 2026-03-02 検証: Golden dataset 回帰テスト（indicator/resample）を CI 必須ゲート化。
+- [x] 既知制約と次アクションが `issues/` に登録済み。
+  - 2026-03-02 登録: `bt-035`（本番相当 smoke/perf baseline）/ `bt-036`（backtest/optimize job duration metrics 拡張）。
 
 ---
 
@@ -216,8 +225,8 @@
 
 ## ブロッカー早見表（先に潰す）
 
-- [ ] DB SoT が曖昧（SQLite vs DuckDB の責務未定義）
-- [ ] OpenAPI 更新フローが PR で自動チェックされない
-- [ ] worker の cancel/retry 実装が後回し
-- [ ] Golden dataset が未整備で回帰検知不能
-- [ ] web/cli で API 呼び出し実装が二重管理
+- [x] DB SoT が曖昧（SQLite vs DuckDB の責務未定義）
+- [x] OpenAPI 更新フローが PR で自動チェックされない
+- [x] worker の cancel/retry 実装が後回し
+- [x] Golden dataset が未整備で回帰検知不能
+- [x] web/cli で API 呼び出し実装が二重管理
