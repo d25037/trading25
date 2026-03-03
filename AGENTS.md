@@ -27,6 +27,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - `POST /api/db/sync` の `dataPlane` override は `backend=duckdb-parquet` のみ受け付ける
 - `GET /api/db/stats` / `GET /api/db/validate` の時系列スナップショット SoT は DuckDB inspection（`timeSeriesSource` を返却）
 - `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
+- `/api/db/sync`（`initial` / `incremental`）は `Bulk+REST hybrid` を stage 単位で選択し、予測外部request数が最小の手法を優先する。`incremental` で DuckDB inspection の `topix/stock/indices` が空かつアンカー不在なら cold-start bootstrap を選び、全日付 fallback 暴走を回避する
 - `market.db` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - DatasetDb の `statements` 読み取りは legacy snapshot（配当/配当性向の forecast 列欠落）でも `NULL` 補完で継続し、必須列 `code` / `disclosed_date` 欠落時はエラーにする
@@ -78,6 +79,7 @@ bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
   - `/markets/margin-interest`: 5分
   - `/fins/summary`（`/statements` / `/statements/raw` で共有）: 15分
 - 実外部呼び出しは `event="jquants_fetch"`、キャッシュ状態は `event="jquants_proxy_cache"` で構造化ログ出力
+- market sync の fetch planner は `event="sync_fetch_strategy"` を出力し、各 stage の選択結果（bulk/rest, 推定request数, 実request数, cache hit/miss）を観測可能にする
 
 ## ミドルウェア構成（FastAPI）
 

@@ -59,12 +59,13 @@ class JQuantsAsyncClient:
         timeout: float = 30.0,
     ) -> None:
         self._api_key = api_key
+        self._plan = plan.strip().lower()
         self._client = httpx.AsyncClient(
             base_url=self.BASE_URL,
             headers={"x-api-key": api_key},
             timeout=timeout,
         )
-        self._rate_limiter = RateLimiter(plan=plan)
+        self._rate_limiter = RateLimiter(plan=self._plan)
 
     @property
     def has_api_key(self) -> bool:
@@ -78,6 +79,10 @@ class JQuantsAsyncClient:
         if len(key) > 8:
             return f"{key[:4]}...{key[-4:]}"
         return "****"
+
+    @property
+    def plan(self) -> str:
+        return self._plan
 
     async def _get_with_retry(
         self, path: str, params: dict[str, Any] | None = None
@@ -173,6 +178,12 @@ class JQuantsAsyncClient:
     async def get_paginated(
         self, path: str, params: dict[str, Any] | None = None, max_pages: int = 10
     ) -> list[dict[str, Any]]:
+        data, _calls = await self.get_paginated_with_meta(path, params=params, max_pages=max_pages)
+        return data
+
+    async def get_paginated_with_meta(
+        self, path: str, params: dict[str, Any] | None = None, max_pages: int = 10
+    ) -> tuple[list[dict[str, Any]], int]:
         """ページネーション付き GET リクエスト
 
         JQuants v2 の pagination_key ベースのページネーションを処理する。
@@ -214,7 +225,7 @@ class JQuantsAsyncClient:
             current_params = {**current_params, "pagination_key": pagination_key}
 
         logger.debug(f"JQuants paginated {path}: {len(all_data)} records in {page_count} pages")
-        return all_data
+        return all_data, page_count
 
     async def close(self) -> None:
         """HTTP クライアントをクローズ"""

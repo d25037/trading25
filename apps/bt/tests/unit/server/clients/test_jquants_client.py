@@ -21,6 +21,10 @@ class TestJQuantsAsyncClient:
     def test_has_api_key(self, client):
         assert client.has_api_key is True
 
+    def test_plan_is_normalized(self):
+        c = JQuantsAsyncClient(api_key="dummy", plan=" Premium ")
+        assert c.plan == "premium"
+
     def test_no_api_key(self):
         c = JQuantsAsyncClient(api_key="", plan="free")
         assert c.has_api_key is False
@@ -151,6 +155,31 @@ class TestGetPaginated:
         ]
         result = await client.get_paginated("/equities/master", max_pages=2)
         assert len(result) == 2
+        await client.close()
+
+    @respx.mock
+    @pytest.mark.asyncio
+    async def test_get_paginated_with_meta_returns_external_call_count(self, client):
+        route = respx.get("https://api.jquants.com/v2/equities/master")
+        route.side_effect = [
+            httpx.Response(
+                200,
+                json={
+                    "data": [{"Code": "7203"}],
+                    "pagination_key": "page2",
+                },
+            ),
+            httpx.Response(
+                200,
+                json={"data": [{"Code": "6758"}]},
+            ),
+        ]
+
+        rows, call_count = await client.get_paginated_with_meta("/equities/master")
+
+        assert len(rows) == 2
+        assert call_count == 2
+        assert route.call_count == 2
         await client.close()
 
 

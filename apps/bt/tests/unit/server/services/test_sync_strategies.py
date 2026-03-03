@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
@@ -15,6 +16,7 @@ from src.application.services.sync_strategies import (
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
     SyncContext,
+    _StageFetchDecision,
     _build_fallback_index_master_rows,
     _build_incremental_date_targets,
     _collect_unique_codes,
@@ -503,6 +505,37 @@ class IndicesOnlyClient:
         ]
 
 
+class _FakeBulkService:
+    def __init__(
+        self,
+        *,
+        results_by_endpoint: dict[str, BulkFetchResult] | None = None,
+        fail_endpoints: set[str] | None = None,
+    ) -> None:
+        self.results_by_endpoint = results_by_endpoint or {}
+        self.fail_endpoints = fail_endpoints or set()
+        self.fetch_calls: list[str] = []
+
+    async def fetch_with_plan(self, plan: BulkFetchPlan) -> BulkFetchResult:
+        self.fetch_calls.append(plan.endpoint)
+        if plan.endpoint in self.fail_endpoints:
+            raise RuntimeError("bulk failed")
+        result = self.results_by_endpoint.get(plan.endpoint)
+        if result is None:
+            return BulkFetchResult(rows=[], api_calls=0, cache_hits=0, cache_misses=0, selected_files=0)
+        return result
+
+
+def _rest_decision(estimated_rest_calls: int) -> _StageFetchDecision:
+    return _StageFetchDecision(
+        method="rest",
+        planner_api_calls=0,
+        estimated_rest_calls=estimated_rest_calls,
+        estimated_bulk_calls=None,
+        plan=None,
+    )
+
+
 @pytest.fixture(autouse=True)
 def patch_small_index_catalog(monkeypatch: pytest.MonkeyPatch) -> None:
     def _seed_rows(*, existing_codes: set[str] | None = None) -> list[dict[str, str | None]]:
@@ -640,6 +673,42 @@ async def test_incremental_sync_uses_timeseries_inspection_anchor_when_sqlite_is
 
 
 @pytest.mark.asyncio
+async def test_incremental_sync_bootstraps_when_timeseries_store_is_empty() -> None:
+    market_db = DummyMarketDb(
+        latest_trading_date="20260206",
+        latest_stock_data_date="20260206",
+        latest_indices_data_dates={"0000": "20260206"},
+    )
+    client = DummyClient()
+    store = DummyTimeSeriesStore(
+        market_db=market_db,
+        inspection=TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=0,
+            stock_count=0,
+            indices_count=0,
+            latest_indices_dates={},
+        ),
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        time_series_store=store,  # type: ignore[arg-type]
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    topix_calls = [c for c in client.calls if c[0] == "/indices/bars/daily/topix"]
+    assert topix_calls
+    assert topix_calls[0][1] == {}
+    assert any(path == "/equities/bars/daily" and params == {"date": "2026-02-06"} for path, params in client.calls)
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_skips_rows_with_missing_ohlcv() -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206")
     client = DummyClient(
@@ -713,6 +782,82 @@ async def test_incremental_sync_supplements_indices_with_date_based_discovery() 
     assert any(path == "/indices/bars/daily" and params == {"date": "20260210"} for path, params in client.calls)
     assert any(row["code"] == "0040" for row in market_db.indices_rows)
     assert any(row["date"] == "2026-02-10" for row in market_db.indices_rows)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_indices_bulk_result_matches_rest_discovery(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    indices_quotes = [
+        {"Date": "2026-02-10", "Code": "40", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"},
+    ]
+
+    rest_market_db = DummyMarketDb(latest_trading_date="20260206")
+    rest_client = DummyClient(indices_quotes=indices_quotes)
+    rest_ctx = SyncContext(
+        client=rest_client,  # type: ignore[arg-type]
+        market_db=rest_market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+    rest_result = await IncrementalSyncStrategy().execute(rest_ctx)
+    assert rest_result.success
+    rest_keys = {(str(row["code"]), str(row["date"])) for row in rest_market_db.indices_rows}
+
+    bulk_market_db = DummyMarketDb(latest_trading_date="20260206")
+    bulk_client = DummyClient(indices_quotes=indices_quotes)
+    bulk_plan = BulkFetchPlan(
+        endpoint="/indices/bars/daily",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/indices/bars/daily": BulkFetchResult(
+                rows=indices_quotes,
+                api_calls=2,
+                cache_hits=0,
+                cache_misses=1,
+                selected_files=1,
+            )
+        }
+    )
+
+    async def _plan_stub(
+        _ctx: SyncContext,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        **_kwargs: Any,
+    ) -> _StageFetchDecision:
+        if stage == "indices_incremental":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=0,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=3,
+                plan=bulk_plan,
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+
+    bulk_ctx = SyncContext(
+        client=bulk_client,  # type: ignore[arg-type]
+        market_db=bulk_market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,  # type: ignore[arg-type]
+    )
+    bulk_result = await IncrementalSyncStrategy().execute(bulk_ctx)
+    assert bulk_result.success
+    bulk_keys = {(str(row["code"]), str(row["date"])) for row in bulk_market_db.indices_rows}
+
+    assert bulk_keys == rest_keys
 
 
 @pytest.mark.asyncio
@@ -1024,6 +1169,132 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
 
 
 @pytest.mark.asyncio
+async def test_initial_sync_stock_data_uses_bulk_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    topix_dates = [f"2026-02-{day:02d}" for day in range(10, 14)]
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=topix_dates)
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/equities/bars/daily": BulkFetchResult(
+                rows=[
+                    {"Code": "72030", "Date": value, "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 1000}
+                    for value in topix_dates
+                ],
+                api_calls=2,
+                cache_hits=0,
+                cache_misses=1,
+                selected_files=1,
+            )
+        }
+    )
+    bulk_plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+
+    async def _plan_stub(
+        _ctx: SyncContext,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        **_kwargs: Any,
+    ) -> _StageFetchDecision:
+        if stage == "stock_data_initial":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=0,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=3,
+                plan=bulk_plan,
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._get_bulk_service",
+        lambda _ctx: bulk_service,
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert "/equities/bars/daily" in bulk_service.fetch_calls
+    daily_calls = [call for call in client.calls if call[0] == "/equities/bars/daily"]
+    assert daily_calls == []
+    assert result.stocksUpdated == len(topix_dates)
+
+
+@pytest.mark.asyncio
+async def test_initial_sync_stock_data_bulk_failure_falls_back_to_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    topix_dates = [f"2026-02-{day:02d}" for day in range(10, 13)]
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=topix_dates)
+    bulk_service = _FakeBulkService(fail_endpoints={"/equities/bars/daily"})
+    bulk_plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+
+    async def _plan_stub(
+        _ctx: SyncContext,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        **_kwargs: Any,
+    ) -> _StageFetchDecision:
+        if stage == "stock_data_initial":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=0,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=3,
+                plan=bulk_plan,
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._get_bulk_service",
+        lambda _ctx: bulk_service,
+    )
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success
+    daily_calls = [call for call in client.calls if call[0] == "/equities/bars/daily"]
+    assert len(daily_calls) == len(topix_dates)
+    assert "/equities/bars/daily" in bulk_service.fetch_calls
+
+
+@pytest.mark.asyncio
 async def test_initial_sync_with_empty_topix_and_empty_master() -> None:
     market_db = DummyMarketDb()
     client = InitialSyncClient(topix_dates=[], master_rows=[])
@@ -1296,6 +1567,110 @@ async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
     assert "9999" not in {row["code"] for row in market_db.statements_rows}
     fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
     assert any((params or {}).get("date") == "20260210" for _, params in fins_calls)
+    assert any((params or {}).get("code") == "67580" for _, params in fins_calls)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_code_backfill_equivalent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-02-09"
+    market_db.statements_rows = [{"code": "7203", "disclosed_date": "2026-02-09"}]
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+            {
+                "Code": "67580",
+                "CoName": "ソニーグループ",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1958-12-01",
+            },
+        ],
+        fins_by_code={
+            "67580": [{"Code": "67580", "DiscDate": "2026-02-10", "EPS": 80.0}],
+        },
+    )
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/fins/summary": BulkFetchResult(
+                rows=[
+                    {"Code": "72030", "DiscDate": "2026-02-10", "EPS": 110.0},
+                    {"Code": "99990", "DiscDate": "2026-02-10", "EPS": 90.0},
+                ],
+                api_calls=2,
+                cache_hits=0,
+                cache_misses=1,
+                selected_files=1,
+            )
+        }
+    )
+    bulk_plan = BulkFetchPlan(
+        endpoint="/fins/summary",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: ["2026-02-10"],
+    )
+
+    async def _plan_stub(
+        _ctx: SyncContext,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        **_kwargs: Any,
+    ) -> _StageFetchDecision:
+        if stage == "fundamentals_incremental_dates":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=0,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=3,
+                plan=bulk_plan,
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+
+    ctx = SyncContext(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,  # type: ignore[arg-type]
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsDatesProcessed == 1
+    assert {"7203", "6758"} <= {row["code"] for row in market_db.statements_rows}
+    assert "9999" not in {row["code"] for row in market_db.statements_rows}
+    fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
+    assert not any((params or {}).get("date") == "20260210" for _, params in fins_calls)
     assert any((params or {}).get("code") == "67580" for _, params in fins_calls)
 
 
