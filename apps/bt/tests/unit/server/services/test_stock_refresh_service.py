@@ -9,18 +9,26 @@ from src.application.services.stock_refresh_service import refresh_stocks
 
 class DummyMarketDb:
     def __init__(self) -> None:
-        self.rows: list[dict[str, Any]] = []
         self.metadata: dict[str, str] = {}
-
-    def get_topix_date_range(self) -> dict[str, str]:
-        return {"min": "2026-02-01", "max": "2026-02-28"}
-
-    def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        self.rows.extend(rows)
-        return len(rows)
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         self.metadata[key] = value
+
+
+class DummyTimeSeriesStore:
+    def __init__(self) -> None:
+        self.rows: list[dict[str, Any]] = []
+
+    def inspect(self, *, missing_stock_dates_limit: int = 0, statement_non_null_columns: list[str] | None = None) -> Any:
+        del missing_stock_dates_limit, statement_non_null_columns
+        return type("Inspection", (), {"topix_min": "2026-02-01", "topix_max": "2026-02-28"})()
+
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+        self.rows.extend(rows)
+        return len(rows)
+
+    def index_stock_data(self) -> None:
+        return None
 
 
 class DummyJQuantsClient:
@@ -41,6 +49,7 @@ class DummyFailingJQuantsClient:
 @pytest.mark.asyncio
 async def test_refresh_stocks_skips_incomplete_ohlcv_rows() -> None:
     market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
     client = DummyJQuantsClient(
         rows=[
             {
@@ -66,19 +75,20 @@ async def test_refresh_stocks_skips_incomplete_ohlcv_rows() -> None:
         ]
     )
 
-    result = await refresh_stocks(["131A"], market_db, client)  # type: ignore[arg-type]
+    result = await refresh_stocks(["131A"], market_db, store, client)  # type: ignore[arg-type]
 
     assert result.successCount == 1
     assert result.failedCount == 0
     assert result.totalRecordsStored == 1
-    assert len(market_db.rows) == 1
-    assert market_db.rows[0]["code"] == "131A"
-    assert market_db.rows[0]["date"] == "2026-02-10"
+    assert len(store.rows) == 1
+    assert store.rows[0]["code"] == "131A"
+    assert store.rows[0]["date"] == "2026-02-10"
 
 
 @pytest.mark.asyncio
 async def test_refresh_stocks_applies_topix_date_range_filter() -> None:
     market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
     client = DummyJQuantsClient(
         rows=[
             {"Code": "72030", "Date": "2026-01-31", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100},
@@ -87,20 +97,26 @@ async def test_refresh_stocks_applies_topix_date_range_filter() -> None:
         ]
     )
 
-    result = await refresh_stocks(["7203"], market_db, client)  # type: ignore[arg-type]
+    result = await refresh_stocks(["7203"], market_db, store, client)  # type: ignore[arg-type]
 
     assert result.successCount == 1
     assert result.failedCount == 0
     assert result.totalRecordsStored == 1
-    assert len(market_db.rows) == 1
-    assert market_db.rows[0]["date"] == "2026-02-10"
+    assert len(store.rows) == 1
+    assert store.rows[0]["date"] == "2026-02-10"
 
 
 @pytest.mark.asyncio
 async def test_refresh_stocks_handles_jquants_error() -> None:
     market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
 
-    result = await refresh_stocks(["7203"], market_db, DummyFailingJQuantsClient())  # type: ignore[arg-type]
+    result = await refresh_stocks(
+        ["7203"],
+        market_db,
+        store,
+        DummyFailingJQuantsClient(),
+    )  # type: ignore[arg-type]
 
     assert result.successCount == 0
     assert result.failedCount == 1

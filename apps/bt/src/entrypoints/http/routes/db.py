@@ -219,9 +219,15 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
 )
 async def refresh_stocks(request: Request, body: RefreshRequest) -> RefreshResponse:
     market_db = _get_market_db(request)
+    time_series_store = _get_market_time_series_store(request)
     jquants_client = _get_jquants_client(request)
 
     if not market_db.is_initialized():
         raise HTTPException(status_code=422, detail="Database not initialized. Please run sync first.")
 
-    return await stock_refresh_service.refresh_stocks(body.codes, market_db, jquants_client)
+    return await stock_refresh_service.refresh_stocks(
+        body.codes,
+        market_db,
+        time_series_store,
+        jquants_client,
+    )

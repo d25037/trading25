@@ -7,6 +7,7 @@ POST /api/db/stocks/refresh のビジネスロジック。
 
 from __future__ import annotations
 
+import asyncio
 from datetime import UTC, datetime
 from typing import Any
 
@@ -14,6 +15,7 @@ from loguru import logger
 
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
 from src.application.services.stock_data_row_builder import build_stock_data_row
@@ -22,6 +24,7 @@ from src.application.services.stock_data_row_builder import build_stock_data_row
 async def refresh_stocks(
     codes: list[str],
     market_db: MarketDb,
+    time_series_store: MarketTimeSeriesStore,
     jquants_client: JQuantsAsyncClient,
 ) -> RefreshResponse:
     """銘柄データを再取得"""
@@ -31,9 +34,9 @@ async def refresh_stocks(
     errors: list[str] = []
 
     # TOPIX 日付範囲を取得（フィルタ用）
-    topix_range = market_db.get_topix_date_range()
-    min_date = topix_range["min"] if topix_range else None
-    max_date = topix_range["max"] if topix_range else None
+    inspection = await asyncio.to_thread(time_series_store.inspect)
+    min_date = inspection.topix_min
+    max_date = inspection.topix_max
 
     for code in codes:
         normalized = normalize_stock_code(code)
@@ -73,7 +76,10 @@ async def refresh_stocks(
                     normalized,
                 )
 
-            stored = market_db.upsert_stock_data(rows) if rows else 0
+            stored = 0
+            if rows:
+                stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
+                await asyncio.to_thread(time_series_store.index_stock_data)
             total_stored += stored
             results.append(RefreshStockResult(
                 code=normalized,
