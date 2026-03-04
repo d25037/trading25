@@ -32,16 +32,12 @@ from src.application.services.indicator_service import (
 )
 
 # Golden dataset directory (relative to repo root)
-GOLDEN_DIR = (
-    Path(__file__).resolve().parents[2].parent
-    / "ts"
-    / "packages"
-    / "shared"
-    / "src"
-    / "ta"
-    / "__fixtures__"
-    / "golden"
-)
+REPO_ROOT = Path(__file__).resolve().parents[2].parent
+GOLDEN_DIR_CANDIDATES = [
+    REPO_ROOT / "ts" / "packages" / "domain" / "src" / "ta" / "__fixtures__" / "golden",
+    REPO_ROOT / "ts" / "packages" / "shared" / "src" / "ta" / "__fixtures__" / "golden",
+]
+GOLDEN_DIR = next((path for path in GOLDEN_DIR_CANDIDATES if path.exists()), GOLDEN_DIR_CANDIDATES[0])
 
 # EMA系インジケーターの暖気期間（初期化差異が収束するまでのバー数）
 # vbt ewm vs TS SMA-initialized EMA の差は period×5 程度で 0.01 以下に収束

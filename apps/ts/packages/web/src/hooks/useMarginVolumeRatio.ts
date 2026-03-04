@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ApiMarginVolumeRatioResponse } from '@trading25/shared/types/api-types';
+import type { ApiMarginVolumeRatioResponse } from '@trading25/contracts/types/api-types';
 import { analyticsClient } from '@/lib/analytics-client';
 
 function fetchMarginVolumeRatio(symbol: string): Promise<ApiMarginVolumeRatioResponse> {

@@ -1,9 +1,9 @@
 /**
  * Screening-related types for frontend
- * Re-exports from @trading25/shared and adds frontend-specific types
+ * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
-import type { ScreeningSortBy, SortOrder } from '@trading25/shared/types/api-response-types';
+import type { ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 
 export type {
   MatchedStrategyItem,
@@ -14,7 +14,7 @@ export type {
   ScreeningSortBy,
   ScreeningSummary,
   SortOrder,
-} from '@trading25/shared/types/api-response-types';
+} from '@trading25/contracts/types/api-response-types';
 
 // Frontend-specific types
 export interface ScreeningParams {

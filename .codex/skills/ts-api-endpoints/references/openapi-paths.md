@@ -1,6 +1,6 @@
 # OpenAPI Paths
 
-Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.
+Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
 Total paths: **119**
 

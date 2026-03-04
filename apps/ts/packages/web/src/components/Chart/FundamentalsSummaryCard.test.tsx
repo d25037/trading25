@@ -1,7 +1,7 @@
 /* @vitest-environment jsdom */
 
 import { render, screen } from '@testing-library/react';
-import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
+import type { ApiFundamentalDataPoint } from '@trading25/contracts/types/api-types';
 import { describe, expect, it } from 'vitest';
 import { DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY } from '@/constants/fundamentalMetrics';
 import { FundamentalsSummaryCard } from './FundamentalsSummaryCard';

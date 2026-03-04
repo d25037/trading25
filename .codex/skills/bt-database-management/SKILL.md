@@ -38,7 +38,7 @@ description: bt 側の SQLite 管理を扱うスキル。`apps/bt/src/lib/market
 
 1. テーブル定義を変えたか: `tables.py` / DB クラス / 対応 contract / `test_tables.py` を更新。
 2. クエリ条件や型を変えたか: `query_helpers.py` と対応ユニットテストを更新。
-3. API 影響があるか: `routes/db.py` と OpenAPI 差分を確認し、必要なら `bun run --filter @trading25/shared bt:sync` を実行。
+3. API 影響があるか: `routes/db.py` と OpenAPI 差分を確認し、必要なら `bun run --filter @trading25/contracts bt:sync` を実行。
 4. ライフサイクル影響があるか: `apps/bt/src/server/app.py` で初期化・`close()`・`close_all()` を確認。
 
 ## Verification

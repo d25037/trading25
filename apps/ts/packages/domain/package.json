@@ -1,0 +1,72 @@
+{
+  "name": "@trading25/domain",
+  "version": "0.0.1",
+  "private": true,
+  "type": "module",
+  "main": "./dist/index.js",
+  "module": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./dataset": {
+      "import": "./dist/dataset/index.js",
+      "types": "./dist/dataset/index.d.ts"
+    },
+    "./dataset/*": {
+      "import": "./dist/dataset/*.js",
+      "types": "./dist/dataset/*.d.ts"
+    },
+    "./portfolio": {
+      "import": "./dist/portfolio/index.js",
+      "types": "./dist/portfolio/index.d.ts"
+    },
+    "./portfolio/*": {
+      "import": "./dist/portfolio/*.js",
+      "types": "./dist/portfolio/*.d.ts"
+    },
+    "./portfolio-performance": {
+      "import": "./dist/portfolio-performance/index.js",
+      "types": "./dist/portfolio-performance/index.d.ts"
+    },
+    "./portfolio-performance/*": {
+      "import": "./dist/portfolio-performance/*.js",
+      "types": "./dist/portfolio-performance/*.d.ts"
+    },
+    "./watchlist": {
+      "import": "./dist/watchlist/index.js",
+      "types": "./dist/watchlist/index.d.ts"
+    },
+    "./watchlist/*": {
+      "import": "./dist/watchlist/*.js",
+      "types": "./dist/watchlist/*.d.ts"
+    },
+    "./ta": {
+      "import": "./dist/ta/index.js",
+      "types": "./dist/ta/index.d.ts"
+    },
+    "./ta/*": {
+      "import": "./dist/ta/*.js",
+      "types": "./dist/ta/*.d.ts"
+    }
+  },
+  "scripts": {
+    "build": "bun run build:deps && bun run build:local",
+    "build:deps": "bun run --filter @trading25/contracts build && bun run --filter @trading25/utils build",
+    "build:local": "tsc -p tsconfig.build.json",
+    "dev": "tsc --watch",
+    "clean": "rm -rf dist",
+    "test": "bun test",
+    "test:watch": "bun test --watch",
+    "test:coverage": "bun test --coverage",
+    "typecheck": "tsc -p tsconfig.typecheck.json --noEmit"
+  },
+  "dependencies": {
+    "@trading25/api-clients": "workspace:*",
+    "@trading25/contracts": "workspace:*",
+    "@trading25/utils": "workspace:*",
+    "zod": "^4.1.5"
+  }
+}

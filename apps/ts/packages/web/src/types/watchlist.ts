@@ -1,6 +1,6 @@
 /**
  * Watchlist types for web frontend
- * Re-exports from @trading25/shared with aliases
+ * Re-exports from @trading25/domain with aliases
  */
 
 export type {
@@ -16,7 +16,7 @@ export type {
   WatchlistSummaryResponse as WatchlistSummary,
   WatchlistWithItemsResponse,
   WatchlistWithItemsResponse as WatchlistWithItems,
-} from '@trading25/shared/watchlist';
+} from '@trading25/domain/watchlist';
 
 // Frontend-specific request types
 export interface CreateWatchlistRequest {

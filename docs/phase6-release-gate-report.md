@@ -10,7 +10,7 @@ Phase 6 のリリースゲートとして、以下を実装した。
   - `.github/workflows/ci.yml`: `contract-tests`
   - `scripts/check-contract-sync.sh` を追加
     - `apps/bt` ソースから OpenAPI 再生成
-    - snapshot (`apps/ts/packages/shared/openapi/bt-openapi.json`) との厳密比較
+    - snapshot (`apps/ts/packages/contracts/openapi/bt-openapi.json`) との厳密比較
     - `scripts/verify-openapi-compat.py` による互換性検証
     - 生成型 (`bt-api-types.ts`) の差分検知
 - Golden dataset 回帰テストを CI 必須ジョブ化

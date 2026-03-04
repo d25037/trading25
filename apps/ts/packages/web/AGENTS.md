@@ -37,7 +37,7 @@ src/
 ├── stores/                 # Zustand state (chartStore, backtestStore)
 ├── hooks/                  # useStockData, useBtIndicators, useBtMarginIndicators, useBtSignals, useFundamentals, useBacktest, useLab
 ├── constants/              # Signal reference data
-└── types/                  # Re-exports from @trading25/shared, backtest types
+└── types/                  # Re-exports from @trading25/contracts/@trading25/domain, backtest types
 ```
 
 ## Chart Data & Indicator Calculation

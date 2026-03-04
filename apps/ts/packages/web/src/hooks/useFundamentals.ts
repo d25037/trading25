@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ApiFundamentalsResponse } from '@trading25/shared/types/api-types';
+import type { ApiFundamentalsResponse } from '@trading25/contracts/types/api-types';
 import { analyticsClient } from '@/lib/analytics-client';
 
 function normalizeTradingValuePeriod(period: number): number {

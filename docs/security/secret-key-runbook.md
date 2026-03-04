@@ -5,7 +5,7 @@ Prevent accidental commit and misuse of the local encryption key file used by `S
 
 ## Scope
 - Managed file name: `.trading25.key`
-- Related component: `apps/ts/packages/shared/src/utils/secure-env-manager.ts`
+- Related component: `apps/ts/packages/utils/src/utils/secure-env-manager.ts`
 
 ## Baseline Rules
 1. Do not commit `.trading25.key` to Git.

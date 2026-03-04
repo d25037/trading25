@@ -31,7 +31,7 @@
 
 ```bash
 cd apps/ts
-bun run --filter @trading25/shared bt:sync
+bun run --filter @trading25/contracts bt:sync
 ```
 
 4. lint / typecheck / tests を通す
@@ -65,7 +65,7 @@ bun run --filter @trading25/shared bt:sync
 
 ## OpenAPI Snapshot
 
-- `apps/ts/packages/shared/openapi/bt-openapi.json`  
+- `apps/ts/packages/contracts/openapi/bt-openapi.json`  
   `bt:sync` で更新される FastAPI 契約スナップショット（`apps/bt` ソースからの直接生成を優先し、失敗時のみ `/openapi.json` 取得にフォールバック）。
 
 ## Dataset Note

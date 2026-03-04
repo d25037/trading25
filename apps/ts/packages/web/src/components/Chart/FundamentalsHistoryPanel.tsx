@@ -1,4 +1,4 @@
-import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
+import type { ApiFundamentalDataPoint } from '@trading25/contracts/types/api-types';
 import { useMemo, useState } from 'react';
 import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,

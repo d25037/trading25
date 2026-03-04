@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ApiFactorRegressionResponse } from '@trading25/shared/types/api-types';
+import type { ApiFactorRegressionResponse } from '@trading25/contracts/types/api-types';
 import { analyticsClient } from '@/lib/analytics-client';
 
 interface FactorRegressionOptions {

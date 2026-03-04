@@ -34,29 +34,43 @@ bun run e2e:ui
 
 ## Package-specific Testing
 
-### Shared Package (`packages/shared/`)
+### Domain/Utils Package (`packages/domain/`, `packages/utils/`)
 
 Tests core business logic:
-- **JQuantsClient**: Authentication, API calls, error handling
-- **Technical Analysis**: SMA, EMA, MACD, PPO indicators with real market data
-- **Timeframe Conversion**: Daily to weekly/monthly OHLC aggregation
+- **Dataset / Portfolio / Watchlist**: validation, helpers, error handling
+- **Technical Analysis Utilities**: fixture handling and utility checks
 - **Test Utilities**: Type-safe array helpers, mock data fixtures
 
 ```bash
-cd packages/shared
+cd packages/domain
 bun run test                # Watch mode
-bun run test:run        # Single run
 bun run test:coverage   # With coverage
 ```
 
-### Frontend Package (`packages/frontend/`)
+```bash
+cd packages/utils
+bun run test                # Watch mode
+bun run test:coverage   # With coverage
+```
+
+### Contracts Package (`packages/contracts/`)
+
+Tests OpenAPI contract sync logic and generated type guardrails:
+
+```bash
+cd packages/contracts
+bun run test
+bun run bt:generate-types
+```
+
+### Web Package (`packages/web/`)
 
 Tests React components and server endpoints:
 - **App Component**: User interactions, state management, API integration
-- **Server API**: Hono HTML server endpoints
+- **FastAPI Proxy Integration**: `/api` contract consumers
 
 ```bash
-cd packages/frontend
+cd packages/web
 bun run test                # Watch mode
 bun run test:ui         # Interactive UI
 bun run test:coverage   # With coverage
@@ -69,8 +83,8 @@ bun run test:coverage   # With coverage
 Mock data fixtures and type-safe helpers are available:
 ```typescript
 // Shared package - Type-safe array access
-import { getFirstElementOrFail, getElementOrFail } from '../test-utils/array-helpers';
-import { mockListedInfo, mockJQuantsConfig } from '../test-utils/fixtures';
+import { getFirstElementOrFail, getElementOrFail } from '@trading25/utils/test-utils';
+import { mockListedInfo, mockJQuantsConfig } from '@trading25/utils/test-utils/fixtures';
 
 // Frontend package  
 import { mockEngineStatus, mockFetch } from './test-utils/mocks';
@@ -138,21 +152,20 @@ it('should convert daily to weekly OHLC', () => {
 
 ## Test Coverage Goals
 
-- **Shared**: >90% - Core business logic
-- **Frontend**: >85% - UI components and API endpoints  
+- **Domain/Utils**: >80% - Core business logic
+- **Web**: >45% lines / >70% functions
 
 ## Configuration
 
 ### Vitest Config
 
 Each package has its own `vitest.config.ts`:
-- **shared**: Node environment, TypeScript support
-- **frontend**: jsdom environment, React testing, path aliases
-- **cli**: Node environment, mock support for external dependencies
+- **contracts/domain/utils**: Node environment, TypeScript support
+- **web**: happy-dom environment, React testing, path aliases
 
 ### Test Setup
 
-Frontend package includes `test-setup.ts` for jest-dom matchers:
+Web package includes `test-setup.ts` for jest-dom matchers:
 ```typescript
 import '@testing-library/jest-dom';
 ```

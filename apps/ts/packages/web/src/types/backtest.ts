@@ -1,6 +1,6 @@
 /**
  * Backtest-related types for frontend
- * Re-exports from @trading25/shared and adds frontend-specific types
+ * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
 // Re-export types from shared package

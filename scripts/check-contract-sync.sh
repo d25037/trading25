@@ -3,8 +3,8 @@ set -euo pipefail
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 bt_root="${repo_root}/apps/bt"
-snapshot_path="${repo_root}/apps/ts/packages/shared/openapi/bt-openapi.json"
-generated_types_path="${repo_root}/apps/ts/packages/shared/src/clients/backtest/generated/bt-api-types.ts"
+snapshot_path="${repo_root}/apps/ts/packages/contracts/openapi/bt-openapi.json"
+generated_types_path="${repo_root}/apps/ts/packages/contracts/src/clients/backtest/generated/bt-api-types.ts"
 
 tmp_openapi="$(mktemp "/tmp/bt-openapi-generated.XXXXXX.json")"
 tmp_openapi_norm="$(mktemp "/tmp/bt-openapi-generated-normalized.XXXXXX.json")"
@@ -39,7 +39,7 @@ normalize_json "${tmp_openapi}" "${tmp_openapi_norm}"
 normalize_json "${snapshot_path}" "${tmp_snapshot_norm}"
 
 if ! cmp -s "${tmp_openapi_norm}" "${tmp_snapshot_norm}"; then
-  echo "[contract] OpenAPI snapshot is stale. Run: bun run --filter @trading25/shared bt:sync" >&2
+  echo "[contract] OpenAPI snapshot is stale. Run: bun run --filter @trading25/contracts bt:sync" >&2
   diff -u "${tmp_snapshot_norm}" "${tmp_openapi_norm}" || true
   exit 1
 fi
@@ -50,11 +50,11 @@ python3 "${repo_root}/scripts/verify-openapi-compat.py" --fastapi-file "${tmp_op
 echo "[contract] Regenerate TypeScript types from committed snapshot"
 (
   cd "${repo_root}/apps/ts"
-  bun run --filter @trading25/shared bt:generate-types
+  bun run --filter @trading25/contracts bt:generate-types
 )
 
 if ! git -C "${repo_root}" diff --exit-code -- "${generated_types_path}" > /dev/null; then
-  echo "[contract] Generated types are not up to date. Run: bun run --filter @trading25/shared bt:sync" >&2
+  echo "[contract] Generated types are not up to date. Run: bun run --filter @trading25/contracts bt:sync" >&2
   git -C "${repo_root}" --no-pager diff -- "${generated_types_path}" || true
   exit 1
 fi

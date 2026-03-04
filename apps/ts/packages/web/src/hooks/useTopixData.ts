@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { JQuantsTOPIXResponse } from '@trading25/shared';
+import type { JQuantsTOPIXResponse } from '@trading25/contracts/types/jquants';
 import { apiGet } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
 
