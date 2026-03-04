@@ -814,6 +814,10 @@ async def test_incremental_sync_handles_mixed_date_formats() -> None:
     assert topix_calls[0][1] == {"from": "20260206"}
 
     assert market_db.metadata.get(METADATA_KEYS["LAST_SYNC_DATE"])
+    assert any(
+        "/equities/bars/daily" in message and ("REST" in message or "BULK" in message)
+        for _, _, _, message in progresses
+    )
     assert progresses[-1][0] == "complete"
 
 
@@ -1327,6 +1331,83 @@ async def test_indices_only_sync_collects_errors_and_continues_other_codes(
     assert len(market_db.indices_rows) == 1
     assert any(stage == "indices_master" for stage, *_ in progresses)
     assert any(stage == "indices_data" for stage, *_ in progresses)
+
+
+@pytest.mark.asyncio
+async def test_indices_only_sync_uses_bulk_when_selected(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    client = IndicesOnlyClient()
+    progresses: list[tuple[str, int, int, str]] = []
+
+    bulk_plan = BulkFetchPlan(
+        endpoint="/indices/bars/daily",
+        files=[{"id": "indices-2026-02-10", "date": "2026-02-10", "size": 1024}],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/indices/bars/daily": BulkFetchResult(
+                rows=[
+                    {"IndexCode": "0000", "Date": "2026-02-10", "O": 100, "H": 101, "L": 99, "C": 100},
+                    {"IndexCode": "0040", "Date": "2026-02-10", "O": 200, "H": 202, "L": 198, "C": 201},
+                ],
+                api_calls=3,
+                cache_hits=0,
+                cache_misses=1,
+                selected_files=1,
+            )
+        },
+    )
+
+    async def _plan_stub(
+        _ctx: Any,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        exact_dates: list[str] | None = None,
+        min_rest_calls_to_probe_bulk: int = 3,
+    ) -> _StageFetchDecision:
+        del date_from, date_to, exact_dates, min_rest_calls_to_probe_bulk
+        if stage == "indices_data" and endpoint == "/indices/bars/daily":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=1,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=3,
+                plan=bulk_plan,
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._get_bulk_service",
+        lambda _ctx: bulk_service,
+    )
+
+    ctx = _build_ctx(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda stage, current, total, message: progresses.append((stage, current, total, message)),
+        bulk_service=bulk_service,  # type: ignore[arg-type]
+    )
+
+    result = await IndicesOnlySyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.totalApiCalls == 4
+    assert "/indices/bars/daily" in bulk_service.fetch_calls
+    assert len(market_db.indices_rows) >= 2
+    assert any("-> BULK" in message for _, _, _, message in progresses)
+    assert any("via BULK" in message for _, _, _, message in progresses)
 
 
 @pytest.mark.asyncio

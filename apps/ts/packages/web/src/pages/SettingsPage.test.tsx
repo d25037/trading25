@@ -7,6 +7,13 @@ type SyncJobStatus = {
   jobId: string;
   status: 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
   mode: string;
+  progress?: {
+    stage: string;
+    current: number;
+    total: number;
+    percentage: number;
+    message: string;
+  };
   startedAt?: string;
 };
 
@@ -170,6 +177,44 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Sync failed')).toBeInTheDocument();
+  });
+
+  it('shows bulk/rest fetch details while sync is running', async () => {
+    const user = userEvent.setup();
+    mockUseSyncJobStatus.mockImplementation((jobId: string | null) => {
+      if (!jobId) {
+        return {
+          data: null,
+          isLoading: false,
+          error: null,
+        };
+      }
+      return {
+        data: {
+          jobId,
+          status: 'running',
+          mode: 'incremental',
+          startedAt: '2026-02-13T00:00:00Z',
+          progress: {
+            stage: 'stock_data',
+            current: 2,
+            total: 5,
+            percentage: 40,
+            message: 'Fetch strategy: /equities/bars/daily -> BULK (REST est=120, BULK est=6, targets=42 dates)',
+          },
+        } as SyncJobStatus,
+        isLoading: false,
+        error: null,
+      };
+    });
+
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    expect(await screen.findByText('Fetch')).toBeInTheDocument();
+    expect(screen.getAllByText('BULK').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('/equities/bars/daily').length).toBeGreaterThan(0);
   });
 
   it('renders market db snapshot from stats/validate', () => {

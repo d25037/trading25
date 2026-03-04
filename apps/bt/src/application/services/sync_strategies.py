@@ -397,6 +397,54 @@ def _log_sync_fetch_execution(
     )
 
 
+def _format_fetch_estimate(value: int | None) -> str:
+    return str(value) if value is not None else "n/a"
+
+
+def _emit_fetch_strategy_progress(
+    ctx: SyncContext,
+    *,
+    progress_stage: str,
+    current: int,
+    total: int,
+    endpoint: str,
+    decision: _StageFetchDecision,
+    target_label: str | None = None,
+) -> None:
+    target_text = f", targets={target_label}" if target_label else ""
+    ctx.on_progress(
+        progress_stage,
+        current,
+        total,
+        (
+            f"Fetch strategy: {endpoint} -> {decision.method.upper()} "
+            f"(REST est={decision.estimated_rest_calls}, "
+            f"BULK est={_format_fetch_estimate(decision.estimated_bulk_calls)}{target_text})"
+        ),
+    )
+
+
+def _emit_fetch_execution_progress(
+    ctx: SyncContext,
+    *,
+    progress_stage: str,
+    current: int,
+    total: int,
+    endpoint: str,
+    method: _FetchMethod,
+    target_label: str | None = None,
+    fallback: bool = False,
+) -> None:
+    target_text = f", targets={target_label}" if target_label else ""
+    fallback_text = " (bulk fallback)" if fallback else ""
+    ctx.on_progress(
+        progress_stage,
+        current,
+        total,
+        f"Fetching {endpoint} via {method.upper()}{fallback_text}{target_text}...",
+    )
+
+
 class IndicesOnlySyncStrategy:
     """指数のみ同期: 指数マスタ + 指数データ（~52 API calls）"""
 
@@ -426,12 +474,30 @@ class IndicesOnlySyncStrategy:
                 estimated_rest_calls=len(target_codes),
             )
             total_calls += decision.planner_api_calls
+            _emit_fetch_strategy_progress(
+                ctx,
+                progress_stage="indices_data",
+                current=1,
+                total=2,
+                endpoint="/indices/bars/daily",
+                decision=decision,
+                target_label=f"{len(target_codes)} codes",
+            )
 
             used_rest_fallback = False
             stage_api_calls = 0
             bulk_result: BulkFetchResult | None = None
             if decision.method == "bulk" and decision.plan is not None:
                 try:
+                    _emit_fetch_execution_progress(
+                        ctx,
+                        progress_stage="indices_data",
+                        current=1,
+                        total=2,
+                        endpoint="/indices/bars/daily",
+                        method="bulk",
+                        target_label=f"{len(target_codes)} codes",
+                    )
                     bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
                     total_calls += bulk_result.api_calls
                     stage_api_calls += bulk_result.api_calls
@@ -466,9 +532,26 @@ class IndicesOnlySyncStrategy:
                     logger.warning("indices-only bulk fetch failed, falling back to REST: {}", e)
 
             if decision.method == "rest" or used_rest_fallback:
-                for code in target_codes:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="indices_data",
+                    current=1,
+                    total=2,
+                    endpoint="/indices/bars/daily",
+                    method="rest",
+                    target_label=f"{len(target_codes)} codes",
+                    fallback=used_rest_fallback,
+                )
+                for i, code in enumerate(target_codes, start=1):
                     if ctx.cancelled.is_set():
                         return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                    if i > 1 and i % 50 == 0:
+                        ctx.on_progress(
+                            "indices_data",
+                            1,
+                            2,
+                            f"Fetching /indices/bars/daily via REST: {i}/{len(target_codes)} codes...",
+                        )
                     try:
                         data, page_calls = await _get_paginated_rows_with_call_count(
                             ctx.client,
@@ -606,12 +689,30 @@ class InitialSyncStrategy:
                 exact_dates=trading_dates,
             )
             total_calls += decision.planner_api_calls
+            _emit_fetch_strategy_progress(
+                ctx,
+                progress_stage="stock_data",
+                current=3,
+                total=6,
+                endpoint="/equities/bars/daily",
+                decision=decision,
+                target_label=f"{len(trading_dates)} dates",
+            )
 
             used_rest_fallback = False
             stage_api_calls = 0
             bulk_result: BulkFetchResult | None = None
             if decision.method == "bulk" and decision.plan is not None:
                 try:
+                    _emit_fetch_execution_progress(
+                        ctx,
+                        progress_stage="stock_data",
+                        current=3,
+                        total=6,
+                        endpoint="/equities/bars/daily",
+                        method="bulk",
+                        target_label=f"{len(trading_dates)} dates",
+                    )
                     bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
                     total_calls += bulk_result.api_calls
                     stage_api_calls += bulk_result.api_calls
@@ -645,12 +746,27 @@ class InitialSyncStrategy:
                     logger.warning("Initial stock_data bulk fetch failed, falling back to REST: {}", e)
 
             if decision.method == "rest" or used_rest_fallback:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="stock_data",
+                    current=3,
+                    total=6,
+                    endpoint="/equities/bars/daily",
+                    method="rest",
+                    target_label=f"{len(trading_dates)} dates",
+                    fallback=used_rest_fallback,
+                )
                 consecutive_failures = 0
                 for i, date in enumerate(trading_dates):
                     if ctx.cancelled.is_set():
                         return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
                     if i % 50 == 0:
-                        ctx.on_progress("stock_data", 3, 6, f"Fetching stock data: {i}/{len(trading_dates)} dates...")
+                        ctx.on_progress(
+                            "stock_data",
+                            3,
+                            6,
+                            f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
+                        )
                     try:
                         payload, page_calls = await _get_paginated_rows_with_call_count(
                             ctx.client,
@@ -836,12 +952,30 @@ class IncrementalSyncStrategy:
                 exact_dates=new_dates,
             )
             total_calls += decision_stock_data.planner_api_calls
+            _emit_fetch_strategy_progress(
+                ctx,
+                progress_stage="stock_data",
+                current=2,
+                total=5,
+                endpoint="/equities/bars/daily",
+                decision=decision_stock_data,
+                target_label=f"{len(new_dates)} dates",
+            )
 
             used_stock_rest_fallback = False
             stock_stage_api_calls = 0
             stock_bulk_result: BulkFetchResult | None = None
             if decision_stock_data.method == "bulk" and decision_stock_data.plan is not None:
                 try:
+                    _emit_fetch_execution_progress(
+                        ctx,
+                        progress_stage="stock_data",
+                        current=2,
+                        total=5,
+                        endpoint="/equities/bars/daily",
+                        method="bulk",
+                        target_label=f"{len(new_dates)} dates",
+                    )
                     stock_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision_stock_data.plan)
                     total_calls += stock_bulk_result.api_calls
                     stock_stage_api_calls += stock_bulk_result.api_calls
@@ -875,9 +1009,26 @@ class IncrementalSyncStrategy:
                     logger.warning("Incremental stock_data bulk fetch failed, falling back to REST: {}", e)
 
             if decision_stock_data.method == "rest" or used_stock_rest_fallback:
-                for date in new_dates:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="stock_data",
+                    current=2,
+                    total=5,
+                    endpoint="/equities/bars/daily",
+                    method="rest",
+                    target_label=f"{len(new_dates)} dates",
+                    fallback=used_stock_rest_fallback,
+                )
+                for i, date in enumerate(new_dates, start=1):
                     if ctx.cancelled.is_set():
                         return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                    if i > 1 and i % 50 == 0:
+                        ctx.on_progress(
+                            "stock_data",
+                            2,
+                            5,
+                            f"Fetching /equities/bars/daily via REST: {i}/{len(new_dates)} dates...",
+                        )
                     try:
                         payload, page_calls = await _get_paginated_rows_with_call_count(
                             ctx.client,
@@ -977,12 +1128,30 @@ class IncrementalSyncStrategy:
                 date_from=latest_index_date if all_code_has_anchor else None,
             )
             total_calls += decision_indices.planner_api_calls
+            _emit_fetch_strategy_progress(
+                ctx,
+                progress_stage="indices",
+                current=3,
+                total=5,
+                endpoint="/indices/bars/daily",
+                decision=decision_indices,
+                target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
+            )
 
             used_indices_rest_fallback = False
             indices_stage_api_calls = 0
             indices_bulk_result: BulkFetchResult | None = None
             if decision_indices.method == "bulk" and decision_indices.plan is not None:
                 try:
+                    _emit_fetch_execution_progress(
+                        ctx,
+                        progress_stage="indices",
+                        current=3,
+                        total=5,
+                        endpoint="/indices/bars/daily",
+                        method="bulk",
+                        target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
+                    )
                     indices_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision_indices.plan)
                     total_calls += indices_bulk_result.api_calls
                     indices_stage_api_calls += indices_bulk_result.api_calls
@@ -1039,9 +1208,26 @@ class IncrementalSyncStrategy:
                     logger.warning("Incremental indices bulk fetch failed, falling back to REST: {}", e)
 
             if decision_indices.method == "rest" or used_indices_rest_fallback:
-                for code in target_codes:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="indices",
+                    current=3,
+                    total=5,
+                    endpoint="/indices/bars/daily",
+                    method="rest",
+                    target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
+                    fallback=used_indices_rest_fallback,
+                )
+                for code_idx, code in enumerate(target_codes, start=1):
                     if ctx.cancelled.is_set():
                         return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                    if code_idx > 1 and code_idx % 50 == 0:
+                        ctx.on_progress(
+                            "indices",
+                            3,
+                            5,
+                            f"Fetching /indices/bars/daily via REST: {code_idx}/{len(target_codes)} codes...",
+                        )
 
                     params: dict[str, Any] = {"code": code}
                     normalized_code = _normalize_index_code(code)
@@ -1078,9 +1264,16 @@ class IncrementalSyncStrategy:
                         errors.append(f"Index {code}: {e}")
                         logger.warning(f"Index {code} incremental sync error: {e}")
 
-                for index_date in fallback_dates:
+                for date_idx, index_date in enumerate(fallback_dates, start=1):
                     if ctx.cancelled.is_set():
                         return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+                    if date_idx > 1 and date_idx % 50 == 0:
+                        ctx.on_progress(
+                            "indices",
+                            3,
+                            5,
+                            f"Fetching /indices/bars/daily via REST: {date_idx}/{len(fallback_dates)} dates...",
+                        )
 
                     try:
                         data, page_calls = await _get_paginated_rows_with_call_count(
@@ -1174,9 +1367,27 @@ async def _sync_fundamentals_initial(
         estimated_rest_calls=max(len(prime_codes), 1),
     )
     api_calls += decision.planner_api_calls
+    _emit_fetch_strategy_progress(
+        ctx,
+        progress_stage="fundamentals",
+        current=2,
+        total=6,
+        endpoint="/fins/summary",
+        decision=decision,
+        target_label=f"{len(prime_codes)} prime codes",
+    )
 
     if decision.method == "bulk" and decision.plan is not None:
         try:
+            _emit_fetch_execution_progress(
+                ctx,
+                progress_stage="fundamentals",
+                current=2,
+                total=6,
+                endpoint="/fins/summary",
+                method="bulk",
+                target_label=f"{len(prime_codes)} prime codes",
+            )
             bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
             api_calls += bulk_result.api_calls
             stage_api_calls += bulk_result.api_calls
@@ -1204,6 +1415,16 @@ async def _sync_fundamentals_initial(
             logger.warning("Initial fundamentals bulk fetch failed, falling back to REST: {}", e)
 
     if not bulk_succeeded:
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage="fundamentals",
+            current=2,
+            total=6,
+            endpoint="/fins/summary",
+            method="rest",
+            target_label=f"{len(prime_codes)} prime codes",
+            fallback=decision.method == "bulk",
+        )
         for idx, code in enumerate(prime_codes):
             if ctx.cancelled.is_set():
                 return {
@@ -1215,7 +1436,12 @@ async def _sync_fundamentals_initial(
                 }
 
             if idx > 0 and idx % 100 == 0:
-                ctx.on_progress("fundamentals", 2, 6, f"Fetching fundamentals: {idx}/{len(prime_codes)} codes...")
+                ctx.on_progress(
+                    "fundamentals",
+                    2,
+                    6,
+                    f"Fetching /fins/summary via REST: {idx}/{len(prime_codes)} codes...",
+                )
 
             try:
                 data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
@@ -1320,9 +1546,27 @@ async def _sync_fundamentals_incremental(
             exact_dates=date_targets,
         )
         api_calls += decision.planner_api_calls
+        _emit_fetch_strategy_progress(
+            ctx,
+            progress_stage="fundamentals",
+            current=4,
+            total=5,
+            endpoint="/fins/summary",
+            decision=decision,
+            target_label=f"{len(date_targets)} dates",
+        )
 
         if decision.method == "bulk" and decision.plan is not None:
             try:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="fundamentals",
+                    current=4,
+                    total=5,
+                    endpoint="/fins/summary",
+                    method="bulk",
+                    target_label=f"{len(date_targets)} dates",
+                )
                 date_phase_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
                 api_calls += date_phase_bulk_result.api_calls
                 date_phase_api_calls += date_phase_bulk_result.api_calls
@@ -1357,6 +1601,16 @@ async def _sync_fundamentals_incremental(
                 logger.warning("Incremental fundamentals bulk date fetch failed, falling back to REST: {}", e)
 
         if not bulk_dates_succeeded:
+            _emit_fetch_execution_progress(
+                ctx,
+                progress_stage="fundamentals",
+                current=4,
+                total=5,
+                endpoint="/fins/summary",
+                method="rest",
+                target_label=f"{len(date_targets)} dates",
+                fallback=decision.method == "bulk",
+            )
             for idx, disclosed_date in enumerate(date_targets):
                 if ctx.cancelled.is_set():
                     return {
@@ -1368,7 +1622,12 @@ async def _sync_fundamentals_incremental(
                     }
 
                 if idx > 0 and idx % 30 == 0:
-                    ctx.on_progress("fundamentals", 4, 5, f"Fetching fundamentals dates: {idx}/{len(date_targets)}...")
+                    ctx.on_progress(
+                        "fundamentals",
+                        4,
+                        5,
+                        f"Fetching /fins/summary via REST: {idx}/{len(date_targets)} dates...",
+                    )
 
                 try:
                     data, page_calls = await _fetch_fins_summary_paginated(
@@ -1405,6 +1664,14 @@ async def _sync_fundamentals_incremental(
     missing_prime_codes = sorted(set(prime_codes) - set(statement_codes))
     code_targets = _collect_unique_codes(previous_failed_codes + missing_prime_codes)
 
+    if code_targets:
+        ctx.on_progress(
+            "fundamentals",
+            4,
+            5,
+            f"Fetching /fins/summary via REST, targets={len(code_targets)} backfill codes...",
+        )
+
     for idx, code in enumerate(code_targets):
         if ctx.cancelled.is_set():
             return {
@@ -1416,7 +1683,12 @@ async def _sync_fundamentals_incremental(
             }
 
         if idx > 0 and idx % 100 == 0:
-            ctx.on_progress("fundamentals", 4, 5, f"Backfilling fundamentals: {idx}/{len(code_targets)} codes...")
+            ctx.on_progress(
+                "fundamentals",
+                4,
+                5,
+                f"Fetching /fins/summary via REST: {idx}/{len(code_targets)} backfill codes...",
+            )
 
         try:
             data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
