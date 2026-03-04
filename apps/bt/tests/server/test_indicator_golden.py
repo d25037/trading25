@@ -34,6 +34,7 @@ from src.application.services.indicator_service import (
 # Golden dataset directory (relative to repo root)
 REPO_ROOT = Path(__file__).resolve().parents[2].parent
 GOLDEN_DIR_CANDIDATES = [
+    REPO_ROOT / "bt" / "tests" / "fixtures" / "ta_golden",
     REPO_ROOT / "ts" / "packages" / "domain" / "src" / "ta" / "__fixtures__" / "golden",
     REPO_ROOT / "ts" / "packages" / "shared" / "src" / "ta" / "__fixtures__" / "golden",
 ]
