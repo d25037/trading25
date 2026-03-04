@@ -105,7 +105,13 @@ class JQuantsBulkService:
             estimated_cache_misses=estimated_cache_misses,
         )
 
-    async def fetch_with_plan(self, plan: BulkFetchPlan) -> BulkFetchResult:
+    async def fetch_with_plan(
+        self,
+        plan: BulkFetchPlan,
+        *,
+        on_rows_batch: Callable[[list[dict[str, Any]], BulkFileInfo], Awaitable[None]] | None = None,
+        accumulate_rows: bool = True,
+    ) -> BulkFetchResult:
         rows: list[dict[str, Any]] = []
         api_calls = 0
         cache_hits = 0
@@ -131,7 +137,11 @@ class JQuantsBulkService:
                 cache_path.write_bytes(payload)
                 self._write_cache_meta(file_info)
 
-            rows.extend(self._read_csv_gzip_rows(cache_path))
+            batch_rows = self._read_csv_gzip_rows(cache_path)
+            if on_rows_batch is not None:
+                await on_rows_batch(batch_rows, file_info)
+            if accumulate_rows:
+                rows.extend(batch_rows)
 
         return BulkFetchResult(
             rows=rows,
