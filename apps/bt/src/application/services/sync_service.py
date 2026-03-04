@@ -58,6 +58,8 @@ async def start_sync(
     close_time_series_store: bool = False,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:
     """Sync ジョブを作成して開始。アクティブジョブがある場合は None。"""
+    if time_series_store is None:
+        raise RuntimeError("DuckDB time-series store is required for sync")
     market_db.ensure_schema()
     resolved_mode = _resolve_mode(mode, market_db)
     data = SyncJobData(mode=mode, resolved_mode=resolved_mode)

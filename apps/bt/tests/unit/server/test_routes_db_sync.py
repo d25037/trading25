@@ -253,8 +253,12 @@ class TestSyncRoutes:
 
 class TestRefreshRoute:
     def test_refresh_success(self, client: TestClient) -> None:
-        with patch("src.application.services.stock_refresh_service.refresh_stocks") as mock_refresh:
+        with (
+            patch("src.entrypoints.http.routes.db._get_market_time_series_store") as mock_store,
+            patch("src.application.services.stock_refresh_service.refresh_stocks") as mock_refresh,
+        ):
             from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
+            mock_store.return_value = MagicMock()
             mock_refresh.return_value = RefreshResponse(
                 totalStocks=1,
                 successCount=1,

@@ -54,6 +54,7 @@ class SyncContext:
     on_progress: Callable[[str, int, int, str], None]
     time_series_store: MarketTimeSeriesStore | None = None
     bulk_service: JQuantsBulkService | None = None
+    bulk_probe_disabled: bool = False
 
 
 class SyncStrategy(Protocol):
@@ -144,9 +145,8 @@ _BULK_FINS_KEY_ALIASES: dict[str, str] = {
 }
 
 
-def _supports_bulk_sync(client: JQuantsAsyncClient) -> bool:
-    plan = str(getattr(client, "plan", "")).strip().lower()
-    return plan in {"light", "standard", "premium"}
+def _get_plan_hint(client: JQuantsAsyncClient) -> str:
+    return str(getattr(client, "plan", "")).strip().lower()
 
 
 def _get_bulk_service(ctx: SyncContext) -> JQuantsBulkService:
@@ -199,17 +199,19 @@ async def _plan_fetch_method(
     exact_dates: list[str] | None = None,
     min_rest_calls_to_probe_bulk: int = 3,
 ) -> _StageFetchDecision:
-    if not _supports_bulk_sync(ctx.client):
+    if ctx.bulk_probe_disabled:
+        plan_hint = _get_plan_hint(ctx.client)
         logger.info(
             "sync fetch strategy selected",
             event="sync_fetch_strategy",
             stage=stage,
             endpoint=endpoint,
             selected="rest",
-            reason="plan_not_supported",
+            reason="bulk_probe_disabled",
             estimatedRestCalls=estimated_rest_calls,
             estimatedBulkCalls=None,
             plannerApiCalls=0,
+            planHint=plan_hint or None,
         )
         return _StageFetchDecision(
             method="rest",
@@ -220,6 +222,7 @@ async def _plan_fetch_method(
         )
 
     if estimated_rest_calls < min_rest_calls_to_probe_bulk:
+        plan_hint = _get_plan_hint(ctx.client)
         logger.info(
             "sync fetch strategy selected",
             event="sync_fetch_strategy",
@@ -230,6 +233,7 @@ async def _plan_fetch_method(
             estimatedRestCalls=estimated_rest_calls,
             estimatedBulkCalls=None,
             plannerApiCalls=0,
+            planHint=plan_hint or None,
         )
         return _StageFetchDecision(
             method="rest",
@@ -240,12 +244,42 @@ async def _plan_fetch_method(
         )
 
     bulk_service = _get_bulk_service(ctx)
-    plan = await bulk_service.build_plan(
-        endpoint=endpoint,
-        date_from=date_from,
-        date_to=date_to,
-        exact_dates=exact_dates,
-    )
+    plan_hint = _get_plan_hint(ctx.client)
+    try:
+        plan = await bulk_service.build_plan(
+            endpoint=endpoint,
+            date_from=date_from,
+            date_to=date_to,
+            exact_dates=exact_dates,
+        )
+    except Exception as e:
+        # free/unknown plan や一時障害で /bulk/list が失敗した場合は
+        # 同期ジョブ全体を止めず、以降は REST に固定して継続する。
+        ctx.bulk_probe_disabled = True
+        logger.warning(
+            "sync bulk plan probe failed, falling back to REST for this job: {}",
+            e,
+        )
+        logger.info(
+            "sync fetch strategy selected",
+            event="sync_fetch_strategy",
+            stage=stage,
+            endpoint=endpoint,
+            selected="rest",
+            reason="bulk_probe_failed",
+            estimatedRestCalls=estimated_rest_calls,
+            estimatedBulkCalls=None,
+            plannerApiCalls=1,
+            planHint=plan_hint or None,
+        )
+        return _StageFetchDecision(
+            method="rest",
+            planner_api_calls=1,
+            estimated_rest_calls=estimated_rest_calls,
+            estimated_bulk_calls=None,
+            plan=None,
+        )
+
     selected: _FetchMethod = "bulk" if plan.estimated_api_calls < estimated_rest_calls else "rest"
     reason = "bulk_estimate_lower" if selected == "bulk" else "rest_estimate_lower_or_equal"
 
@@ -262,6 +296,7 @@ async def _plan_fetch_method(
         estimatedCacheHits=plan.estimated_cache_hits,
         estimatedCacheMisses=plan.estimated_cache_misses,
         selectedFiles=len(plan.files),
+        planHint=plan_hint or None,
     )
     return _StageFetchDecision(
         method=selected,
@@ -308,11 +343,8 @@ def _normalize_bulk_fins_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]
 
 
 def _is_incremental_cold_start(
-    ctx: SyncContext,
-    inspection: TimeSeriesInspection | None,
+    inspection: TimeSeriesInspection,
 ) -> bool:
-    if inspection is None or ctx.time_series_store is None:
-        return False
     has_anchor_signal = bool(
         inspection.topix_max
         or inspection.stock_max
@@ -723,15 +755,9 @@ class IncrementalSyncStrategy:
             # stock_data が一部日付で取りこぼされると topix_data より遅れる場合があるため、
             # 増分同期の基準日は stock_data の最新日を優先する。
             inspection = _inspect_time_series(ctx)
-            cold_start_bootstrap = _is_incremental_cold_start(ctx, inspection)
-            last_topix_date = (
-                inspection.topix_max if inspection and inspection.topix_max else ctx.market_db.get_latest_trading_date()
-            )
-            last_stock_date = (
-                inspection.stock_max
-                if inspection and inspection.stock_max
-                else ctx.market_db.get_latest_stock_data_date()
-            )
+            cold_start_bootstrap = _is_incremental_cold_start(inspection)
+            last_topix_date = inspection.topix_max
+            last_stock_date = inspection.stock_max
             last_date = last_stock_date or last_topix_date
             if cold_start_bootstrap:
                 logger.info(
@@ -897,11 +923,7 @@ class IncrementalSyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             known_master_codes = await _seed_index_master_from_catalog(ctx)
-            raw_latest_index_dates = (
-                dict(inspection.latest_indices_dates)
-                if inspection and inspection.latest_indices_dates
-                else ctx.market_db.get_latest_indices_data_dates()
-            )
+            raw_latest_index_dates = dict(inspection.latest_indices_dates)
             latest_index_dates = {
                 _normalize_index_code(code): value
                 for code, value in raw_latest_index_dates.items()
@@ -1626,28 +1648,33 @@ def _build_incremental_date_targets(anchor: str | None, retry_dates: list[str]) 
     return targets
 
 
-def _inspect_time_series(ctx: SyncContext) -> TimeSeriesInspection | None:
+def _require_time_series_store(ctx: SyncContext) -> MarketTimeSeriesStore:
     if ctx.time_series_store is None:
-        return None
+        raise RuntimeError("DuckDB time-series store is required for sync strategy execution")
+    return ctx.time_series_store
+
+
+def _inspect_time_series(ctx: SyncContext) -> TimeSeriesInspection:
+    store = _require_time_series_store(ctx)
     try:
-        return ctx.time_series_store.inspect()
-    except Exception as e:  # noqa: BLE001 - inspection failure should not block sync
-        logger.warning("Failed to inspect time-series store during sync: {}", e)
-        return None
+        inspection = store.inspect()
+    except Exception as e:  # noqa: BLE001 - include backend error in sync failure
+        raise RuntimeError(f"DuckDB inspection failed during sync: {e}") from e
+    if inspection.source != "duckdb-parquet":
+        raise RuntimeError(
+            f"Unexpected time-series source during sync: {inspection.source}"
+        )
+    return inspection
 
 
 def _get_latest_statement_disclosed_date(ctx: SyncContext) -> str | None:
     inspection = _inspect_time_series(ctx)
-    if inspection and inspection.latest_statement_disclosed_date:
-        return inspection.latest_statement_disclosed_date
-    return ctx.market_db.get_latest_statement_disclosed_date()
+    return inspection.latest_statement_disclosed_date
 
 
 def _get_statement_codes(ctx: SyncContext) -> set[str]:
     inspection = _inspect_time_series(ctx)
-    if inspection and inspection.statement_codes:
-        return set(inspection.statement_codes)
-    return ctx.market_db.get_statement_codes()
+    return set(inspection.statement_codes)
 
 
 def get_strategy(resolved_mode: str) -> SyncStrategy:
@@ -1692,57 +1719,49 @@ async def _upsert_indices_rows_with_master_backfill(
 async def _publish_topix_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
-    if ctx.time_series_store is None:
-        return await asyncio.to_thread(ctx.market_db.upsert_topix_data, rows)
-    return await asyncio.to_thread(ctx.time_series_store.publish_topix_data, rows)
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(store.publish_topix_data, rows)
 
 
 async def _publish_stock_data_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
-    if ctx.time_series_store is None:
-        return await asyncio.to_thread(ctx.market_db.upsert_stock_data, rows)
-    return await asyncio.to_thread(ctx.time_series_store.publish_stock_data, rows)
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(store.publish_stock_data, rows)
 
 
 async def _publish_indices_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
-    if ctx.time_series_store is None:
-        return await asyncio.to_thread(ctx.market_db.upsert_indices_data, rows)
-    return await asyncio.to_thread(ctx.time_series_store.publish_indices_data, rows)
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(store.publish_indices_data, rows)
 
 
 async def _publish_statement_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
-    if ctx.time_series_store is None:
-        return await asyncio.to_thread(ctx.market_db.upsert_statements, rows)
-    return await asyncio.to_thread(ctx.time_series_store.publish_statements, rows)
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(store.publish_statements, rows)
 
 
 async def _index_topix_rows(ctx: SyncContext) -> None:
-    if ctx.time_series_store is None:
-        return
-    await asyncio.to_thread(ctx.time_series_store.index_topix_data)
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.index_topix_data)
 
 
 async def _index_stock_data_rows(ctx: SyncContext) -> None:
-    if ctx.time_series_store is None:
-        return
-    await asyncio.to_thread(ctx.time_series_store.index_stock_data)
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.index_stock_data)
 
 
 async def _index_indices_rows(ctx: SyncContext) -> None:
-    if ctx.time_series_store is None:
-        return
-    await asyncio.to_thread(ctx.time_series_store.index_indices_data)
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.index_indices_data)
 
 
 async def _index_statement_rows(ctx: SyncContext) -> None:
-    if ctx.time_series_store is None:
-        return
-    await asyncio.to_thread(ctx.time_series_store.index_statements)
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.index_statements)
 
 
 def _convert_topix_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
