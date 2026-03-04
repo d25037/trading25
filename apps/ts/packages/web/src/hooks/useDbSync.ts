@@ -21,6 +21,10 @@ function fetchJobStatus(jobId: string): Promise<SyncJobResponse> {
   return apiGet<SyncJobResponse>(`/api/db/sync/jobs/${jobId}`);
 }
 
+function fetchActiveJobStatus(): Promise<SyncJobResponse | null> {
+  return apiGet<SyncJobResponse | null>('/api/db/sync/jobs/active');
+}
+
 function cancelJob(jobId: string): Promise<CancelJobResponse> {
   return apiDelete<CancelJobResponse>(`/api/db/sync/jobs/${jobId}`);
 }
@@ -88,12 +92,22 @@ export function useSyncJobStatus(jobId: string | null) {
     },
     enabled: !!jobId,
     refetchInterval: (query) => {
-      // Poll every 1s while running, stop when completed/failed/cancelled
       const status = query.state.data?.status;
-      if (status === 'running' || status === 'pending') return 1000;
-      return false;
+      // Keep polling until terminal status is observed.
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+        return false;
+      }
+      return 1000;
     },
     staleTime: 0, // Always fetch fresh data
+  });
+}
+
+export function useActiveSyncJob() {
+  return useQuery({
+    queryKey: ['sync-job-active'],
+    queryFn: fetchActiveJobStatus,
+    staleTime: 0,
   });
 }
 

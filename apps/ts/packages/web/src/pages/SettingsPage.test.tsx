@@ -1,6 +1,7 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/api-client';
 import { SettingsPage } from './SettingsPage';
 
 type SyncJobStatus = {
@@ -29,6 +30,7 @@ const mockCancelSyncState = {
 };
 
 const mockUseSyncJobStatus = vi.fn();
+const mockUseActiveSyncJob = vi.fn();
 const mockUseDbStats = vi.fn();
 const mockUseDbValidation = vi.fn();
 const mockUseRefreshStocks = vi.fn();
@@ -36,6 +38,7 @@ const mockUseRefreshStocks = vi.fn();
 vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
   useCancelSync: () => mockCancelSyncState,
+  useActiveSyncJob: () => mockUseActiveSyncJob(),
   useSyncJobStatus: (jobId: string | null) => mockUseSyncJobStatus(jobId),
   useDbStats: (options?: unknown) => mockUseDbStats(options),
   useDbValidation: (options?: unknown) => mockUseDbValidation(options),
@@ -44,9 +47,15 @@ vi.mock('@/hooks/useDbSync', () => ({
 
 beforeEach(() => {
   vi.clearAllMocks();
+  localStorage.clear();
   mockStartSyncState.isPending = false;
   mockStartSyncState.error = null;
   mockCancelSyncState.isPending = false;
+  mockUseActiveSyncJob.mockReturnValue({
+    data: null,
+    isLoading: false,
+    error: null,
+  });
   mockUseRefreshStocks.mockReturnValue({
     mutate: vi.fn(),
     isPending: false,
@@ -99,6 +108,46 @@ beforeEach(() => {
 });
 
 describe('SettingsPage', () => {
+  it('loads active job id from localStorage on mount', () => {
+    localStorage.setItem('trading25.settings.sync.activeJobId', 'stored-job-1');
+
+    render(<SettingsPage />);
+
+    expect(mockUseSyncJobStatus).toHaveBeenCalledWith('stored-job-1');
+  });
+
+  it('restores active job id from backend active job endpoint', () => {
+    mockUseActiveSyncJob.mockReturnValue({
+      data: {
+        jobId: 'active-job-1',
+        status: 'running',
+        mode: 'incremental',
+        startedAt: '2026-03-04T00:00:00Z',
+      } as SyncJobStatus,
+      isLoading: false,
+      error: null,
+    });
+
+    render(<SettingsPage />);
+
+    expect(mockUseSyncJobStatus).toHaveBeenCalledWith('active-job-1');
+  });
+
+  it('clears persisted active job id when status endpoint returns 404', async () => {
+    localStorage.setItem('trading25.settings.sync.activeJobId', 'missing-job');
+    mockUseSyncJobStatus.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: new ApiError('Job not found', 404),
+    });
+
+    render(<SettingsPage />);
+
+    await waitFor(() => {
+      expect(localStorage.getItem('trading25.settings.sync.activeJobId')).toBeNull();
+    });
+  });
+
   it('starts sync and renders running status', async () => {
     const user = userEvent.setup();
 

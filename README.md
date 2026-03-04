@@ -53,6 +53,7 @@ bun run workspace:dev
 ### 2.1) Market Sync Data Plane 実行オプション
 
 - Web: `Settings > Database Sync` で DuckDB SoT 同期を実行し、`DuckDB Snapshot`（`/api/db/stats`, `/api/db/validate`）を確認可能
+- Sync中にページ再読み込み/再訪しても、`/api/db/sync/jobs/active` + localStorage により実行中ジョブ追跡を自動復元
 
 ### 3) Signal Attribution（LOO + Shapley top-N）
 - Web: Backtest ページの `Attribution` サブタブで `Run` から実行し、`History` で保存済み JSON を閲覧
