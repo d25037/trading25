@@ -10,6 +10,32 @@ interface SyncStatusCardProps {
   isCancelling: boolean;
 }
 
+interface FetchProgressInfo {
+  endpoint: string | null;
+  method: 'BULK' | 'REST' | null;
+}
+
+const FETCH_ENDPOINT_PATTERN = /\/[a-z0-9-]+(?:\/[a-z0-9-]+)+/i;
+const FETCH_METHOD_PATTERN = /\b(BULK|REST)\b/i;
+
+function parseFetchProgressInfo(message: string): FetchProgressInfo {
+  const endpointMatch = message.match(FETCH_ENDPOINT_PATTERN);
+  const methodMatch = message.match(FETCH_METHOD_PATTERN);
+
+  const endpoint = endpointMatch?.[0] ?? null;
+  const methodRaw = methodMatch?.[1]?.toUpperCase();
+  const method = methodRaw === 'BULK' || methodRaw === 'REST' ? methodRaw : null;
+
+  return { endpoint, method };
+}
+
+function getMethodBadgeClass(method: FetchProgressInfo['method']): string {
+  if (method === 'BULK') {
+    return 'bg-emerald-500/15 text-emerald-700';
+  }
+  return 'bg-blue-500/15 text-blue-700';
+}
+
 function StatusIcon({ status }: { status: SyncJobResponse['status'] }) {
   switch (status) {
     case 'pending':
@@ -43,6 +69,7 @@ export function SyncStatusCard({ job, isLoading, onCancel, isCancelling }: SyncS
   const isActive = job.status === 'pending' || job.status === 'running';
   const progress = job.progress;
   const result = job.result;
+  const fetchInfo = progress ? parseFetchProgressInfo(progress.message) : { endpoint: null, method: null };
 
   return (
     <Card className="mt-4">
@@ -76,6 +103,19 @@ export function SyncStatusCard({ job, isLoading, onCancel, isCancelling }: SyncS
                 style={{ width: `${progress.percentage}%` }}
               />
             </div>
+            {(fetchInfo.method || fetchInfo.endpoint) && (
+              <div className="flex flex-wrap items-center gap-2 text-xs">
+                <span className="text-muted-foreground">Fetch</span>
+                {fetchInfo.method && (
+                  <span className={`rounded px-2 py-0.5 font-medium ${getMethodBadgeClass(fetchInfo.method)}`}>
+                    {fetchInfo.method}
+                  </span>
+                )}
+                {fetchInfo.endpoint && (
+                  <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{fetchInfo.endpoint}</code>
+                )}
+              </div>
+            )}
             <p className="text-xs text-muted-foreground">{progress.message}</p>
           </div>
         )}
