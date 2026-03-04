@@ -1,0 +1,3050 @@
+{
+  "indicator": "input_margin",
+  "params": {},
+  "version": "phase2.5-v1",
+  "source_commit": "ae407994f3f61cb6605f5ad93f45ae03555b67e6",
+  "data": [
+    {
+      "date": "2015-08-14",
+      "value": null,
+      "longVol": 9048500,
+      "shortVol": 403300
+    },
+    {
+      "date": "2015-08-21",
+      "value": null,
+      "longVol": 9317200,
+      "shortVol": 505300
+    },
+    {
+      "date": "2015-08-28",
+      "value": null,
+      "longVol": 9161600,
+      "shortVol": 751900
+    },
+    {
+      "date": "2015-09-04",
+      "value": null,
+      "longVol": 9267900,
+      "shortVol": 705900
+    },
+    {
+      "date": "2015-09-11",
+      "value": null,
+      "longVol": 9675800,
+      "shortVol": 591900
+    },
+    {
+      "date": "2015-09-18",
+      "value": null,
+      "longVol": 8448900,
+      "shortVol": 1586300
+    },
+    {
+      "date": "2015-10-02",
+      "value": null,
+      "longVol": 8579000,
+      "shortVol": 886200
+    },
+    {
+      "date": "2015-10-09",
+      "value": null,
+      "longVol": 7866500,
+      "shortVol": 1112500
+    },
+    {
+      "date": "2015-10-16",
+      "value": null,
+      "longVol": 8299200,
+      "shortVol": 891800
+    },
+    {
+      "date": "2015-10-23",
+      "value": null,
+      "longVol": 7923300,
+      "shortVol": 1051700
+    },
+    {
+      "date": "2015-10-30",
+      "value": null,
+      "longVol": 8789500,
+      "shortVol": 1030000
+    },
+    {
+      "date": "2015-11-06",
+      "value": null,
+      "longVol": 8966500,
+      "shortVol": 681700
+    },
+    {
+      "date": "2015-11-13",
+      "value": null,
+      "longVol": 8300200,
+      "shortVol": 690700
+    },
+    {
+      "date": "2015-11-20",
+      "value": null,
+      "longVol": 7741400,
+      "shortVol": 725300
+    },
+    {
+      "date": "2015-11-27",
+      "value": null,
+      "longVol": 7327100,
+      "shortVol": 959300
+    },
+    {
+      "date": "2015-12-04",
+      "value": null,
+      "longVol": 7196900,
+      "shortVol": 894400
+    },
+    {
+      "date": "2015-12-11",
+      "value": null,
+      "longVol": 7655000,
+      "shortVol": 956900
+    },
+    {
+      "date": "2015-12-18",
+      "value": null,
+      "longVol": 6792100,
+      "shortVol": 1010300
+    },
+    {
+      "date": "2015-12-25",
+      "value": null,
+      "longVol": 7423300,
+      "shortVol": 783300
+    },
+    {
+      "date": "2015-12-30",
+      "value": null,
+      "longVol": 7422000,
+      "shortVol": 626700
+    },
+    {
+      "date": "2016-01-08",
+      "value": null,
+      "longVol": 10234900,
+      "shortVol": 532600
+    },
+    {
+      "date": "2016-01-15",
+      "value": null,
+      "longVol": 10429000,
+      "shortVol": 556900
+    },
+    {
+      "date": "2016-01-22",
+      "value": null,
+      "longVol": 9580700,
+      "shortVol": 773900
+    },
+    {
+      "date": "2016-01-29",
+      "value": null,
+      "longVol": 8700800,
+      "shortVol": 691000
+    },
+    {
+      "date": "2016-02-05",
+      "value": null,
+      "longVol": 9649300,
+      "shortVol": 569700
+    },
+    {
+      "date": "2016-02-12",
+      "value": null,
+      "longVol": 9653600,
+      "shortVol": 754500
+    },
+    {
+      "date": "2016-02-19",
+      "value": null,
+      "longVol": 9642500,
+      "shortVol": 657100
+    },
+    {
+      "date": "2016-02-26",
+      "value": null,
+      "longVol": 10147300,
+      "shortVol": 636700
+    },
+    {
+      "date": "2016-03-04",
+      "value": null,
+      "longVol": 9414100,
+      "shortVol": 810900
+    },
+    {
+      "date": "2016-03-11",
+      "value": null,
+      "longVol": 9985600,
+      "shortVol": 825900
+    },
+    {
+      "date": "2016-03-18",
+      "value": null,
+      "longVol": 12079100,
+      "shortVol": 597500
+    },
+    {
+      "date": "2016-03-25",
+      "value": null,
+      "longVol": 10512700,
+      "shortVol": 758500
+    },
+    {
+      "date": "2016-04-01",
+      "value": null,
+      "longVol": 11824100,
+      "shortVol": 534000
+    },
+    {
+      "date": "2016-04-08",
+      "value": null,
+      "longVol": 12947600,
+      "shortVol": 753800
+    },
+    {
+      "date": "2016-04-15",
+      "value": null,
+      "longVol": 11824900,
+      "shortVol": 893000
+    },
+    {
+      "date": "2016-04-22",
+      "value": null,
+      "longVol": 10453700,
+      "shortVol": 1260300
+    },
+    {
+      "date": "2016-04-28",
+      "value": null,
+      "longVol": 11070100,
+      "shortVol": 1044100
+    },
+    {
+      "date": "2016-05-13",
+      "value": null,
+      "longVol": 12240200,
+      "shortVol": 970000
+    },
+    {
+      "date": "2016-05-20",
+      "value": null,
+      "longVol": 12114700,
+      "shortVol": 983800
+    },
+    {
+      "date": "2016-05-27",
+      "value": null,
+      "longVol": 11919200,
+      "shortVol": 1029500
+    },
+    {
+      "date": "2016-06-03",
+      "value": null,
+      "longVol": 14151700,
+      "shortVol": 1096500
+    },
+    {
+      "date": "2016-06-10",
+      "value": null,
+      "longVol": 12991700,
+      "shortVol": 1055500
+    },
+    {
+      "date": "2016-06-17",
+      "value": null,
+      "longVol": 12396000,
+      "shortVol": 1207600
+    },
+    {
+      "date": "2016-06-24",
+      "value": null,
+      "longVol": 11329700,
+      "shortVol": 1302800
+    },
+    {
+      "date": "2016-07-01",
+      "value": null,
+      "longVol": 12058600,
+      "shortVol": 1099900
+    },
+    {
+      "date": "2016-07-08",
+      "value": null,
+      "longVol": 11313300,
+      "shortVol": 1171200
+    },
+    {
+      "date": "2016-07-15",
+      "value": null,
+      "longVol": 7649700,
+      "shortVol": 2742300
+    },
+    {
+      "date": "2016-07-22",
+      "value": null,
+      "longVol": 6786400,
+      "shortVol": 2666700
+    },
+    {
+      "date": "2016-07-29",
+      "value": null,
+      "longVol": 6010100,
+      "shortVol": 3127800
+    },
+    {
+      "date": "2016-08-05",
+      "value": null,
+      "longVol": 5091500,
+      "shortVol": 2305700
+    },
+    {
+      "date": "2016-08-12",
+      "value": null,
+      "longVol": 4486700,
+      "shortVol": 2092000
+    },
+    {
+      "date": "2016-08-19",
+      "value": null,
+      "longVol": 4095900,
+      "shortVol": 2304500
+    },
+    {
+      "date": "2016-08-26",
+      "value": null,
+      "longVol": 4620300,
+      "shortVol": 2025800
+    },
+    {
+      "date": "2016-09-02",
+      "value": null,
+      "longVol": 3458500,
+      "shortVol": 2856300
+    },
+    {
+      "date": "2016-09-09",
+      "value": null,
+      "longVol": 3983400,
+      "shortVol": 2554500
+    },
+    {
+      "date": "2016-09-16",
+      "value": null,
+      "longVol": 5074200,
+      "shortVol": 1907100
+    },
+    {
+      "date": "2016-09-23",
+      "value": null,
+      "longVol": 5429900,
+      "shortVol": 1628000
+    },
+    {
+      "date": "2016-09-30",
+      "value": null,
+      "longVol": 6243800,
+      "shortVol": 1508900
+    },
+    {
+      "date": "2016-10-07",
+      "value": null,
+      "longVol": 5270200,
+      "shortVol": 1726900
+    },
+    {
+      "date": "2016-10-14",
+      "value": null,
+      "longVol": 5196500,
+      "shortVol": 1648400
+    },
+    {
+      "date": "2016-10-21",
+      "value": null,
+      "longVol": 5236400,
+      "shortVol": 1713500
+    },
+    {
+      "date": "2016-10-28",
+      "value": null,
+      "longVol": 4866600,
+      "shortVol": 1857600
+    },
+    {
+      "date": "2016-11-04",
+      "value": null,
+      "longVol": 6670700,
+      "shortVol": 1349000
+    },
+    {
+      "date": "2016-11-11",
+      "value": null,
+      "longVol": 5172600,
+      "shortVol": 1805900
+    },
+    {
+      "date": "2016-11-18",
+      "value": null,
+      "longVol": 3649700,
+      "shortVol": 2273100
+    },
+    {
+      "date": "2016-11-25",
+      "value": null,
+      "longVol": 3322400,
+      "shortVol": 2823000
+    },
+    {
+      "date": "2016-12-02",
+      "value": null,
+      "longVol": 3636200,
+      "shortVol": 2653300
+    },
+    {
+      "date": "2016-12-09",
+      "value": null,
+      "longVol": 2851400,
+      "shortVol": 2690700
+    },
+    {
+      "date": "2016-12-16",
+      "value": null,
+      "longVol": 3243300,
+      "shortVol": 2656000
+    },
+    {
+      "date": "2016-12-22",
+      "value": null,
+      "longVol": 2962400,
+      "shortVol": 2606000
+    },
+    {
+      "date": "2016-12-30",
+      "value": null,
+      "longVol": 3332000,
+      "shortVol": 2202000
+    },
+    {
+      "date": "2017-01-06",
+      "value": null,
+      "longVol": 3349400,
+      "shortVol": 2381700
+    },
+    {
+      "date": "2017-01-13",
+      "value": null,
+      "longVol": 3561800,
+      "shortVol": 2258300
+    },
+    {
+      "date": "2017-01-20",
+      "value": null,
+      "longVol": 3622100,
+      "shortVol": 2132900
+    },
+    {
+      "date": "2017-01-27",
+      "value": null,
+      "longVol": 4033000,
+      "shortVol": 2265000
+    },
+    {
+      "date": "2017-02-03",
+      "value": null,
+      "longVol": 4763100,
+      "shortVol": 1734800
+    },
+    {
+      "date": "2017-02-10",
+      "value": null,
+      "longVol": 5494200,
+      "shortVol": 1691600
+    },
+    {
+      "date": "2017-02-17",
+      "value": null,
+      "longVol": 5715700,
+      "shortVol": 1660100
+    },
+    {
+      "date": "2017-02-24",
+      "value": null,
+      "longVol": 5557700,
+      "shortVol": 1578000
+    },
+    {
+      "date": "2017-03-03",
+      "value": null,
+      "longVol": 5689000,
+      "shortVol": 1692900
+    },
+    {
+      "date": "2017-03-10",
+      "value": null,
+      "longVol": 5442100,
+      "shortVol": 1371300
+    },
+    {
+      "date": "2017-03-17",
+      "value": null,
+      "longVol": 6433400,
+      "shortVol": 1112200
+    },
+    {
+      "date": "2017-03-24",
+      "value": null,
+      "longVol": 7297200,
+      "shortVol": 926300
+    },
+    {
+      "date": "2017-03-31",
+      "value": null,
+      "longVol": 7836200,
+      "shortVol": 1555500
+    },
+    {
+      "date": "2017-04-07",
+      "value": null,
+      "longVol": 8270100,
+      "shortVol": 931700
+    },
+    {
+      "date": "2017-04-14",
+      "value": null,
+      "longVol": 8274100,
+      "shortVol": 1086400
+    },
+    {
+      "date": "2017-04-21",
+      "value": null,
+      "longVol": 8130500,
+      "shortVol": 1073900
+    },
+    {
+      "date": "2017-04-28",
+      "value": null,
+      "longVol": 7592700,
+      "shortVol": 1107300
+    },
+    {
+      "date": "2017-05-12",
+      "value": null,
+      "longVol": 8321700,
+      "shortVol": 1039600
+    },
+    {
+      "date": "2017-05-19",
+      "value": null,
+      "longVol": 7941900,
+      "shortVol": 1034300
+    },
+    {
+      "date": "2017-05-26",
+      "value": null,
+      "longVol": 8150400,
+      "shortVol": 1171300
+    },
+    {
+      "date": "2017-06-02",
+      "value": null,
+      "longVol": 7532800,
+      "shortVol": 1025200
+    },
+    {
+      "date": "2017-06-09",
+      "value": null,
+      "longVol": 9039900,
+      "shortVol": 904500
+    },
+    {
+      "date": "2017-06-16",
+      "value": null,
+      "longVol": 9075500,
+      "shortVol": 774800
+    },
+    {
+      "date": "2017-06-23",
+      "value": null,
+      "longVol": 8599900,
+      "shortVol": 786400
+    },
+    {
+      "date": "2017-06-30",
+      "value": null,
+      "longVol": 8386900,
+      "shortVol": 776300
+    },
+    {
+      "date": "2017-07-07",
+      "value": null,
+      "longVol": 6350500,
+      "shortVol": 1055600
+    },
+    {
+      "date": "2017-07-14",
+      "value": null,
+      "longVol": 5728700,
+      "shortVol": 1223300
+    },
+    {
+      "date": "2017-07-21",
+      "value": null,
+      "longVol": 5745800,
+      "shortVol": 1029700
+    },
+    {
+      "date": "2017-07-28",
+      "value": null,
+      "longVol": 4756800,
+      "shortVol": 1347600
+    },
+    {
+      "date": "2017-08-04",
+      "value": null,
+      "longVol": 4602000,
+      "shortVol": 1278900
+    },
+    {
+      "date": "2017-08-10",
+      "value": null,
+      "longVol": 3653700,
+      "shortVol": 1470200
+    },
+    {
+      "date": "2017-08-18",
+      "value": null,
+      "longVol": 4000600,
+      "shortVol": 1429200
+    },
+    {
+      "date": "2017-08-25",
+      "value": null,
+      "longVol": 3892700,
+      "shortVol": 2019700
+    },
+    {
+      "date": "2017-09-01",
+      "value": null,
+      "longVol": 3844100,
+      "shortVol": 1835900
+    },
+    {
+      "date": "2017-09-08",
+      "value": null,
+      "longVol": 3242500,
+      "shortVol": 1797300
+    },
+    {
+      "date": "2017-09-15",
+      "value": null,
+      "longVol": 2422400,
+      "shortVol": 1936900
+    },
+    {
+      "date": "2017-09-22",
+      "value": null,
+      "longVol": 2104600,
+      "shortVol": 2358400
+    },
+    {
+      "date": "2017-09-29",
+      "value": null,
+      "longVol": 2224200,
+      "shortVol": 1875100
+    },
+    {
+      "date": "2017-10-06",
+      "value": null,
+      "longVol": 1821100,
+      "shortVol": 2221800
+    },
+    {
+      "date": "2017-10-13",
+      "value": null,
+      "longVol": 2024900,
+      "shortVol": 2292000
+    },
+    {
+      "date": "2017-10-20",
+      "value": null,
+      "longVol": 1768000,
+      "shortVol": 2503500
+    },
+    {
+      "date": "2017-10-27",
+      "value": null,
+      "longVol": 1846200,
+      "shortVol": 2313800
+    },
+    {
+      "date": "2017-11-02",
+      "value": null,
+      "longVol": 1810000,
+      "shortVol": 2321000
+    },
+    {
+      "date": "2017-11-10",
+      "value": null,
+      "longVol": 2452500,
+      "shortVol": 2152400
+    },
+    {
+      "date": "2017-11-17",
+      "value": null,
+      "longVol": 2777500,
+      "shortVol": 1811500
+    },
+    {
+      "date": "2017-11-24",
+      "value": null,
+      "longVol": 2491600,
+      "shortVol": 1870400
+    },
+    {
+      "date": "2017-12-01",
+      "value": null,
+      "longVol": 2488200,
+      "shortVol": 1876000
+    },
+    {
+      "date": "2017-12-08",
+      "value": null,
+      "longVol": 2674300,
+      "shortVol": 1810900
+    },
+    {
+      "date": "2017-12-15",
+      "value": null,
+      "longVol": 2765100,
+      "shortVol": 1627600
+    },
+    {
+      "date": "2017-12-22",
+      "value": null,
+      "longVol": 2162500,
+      "shortVol": 2128600
+    },
+    {
+      "date": "2017-12-29",
+      "value": null,
+      "longVol": 2144900,
+      "shortVol": 1750900
+    },
+    {
+      "date": "2018-01-12",
+      "value": null,
+      "longVol": 2900400,
+      "shortVol": 1963300
+    },
+    {
+      "date": "2018-01-19",
+      "value": null,
+      "longVol": 2462800,
+      "shortVol": 2026800
+    },
+    {
+      "date": "2018-01-26",
+      "value": null,
+      "longVol": 2262100,
+      "shortVol": 1818500
+    },
+    {
+      "date": "2018-02-02",
+      "value": null,
+      "longVol": 1966500,
+      "shortVol": 1794500
+    },
+    {
+      "date": "2018-02-09",
+      "value": null,
+      "longVol": 2307900,
+      "shortVol": 1630500
+    },
+    {
+      "date": "2018-02-16",
+      "value": null,
+      "longVol": 2737000,
+      "shortVol": 1541800
+    },
+    {
+      "date": "2018-02-23",
+      "value": null,
+      "longVol": 2803700,
+      "shortVol": 1773600
+    },
+    {
+      "date": "2018-03-02",
+      "value": null,
+      "longVol": 3425200,
+      "shortVol": 1418700
+    },
+    {
+      "date": "2018-03-09",
+      "value": null,
+      "longVol": 3636900,
+      "shortVol": 1389600
+    },
+    {
+      "date": "2018-03-16",
+      "value": null,
+      "longVol": 3600900,
+      "shortVol": 1316800
+    },
+    {
+      "date": "2018-03-23",
+      "value": null,
+      "longVol": 3969700,
+      "shortVol": 1278200
+    },
+    {
+      "date": "2018-03-30",
+      "value": null,
+      "longVol": 3801100,
+      "shortVol": 1280400
+    },
+    {
+      "date": "2018-04-06",
+      "value": null,
+      "longVol": 3812500,
+      "shortVol": 992600
+    },
+    {
+      "date": "2018-04-13",
+      "value": null,
+      "longVol": 3435100,
+      "shortVol": 993400
+    },
+    {
+      "date": "2018-04-20",
+      "value": null,
+      "longVol": 3235200,
+      "shortVol": 1020600
+    },
+    {
+      "date": "2018-04-27",
+      "value": null,
+      "longVol": 2749200,
+      "shortVol": 1074500
+    },
+    {
+      "date": "2018-05-11",
+      "value": null,
+      "longVol": 2112800,
+      "shortVol": 1433400
+    },
+    {
+      "date": "2018-05-18",
+      "value": null,
+      "longVol": 1961600,
+      "shortVol": 1456100
+    },
+    {
+      "date": "2018-05-25",
+      "value": null,
+      "longVol": 2540100,
+      "shortVol": 1245500
+    },
+    {
+      "date": "2018-06-01",
+      "value": null,
+      "longVol": 3287100,
+      "shortVol": 1184700
+    },
+    {
+      "date": "2018-06-08",
+      "value": null,
+      "longVol": 3008100,
+      "shortVol": 1477000
+    },
+    {
+      "date": "2018-06-15",
+      "value": null,
+      "longVol": 2008100,
+      "shortVol": 1757100
+    },
+    {
+      "date": "2018-06-22",
+      "value": null,
+      "longVol": 1995300,
+      "shortVol": 1976400
+    },
+    {
+      "date": "2018-06-29",
+      "value": null,
+      "longVol": 2724000,
+      "shortVol": 1089300
+    },
+    {
+      "date": "2018-07-06",
+      "value": null,
+      "longVol": 2245400,
+      "shortVol": 1070700
+    },
+    {
+      "date": "2018-07-13",
+      "value": null,
+      "longVol": 2039000,
+      "shortVol": 1224700
+    },
+    {
+      "date": "2018-07-20",
+      "value": null,
+      "longVol": 1609100,
+      "shortVol": 1390100
+    },
+    {
+      "date": "2018-07-27",
+      "value": null,
+      "longVol": 1466000,
+      "shortVol": 1417600
+    },
+    {
+      "date": "2018-08-03",
+      "value": null,
+      "longVol": 2061900,
+      "shortVol": 1191500
+    },
+    {
+      "date": "2018-08-10",
+      "value": null,
+      "longVol": 3022200,
+      "shortVol": 917700
+    },
+    {
+      "date": "2018-08-17",
+      "value": null,
+      "longVol": 3836800,
+      "shortVol": 802200
+    },
+    {
+      "date": "2018-08-24",
+      "value": null,
+      "longVol": 3942900,
+      "shortVol": 789400
+    },
+    {
+      "date": "2018-08-31",
+      "value": null,
+      "longVol": 3555200,
+      "shortVol": 884800
+    },
+    {
+      "date": "2018-09-07",
+      "value": null,
+      "longVol": 4637700,
+      "shortVol": 847600
+    },
+    {
+      "date": "2018-09-14",
+      "value": null,
+      "longVol": 4310900,
+      "shortVol": 779500
+    },
+    {
+      "date": "2018-09-21",
+      "value": null,
+      "longVol": 3676700,
+      "shortVol": 785000
+    },
+    {
+      "date": "2018-09-28",
+      "value": null,
+      "longVol": 3487700,
+      "shortVol": 1099900
+    },
+    {
+      "date": "2018-10-05",
+      "value": null,
+      "longVol": 3458500,
+      "shortVol": 1052100
+    },
+    {
+      "date": "2018-10-12",
+      "value": null,
+      "longVol": 4693000,
+      "shortVol": 767100
+    },
+    {
+      "date": "2018-10-19",
+      "value": null,
+      "longVol": 4895100,
+      "shortVol": 641400
+    },
+    {
+      "date": "2018-10-26",
+      "value": null,
+      "longVol": 4923200,
+      "shortVol": 714100
+    },
+    {
+      "date": "2018-11-02",
+      "value": null,
+      "longVol": 5302800,
+      "shortVol": 579900
+    },
+    {
+      "date": "2018-11-09",
+      "value": null,
+      "longVol": 4750800,
+      "shortVol": 733400
+    },
+    {
+      "date": "2018-11-16",
+      "value": null,
+      "longVol": 4787700,
+      "shortVol": 632300
+    },
+    {
+      "date": "2018-11-22",
+      "value": null,
+      "longVol": 4162000,
+      "shortVol": 839100
+    },
+    {
+      "date": "2018-11-30",
+      "value": null,
+      "longVol": 3463400,
+      "shortVol": 1000900
+    },
+    {
+      "date": "2018-12-07",
+      "value": null,
+      "longVol": 3128100,
+      "shortVol": 870000
+    },
+    {
+      "date": "2018-12-14",
+      "value": null,
+      "longVol": 3145100,
+      "shortVol": 706000
+    },
+    {
+      "date": "2018-12-21",
+      "value": null,
+      "longVol": 3328300,
+      "shortVol": 427300
+    },
+    {
+      "date": "2018-12-28",
+      "value": null,
+      "longVol": 3268400,
+      "shortVol": 409800
+    },
+    {
+      "date": "2019-01-11",
+      "value": null,
+      "longVol": 2651800,
+      "shortVol": 1097600
+    },
+    {
+      "date": "2019-01-18",
+      "value": null,
+      "longVol": 2756700,
+      "shortVol": 1066200
+    },
+    {
+      "date": "2019-01-25",
+      "value": null,
+      "longVol": 2497800,
+      "shortVol": 1029200
+    },
+    {
+      "date": "2019-02-01",
+      "value": null,
+      "longVol": 2534500,
+      "shortVol": 946500
+    },
+    {
+      "date": "2019-02-08",
+      "value": null,
+      "longVol": 2763700,
+      "shortVol": 847900
+    },
+    {
+      "date": "2019-02-15",
+      "value": null,
+      "longVol": 2477000,
+      "shortVol": 813200
+    },
+    {
+      "date": "2019-02-22",
+      "value": null,
+      "longVol": 2237700,
+      "shortVol": 840700
+    },
+    {
+      "date": "2019-03-01",
+      "value": null,
+      "longVol": 2215500,
+      "shortVol": 805500
+    },
+    {
+      "date": "2019-03-08",
+      "value": null,
+      "longVol": 2529300,
+      "shortVol": 676400
+    },
+    {
+      "date": "2019-03-15",
+      "value": null,
+      "longVol": 2426500,
+      "shortVol": 1246600
+    },
+    {
+      "date": "2019-03-22",
+      "value": null,
+      "longVol": 2112700,
+      "shortVol": 1811600
+    },
+    {
+      "date": "2019-03-29",
+      "value": null,
+      "longVol": 2713600,
+      "shortVol": 497400
+    },
+    {
+      "date": "2019-04-05",
+      "value": null,
+      "longVol": 1507700,
+      "shortVol": 1052300
+    },
+    {
+      "date": "2019-04-12",
+      "value": null,
+      "longVol": 1514500,
+      "shortVol": 1022400
+    },
+    {
+      "date": "2019-04-19",
+      "value": null,
+      "longVol": 1252100,
+      "shortVol": 1208800
+    },
+    {
+      "date": "2019-04-26",
+      "value": null,
+      "longVol": 1258700,
+      "shortVol": 1133600
+    },
+    {
+      "date": "2019-05-10",
+      "value": null,
+      "longVol": 2221800,
+      "shortVol": 512300
+    },
+    {
+      "date": "2019-05-17",
+      "value": null,
+      "longVol": 2453600,
+      "shortVol": 465900
+    },
+    {
+      "date": "2019-05-24",
+      "value": null,
+      "longVol": 2546000,
+      "shortVol": 492700
+    },
+    {
+      "date": "2019-05-31",
+      "value": null,
+      "longVol": 2626300,
+      "shortVol": 545600
+    },
+    {
+      "date": "2019-06-07",
+      "value": null,
+      "longVol": 2165200,
+      "shortVol": 974600
+    },
+    {
+      "date": "2019-06-14",
+      "value": null,
+      "longVol": 1576400,
+      "shortVol": 1258000
+    },
+    {
+      "date": "2019-06-21",
+      "value": null,
+      "longVol": 1525400,
+      "shortVol": 1103300
+    },
+    {
+      "date": "2019-06-28",
+      "value": null,
+      "longVol": 1591700,
+      "shortVol": 1062300
+    },
+    {
+      "date": "2019-07-05",
+      "value": null,
+      "longVol": 1236600,
+      "shortVol": 1372000
+    },
+    {
+      "date": "2019-07-12",
+      "value": null,
+      "longVol": 1163500,
+      "shortVol": 1472700
+    },
+    {
+      "date": "2019-07-19",
+      "value": null,
+      "longVol": 1279300,
+      "shortVol": 2064800
+    },
+    {
+      "date": "2019-07-26",
+      "value": null,
+      "longVol": 1467200,
+      "shortVol": 2048500
+    },
+    {
+      "date": "2019-08-02",
+      "value": null,
+      "longVol": 1661300,
+      "shortVol": 1552200
+    },
+    {
+      "date": "2019-08-09",
+      "value": null,
+      "longVol": 1652600,
+      "shortVol": 1205600
+    },
+    {
+      "date": "2019-08-16",
+      "value": null,
+      "longVol": 1686100,
+      "shortVol": 1087900
+    },
+    {
+      "date": "2019-08-23",
+      "value": null,
+      "longVol": 1517100,
+      "shortVol": 1311400
+    },
+    {
+      "date": "2019-08-30",
+      "value": null,
+      "longVol": 1404100,
+      "shortVol": 1438300
+    },
+    {
+      "date": "2019-09-06",
+      "value": null,
+      "longVol": 1291600,
+      "shortVol": 1266500
+    },
+    {
+      "date": "2019-09-13",
+      "value": null,
+      "longVol": 900700,
+      "shortVol": 1809900
+    },
+    {
+      "date": "2019-09-20",
+      "value": null,
+      "longVol": 847300,
+      "shortVol": 1724900
+    },
+    {
+      "date": "2019-09-27",
+      "value": null,
+      "longVol": 1054600,
+      "shortVol": 1637500
+    },
+    {
+      "date": "2019-10-04",
+      "value": null,
+      "longVol": 1530200,
+      "shortVol": 1088600
+    },
+    {
+      "date": "2019-10-11",
+      "value": null,
+      "longVol": 1150300,
+      "shortVol": 1413900
+    },
+    {
+      "date": "2019-10-18",
+      "value": null,
+      "longVol": 926800,
+      "shortVol": 1565500
+    },
+    {
+      "date": "2019-10-25",
+      "value": null,
+      "longVol": 817000,
+      "shortVol": 1814200
+    },
+    {
+      "date": "2019-11-01",
+      "value": null,
+      "longVol": 781800,
+      "shortVol": 1849000
+    },
+    {
+      "date": "2019-11-08",
+      "value": null,
+      "longVol": 983400,
+      "shortVol": 2059000
+    },
+    {
+      "date": "2019-11-15",
+      "value": null,
+      "longVol": 1022900,
+      "shortVol": 1863400
+    },
+    {
+      "date": "2019-11-22",
+      "value": null,
+      "longVol": 1114800,
+      "shortVol": 1777200
+    },
+    {
+      "date": "2019-11-29",
+      "value": null,
+      "longVol": 1482700,
+      "shortVol": 1732800
+    },
+    {
+      "date": "2019-12-06",
+      "value": null,
+      "longVol": 1371100,
+      "shortVol": 1663300
+    },
+    {
+      "date": "2019-12-13",
+      "value": null,
+      "longVol": 1119000,
+      "shortVol": 1858100
+    },
+    {
+      "date": "2019-12-20",
+      "value": null,
+      "longVol": 1273200,
+      "shortVol": 1694800
+    },
+    {
+      "date": "2019-12-27",
+      "value": null,
+      "longVol": 1238900,
+      "shortVol": 1535800
+    },
+    {
+      "date": "2020-01-10",
+      "value": null,
+      "longVol": 1384200,
+      "shortVol": 1249400
+    },
+    {
+      "date": "2020-01-17",
+      "value": null,
+      "longVol": 1395300,
+      "shortVol": 1242400
+    },
+    {
+      "date": "2020-01-24",
+      "value": null,
+      "longVol": 1132500,
+      "shortVol": 1466100
+    },
+    {
+      "date": "2020-01-31",
+      "value": null,
+      "longVol": 1347400,
+      "shortVol": 1351900
+    },
+    {
+      "date": "2020-02-07",
+      "value": null,
+      "longVol": 1317300,
+      "shortVol": 1511200
+    },
+    {
+      "date": "2020-02-14",
+      "value": null,
+      "longVol": 1298700,
+      "shortVol": 1242700
+    },
+    {
+      "date": "2020-02-21",
+      "value": null,
+      "longVol": 1149900,
+      "shortVol": 1416700
+    },
+    {
+      "date": "2020-02-28",
+      "value": null,
+      "longVol": 1720100,
+      "shortVol": 815200
+    },
+    {
+      "date": "2020-03-06",
+      "value": null,
+      "longVol": 1913200,
+      "shortVol": 935400
+    },
+    {
+      "date": "2020-03-13",
+      "value": null,
+      "longVol": 1908600,
+      "shortVol": 1451100
+    },
+    {
+      "date": "2020-03-19",
+      "value": null,
+      "longVol": 1695200,
+      "shortVol": 1672800
+    },
+    {
+      "date": "2020-03-27",
+      "value": null,
+      "longVol": 1411900,
+      "shortVol": 1963000
+    },
+    {
+      "date": "2020-04-03",
+      "value": null,
+      "longVol": 1805600,
+      "shortVol": 1546700
+    },
+    {
+      "date": "2020-04-10",
+      "value": null,
+      "longVol": 1536100,
+      "shortVol": 2036300
+    },
+    {
+      "date": "2020-04-17",
+      "value": null,
+      "longVol": 1424400,
+      "shortVol": 1984800
+    },
+    {
+      "date": "2020-04-24",
+      "value": null,
+      "longVol": 1700100,
+      "shortVol": 1705300
+    },
+    {
+      "date": "2020-05-01",
+      "value": null,
+      "longVol": 1916100,
+      "shortVol": 1425100
+    },
+    {
+      "date": "2020-05-15",
+      "value": null,
+      "longVol": 2961800,
+      "shortVol": 1098400
+    },
+    {
+      "date": "2020-05-22",
+      "value": null,
+      "longVol": 2707100,
+      "shortVol": 1097300
+    },
+    {
+      "date": "2020-05-29",
+      "value": null,
+      "longVol": 1716400,
+      "shortVol": 1532600
+    },
+    {
+      "date": "2020-06-05",
+      "value": null,
+      "longVol": 1523000,
+      "shortVol": 1791500
+    },
+    {
+      "date": "2020-06-12",
+      "value": null,
+      "longVol": 1740800,
+      "shortVol": 1490000
+    },
+    {
+      "date": "2020-06-19",
+      "value": null,
+      "longVol": 1648200,
+      "shortVol": 1419700
+    },
+    {
+      "date": "2020-06-26",
+      "value": null,
+      "longVol": 1652100,
+      "shortVol": 1635300
+    },
+    {
+      "date": "2020-07-03",
+      "value": null,
+      "longVol": 1866200,
+      "shortVol": 1470300
+    },
+    {
+      "date": "2020-07-10",
+      "value": null,
+      "longVol": 2200600,
+      "shortVol": 1256800
+    },
+    {
+      "date": "2020-07-17",
+      "value": null,
+      "longVol": 1753700,
+      "shortVol": 1365900
+    },
+    {
+      "date": "2020-07-22",
+      "value": null,
+      "longVol": 1880600,
+      "shortVol": 1258900
+    },
+    {
+      "date": "2020-07-31",
+      "value": null,
+      "longVol": 2759600,
+      "shortVol": 1017700
+    },
+    {
+      "date": "2020-08-07",
+      "value": null,
+      "longVol": 1802300,
+      "shortVol": 1606800
+    },
+    {
+      "date": "2020-08-14",
+      "value": null,
+      "longVol": 1248600,
+      "shortVol": 2116100
+    },
+    {
+      "date": "2020-08-21",
+      "value": null,
+      "longVol": 1325800,
+      "shortVol": 1885400
+    },
+    {
+      "date": "2020-08-28",
+      "value": null,
+      "longVol": 1294400,
+      "shortVol": 1657800
+    },
+    {
+      "date": "2020-09-04",
+      "value": null,
+      "longVol": 1409300,
+      "shortVol": 1348200
+    },
+    {
+      "date": "2020-09-11",
+      "value": null,
+      "longVol": 1640000,
+      "shortVol": 1101900
+    },
+    {
+      "date": "2020-09-18",
+      "value": null,
+      "longVol": 1409800,
+      "shortVol": 1074500
+    },
+    {
+      "date": "2020-09-25",
+      "value": null,
+      "longVol": 1564400,
+      "shortVol": 1357200
+    },
+    {
+      "date": "2020-10-02",
+      "value": null,
+      "longVol": 1777500,
+      "shortVol": 924600
+    },
+    {
+      "date": "2020-10-09",
+      "value": null,
+      "longVol": 1718400,
+      "shortVol": 1269300
+    },
+    {
+      "date": "2020-10-16",
+      "value": null,
+      "longVol": 2072000,
+      "shortVol": 1071000
+    },
+    {
+      "date": "2020-10-23",
+      "value": null,
+      "longVol": 1539200,
+      "shortVol": 1127900
+    },
+    {
+      "date": "2020-10-30",
+      "value": null,
+      "longVol": 1931100,
+      "shortVol": 993400
+    },
+    {
+      "date": "2020-11-06",
+      "value": null,
+      "longVol": 1917400,
+      "shortVol": 1095900
+    },
+    {
+      "date": "2020-11-13",
+      "value": null,
+      "longVol": 1283800,
+      "shortVol": 1286300
+    },
+    {
+      "date": "2020-11-20",
+      "value": null,
+      "longVol": 1316800,
+      "shortVol": 1195600
+    },
+    {
+      "date": "2020-11-27",
+      "value": null,
+      "longVol": 1713100,
+      "shortVol": 1058900
+    },
+    {
+      "date": "2020-12-04",
+      "value": null,
+      "longVol": 2145900,
+      "shortVol": 967800
+    },
+    {
+      "date": "2020-12-11",
+      "value": null,
+      "longVol": 1172200,
+      "shortVol": 1576100
+    },
+    {
+      "date": "2020-12-18",
+      "value": null,
+      "longVol": 1101600,
+      "shortVol": 1610000
+    },
+    {
+      "date": "2020-12-25",
+      "value": null,
+      "longVol": 1112300,
+      "shortVol": 1333200
+    },
+    {
+      "date": "2020-12-30",
+      "value": null,
+      "longVol": 1003100,
+      "shortVol": 1293100
+    },
+    {
+      "date": "2021-01-08",
+      "value": null,
+      "longVol": 1118700,
+      "shortVol": 1202200
+    },
+    {
+      "date": "2021-01-15",
+      "value": null,
+      "longVol": 1601300,
+      "shortVol": 1026800
+    },
+    {
+      "date": "2021-01-22",
+      "value": null,
+      "longVol": 1774800,
+      "shortVol": 1026900
+    },
+    {
+      "date": "2021-01-29",
+      "value": null,
+      "longVol": 2671500,
+      "shortVol": 715500
+    },
+    {
+      "date": "2021-02-05",
+      "value": null,
+      "longVol": 2022900,
+      "shortVol": 978000
+    },
+    {
+      "date": "2021-02-12",
+      "value": null,
+      "longVol": 1939700,
+      "shortVol": 1370400
+    },
+    {
+      "date": "2021-02-19",
+      "value": null,
+      "longVol": 2802500,
+      "shortVol": 987300
+    },
+    {
+      "date": "2021-02-26",
+      "value": null,
+      "longVol": 2995300,
+      "shortVol": 819500
+    },
+    {
+      "date": "2021-03-05",
+      "value": null,
+      "longVol": 2996900,
+      "shortVol": 816900
+    },
+    {
+      "date": "2021-03-12",
+      "value": null,
+      "longVol": 3005100,
+      "shortVol": 935900
+    },
+    {
+      "date": "2021-03-19",
+      "value": null,
+      "longVol": 1973300,
+      "shortVol": 1494900
+    },
+    {
+      "date": "2021-03-26",
+      "value": null,
+      "longVol": 2328300,
+      "shortVol": 1225100
+    },
+    {
+      "date": "2021-04-02",
+      "value": null,
+      "longVol": 2085300,
+      "shortVol": 1305000
+    },
+    {
+      "date": "2021-04-09",
+      "value": null,
+      "longVol": 2085800,
+      "shortVol": 939500
+    },
+    {
+      "date": "2021-04-16",
+      "value": null,
+      "longVol": 1774000,
+      "shortVol": 1064100
+    },
+    {
+      "date": "2021-04-23",
+      "value": null,
+      "longVol": 2110700,
+      "shortVol": 778400
+    },
+    {
+      "date": "2021-04-30",
+      "value": null,
+      "longVol": 2925100,
+      "shortVol": 602600
+    },
+    {
+      "date": "2021-05-14",
+      "value": null,
+      "longVol": 2500700,
+      "shortVol": 819100
+    },
+    {
+      "date": "2021-05-21",
+      "value": null,
+      "longVol": 2501400,
+      "shortVol": 1063500
+    },
+    {
+      "date": "2021-05-28",
+      "value": null,
+      "longVol": 2597600,
+      "shortVol": 1292300
+    },
+    {
+      "date": "2021-06-04",
+      "value": null,
+      "longVol": 3538300,
+      "shortVol": 1641400
+    },
+    {
+      "date": "2021-06-11",
+      "value": null,
+      "longVol": 3525700,
+      "shortVol": 1616700
+    },
+    {
+      "date": "2021-06-18",
+      "value": null,
+      "longVol": 3736500,
+      "shortVol": 1408400
+    },
+    {
+      "date": "2021-06-25",
+      "value": null,
+      "longVol": 3683400,
+      "shortVol": 1243800
+    },
+    {
+      "date": "2021-07-02",
+      "value": null,
+      "longVol": 3666700,
+      "shortVol": 1205900
+    },
+    {
+      "date": "2021-07-09",
+      "value": null,
+      "longVol": 3970300,
+      "shortVol": 1036400
+    },
+    {
+      "date": "2021-07-16",
+      "value": null,
+      "longVol": 3377300,
+      "shortVol": 1171800
+    },
+    {
+      "date": "2021-07-21",
+      "value": null,
+      "longVol": 3436800,
+      "shortVol": 1045300
+    },
+    {
+      "date": "2021-07-30",
+      "value": null,
+      "longVol": 3364600,
+      "shortVol": 1045900
+    },
+    {
+      "date": "2021-08-06",
+      "value": null,
+      "longVol": 3581900,
+      "shortVol": 961300
+    },
+    {
+      "date": "2021-08-13",
+      "value": null,
+      "longVol": 3104800,
+      "shortVol": 985800
+    },
+    {
+      "date": "2021-08-20",
+      "value": null,
+      "longVol": 4639900,
+      "shortVol": 877500
+    },
+    {
+      "date": "2021-08-27",
+      "value": null,
+      "longVol": 4006900,
+      "shortVol": 880200
+    },
+    {
+      "date": "2021-09-03",
+      "value": null,
+      "longVol": 3563700,
+      "shortVol": 779200
+    },
+    {
+      "date": "2021-09-10",
+      "value": null,
+      "longVol": 3161900,
+      "shortVol": 975300
+    },
+    {
+      "date": "2021-09-17",
+      "value": null,
+      "longVol": 3050700,
+      "shortVol": 1457900
+    },
+    {
+      "date": "2021-09-24",
+      "value": null,
+      "longVol": 2785700,
+      "shortVol": 1668700
+    },
+    {
+      "date": "2021-10-01",
+      "value": null,
+      "longVol": 15012200,
+      "shortVol": 7487000
+    },
+    {
+      "date": "2021-10-08",
+      "value": null,
+      "longVol": 15274900,
+      "shortVol": 3677400
+    },
+    {
+      "date": "2021-10-15",
+      "value": null,
+      "longVol": 14064800,
+      "shortVol": 3189500
+    },
+    {
+      "date": "2021-10-22",
+      "value": null,
+      "longVol": 13535700,
+      "shortVol": 3198300
+    },
+    {
+      "date": "2021-10-29",
+      "value": null,
+      "longVol": 12805700,
+      "shortVol": 3326600
+    },
+    {
+      "date": "2021-11-05",
+      "value": null,
+      "longVol": 11903800,
+      "shortVol": 3574000
+    },
+    {
+      "date": "2021-11-12",
+      "value": null,
+      "longVol": 10876300,
+      "shortVol": 3574800
+    },
+    {
+      "date": "2021-11-19",
+      "value": null,
+      "longVol": 10170800,
+      "shortVol": 3482600
+    },
+    {
+      "date": "2021-11-26",
+      "value": null,
+      "longVol": 10968600,
+      "shortVol": 3146600
+    },
+    {
+      "date": "2021-12-03",
+      "value": null,
+      "longVol": 10275900,
+      "shortVol": 2888800
+    },
+    {
+      "date": "2021-12-10",
+      "value": null,
+      "longVol": 11067700,
+      "shortVol": 3723700
+    },
+    {
+      "date": "2021-12-17",
+      "value": null,
+      "longVol": 11757000,
+      "shortVol": 3030700
+    },
+    {
+      "date": "2021-12-24",
+      "value": null,
+      "longVol": 10902700,
+      "shortVol": 2826700
+    },
+    {
+      "date": "2021-12-30",
+      "value": null,
+      "longVol": 10967300,
+      "shortVol": 2837700
+    },
+    {
+      "date": "2022-01-07",
+      "value": null,
+      "longVol": 12372200,
+      "shortVol": 4373500
+    },
+    {
+      "date": "2022-01-14",
+      "value": null,
+      "longVol": 13472000,
+      "shortVol": 4650400
+    },
+    {
+      "date": "2022-01-21",
+      "value": null,
+      "longVol": 12728200,
+      "shortVol": 3478300
+    },
+    {
+      "date": "2022-01-28",
+      "value": null,
+      "longVol": 12108000,
+      "shortVol": 3537600
+    },
+    {
+      "date": "2022-02-04",
+      "value": null,
+      "longVol": 12182300,
+      "shortVol": 3215800
+    },
+    {
+      "date": "2022-02-10",
+      "value": null,
+      "longVol": 14344700,
+      "shortVol": 3305200
+    },
+    {
+      "date": "2022-02-18",
+      "value": null,
+      "longVol": 15453900,
+      "shortVol": 2886700
+    },
+    {
+      "date": "2022-02-25",
+      "value": null,
+      "longVol": 15891400,
+      "shortVol": 2619000
+    },
+    {
+      "date": "2022-03-04",
+      "value": null,
+      "longVol": 20012500,
+      "shortVol": 1869800
+    },
+    {
+      "date": "2022-03-11",
+      "value": null,
+      "longVol": 20633100,
+      "shortVol": 3373800
+    },
+    {
+      "date": "2022-03-18",
+      "value": null,
+      "longVol": 19201400,
+      "shortVol": 3682400
+    },
+    {
+      "date": "2022-03-25",
+      "value": null,
+      "longVol": 18416800,
+      "shortVol": 4238800
+    },
+    {
+      "date": "2022-04-01",
+      "value": null,
+      "longVol": 17770600,
+      "shortVol": 2144500
+    },
+    {
+      "date": "2022-04-08",
+      "value": null,
+      "longVol": 19164300,
+      "shortVol": 1831700
+    },
+    {
+      "date": "2022-04-15",
+      "value": null,
+      "longVol": 16269200,
+      "shortVol": 2019100
+    },
+    {
+      "date": "2022-04-22",
+      "value": null,
+      "longVol": 15235600,
+      "shortVol": 2395600
+    },
+    {
+      "date": "2022-04-28",
+      "value": null,
+      "longVol": 13752000,
+      "shortVol": 2456600
+    },
+    {
+      "date": "2022-05-13",
+      "value": null,
+      "longVol": 16854700,
+      "shortVol": 2724500
+    },
+    {
+      "date": "2022-05-20",
+      "value": null,
+      "longVol": 18641100,
+      "shortVol": 2842500
+    },
+    {
+      "date": "2022-05-27",
+      "value": null,
+      "longVol": 17342100,
+      "shortVol": 2534900
+    },
+    {
+      "date": "2022-06-03",
+      "value": null,
+      "longVol": 15573000,
+      "shortVol": 2327100
+    },
+    {
+      "date": "2022-06-10",
+      "value": null,
+      "longVol": 14065700,
+      "shortVol": 2850100
+    },
+    {
+      "date": "2022-06-17",
+      "value": null,
+      "longVol": 16510900,
+      "shortVol": 1637300
+    },
+    {
+      "date": "2022-06-24",
+      "value": null,
+      "longVol": 14724400,
+      "shortVol": 1995000
+    },
+    {
+      "date": "2022-07-01",
+      "value": null,
+      "longVol": 16375300,
+      "shortVol": 2010000
+    },
+    {
+      "date": "2022-07-08",
+      "value": null,
+      "longVol": 14398900,
+      "shortVol": 1735500
+    },
+    {
+      "date": "2022-07-15",
+      "value": null,
+      "longVol": 12719800,
+      "shortVol": 2679200
+    },
+    {
+      "date": "2022-07-22",
+      "value": null,
+      "longVol": 10023000,
+      "shortVol": 3328900
+    },
+    {
+      "date": "2022-07-29",
+      "value": null,
+      "longVol": 11122100,
+      "shortVol": 2407500
+    },
+    {
+      "date": "2022-08-05",
+      "value": null,
+      "longVol": 12390700,
+      "shortVol": 2313300
+    },
+    {
+      "date": "2022-08-12",
+      "value": null,
+      "longVol": 11310300,
+      "shortVol": 2450500
+    },
+    {
+      "date": "2022-08-19",
+      "value": null,
+      "longVol": 10260200,
+      "shortVol": 2581400
+    },
+    {
+      "date": "2022-08-26",
+      "value": null,
+      "longVol": 12660800,
+      "shortVol": 2278900
+    },
+    {
+      "date": "2022-09-02",
+      "value": null,
+      "longVol": 16774700,
+      "shortVol": 1994200
+    },
+    {
+      "date": "2022-09-09",
+      "value": null,
+      "longVol": 15437700,
+      "shortVol": 2554900
+    },
+    {
+      "date": "2022-09-16",
+      "value": null,
+      "longVol": 17938600,
+      "shortVol": 2314000
+    },
+    {
+      "date": "2022-09-22",
+      "value": null,
+      "longVol": 18781200,
+      "shortVol": 2393700
+    },
+    {
+      "date": "2022-09-30",
+      "value": null,
+      "longVol": 22351300,
+      "shortVol": 1292900
+    },
+    {
+      "date": "2022-10-07",
+      "value": null,
+      "longVol": 21645800,
+      "shortVol": 1536900
+    },
+    {
+      "date": "2022-10-14",
+      "value": null,
+      "longVol": 18610500,
+      "shortVol": 1768300
+    },
+    {
+      "date": "2022-10-21",
+      "value": null,
+      "longVol": 20043300,
+      "shortVol": 1328300
+    },
+    {
+      "date": "2022-10-28",
+      "value": null,
+      "longVol": 15523100,
+      "shortVol": 3402300
+    },
+    {
+      "date": "2022-11-04",
+      "value": null,
+      "longVol": 18727500,
+      "shortVol": 2878200
+    },
+    {
+      "date": "2022-11-11",
+      "value": null,
+      "longVol": 16133600,
+      "shortVol": 3392300
+    },
+    {
+      "date": "2022-11-18",
+      "value": null,
+      "longVol": 15933500,
+      "shortVol": 2828200
+    },
+    {
+      "date": "2022-11-25",
+      "value": null,
+      "longVol": 13694800,
+      "shortVol": 3355000
+    },
+    {
+      "date": "2022-12-02",
+      "value": null,
+      "longVol": 19325900,
+      "shortVol": 2654200
+    },
+    {
+      "date": "2022-12-09",
+      "value": null,
+      "longVol": 19847100,
+      "shortVol": 2642500
+    },
+    {
+      "date": "2022-12-16",
+      "value": null,
+      "longVol": 19747600,
+      "shortVol": 1839700
+    },
+    {
+      "date": "2022-12-23",
+      "value": null,
+      "longVol": 24249100,
+      "shortVol": 3001000
+    },
+    {
+      "date": "2022-12-30",
+      "value": null,
+      "longVol": 24333800,
+      "shortVol": 2879400
+    },
+    {
+      "date": "2023-01-06",
+      "value": null,
+      "longVol": 25062400,
+      "shortVol": 2832800
+    },
+    {
+      "date": "2023-01-13",
+      "value": null,
+      "longVol": 25389900,
+      "shortVol": 2750200
+    },
+    {
+      "date": "2023-01-20",
+      "value": null,
+      "longVol": 21558100,
+      "shortVol": 2824000
+    },
+    {
+      "date": "2023-01-27",
+      "value": null,
+      "longVol": 21541900,
+      "shortVol": 2968800
+    },
+    {
+      "date": "2023-02-03",
+      "value": null,
+      "longVol": 20717300,
+      "shortVol": 2879300
+    },
+    {
+      "date": "2023-02-10",
+      "value": null,
+      "longVol": 22070500,
+      "shortVol": 2818400
+    },
+    {
+      "date": "2023-02-17",
+      "value": null,
+      "longVol": 19848500,
+      "shortVol": 1846400
+    },
+    {
+      "date": "2023-02-24",
+      "value": null,
+      "longVol": 23409600,
+      "shortVol": 1652700
+    },
+    {
+      "date": "2023-03-03",
+      "value": null,
+      "longVol": 21597700,
+      "shortVol": 1468600
+    },
+    {
+      "date": "2023-03-10",
+      "value": null,
+      "longVol": 17047100,
+      "shortVol": 1736300
+    },
+    {
+      "date": "2023-03-17",
+      "value": null,
+      "longVol": 21660400,
+      "shortVol": 938500
+    },
+    {
+      "date": "2023-03-24",
+      "value": null,
+      "longVol": 21431600,
+      "shortVol": 1334900
+    },
+    {
+      "date": "2023-03-31",
+      "value": null,
+      "longVol": 17800900,
+      "shortVol": 1416400
+    },
+    {
+      "date": "2023-04-07",
+      "value": null,
+      "longVol": 19105800,
+      "shortVol": 1307600
+    },
+    {
+      "date": "2023-04-14",
+      "value": null,
+      "longVol": 20855600,
+      "shortVol": 1288800
+    },
+    {
+      "date": "2023-04-21",
+      "value": null,
+      "longVol": 21774400,
+      "shortVol": 1351900
+    },
+    {
+      "date": "2023-04-28",
+      "value": null,
+      "longVol": 19235300,
+      "shortVol": 1139500
+    },
+    {
+      "date": "2023-05-12",
+      "value": null,
+      "longVol": 14076300,
+      "shortVol": 2044500
+    },
+    {
+      "date": "2023-05-19",
+      "value": null,
+      "longVol": 12183600,
+      "shortVol": 2145800
+    },
+    {
+      "date": "2023-05-26",
+      "value": null,
+      "longVol": 13105100,
+      "shortVol": 2057900
+    },
+    {
+      "date": "2023-06-02",
+      "value": null,
+      "longVol": 10461200,
+      "shortVol": 2848800
+    },
+    {
+      "date": "2023-06-09",
+      "value": null,
+      "longVol": 9574000,
+      "shortVol": 3073800
+    },
+    {
+      "date": "2023-06-16",
+      "value": null,
+      "longVol": 12360500,
+      "shortVol": 4703900
+    },
+    {
+      "date": "2023-06-23",
+      "value": null,
+      "longVol": 14089000,
+      "shortVol": 3620700
+    },
+    {
+      "date": "2023-06-30",
+      "value": null,
+      "longVol": 12019200,
+      "shortVol": 4191800
+    },
+    {
+      "date": "2023-07-07",
+      "value": null,
+      "longVol": 11069100,
+      "shortVol": 4114200
+    },
+    {
+      "date": "2023-07-14",
+      "value": null,
+      "longVol": 11690100,
+      "shortVol": 3335000
+    },
+    {
+      "date": "2023-07-21",
+      "value": null,
+      "longVol": 10411500,
+      "shortVol": 3598400
+    },
+    {
+      "date": "2023-07-28",
+      "value": null,
+      "longVol": 9537400,
+      "shortVol": 3689900
+    },
+    {
+      "date": "2023-08-04",
+      "value": null,
+      "longVol": 10631200,
+      "shortVol": 3980000
+    },
+    {
+      "date": "2023-08-10",
+      "value": null,
+      "longVol": 10337800,
+      "shortVol": 3632500
+    },
+    {
+      "date": "2023-08-18",
+      "value": null,
+      "longVol": 10773800,
+      "shortVol": 3280100
+    },
+    {
+      "date": "2023-08-25",
+      "value": null,
+      "longVol": 10245100,
+      "shortVol": 3311100
+    },
+    {
+      "date": "2023-09-01",
+      "value": null,
+      "longVol": 7977300,
+      "shortVol": 3913200
+    },
+    {
+      "date": "2023-09-08",
+      "value": null,
+      "longVol": 8373100,
+      "shortVol": 3762300
+    },
+    {
+      "date": "2023-09-15",
+      "value": null,
+      "longVol": 7851200,
+      "shortVol": 4022500
+    },
+    {
+      "date": "2023-09-22",
+      "value": null,
+      "longVol": 10773300,
+      "shortVol": 3282000
+    },
+    {
+      "date": "2023-09-29",
+      "value": null,
+      "longVol": 12523500,
+      "shortVol": 2667500
+    },
+    {
+      "date": "2023-10-06",
+      "value": null,
+      "longVol": 13628900,
+      "shortVol": 2383500
+    },
+    {
+      "date": "2023-10-13",
+      "value": null,
+      "longVol": 13580700,
+      "shortVol": 2347300
+    },
+    {
+      "date": "2023-10-20",
+      "value": null,
+      "longVol": 14045800,
+      "shortVol": 2441700
+    },
+    {
+      "date": "2023-10-27",
+      "value": null,
+      "longVol": 13673000,
+      "shortVol": 2420000
+    },
+    {
+      "date": "2023-11-02",
+      "value": null,
+      "longVol": 13121100,
+      "shortVol": 2795900
+    },
+    {
+      "date": "2023-11-10",
+      "value": null,
+      "longVol": 10993100,
+      "shortVol": 2836200
+    },
+    {
+      "date": "2023-11-17",
+      "value": null,
+      "longVol": 9607400,
+      "shortVol": 3203500
+    },
+    {
+      "date": "2023-11-24",
+      "value": null,
+      "longVol": 11494400,
+      "shortVol": 2644000
+    },
+    {
+      "date": "2023-12-01",
+      "value": null,
+      "longVol": 10793300,
+      "shortVol": 2674300
+    },
+    {
+      "date": "2023-12-08",
+      "value": null,
+      "longVol": 13563100,
+      "shortVol": 2008700
+    },
+    {
+      "date": "2023-12-15",
+      "value": null,
+      "longVol": 14137900,
+      "shortVol": 1674500
+    },
+    {
+      "date": "2023-12-22",
+      "value": null,
+      "longVol": 15564000,
+      "shortVol": 3122700
+    },
+    {
+      "date": "2023-12-29",
+      "value": null,
+      "longVol": 14618700,
+      "shortVol": 2347000
+    },
+    {
+      "date": "2024-01-12",
+      "value": null,
+      "longVol": 9891700,
+      "shortVol": 2806200
+    },
+    {
+      "date": "2024-01-19",
+      "value": null,
+      "longVol": 9036800,
+      "shortVol": 3838200
+    },
+    {
+      "date": "2024-01-26",
+      "value": null,
+      "longVol": 10718300,
+      "shortVol": 3164800
+    },
+    {
+      "date": "2024-02-02",
+      "value": null,
+      "longVol": 10212300,
+      "shortVol": 3304800
+    },
+    {
+      "date": "2024-02-09",
+      "value": null,
+      "longVol": 10171600,
+      "shortVol": 4084300
+    },
+    {
+      "date": "2024-02-16",
+      "value": null,
+      "longVol": 9570000,
+      "shortVol": 3489000
+    },
+    {
+      "date": "2024-02-22",
+      "value": null,
+      "longVol": 9200100,
+      "shortVol": 4128500
+    },
+    {
+      "date": "2024-03-01",
+      "value": null,
+      "longVol": 9330500,
+      "shortVol": 3986800
+    },
+    {
+      "date": "2024-03-08",
+      "value": null,
+      "longVol": 12939900,
+      "shortVol": 3044200
+    },
+    {
+      "date": "2024-03-15",
+      "value": null,
+      "longVol": 13260200,
+      "shortVol": 2692300
+    },
+    {
+      "date": "2024-03-22",
+      "value": null,
+      "longVol": 11089800,
+      "shortVol": 3012300
+    },
+    {
+      "date": "2024-03-29",
+      "value": null,
+      "longVol": 11478000,
+      "shortVol": 2511600
+    },
+    {
+      "date": "2024-04-05",
+      "value": null,
+      "longVol": 13472400,
+      "shortVol": 2478100
+    },
+    {
+      "date": "2024-04-12",
+      "value": null,
+      "longVol": 12096100,
+      "shortVol": 2499500
+    },
+    {
+      "date": "2024-04-19",
+      "value": null,
+      "longVol": 14440900,
+      "shortVol": 2276400
+    },
+    {
+      "date": "2024-04-26",
+      "value": null,
+      "longVol": 15359100,
+      "shortVol": 2162000
+    },
+    {
+      "date": "2024-05-02",
+      "value": null,
+      "longVol": 15911400,
+      "shortVol": 2185300
+    },
+    {
+      "date": "2024-05-10",
+      "value": null,
+      "longVol": 22064500,
+      "shortVol": 2289700
+    },
+    {
+      "date": "2024-05-17",
+      "value": null,
+      "longVol": 21089000,
+      "shortVol": 2381700
+    },
+    {
+      "date": "2024-05-24",
+      "value": null,
+      "longVol": 20977400,
+      "shortVol": 1995000
+    },
+    {
+      "date": "2024-05-31",
+      "value": null,
+      "longVol": 21076900,
+      "shortVol": 2049600
+    },
+    {
+      "date": "2024-06-07",
+      "value": null,
+      "longVol": 23568600,
+      "shortVol": 2269200
+    },
+    {
+      "date": "2024-06-14",
+      "value": null,
+      "longVol": 24260700,
+      "shortVol": 1389100
+    },
+    {
+      "date": "2024-06-21",
+      "value": null,
+      "longVol": 24452700,
+      "shortVol": 2069900
+    },
+    {
+      "date": "2024-06-28",
+      "value": null,
+      "longVol": 23097000,
+      "shortVol": 2656400
+    },
+    {
+      "date": "2024-07-05",
+      "value": null,
+      "longVol": 22980700,
+      "shortVol": 1387700
+    },
+    {
+      "date": "2024-07-12",
+      "value": null,
+      "longVol": 22994600,
+      "shortVol": 1257300
+    },
+    {
+      "date": "2024-07-19",
+      "value": null,
+      "longVol": 23991400,
+      "shortVol": 1655900
+    },
+    {
+      "date": "2024-07-26",
+      "value": null,
+      "longVol": 24655500,
+      "shortVol": 3624900
+    },
+    {
+      "date": "2024-08-02",
+      "value": null,
+      "longVol": 28629700,
+      "shortVol": 962900
+    },
+    {
+      "date": "2024-08-09",
+      "value": null,
+      "longVol": 24244600,
+      "shortVol": 1237700
+    },
+    {
+      "date": "2024-08-16",
+      "value": null,
+      "longVol": 22950300,
+      "shortVol": 1815200
+    },
+    {
+      "date": "2024-08-23",
+      "value": null,
+      "longVol": 23614200,
+      "shortVol": 2338300
+    },
+    {
+      "date": "2024-08-30",
+      "value": null,
+      "longVol": 21988900,
+      "shortVol": 1646500
+    },
+    {
+      "date": "2024-09-06",
+      "value": null,
+      "longVol": 22571400,
+      "shortVol": 1306100
+    },
+    {
+      "date": "2024-09-13",
+      "value": null,
+      "longVol": 23512500,
+      "shortVol": 1285500
+    },
+    {
+      "date": "2024-09-20",
+      "value": null,
+      "longVol": 22323800,
+      "shortVol": 1680100
+    },
+    {
+      "date": "2024-09-27",
+      "value": null,
+      "longVol": 20588400,
+      "shortVol": 1530500
+    },
+    {
+      "date": "2024-10-04",
+      "value": null,
+      "longVol": 22729100,
+      "shortVol": 1175700
+    },
+    {
+      "date": "2024-10-11",
+      "value": null,
+      "longVol": 23063600,
+      "shortVol": 1085000
+    },
+    {
+      "date": "2024-10-18",
+      "value": null,
+      "longVol": 23003900,
+      "shortVol": 997200
+    },
+    {
+      "date": "2024-10-25",
+      "value": null,
+      "longVol": 20175100,
+      "shortVol": 1231900
+    },
+    {
+      "date": "2024-11-01",
+      "value": null,
+      "longVol": 19581300,
+      "shortVol": 1259300
+    },
+    {
+      "date": "2024-11-08",
+      "value": null,
+      "longVol": 17699200,
+      "shortVol": 1477600
+    },
+    {
+      "date": "2024-11-15",
+      "value": null,
+      "longVol": 16129500,
+      "shortVol": 1524900
+    },
+    {
+      "date": "2024-11-22",
+      "value": null,
+      "longVol": 16600800,
+      "shortVol": 1049700
+    },
+    {
+      "date": "2024-11-29",
+      "value": null,
+      "longVol": 18264200,
+      "shortVol": 1023800
+    },
+    {
+      "date": "2024-12-06",
+      "value": null,
+      "longVol": 16310900,
+      "shortVol": 1200800
+    },
+    {
+      "date": "2024-12-13",
+      "value": null,
+      "longVol": 14550500,
+      "shortVol": 1425500
+    },
+    {
+      "date": "2024-12-20",
+      "value": null,
+      "longVol": 12641600,
+      "shortVol": 1832100
+    },
+    {
+      "date": "2024-12-27",
+      "value": null,
+      "longVol": 12019600,
+      "shortVol": 3297700
+    },
+    {
+      "date": "2025-01-10",
+      "value": null,
+      "longVol": 14085600,
+      "shortVol": 2382200
+    },
+    {
+      "date": "2025-01-17",
+      "value": null,
+      "longVol": 14233700,
+      "shortVol": 1320600
+    },
+    {
+      "date": "2025-01-24",
+      "value": null,
+      "longVol": 13676800,
+      "shortVol": 2401300
+    },
+    {
+      "date": "2025-01-31",
+      "value": null,
+      "longVol": 12728500,
+      "shortVol": 2322200
+    },
+    {
+      "date": "2025-02-07",
+      "value": null,
+      "longVol": 15671700,
+      "shortVol": 1106200
+    },
+    {
+      "date": "2025-02-14",
+      "value": null,
+      "longVol": 16067200,
+      "shortVol": 825800
+    },
+    {
+      "date": "2025-02-21",
+      "value": null,
+      "longVol": 17175700,
+      "shortVol": 1333800
+    },
+    {
+      "date": "2025-02-28",
+      "value": null,
+      "longVol": 16405000,
+      "shortVol": 1270700
+    },
+    {
+      "date": "2025-03-07",
+      "value": null,
+      "longVol": 15330000,
+      "shortVol": 1274800
+    },
+    {
+      "date": "2025-03-14",
+      "value": null,
+      "longVol": 15440500,
+      "shortVol": 1377100
+    },
+    {
+      "date": "2025-03-21",
+      "value": null,
+      "longVol": 14004500,
+      "shortVol": 1625900
+    },
+    {
+      "date": "2025-03-28",
+      "value": null,
+      "longVol": 16921200,
+      "shortVol": 985000
+    },
+    {
+      "date": "2025-04-04",
+      "value": null,
+      "longVol": 18737900,
+      "shortVol": 1072500
+    },
+    {
+      "date": "2025-04-11",
+      "value": null,
+      "longVol": 16735500,
+      "shortVol": 2001000
+    },
+    {
+      "date": "2025-04-18",
+      "value": null,
+      "longVol": 16156700,
+      "shortVol": 2389100
+    },
+    {
+      "date": "2025-04-25",
+      "value": null,
+      "longVol": 14100300,
+      "shortVol": 3465200
+    },
+    {
+      "date": "2025-05-02",
+      "value": null,
+      "longVol": 12845100,
+      "shortVol": 3906500
+    },
+    {
+      "date": "2025-05-09",
+      "value": null,
+      "longVol": 13352400,
+      "shortVol": 4289000
+    },
+    {
+      "date": "2025-05-16",
+      "value": null,
+      "longVol": 15131500,
+      "shortVol": 3752200
+    },
+    {
+      "date": "2025-05-23",
+      "value": null,
+      "longVol": 14988400,
+      "shortVol": 4182500
+    },
+    {
+      "date": "2025-05-30",
+      "value": null,
+      "longVol": 13127800,
+      "shortVol": 5023700
+    },
+    {
+      "date": "2025-06-06",
+      "value": null,
+      "longVol": 15540100,
+      "shortVol": 3643400
+    },
+    {
+      "date": "2025-06-13",
+      "value": null,
+      "longVol": 18780000,
+      "shortVol": 3237400
+    },
+    {
+      "date": "2025-06-20",
+      "value": null,
+      "longVol": 20528300,
+      "shortVol": 3027500
+    },
+    {
+      "date": "2025-06-27",
+      "value": null,
+      "longVol": 20236500,
+      "shortVol": 3359000
+    },
+    {
+      "date": "2025-07-04",
+      "value": null,
+      "longVol": 22024100,
+      "shortVol": 2995200
+    },
+    {
+      "date": "2025-07-11",
+      "value": null,
+      "longVol": 21253300,
+      "shortVol": 2842100
+    },
+    {
+      "date": "2025-07-18",
+      "value": null,
+      "longVol": 21648300,
+      "shortVol": 2942800
+    },
+    {
+      "date": "2025-07-25",
+      "value": null,
+      "longVol": 16239200,
+      "shortVol": 4420400
+    },
+    {
+      "date": "2025-08-01",
+      "value": null,
+      "longVol": 16662700,
+      "shortVol": 3042000
+    }
+  ]
+}
