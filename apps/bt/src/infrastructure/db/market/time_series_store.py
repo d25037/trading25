@@ -36,7 +36,7 @@ class MarketTimeSeriesStore(Protocol):
 class _TableSpec:
     table_name: str
     parquet_name: str
-    order_by: str
+    order_by: str | None = None
 
 
 @dataclass
@@ -69,8 +69,9 @@ class DuckDbParquetTimeSeriesStore:
 
     _TABLE_SPECS = {
         "topix_data": _TableSpec("topix_data", "topix_data.parquet", "date"),
-        "stock_data": _TableSpec("stock_data", "stock_data.parquet", "date, code"),
-        "indices_data": _TableSpec("indices_data", "indices_data.parquet", "date, code"),
+        # 高カーディナリティ表は export 時の全件 sort が支配的になりやすいため非ソートで出力する。
+        "stock_data": _TableSpec("stock_data", "stock_data.parquet"),
+        "indices_data": _TableSpec("indices_data", "indices_data.parquet"),
         "statements": _TableSpec("statements", "statements.parquet", "disclosed_date, code"),
     }
 
@@ -503,10 +504,11 @@ class DuckDbParquetTimeSeriesStore:
                 output_path.unlink()
 
             escaped = str(output_path).replace("'", "''")
-            self._conn.execute(
-                f"COPY (SELECT * FROM {spec.table_name} ORDER BY {spec.order_by}) "
-                f"TO '{escaped}' (FORMAT PARQUET)"
-            )
+            if spec.order_by:
+                source_sql = f"(SELECT * FROM {spec.table_name} ORDER BY {spec.order_by})"
+            else:
+                source_sql = spec.table_name
+            self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
             self._dirty_tables.discard(table_name)
 
     def close(self) -> None:

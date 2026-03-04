@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import math
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
@@ -340,17 +341,31 @@ def _normalize_bulk_row_keys(
     rows: list[dict[str, Any]],
     aliases: dict[str, str],
 ) -> list[dict[str, Any]]:
+    if not rows:
+        return rows
+
+    # CSV のヘッダは通常全行で共通なので、キー変換は先頭行だけで解決する。
+    first_row = rows[0]
+    remap: dict[str, str] = {}
+    for raw_key in first_row.keys():
+        canonical = _canonicalize_key(str(raw_key))
+        target = aliases.get(canonical)
+        if target and target != raw_key:
+            remap[str(raw_key)] = target
+
+    if not remap:
+        return rows
+
     normalized_rows: list[dict[str, Any]] = []
     for row in rows:
         normalized = dict(row)
-        for raw_key, raw_value in row.items():
-            canonical = _canonicalize_key(str(raw_key))
-            target = aliases.get(canonical)
-            if not target:
+        for raw_key, target in remap.items():
+            if _has_non_empty_value(normalized.get(target)):
                 continue
-            existing = normalized.get(target)
-            if existing is None or (isinstance(existing, str) and not existing.strip()):
-                normalized[target] = raw_value
+            raw_value = row.get(raw_key)
+            if raw_value is None:
+                continue
+            normalized[target] = raw_value
         normalized_rows.append(normalized)
     return normalized_rows
 
@@ -367,10 +382,159 @@ def _normalize_bulk_fins_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     return _normalize_bulk_row_keys(rows, _BULK_FINS_KEY_ALIASES)
 
 
+def _has_non_empty_value(value: Any) -> bool:
+    if value is None:
+        return False
+    if isinstance(value, str):
+        return bool(value.strip())
+    return True
+
+
+def _normalize_iso_date_text(value: Any) -> str | None:
+    if value is None:
+        return None
+    if isinstance(value, date):
+        return value.isoformat()
+
+    text = str(value).strip()
+    if not text:
+        return None
+
+    if (
+        len(text) == 10
+        and text[4] == "-"
+        and text[7] == "-"
+        and text[:4].isdigit()
+        and text[5:7].isdigit()
+        and text[8:10].isdigit()
+    ):
+        try:
+            date(int(text[:4]), int(text[5:7]), int(text[8:10]))
+        except ValueError:
+            return None
+        return text
+
+    if len(text) == 8 and text.isdigit():
+        try:
+            date(int(text[:4]), int(text[4:6]), int(text[6:8]))
+        except ValueError:
+            return None
+        return f"{text[:4]}-{text[4:6]}-{text[6:8]}"
+
+    return _to_iso_date_text(text)
+
+
+def _coerce_float_fast(value: Any) -> float | None:
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        parsed = float(value)
+        return parsed if math.isfinite(parsed) else None
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            parsed = float(text)
+        except ValueError:
+            return None
+        return parsed if math.isfinite(parsed) else None
+    return None
+
+
+def _coerce_int_fast(value: Any) -> int | None:
+    parsed = _coerce_float_fast(value)
+    if parsed is None:
+        return None
+    return int(parsed)
+
+
+def _collect_sample_code(sample_codes: list[str], code: str) -> None:
+    if code in sample_codes:
+        return
+    if len(sample_codes) >= 5:
+        return
+    sample_codes.append(code)
+
+
+def _convert_stock_bulk_rows(
+    data: list[dict[str, Any]],
+    *,
+    target_dates: set[str] | None,
+) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    skipped = 0
+    sample_codes: list[str] = []
+    seen: set[tuple[str, str]] = set()
+    date_cache: dict[str, str | None] = {}
+    created_at = datetime.now(UTC).isoformat()
+
+    for row in data:
+        code = normalize_stock_code(row.get("Code", row.get("code", "")))
+        if not code:
+            continue
+
+        raw_date_value = row.get("Date", row.get("date"))
+        if isinstance(raw_date_value, date):
+            cache_key = raw_date_value.isoformat()
+        else:
+            cache_key = str(raw_date_value)
+        if cache_key in date_cache:
+            date_text = date_cache[cache_key]
+        else:
+            date_text = _normalize_iso_date_text(raw_date_value)
+            date_cache[cache_key] = date_text
+        if date_text is None:
+            skipped += 1
+            _collect_sample_code(sample_codes, code)
+            continue
+
+        if target_dates is not None and date_text not in target_dates:
+            continue
+
+        open_value = _coerce_float_fast(row.get("AdjO", row.get("O", row.get("open"))))
+        high_value = _coerce_float_fast(row.get("AdjH", row.get("H", row.get("high"))))
+        low_value = _coerce_float_fast(row.get("AdjL", row.get("L", row.get("low"))))
+        close_value = _coerce_float_fast(row.get("AdjC", row.get("C", row.get("close"))))
+        volume_value = _coerce_int_fast(row.get("AdjVo", row.get("Vo", row.get("volume"))))
+        if any(v is None for v in (open_value, high_value, low_value, close_value, volume_value)):
+            skipped += 1
+            _collect_sample_code(sample_codes, code)
+            continue
+
+        row_key = (code, date_text)
+        if row_key in seen:
+            continue
+        seen.add(row_key)
+
+        rows.append(
+            {
+                "code": code,
+                "date": date_text,
+                "open": open_value,
+                "high": high_value,
+                "low": low_value,
+                "close": close_value,
+                "volume": volume_value,
+                "adjustment_factor": _coerce_float_fast(row.get("AdjFactor")),
+                "created_at": created_at,
+            }
+        )
+
+    if skipped > 0:
+        sample = ", ".join(sample_codes) if sample_codes else "unknown"
+        logger.warning(
+            "Skipped {} daily quotes with incomplete OHLCV data (sample codes: {})",
+            skipped,
+            sample,
+        )
+    return rows
+
+
 def _build_target_date_set(dates: list[str]) -> set[str] | None:
     normalized = {
         date_text
-        for date_text in (_to_iso_date_text(value) for value in dates)
+        for date_text in (_normalize_iso_date_text(value) for value in dates)
         if date_text is not None
     }
     return normalized or None
@@ -383,18 +547,7 @@ async def _ingest_stock_bulk_batch(
     target_dates: set[str] | None,
 ) -> int:
     normalized_rows = _normalize_bulk_stock_rows(batch_rows)
-    if target_dates is not None:
-        normalized_rows = [
-            row
-            for row in normalized_rows
-            if _to_iso_date_text(str(row.get("Date") or "")) in target_dates
-        ]
-    rows = validate_rows_required_fields(
-        _convert_stock_data_rows(normalized_rows),
-        required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-        dedupe_keys=("code", "date"),
-        stage="stock_data",
-    )
+    rows = _convert_stock_bulk_rows(normalized_rows, target_dates=target_dates)
     if not rows:
         return 0
     return await _publish_stock_data_rows(ctx, rows)

@@ -11,6 +11,7 @@ import gzip
 import hashlib
 import json
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
@@ -299,7 +300,9 @@ class JQuantsBulkService:
         )
 
     def _read_csv_gzip_rows(self, path: Path) -> list[dict[str, Any]]:
-        rows: list[dict[str, Any]] = []
+        return list(self._iter_csv_gzip_rows(path))
+
+    def _iter_csv_gzip_rows(self, path: Path) -> Iterator[dict[str, Any]]:
         with gzip.open(path, mode="rt", encoding="utf-8-sig", newline="") as fh:
             reader = csv.DictReader(fh)
             for row in reader:
@@ -317,8 +320,7 @@ class JQuantsBulkService:
                     else:
                         cleaned[key] = raw_value
                 if cleaned:
-                    rows.append(cleaned)
-        return rows
+                    yield cleaned
 
     def _data_cache_path(self, key: str) -> Path:
         digest = hashlib.sha256(key.encode("utf-8")).hexdigest()

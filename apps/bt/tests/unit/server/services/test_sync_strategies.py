@@ -23,6 +23,7 @@ from src.application.services.sync_strategies import (
     _collect_unique_codes,
     _convert_index_master_rows,
     _convert_indices_data_rows,
+    _convert_stock_bulk_rows,
     _convert_stock_rows,
     _date_sort_key,
     _dedupe_preserve_order,
@@ -33,6 +34,7 @@ from src.application.services.sync_strategies import (
     _latest_date,
     _load_metadata_json_list,
     _normalize_date_list,
+    _normalize_iso_date_text,
     _plan_fetch_method,
     _parse_date,
     _to_jquants_date_param,
@@ -2312,6 +2314,31 @@ def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:
     )
     assert len(index_rows_from_lower_hex_code) == 1
     assert index_rows_from_lower_hex_code[0]["code"] == "004A"
+
+
+def test_convert_stock_bulk_rows_skips_invalid_dates_and_dedupes() -> None:
+    rows = _convert_stock_bulk_rows(
+        [
+            {"Code": "72030", "Date": "20260210", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"},
+            {"Code": "72030", "Date": "20260210", "O": "9", "H": "9", "L": "9", "C": "9", "Vo": "999"},
+            {"Code": "72030", "Date": "20260230", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"},
+            {"Code": "72030", "Date": "2026-13-01", "O": "1", "H": "2", "L": "1", "C": "2", "Vo": "100"},
+        ],
+        target_dates={"2026-02-10"},
+    )
+
+    assert len(rows) == 1
+    assert rows[0]["code"] == "7203"
+    assert rows[0]["date"] == "2026-02-10"
+    assert rows[0]["open"] == 1.0
+    assert rows[0]["volume"] == 100
+
+
+def test_normalize_iso_date_text_validates_yyyymmdd_and_hyphen_formats() -> None:
+    assert _normalize_iso_date_text("20260210") == "2026-02-10"
+    assert _normalize_iso_date_text("2026-02-10") == "2026-02-10"
+    assert _normalize_iso_date_text("20260230") is None
+    assert _normalize_iso_date_text("2026-13-01") is None
 
 
 def test_build_fallback_index_master_rows_deduplicates_and_keeps_inputs_immutable() -> None:
