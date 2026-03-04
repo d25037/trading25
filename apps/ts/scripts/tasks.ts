@@ -52,19 +52,10 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Check coverage thresholds',
     steps: [{ command: ['scripts/check-coverage.ts'] }],
   },
-  'domain:build': {
-    description: 'Build domain package',
-    steps: [{ command: ['run', '--filter', '@trading25/domain', 'build'] }],
-  },
-  'domain:build:local': {
-    description: 'Build domain package without dependency bootstrap',
-    steps: [{ command: ['run', '--filter', '@trading25/domain', 'build:local'] }],
-  },
   'packages:test': {
-    description: 'Run package tests (contracts + domain + utils + api-clients)',
+    description: 'Run package tests (contracts + utils + api-clients)',
     steps: [
       { command: ['run', '--filter', '@trading25/contracts', 'test'] },
-      { command: ['run', '--filter', '@trading25/domain', 'test'] },
       { command: ['run', '--filter', '@trading25/utils', 'test'] },
       { command: ['run', '--filter', '@trading25/api-clients', 'test'] },
     ],
@@ -128,7 +119,6 @@ const TASKS: Record<string, TaskDefinition> = {
       { task: 'api-clients:build' },
       { task: 'contracts:build:local' },
       { task: 'utils:build:local' },
-      { task: 'domain:build:local' },
       { task: 'web:build' },
     ],
   },
@@ -159,7 +149,6 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Run all workspace coverage tests',
     steps: [
       { command: ['run', '--filter', '@trading25/contracts', 'test:coverage'] },
-      { command: ['run', '--filter', '@trading25/domain', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/utils', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/api-clients', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/web', 'test:coverage'] },
@@ -184,12 +173,10 @@ async function runShell(command: string): Promise<number> {
     await Promise.all([
       rm(resolve(ROOT, 'packages/api-clients/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/contracts/dist'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/domain/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/utils/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/api-clients/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/contracts/node_modules'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/domain/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/utils/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'node_modules'), { recursive: true, force: true }),

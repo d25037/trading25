@@ -28,16 +28,6 @@
         "openapi-typescript": "^7.10.1",
       },
     },
-    "packages/domain": {
-      "name": "@trading25/domain",
-      "version": "0.0.1",
-      "dependencies": {
-        "@trading25/api-clients": "workspace:*",
-        "@trading25/contracts": "workspace:*",
-        "@trading25/utils": "workspace:*",
-        "zod": "^4.1.5",
-      },
-    },
     "packages/utils": {
       "name": "@trading25/utils",
       "version": "0.0.1",
@@ -59,7 +49,6 @@
         "@tanstack/react-router": "^1.163.3",
         "@trading25/api-clients": "workspace:*",
         "@trading25/contracts": "workspace:*",
-        "@trading25/domain": "workspace:*",
         "@trading25/utils": "workspace:*",
         "class-variance-authority": "^0.7.1",
         "clsx": "^2.1.1",
@@ -425,8 +414,6 @@
     "@trading25/api-clients": ["@trading25/api-clients@workspace:packages/api-clients"],
 
     "@trading25/contracts": ["@trading25/contracts@workspace:packages/contracts"],
-
-    "@trading25/domain": ["@trading25/domain@workspace:packages/domain"],
 
     "@trading25/utils": ["@trading25/utils@workspace:packages/utils"],
 

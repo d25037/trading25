@@ -143,7 +143,6 @@ uv run pyright src/              # 型チェック
 |---|---|
 | `packages/web/` | React 19 + Vite フロントエンド |
 | `packages/contracts/` | OpenAPI 生成型・API response 型・bt:sync |
-| `packages/domain/` | dataset/portfolio/watchlist/portfolio-performance 等のドメイン実装 |
 | `packages/utils/` | logger/env/date/path などの共通ユーティリティ |
 | `packages/api-clients/` | FastAPI クライアント（backtest/analytics/JQuants） |
 

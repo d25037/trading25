@@ -15,12 +15,10 @@
       "@trading25/api-clients/*": ["../api-clients/src/*"],
       "@trading25/contracts": ["../contracts/src"],
       "@trading25/contracts/*": ["../contracts/src/*"],
-      "@trading25/domain": ["../domain/src"],
-      "@trading25/domain/*": ["../domain/src/*"],
       "@trading25/utils": ["../utils/src"],
       "@trading25/utils/*": ["../utils/src/*"]
     }
   },
-  "include": ["src/**/*", "../contracts/src/**/*.d.ts", "../domain/src/**/*.d.ts", "../utils/src/**/*.d.ts"],
+  "include": ["src/**/*", "../contracts/src/**/*.d.ts", "../utils/src/**/*.d.ts"],
   "exclude": ["node_modules", "dist"]
 }

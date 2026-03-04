@@ -37,6 +37,34 @@ function refreshStocks(request: RefreshStocksRequest): Promise<MarketRefreshResp
   return apiPost<MarketRefreshResponse>('/api/db/stocks/refresh', request);
 }
 
+interface SnapshotPollingOptions {
+  isSyncRunning?: boolean;
+}
+
+const SNAPSHOT_POLL_INTERVAL_RUNNING_MS = 2_000;
+const SNAPSHOT_POLL_INTERVAL_IDLE_MS = 30_000;
+const SNAPSHOT_STALE_TIME_RUNNING_MS = 0;
+const SNAPSHOT_STALE_TIME_IDLE_MS = 5_000;
+
+interface SnapshotQueryTiming {
+  refetchInterval: number;
+  staleTime: number;
+}
+
+function resolveSnapshotQueryTiming(isSyncRunning: boolean): SnapshotQueryTiming {
+  if (isSyncRunning) {
+    return {
+      refetchInterval: SNAPSHOT_POLL_INTERVAL_RUNNING_MS,
+      staleTime: SNAPSHOT_STALE_TIME_RUNNING_MS,
+    };
+  }
+
+  return {
+    refetchInterval: SNAPSHOT_POLL_INTERVAL_IDLE_MS,
+    staleTime: SNAPSHOT_STALE_TIME_IDLE_MS,
+  };
+}
+
 // Hooks
 export function useStartSync() {
   return useMutation({
@@ -83,21 +111,25 @@ export function useCancelSync() {
   });
 }
 
-export function useDbStats() {
+export function useDbStats(options?: SnapshotPollingOptions) {
+  const isSyncRunning = options?.isSyncRunning ?? false;
+  const timing = resolveSnapshotQueryTiming(isSyncRunning);
   return useQuery({
     queryKey: ['db-stats'],
     queryFn: fetchDbStats,
-    refetchInterval: 30_000,
-    staleTime: 5_000,
+    refetchInterval: timing.refetchInterval,
+    staleTime: timing.staleTime,
   });
 }
 
-export function useDbValidation() {
+export function useDbValidation(options?: SnapshotPollingOptions) {
+  const isSyncRunning = options?.isSyncRunning ?? false;
+  const timing = resolveSnapshotQueryTiming(isSyncRunning);
   return useQuery({
     queryKey: ['db-validation'],
     queryFn: fetchDbValidation,
-    refetchInterval: 30_000,
-    staleTime: 5_000,
+    refetchInterval: timing.refetchInterval,
+    staleTime: timing.staleTime,
   });
 }
 

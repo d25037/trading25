@@ -1,6 +1,6 @@
 /**
  * Portfolio types for web frontend
- * Re-exports from @trading25/domain with backward-compatible aliases
+ * Re-exports from @trading25/contracts with backward-compatible aliases
  */
 
 export type {
@@ -15,7 +15,7 @@ export type {
   PortfolioSummaryResponse as PortfolioSummary,
   PortfolioWithItemsResponse,
   PortfolioWithItemsResponse as PortfolioWithItems,
-} from '@trading25/domain/portfolio';
+} from '@trading25/contracts/types/api-response-types';
 
 // Frontend-specific request types
 export interface CreatePortfolioRequest {

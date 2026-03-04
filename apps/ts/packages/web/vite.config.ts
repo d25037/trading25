@@ -47,8 +47,6 @@ export default defineConfig({
 				replacement: `${import.meta.dirname}/../contracts/src/$1`,
 			},
 			{ find: '@trading25/contracts', replacement: `${import.meta.dirname}/../contracts/src` },
-			{ find: /^@trading25\/domain\/(.*)$/, replacement: `${import.meta.dirname}/../domain/src/$1` },
-			{ find: '@trading25/domain', replacement: `${import.meta.dirname}/../domain/src` },
 			{ find: /^@trading25\/utils\/(.*)$/, replacement: `${import.meta.dirname}/../utils/src/$1` },
 			{ find: '@trading25/utils', replacement: `${import.meta.dirname}/../utils/src` },
 		],

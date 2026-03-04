@@ -33,8 +33,6 @@
       "@trading25/api-clients/*": ["packages/api-clients/src/*"],
       "@trading25/contracts": ["packages/contracts/src"],
       "@trading25/contracts/*": ["packages/contracts/src/*"],
-      "@trading25/domain": ["packages/domain/src"],
-      "@trading25/domain/*": ["packages/domain/src/*"],
       "@trading25/utils": ["packages/utils/src"],
       "@trading25/utils/*": ["packages/utils/src/*"],
       "@trading25/web": ["packages/web/src"]
@@ -42,7 +40,6 @@
   },
   "include": [
     "packages/contracts/src/**/*",
-    "packages/domain/src/**/*",
     "packages/utils/src/**/*",
     "node_modules/bun-types/**/*.d.ts"
   ],

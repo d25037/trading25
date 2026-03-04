@@ -9,7 +9,6 @@
 |---|---|---|
 | `packages/web` | React 19 + Vite フロントエンド | Active |
 | `packages/contracts` | OpenAPI generated 型・API response 型・`bt:sync` | Active |
-| `packages/domain` | dataset/portfolio/watchlist/portfolio-performance 等のドメイン実装 | Active |
 | `packages/utils` | logger/env/date/path 等の共通ユーティリティ | Active |
 | `packages/api-clients` | FastAPI クライアント（backtest/JQuants） | Active |
 
