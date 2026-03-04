@@ -108,6 +108,13 @@ export function useActiveSyncJob() {
     queryKey: ['sync-job-active'],
     queryFn: fetchActiveJobStatus,
     staleTime: 0,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'pending' || status === 'running') {
+        return 1000;
+      }
+      return 5000;
+    },
   });
 }
 
@@ -129,10 +136,11 @@ export function useDbStats(options?: SnapshotPollingOptions) {
   const isSyncRunning = options?.isSyncRunning ?? false;
   const timing = resolveSnapshotQueryTiming(isSyncRunning);
   return useQuery({
-    queryKey: ['db-stats'],
+    queryKey: ['db-stats', isSyncRunning ? 'running' : 'idle'],
     queryFn: fetchDbStats,
     refetchInterval: timing.refetchInterval,
     staleTime: timing.staleTime,
+    refetchIntervalInBackground: true,
   });
 }
 
@@ -140,10 +148,11 @@ export function useDbValidation(options?: SnapshotPollingOptions) {
   const isSyncRunning = options?.isSyncRunning ?? false;
   const timing = resolveSnapshotQueryTiming(isSyncRunning);
   return useQuery({
-    queryKey: ['db-validation'],
+    queryKey: ['db-validation', isSyncRunning ? 'running' : 'idle'],
     queryFn: fetchDbValidation,
     refetchInterval: timing.refetchInterval,
     staleTime: timing.staleTime,
+    refetchIntervalInBackground: true,
   });
 }
 

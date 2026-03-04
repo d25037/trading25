@@ -12,7 +12,7 @@ import json
 import re
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
-from typing import Any, Awaitable, Callable, Literal, Protocol, cast
+from typing import Any, Awaitable, Callable, Literal, NoReturn, Protocol, cast
 from zoneinfo import ZoneInfo
 
 from loguru import logger
@@ -56,6 +56,8 @@ class SyncContext:
     time_series_store: MarketTimeSeriesStore | None = None
     bulk_service: JQuantsBulkService | None = None
     bulk_probe_disabled: bool = False
+    bulk_probe_failure_reason: str | None = None
+    enforce_bulk_for_stock_data: bool = False
 
 
 class SyncStrategy(Protocol):
@@ -77,6 +79,12 @@ class _StageFetchDecision:
     estimated_rest_calls: int
     estimated_bulk_calls: int | None
     plan: BulkFetchPlan | None = None
+    reason: str = "unspecified"
+    reason_detail: str | None = None
+
+
+class BulkFetchRequiredError(RuntimeError):
+    """Raised when stock_data sync requires bulk but planner/execution cannot use it."""
 
 
 _BULK_STOCK_KEY_ALIASES: dict[str, str] = {
@@ -220,6 +228,8 @@ async def _plan_fetch_method(
             estimated_rest_calls=estimated_rest_calls,
             estimated_bulk_calls=None,
             plan=None,
+            reason="bulk_probe_disabled",
+            reason_detail=ctx.bulk_probe_failure_reason,
         )
 
     if estimated_rest_calls < min_rest_calls_to_probe_bulk:
@@ -242,6 +252,7 @@ async def _plan_fetch_method(
             estimated_rest_calls=estimated_rest_calls,
             estimated_bulk_calls=None,
             plan=None,
+            reason="rest_estimate_too_small",
         )
 
     bulk_service = _get_bulk_service(ctx)
@@ -257,6 +268,7 @@ async def _plan_fetch_method(
         # free/unknown plan や一時障害で /bulk/list が失敗した場合は
         # 同期ジョブ全体を止めず、以降は REST に固定して継続する。
         ctx.bulk_probe_disabled = True
+        ctx.bulk_probe_failure_reason = _summarize_exception(e)
         logger.warning(
             "sync bulk plan probe failed, falling back to REST for this job: {}",
             e,
@@ -279,6 +291,8 @@ async def _plan_fetch_method(
             estimated_rest_calls=estimated_rest_calls,
             estimated_bulk_calls=None,
             plan=None,
+            reason="bulk_probe_failed",
+            reason_detail=ctx.bulk_probe_failure_reason,
         )
 
     selected: _FetchMethod = "bulk" if plan.estimated_api_calls < estimated_rest_calls else "rest"
@@ -305,6 +319,7 @@ async def _plan_fetch_method(
         estimated_rest_calls=estimated_rest_calls,
         estimated_bulk_calls=plan.estimated_api_calls,
         plan=plan,
+        reason=reason,
     )
 
 
@@ -440,6 +455,91 @@ def _summarize_exception(exc: Exception, *, limit: int = 200) -> str:
     if len(text) <= limit:
         return text
     return f"{text[: limit - 3]}..."
+
+
+def _describe_bulk_unavailable_reason(
+    *,
+    reason: str,
+    reason_detail: str | None = None,
+) -> str:
+    reason_map = {
+        "bulk_probe_disabled": "bulk probe is disabled after a previous probe failure",
+        "bulk_probe_failed": "bulk plan probe failed",
+        "rest_estimate_too_small": "rest estimate is below bulk probe threshold",
+        "rest_estimate_lower_or_equal": "planner selected REST based on API-call estimate",
+        "bulk_plan_missing": "bulk plan is missing",
+        "bulk_plan_empty": "bulk/list returned no matching files for requested dates",
+        "bulk_fetch_failed": "bulk fetch execution failed",
+    }
+    base = reason_map.get(reason, f"bulk unavailable ({reason})")
+    if not reason_detail:
+        return base
+    return f"{base}: {reason_detail}"
+
+
+def _raise_stock_bulk_required_error(
+    ctx: SyncContext,
+    *,
+    progress_stage: str,
+    current: int,
+    total: int,
+    endpoint: str,
+    reason: str,
+    reason_detail: str | None = None,
+) -> NoReturn:
+    detail = _describe_bulk_unavailable_reason(reason=reason, reason_detail=reason_detail)
+    message = (
+        f"Bulk fetch required for {endpoint} but unavailable ({detail}). "
+        "REST fallback is disabled for stock_data sync."
+    )
+    ctx.on_progress(progress_stage, current, total, message)
+    raise BulkFetchRequiredError(message)
+
+
+def _enforce_stock_bulk_plan_available(
+    ctx: SyncContext,
+    *,
+    decision: _StageFetchDecision,
+    endpoint: str,
+    progress_stage: str,
+    current: int,
+    total: int,
+    target_count: int,
+) -> None:
+    if not ctx.enforce_bulk_for_stock_data or target_count <= 0:
+        return
+
+    if decision.method != "bulk":
+        _raise_stock_bulk_required_error(
+            ctx,
+            progress_stage=progress_stage,
+            current=current,
+            total=total,
+            endpoint=endpoint,
+            reason=decision.reason,
+            reason_detail=decision.reason_detail,
+        )
+
+    if decision.plan is None:
+        _raise_stock_bulk_required_error(
+            ctx,
+            progress_stage=progress_stage,
+            current=current,
+            total=total,
+            endpoint=endpoint,
+            reason="bulk_plan_missing",
+        )
+
+    if len(decision.plan.files) == 0:
+        _raise_stock_bulk_required_error(
+            ctx,
+            progress_stage=progress_stage,
+            current=current,
+            total=total,
+            endpoint=endpoint,
+            reason="bulk_plan_empty",
+            reason_detail=f"targets={target_count} dates",
+        )
 
 
 def _emit_fetch_strategy_progress(
@@ -747,6 +847,16 @@ class InitialSyncStrategy:
                 target_label=f"{len(trading_dates)} dates",
             )
 
+            _enforce_stock_bulk_plan_available(
+                ctx,
+                decision=decision,
+                endpoint="/equities/bars/daily",
+                progress_stage="stock_data",
+                current=3,
+                total=6,
+                target_count=len(trading_dates),
+            )
+
             used_rest_fallback = False
             stock_bulk_fallback_reason: str | None = None
             stage_api_calls = 0
@@ -792,6 +902,16 @@ class InitialSyncStrategy:
                         bulk_result=bulk_result,
                     )
                 except Exception as e:
+                    if ctx.enforce_bulk_for_stock_data and len(trading_dates) > 0:
+                        _raise_stock_bulk_required_error(
+                            ctx,
+                            progress_stage="stock_data",
+                            current=3,
+                            total=6,
+                            endpoint="/equities/bars/daily",
+                            reason="bulk_fetch_failed",
+                            reason_detail=_summarize_exception(e),
+                        )
                     used_rest_fallback = True
                     stock_bulk_fallback_reason = _summarize_exception(e)
                     logger.exception(
@@ -894,6 +1014,8 @@ class InitialSyncStrategy:
                 failedDates=failed_dates,
                 errors=errors,
             )
+        except BulkFetchRequiredError:
+            raise
         except Exception as e:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
 
@@ -1017,6 +1139,16 @@ class IncrementalSyncStrategy:
                 target_label=f"{len(new_dates)} dates",
             )
 
+            _enforce_stock_bulk_plan_available(
+                ctx,
+                decision=decision_stock_data,
+                endpoint="/equities/bars/daily",
+                progress_stage="stock_data",
+                current=2,
+                total=5,
+                target_count=len(new_dates),
+            )
+
             used_stock_rest_fallback = False
             stock_bulk_fallback_reason: str | None = None
             stock_stage_api_calls = 0
@@ -1062,6 +1194,16 @@ class IncrementalSyncStrategy:
                         bulk_result=stock_bulk_result,
                     )
                 except Exception as e:
+                    if ctx.enforce_bulk_for_stock_data and len(new_dates) > 0:
+                        _raise_stock_bulk_required_error(
+                            ctx,
+                            progress_stage="stock_data",
+                            current=2,
+                            total=5,
+                            endpoint="/equities/bars/daily",
+                            reason="bulk_fetch_failed",
+                            reason_detail=_summarize_exception(e),
+                        )
                     used_stock_rest_fallback = True
                     stock_bulk_fallback_reason = _summarize_exception(e)
                     logger.exception(
@@ -1404,6 +1546,8 @@ class IncrementalSyncStrategy:
                 fundamentalsDatesProcessed=fundamentals_dates_processed,
                 errors=errors,
             )
+        except BulkFetchRequiredError:
+            raise
         except Exception as e:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
 

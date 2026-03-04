@@ -92,6 +92,7 @@ beforeEach(() => {
     },
     isLoading: false,
     error: null,
+    refetch: vi.fn(),
   });
   mockUseDbValidation.mockReturnValue({
     data: {
@@ -101,6 +102,7 @@ beforeEach(() => {
     },
     isLoading: false,
     error: null,
+    refetch: vi.fn(),
   });
   mockStartSyncState.mutate.mockImplementation((_, options) => {
     options?.onSuccess?.({ jobId: 'job-1', status: 'running', mode: 'auto' });
@@ -357,11 +359,13 @@ describe('SettingsPage', () => {
       data: null,
       isLoading: true,
       error: null,
+      refetch: vi.fn(),
     });
     mockUseDbValidation.mockReturnValue({
       data: null,
       isLoading: true,
       error: null,
+      refetch: vi.fn(),
     });
 
     render(<SettingsPage />);
@@ -374,11 +378,13 @@ describe('SettingsPage', () => {
       data: null,
       isLoading: false,
       error: new Error('Failed to load db stats'),
+      refetch: vi.fn(),
     });
     mockUseDbValidation.mockReturnValue({
       data: null,
       isLoading: false,
       error: null,
+      refetch: vi.fn(),
     });
 
     render(<SettingsPage />);

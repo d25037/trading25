@@ -129,7 +129,7 @@ describe('useDbSync hooks', () => {
     const { queryClient, wrapper } = createTestWrapper();
     renderHook(() => useDbStats({ isSyncRunning: true }), { wrapper });
 
-    const query = queryClient.getQueryCache().find({ queryKey: ['db-stats'] });
+    const query = queryClient.getQueryCache().find({ queryKey: ['db-stats', 'running'] });
     const options = query?.options as { refetchInterval?: unknown; staleTime?: unknown } | undefined;
     expect(options?.refetchInterval).toBe(2000);
     expect(options?.staleTime).toBe(0);
@@ -140,7 +140,7 @@ describe('useDbSync hooks', () => {
     const { queryClient, wrapper } = createTestWrapper();
     renderHook(() => useDbValidation({ isSyncRunning: false }), { wrapper });
 
-    const query = queryClient.getQueryCache().find({ queryKey: ['db-validation'] });
+    const query = queryClient.getQueryCache().find({ queryKey: ['db-validation', 'idle'] });
     const options = query?.options as { refetchInterval?: unknown; staleTime?: unknown } | undefined;
     expect(options?.refetchInterval).toBe(30000);
     expect(options?.staleTime).toBe(5000);

@@ -12,6 +12,7 @@ from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFet
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
+    BulkFetchRequiredError,
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
@@ -356,6 +357,7 @@ def _build_ctx(
     time_series_store: DummyTimeSeriesStore | None = None,
     bulk_service: Any = None,
     bulk_probe_disabled: bool = True,
+    enforce_bulk_for_stock_data: bool = False,
 ) -> SyncContext:
     resolved_cancelled = cancelled or asyncio.Event()
     resolved_on_progress = on_progress or (lambda *_: None)
@@ -368,6 +370,7 @@ def _build_ctx(
         time_series_store=resolved_store,  # type: ignore[arg-type]
         bulk_service=bulk_service,  # type: ignore[arg-type]
         bulk_probe_disabled=bulk_probe_disabled,
+        enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
     )
 
 
@@ -1671,6 +1674,64 @@ async def test_initial_sync_stock_data_bulk_failure_falls_back_to_rest(
     daily_calls = [call for call in client.calls if call[0] == "/equities/bars/daily"]
     assert len(daily_calls) == len(topix_dates)
     assert "/equities/bars/daily" in bulk_service.fetch_calls
+
+
+@pytest.mark.asyncio
+async def test_initial_sync_stock_data_bulk_failure_raises_when_bulk_enforced(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    topix_dates = [f"2026-02-{day:02d}" for day in range(10, 13)]
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(topix_dates=topix_dates)
+    bulk_service = _FakeBulkService(fail_endpoints={"/equities/bars/daily"})
+    bulk_plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=3,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+
+    async def _plan_stub(
+        _ctx: SyncContext,
+        *,
+        stage: str,
+        endpoint: str,
+        estimated_rest_calls: int,
+        **_kwargs: Any,
+    ) -> _StageFetchDecision:
+        if stage == "stock_data_initial":
+            return _StageFetchDecision(
+                method="bulk",
+                planner_api_calls=0,
+                estimated_rest_calls=estimated_rest_calls,
+                estimated_bulk_calls=3,
+                plan=bulk_plan,
+            )
+        return _rest_decision(estimated_rest_calls)
+
+    monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._get_bulk_service",
+        lambda _ctx: bulk_service,
+    )
+
+    progress_messages: list[str] = []
+    ctx = _build_ctx(
+        client=client,  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda _stage, _current, _total, message: progress_messages.append(message),
+        enforce_bulk_for_stock_data=True,
+    )
+
+    with pytest.raises(BulkFetchRequiredError, match="REST fallback is disabled"):
+        await InitialSyncStrategy().execute(ctx)
+
+    daily_calls = [call for call in client.calls if call[0] == "/equities/bars/daily"]
+    assert daily_calls == []
+    assert any("Bulk fetch required for /equities/bars/daily" in message for message in progress_messages)
 
 
 @pytest.mark.asyncio
