@@ -1,4 +1,4 @@
-import type { ApiIndexMatch } from '@trading25/shared/types/api-types';
+import type { ApiIndexMatch } from '@trading25/contracts/types/api-types';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { useFactorRegression } from '@/hooks/useFactorRegression';
 

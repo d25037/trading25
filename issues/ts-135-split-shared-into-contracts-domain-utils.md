@@ -1,7 +1,7 @@
 ---
 id: ts-135
 title: "packages/shared を責務別3パッケージへ一括分割（core中間なし）"
-status: open
+status: done
 priority: high
 labels: [refactor, architecture, packages, breaking-change, openapi]
 project: ts
@@ -31,25 +31,34 @@ parent: null
 - `bun run quality:typecheck` / `bun run workspace:test` / `bun run workspace:build` が成功する。
 
 ## 実施内容
-- [ ] `packages/contracts` を作成し、OpenAPI generated 型・API response 型・型整合チェックを移設
-- [ ] `packages/domain` を作成し、dataset/portfolio/watchlist/portfolio-performance を移設
-- [ ] `packages/utils` を作成し、logger/env/date/path など汎用 utility を移設
-- [ ] `apps/ts/packages/shared` を削除し、残存参照を完全解消
-- [ ] `apps/ts/package.json` の workspace / scripts を新パッケージ構成へ更新
-- [ ] `apps/ts/scripts/tasks.ts` の task 名称・filter・説明を新構成へ更新
-- [ ] `apps/ts/tsconfig.json` と package 個別 `tsconfig` の `paths` を新構成へ更新
-- [ ] `apps/ts/packages/*`（`web`, `cli`, `api-clients`）の import specifier / dependencies を一括置換
-- [ ] `bun.lock` と関連設定を再生成し、依存解決の不整合を解消
-- [ ] README / AGENTS / docs の import 例と運用手順を新パッケージ名へ更新
-- [ ] 検証コマンドを実行
-  - [ ] `bun run quality:typecheck`
-  - [ ] `bun run workspace:test`
-  - [ ] `bun run workspace:build`
-  - [ ] `bun run quality:lint`
-  - [ ] `bun run --filter @trading25/contracts bt:sync`
+- [x] `packages/contracts` を作成し、OpenAPI generated 型・API response 型・型整合チェックを移設
+- [x] `packages/domain` を作成し、dataset/portfolio/watchlist/portfolio-performance を移設
+- [x] `packages/utils` を作成し、logger/env/date/path など汎用 utility を移設
+- [x] `apps/ts/packages/shared` を削除し、残存参照を完全解消
+- [x] `apps/ts/package.json` の workspace / scripts を新パッケージ構成へ更新
+- [x] `apps/ts/scripts/tasks.ts` の task 名称・filter・説明を新構成へ更新
+- [x] `apps/ts/tsconfig.json` と package 個別 `tsconfig` の `paths` を新構成へ更新
+- [x] `apps/ts/packages/*`（`web`, `cli`, `api-clients`）の import specifier / dependencies を一括置換
+- [x] `bun.lock` と関連設定を再生成し、依存解決の不整合を解消
+- [x] README / AGENTS / docs の import 例と運用手順を新パッケージ名へ更新
+- [x] 検証コマンドを実行
+  - [x] `bun run quality:typecheck`
+  - [x] `bun run workspace:test`
+  - [x] `bun run workspace:build`
+  - [x] `bun run quality:lint`
+  - [x] `bun run --filter @trading25/contracts bt:sync`
 
 ## 結果
-- 未着手
+- `apps/ts/packages/contracts` / `apps/ts/packages/domain` / `apps/ts/packages/utils` を新設し、`shared` の責務を分割移設
+- `apps/ts/packages/shared` を削除し、active code/docs/scripts から `@trading25/shared` 参照を解消（archive / done issues を除く）
+- `apps/ts` の workspace 設定・task runner・tsconfig paths・web alias/dependencies を新パッケージ構成に更新
+- ルート運用スクリプト（`scripts/check-contract-sync.sh` / `scripts/check-dep-direction.sh` / `scripts/dep-direction-allowlist.txt`）と skills 参照生成を新パスへ更新
+- 実行結果:
+  - `bun run quality:typecheck` ✅
+  - `bun run workspace:test` ✅
+  - `bun run workspace:build` ✅
+  - `bun run quality:lint` ✅（warning 3件は既存ルール警告、exit 0）
+  - `bun run --filter @trading25/contracts bt:sync` ✅（ローカル生成不可時は snapshot fallback で継続）
 
 ## 補足
 - このIssueは breaking change を許容する前提で実施する（同時移行・一括置換）。

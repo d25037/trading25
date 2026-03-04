@@ -49,7 +49,7 @@ def _render_openapi_reference(openapi_path: Path) -> str:
     lines = [
         "# OpenAPI Paths",
         "",
-        "Generated from `apps/ts/packages/shared/openapi/bt-openapi.json`. Do not edit manually.",
+        "Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.",
         "",
         f"Total paths: **{sum(len(v) for v in grouped.values())}**",
         "",
@@ -137,7 +137,7 @@ def main() -> int:
 
     repo_root = Path(__file__).resolve().parents[2]
 
-    openapi_json = repo_root / "apps/ts/packages/shared/openapi/bt-openapi.json"
+    openapi_json = repo_root / "apps/ts/packages/contracts/openapi/bt-openapi.json"
     fastapi_app = repo_root / "apps/bt/src/entrypoints/http/app.py"
 
     targets = {

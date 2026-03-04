@@ -11,7 +11,7 @@ import type {
   PPOIndicatorData as ApiPPOIndicatorData,
   ApiStockDataPoint,
   ApiStockDataResponse,
-} from '@trading25/shared/types/api-types';
+} from '@trading25/contracts/types/api-types';
 
 // Type aliases for compatibility
 export type StockDataPoint = ApiStockDataPoint;

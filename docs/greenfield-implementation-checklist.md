@@ -44,7 +44,7 @@
 
 - [x] `uv run ruff check src/`
 - [x] `uv run pyright src/`
-- [x] `bun run --filter @trading25/shared bt:sync`
+- [x] `bun run --filter @trading25/contracts bt:sync`
 - [x] API サーバ起動で `/doc` に契約が反映される。
 
 ### Exit Criteria
@@ -148,7 +148,7 @@
 - [x] web/cli の主要ワークフローで手動確認チェックリストを全通過。
   - 2026-03-02 検証: web (`Analysis/Backtest/Lab`) の履歴表示と仮想化対象、cli (`analysis screening` / `backtest run` / `backtest attribution run`) の `--wait --json --output` をテストで確認。
 - [x] API 契約変更時に ts 側ビルドが自動で破綻検知できる。
-  - 2026-03-02 検証: `quality:typecheck` 実行時に `@trading25/shared bt:generate-types`（OpenAPI生成）を経由し、ts workspace typecheck を通過。
+  - 2026-03-02 検証: `quality:typecheck` 実行時に `@trading25/contracts bt:generate-types`（OpenAPI生成）を経由し、ts workspace typecheck を通過。
 
 ---
 
@@ -159,11 +159,11 @@
 - [x] structured logging（event名, correlationId, jobId）を統一する。
   - 2026-03-02 実装: `RequestLoggerMiddleware` と `ScreeningJobService` で `request/request_error/job_lifecycle` の構造化キーを統一。
 - [x] metrics（latency/error rate/job duration）を採取する。
-  - 2026-03-02 実装: `src/shared/observability/metrics.py` を追加し、request/job/J-Quants の process-local メトリクス集計を導入。
+  - 2026-03-02 実装: `src/contracts/observability/metrics.py` を追加し、request/job/J-Quants の process-local メトリクス集計を導入。
 - [x] J-Quants proxy cache/singleflight の計測を標準化する。
   - 2026-03-02 実装: `jquants_proxy_cache` ログに加えて cache state カウンタを追加し、`jquants_fetch/jquants_retry` も共通キーで記録。
 - [x] timeout/retry/backoff のデフォルトを機能別に定義する。
-  - 2026-03-02 実装: `src/shared/config/reliability.py` に J-Quants retry/backoff・sync/dataset timeout の SoT を新設。
+  - 2026-03-02 実装: `src/contracts/config/reliability.py` に J-Quants retry/backoff・sync/dataset timeout の SoT を新設。
 - [x] 障害 runbook を `docs/` に整備する（API/DB/J-Quants/job stuck）。
   - 2026-03-02 実装: `docs/phase5-reliability-observability-runbook.md` を追加。
 

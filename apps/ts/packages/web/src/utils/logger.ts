@@ -1,4 +1,4 @@
-import type { ILogger, LogContext, LogLevel } from '@trading25/shared/utils/logger-interface';
+import type { ILogger, LogContext, LogLevel } from '@trading25/utils/logger-interface';
 
 class BrowserLogger implements ILogger {
   private level: LogLevel;

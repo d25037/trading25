@@ -1,4 +1,4 @@
-import type { ApiExcludedStock, ApiIndexMatch, ApiPortfolioWeight } from '@trading25/shared/types/api-types';
+import type { ApiExcludedStock, ApiIndexMatch, ApiPortfolioWeight } from '@trading25/contracts/types/api-types';
 import { AlertTriangle } from 'lucide-react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import { usePortfolioFactorRegression } from '@/hooks/usePortfolioFactorRegression';

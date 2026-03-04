@@ -76,7 +76,7 @@ uv run pytest tests
 - 運用向けCLIは `apps/bt` の `bt` コマンド
 - ポートフォリオ操作は `apps/ts/packages/web` から実行
 - `apps/ts/packages/web` は `/api` を FastAPI (`:3002`) にプロキシ
-- OpenAPI 変更時は `apps/ts` で `bun run --filter @trading25/shared bt:sync` を実行
+- OpenAPI 変更時は `apps/ts` で `bun run --filter @trading25/contracts bt:sync` を実行
 
 ## Tech Stack
 

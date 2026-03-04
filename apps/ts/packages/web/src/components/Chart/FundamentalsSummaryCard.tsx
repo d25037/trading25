@@ -1,4 +1,4 @@
-import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
+import type { ApiFundamentalDataPoint } from '@trading25/contracts/types/api-types';
 import { Fragment, type ReactNode } from 'react';
 import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,

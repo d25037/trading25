@@ -12,11 +12,11 @@
 # ─────────────────────────────────────────────────────────
 # [permanent] bt:sync tooling — required for OpenAPI schema → TS type generation
 # ─────────────────────────────────────────────────────────
-apps/ts/packages/shared/scripts/fetch-bt-openapi.ts
+apps/ts/packages/contracts/scripts/fetch-bt-openapi.ts
 # PR #28: bt:sync source-first fallback behavior tests
-apps/ts/packages/shared/scripts/fetch-bt-openapi.test.ts
-apps/ts/packages/shared/scripts/check-bt-types.ts
-apps/ts/packages/shared/src/clients/backtest/generated/type-compatibility-check.ts
+apps/ts/packages/contracts/scripts/fetch-bt-openapi.test.ts
+apps/ts/packages/contracts/scripts/check-bt-types.ts
+apps/ts/packages/contracts/src/clients/backtest/generated/type-compatibility-check.ts
 
 # ─────────────────────────────────────────────────────────
 # [runtime] apps that intentionally call FastAPI (:3002)
@@ -34,10 +34,10 @@ apps/ts/packages/web/vite.config.ts
 # PR #150: web BacktestClient re-export keeps bt endpoint/client references centralized
 apps/ts/packages/web/src/lib/backtest-client.ts
 
-# Shared dataset/fixtures now route via bt FastAPI proxy (:3002)
-apps/ts/packages/shared/src/dataset/api-client.ts
-apps/ts/packages/shared/src/ta/__fixtures__/fetch-margin-data.ts
-apps/ts/packages/shared/src/ta/__fixtures__/fetch-test-data.ts
+# Domain dataset/fixtures now route via bt FastAPI proxy (:3002)
+apps/ts/packages/domain/src/dataset/api-client.ts
+apps/ts/packages/domain/src/ta/__fixtures__/fetch-margin-data.ts
+apps/ts/packages/domain/src/ta/__fixtures__/fetch-test-data.ts
 
 # Canonical client package (Phase 4A)
 apps/ts/packages/api-clients/src/backtest/BacktestClient.ts

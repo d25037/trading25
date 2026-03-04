@@ -46,9 +46,9 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 
 ## OpenAPI契約
 
-bt が FastAPI の OpenAPI スキーマを公開し、ts/shared が型を自動生成する。
+bt が FastAPI の OpenAPI スキーマを公開し、ts/contracts が型を自動生成する。
 ```bash
-bun run --filter @trading25/shared bt:sync   # bt の OpenAPI → TS型生成
+bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 ```
 スキーマ変更時は必ず `bt:sync` を実行し、`contracts/` 配下も更新すること。
 - `apps/ts` workspace は `@redocly/openapi-core` を `1.34.5` に固定し、`bt:sync`（openapi-typescript）を安定実行する
@@ -141,7 +141,9 @@ uv run pyright src/              # 型チェック
 | パッケージ | 役割 |
 |---|---|
 | `packages/web/` | React 19 + Vite フロントエンド |
-| `packages/shared/` | 共有ライブラリ（OpenAPI 生成型, JQuants, TA/FA指標） |
+| `packages/contracts/` | OpenAPI 生成型・API response 型・bt:sync |
+| `packages/domain/` | dataset/portfolio/watchlist/portfolio-performance 等のドメイン実装 |
+| `packages/utils/` | logger/env/date/path などの共通ユーティリティ |
 | `packages/api-clients/` | FastAPI クライアント（backtest/analytics/JQuants） |
 
 ```bash

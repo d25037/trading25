@@ -20,7 +20,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 ## Repository Layout
 
 - `apps/bt` - Python 3.12 + FastAPI + vectorbt + typer CLI
-- `apps/ts` - Bun workspace（web / shared / api-clients）
+- `apps/ts` - Bun workspace（web / contracts / domain / utils / api-clients）
 - `contracts` - bt/ts 間の安定インターフェース（JSON Schema, OpenAPI baseline）
 - `docs` - ロードマップ、設計判断、監査レポート
   - `docs/bt-src-layering-guide.md` - `apps/bt/src` の 5層配置ガイド
@@ -118,7 +118,7 @@ GET /api/analytics/fundamental-ranking?markets=prime&limit=20
 FastAPI スキーマ更新後は `apps/ts` で次を実行:
 
 ```bash
-bun run --filter @trading25/shared bt:sync
+bun run --filter @trading25/contracts bt:sync
 ```
 
 ## CI

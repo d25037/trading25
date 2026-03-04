@@ -31,11 +31,20 @@
     "paths": {
       "@trading25/api-clients": ["packages/api-clients/src"],
       "@trading25/api-clients/*": ["packages/api-clients/src/*"],
-      "@trading25/shared": ["packages/shared/src"],
-      "@trading25/shared/*": ["packages/shared/src/*"],
+      "@trading25/contracts": ["packages/contracts/src"],
+      "@trading25/contracts/*": ["packages/contracts/src/*"],
+      "@trading25/domain": ["packages/domain/src"],
+      "@trading25/domain/*": ["packages/domain/src/*"],
+      "@trading25/utils": ["packages/utils/src"],
+      "@trading25/utils/*": ["packages/utils/src/*"],
       "@trading25/web": ["packages/web/src"]
     }
   },
-  "include": ["packages/shared/src/**/*", "node_modules/bun-types/**/*.d.ts"],
+  "include": [
+    "packages/contracts/src/**/*",
+    "packages/domain/src/**/*",
+    "packages/utils/src/**/*",
+    "node_modules/bun-types/**/*.d.ts"
+  ],
   "exclude": ["node_modules", "**/dist", "**/*.disabled/**", "**/examples.disabled/**"]
 }

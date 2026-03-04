@@ -1,6 +1,6 @@
 /**
  * Fundamental ranking types for frontend
- * Re-exports from @trading25/shared and adds frontend-specific params
+ * Re-exports from @trading25/contracts and adds frontend-specific params
  */
 
 export type {
@@ -8,7 +8,7 @@ export type {
   FundamentalRankingSource,
   FundamentalRankings,
   MarketFundamentalRankingResponse,
-} from '@trading25/shared/types/api-response-types';
+} from '@trading25/contracts/types/api-response-types';
 
 export interface FundamentalRankingParams {
   limit?: number;

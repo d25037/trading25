@@ -1,4 +1,4 @@
-import type { ApiFundamentalDataPoint } from '@trading25/shared/types/api-types';
+import type { ApiFundamentalDataPoint } from '@trading25/contracts/types/api-types';
 import { useMemo } from 'react';
 import { DataStateWrapper } from '@/components/ui/data-state-wrapper';
 import {

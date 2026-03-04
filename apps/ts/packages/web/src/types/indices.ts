@@ -1,6 +1,6 @@
 /**
  * Indices types for web frontend
- * Re-exports from @trading25/shared
+ * Re-exports from @trading25/contracts
  */
 
 export type {
@@ -8,4 +8,4 @@ export type {
   IndexDataResponse,
   IndexItem,
   IndicesListResponse,
-} from '@trading25/shared/types/api-response-types';
+} from '@trading25/contracts/types/api-response-types';

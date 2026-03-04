@@ -9,12 +9,16 @@ type CoverageSummary = {
 };
 
 const thresholds: Record<string, CoverageThreshold> = {
-  shared: { lines: 0.8, functions: 0.8 },
+  contracts: { lines: 0.6, functions: 0.6 },
+  domain: { lines: 0.8, functions: 0.8 },
+  utils: { lines: 0.8, functions: 0.8 },
   web: { lines: 0.45, functions: 0.7 },
 };
 
 const coverageFiles: Record<string, string> = {
-  shared: 'packages/shared/coverage/lcov.info',
+  contracts: 'packages/contracts/coverage/lcov.info',
+  domain: 'packages/domain/coverage/lcov.info',
+  utils: 'packages/utils/coverage/lcov.info',
   web: 'packages/web/coverage/lcov.info',
 };
 

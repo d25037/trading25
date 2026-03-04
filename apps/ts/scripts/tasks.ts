@@ -36,18 +36,36 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Build api-clients package',
     steps: [{ command: ['run', '--filter', '@trading25/api-clients', 'build'] }],
   },
-  'core:test': {
-    description: 'Run package tests',
-    steps: [{ task: 'packages:test' }],
+  'contracts:build': {
+    description: 'Build contracts package',
+    steps: [{ command: ['run', '--filter', '@trading25/contracts', 'build'] }],
+  },
+  'contracts:build:local': {
+    description: 'Build contracts package without dependency bootstrap',
+    steps: [{ command: ['run', '--filter', '@trading25/contracts', 'build:local'] }],
+  },
+  'contracts:sync:bt': {
+    description: 'Sync bt OpenAPI schema and generated contract types',
+    steps: [{ command: ['run', '--filter', '@trading25/contracts', 'bt:sync'] }],
   },
   'coverage:check': {
     description: 'Check coverage thresholds',
     steps: [{ command: ['scripts/check-coverage.ts'] }],
   },
+  'domain:build': {
+    description: 'Build domain package',
+    steps: [{ command: ['run', '--filter', '@trading25/domain', 'build'] }],
+  },
+  'domain:build:local': {
+    description: 'Build domain package without dependency bootstrap',
+    steps: [{ command: ['run', '--filter', '@trading25/domain', 'build:local'] }],
+  },
   'packages:test': {
-    description: 'Run package tests (shared + api-clients)',
+    description: 'Run package tests (contracts + domain + utils + api-clients)',
     steps: [
-      { command: ['run', '--filter', '@trading25/shared', 'test'] },
+      { command: ['run', '--filter', '@trading25/contracts', 'test'] },
+      { command: ['run', '--filter', '@trading25/domain', 'test'] },
+      { command: ['run', '--filter', '@trading25/utils', 'test'] },
       { command: ['run', '--filter', '@trading25/api-clients', 'test'] },
     ],
   },
@@ -70,7 +88,7 @@ const TASKS: Record<string, TaskDefinition> = {
   'quality:typecheck': {
     description: 'Run full typecheck (root + api-clients + web)',
     steps: [
-      { command: ['run', '--filter', '@trading25/shared', 'bt:generate-types'] },
+      { command: ['run', '--filter', '@trading25/contracts', 'bt:generate-types'] },
       { task: 'quality:typecheck:root' },
       { command: ['run', '--filter', '@trading25/api-clients', 'typecheck'] },
       { task: 'quality:typecheck:web' },
@@ -84,13 +102,13 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Run web TypeScript typecheck',
     steps: [{ command: ['run', '--filter', '@trading25/web', 'typecheck'] }],
   },
-  'shared:build': {
-    description: 'Build shared package',
-    steps: [{ command: ['run', '--filter', '@trading25/shared', 'build'] }],
+  'utils:build': {
+    description: 'Build utils package',
+    steps: [{ command: ['run', '--filter', '@trading25/utils', 'build'] }],
   },
-  'shared:sync:bt': {
-    description: 'Sync bt OpenAPI schema and generated types',
-    steps: [{ command: ['run', '--filter', '@trading25/shared', 'bt:sync'] }],
+  'utils:build:local': {
+    description: 'Build utils package without dependency bootstrap',
+    steps: [{ command: ['run', '--filter', '@trading25/utils', 'build:local'] }],
   },
   'web:build': {
     description: 'Build web package',
@@ -106,7 +124,13 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'workspace:build': {
     description: 'Build all workspace packages',
-    steps: [{ task: 'api-clients:build' }, { task: 'shared:build' }, { task: 'web:build' }],
+    steps: [
+      { task: 'api-clients:build' },
+      { task: 'contracts:build:local' },
+      { task: 'utils:build:local' },
+      { task: 'domain:build:local' },
+      { task: 'web:build' },
+    ],
   },
   'workspace:clean': {
     description: 'Clean dist/node_modules and lock files',
@@ -120,7 +144,7 @@ const TASKS: Record<string, TaskDefinition> = {
     description: 'Run bt sync then web dev (continue on sync failure)',
     steps: [
       {
-        task: 'shared:sync:bt',
+        task: 'contracts:sync:bt',
         optional: true,
         warning: '[WARNING] bt:sync failed - continuing with existing types',
       },
@@ -134,7 +158,9 @@ const TASKS: Record<string, TaskDefinition> = {
   'workspace:test:coverage': {
     description: 'Run all workspace coverage tests',
     steps: [
-      { command: ['run', '--filter', '@trading25/shared', 'test:coverage'] },
+      { command: ['run', '--filter', '@trading25/contracts', 'test:coverage'] },
+      { command: ['run', '--filter', '@trading25/domain', 'test:coverage'] },
+      { command: ['run', '--filter', '@trading25/utils', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/api-clients', 'test:coverage'] },
       { command: ['run', '--filter', '@trading25/web', 'test:coverage'] },
     ],
@@ -157,10 +183,14 @@ async function runShell(command: string): Promise<number> {
   if (command === 'workspace-clean') {
     await Promise.all([
       rm(resolve(ROOT, 'packages/api-clients/dist'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/shared/dist'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/contracts/dist'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/domain/dist'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/utils/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/dist'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/api-clients/node_modules'), { recursive: true, force: true }),
-      rm(resolve(ROOT, 'packages/shared/node_modules'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/contracts/node_modules'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/domain/node_modules'), { recursive: true, force: true }),
+      rm(resolve(ROOT, 'packages/utils/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'packages/web/node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'node_modules'), { recursive: true, force: true }),
       rm(resolve(ROOT, 'pnpm-lock.yaml'), { force: true }),

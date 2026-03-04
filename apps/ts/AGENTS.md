@@ -1,5 +1,5 @@
 ---
-description: Trading25 TypeScript monorepo with frontend and shared libraries
+description: Trading25 TypeScript monorepo with frontend and split contracts/domain/utils libraries
 globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json, biome.json"
 alwaysApply: false
 ---
@@ -9,7 +9,9 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 ## Architecture
 
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
-- **`packages/shared/`** - JQuants API clients, shared API types, TA/FA utilities → [Shared AGENTS.md](./packages/shared/AGENTS.md)
+- **`packages/contracts/`** - OpenAPI generated 型、API response 型、`bt:sync`
+- **`packages/domain/`** - dataset/portfolio/watchlist/portfolio-performance 等のドメイン実装
+- **`packages/utils/`** - logger/env/date/path など共通ユーティリティ
 - **`packages/api-clients/`** - FastAPI client packages (backtest/JQuants)
 
 ## Critical Rules
@@ -22,25 +24,25 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 
 ```typescript
 // Use type guards instead of non-null assertions
-import { getFirstElementOrFail } from '@trading25/shared/test-utils';
+import { getFirstElementOrFail } from '@trading25/utils/test-utils';
 const first = getFirstElementOrFail(array, 'Expected element');
 ```
 
 ### API Response Type Pattern
 
-API レスポンス型は `@trading25/shared/types/api-response-types` で一元管理。Web/CLI の型ファイルは re-export パターンで参照する（`backtest.ts` が模範）。型の重複定義は禁止。
+API レスポンス型は `@trading25/contracts/types/api-response-types` で一元管理。Web/CLI の型ファイルは re-export パターンで参照する（`backtest.ts` が模範）。型の重複定義は禁止。
 
 ```typescript
 // web/src/types/ranking.ts - re-export pattern
-export type { RankingItem, Rankings } from '@trading25/shared/types/api-response-types';
+export type { RankingItem, Rankings } from '@trading25/contracts/types/api-response-types';
 // Frontend-specific types remain local
 export interface RankingParams { ... }
 ```
 
 ## TypeScript Configuration
 
-Root `tsconfig.json` は shared を対象にし、web は別設定で型検査する。
-- **Root**: packages/shared
+Root `tsconfig.json` は contracts/domain/utils を対象にし、web は別設定で型検査する。
+- **Root**: packages/contracts + packages/domain + packages/utils
 - **Web**: JSX + DOM APIs (React 19)
 - **API**: Node.js-specific (ESNext)
 
@@ -59,7 +61,7 @@ bun run quality:typecheck           # TypeScript checking
 bun run quality:lint && bun run quality:check:fix   # Code quality
 
 # bt contract sync (serverless local generation first; HTTP fetch is fallback)
-bun run --filter @trading25/shared bt:sync  # Generate schema + generate types
+bun run --filter @trading25/contracts bt:sync  # Generate schema + generate types
 
 # Headless operations are handled by bt CLI
 uv run --project ../bt bt --help
@@ -75,8 +77,8 @@ uv run --project ../bt bt --help
 
 **ステップ**:
 1. Lint (`bun run quality:lint`)
-2. bt OpenAPI 型生成 (`cd packages/shared && bun run bt:generate-types`)
-3. Build shared package (`bun run --filter @trading25/shared build`)
+2. bt OpenAPI 型生成 (`cd packages/contracts && bun run bt:generate-types`)
+3. Build contracts/domain/utils package (`bun run workspace:build`)
 4. Typecheck (`bun run quality:typecheck`)
 5. Test with coverage (`bun run workspace:test:coverage`)
 6. Coverage threshold 検証 (`bun run coverage:check`)

@@ -1,5 +1,5 @@
 import { useQuery } from '@tanstack/react-query';
-import type { ApiStockDataResponse } from '@trading25/shared/types/api-types';
+import type { ApiStockDataResponse } from '@trading25/contracts/types/api-types';
 import { apiGet } from '@/lib/api-client';
 import { logger } from '@/utils/logger';
 
