@@ -218,10 +218,12 @@ export function SettingsPage() {
   const { data: jobStatus, isLoading: isPolling } = useSyncJobStatus(activeJobId);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();
-  const { data: dbStats, isLoading: isStatsLoading, error: statsError } = useDbStats();
-  const { data: dbValidation, isLoading: isValidationLoading, error: validationError } = useDbValidation();
 
   const isRunning = jobStatus?.status === 'pending' || jobStatus?.status === 'running';
+  const { data: dbStats, isLoading: isStatsLoading, error: statsError } = useDbStats({ isSyncRunning: isRunning });
+  const { data: dbValidation, isLoading: isValidationLoading, error: validationError } = useDbValidation({
+    isSyncRunning: isRunning,
+  });
 
   const handleStartSync = () => {
     const request: StartSyncRequest = { mode: syncMode };

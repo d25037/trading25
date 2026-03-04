@@ -78,6 +78,28 @@ describe('useDbSync hooks', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/db/validate');
   });
 
+  it('useDbStats uses fast polling while sync is running', () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ initialized: true });
+    const { queryClient, wrapper } = createTestWrapper();
+    renderHook(() => useDbStats({ isSyncRunning: true }), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: ['db-stats'] });
+    const options = query?.options as { refetchInterval?: unknown; staleTime?: unknown } | undefined;
+    expect(options?.refetchInterval).toBe(2000);
+    expect(options?.staleTime).toBe(0);
+  });
+
+  it('useDbValidation uses slower polling while sync is idle', () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ status: 'healthy' });
+    const { queryClient, wrapper } = createTestWrapper();
+    renderHook(() => useDbValidation({ isSyncRunning: false }), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: ['db-validation'] });
+    const options = query?.options as { refetchInterval?: unknown; staleTime?: unknown } | undefined;
+    expect(options?.refetchInterval).toBe(30000);
+    expect(options?.staleTime).toBe(5000);
+  });
+
   it('useRefreshStocks posts request and invalidates db queries', async () => {
     vi.mocked(apiPost).mockResolvedValueOnce({
       totalStocks: 1,

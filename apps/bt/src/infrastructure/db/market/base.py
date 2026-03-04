@@ -2,14 +2,14 @@
 Base Database Access
 
 SQLAlchemy Core Engine 管理の基底クラス。
-StaticPool + check_same_thread=False で FastAPI の非同期環境に対応。
+NullPool + check_same_thread=False で FastAPI の並行アクセスに対応。
 PRAGMA は event.listens_for で接続ごとに確実に設定される。
 """
 
 from __future__ import annotations
 
 from sqlalchemy import Engine, create_engine, event
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.pool import NullPool
 
 
 class BaseDbAccess:
@@ -30,19 +30,23 @@ class BaseDbAccess:
             self._engine = create_engine(
                 "sqlite://",
                 creator=_creator,
-                poolclass=StaticPool,
+                poolclass=NullPool,
             )
         else:
             self._engine = create_engine(
                 f"sqlite:///{db_path}",
-                connect_args={"check_same_thread": False},
-                poolclass=StaticPool,
+                connect_args={
+                    "check_same_thread": False,
+                    "timeout": 30.0,
+                },
+                poolclass=NullPool,
             )
 
         # 全接続で PRAGMA を確実に設定（プール再利用時も）
         @event.listens_for(self._engine, "connect")
         def _set_pragmas(dbapi_conn: object, _connection_record: object) -> None:  # pyright: ignore[reportUnusedFunction]
             cursor = dbapi_conn.cursor()  # type: ignore[union-attr]
+            cursor.execute("PRAGMA busy_timeout=30000")
             if not read_only:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA foreign_keys=ON")

@@ -30,8 +30,8 @@ vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
   useCancelSync: () => mockCancelSyncState,
   useSyncJobStatus: (jobId: string | null) => mockUseSyncJobStatus(jobId),
-  useDbStats: () => mockUseDbStats(),
-  useDbValidation: () => mockUseDbValidation(),
+  useDbStats: (options?: unknown) => mockUseDbStats(options),
+  useDbValidation: (options?: unknown) => mockUseDbValidation(options),
   useRefreshStocks: () => mockUseRefreshStocks(),
 }));
 
@@ -109,6 +109,19 @@ describe('SettingsPage', () => {
 
     await user.click(screen.getByRole('button', { name: /Cancel/i }));
     expect(mockCancelSyncState.mutate).toHaveBeenCalledWith('job-1');
+  });
+
+  it('passes sync running flag to snapshot hooks', async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPage />);
+    expect(mockUseDbStats).toHaveBeenCalledWith({ isSyncRunning: false });
+    expect(mockUseDbValidation).toHaveBeenCalledWith({ isSyncRunning: false });
+
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    expect(mockUseDbStats).toHaveBeenCalledWith({ isSyncRunning: true });
+    expect(mockUseDbValidation).toHaveBeenCalledWith({ isSyncRunning: true });
   });
 
   it('starts sync request without legacy sqlite data-plane override', async () => {
