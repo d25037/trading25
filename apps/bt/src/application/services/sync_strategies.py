@@ -207,6 +207,7 @@ async def _plan_fetch_method(
     date_to: str | None = None,
     exact_dates: list[str] | None = None,
     min_rest_calls_to_probe_bulk: int = 3,
+    require_bulk: bool = False,
 ) -> _StageFetchDecision:
     if ctx.bulk_probe_disabled:
         plan_hint = _get_plan_hint(ctx.client)
@@ -221,6 +222,7 @@ async def _plan_fetch_method(
             estimatedBulkCalls=None,
             plannerApiCalls=0,
             planHint=plan_hint or None,
+            requireBulk=require_bulk,
         )
         return _StageFetchDecision(
             method="rest",
@@ -232,7 +234,7 @@ async def _plan_fetch_method(
             reason_detail=ctx.bulk_probe_failure_reason,
         )
 
-    if estimated_rest_calls < min_rest_calls_to_probe_bulk:
+    if not require_bulk and estimated_rest_calls < min_rest_calls_to_probe_bulk:
         plan_hint = _get_plan_hint(ctx.client)
         logger.info(
             "sync fetch strategy selected",
@@ -245,6 +247,7 @@ async def _plan_fetch_method(
             estimatedBulkCalls=None,
             plannerApiCalls=0,
             planHint=plan_hint or None,
+            requireBulk=require_bulk,
         )
         return _StageFetchDecision(
             method="rest",
@@ -284,6 +287,7 @@ async def _plan_fetch_method(
             estimatedBulkCalls=None,
             plannerApiCalls=1,
             planHint=plan_hint or None,
+            requireBulk=require_bulk,
         )
         return _StageFetchDecision(
             method="rest",
@@ -295,8 +299,12 @@ async def _plan_fetch_method(
             reason_detail=ctx.bulk_probe_failure_reason,
         )
 
-    selected: _FetchMethod = "bulk" if plan.estimated_api_calls < estimated_rest_calls else "rest"
-    reason = "bulk_estimate_lower" if selected == "bulk" else "rest_estimate_lower_or_equal"
+    if require_bulk:
+        selected: _FetchMethod = "bulk"
+        reason = "bulk_required"
+    else:
+        selected = "bulk" if plan.estimated_api_calls < estimated_rest_calls else "rest"
+        reason = "bulk_estimate_lower" if selected == "bulk" else "rest_estimate_lower_or_equal"
 
     logger.info(
         "sync fetch strategy selected",
@@ -312,6 +320,7 @@ async def _plan_fetch_method(
         estimatedCacheMisses=plan.estimated_cache_misses,
         selectedFiles=len(plan.files),
         planHint=plan_hint or None,
+        requireBulk=require_bulk,
     )
     return _StageFetchDecision(
         method=selected,
@@ -835,6 +844,7 @@ class InitialSyncStrategy:
                 date_from=from_date,
                 date_to=to_date,
                 exact_dates=trading_dates,
+                require_bulk=ctx.enforce_bulk_for_stock_data,
             )
             total_calls += decision.planner_api_calls
             _emit_fetch_strategy_progress(
@@ -1127,6 +1137,7 @@ class IncrementalSyncStrategy:
                 date_from=from_date_new,
                 date_to=to_date_new,
                 exact_dates=new_dates,
+                require_bulk=ctx.enforce_bulk_for_stock_data,
             )
             total_calls += decision_stock_data.planner_api_calls
             _emit_fetch_strategy_progress(

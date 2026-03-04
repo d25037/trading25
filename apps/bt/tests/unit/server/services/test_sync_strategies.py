@@ -805,6 +805,40 @@ async def test_plan_fetch_method_disables_future_probe_after_bulk_probe_failure(
 
 
 @pytest.mark.asyncio
+async def test_plan_fetch_method_requires_bulk_even_when_rest_estimate_is_small() -> None:
+    bulk_plan = BulkFetchPlan(
+        endpoint="/equities/bars/daily",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=5,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _PlanOnlyBulkService(bulk_plan)
+    ctx = _build_ctx(
+        client=_PlanOnlyClient("premium"),  # type: ignore[arg-type]
+        market_db=DummyMarketDb(),  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_probe_disabled=False,
+    )
+
+    decision = await _plan_fetch_method(
+        ctx,
+        stage="stock_data_incremental",
+        endpoint="/equities/bars/daily",
+        estimated_rest_calls=1,
+        require_bulk=True,
+    )
+
+    assert decision.method == "bulk"
+    assert decision.reason == "bulk_required"
+    assert decision.planner_api_calls == 1
+    assert bulk_service.build_calls == 1
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_handles_mixed_date_formats() -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206")
     client = DummyClient()
