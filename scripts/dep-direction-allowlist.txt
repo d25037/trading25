@@ -34,11 +34,6 @@ apps/ts/packages/web/vite.config.ts
 # PR #150: web BacktestClient re-export keeps bt endpoint/client references centralized
 apps/ts/packages/web/src/lib/backtest-client.ts
 
-# Domain dataset/fixtures now route via bt FastAPI proxy (:3002)
-apps/ts/packages/domain/src/dataset/api-client.ts
-apps/ts/packages/domain/src/ta/__fixtures__/fetch-margin-data.ts
-apps/ts/packages/domain/src/ta/__fixtures__/fetch-test-data.ts
-
 # Canonical client package (Phase 4A)
 apps/ts/packages/api-clients/src/backtest/BacktestClient.ts
 apps/ts/packages/api-clients/src/backtest/BacktestClient.test.ts

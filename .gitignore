@@ -65,6 +65,7 @@ apps/bt/.db
 apps/bt/**/*.csv
 apps/bt/**/*.xlsx
 apps/bt/**/*.json
+!apps/bt/tests/fixtures/ta_golden/*.json
 apps/bt/**/*.pickle
 apps/bt/**/*.pkl
 apps/bt/config/strategies/experimental/

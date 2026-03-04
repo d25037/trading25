@@ -365,6 +365,102 @@ export interface DatasetInfoResponse {
   };
 }
 
+// ===== PORTFOLIO / WATCHLIST TYPES =====
+
+export interface DeleteResponse {
+  success: boolean;
+  message: string;
+}
+
+export type WatchlistDeleteResponse = DeleteResponse;
+
+export interface PortfolioResponse {
+  id: number;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PortfolioItemResponse {
+  id: number;
+  portfolioId: number;
+  code: string;
+  companyName: string;
+  quantity: number;
+  purchasePrice: number;
+  purchaseDate: string;
+  account?: string;
+  notes?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface PortfolioWithItemsResponse extends PortfolioResponse {
+  items: PortfolioItemResponse[];
+}
+
+export interface PortfolioSummaryResponse {
+  id: number;
+  name: string;
+  description?: string;
+  stockCount: number;
+  totalShares: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListPortfoliosResponse {
+  portfolios: PortfolioSummaryResponse[];
+}
+
+export interface WatchlistResponse {
+  id: number;
+  name: string;
+  description?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface WatchlistItemResponse {
+  id: number;
+  watchlistId: number;
+  code: string;
+  companyName: string;
+  memo?: string;
+  createdAt: string;
+}
+
+export interface WatchlistWithItemsResponse extends WatchlistResponse {
+  items: WatchlistItemResponse[];
+}
+
+export interface WatchlistSummaryResponse {
+  id: number;
+  name: string;
+  description?: string;
+  stockCount: number;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ListWatchlistsResponse {
+  watchlists: WatchlistSummaryResponse[];
+}
+
+export interface WatchlistStockPrice {
+  code: string;
+  close: number;
+  prevClose: number | null;
+  changePercent: number | null;
+  volume: number;
+  date: string;
+}
+
+export interface WatchlistPricesResponse {
+  prices: WatchlistStockPrice[];
+}
+
 export interface CancelDatasetJobResponse {
   success: boolean;
   jobId: string;

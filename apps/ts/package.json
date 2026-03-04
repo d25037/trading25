@@ -5,7 +5,6 @@
   "workspaces": [
     "packages/api-clients",
     "packages/contracts",
-    "packages/domain",
     "packages/utils",
     "packages/web"
   ],
@@ -16,7 +15,6 @@
     "contracts:build": "bun scripts/tasks.ts contracts:build",
     "contracts:sync:bt": "bun scripts/tasks.ts contracts:sync:bt",
     "coverage:check": "bun scripts/tasks.ts coverage:check",
-    "domain:build": "bun scripts/tasks.ts domain:build",
     "packages:test": "bun scripts/tasks.ts packages:test",
     "quality:check:fix": "bun scripts/tasks.ts quality:check:fix",
     "quality:format": "bun scripts/tasks.ts quality:format",

@@ -34,18 +34,11 @@ bun run e2e:ui
 
 ## Package-specific Testing
 
-### Domain/Utils Package (`packages/domain/`, `packages/utils/`)
+### Utils Package (`packages/utils/`)
 
-Tests core business logic:
-- **Dataset / Portfolio / Watchlist**: validation, helpers, error handling
-- **Technical Analysis Utilities**: fixture handling and utility checks
+Tests shared utilities:
 - **Test Utilities**: Type-safe array helpers, mock data fixtures
-
-```bash
-cd packages/domain
-bun run test                # Watch mode
-bun run test:coverage   # With coverage
-```
+- **Runtime Helpers**: env/date/path/logger/error helper behavior
 
 ```bash
 cd packages/utils
@@ -125,17 +118,13 @@ it('should render chart components', async () => {
 });
 ```
 
-**Technical Analysis Testing:**
+**Utility Module Testing:**
 ```typescript
-import { loadToyotaData } from '../__fixtures__/toyota-data-loader';
-import { getFirstElementOrFail } from '../test-utils/array-helpers';
+import { getFirstElementOrFail } from '@trading25/utils/test-utils';
 
-it('should calculate SMA with real market data', () => {
-  const prices = loadToyotaData().map(d => d.close);
-  const result = sma(prices, 20);
-  
-  const firstSMA = getFirstElementOrFail(result, 'Expected SMA calculation result');
-  expect(firstSMA).toBeGreaterThan(0);
+it('returns first element with strong typing', () => {
+  const first = getFirstElementOrFail([1, 2, 3], 'Expected at least one value');
+  expect(first).toBe(1);
 });
 ```
 

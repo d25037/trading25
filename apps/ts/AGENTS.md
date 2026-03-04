@@ -1,5 +1,5 @@
 ---
-description: Trading25 TypeScript monorepo with frontend and split contracts/domain/utils libraries
+description: Trading25 TypeScript monorepo with frontend and split contracts/utils/api-clients libraries
 globs: "*.ts, *.tsx, *.html, *.css, *.js, *.jsx, package.json, biome.json"
 alwaysApply: false
 ---
@@ -10,7 +10,6 @@ Trading25 TypeScript monorepo for financial data analysis with strict TypeScript
 
 - **`packages/web/`** - React 19 + Vite + Tailwind CSS v4 → [Web AGENTS.md](./packages/web/AGENTS.md)
 - **`packages/contracts/`** - OpenAPI generated 型、API response 型、`bt:sync`
-- **`packages/domain/`** - dataset/portfolio/watchlist/portfolio-performance 等のドメイン実装
 - **`packages/utils/`** - logger/env/date/path など共通ユーティリティ
 - **`packages/api-clients/`** - FastAPI client packages (backtest/JQuants)
 
@@ -41,8 +40,8 @@ export interface RankingParams { ... }
 
 ## TypeScript Configuration
 
-Root `tsconfig.json` は contracts/domain/utils を対象にし、web は別設定で型検査する。
-- **Root**: packages/contracts + packages/domain + packages/utils
+Root `tsconfig.json` は contracts/utils を対象にし、web は別設定で型検査する。
+- **Root**: packages/contracts + packages/utils
 - **Web**: JSX + DOM APIs (React 19)
 - **API**: Node.js-specific (ESNext)
 
@@ -78,7 +77,7 @@ uv run --project ../bt bt --help
 **ステップ**:
 1. Lint (`bun run quality:lint`)
 2. bt OpenAPI 型生成 (`cd packages/contracts && bun run bt:generate-types`)
-3. Build contracts/domain/utils package (`bun run workspace:build`)
+3. Build contracts/utils/api-clients/web package (`bun run workspace:build`)
 4. Typecheck (`bun run quality:typecheck`)
 5. Test with coverage (`bun run workspace:test:coverage`)
 6. Coverage threshold 検証 (`bun run coverage:check`)

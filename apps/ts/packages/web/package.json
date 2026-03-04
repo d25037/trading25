@@ -28,7 +28,6 @@
     "@tanstack/react-router": "^1.163.3",
     "@trading25/api-clients": "workspace:*",
     "@trading25/contracts": "workspace:*",
-    "@trading25/domain": "workspace:*",
     "@trading25/utils": "workspace:*",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
