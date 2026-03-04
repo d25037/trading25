@@ -639,13 +639,29 @@ class _FakeBulkService:
         self.fail_endpoints = fail_endpoints or set()
         self.fetch_calls: list[str] = []
 
-    async def fetch_with_plan(self, plan: BulkFetchPlan) -> BulkFetchResult:
+    async def fetch_with_plan(
+        self,
+        plan: BulkFetchPlan,
+        *,
+        on_rows_batch: Any | None = None,
+        accumulate_rows: bool = True,
+    ) -> BulkFetchResult:
         self.fetch_calls.append(plan.endpoint)
         if plan.endpoint in self.fail_endpoints:
             raise RuntimeError("bulk failed")
         result = self.results_by_endpoint.get(plan.endpoint)
         if result is None:
             return BulkFetchResult(rows=[], api_calls=0, cache_hits=0, cache_misses=0, selected_files=0)
+        if on_rows_batch is not None:
+            await on_rows_batch(result.rows, None)
+        if not accumulate_rows:
+            return BulkFetchResult(
+                rows=[],
+                api_calls=result.api_calls,
+                cache_hits=result.cache_hits,
+                cache_misses=result.cache_misses,
+                selected_files=result.selected_files,
+            )
         return result
 
 

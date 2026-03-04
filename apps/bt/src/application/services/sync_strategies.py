@@ -18,6 +18,7 @@ from zoneinfo import ZoneInfo
 from loguru import logger
 
 from src.application.services.jquants_bulk_service import (
+    BulkFileInfo,
     BulkFetchPlan,
     BulkFetchResult,
     JQuantsBulkService,
@@ -342,6 +343,39 @@ def _normalize_bulk_fins_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]
     return _normalize_bulk_row_keys(rows, _BULK_FINS_KEY_ALIASES)
 
 
+def _build_target_date_set(dates: list[str]) -> set[str] | None:
+    normalized = {
+        date_text
+        for date_text in (_to_iso_date_text(value) for value in dates)
+        if date_text is not None
+    }
+    return normalized or None
+
+
+async def _ingest_stock_bulk_batch(
+    ctx: SyncContext,
+    *,
+    batch_rows: list[dict[str, Any]],
+    target_dates: set[str] | None,
+) -> int:
+    normalized_rows = _normalize_bulk_stock_rows(batch_rows)
+    if target_dates is not None:
+        normalized_rows = [
+            row
+            for row in normalized_rows
+            if _to_iso_date_text(str(row.get("Date") or "")) in target_dates
+        ]
+    rows = validate_rows_required_fields(
+        _convert_stock_data_rows(normalized_rows),
+        required_fields=("code", "date", "open", "high", "low", "close", "volume"),
+        dedupe_keys=("code", "date"),
+        stage="stock_data",
+    )
+    if not rows:
+        return 0
+    return await _publish_stock_data_rows(ctx, rows)
+
+
 def _is_incremental_cold_start(
     inspection: TimeSeriesInspection,
 ) -> bool:
@@ -401,6 +435,13 @@ def _format_fetch_estimate(value: int | None) -> str:
     return str(value) if value is not None else "n/a"
 
 
+def _summarize_exception(exc: Exception, *, limit: int = 200) -> str:
+    text = str(exc).replace("\n", " ").strip() or exc.__class__.__name__
+    if len(text) <= limit:
+        return text
+    return f"{text[: limit - 3]}..."
+
+
 def _emit_fetch_strategy_progress(
     ctx: SyncContext,
     *,
@@ -434,9 +475,16 @@ def _emit_fetch_execution_progress(
     method: _FetchMethod,
     target_label: str | None = None,
     fallback: bool = False,
+    fallback_reason: str | None = None,
 ) -> None:
     target_text = f", targets={target_label}" if target_label else ""
-    fallback_text = " (bulk fallback)" if fallback else ""
+    fallback_text = ""
+    if fallback:
+        fallback_text = (
+            f" (bulk fallback: {fallback_reason})"
+            if fallback_reason
+            else " (bulk fallback)"
+        )
     ctx.on_progress(
         progress_stage,
         current,
@@ -700,6 +748,7 @@ class InitialSyncStrategy:
             )
 
             used_rest_fallback = False
+            stock_bulk_fallback_reason: str | None = None
             stage_api_calls = 0
             bulk_result: BulkFetchResult | None = None
             if decision.method == "bulk" and decision.plan is not None:
@@ -713,25 +762,26 @@ class InitialSyncStrategy:
                         method="bulk",
                         target_label=f"{len(trading_dates)} dates",
                     )
-                    bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
+                    trading_date_set = _build_target_date_set(trading_dates)
+
+                    async def _consume_stock_bulk_rows(
+                        batch_rows: list[dict[str, Any]],
+                        _file_info: BulkFileInfo,
+                    ) -> None:
+                        nonlocal stocks_updated
+                        stocks_updated += await _ingest_stock_bulk_batch(
+                            ctx,
+                            batch_rows=batch_rows,
+                            target_dates=trading_date_set,
+                        )
+
+                    bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                        decision.plan,
+                        on_rows_batch=_consume_stock_bulk_rows,
+                        accumulate_rows=False,
+                    )
                     total_calls += bulk_result.api_calls
                     stage_api_calls += bulk_result.api_calls
-                    bulk_rows = _normalize_bulk_stock_rows(bulk_result.rows)
-                    if trading_dates:
-                        trading_date_set = {_to_iso_date_text(value) for value in trading_dates}
-                        bulk_rows = [
-                            row
-                            for row in bulk_rows
-                            if _to_iso_date_text(str(row.get("Date") or "")) in trading_date_set
-                        ]
-                    rows = validate_rows_required_fields(
-                        _convert_stock_data_rows(bulk_rows),
-                        required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-                        dedupe_keys=("code", "date"),
-                        stage="stock_data",
-                    )
-                    if rows:
-                        stocks_updated += await _publish_stock_data_rows(ctx, rows)
                     _log_sync_fetch_execution(
                         stage="stock_data_initial",
                         endpoint="/equities/bars/daily",
@@ -743,7 +793,11 @@ class InitialSyncStrategy:
                     )
                 except Exception as e:
                     used_rest_fallback = True
-                    logger.warning("Initial stock_data bulk fetch failed, falling back to REST: {}", e)
+                    stock_bulk_fallback_reason = _summarize_exception(e)
+                    logger.exception(
+                        "Initial stock_data bulk fetch failed, falling back to REST: {}",
+                        stock_bulk_fallback_reason,
+                    )
 
             if decision.method == "rest" or used_rest_fallback:
                 _emit_fetch_execution_progress(
@@ -755,6 +809,7 @@ class InitialSyncStrategy:
                     method="rest",
                     target_label=f"{len(trading_dates)} dates",
                     fallback=used_rest_fallback,
+                    fallback_reason=stock_bulk_fallback_reason,
                 )
                 consecutive_failures = 0
                 for i, date in enumerate(trading_dates):
@@ -963,6 +1018,7 @@ class IncrementalSyncStrategy:
             )
 
             used_stock_rest_fallback = False
+            stock_bulk_fallback_reason: str | None = None
             stock_stage_api_calls = 0
             stock_bulk_result: BulkFetchResult | None = None
             if decision_stock_data.method == "bulk" and decision_stock_data.plan is not None:
@@ -976,25 +1032,26 @@ class IncrementalSyncStrategy:
                         method="bulk",
                         target_label=f"{len(new_dates)} dates",
                     )
-                    stock_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision_stock_data.plan)
+                    new_date_set = _build_target_date_set(new_dates)
+
+                    async def _consume_incremental_stock_bulk_rows(
+                        batch_rows: list[dict[str, Any]],
+                        _file_info: BulkFileInfo,
+                    ) -> None:
+                        nonlocal stocks_updated
+                        stocks_updated += await _ingest_stock_bulk_batch(
+                            ctx,
+                            batch_rows=batch_rows,
+                            target_dates=new_date_set,
+                        )
+
+                    stock_bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                        decision_stock_data.plan,
+                        on_rows_batch=_consume_incremental_stock_bulk_rows,
+                        accumulate_rows=False,
+                    )
                     total_calls += stock_bulk_result.api_calls
                     stock_stage_api_calls += stock_bulk_result.api_calls
-                    bulk_rows = _normalize_bulk_stock_rows(stock_bulk_result.rows)
-                    if new_dates:
-                        new_date_set = {_to_iso_date_text(value) for value in new_dates}
-                        bulk_rows = [
-                            row
-                            for row in bulk_rows
-                            if _to_iso_date_text(str(row.get("Date") or "")) in new_date_set
-                        ]
-                    rows = validate_rows_required_fields(
-                        _convert_stock_data_rows(bulk_rows),
-                        required_fields=("code", "date", "open", "high", "low", "close", "volume"),
-                        dedupe_keys=("code", "date"),
-                        stage="stock_data",
-                    )
-                    if rows:
-                        stocks_updated += await _publish_stock_data_rows(ctx, rows)
                     _log_sync_fetch_execution(
                         stage="stock_data_incremental",
                         endpoint="/equities/bars/daily",
@@ -1006,7 +1063,11 @@ class IncrementalSyncStrategy:
                     )
                 except Exception as e:
                     used_stock_rest_fallback = True
-                    logger.warning("Incremental stock_data bulk fetch failed, falling back to REST: {}", e)
+                    stock_bulk_fallback_reason = _summarize_exception(e)
+                    logger.exception(
+                        "Incremental stock_data bulk fetch failed, falling back to REST: {}",
+                        stock_bulk_fallback_reason,
+                    )
 
             if decision_stock_data.method == "rest" or used_stock_rest_fallback:
                 _emit_fetch_execution_progress(
@@ -1018,6 +1079,7 @@ class IncrementalSyncStrategy:
                     method="rest",
                     target_label=f"{len(new_dates)} dates",
                     fallback=used_stock_rest_fallback,
+                    fallback_reason=stock_bulk_fallback_reason,
                 )
                 for i, date in enumerate(new_dates, start=1):
                     if ctx.cancelled.is_set():
