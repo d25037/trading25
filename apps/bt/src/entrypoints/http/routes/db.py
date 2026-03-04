@@ -4,6 +4,7 @@ Database Routes
 GET    /api/db/stats                 — DB 統計
 GET    /api/db/validate              — DB 検証
 POST   /api/db/sync                  — Sync 開始
+GET    /api/db/sync/jobs/active      — 実行中 Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}     — Sync ジョブ状態
 DELETE /api/db/sync/jobs/{jobId}     — Sync ジョブキャンセル
 POST   /api/db/stocks/refresh        — 銘柄データ再取得
@@ -29,12 +30,15 @@ from src.entrypoints.http.schemas.db import (
     MarketValidationResponse,
     RefreshRequest,
     RefreshResponse,
+    SyncProgress,
     SyncRequest,
     SyncJobResponse,
+    SyncResult,
 )
 from src.entrypoints.http.schemas.job import CancelJobResponse, JobStatus
 from src.application.services import db_stats_service, db_validation_service, stock_refresh_service
-from src.application.services.sync_service import SyncMode, sync_job_manager, start_sync
+from src.application.services.generic_job_manager import JobInfo
+from src.application.services.sync_service import SyncJobData, SyncMode, sync_job_manager, start_sync
 
 router = APIRouter(tags=["Database"])
 
@@ -172,16 +176,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
     )
 
 
-@router.get(
-    "/api/db/sync/jobs/{jobId}",
-    response_model=SyncJobResponse,
-    summary="Get sync job status",
-)
-def get_sync_job(jobId: str) -> SyncJobResponse:
-    job = sync_job_manager.get_job(jobId)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
-
+def _to_sync_job_response(job: JobInfo[SyncJobData, SyncProgress, SyncResult]) -> SyncJobResponse:
     return SyncJobResponse(
         jobId=job.job_id,
         status=job.status.value,
@@ -192,6 +187,30 @@ def get_sync_job(jobId: str) -> SyncJobResponse:
         completedAt=job.completed_at.isoformat() if job.completed_at else None,
         error=job.error,
     )
+
+
+@router.get(
+    "/api/db/sync/jobs/active",
+    response_model=SyncJobResponse | None,
+    summary="Get active sync job status",
+)
+def get_active_sync_job() -> SyncJobResponse | None:
+    job = sync_job_manager.get_active_job()
+    if job is None:
+        return None
+    return _to_sync_job_response(job)
+
+
+@router.get(
+    "/api/db/sync/jobs/{jobId}",
+    response_model=SyncJobResponse,
+    summary="Get sync job status",
+)
+def get_sync_job(jobId: str) -> SyncJobResponse:
+    job = sync_job_manager.get_job(jobId)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
+    return _to_sync_job_response(job)
 
 
 @router.delete(

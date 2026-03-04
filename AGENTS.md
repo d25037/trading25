@@ -28,6 +28,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - `GET /api/db/stats` / `GET /api/db/validate` の時系列スナップショット SoT は DuckDB inspection（`timeSeriesSource` を返却）
 - `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
 - `/api/db/sync`（`initial` / `incremental`）は `Bulk+REST hybrid` を stage 単位で選択し、予測外部request数が最小の手法を優先する。`incremental` で DuckDB inspection の `topix/stock/indices` が空かつアンカー不在なら cold-start bootstrap を選び、全日付 fallback 暴走を回避する
+- `/api/db/sync/jobs/active` は実行中ジョブの再取得 SoT とし、web は再読み込み/再訪時に localStorage と組み合わせて active job 追跡を復元する。`/api/db/sync/jobs/{jobId}` が 404 の場合は stale な jobId を破棄する
 - `stock_data` の bulk ingest は bulk file 単位で publish し、大量期間同期時のメモリピークによる bulk 失敗→REST fallback を抑制する。fallback 時の progress message は reason を含める
 - `/api/db/sync` と `POST /api/db/stocks/refresh` の時系列アンカー判定・publish/index は DuckDB inspection + time-series store を必須 SoT とし、SQLite `market.db` 時系列テーブルへの fallback を禁止する（inspection 失敗時はエラーで停止）
 - DuckDB time-series store は `publish/index/inspect/close` をプロセス内ロックで直列化し、sync 実行と `/api/db/stats` `/api/db/validate` 参照の同時実行による 500 を防止する
@@ -167,7 +168,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - Charts の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
 - Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする
-- web `Settings > Database Sync` は DuckDB SoT 同期 + DuckDB Snapshot 表示を提供し、sync中は stageごとの fetch strategy（bulk/rest と endpoint）を進捗表示する
+- web `Settings > Database Sync` は DuckDB SoT 同期 + DuckDB Snapshot 表示を提供し、sync中は stageごとの fetch strategy（bulk/rest と endpoint）を進捗表示する。active sync job は `localStorage + /api/db/sync/jobs/active` で再読み込み/再訪時も復元する
 
 主要技術: TypeScript, Bun, React 19, Vite, Tailwind CSS v4, Biome, OpenAPI generated types
 

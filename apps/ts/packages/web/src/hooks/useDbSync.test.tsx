@@ -2,7 +2,15 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
-import { useCancelSync, useDbStats, useDbValidation, useRefreshStocks, useStartSync, useSyncJobStatus } from './useDbSync';
+import {
+  useActiveSyncJob,
+  useCancelSync,
+  useDbStats,
+  useDbValidation,
+  useRefreshStocks,
+  useStartSync,
+  useSyncJobStatus,
+} from './useDbSync';
 
 vi.mock('@/lib/api-client', () => ({
   apiGet: vi.fn(),
@@ -48,6 +56,44 @@ describe('useDbSync hooks', () => {
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(() => useSyncJobStatus(null), { wrapper });
     expect(result.current.fetchStatus).toBe('idle');
+  });
+
+  it('useSyncJobStatus keeps polling when no status data is available', () => {
+    vi.mocked(apiGet).mockRejectedValueOnce(new Error('temporary error'));
+    const { queryClient, wrapper } = createTestWrapper();
+    renderHook(() => useSyncJobStatus('abc'), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: ['sync-job', 'abc'] });
+    const options = query?.options as { refetchInterval?: unknown } | undefined;
+    const refetchInterval = options?.refetchInterval as
+      | ((query: { state: { data?: { status?: string } } }) => number | false)
+      | undefined;
+
+    expect(refetchInterval).toBeTypeOf('function');
+    expect(refetchInterval?.({ state: { data: undefined } })).toBe(1000);
+  });
+
+  it('useSyncJobStatus stops polling for terminal status', () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ jobId: 'abc', status: 'completed' });
+    const { queryClient, wrapper } = createTestWrapper();
+    renderHook(() => useSyncJobStatus('abc'), { wrapper });
+
+    const query = queryClient.getQueryCache().find({ queryKey: ['sync-job', 'abc'] });
+    const options = query?.options as { refetchInterval?: unknown } | undefined;
+    const refetchInterval = options?.refetchInterval as
+      | ((query: { state: { data?: { status?: string } } }) => number | false)
+      | undefined;
+
+    expect(refetchInterval).toBeTypeOf('function');
+    expect(refetchInterval?.({ state: { data: { status: 'completed' } } })).toBe(false);
+  });
+
+  it('useActiveSyncJob fetches active job status', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({ jobId: 'active-1', status: 'running' });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useActiveSyncJob(), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/db/sync/jobs/active');
   });
 
   it('useCancelSync cancels a job and invalidates', async () => {

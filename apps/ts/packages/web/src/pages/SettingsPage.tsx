@@ -1,11 +1,12 @@
 import { Database, Loader2, RotateCcw } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
+  useActiveSyncJob,
   useCancelSync,
   useDbStats,
   useDbValidation,
@@ -13,6 +14,7 @@ import {
   useStartSync,
   useSyncJobStatus,
 } from '@/hooks/useDbSync';
+import { ApiError } from '@/lib/api-client';
 import type {
   MarketRefreshResponse,
   MarketStatsResponse,
@@ -26,6 +28,39 @@ function formatTimestamp(value?: string | null): string {
   const parsed = new Date(value);
   if (Number.isNaN(parsed.getTime())) return value;
   return parsed.toLocaleString();
+}
+
+const ACTIVE_SYNC_JOB_STORAGE_KEY = 'trading25.settings.sync.activeJobId';
+
+function readPersistedActiveSyncJobId(): string | null {
+  if (typeof window === 'undefined') {
+    return null;
+  }
+  try {
+    const value = window.localStorage.getItem(ACTIVE_SYNC_JOB_STORAGE_KEY);
+    if (typeof value !== 'string') {
+      return null;
+    }
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : null;
+  } catch {
+    return null;
+  }
+}
+
+function persistActiveSyncJobId(jobId: string | null): void {
+  if (typeof window === 'undefined') {
+    return;
+  }
+  try {
+    if (jobId) {
+      window.localStorage.setItem(ACTIVE_SYNC_JOB_STORAGE_KEY, jobId);
+      return;
+    }
+    window.localStorage.removeItem(ACTIVE_SYNC_JOB_STORAGE_KEY);
+  } catch {
+    // localStorage can fail in restricted environments.
+  }
 }
 
 interface SyncActionButtonProps {
@@ -209,15 +244,34 @@ function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: settings page coordinates sync and refresh sections
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
-  const [activeJobId, setActiveJobId] = useState<string | null>(null);
+  const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
   const [refreshCodesInput, setRefreshCodesInput] = useState('');
   const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
   const [refreshResult, setRefreshResult] = useState<MarketRefreshResponse | null>(null);
 
   const startSync = useStartSync();
-  const { data: jobStatus, isLoading: isPolling } = useSyncJobStatus(activeJobId);
+  const { data: activeSyncJob } = useActiveSyncJob();
+  const { data: jobStatus, isLoading: isPolling, error: syncJobError } = useSyncJobStatus(activeJobId);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();
+
+  useEffect(() => {
+    if (!activeSyncJob?.jobId) {
+      return;
+    }
+    setActiveJobId(activeSyncJob.jobId);
+  }, [activeSyncJob?.jobId]);
+
+  useEffect(() => {
+    persistActiveSyncJobId(activeJobId);
+  }, [activeJobId]);
+
+  useEffect(() => {
+    if (!(syncJobError instanceof ApiError) || syncJobError.status !== 404) {
+      return;
+    }
+    setActiveJobId(null);
+  }, [syncJobError]);
 
   const isRunning = jobStatus?.status === 'pending' || jobStatus?.status === 'running';
   const { data: dbStats, isLoading: isStatsLoading, error: statsError } = useDbStats({ isSyncRunning: isRunning });

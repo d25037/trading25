@@ -204,6 +204,36 @@ class TestSyncRoutes:
         resp = client.get("/api/db/sync/jobs/nonexistent-id")
         assert resp.status_code == 404
 
+    def test_get_active_sync_job_returns_null_when_idle(self, client: TestClient) -> None:
+        with patch("src.entrypoints.http.routes.db.sync_job_manager.get_active_job") as mock_get_active:
+            mock_get_active.return_value = None
+
+            resp = client.get("/api/db/sync/jobs/active")
+            assert resp.status_code == 200
+            assert resp.json() is None
+
+    def test_get_active_sync_job_success(self, client: TestClient) -> None:
+        with patch("src.entrypoints.http.routes.db.sync_job_manager.get_active_job") as mock_get_active:
+            job = MagicMock()
+            job.job_id = "job-active"
+            job.status = JobStatus.RUNNING
+            job.data.resolved_mode = "incremental"
+            job.data.mode.value = "incremental"
+            job.progress = None
+            job.result = None
+            job.created_at = datetime.now(UTC)
+            job.started_at = None
+            job.completed_at = None
+            job.error = None
+            mock_get_active.return_value = job
+
+            resp = client.get("/api/db/sync/jobs/active")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["jobId"] == "job-active"
+            assert body["status"] == "running"
+            assert body["mode"] == "incremental"
+
     def test_get_sync_job_success(self, client: TestClient) -> None:
         with patch("src.entrypoints.http.routes.db.sync_job_manager.get_job") as mock_get_job:
             job = MagicMock()
