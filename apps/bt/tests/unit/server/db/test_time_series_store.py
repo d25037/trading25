@@ -1,10 +1,16 @@
 from __future__ import annotations
 
+import builtins
 from pathlib import Path
+from threading import Barrier, Lock, RLock, Thread
+from time import sleep
 
 import pytest
 
-from src.infrastructure.db.market.time_series_store import create_time_series_store
+from src.infrastructure.db.market.time_series_store import (
+    DuckDbParquetTimeSeriesStore,
+    create_time_series_store,
+)
 
 
 def _stock_row() -> dict[str, object]:
@@ -125,3 +131,185 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.statement_non_null_counts["unknown_column"] == 0
 
     store.close()
+
+
+class _ResultCursor:
+    def __init__(
+        self,
+        *,
+        one: tuple[object, ...] | None = None,
+        many: list[tuple[object, ...]] | None = None,
+    ) -> None:
+        self._one = one
+        self._many = many or []
+
+    def fetchone(self) -> tuple[object, ...] | None:
+        return self._one
+
+    def fetchall(self) -> list[tuple[object, ...]]:
+        return list(self._many)
+
+
+class _ConcurrentAccessDetectingConnection:
+    """同時アクセスを検知して例外化するテスト用接続。"""
+
+    def __init__(self) -> None:
+        self._guard = Lock()
+        self.closed = False
+
+    def execute(self, sql: str, params: list[int] | None = None) -> _ResultCursor:
+        del params
+        self._enter_critical()
+        try:
+            return self._cursor_for(sql)
+        finally:
+            self._exit_critical()
+
+    def executemany(self, sql: str, _values: list[tuple[object, ...]]) -> None:
+        del sql
+        self._enter_critical()
+        try:
+            return
+        finally:
+            self._exit_critical()
+
+    def close(self) -> None:
+        self.closed = True
+
+    def _enter_critical(self) -> None:
+        if not self._guard.acquire(blocking=False):
+            raise RuntimeError("concurrent access detected")
+        sleep(0.001)
+
+    def _exit_critical(self) -> None:
+        self._guard.release()
+
+    @staticmethod
+    def _cursor_for(sql: str) -> _ResultCursor:
+        if "FROM topix_data" in sql and "MAX(date)" in sql:
+            return _ResultCursor(one=(0, None, None))
+        if "FROM stock_data" in sql and "COUNT(DISTINCT date)" in sql:
+            return _ResultCursor(one=(0, None, None, 0))
+        if "FROM indices_data" in sql and "COUNT(DISTINCT date)" in sql:
+            return _ResultCursor(one=(0, None, None, 0))
+        if "FROM indices_data" in sql and "GROUP BY code" in sql:
+            return _ResultCursor(many=[])
+        if "FROM statements" in sql and "MAX(disclosed_date)" in sql:
+            return _ResultCursor(one=(0, None))
+        if "LEFT JOIN (SELECT DISTINCT date FROM stock_data)" in sql:
+            return _ResultCursor(one=(0,))
+        if "SELECT DISTINCT code FROM statements" in sql:
+            return _ResultCursor(many=[])
+        if "PRAGMA table_info('statements')" in sql:
+            return _ResultCursor(many=[])
+        if "COPY (SELECT * FROM" in sql:
+            return _ResultCursor()
+        return _ResultCursor()
+
+
+def _build_lock_test_store(tmp_path: Path) -> DuckDbParquetTimeSeriesStore:
+    store = DuckDbParquetTimeSeriesStore.__new__(DuckDbParquetTimeSeriesStore)
+    store._duckdb_path = tmp_path / "market.duckdb"
+    store._parquet_dir = tmp_path / "parquet"
+    store._parquet_dir.mkdir(parents=True, exist_ok=True)
+    store._conn = _ConcurrentAccessDetectingConnection()
+    store._dirty_tables = set()
+    store._lock = RLock()
+    return store
+
+
+def test_duckdb_store_serializes_publish_and_inspect(tmp_path: Path) -> None:
+    store = _build_lock_test_store(tmp_path)
+    barrier = Barrier(3)
+    errors: list[Exception] = []
+
+    row = _stock_row()
+
+    def _publish_worker() -> None:
+        try:
+            barrier.wait(timeout=2)
+            for _ in range(200):
+                store.publish_stock_data([row])
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    def _inspect_worker() -> None:
+        try:
+            barrier.wait(timeout=2)
+            for _ in range(200):
+                store.inspect()
+        except Exception as exc:  # pragma: no cover - failure path
+            errors.append(exc)
+
+    publisher = Thread(target=_publish_worker)
+    inspector = Thread(target=_inspect_worker)
+    publisher.start()
+    inspector.start()
+    barrier.wait(timeout=2)
+    publisher.join(timeout=5)
+    inspector.join(timeout=5)
+
+    assert not publisher.is_alive()
+    assert not inspector.is_alive()
+    assert not errors
+
+
+def test_duckdb_store_init_raises_when_duckdb_import_missing(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    original_import = builtins.__import__
+
+    def _patched_import(
+        name: str,
+        globals: dict[str, object] | None = None,
+        locals: dict[str, object] | None = None,
+        fromlist: tuple[str, ...] = (),
+        level: int = 0,
+    ) -> object:
+        if name == "duckdb":
+            raise ModuleNotFoundError("No module named 'duckdb'")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _patched_import)
+
+    with pytest.raises(RuntimeError, match="duckdb"):
+        DuckDbParquetTimeSeriesStore(
+            duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+            parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+        )
+
+
+def test_publish_methods_return_zero_for_empty_rows(tmp_path: Path) -> None:
+    store = _build_lock_test_store(tmp_path)
+    assert store.publish_topix_data([]) == 0
+    assert store.publish_stock_data([]) == 0
+    assert store.publish_indices_data([]) == 0
+    assert store.publish_statements([]) == 0
+
+
+def test_export_if_dirty_handles_absent_and_existing_parquet(tmp_path: Path) -> None:
+    store = _build_lock_test_store(tmp_path)
+
+    # dirty でない場合は no-op
+    store._export_if_dirty("topix_data")
+
+    output = store._parquet_dir / "topix_data.parquet"
+    output.write_text("stale")
+    store._dirty_tables.add("topix_data")
+
+    store._export_if_dirty("topix_data")
+
+    assert not output.exists()
+    assert "topix_data" not in store._dirty_tables
+
+
+def test_close_flushes_dirty_tables_and_closes_connection(tmp_path: Path) -> None:
+    store = _build_lock_test_store(tmp_path)
+    (store._parquet_dir / "topix_data.parquet").write_text("stale")
+    store._dirty_tables.add("topix_data")
+
+    store.close()
+
+    assert store._dirty_tables == set()
+    assert store._conn.closed is True
