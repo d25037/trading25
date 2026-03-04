@@ -1,0 +1,217 @@
+from __future__ import annotations
+
+import asyncio
+from typing import Any
+
+import pytest
+
+from src.application.services import sync_service
+from src.application.services.generic_job_manager import GenericJobManager
+from src.application.services.sync_service import SyncMode
+from src.entrypoints.http.schemas.db import SyncResult
+from src.infrastructure.db.market.market_db import METADATA_KEYS
+
+
+class DummyMarketDb:
+    def __init__(self, last_sync_date: str | None = None) -> None:
+        self._last_sync_date = last_sync_date
+        self.ensure_schema_calls = 0
+
+    def get_sync_metadata(self, key: str) -> str | None:
+        if key != METADATA_KEYS["LAST_SYNC_DATE"]:
+            return None
+        return self._last_sync_date
+
+    def ensure_schema(self) -> None:
+        self.ensure_schema_calls += 1
+
+
+class DummyTimeSeriesStore:
+    def __init__(self) -> None:
+        self.close_calls = 0
+
+    def close(self) -> None:
+        self.close_calls += 1
+
+
+class StrategyProbe:
+    def __init__(
+        self,
+        *,
+        result: SyncResult | None = None,
+        error: Exception | None = None,
+        emit_progress: bool = True,
+    ) -> None:
+        self._result = result or SyncResult(success=True, totalApiCalls=1)
+        self._error = error
+        self._emit_progress = emit_progress
+        self.captured_ctx: Any = None
+
+    async def execute(self, ctx: Any) -> SyncResult:
+        self.captured_ctx = ctx
+        if self._emit_progress:
+            ctx.on_progress("stock_data", 1, 2, "running")
+        if self._error is not None:
+            raise self._error
+        return self._result
+
+
+@pytest.fixture
+def isolated_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
+    manager: GenericJobManager = GenericJobManager()
+    monkeypatch.setattr(sync_service, "sync_job_manager", manager)
+    return manager
+
+
+def test_resolve_mode_prefers_requested_non_auto() -> None:
+    market_db = DummyMarketDb(last_sync_date=None)
+    assert sync_service._resolve_mode(SyncMode.INDICES_ONLY, market_db) == "indices-only"
+
+
+def test_resolve_mode_auto_uses_metadata_anchor() -> None:
+    assert sync_service._resolve_mode(SyncMode.AUTO, DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")) == "incremental"
+    assert sync_service._resolve_mode(SyncMode.AUTO, DummyMarketDb(last_sync_date=None)) == "initial"
+
+
+@pytest.mark.asyncio
+async def test_start_sync_requires_duckdb_store(isolated_manager: GenericJobManager) -> None:
+    del isolated_manager
+    with pytest.raises(RuntimeError, match="DuckDB time-series store is required for sync"):
+        await sync_service.start_sync(
+            SyncMode.AUTO,
+            DummyMarketDb(),  # type: ignore[arg-type]
+            object(),  # type: ignore[arg-type]
+            time_series_store=None,
+        )
+
+
+@pytest.mark.asyncio
+async def test_start_sync_returns_none_when_manager_rejects_job(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe()
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    async def _reject_new_job(_data: Any) -> None:
+        return None
+
+    monkeypatch.setattr(isolated_manager, "create_job", _reject_new_job)
+
+    job = await sync_service.start_sync(
+        SyncMode.AUTO,
+        DummyMarketDb(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+    )
+    assert job is None
+
+
+@pytest.mark.asyncio
+async def test_start_sync_completes_job_and_passes_bulk_enforcement(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe()
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
+    store = DummyTimeSeriesStore()
+    job = await sync_service.start_sync(
+        SyncMode.AUTO,
+        market_db,  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        time_series_store=store,  # type: ignore[arg-type]
+        close_time_series_store=True,
+    )
+    assert job is not None
+    assert job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "completed"
+    assert stored.result is not None and stored.result.success is True
+    assert stored.progress is not None and stored.progress.percentage == 50.0
+    assert strategy.captured_ctx is not None
+    assert strategy.captured_ctx.enforce_bulk_for_stock_data is True
+    assert market_db.ensure_schema_calls == 1
+    assert store.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_start_sync_marks_failed_on_timeout(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(emit_progress=False)
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    async def _timeout(coro: Any, *, timeout: float) -> Any:
+        del timeout
+        coro.close()
+        raise asyncio.TimeoutError()
+
+    monkeypatch.setattr(sync_service.asyncio, "wait_for", _timeout)
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        DummyMarketDb(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "failed"
+    assert stored.error is not None and "timed out" in stored.error
+
+
+@pytest.mark.asyncio
+async def test_start_sync_marks_failed_on_unexpected_exception(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(error=RuntimeError("boom"))
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "failed"
+    assert stored.error == "boom"
+
+
+@pytest.mark.asyncio
+async def test_start_sync_skips_completion_when_job_already_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe()
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        DummyMarketDb(),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    # on_progress updates pending -> running, but complete should be skipped.
+    assert stored.status.value == "running"
+    assert stored.result is None

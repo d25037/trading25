@@ -273,11 +273,29 @@ export function SettingsPage() {
     setActiveJobId(null);
   }, [syncJobError]);
 
-  const isRunning = jobStatus?.status === 'pending' || jobStatus?.status === 'running';
-  const { data: dbStats, isLoading: isStatsLoading, error: statsError } = useDbStats({ isSyncRunning: isRunning });
-  const { data: dbValidation, isLoading: isValidationLoading, error: validationError } = useDbValidation({
-    isSyncRunning: isRunning,
-  });
+  const isJobStatusRunning = jobStatus?.status === 'pending' || jobStatus?.status === 'running';
+  const isActiveJobRunning = activeSyncJob?.status === 'pending' || activeSyncJob?.status === 'running';
+  const isRunning = startSync.isPending || isJobStatusRunning || (!jobStatus && isActiveJobRunning);
+  const {
+    data: dbStats,
+    isLoading: isStatsLoading,
+    error: statsError,
+    refetch: refetchDbStats,
+  } = useDbStats({ isSyncRunning: isRunning });
+  const {
+    data: dbValidation,
+    isLoading: isValidationLoading,
+    error: validationError,
+    refetch: refetchDbValidation,
+  } = useDbValidation({ isSyncRunning: isRunning });
+
+  useEffect(() => {
+    if (!isRunning) {
+      return;
+    }
+    void refetchDbStats();
+    void refetchDbValidation();
+  }, [isRunning, jobStatus?.progress?.stage, jobStatus?.progress?.current, refetchDbStats, refetchDbValidation]);
 
   const handleStartSync = () => {
     const request: StartSyncRequest = { mode: syncMode };

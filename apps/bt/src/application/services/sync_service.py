@@ -84,6 +84,7 @@ async def start_sync(
             time_series_store=time_series_store,
             cancelled=job.cancelled,
             on_progress=on_progress,
+            enforce_bulk_for_stock_data=True,
         )
         try:
             result = await asyncio.wait_for(strategy.execute(ctx), timeout=SYNC_JOB_TIMEOUT_MINUTES * 60)
