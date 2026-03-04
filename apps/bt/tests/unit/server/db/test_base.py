@@ -5,8 +5,10 @@ Tests for BaseDbAccess
 from __future__ import annotations
 
 from pathlib import Path
+from threading import Thread
 
 from sqlalchemy import text
+from sqlalchemy.pool import NullPool
 
 from src.infrastructure.db.market.base import BaseDbAccess
 
@@ -78,4 +80,57 @@ class TestBaseDbAccess:
         from sqlalchemy import Engine
 
         assert isinstance(db.engine, Engine)
+        db.close()
+
+    def test_uses_null_pool(self, tmp_path: Path) -> None:
+        db = BaseDbAccess(str(tmp_path / "test.db"))
+        assert isinstance(db.engine.pool, NullPool)
+        db.close()
+
+    def test_busy_timeout_set_on_connection(self, tmp_path: Path) -> None:
+        db = BaseDbAccess(str(tmp_path / "test.db"))
+        with db.engine.connect() as conn:
+            timeout = conn.execute(text("PRAGMA busy_timeout")).scalar()
+            assert timeout == 30000
+        db.close()
+
+    def test_concurrent_read_write_does_not_raise_transaction_errors(self, tmp_path: Path) -> None:
+        db = BaseDbAccess(str(tmp_path / "test.db"))
+        with db.engine.begin() as conn:
+            conn.execute(text("CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL)"))
+
+        errors: list[Exception] = []
+
+        def _writer() -> None:
+            try:
+                for idx in range(300):
+                    with db.engine.begin() as conn:
+                        conn.execute(
+                            text(
+                                "INSERT OR REPLACE INTO sync_metadata (key, value) "
+                                "VALUES ('k', :value)"
+                            ),
+                            {"value": str(idx)},
+                        )
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        def _reader() -> None:
+            try:
+                for _ in range(300):
+                    with db.engine.connect() as conn:
+                        conn.execute(text("SELECT COUNT(*) FROM sync_metadata")).scalar()
+            except Exception as exc:  # pragma: no cover - failure path
+                errors.append(exc)
+
+        writer = Thread(target=_writer)
+        reader = Thread(target=_reader)
+        writer.start()
+        reader.start()
+        writer.join(timeout=10)
+        reader.join(timeout=10)
+
+        assert not writer.is_alive()
+        assert not reader.is_alive()
+        assert not errors
         db.close()
