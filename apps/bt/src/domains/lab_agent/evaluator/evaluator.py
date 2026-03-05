@@ -17,9 +17,10 @@ from .batch_executor import (
     execute_batch_evaluation,
     get_max_workers,
     prepare_batch_data,
+    should_include_forecast_revision,
 )
 from .candidate_processor import evaluate_single_candidate
-from .data_preparation import load_default_shared_config
+from .data_preparation import BatchPreparedData, load_default_shared_config
 from .score_normalizer import normalize_scores
 
 
@@ -58,17 +59,31 @@ class StrategyEvaluator:
         self.n_jobs = n_jobs
         self.timeout_seconds = timeout_seconds
 
-    def evaluate_single(self, candidate: StrategyCandidate) -> EvaluationResult:
+    def evaluate_single(
+        self,
+        candidate: StrategyCandidate,
+        prepared_data: BatchPreparedData | None = None,
+    ) -> EvaluationResult:
         """
         単一候補を評価
 
         Args:
             candidate: 戦略候補
+            prepared_data: 事前取得データ（省略時は都度ロード）
 
         Returns:
             評価結果
         """
         with data_access_mode_context("direct"):
+            if prepared_data is not None:
+                return evaluate_single_candidate(
+                    candidate,
+                    self.shared_config_dict,
+                    self.scoring_weights,
+                    prepared_data.stock_codes,
+                    prepared_data.ohlcv_data,
+                    prepared_data.benchmark_data,
+                )
             return evaluate_single_candidate(
                 candidate, self.shared_config_dict, self.scoring_weights
             )
@@ -78,6 +93,7 @@ class StrategyEvaluator:
         candidates: list[StrategyCandidate],
         top_k: int | None = None,
         enable_cache: bool = True,
+        prepared_data: BatchPreparedData | None = None,
     ) -> list[EvaluationResult]:
         """
         複数候補をバッチ評価
@@ -105,7 +121,11 @@ class StrategyEvaluator:
                 logger.debug("DataCache enabled for batch evaluation")
 
             try:
-                results = self._evaluate_batch_internal(candidates, top_k)
+                results = self._evaluate_batch_internal(
+                    candidates,
+                    top_k,
+                    prepared_data=prepared_data,
+                )
             finally:
                 # キャッシュ無効化・クリア
                 if enable_cache:
@@ -116,18 +136,39 @@ class StrategyEvaluator:
 
             return results
 
+    def prepare_batch_data(
+        self,
+        candidates: list[StrategyCandidate] | None = None,
+        *,
+        force_include_forecast_revision: bool = False,
+    ) -> BatchPreparedData:
+        """共有設定に基づいてバッチ評価用データを事前取得する。"""
+        return prepare_batch_data(
+            self.shared_config_dict,
+            candidates,
+            force_include_forecast_revision=force_include_forecast_revision,
+        )
+
+    def requires_forecast_revision(
+        self,
+        candidates: list[StrategyCandidate] | None,
+    ) -> bool:
+        """候補群が forecast revision データを必要とするか判定する。"""
+        return should_include_forecast_revision(candidates)
+
     def _evaluate_batch_internal(
         self,
         candidates: list[StrategyCandidate],
         top_k: int | None = None,
+        prepared_data: BatchPreparedData | None = None,
     ) -> list[EvaluationResult]:
         """バッチ評価の内部実装"""
         max_workers = get_max_workers(self.n_jobs)
-        prepared_data = prepare_batch_data(self.shared_config_dict, candidates)
+        effective_prepared_data = prepared_data or self.prepare_batch_data(candidates)
         results = execute_batch_evaluation(
             candidates,
             max_workers,
-            prepared_data,
+            effective_prepared_data,
             self.shared_config_dict,
             self.scoring_weights,
             self.timeout_seconds,

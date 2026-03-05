@@ -78,7 +78,7 @@ def _is_forecast_signal_enabled(side_params: dict[str, Any]) -> bool:
     return False
 
 
-def _should_include_forecast_revision(
+def should_include_forecast_revision(
     candidates: list[StrategyCandidate] | None,
 ) -> bool:
     if not candidates:
@@ -90,9 +90,14 @@ def _should_include_forecast_revision(
     )
 
 
+# Backward-compatible alias.
+_should_include_forecast_revision = should_include_forecast_revision
+
+
 def prepare_batch_data(
     shared_config_dict: dict[str, Any],
     candidates: list[StrategyCandidate] | None = None,
+    force_include_forecast_revision: bool = False,
 ) -> BatchPreparedData:
     """
     バッチ評価用データを事前取得
@@ -107,7 +112,9 @@ def prepare_batch_data(
     Returns:
         BatchPreparedData: 事前取得データ（銘柄リスト、OHLCVデータ、ベンチマークデータ）
     """
-    include_forecast_revision = _should_include_forecast_revision(candidates)
+    include_forecast_revision = force_include_forecast_revision or should_include_forecast_revision(
+        candidates
+    )
     stock_codes = fetch_stock_codes(shared_config_dict)
     ohlcv_data = fetch_ohlcv_data(
         shared_config_dict,
@@ -120,6 +127,7 @@ def prepare_batch_data(
         stock_codes=stock_codes,
         ohlcv_data=ohlcv_data,
         benchmark_data=benchmark_data,
+        include_forecast_revision=include_forecast_revision,
     )
 
 

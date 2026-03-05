@@ -76,6 +76,8 @@ uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mod
   - `entry_filter_only` は後方互換フラグとして維持（`target_scope=entry_filter_only` と同義）
   - `allowed_categories` は `all` または `fundamental` 運用を推奨
 - `/api/lab/optimize` は依存パラメータ制約（`long>short` / `slow>fast` / `max>min`）付きで探索し、`trials>=40` では `stage1(広域)+stage2(局所)` の2段階探索を行う
+- `/api/lab/evolve` も依存パラメータ制約（`long>short` / `slow>fast` / `max>min`）を適用し、baseline（ベース戦略）より悪化した候補は guardrail で棄却して base 採用へフォールバックする
+- `evolve` は世代間で OHLCV/benchmark の prefetch を再利用し、forecast revision が必要になった場合のみ再prefetch する
 - `/api/lab/optimize/recommendation` で探索次元数に応じた `minimum/recommended/high_quality` trial 推奨値を取得可能
 - `evolve` / `optimize` は `--structure-mode` で探索方式を切り替え可能
   - `params_only`: 既存シグナルのパラメータのみ探索

@@ -5,14 +5,18 @@
 """
 
 import copy
+import math
 import random
 from typing import Any
 
 from loguru import logger
 
+from src.domains.optimization.scoring import calculate_weighted_score_from_metrics
 from src.domains.strategy.runtime.loader import ConfigLoader
 
+from .evaluator.data_preparation import BatchPreparedData
 from .models import EvolutionConfig, EvaluationResult, SignalCategory, StrategyCandidate
+from .param_constraints import apply_param_dependency_constraints
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
 from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
@@ -28,6 +32,7 @@ class ParameterEvolver:
 
     # Backward-compatible alias (used by older internal callers).
     PARAM_RANGES = PARAM_RANGES
+    MIN_ACCEPTABLE_RETURN_RATIO = 0.95
 
     def __init__(
         self,
@@ -45,7 +50,6 @@ class ParameterEvolver:
         """
         self.config = config or EvolutionConfig()
         self.shared_config_dict = shared_config_dict
-        self.scoring_weights = scoring_weights
         self.allowed_category_set: set[SignalCategory] = set(self.config.allowed_categories)
 
         # 乱数シード設定
@@ -58,11 +62,14 @@ class ParameterEvolver:
             n_jobs=self.config.n_jobs,
             timeout_seconds=self.config.timeout_seconds,
         )
+        self.scoring_weights = self.evaluator.scoring_weights
 
         # 進化履歴
         self.history: list[dict[str, Any]] = []
         self._base_entry_signals: set[str] = set()
         self._base_exit_signals: set[str] = set()
+        self._baseline_score: float | None = None
+        self._baseline_total_return: float | None = None
 
     def evolve(
         self,
@@ -95,6 +102,8 @@ class ParameterEvolver:
 
         # 初期集団生成
         population = self._initialize_population(base_candidate)
+        prepared_data = self.evaluator.prepare_batch_data(population)
+        self._evaluate_baseline_candidate(base_candidate, prepared_data)
 
         # 最良個体追跡
         best_result: EvaluationResult | None = None
@@ -103,8 +112,17 @@ class ParameterEvolver:
         for generation in range(self.config.generations):
             logger.info(f"Generation {generation + 1}/{self.config.generations}")
 
+            if self._needs_prefetch_upgrade(population, prepared_data):
+                logger.info(
+                    "Evolution prefetch upgraded to include forecast revision data"
+                )
+                prepared_data = self.evaluator.prepare_batch_data(population)
+
             # 評価
-            results = self.evaluator.evaluate_batch(population)
+            results = self.evaluator.evaluate_batch(
+                population,
+                prepared_data=prepared_data,
+            )
             all_results.extend(results)
 
             # 成功した結果のみ抽出
@@ -143,12 +161,14 @@ class ParameterEvolver:
         if best_result is None:
             raise RuntimeError("Evolution failed: no successful evaluations")
 
+        best_candidate = self._resolve_best_candidate(best_result, base_candidate)
+
         logger.info(
             f"Evolution complete: best_score={best_result.score:.4f}, "
             f"sharpe={best_result.sharpe_ratio:.4f}"
         )
 
-        return best_result.candidate, all_results
+        return best_candidate, all_results
 
     def _is_usage_targeted(self, usage_type: str) -> bool:
         """target_scope に基づき対象サイドか判定する。"""
@@ -171,6 +191,108 @@ class ParameterEvolver:
             else 0
         )
         return add_entry, add_exit
+
+    def _needs_prefetch_upgrade(
+        self,
+        population: list[StrategyCandidate],
+        prepared_data: BatchPreparedData,
+    ) -> bool:
+        """未取得だった forecast revision データが必要になった時のみ再prefetchする。"""
+        if prepared_data.include_forecast_revision:
+            return False
+        return self.evaluator.requires_forecast_revision(population)
+
+    @staticmethod
+    def _safe_metric(value: Any) -> float:
+        try:
+            scalar = float(value)
+        except (TypeError, ValueError):
+            return 0.0
+        return scalar if math.isfinite(scalar) else 0.0
+
+    def _calculate_weighted_score(
+        self,
+        sharpe: float,
+        calmar: float,
+        total_return: float,
+    ) -> float:
+        return calculate_weighted_score_from_metrics(
+            {
+                "sharpe_ratio": sharpe,
+                "calmar_ratio": calmar,
+                "total_return": total_return,
+            },
+            self.scoring_weights,
+        )
+
+    def _weighted_score_from_result(self, result: EvaluationResult) -> float:
+        """評価結果を guardrail 比較用の重み付きスコアへ変換する。"""
+        return self._calculate_weighted_score(
+            self._safe_metric(result.sharpe_ratio),
+            self._safe_metric(result.calmar_ratio),
+            self._safe_metric(result.total_return),
+        )
+
+    def _evaluate_baseline_candidate(
+        self,
+        base_candidate: StrategyCandidate,
+        prepared_data: BatchPreparedData,
+    ) -> None:
+        """ベース戦略の基準値を計算して非退行ガードに使う。"""
+        self._baseline_score = None
+        self._baseline_total_return = None
+
+        baseline_result = self.evaluator.evaluate_single(
+            base_candidate,
+            prepared_data=prepared_data,
+        )
+        if not baseline_result.success:
+            logger.warning(
+                "Failed to evaluate baseline strategy for evolve guardrail: "
+                f"strategy={base_candidate.strategy_id}, "
+                f"error={baseline_result.error_message}"
+            )
+            return
+
+        total_return = self._safe_metric(baseline_result.total_return)
+        self._baseline_total_return = total_return
+        self._baseline_score = self._weighted_score_from_result(baseline_result)
+
+        logger.info(
+            "Evolution baseline evaluated: "
+            f"score={self._baseline_score:.4f}, total_return={total_return:.4f}"
+        )
+
+    def _resolve_best_candidate(
+        self,
+        best_result: EvaluationResult,
+        base_candidate: StrategyCandidate,
+    ) -> StrategyCandidate:
+        """非退行ガードを適用し、最終的な採用候補を返す。"""
+        best_score = self._weighted_score_from_result(best_result)
+        if self._baseline_score is not None and best_score < self._baseline_score:
+            logger.warning(
+                "Evolution best score is below baseline; falling back to base strategy "
+                f"(best={best_score:.4f}, baseline={self._baseline_score:.4f})"
+            )
+            return base_candidate
+
+        best_return = self._safe_metric(best_result.total_return)
+        if (
+            self._baseline_total_return is not None
+            and self._baseline_total_return > 0.0
+            and best_return
+            < self._baseline_total_return * self.MIN_ACCEPTABLE_RETURN_RATIO
+        ):
+            logger.warning(
+                "Evolution best return is below acceptable baseline ratio; "
+                "falling back to base strategy "
+                f"(best={best_return:.4f}, baseline={self._baseline_total_return:.4f}, "
+                f"ratio={self.MIN_ACCEPTABLE_RETURN_RATIO:.2f})"
+            )
+            return base_candidate
+
+        return best_result.candidate
 
     def _load_base_strategy(
         self, base_strategy: str | StrategyCandidate
@@ -505,11 +627,20 @@ class ParameterEvolver:
                 continue
 
             min_val, max_val, param_type = ranges[param_name]
+            min_val, max_val = apply_param_dependency_constraints(
+                key=key,
+                min_val=min_val,
+                max_val=max_val,
+                param_type=param_type,
+                sibling_params=params,
+            )
             if param_type == "int":
                 # ガウシアン摂動（整数）
-                delta = int((max_val - min_val) * 0.2 * random.gauss(0, 1))
+                min_int = int(min_val)
+                max_int = int(max_val)
+                delta = int((max_int - min_int) * 0.2 * random.gauss(0, 1))
                 new_value = int(value) + delta
-                params[key] = max(int(min_val), min(int(max_val), new_value))
+                params[key] = max(min_int, min(max_int, new_value))
             else:
                 # ガウシアン摂動（浮動小数点）
                 delta = (max_val - min_val) * 0.2 * random.gauss(0, 1)

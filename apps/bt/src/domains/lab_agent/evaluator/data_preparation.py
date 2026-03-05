@@ -27,6 +27,7 @@ class BatchPreparedData:
     stock_codes: list[str] | None
     ohlcv_data: dict[str, dict[str, Any]] | None
     benchmark_data: dict[str, Any] | None
+    include_forecast_revision: bool = False
 
 
 def convert_dataframes_to_dict(
