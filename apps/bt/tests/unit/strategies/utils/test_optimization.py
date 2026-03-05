@@ -15,7 +15,8 @@ if "src.domains.optimization" not in sys.modules:
     import types
 
     _dummy = types.ModuleType("src.domains.optimization")
-    _dummy.scoring = types.ModuleType("src.domains.optimization.scoring")  # type: ignore[attr-defined]
+    _dummy_scoring = types.ModuleType("src.domains.optimization.scoring")
+    setattr(_dummy, "scoring", _dummy_scoring)
 
     def _is_valid_metric(value):
         import numpy as np
@@ -27,10 +28,10 @@ if "src.domains.optimization" not in sys.modules:
     def _normalize_and_recalculate_scores(results, weights):
         return results
 
-    _dummy.scoring.is_valid_metric = _is_valid_metric  # type: ignore[attr-defined]
-    _dummy.scoring.normalize_and_recalculate_scores = _normalize_and_recalculate_scores  # type: ignore[attr-defined]
+    setattr(_dummy_scoring, "is_valid_metric", _is_valid_metric)
+    setattr(_dummy_scoring, "normalize_and_recalculate_scores", _normalize_and_recalculate_scores)
     sys.modules["src.domains.optimization"] = _dummy
-    sys.modules["src.domains.optimization.scoring"] = _dummy.scoring  # type: ignore[attr-defined]
+    sys.modules["src.domains.optimization.scoring"] = _dummy_scoring
 
 from src.domains.strategy.utils.optimization import (  # noqa: E402
     OptimizationResult,

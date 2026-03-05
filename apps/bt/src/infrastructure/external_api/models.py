@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date, datetime
-from typing import Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -229,7 +229,7 @@ class Portfolio(BaseModel):
 class PaginatedResponse(BaseModel):
     """Paginated API response wrapper."""
 
-    data: list[dict]  # type: ignore[type-arg]
+    data: list[dict[str, Any]]
     total: int
     page: int
     per_page: int = Field(alias="perPage")

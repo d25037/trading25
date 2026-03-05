@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from concurrent.futures import ThreadPoolExecutor
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -200,13 +201,13 @@ class TestAnalyticsRouteHelpers:
     def test_get_roe_service_not_initialized(self) -> None:
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
         with pytest.raises(HTTPException) as exc:
-            analytics_jquants._get_roe_service(request)  # type: ignore[arg-type]
+            analytics_jquants._get_roe_service(cast(Any, request))
         assert exc.value.status_code == 422
 
     def test_get_margin_service_not_initialized(self) -> None:
         request = SimpleNamespace(app=SimpleNamespace(state=SimpleNamespace()))
         with pytest.raises(HTTPException) as exc:
-            analytics_jquants._get_margin_service(request)  # type: ignore[arg-type]
+            analytics_jquants._get_margin_service(cast(Any, request))
         assert exc.value.status_code == 422
 
 

@@ -74,7 +74,7 @@ async def test_bulk_service_build_plan_and_cache_reuse(tmp_path: Path) -> None:
         return payload
 
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_downloader,
     )
@@ -127,7 +127,7 @@ async def test_bulk_service_selects_monthly_file_by_exact_date(tmp_path: Path) -
         raise AssertionError("download should not run in plan-only test")
 
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_never_downloader,
     )
@@ -153,7 +153,7 @@ async def test_bulk_service_fetch_with_callback_without_accumulating_rows(tmp_pa
         return payload
 
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_downloader,
     )
@@ -190,7 +190,7 @@ async def test_bulk_service_wraps_signed_url_download_error(tmp_path: Path) -> N
         raise RuntimeError("network down")
 
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_failing_downloader,
     )
@@ -209,7 +209,7 @@ async def test_bulk_service_raises_when_bulk_get_url_is_missing(tmp_path: Path) 
         bulk_get_payloads={key: {}},
     )
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_noop_downloader,
     )
@@ -232,7 +232,7 @@ async def test_bulk_service_plan_and_fetch_adds_list_call(tmp_path: Path) -> Non
         return payload
 
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_downloader,
     )
@@ -250,7 +250,7 @@ async def test_bulk_service_build_plan_accepts_files_key_payload(tmp_path: Path)
         list_response={"files": [{"Key": monthly_key, "LastModified": "2026-03-01T00:00:00Z", "Size": "abc"}]},
     )
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
         downloader=_noop_downloader,
     )
@@ -271,10 +271,14 @@ async def test_bulk_service_select_files_includes_unknown_range_for_safety(tmp_p
         ],
         signed_urls={},
     )
+
+    async def _empty_downloader(_url: str) -> bytes:
+        return b""
+
     service = JQuantsBulkService(
-        client,  # type: ignore[arg-type]
+        client,
         cache_dir=tmp_path / "bulk-cache",
-        downloader=lambda _url: b"",  # type: ignore[arg-type]
+        downloader=_empty_downloader,
     )
 
     plan = await service.build_plan(endpoint="/fins/summary", date_from="2026-02-01", date_to="2026-02-28")
@@ -283,7 +287,7 @@ async def test_bulk_service_select_files_includes_unknown_range_for_safety(tmp_p
 
 def test_bulk_service_cache_meta_invalid_json_and_non_dict(tmp_path: Path) -> None:
     client = _BulkClient(list_payload=[], signed_urls={})
-    service = JQuantsBulkService(client, cache_dir=tmp_path / "bulk-cache", downloader=_noop_downloader)  # type: ignore[arg-type]
+    service = JQuantsBulkService(client, cache_dir=tmp_path / "bulk-cache", downloader=_noop_downloader)
     key = "equities_bars_daily_20260210.csv.gz"
     meta_path = service._meta_cache_path(key)
 
@@ -313,7 +317,13 @@ async def test_bulk_service_download_bytes_records_metrics(monkeypatch: pytest.M
         async def __aenter__(self) -> "_AsyncClient":
             return self
 
-        async def __aexit__(self, exc_type, exc, tb) -> None:  # type: ignore[no-untyped-def]
+        async def __aexit__(
+            self,
+            exc_type: type[BaseException] | None,
+            exc: BaseException | None,
+            tb: object | None,
+        ) -> None:
+            del exc_type, exc, tb
             return None
 
         async def get(self, url: str) -> _Response:
@@ -321,7 +331,7 @@ async def test_bulk_service_download_bytes_records_metrics(monkeypatch: pytest.M
             return _Response()
 
     client = _BulkClient(list_payload=[], signed_urls={})
-    service = JQuantsBulkService(client, cache_dir=tmp_path / "bulk-cache", downloader=_noop_downloader)  # type: ignore[arg-type]
+    service = JQuantsBulkService(client, cache_dir=tmp_path / "bulk-cache", downloader=_noop_downloader)
 
     recorder = MagicMock()
     monkeypatch.setattr(bulk_module, "metrics_recorder", recorder)

@@ -6,7 +6,7 @@ import threading
 from datetime import UTC, datetime
 from pathlib import Path
 from types import SimpleNamespace
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -20,7 +20,7 @@ def test_execute_attribution_sync_uses_threadsafe_progress(monkeypatch):
     async def _dummy_update_job_status(*args, **kwargs):
         return None
 
-    service._manager.update_job_status = _dummy_update_job_status  # type: ignore[assignment]
+    monkeypatch.setattr(service._manager, "update_job_status", _dummy_update_job_status)
 
     called = {}
     init_args = {}
@@ -74,7 +74,7 @@ def test_execute_attribution_sync_skips_progress_when_cancelled(monkeypatch):
     async def _dummy_update_job_status(*args, **kwargs):
         return None
 
-    service._manager.update_job_status = _dummy_update_job_status  # type: ignore[assignment]
+    monkeypatch.setattr(service._manager, "update_job_status", _dummy_update_job_status)
     called = {"count": 0}
 
     def _fake_run_coroutine_threadsafe(coro, loop):
@@ -172,7 +172,7 @@ class _DummyManager:
 
 
 class _DummyLoop:
-    def __init__(self, result: dict[str, Any] | None = None, exc: Exception | None = None) -> None:
+    def __init__(self, result: dict[str, Any] | None = None, exc: BaseException | None = None) -> None:
         self.result = result
         self.exc = exc
         self.calls: list[tuple[Any, Any, tuple[Any, ...]]] = []
@@ -187,7 +187,7 @@ class _DummyLoop:
 @pytest.mark.asyncio
 async def test_submit_attribution_creates_job_and_registers_task(monkeypatch):
     manager = _DummyManager()
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
 
     fake_task = object()
     captured: dict[str, Any] = {}
@@ -217,7 +217,7 @@ async def test_submit_attribution_creates_job_and_registers_task(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_attribution_success_updates_status_and_stores_raw_result(monkeypatch):
     manager = _DummyManager(with_job=True)
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
     loop = _DummyLoop(result={"baseline_metrics": {"total_return": 1.0, "sharpe_ratio": 1.0}})
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
 
@@ -242,7 +242,7 @@ async def test_run_attribution_success_updates_status_and_stores_raw_result(monk
 @pytest.mark.asyncio
 async def test_run_attribution_success_without_job_entry(monkeypatch):
     manager = _DummyManager(with_job=False)
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
     loop = _DummyLoop(result={"ok": True})
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
 
@@ -263,7 +263,7 @@ async def test_run_attribution_success_without_job_entry(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_attribution_failure_sets_failed_status(monkeypatch):
     manager = _DummyManager(with_job=True)
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
     loop = _DummyLoop(exc=RuntimeError("boom"))
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
 
@@ -285,7 +285,7 @@ async def test_run_attribution_failure_sets_failed_status(monkeypatch):
 @pytest.mark.asyncio
 async def test_run_attribution_cancelled_sets_cancelled_status(monkeypatch):
     manager = _DummyManager(with_job=True)
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
     loop = _DummyLoop(exc=asyncio.CancelledError())
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
     cancel_event = threading.Event()
@@ -308,7 +308,7 @@ async def test_run_attribution_cancelled_sets_cancelled_status(monkeypatch):
 
 def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Path):
     manager = _DummyManager(with_job=True)
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
 
     monkeypatch.setattr(
         "src.application.services.backtest_attribution_service.get_backtest_attribution_dir",
@@ -326,14 +326,20 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
             dataset_base_path="/tmp/datasets",
         ),
     )
-    service._runner.config_loader.load_strategy_config = lambda _name: {  # type: ignore[assignment]
-        "entry_filter_params": {"volume": {"enabled": True}},
-    }
-    service._runner.build_parameters_for_strategy = lambda strategy, config_override: {  # type: ignore[assignment]
-        "shared_config": {"dataset": "prime_202601"},
-        "entry_filter_params": {"volume": {"enabled": True}},
-        "exit_trigger_params": {},
-    }
+    monkeypatch.setattr(
+        service._runner.config_loader,
+        "load_strategy_config",
+        lambda _name: {"entry_filter_params": {"volume": {"enabled": True}}},
+    )
+    monkeypatch.setattr(
+        service._runner,
+        "build_parameters_for_strategy",
+        lambda strategy, config_override: {
+            "shared_config": {"dataset": "prime_202601"},
+            "entry_filter_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {},
+        },
+    )
 
     saved_path = service._persist_attribution_artifact(
         job_id="job-1",
@@ -362,14 +368,14 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
 @pytest.mark.asyncio
 async def test_run_attribution_persistence_failure_does_not_fail_job(monkeypatch):
     manager = _DummyManager(with_job=True)
-    service = BacktestAttributionService(manager=manager)
+    service = BacktestAttributionService(manager=cast(Any, manager))
     loop = _DummyLoop(result={"ok": True})
     monkeypatch.setattr(asyncio, "get_running_loop", lambda: loop)
 
     def _raise_persist(**_kwargs):
         raise RuntimeError("persist failed")
 
-    service._persist_attribution_artifact = _raise_persist  # type: ignore[assignment]
+    monkeypatch.setattr(service, "_persist_attribution_artifact", _raise_persist)
 
     await service._run_attribution(
         job_id="job-1",

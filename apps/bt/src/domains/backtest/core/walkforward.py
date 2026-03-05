@@ -35,7 +35,7 @@ def generate_walkforward_splits(
         test_window: 検証期間（営業日数）
         step: ステップ幅（Noneならtest_window）
     """
-    dates = pd.DatetimeIndex(index).sort_values().unique()  # type: ignore[arg-type]
+    dates = pd.DatetimeIndex(list(index)).sort_values().unique()
     if train_window <= 0 or test_window <= 0:
         raise ValueError("train_windowとtest_windowは正の値である必要があります")
 

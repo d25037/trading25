@@ -11,20 +11,34 @@ import asyncio
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
-from typing import Any
+from typing import Any, Protocol
 
 from loguru import logger
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
-from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
-from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore, TimeSeriesInspection
+from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.sync_strategies import (
     SyncContext,
+    SyncClientLike,
+    SyncMarketDbLike,
+    SyncTimeSeriesStoreLike,
     get_strategy,
 )
 from src.shared.config.reliability import SYNC_JOB_TIMEOUT_MINUTES
+
+
+class SyncServiceMarketDbLike(SyncMarketDbLike, Protocol):
+    def ensure_schema(self) -> None: ...
+
+
+class SyncServiceTimeSeriesStoreLike(SyncTimeSeriesStoreLike, Protocol):
+    def close(self) -> None: ...
+
+
+class SyncServiceClientLike(SyncClientLike, Protocol):
+    pass
 
 
 class SyncMode(str, Enum):
@@ -64,9 +78,9 @@ def _inspection_has_existing_snapshot(inspection: TimeSeriesInspection) -> bool:
 
 def _resolve_mode(
     mode: SyncMode,
-    market_db: MarketDb,
+    market_db: SyncServiceMarketDbLike,
     *,
-    time_series_store: MarketTimeSeriesStore | None = None,
+    time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
 ) -> str:
     """auto モードを実際の戦略に解決"""
     if mode != SyncMode.AUTO:
@@ -89,9 +103,9 @@ def _resolve_mode(
 
 async def start_sync(
     mode: SyncMode,
-    market_db: MarketDb,
-    jquants_client: JQuantsAsyncClient,
-    time_series_store: MarketTimeSeriesStore | None = None,
+    market_db: SyncServiceMarketDbLike,
+    jquants_client: SyncServiceClientLike,
+    time_series_store: SyncServiceTimeSeriesStoreLike | None = None,
     close_time_series_store: bool = False,
     enforce_bulk_for_stock_data: bool = False,
 ) -> JobInfo[SyncJobData, SyncProgress, SyncResult] | None:

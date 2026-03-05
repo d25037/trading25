@@ -18,7 +18,7 @@ def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: P
     async def _dummy_update_job_status(*args, **kwargs):
         return None
 
-    service._manager.update_job_status = _dummy_update_job_status  # type: ignore[assignment]
+    monkeypatch.setattr(service._manager, "update_job_status", _dummy_update_job_status)
 
     result = BacktestResult(
         html_path=tmp_path / "result.html",
@@ -39,7 +39,7 @@ def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: P
             progress_callback("running", 0.1)
         return result
 
-    service._runner.execute = _fake_execute  # type: ignore[assignment]
+    monkeypatch.setattr(service._runner, "execute", _fake_execute)
 
     called = {}
 
@@ -59,7 +59,7 @@ def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: P
     assert called["loop"] is loop
 
 
-def test_execute_backtest_sync_uses_runner_default_data_access_mode(tmp_path: Path):
+def test_execute_backtest_sync_uses_runner_default_data_access_mode(monkeypatch, tmp_path: Path):
     service = BacktestService()
 
     result = BacktestResult(
@@ -76,7 +76,7 @@ def test_execute_backtest_sync_uses_runner_default_data_access_mode(tmp_path: Pa
         captured.update(kwargs)
         return result
 
-    service._runner.execute = _fake_execute  # type: ignore[assignment]
+    monkeypatch.setattr(service._runner, "execute", _fake_execute)
 
     loop = asyncio.new_event_loop()
     try:
@@ -138,10 +138,10 @@ async def test_run_backtest_success_updates_result_and_status(monkeypatch, tmp_p
     async def _set_job_result(**kwargs):
         events.append(("result", kwargs))
 
-    service._manager.acquire_slot = _acquire_slot  # type: ignore[assignment]
-    service._manager.update_job_status = _update_job_status  # type: ignore[assignment]
-    service._manager.set_job_result = _set_job_result  # type: ignore[assignment]
-    service._manager.release_slot = lambda: events.append(("release", None))  # type: ignore[assignment]
+    monkeypatch.setattr(service._manager, "acquire_slot", _acquire_slot)
+    monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
+    monkeypatch.setattr(service._manager, "set_job_result", _set_job_result)
+    monkeypatch.setattr(service._manager, "release_slot", lambda: events.append(("release", None)))
 
     class _FakeLoop:
         def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
@@ -173,9 +173,9 @@ async def test_run_backtest_handles_cancelled_and_failure(monkeypatch):
         events.append(("status", (job_id, status, kwargs)))
         status_values.append(status.value)
 
-    service._manager.acquire_slot = _acquire_slot  # type: ignore[assignment]
-    service._manager.update_job_status = _update_job_status  # type: ignore[assignment]
-    service._manager.release_slot = lambda: events.append(("release", None))  # type: ignore[assignment]
+    monkeypatch.setattr(service._manager, "acquire_slot", _acquire_slot)
+    monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
+    monkeypatch.setattr(service._manager, "release_slot", lambda: events.append(("release", None)))
 
     class _CancelledLoop:
         def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
@@ -263,8 +263,8 @@ def test_extract_result_summary_fallback_when_metrics_fail(tmp_path: Path):
         assert summary.trade_count == 12
 
 
-def test_get_execution_info_delegates_to_runner():
+def test_get_execution_info_delegates_to_runner(monkeypatch):
     service = BacktestService()
-    service._runner.get_execution_info = lambda name: {"strategy": name}  # type: ignore[assignment]
+    monkeypatch.setattr(service._runner, "get_execution_info", lambda name: {"strategy": name})
 
     assert service.get_execution_info("abc") == {"strategy": "abc"}

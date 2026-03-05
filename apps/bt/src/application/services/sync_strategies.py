@@ -24,10 +24,8 @@ from src.application.services.jquants_bulk_service import (
     BulkFetchResult,
     JQuantsBulkService,
 )
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
-from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
-    MarketTimeSeriesStore,
     TimeSeriesInspection,
 )
 from src.infrastructure.db.market.query_helpers import (
@@ -48,15 +46,75 @@ from src.application.services.index_master_catalog import (
 from src.application.services.stock_data_row_builder import build_stock_data_row
 
 
+class SyncClientLike(Protocol):
+    async def get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
+
+    async def get_paginated(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+
+class SyncMarketDbLike(Protocol):
+    def get_sync_metadata(self, key: str) -> str | None: ...
+    def set_sync_metadata(self, key: str, value: str) -> None: ...
+    def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
+    def get_prime_codes(self) -> set[str]: ...
+    def upsert_index_master(self, rows: list[dict[str, Any]]) -> Any: ...
+    def get_index_master_codes(self) -> set[str]: ...
+
+
+class BulkServiceLike(Protocol):
+    async def build_plan(
+        self,
+        *,
+        endpoint: str,
+        date_from: str | None = None,
+        date_to: str | None = None,
+        exact_dates: list[str] | None = None,
+    ) -> BulkFetchPlan: ...
+
+    async def fetch_with_plan(
+        self,
+        plan: BulkFetchPlan,
+        *,
+        on_rows_batch: Callable[[list[dict[str, Any]], BulkFileInfo], Awaitable[None]] | None = None,
+        accumulate_rows: bool = True,
+    ) -> BulkFetchResult: ...
+
+
+class SyncTimeSeriesStoreLike(Protocol):
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> TimeSeriesInspection: ...
+
+    def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_statements(self, rows: list[dict[str, Any]]) -> int: ...
+    def index_topix_data(self) -> None: ...
+    def index_stock_data(self) -> None: ...
+    def index_indices_data(self) -> None: ...
+    def index_statements(self) -> None: ...
+
+
 @dataclass
 class SyncContext:
-    client: JQuantsAsyncClient
-    market_db: MarketDb
+    client: SyncClientLike
+    market_db: SyncMarketDbLike
     cancelled: asyncio.Event
     on_progress: Callable[[str, int, int, str], None]
     on_fetch_detail: Callable[[dict[str, Any]], None] | None = None
-    time_series_store: MarketTimeSeriesStore | None = None
-    bulk_service: JQuantsBulkService | None = None
+    time_series_store: SyncTimeSeriesStoreLike | None = None
+    bulk_service: BulkServiceLike | None = None
     bulk_probe_disabled: bool = False
     bulk_probe_failure_reason: str | None = None
     enforce_bulk_for_stock_data: bool = False
@@ -156,18 +214,18 @@ _BULK_FINS_KEY_ALIASES: dict[str, str] = {
 }
 
 
-def _get_plan_hint(client: JQuantsAsyncClient) -> str:
+def _get_plan_hint(client: SyncClientLike) -> str:
     return str(getattr(client, "plan", "")).strip().lower()
 
 
-def _get_bulk_service(ctx: SyncContext) -> JQuantsBulkService:
+def _get_bulk_service(ctx: SyncContext) -> BulkServiceLike:
     if ctx.bulk_service is None:
         ctx.bulk_service = JQuantsBulkService(ctx.client)
     return ctx.bulk_service
 
 
 async def _get_paginated_rows_with_call_count(
-    client: JQuantsAsyncClient,
+    client: SyncClientLike,
     path: str,
     *,
     params: dict[str, Any] | None = None,
@@ -2163,7 +2221,7 @@ async def _sync_fundamentals_incremental(
 
 
 async def _fetch_fins_summary_paginated(
-    client: JQuantsAsyncClient,
+    client: SyncClientLike,
     params: dict[str, Any],
 ) -> tuple[list[dict[str, Any]], int]:
     """`/fins/summary` を pagination_key が尽きるまで取得する。"""
@@ -2191,7 +2249,7 @@ async def _fetch_fins_summary_paginated(
 
 
 async def _fetch_fins_summary_by_code(
-    client: JQuantsAsyncClient,
+    client: SyncClientLike,
     code: str,
 ) -> tuple[list[dict[str, Any]], int]:
     """Fetch /fins/summary by trying both 5-digit and 4-digit code formats.
@@ -2255,7 +2313,7 @@ def _is_prime_market_code(value: Any) -> bool:
     return normalized in _PRIME_MARKET_CODES
 
 
-def _load_metadata_json_list(market_db: MarketDb, key: str) -> list[str]:
+def _load_metadata_json_list(market_db: SyncMarketDbLike, key: str) -> list[str]:
     raw = market_db.get_sync_metadata(key)
     if not raw:
         return []
@@ -2339,7 +2397,7 @@ def _build_incremental_date_targets(anchor: str | None, retry_dates: list[str]) 
     return targets
 
 
-def _require_time_series_store(ctx: SyncContext) -> MarketTimeSeriesStore:
+def _require_time_series_store(ctx: SyncContext) -> SyncTimeSeriesStoreLike:
     if ctx.time_series_store is None:
         raise RuntimeError("DuckDB time-series store is required for sync strategy execution")
     return ctx.time_series_store

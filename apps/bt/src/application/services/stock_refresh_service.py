@@ -9,23 +9,45 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Protocol
 
 from loguru import logger
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
-from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
-from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
+from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 from src.entrypoints.http.schemas.db import RefreshResponse, RefreshStockResult
 from src.application.services.stock_data_row_builder import build_stock_data_row
 
 
+class StockRefreshMarketDbLike(Protocol):
+    def set_sync_metadata(self, key: str, value: str) -> None: ...
+
+
+class StockRefreshClientLike(Protocol):
+    async def get_paginated(
+        self,
+        path: str,
+        params: dict[str, str] | None = None,
+    ) -> list[dict[str, Any]]: ...
+
+
+class StockRefreshTimeSeriesStoreLike(Protocol):
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> Any: ...
+
+    def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def index_stock_data(self) -> None: ...
+
+
 async def refresh_stocks(
     codes: list[str],
-    market_db: MarketDb,
-    time_series_store: MarketTimeSeriesStore,
-    jquants_client: JQuantsAsyncClient,
+    market_db: StockRefreshMarketDbLike,
+    time_series_store: StockRefreshTimeSeriesStoreLike,
+    jquants_client: StockRefreshClientLike,
 ) -> RefreshResponse:
     """銘柄データを再取得"""
     total_calls = 0

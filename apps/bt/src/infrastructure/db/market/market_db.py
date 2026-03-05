@@ -8,11 +8,12 @@ metadata / reference data（stocks, sync_metadata, index_master）と
 
 from __future__ import annotations
 
+import importlib
 import os
 import threading
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 # Hono 互換 metadata キー
 METADATA_KEYS = {
@@ -81,9 +82,8 @@ class MarketDb:
         self._read_only = read_only
         Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
 
-        import duckdb  # type: ignore[import-not-found]
-
-        self._conn = duckdb.connect(self._db_path, read_only=read_only)
+        duckdb = importlib.import_module("duckdb")
+        self._conn = cast(Any, duckdb).connect(self._db_path, read_only=read_only)
         self._lock = threading.RLock()
         if not read_only:
             self.ensure_schema()

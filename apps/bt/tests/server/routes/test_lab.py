@@ -4,6 +4,7 @@ Lab API Tests
 Lab APIスキーマバリデーション + エンドポイントのテスト
 """
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -97,17 +98,17 @@ class TestLabGenerateRequestSchema:
     def test_invalid_direction(self) -> None:
         """不正なdirectionでバリデーションエラー"""
         with pytest.raises(ValidationError):
-            LabGenerateRequest(direction="invalid")  # type: ignore[arg-type]
+            LabGenerateRequest(direction=cast(Any, "invalid"))
 
     def test_invalid_timeframe(self) -> None:
         """不正なtimeframeでバリデーションエラー"""
         with pytest.raises(ValidationError):
-            LabGenerateRequest(timeframe="monthly")  # type: ignore[arg-type]
+            LabGenerateRequest(timeframe=cast(Any, "monthly"))
 
     def test_invalid_allowed_category(self) -> None:
         """不正なallowed_categoriesでバリデーションエラー"""
         with pytest.raises(ValidationError):
-            LabGenerateRequest(allowed_categories=["invalid"])  # type: ignore[list-item]
+            LabGenerateRequest(allowed_categories=cast(Any, ["invalid"]))
 
 
 class TestLabEvolveRequestSchema:
@@ -165,7 +166,7 @@ class TestLabEvolveRequestSchema:
     def test_invalid_allowed_category(self) -> None:
         """不正なallowed_categoriesでバリデーションエラー"""
         with pytest.raises(ValidationError):
-            LabEvolveRequest(strategy_name="test", allowed_categories=["invalid"])  # type: ignore[list-item]
+            LabEvolveRequest(strategy_name="test", allowed_categories=cast(Any, ["invalid"]))
 
     def test_target_scope_conflict(self) -> None:
         with pytest.raises(ValidationError):
@@ -196,7 +197,7 @@ class TestLabOptimizeRequestSchema:
         for sampler in ("tpe", "random", "cmaes"):
             req = LabOptimizeRequest(
                 strategy_name="test",
-                sampler=sampler,  # type: ignore[arg-type]
+                sampler=cast(Any, sampler),
             )
             assert req.sampler == sampler
 
@@ -205,7 +206,7 @@ class TestLabOptimizeRequestSchema:
         with pytest.raises(ValidationError):
             LabOptimizeRequest(
                 strategy_name="test",
-                sampler="invalid",  # type: ignore[arg-type]
+                sampler=cast(Any, "invalid"),
             )
 
     def test_trials_bounds(self) -> None:
@@ -245,7 +246,7 @@ class TestLabOptimizeRequestSchema:
     def test_invalid_allowed_category(self) -> None:
         """不正なallowed_categoriesでバリデーションエラー"""
         with pytest.raises(ValidationError):
-            LabOptimizeRequest(strategy_name="test", allowed_categories=["invalid"])  # type: ignore[list-item]
+            LabOptimizeRequest(strategy_name="test", allowed_categories=cast(Any, ["invalid"]))
 
     def test_target_scope_conflict(self) -> None:
         with pytest.raises(ValidationError):
@@ -928,7 +929,7 @@ class TestLabEdgeCases:
     def test_generate_request_all_directions(self) -> None:
         """全direction値がバリデーションを通る"""
         for direction in ("longonly", "shortonly", "both"):
-            req = LabGenerateRequest(direction=direction)  # type: ignore[arg-type]
+            req = LabGenerateRequest(direction=cast(Any, direction))
             assert req.direction == direction
 
     def test_lab_job_response_serialization(self) -> None:
@@ -1042,7 +1043,7 @@ class TestLabServiceAsync:
         sync_args: tuple[object, ...],
         mock_result: dict[str, object] | None = None,
         side_effect: type[BaseException] | Exception | None = None,
-    ) -> tuple["LabService", str]:  # type: ignore[name-defined]  # noqa: F821
+    ) -> tuple[Any, str]:
         """_run_job テストの共通ヘルパー"""
         from src.application.services.lab_service import LabService
 
@@ -1050,24 +1051,32 @@ class TestLabServiceAsync:
         service = LabService(manager=manager, max_workers=1)
         job_id = manager.create_job("test", job_type=job_type)
 
-        patch_kwargs: dict[str, object] = {}
         if side_effect is not None:
-            patch_kwargs["side_effect"] = side_effect
+            with patch.object(service, sync_method, side_effect=side_effect):
+                await service._run_job(
+                    job_id=job_id,
+                    lab_type=lab_type,
+                    start_message="開始...",
+                    complete_message="完了",
+                    cancel_message="キャンセル",
+                    fail_message="失敗",
+                    log_detail="test",
+                    sync_fn=getattr(service, sync_method),
+                    sync_args=sync_args,
+                )
         else:
-            patch_kwargs["return_value"] = mock_result
-
-        with patch.object(service, sync_method, **patch_kwargs):  # type: ignore[arg-type]
-            await service._run_job(
-                job_id=job_id,
-                lab_type=lab_type,
-                start_message="開始...",
-                complete_message="完了",
-                cancel_message="キャンセル",
-                fail_message="失敗",
-                log_detail="test",
-                sync_fn=getattr(service, sync_method),
-                sync_args=sync_args,
-            )
+            with patch.object(service, sync_method, return_value=mock_result):
+                await service._run_job(
+                    job_id=job_id,
+                    lab_type=lab_type,
+                    start_message="開始...",
+                    complete_message="完了",
+                    cancel_message="キャンセル",
+                    fail_message="失敗",
+                    log_detail="test",
+                    sync_fn=getattr(service, sync_method),
+                    sync_args=sync_args,
+                )
 
         return service, job_id
 

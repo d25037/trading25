@@ -4,6 +4,7 @@ JQuants Proxy Routes Tests
 sync_client + mock を使用したルートテスト。
 """
 
+from typing import Any, cast
 from unittest.mock import AsyncMock, patch
 
 import pytest
@@ -19,6 +20,14 @@ from src.entrypoints.http.schemas.jquants import (
     StatementsResponse,
     TopixRawResponse,
 )
+
+
+def _proxy_service(app_client: TestClient) -> Any:
+    return cast(Any, app_client.app.state).jquants_proxy_service
+
+
+def _proxy_client(app_client: TestClient) -> Any:
+    return cast(Any, _proxy_service(app_client))._client
 
 
 @pytest.fixture
@@ -48,7 +57,7 @@ class TestDailyQuotes:
         """code パラメータ指定で 200 を返す（JQuants API はモック経由）"""
         mock_response = DailyQuotesResponse(data=[])
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_daily_quotes",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -63,7 +72,7 @@ class TestIndices:
         """from > to の場合 422"""
         mock_response = ApiIndicesResponse(indices=[], lastUpdated="2024-01-01")
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_indices",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -74,7 +83,7 @@ class TestIndices:
     def test_indices_success(self, app_client):
         mock_response = ApiIndicesResponse(indices=[], lastUpdated="2024-01-01")
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_indices",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -87,7 +96,7 @@ class TestListedInfo:
     def test_listed_info_success(self, app_client):
         mock_response = ApiListedInfoResponse(info=[], lastUpdated="2024-01-01")
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_listed_info",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -107,7 +116,7 @@ class TestMarginInterest:
             marginInterest=[], symbol="7203", lastUpdated="2024-01-01"
         )
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_margin_interest",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -125,7 +134,7 @@ class TestStatements:
     def test_statements_success(self, app_client):
         mock_response = StatementsResponse(data=[])
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_statements",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -136,7 +145,7 @@ class TestStatements:
     def test_statements_raw_success(self, app_client):
         mock_response = RawStatementsResponse(data=[])
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_statements_raw",
             new_callable=AsyncMock,
             return_value=mock_response,
@@ -160,7 +169,7 @@ class TestStatements:
             ]
         }
         with patch.object(
-            app_client.app.state.jquants_proxy_service._client,  # type: ignore[union-attr]
+            _proxy_client(app_client),
             "get",
             new_callable=AsyncMock,
             return_value=raw_body,
@@ -176,7 +185,7 @@ class TestTopix:
     def test_topix_success(self, app_client):
         mock_response = TopixRawResponse(topix=[])
         with patch.object(
-            app_client.app.state.jquants_proxy_service,  # type: ignore[union-attr]
+            _proxy_service(app_client),
             "get_topix",
             new_callable=AsyncMock,
             return_value=mock_response,

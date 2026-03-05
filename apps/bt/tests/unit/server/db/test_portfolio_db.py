@@ -4,6 +4,7 @@ Tests for PortfolioDb
 
 from __future__ import annotations
 
+from collections.abc import Generator
 from pathlib import Path
 
 import pytest
@@ -13,9 +14,9 @@ from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
 @pytest.fixture()
-def pdb(tmp_path: Path) -> PortfolioDb:
+def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db = PortfolioDb(str(tmp_path / "portfolio.db"))
-    yield db  # type: ignore[misc]
+    yield db
     db.close()
 
 

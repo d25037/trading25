@@ -1,5 +1,6 @@
 """Tests for DatasetWriter."""
 
+from collections.abc import Generator
 import os
 import tempfile
 
@@ -10,12 +11,12 @@ from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
 
 
 @pytest.fixture
-def writer() -> DatasetWriter:
+def writer() -> Generator[DatasetWriter, None, None]:
     """Temporary database writer."""
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     w = DatasetWriter(path)
-    yield w  # type: ignore[misc]
+    yield w
     w.close()
     os.unlink(path)
 

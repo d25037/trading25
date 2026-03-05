@@ -2,6 +2,8 @@
 共通財務計算関数のユニットテスト
 """
 
+from typing import cast
+
 import numpy as np
 import pandas as pd
 import pytest
@@ -83,7 +85,7 @@ class TestCalcMarketCapScalar:
 
     def test_shares_outstanding_none(self):
         """発行済み株式数None → None"""
-        assert calc_market_cap_scalar(1000.0, None, 0.0) is None  # type: ignore[arg-type]
+        assert calc_market_cap_scalar(1000.0, cast(float, None), 0.0) is None
 
     def test_zero_actual_shares(self):
         """実質株式数0（全て自己株式） → None"""

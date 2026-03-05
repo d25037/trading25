@@ -6,9 +6,11 @@ market time-series データ（DuckDB SoT）への読み取り専用アクセス
 
 from __future__ import annotations
 
+import importlib
 import threading
 from dataclasses import dataclass
-from typing import Any
+from collections.abc import Iterator
+from typing import Any, cast
 
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 
@@ -33,7 +35,7 @@ class _DuckDbRow:
         except KeyError as exc:
             raise AttributeError(name) from exc
 
-    def __iter__(self):  # type: ignore[override]
+    def __iter__(self) -> Iterator[tuple[str, Any]]:
         return iter(zip(self._columns, self._values))
 
     def keys(self) -> tuple[str, ...]:
@@ -55,11 +57,11 @@ class MarketDbReader:
         self._conn_lock = threading.Lock()
 
     def _create_connection(self) -> Any:
-        import duckdb  # type: ignore[import-not-found]
+        duckdb = importlib.import_module("duckdb")
 
         # Keep the same default connection mode as the time-series store.
         # DuckDB rejects mixed configs (e.g. read_only + read_write) for one file in a process.
-        return duckdb.connect(self._db_path)
+        return cast(Any, duckdb).connect(self._db_path)
 
     def _get_thread_connection(self) -> Any:
         thread_id = threading.get_ident()

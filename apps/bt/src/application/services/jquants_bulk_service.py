@@ -15,14 +15,21 @@ from collections.abc import Iterator
 from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
-from typing import Any, Awaitable, Callable
+from typing import Any, Awaitable, Callable, Protocol
 
 import httpx
 from loguru import logger
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.shared.observability.metrics import metrics_recorder
 from src.shared.paths import get_cache_dir
+
+
+class BulkApiClientLike(Protocol):
+    async def get(
+        self,
+        path: str,
+        params: dict[str, Any] | None = None,
+    ) -> dict[str, Any]: ...
 
 
 @dataclass(frozen=True)
@@ -58,7 +65,7 @@ class JQuantsBulkService:
 
     def __init__(
         self,
-        client: JQuantsAsyncClient,
+        client: BulkApiClientLike,
         *,
         cache_dir: Path | None = None,
         downloader: Callable[[str], Awaitable[bytes]] | None = None,

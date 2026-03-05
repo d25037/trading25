@@ -8,13 +8,11 @@ from __future__ import annotations
 
 import json
 from datetime import UTC, datetime
-from typing import Any
-from typing import Literal
+from typing import Any, Literal, Protocol
 
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
-from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
-    MarketTimeSeriesStore,
     TimeSeriesInspection,
 )
 from src.entrypoints.http.schemas.db import (
@@ -75,10 +73,29 @@ _SIGNAL_STATEMENT_COLUMNS = sorted(
 )
 
 
+class ValidationMarketDbLike(Protocol):
+    def is_initialized(self) -> bool: ...
+    def get_sync_metadata(self, key: str) -> str | None: ...
+    def get_stats(self) -> dict[str, int]: ...
+    def get_stock_count_by_market(self) -> dict[str, int]: ...
+    def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
+    def get_stocks_needing_refresh(self, limit: int = 100) -> list[str]: ...
+    def get_prime_codes(self) -> set[str]: ...
+
+
+class ValidationTimeSeriesStoreLike(Protocol):
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> TimeSeriesInspection: ...
+
+
 def validate_market_db(
-    market_db: MarketDb,
+    market_db: ValidationMarketDbLike,
     *,
-    time_series_store: MarketTimeSeriesStore,
+    time_series_store: ValidationTimeSeriesStoreLike,
 ) -> MarketValidationResponse:
     """DuckDB 時系列 SoT を基準とした整合性検証。"""
     initialized = market_db.is_initialized()
@@ -227,7 +244,7 @@ def validate_market_db(
 
 
 def _resolve_time_series_inspection(
-    time_series_store: MarketTimeSeriesStore,
+    time_series_store: ValidationTimeSeriesStoreLike,
 ) -> TimeSeriesInspection:
     return time_series_store.inspect(
         missing_stock_dates_limit=100,
@@ -236,7 +253,7 @@ def _resolve_time_series_inspection(
 
 
 def _build_prime_statement_coverage(
-    market_db: MarketDb,
+    market_db: ValidationMarketDbLike,
     statement_codes: set[str],
     *,
     limit_missing: int = 20,
@@ -358,7 +375,7 @@ def _is_statement_requirement_satisfied(
     return False
 
 
-def _load_metadata_list(market_db: MarketDb, key: str) -> list[str]:
+def _load_metadata_list(market_db: ValidationMarketDbLike, key: str) -> list[str]:
     raw = market_db.get_sync_metadata(key)
     if not raw:
         return []

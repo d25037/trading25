@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -122,7 +123,7 @@ def test_sort_results_supports_non_score_keys_and_fallback() -> None:
     by_date = sort_results([row1, row2], "matchedDate", "asc")
     by_code = sort_results([row2, row1], "stockCode", "desc")
     by_count = sort_results([row2, row1], "matchStrategyCount", "desc")
-    passthrough = sort_results([row1], "unknown", "asc")  # type: ignore[arg-type]
+    passthrough = sort_results([row1], cast(Any, "unknown"), "asc")
 
     assert [row.stockCode for row in by_date] == ["1002", "1001"]
     assert [row.stockCode for row in by_code] == ["1002", "1001"]

@@ -53,6 +53,16 @@ class DummyTimeSeriesStore:
         self.close_calls += 1
 
 
+class DummyJQuantsClient:
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        del path, params
+        return {"data": []}
+
+    async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        del path, params
+        return []
+
+
 class StrategyProbe:
     def __init__(
         self,
@@ -150,8 +160,8 @@ async def test_start_sync_requires_duckdb_store(isolated_manager: GenericJobMana
     with pytest.raises(RuntimeError, match="DuckDB time-series store is required for sync"):
         await sync_service.start_sync(
             SyncMode.AUTO,
-            DummyMarketDb(),  # type: ignore[arg-type]
-            object(),  # type: ignore[arg-type]
+            DummyMarketDb(),
+            DummyJQuantsClient(),
             time_series_store=None,
         )
 
@@ -171,9 +181,9 @@ async def test_start_sync_returns_none_when_manager_rejects_job(
 
     job = await sync_service.start_sync(
         SyncMode.AUTO,
-        DummyMarketDb(),  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]
-        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+        DummyMarketDb(),
+        DummyJQuantsClient(),
+        time_series_store=DummyTimeSeriesStore(),
     )
     assert job is None
 
@@ -190,9 +200,9 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     store = DummyTimeSeriesStore()
     job = await sync_service.start_sync(
         SyncMode.AUTO,
-        market_db,  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]
-        time_series_store=store,  # type: ignore[arg-type]
+        market_db,
+        DummyJQuantsClient(),
+        time_series_store=store,
         close_time_series_store=True,
     )
     assert job is not None
@@ -224,9 +234,9 @@ async def test_start_sync_passes_requested_bulk_enforcement(
 
     job = await sync_service.start_sync(
         SyncMode.INCREMENTAL,
-        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]
-        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=DummyTimeSeriesStore(),
         enforce_bulk_for_stock_data=True,
     )
     assert job is not None and job.task is not None
@@ -256,9 +266,9 @@ async def test_start_sync_marks_failed_on_timeout(
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
-        DummyMarketDb(),  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]
-        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+        DummyMarketDb(),
+        DummyJQuantsClient(),
+        time_series_store=DummyTimeSeriesStore(),
     )
     assert job is not None and job.task is not None
     await job.task
@@ -279,9 +289,9 @@ async def test_start_sync_marks_failed_on_unexpected_exception(
 
     job = await sync_service.start_sync(
         SyncMode.INCREMENTAL,
-        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]
-        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),
+        DummyJQuantsClient(),
+        time_series_store=DummyTimeSeriesStore(),
     )
     assert job is not None and job.task is not None
     await job.task
@@ -303,9 +313,9 @@ async def test_start_sync_skips_completion_when_job_already_cancelled(
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
-        DummyMarketDb(),  # type: ignore[arg-type]
-        object(),  # type: ignore[arg-type]
-        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+        DummyMarketDb(),
+        DummyJQuantsClient(),
+        time_series_store=DummyTimeSeriesStore(),
     )
     assert job is not None and job.task is not None
     await job.task

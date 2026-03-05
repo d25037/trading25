@@ -295,7 +295,7 @@ class TestJobManager:
         )
         assert queue.qsize() == 1
 
-    def test_cleanup_old_jobs_with_db_delete_mismatch(self, tmp_path):
+    def test_cleanup_old_jobs_with_db_delete_mismatch(self, tmp_path, monkeypatch: pytest.MonkeyPatch):
         db = PortfolioDb(str(tmp_path / "portfolio.db"))
         try:
             mgr = JobManager()
@@ -305,7 +305,7 @@ class TestJobManager:
             assert job is not None
             job.status = JobStatus.COMPLETED
             job.created_at = datetime.now() - timedelta(hours=25)
-            db.delete_jobs = Mock(return_value=0)  # type: ignore[method-assign]
+            monkeypatch.setattr(db, "delete_jobs", Mock(return_value=0))
             deleted = mgr.cleanup_old_jobs(max_age_hours=24)
             assert deleted == 1
         finally:
