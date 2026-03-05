@@ -490,6 +490,17 @@ export interface LabOptimizeRequest {
   scoring_weights?: Record<string, number>;
 }
 
+export interface LabOptimizeTrialRecommendationResponse {
+  strategy_name: string;
+  target_scope: LabTargetScope;
+  allowed_categories: LabSignalCategory[];
+  dimension_count: number;
+  minimum_trials: number;
+  recommended_trials: number;
+  high_quality_trials: number;
+  formula: string;
+}
+
 export interface LabImproveRequest {
   strategy_name: string;
   auto_apply?: boolean;

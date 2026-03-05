@@ -20,12 +20,16 @@ from src.entrypoints.http.schemas.lab import (
     LabImproveResult,
     LabJobResponse,
     LabOptimizeRequest,
+    LabOptimizeRecommendationResponse,
     LabOptimizeResult,
     LabResultData,
+    LabSignalCategory,
+    LabTargetScope,
 )
 from src.application.services.job_manager import JobInfo, job_manager
 from src.application.services.lab_service import lab_service
 from src.application.services.sse_manager import sse_manager
+from src.domains.lab_agent.optuna_optimizer import OptunaOptimizer
 
 router = APIRouter(tags=["Lab"])
 
@@ -170,6 +174,40 @@ async def run_lab_optimize(request: LabOptimizeRequest) -> LabJobResponse:
         },
         error_label="optimize",
     )
+
+
+@router.get(
+    "/api/lab/optimize/recommendation",
+    response_model=LabOptimizeRecommendationResponse,
+)
+async def get_lab_optimize_recommendation(
+    strategy_name: str = Query(..., min_length=1),
+    target_scope: LabTargetScope = Query(default="both"),
+    allowed_categories: list[LabSignalCategory] | None = Query(default=None),
+) -> LabOptimizeRecommendationResponse:
+    """戦略の探索次元数から Optuna の試行回数推奨値を返す。"""
+    categories = list(allowed_categories or [])
+    try:
+        recommendation = OptunaOptimizer.estimate_trial_recommendation(
+            strategy_name=strategy_name,
+            target_scope=target_scope,
+            allowed_categories=categories,
+        )
+        return LabOptimizeRecommendationResponse(
+            strategy_name=strategy_name,
+            target_scope=target_scope,
+            allowed_categories=categories,
+            dimension_count=int(recommendation["dimension_count"]),
+            minimum_trials=int(recommendation["minimum_trials"]),
+            recommended_trials=int(recommendation["recommended_trials"]),
+            high_quality_trials=int(recommendation["high_quality_trials"]),
+            formula="minimum=max(40,8*N), recommended=max(60,15*N), high_quality=max(100,25*N)",
+        )
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.exception("Lab optimize recommendation error")
+        raise HTTPException(status_code=500, detail=str(e)) from e
 
 
 @router.post("/api/lab/improve", response_model=LabJobResponse)

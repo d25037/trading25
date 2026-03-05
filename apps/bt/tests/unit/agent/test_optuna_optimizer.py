@@ -6,6 +6,7 @@ from unittest.mock import MagicMock, patch
 import pandas as pd
 import pytest
 
+from src.domains.lab_agent import optuna_optimizer as optuna_optimizer_module
 from src.domains.lab_agent.models import OptunaConfig, StrategyCandidate
 from src.domains.lab_agent.optuna_optimizer import OptunaOptimizer, _extract_enabled_signal_names
 
@@ -63,6 +64,12 @@ class TestOptunaOptimizerInit:
         optimizer = OptunaOptimizer()
         assert "sharpe_ratio" in optimizer.scoring_weights
         assert "calmar_ratio" in optimizer.scoring_weights
+
+    def test_recommend_trials_from_dimension_count(self):
+        recommendation = OptunaOptimizer.recommend_trials_from_dimension_count(17)
+        assert recommendation["minimum_trials"] == 136
+        assert recommendation["recommended_trials"] == 255
+        assert recommendation["high_quality_trials"] == 425
 
     def test_load_base_strategy_from_name(self):
         optimizer = _make_optimizer()
@@ -194,6 +201,184 @@ class TestOptimizeFlow:
             patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
             optimizer.optimize("demo_strategy", progress_callback=None)
+
+    def test_optimize_uses_two_stage_plan_when_trials_are_large(self):
+        optimizer = _make_optimizer(n_trials=50)
+        study = MagicMock()
+        study.trials = []
+        study.best_trial = MagicMock()
+        study.best_trial.value = 1.0
+        study.best_trial.user_attrs = {"total_return": 0.2}
+        study.best_value = 1.0
+        study.best_params = {}
+
+        optimize_calls: list[int] = []
+
+        def fake_optimize(_objective, n_trials, n_jobs, show_progress_bar, callbacks):
+            optimize_calls.append(n_trials)
+
+        study.optimize.side_effect = fake_optimize
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
+            patch.object(optimizer, "_build_stage2_local_search_space", return_value=({}, [])),
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer.optimize("demo_strategy", progress_callback=None)
+
+        assert optimize_calls == [30, 20]
+
+    def test_optimize_enables_stage2_local_search_when_overrides_exist(self):
+        optimizer = _make_optimizer(n_trials=50)
+        study = MagicMock()
+        study.trials = []
+        study.best_trial = MagicMock()
+        study.best_trial.value = 1.0
+        study.best_trial.user_attrs = {"total_return": 0.2}
+        study.best_value = 1.0
+        study.best_params = {}
+
+        optimize_calls: list[int] = []
+
+        def fake_optimize(_objective, n_trials, n_jobs, show_progress_bar, callbacks):
+            optimize_calls.append(n_trials)
+
+        study.optimize.side_effect = fake_optimize
+
+        with (
+            patch.object(optimizer, "_load_base_strategy", return_value=_make_candidate("base")),
+            patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
+            patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
+            patch.object(
+                optimizer,
+                "_build_stage2_local_search_space",
+                return_value=(
+                    {"entry_volume_short_period": (10.0, 40.0, "int")},
+                    [MagicMock()],
+                ),
+            ),
+            patch.object(optimizer, "_enqueue_stage2_seed_trials") as mock_enqueue,
+            patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
+            patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
+        ):
+            optimizer.optimize("demo_strategy", progress_callback=None)
+
+        assert optimize_calls == [30, 20]
+        mock_enqueue.assert_called_once()
+
+    def test_optimize_study_skips_non_positive_trials(self):
+        optimizer = _make_optimizer()
+        study = MagicMock()
+
+        optimizer._optimize_study(study, 0, [])
+
+        study.optimize.assert_not_called()
+
+    def test_build_two_stage_plan_returns_single_stage_when_stage2_too_small(self):
+        optimizer = _make_optimizer()
+        with patch.object(optimizer, "MIN_STAGE2_TRIALS", 30):
+            stage1, stage2 = optimizer._build_two_stage_plan(45)
+        assert stage1 == 45
+        assert stage2 == 0
+
+    def test_build_stage2_local_search_space_returns_empty_when_trials_are_insufficient(self):
+        optimizer = _make_optimizer()
+        state_complete = optuna_optimizer_module.optuna_runtime.trial.TrialState.COMPLETE
+        study = SimpleNamespace(
+            trials=[
+                SimpleNamespace(state=state_complete, value=1.0, params={}),
+                SimpleNamespace(state=state_complete, value=0.8, params={}),
+            ]
+        )
+
+        overrides, top_trials = optimizer._build_stage2_local_search_space(study)  # type: ignore[arg-type]
+
+        assert overrides == {}
+        assert top_trials == []
+
+    def test_build_stage2_local_search_space_builds_overrides_for_int_and_float(self):
+        optimizer = _make_optimizer()
+        optimizer._param_specs = {
+            "entry_volume_short_period": (5.0, 100.0, "int"),
+            "entry_volume_threshold": (0.5, 3.0, "float"),
+            "entry_missing_signal_param": (1.0, 2.0, "float"),
+        }
+        state_complete = optuna_optimizer_module.optuna_runtime.trial.TrialState.COMPLETE
+        trials = [
+            SimpleNamespace(
+                state=state_complete,
+                value=1.20,
+                params={
+                    "entry_volume_short_period": 28,
+                    "entry_volume_threshold": 1.05,
+                },
+            ),
+            SimpleNamespace(
+                state=state_complete,
+                value=1.10,
+                params={
+                    "entry_volume_short_period": 32,
+                    "entry_volume_threshold": 1.15,
+                },
+            ),
+            SimpleNamespace(
+                state=state_complete,
+                value=1.00,
+                params={
+                    "entry_volume_short_period": 36,
+                    "entry_volume_threshold": 1.25,
+                },
+            ),
+        ]
+        study = SimpleNamespace(trials=trials)
+
+        overrides, top_trials = optimizer._build_stage2_local_search_space(study)  # type: ignore[arg-type]
+
+        assert len(top_trials) == 3
+        assert "entry_volume_short_period" in overrides
+        assert "entry_volume_threshold" in overrides
+        int_min, int_max, int_type = overrides["entry_volume_short_period"]
+        assert int_type == "int"
+        assert int_min <= int_max
+        float_min, float_max, float_type = overrides["entry_volume_threshold"]
+        assert float_type == "float"
+        assert float_min < float_max
+        assert "entry_missing_signal_param" not in overrides
+
+    def test_enqueue_stage2_seed_trials_clamps_values_to_override_ranges(self):
+        optimizer = _make_optimizer()
+        study = MagicMock()
+        top_trials = [
+            SimpleNamespace(
+                params={
+                    "entry_volume_short_period": 90,
+                    "entry_volume_threshold": 3.5,
+                    "ignored": 1,
+                }
+            )
+        ]
+        overrides = {
+            "entry_volume_short_period": (20.0, 40.0, "int"),
+            "entry_volume_threshold": (1.0, 2.0, "float"),
+        }
+
+        optimizer._enqueue_stage2_seed_trials(study, top_trials, overrides)  # type: ignore[arg-type]
+
+        study.enqueue_trial.assert_called_once()
+        seeded = study.enqueue_trial.call_args.args[0]
+        assert seeded["entry_volume_short_period"] == 40
+        assert seeded["entry_volume_threshold"] == 2.0
+        assert "ignored" not in seeded
+
+    def test_estimate_trial_recommendation_uses_loaded_strategy_dimensions(self):
+        with patch.object(OptunaOptimizer, "_load_base_strategy", return_value=_make_candidate("base")):
+            recommendation = OptunaOptimizer.estimate_trial_recommendation("demo_strategy")
+
+        assert recommendation["dimension_count"] == 3
+        assert recommendation["minimum_trials"] == 40
 
     def test_optimize_applies_random_add_structure_when_enabled(self):
         optimizer = _make_optimizer(
@@ -428,6 +613,60 @@ class TestSampleParams:
         assert result["fundamental"]["per"]["threshold"] == 12.3
         assert result["fundamental"]["per"]["enabled"] is True
         assert result["fundamental"]["use_adjusted"] is True
+
+    def test_enforces_period_order_constraints_during_sampling(self):
+        optimizer = _make_optimizer()
+        base_entry = {
+            "volume": {"enabled": True, "short_period": 20, "long_period": 100},
+        }
+        mock_trial = MagicMock()
+
+        def suggest_int(name: str, low: int, high: int) -> int:
+            if name.endswith("short_period"):
+                return 95
+            assert name.endswith("long_period")
+            assert low >= 96
+            return low
+
+        mock_trial.suggest_int.side_effect = suggest_int
+
+        result = optimizer._sample_params(mock_trial, base_entry, "entry")
+        assert result["volume"]["short_period"] == 95
+        assert result["volume"]["long_period"] >= 96
+
+    def test_enforces_constraints_even_when_dependent_keys_are_declared_first(self):
+        optimizer = _make_optimizer()
+        base_entry = {
+            "volume": {
+                "enabled": True,
+                "long_period": 100,
+                "short_period": 20,
+                "max_threshold": 2.0,
+                "min_threshold": 1.0,
+            },
+        }
+        mock_trial = MagicMock()
+
+        def suggest_int(name: str, low: int, high: int) -> int:
+            if name.endswith("long_period"):
+                return 30
+            assert name.endswith("short_period")
+            assert high <= 29
+            return high
+
+        def suggest_float(name: str, low: float, high: float) -> float:
+            if name.endswith("max_threshold"):
+                return 1.4
+            assert name.endswith("min_threshold")
+            assert high < 1.4
+            return high
+
+        mock_trial.suggest_int.side_effect = suggest_int
+        mock_trial.suggest_float.side_effect = suggest_float
+
+        result = optimizer._sample_params(mock_trial, base_entry, "entry")
+        assert result["volume"]["short_period"] < result["volume"]["long_period"]
+        assert result["volume"]["min_threshold"] < result["volume"]["max_threshold"]
 
 
 class TestBuildCandidateFromParams:

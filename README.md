@@ -75,11 +75,13 @@ uv run bt lab optimize experimental/base_strategy_01 --trials 50 --structure-mod
 - `/api/lab/evolve` と `/api/lab/optimize` は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を指定可能
   - `entry_filter_only` は後方互換フラグとして維持（`target_scope=entry_filter_only` と同義）
   - `allowed_categories` は `all` または `fundamental` 運用を推奨
+- `/api/lab/optimize` は依存パラメータ制約（`long>short` / `slow>fast` / `max>min`）付きで探索し、`trials>=40` では `stage1(広域)+stage2(局所)` の2段階探索を行う
+- `/api/lab/optimize/recommendation` で探索次元数に応じた `minimum/recommended/high_quality` trial 推奨値を取得可能
 - `evolve` / `optimize` は `--structure-mode` で探索方式を切り替え可能
   - `params_only`: 既存シグナルのパラメータのみ探索
   - `random_add`: ランダムなシグナル追加 + パラメータ探索（追加数は `--random-add-entry-signals` / `--random-add-exit-signals`）
 - API では `/api/lab/evolve` と `/api/lab/optimize` に `structure_mode` / `random_add_*` / `seed` も指定可能
-- Web の Backtest > Lab ページでも `evolve` / `optimize` に同じ `structure_mode` 設定を反映済み
+- Web の Backtest > Lab ページでも `evolve` / `optimize` に同じ `structure_mode` 設定を反映し、Optimize form で scope/category 選択に追従した trial 推奨値と最低推奨未満警告を表示
 
 ### 5) Analysis（Screening / Daily Ranking / Fundamental Ranking）
 Analysis は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成です。

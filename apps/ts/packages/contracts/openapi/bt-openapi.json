@@ -4776,6 +4776,80 @@
         "title": "LabJobResponse",
         "type": "object"
       },
+      "LabOptimizeRecommendationResponse": {
+        "description": "Optuna試行回数の推奨値",
+        "properties": {
+          "allowed_categories": {
+            "description": "カテゴリ制約（未指定は空配列）",
+            "items": {
+              "enum": [
+                "breakout",
+                "trend",
+                "oscillator",
+                "volatility",
+                "volume",
+                "macro",
+                "fundamental",
+                "sector"
+              ],
+              "type": "string"
+            },
+            "title": "Allowed Categories",
+            "type": "array"
+          },
+          "dimension_count": {
+            "description": "探索次元数",
+            "title": "Dimension Count",
+            "type": "integer"
+          },
+          "formula": {
+            "description": "推奨値算出式",
+            "title": "Formula",
+            "type": "string"
+          },
+          "high_quality_trials": {
+            "description": "高品質探索向け推奨試行数",
+            "title": "High Quality Trials",
+            "type": "integer"
+          },
+          "minimum_trials": {
+            "description": "最小推奨試行数",
+            "title": "Minimum Trials",
+            "type": "integer"
+          },
+          "recommended_trials": {
+            "description": "標準推奨試行数",
+            "title": "Recommended Trials",
+            "type": "integer"
+          },
+          "strategy_name": {
+            "description": "戦略名",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "target_scope": {
+            "description": "最適化対象",
+            "enum": [
+              "entry_filter_only",
+              "exit_trigger_only",
+              "both"
+            ],
+            "title": "Target Scope",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_name",
+          "target_scope",
+          "dimension_count",
+          "minimum_trials",
+          "recommended_trials",
+          "high_quality_trials",
+          "formula"
+        ],
+        "title": "LabOptimizeRecommendationResponse",
+        "type": "object"
+      },
       "LabOptimizeRequest": {
         "description": "Optuna最適化リクエスト",
         "properties": {
@@ -19497,6 +19571,124 @@
           }
         },
         "summary": "Run Lab Optimize",
+        "tags": [
+          "Lab"
+        ]
+      }
+    },
+    "/api/lab/optimize/recommendation": {
+      "get": {
+        "description": "戦略の探索次元数から Optuna の試行回数推奨値を返す。",
+        "operationId": "get_lab_optimize_recommendation_api_lab_optimize_recommendation_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "strategy_name",
+            "required": true,
+            "schema": {
+              "minLength": 1,
+              "title": "Strategy Name",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "target_scope",
+            "required": false,
+            "schema": {
+              "default": "both",
+              "enum": [
+                "entry_filter_only",
+                "exit_trigger_only",
+                "both"
+              ],
+              "title": "Target Scope",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "allowed_categories",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "items": {
+                    "enum": [
+                      "breakout",
+                      "trend",
+                      "oscillator",
+                      "volatility",
+                      "volume",
+                      "macro",
+                      "fundamental",
+                      "sector"
+                    ],
+                    "type": "string"
+                  },
+                  "type": "array"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Allowed Categories"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LabOptimizeRecommendationResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Lab Optimize Recommendation",
         "tags": [
           "Lab"
         ]

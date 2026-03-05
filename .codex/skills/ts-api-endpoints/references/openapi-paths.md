@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **120**
+Total paths: **121**
 
 ## /api/analytics
 
@@ -142,6 +142,7 @@ Total paths: **120**
 | `/api/lab/jobs/{job_id}/cancel` | `POST` |
 | `/api/lab/jobs/{job_id}/stream` | `GET` |
 | `/api/lab/optimize` | `POST` |
+| `/api/lab/optimize/recommendation` | `GET` |
 
 ## /api/market
 

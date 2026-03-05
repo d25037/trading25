@@ -1,9 +1,14 @@
 import { useState } from 'react';
+import { useLabOptimizeRecommendation } from '@/hooks/useLab';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { LabOptimizeRequest } from '@/types/backtest';
+import type {
+  LabOptimizeRequest,
+  LabOptimizeTrialRecommendationResponse,
+  LabSignalCategory,
+} from '@/types/backtest';
 
 type CategoryScope = 'all' | 'fundamental';
 type TargetScope = 'entry_filter_only' | 'exit_trigger_only' | 'both';
@@ -17,13 +22,18 @@ function resolveTargetScope(value: string): TargetScope {
   return 'both';
 }
 
+function resolveAllowedCategories(scope: CategoryScope): LabSignalCategory[] {
+  return scope === 'fundamental' ? ['fundamental'] : [];
+}
+
 interface LabOptimizeFormProps {
   strategyName: string | null;
+  trialRecommendation?: LabOptimizeTrialRecommendationResponse;
   onSubmit: (request: LabOptimizeRequest) => void;
   disabled?: boolean;
 }
 
-export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimizeFormProps) {
+export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, disabled }: LabOptimizeFormProps) {
   const [trials, setTrials] = useState('50');
   const [targetScope, setTargetScope] = useState<TargetScope>('both');
   const [categoryScope, setCategoryScope] = useState<CategoryScope>('all');
@@ -34,6 +44,8 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
   const [seed, setSeed] = useState('');
   const isEntryTargeted = targetScope !== 'exit_trigger_only';
   const isExitTargeted = targetScope !== 'entry_filter_only';
+  const selectedCategories = resolveAllowedCategories(categoryScope);
+  const { data: dynamicRecommendation } = useLabOptimizeRecommendation(strategyName, targetScope, selectedCategories);
 
   const parseIntInRange = (value: string, defaultValue: number, min: number, max: number) => {
     const parsed = Number.parseInt(value, 10);
@@ -58,7 +70,7 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
 
   const applyCompatibilityFlags = (request: LabOptimizeRequest) => {
     if (targetScope === 'entry_filter_only') request.entry_filter_only = true;
-    if (categoryScope === 'fundamental') request.allowed_categories = ['fundamental'];
+    if (selectedCategories.length > 0) request.allowed_categories = selectedCategories;
   };
 
   const buildRequest = (strategy: string): LabOptimizeRequest => {
@@ -79,6 +91,12 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
     onSubmit(buildRequest(strategyName));
   };
 
+  const currentTrials = parseIntInRange(trials, 50, 10, 1000);
+  const effectiveRecommendation = trialRecommendation ?? dynamicRecommendation;
+  const showRecommendation = !!effectiveRecommendation && effectiveRecommendation.dimension_count > 0;
+  const isUnderMinimum =
+    showRecommendation && currentTrials < (effectiveRecommendation?.minimum_trials ?? 0);
+
   return (
     <div className="space-y-3">
       <div className="grid grid-cols-2 gap-3">
@@ -95,6 +113,16 @@ export function LabOptimizeForm({ strategyName, onSubmit, disabled }: LabOptimiz
             onChange={(e) => setTrials(e.target.value)}
             disabled={disabled}
           />
+          {showRecommendation && (
+            <p className="text-[11px] leading-4 text-muted-foreground">
+              {`Dimensions: ${effectiveRecommendation.dimension_count} / Recommended: ${effectiveRecommendation.recommended_trials} trials (min ${effectiveRecommendation.minimum_trials}, high ${effectiveRecommendation.high_quality_trials})`}
+            </p>
+          )}
+          {isUnderMinimum && (
+            <p className="text-[11px] leading-4 text-amber-600">
+              Current trials are below the minimum recommendation for this search space.
+            </p>
+          )}
         </div>
         <div className="space-y-1.5">
           <Label className="text-xs">Sampler</Label>
