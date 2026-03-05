@@ -27,6 +27,13 @@ def _stock_row() -> dict[str, object]:
     }
 
 
+def _stock_row_for(date: str) -> dict[str, object]:
+    row = _stock_row()
+    row["date"] = date
+    row["created_at"] = f"{date}T00:00:00+00:00"
+    return row
+
+
 def _topix_rows() -> list[dict[str, object]]:
     return [
         {"date": "2026-02-10", "open": 1.0, "high": 2.0, "low": 1.0, "close": 2.0},
@@ -131,6 +138,100 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.statement_non_null_counts["unknown_column"] == 0
 
     store.close()
+
+
+def test_publish_topix_data_excludes_flat_row_equal_to_previous_close(tmp_path: Path) -> None:
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(tmp_path / "market-timeseries" / "parquet"),
+    )
+    assert store is not None
+
+    published = store.publish_topix_data(
+        [
+            {
+                "date": "2020-09-30",
+                "open": 1650.32,
+                "high": 1654.18,
+                "low": 1625.49,
+                "close": 1625.49,
+                "created_at": "2026-03-05T00:00:00+00:00",
+            },
+            {
+                "date": "2020-10-01",
+                "open": 1625.49,
+                "high": 1625.49,
+                "low": 1625.49,
+                "close": 1625.49,
+                "created_at": "2026-03-05T00:00:00+00:00",
+            },
+            {
+                "date": "2020-10-02",
+                "open": 1633.02,
+                "high": 1638.80,
+                "low": 1603.32,
+                "close": 1609.22,
+                "created_at": "2026-03-05T00:00:00+00:00",
+            },
+        ]
+    )
+    assert published == 3
+
+    store.publish_stock_data(
+        [
+            _stock_row_for("2020-09-30"),
+            _stock_row_for("2020-10-02"),
+        ]
+    )
+    inspection = store.inspect(missing_stock_dates_limit=10)
+
+    assert inspection.topix_count == 2
+    assert inspection.topix_min == "2020-09-30"
+    assert inspection.topix_max == "2020-10-02"
+    assert inspection.missing_stock_dates_count == 0
+    assert inspection.missing_stock_dates == []
+
+    store.close()
+
+
+def test_store_startup_cleans_existing_invalid_topix_rows(tmp_path: Path) -> None:
+    duckdb_path = tmp_path / "market-timeseries" / "market.duckdb"
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+
+    first = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(duckdb_path),
+        parquet_dir=str(parquet_dir),
+    )
+    assert isinstance(first, DuckDbParquetTimeSeriesStore)
+
+    first._conn.executemany(
+        """
+        INSERT INTO topix_data (date, open, high, low, close, created_at)
+        VALUES (?, ?, ?, ?, ?, ?)
+        """,
+        [
+            ("2020-09-30", 1650.32, 1654.18, 1625.49, 1625.49, "2026-03-05T00:00:00+00:00"),
+            ("2020-10-01", 1625.49, 1625.49, 1625.49, 1625.49, "2026-03-05T00:00:00+00:00"),
+            ("2020-10-02", 1633.02, 1638.80, 1603.32, 1609.22, "2026-03-05T00:00:00+00:00"),
+        ],
+    )
+    first.close()
+
+    second = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(duckdb_path),
+        parquet_dir=str(parquet_dir),
+    )
+    assert second is not None
+    inspection = second.inspect(missing_stock_dates_limit=10)
+
+    assert inspection.topix_count == 2
+    assert inspection.topix_min == "2020-09-30"
+    assert inspection.topix_max == "2020-10-02"
+
+    second.close()
 
 
 class _ResultCursor:
