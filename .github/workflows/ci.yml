@@ -156,6 +156,7 @@ jobs:
         with:
           name: bt-coverage-unit
           path: apps/bt/.coverage.unit
+          include-hidden-files: true
           if-no-files-found: error
 
   app-integration-tests:
@@ -191,6 +192,7 @@ jobs:
         with:
           name: bt-coverage-app
           path: apps/bt/.coverage.app
+          include-hidden-files: true
           if-no-files-found: error
 
   secret-scan:
