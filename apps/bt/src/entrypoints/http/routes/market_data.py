@@ -1,7 +1,7 @@
 """
 Market Data Routes
 
-market.db から株式・TOPIX データを提供する 4 エンドポイント。
+DuckDB market time-series から株式・TOPIX データを提供する 4 エンドポイント。
 Hono /api/market/ ルートと互換。
 """
 

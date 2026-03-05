@@ -1,7 +1,7 @@
 """Mode-aware data clients for loader paths.
 
 HTTP mode uses existing API clients.
-Direct mode bypasses internal HTTP and reads SQLite via DatasetDb/MarketDbReader.
+Direct mode bypasses internal HTTP and reads local DBs via DatasetDb/MarketDbReader.
 """
 
 from __future__ import annotations
@@ -64,13 +64,16 @@ def _resolve_dataset_db(dataset_name: str) -> DatasetDb:
 def _resolve_market_reader() -> MarketDbReader:
     global _market_reader
     settings = get_settings()
-    market_db_path = Path(settings.market_db_path)
-    if not market_db_path.exists():
-        raise FileNotFoundError(f"market.db not found: {market_db_path}")
+    market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
+    if not market_timeseries_dir:
+        raise FileNotFoundError("MARKET_TIMESERIES_DIR is not configured")
+    reader_path = Path(market_timeseries_dir) / "market.duckdb"
+    if not reader_path.exists():
+        raise FileNotFoundError(f"market.duckdb not found: {reader_path}")
 
     with _market_reader_lock:
         if _market_reader is None:
-            _market_reader = MarketDbReader(str(market_db_path))
+            _market_reader = MarketDbReader(str(reader_path))
         return _market_reader
 
 
@@ -381,7 +384,7 @@ class DirectDatasetClient:
 
 
 class DirectMarketClient:
-    """Market client backed by market.db reader (no HTTP)."""
+    """Market client backed by DuckDB reader (no HTTP)."""
 
     def __enter__(self) -> DirectMarketClient:
         return self

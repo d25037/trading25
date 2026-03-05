@@ -6,7 +6,6 @@ screening の market データソース向けローダー。
 
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import pandas as pd
@@ -67,7 +66,7 @@ def load_market_multi_data(
     period_type: APIPeriodType = "FY",
     include_forecast_revision: bool = False,
 ) -> tuple[dict[str, dict[str, pd.DataFrame]], list[str]]:
-    """market.db から複数銘柄の screening 用データを取得"""
+    """DuckDB から複数銘柄の screening 用データを取得"""
     warnings: list[str] = []
     normalized_codes = _normalize_codes(stock_codes)
     if not normalized_codes:
@@ -80,7 +79,7 @@ def load_market_multi_data(
             start_date=start_date,
             end_date=end_date,
         )
-    except sqlite3.OperationalError as e:
+    except Exception as e:  # noqa: BLE001 - loader should degrade gracefully
         logger.warning("market stock_data load failed: {}", e)
         return {}, [f"market daily load failed ({e})"]
 
@@ -115,7 +114,7 @@ def load_market_topix_data(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> pd.DataFrame:
-    """market.db topix_data から benchmark を取得"""
+    """DuckDB topix_data から benchmark を取得"""
     sql = "SELECT date, open, high, low, close FROM topix_data"
     params: list[str] = []
     conds: list[str] = []
@@ -140,7 +139,7 @@ def load_market_sector_indices(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> dict[str, pd.DataFrame]:
-    """market.db indices_data から sector 指数を取得"""
+    """DuckDB indices_data から sector 指数を取得"""
     sql = """
         SELECT
             d.code,
@@ -170,7 +169,7 @@ def load_market_sector_indices(
 
     try:
         rows = reader.query(sql, tuple(params))
-    except sqlite3.OperationalError:
+    except Exception:  # noqa: BLE001 - optional data source
         return {}
 
     grouped: dict[str, list[Any]] = {}
@@ -288,8 +287,8 @@ def _attach_statements(
             period_type=period_type,
             actual_only=True,
         )
-    except sqlite3.OperationalError as e:
-        if "no such table" in str(e).lower():
+    except Exception as e:  # noqa: BLE001 - backend error path
+        if _is_missing_table_error(e):
             warnings.append("market statements table is missing; statements signals may be skipped")
             return warnings
         raise
@@ -305,7 +304,7 @@ def _attach_statements(
                 period_type="all",
                 actual_only=False,
             )
-        except sqlite3.OperationalError as e:
+        except Exception as e:  # noqa: BLE001 - revision is best-effort
             warnings.append(f"market statements revision load failed ({e})")
 
     base_map = _group_statement_rows(base_rows)
@@ -335,6 +334,11 @@ def _attach_statements(
             warnings.append(f"{code} statements transform failed ({e})")
 
     return warnings
+
+
+def _is_missing_table_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "no such table" in message or ("does not exist" in message and "table" in message)
 
 
 def _query_statements_rows(

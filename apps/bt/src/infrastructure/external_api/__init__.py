@@ -5,7 +5,7 @@ instead of direct SQL queries.
 
 Clients:
     - DatasetAPIClient: For dataset operations (backtest data)
-    - MarketAPIClient: For market.db operations (market analysis)
+    - MarketAPIClient: For DuckDB market operations (market analysis)
     - PortfolioAPIClient: For portfolio operations (existing API)
 """
 

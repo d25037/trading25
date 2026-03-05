@@ -49,7 +49,7 @@ Compute fundamental analysis metrics for a stock symbol.
 
 **Data Sources**:
 - Financial statements: JQuants API via apps/ts/api proxy
-- Stock prices: market.db via apps/ts/api proxy
+- Stock prices: market.duckdb via apps/ts/api proxy
 
 **Response includes**:
 - `data`: Array of fundamental data points sorted by date (descending)

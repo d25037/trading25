@@ -4,8 +4,8 @@ Complex Analytics Routes Unit Tests
 Ranking, Factor Regression, Screening のルートテスト。
 """
 
-import sqlite3
 from datetime import datetime
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -31,11 +31,14 @@ def _generate_dates(n: int, start: str = "2023-01-02") -> list[str]:
 
 
 @pytest.fixture
-def analytics_db_path(tmp_path):
-    """factor-regression/screening 用に十分なデータを持つ market.db"""
-    db_path = str(tmp_path / "market.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
+def analytics_timeseries_dir(tmp_path):
+    """factor-regression/screening 用に十分なデータを持つ market.duckdb"""
+    import duckdb
+
+    base_dir = tmp_path / "market-timeseries"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    db_path = str(base_dir / "market.duckdb")
+    conn = duckdb.connect(db_path)
 
     # テーブル作成
     conn.execute("""
@@ -228,15 +231,15 @@ def analytics_db_path(tmp_path):
         ("33330", "2024-05-20", 200.0, "FY", 250.0, 250.0, 100.0),
     )
 
-    conn.commit()
     conn.close()
-    return db_path
+    return str(base_dir)
 
 
 @pytest.fixture
-def analytics_client(analytics_db_path, monkeypatch):
+def analytics_client(analytics_timeseries_dir, monkeypatch):
     """analytics テスト用クライアント"""
-    monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
+    monkeypatch.setenv("MARKET_TIMESERIES_DIR", analytics_timeseries_dir)
+    monkeypatch.setenv("MARKET_DB_PATH", str(Path(analytics_timeseries_dir) / "market.duckdb"))
     monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
     from src.shared.config.settings import reload_settings
@@ -666,13 +669,14 @@ class TestAnalyticsRouteErrorMapping:
 
     def test_portfolio_factor_regression_maps_value_error_variants(
         self,
-        analytics_db_path,
+        analytics_timeseries_dir,
         monkeypatch,
     ):
         from src.shared.config.settings import reload_settings
         from src.application.services.portfolio_factor_regression_service import PortfolioFactorRegressionService
 
-        monkeypatch.setenv("MARKET_DB_PATH", analytics_db_path)
+        monkeypatch.setenv("MARKET_TIMESERIES_DIR", analytics_timeseries_dir)
+        monkeypatch.setenv("MARKET_DB_PATH", str(Path(analytics_timeseries_dir) / "market.duckdb"))
         monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
         monkeypatch.setenv("JQUANTS_PLAN", "free")
         reload_settings()

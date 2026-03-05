@@ -4,6 +4,8 @@ Market Data Routes Unit Tests
 sync_client を使用してルートの E2E テスト。
 """
 
+from pathlib import Path
+
 import pytest
 
 from fastapi.testclient import TestClient
@@ -12,9 +14,10 @@ from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture
-def client_with_market_db(market_db_path, monkeypatch):
-    """market.db 付きテストクライアント"""
-    monkeypatch.setenv("MARKET_DB_PATH", market_db_path)
+def client_with_market_db(market_timeseries_dir, monkeypatch):
+    """market.duckdb 付きテストクライアント"""
+    monkeypatch.setenv("MARKET_TIMESERIES_DIR", market_timeseries_dir)
+    monkeypatch.setenv("MARKET_DB_PATH", str(Path(market_timeseries_dir) / "market.duckdb"))
     monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
     # settings cache をクリア

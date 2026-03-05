@@ -1,8 +1,6 @@
-"""
-MarketDataService market-code alias tests.
-"""
+"""MarketDataService market-code alias tests."""
 
-import sqlite3
+import duckdb
 
 import pytest
 
@@ -13,8 +11,7 @@ from src.application.services.market_data_service import MarketDataService
 @pytest.fixture
 def market_alias_db(tmp_path):
     db_path = str(tmp_path / "market-alias.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = duckdb.connect(db_path)
 
     conn.execute("""
         CREATE TABLE stocks (
@@ -54,7 +51,6 @@ def market_alias_db(tmp_path):
             (code, "2026-02-06", 100 + i, 101 + i, 99 + i, 100 + i, 1000 + i),
         )
 
-    conn.commit()
     conn.close()
     return db_path
 

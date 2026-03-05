@@ -158,34 +158,35 @@ export function normalizeDatasetPath(input: string): string {
 }
 
 /**
- * Get the market database path in the user's data directory
+ * Get the DuckDB market time-series path in the user's data directory
  * Follows XDG Base Directory specification for cross-project shared data
  *
  * Path resolution:
- * - Uses XDG_DATA_HOME if set (e.g., /custom/path/trading25/market.db)
- * - Otherwise uses $HOME/.local/share/trading25/market.db
+ * - Uses XDG_DATA_HOME if set (e.g., /custom/path/trading25/market-timeseries/market.duckdb)
+ * - Otherwise uses $HOME/.local/share/trading25/market-timeseries/market.duckdb
  *
  * The directory is automatically created if it doesn't exist.
  *
- * @returns Absolute path to market.db
+ * @returns Absolute path to market.duckdb
  */
 export function getMarketDbPath(): string {
   // Use XDG_DATA_HOME if set, otherwise default to $HOME/.local/share
   const dataHome = process.env.XDG_DATA_HOME || path.join(os.homedir(), '.local', 'share');
   const tradingDataDir = path.join(dataHome, 'trading25');
+  const marketTimeseriesDir = path.join(tradingDataDir, 'market-timeseries');
 
   // Ensure the directory exists
-  if (!fs.existsSync(tradingDataDir)) {
+  if (!fs.existsSync(marketTimeseriesDir)) {
     try {
-      fs.mkdirSync(tradingDataDir, { recursive: true });
+      fs.mkdirSync(marketTimeseriesDir, { recursive: true });
     } catch (error) {
       throw new Error(
-        `Failed to create trading25 data directory at ${tradingDataDir}: ${error instanceof Error ? error.message : String(error)}`
+        `Failed to create trading25 market-timeseries directory at ${marketTimeseriesDir}: ${error instanceof Error ? error.message : String(error)}`
       );
     }
   }
 
-  return path.join(tradingDataDir, 'market.db');
+  return path.join(marketTimeseriesDir, 'market.duckdb');
 }
 
 /**

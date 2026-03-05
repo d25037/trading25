@@ -1,7 +1,7 @@
 """
 Sync Strategies
 
-market.db 同期のための 3 つの戦略。
+DuckDB market data 同期のための 3 つの戦略。
 Hono sync-strategies.ts からの移植。
 """
 
@@ -185,9 +185,7 @@ async def _get_paginated_rows_with_call_count(
 
 def _to_iso_date_text(value: str | None) -> str | None:
     parsed = _parse_date(value or "")
-    if parsed is None:
-        return None
-    return parsed.isoformat()
+    return parsed.isoformat() if parsed is not None else None
 
 
 def _select_bulk_candidates_from_dates(dates: list[str]) -> tuple[str | None, str | None]:
@@ -355,7 +353,6 @@ def _normalize_bulk_row_keys(
 
     if not remap:
         return rows
-
     normalized_rows: list[dict[str, Any]] = []
     for row in rows:
         normalized = dict(row)

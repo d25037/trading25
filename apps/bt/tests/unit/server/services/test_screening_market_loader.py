@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import sqlite3
 from typing import Any
 
 import pandas as pd
@@ -45,7 +44,7 @@ def test_load_market_multi_data_returns_empty_for_empty_codes() -> None:
 def test_load_market_multi_data_handles_daily_operational_error(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "src.application.services.screening_market_loader._load_daily_by_code",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("stock_data missing")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("stock_data missing")),
     )
     result, warnings = load_market_multi_data(DummyReader(), ["7203"])
     assert result == {}
@@ -137,7 +136,7 @@ def test_load_market_topix_data_without_filters() -> None:
 
 
 def test_load_market_sector_indices_handles_operational_error() -> None:
-    reader = DummyReader(error=sqlite3.OperationalError("missing index table"))
+    reader = DummyReader(error=RuntimeError("missing index table"))
     assert load_market_sector_indices(reader) == {}
 
 
@@ -256,7 +255,7 @@ def test_attach_statements_missing_table_warning(monkeypatch: pytest.MonkeyPatch
 
     monkeypatch.setattr(
         "src.application.services.screening_market_loader._query_statements_rows",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("no such table: statements")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("no such table: statements")),
     )
 
     warnings = _attach_statements(
@@ -284,17 +283,17 @@ def test_attach_statements_returns_empty_when_no_codes() -> None:
     assert warnings == []
 
 
-def test_attach_statements_reraises_unexpected_operational_error(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_attach_statements_reraises_unexpected_error(monkeypatch: pytest.MonkeyPatch) -> None:
     index = pd.to_datetime(["2026-01-01"])
     result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
     daily_index = {"7203": index}
 
     monkeypatch.setattr(
         "src.application.services.screening_market_loader._query_statements_rows",
-        lambda *_args, **_kwargs: (_ for _ in ()).throw(sqlite3.OperationalError("permission denied")),
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("permission denied")),
     )
 
-    with pytest.raises(sqlite3.OperationalError):
+    with pytest.raises(RuntimeError):
         _attach_statements(
             DummyReader(),
             result,

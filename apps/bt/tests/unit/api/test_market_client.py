@@ -19,7 +19,7 @@ class TestMarketAPIClient:
 
     @patch("httpx.Client")
     def test_get_stock_ohlcv(self, mock_client_class: MagicMock) -> None:
-        """Test stock OHLCV retrieval from market.db."""
+        """Test stock OHLCV retrieval from market.duckdb-backed API."""
         mock_response = MagicMock()
         mock_response.is_success = True
         mock_response.json.return_value = [
@@ -54,7 +54,7 @@ class TestMarketAPIClient:
 
     @patch("httpx.Client")
     def test_get_topix(self, mock_client_class: MagicMock) -> None:
-        """Test TOPIX data retrieval from market.db."""
+        """Test TOPIX data retrieval from market.duckdb-backed API."""
         mock_response = MagicMock()
         mock_response.is_success = True
         mock_response.json.return_value = [

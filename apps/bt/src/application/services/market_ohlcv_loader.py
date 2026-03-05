@@ -1,6 +1,6 @@
 """Market OHLCV Loader
 
-market.db から OHLCV/TOPIX を DataFrame として読み込む共通ローダ。
+DuckDB market time-series から OHLCV/TOPIX を DataFrame として読み込む共通ローダ。
 Indicator/Signal で source=market を扱う際の重複実装を避ける。
 """
 
@@ -26,7 +26,7 @@ def load_stock_ohlcv_df(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> pd.DataFrame:
-    """market.db から銘柄 OHLCV を DataFrame で取得する。"""
+    """DuckDB から銘柄 OHLCV を DataFrame で取得する。"""
     candidates = stock_code_candidates(stock_code)
     placeholders = ",".join("?" for _ in candidates)
 
@@ -67,7 +67,7 @@ def load_topix_df(
     start_date: str | None = None,
     end_date: str | None = None,
 ) -> pd.DataFrame:
-    """market.db から TOPIX OHLC を DataFrame で取得する。"""
+    """DuckDB から TOPIX OHLC を DataFrame で取得する。"""
     sql = "SELECT date, open, high, low, close FROM topix_data"
     params: list[str] = []
     conditions: list[str] = []

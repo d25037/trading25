@@ -3,6 +3,7 @@ Chart Routes Unit Tests
 """
 
 import pytest
+from pathlib import Path
 
 from fastapi.testclient import TestClient
 
@@ -10,9 +11,10 @@ from src.entrypoints.http.app import create_app
 
 
 @pytest.fixture
-def client_with_market_db(market_db_path, monkeypatch):
-    """market.db 付きテストクライアント"""
-    monkeypatch.setenv("MARKET_DB_PATH", market_db_path)
+def client_with_market_db(market_timeseries_dir, monkeypatch):
+    """market.duckdb 付きテストクライアント"""
+    monkeypatch.setenv("MARKET_TIMESERIES_DIR", market_timeseries_dir)
+    monkeypatch.setenv("MARKET_DB_PATH", str(Path(market_timeseries_dir) / "market.duckdb"))
     monkeypatch.setenv("JQUANTS_API_KEY", "dummy_token_value_0000")
     monkeypatch.setenv("JQUANTS_PLAN", "free")
     from src.shared.config.settings import reload_settings
@@ -136,7 +138,7 @@ class TestSearchStocks:
 
 class TestGetStockData:
     def test_200_from_db(self, client_with_market_db):
-        """market.db から銘柄チャートデータ取得"""
+        """market.duckdb から銘柄チャートデータ取得"""
         resp = client_with_market_db.get("/api/chart/stocks/7203")
         assert resp.status_code == 200
         data = resp.json()

@@ -45,7 +45,7 @@
 
 1. `request_error` を `correlationId` で検索。
 2. 同一IDの `job_lifecycle` / `jquants_*` を辿り、外部依存か内部例外か判定。
-3. DB例外 (`SQLAlchemyError`) の場合は `market.db` / `portfolio.db` ロック競合を確認。
+3. DB例外 (`SQLAlchemyError`) の場合は `market-timeseries/market.duckdb` / `portfolio.db` ロック競合を確認。
 
 ### 5.2 J-Quants 遅延 / 失敗
 

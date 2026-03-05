@@ -7,7 +7,6 @@ import argparse
 import json
 import math
 import os
-import sqlite3
 import statistics
 import sys
 import time
@@ -140,7 +139,7 @@ def prepare_runtime_dirs(runtime_root: Path) -> None:
 
 
 def set_runtime_env(data_root: Path, runtime_root: Path) -> None:
-    os.environ["MARKET_DB_PATH"] = str(data_root / "market.db")
+    os.environ["MARKET_DB_PATH"] = str(data_root / "market-timeseries" / "market.duckdb")
     os.environ["DATASET_BASE_PATH"] = str(data_root / "datasets")
     os.environ["PORTFOLIO_DB_PATH"] = str(runtime_root / "portfolio.db")
     os.environ["MARKET_TIMESERIES_DIR"] = str(runtime_root / "market-timeseries")
@@ -152,12 +151,17 @@ def set_runtime_env(data_root: Path, runtime_root: Path) -> None:
 
 
 def query_counts(db_path: Path) -> dict[str, int]:
+    import duckdb  # type: ignore[import-not-found]
+
     tables = ("stocks", "stock_data", "topix_data", "indices_data", "statements")
     counts: dict[str, int] = {}
-    with sqlite3.connect(str(db_path)) as conn:
+    conn = duckdb.connect(str(db_path), read_only=True)
+    try:
         for table in tables:
             row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()
             counts[table] = int(row[0] if row is not None else 0)
+    finally:
+        conn.close()
     return counts
 
 
@@ -336,9 +340,9 @@ def main() -> int:
     prepare_runtime_dirs(runtime_root)
     set_runtime_env(data_root, runtime_root)
 
-    market_db = data_root / "market.db"
+    market_db = data_root / "market-timeseries" / "market.duckdb"
     if not market_db.exists():
-        print(f"market.db not found: {market_db}", file=sys.stderr)
+        print(f"market.duckdb not found: {market_db}", file=sys.stderr)
         return 1
 
     data_snapshot = {
@@ -439,7 +443,7 @@ def main() -> int:
         },
         "failures": [asdict(f) for f in failures],
         "notes": [
-            "Screening/backtest are measured via in-process FastAPI job endpoints using market.db + production strategy config.",
+            "Screening/backtest are measured via in-process FastAPI job endpoints using market.duckdb + production strategy config.",
             "Backtest artifacts are written under runtimeRoot to avoid mutating the source data directory.",
             "datasetBuildThroughputRowsPerMinute is synthetic build_stock_data_row throughput.",
         ],

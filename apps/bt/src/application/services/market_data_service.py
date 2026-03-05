@@ -1,7 +1,7 @@
 """
 Market Data Service
 
-market.db から株式・TOPIX データを読み取るサービス。
+DuckDB market time-series から株式・TOPIX データを読み取るサービス。
 Hono market-data-service.ts と同等のロジック。
 """
 
@@ -24,7 +24,7 @@ def _stock_code_candidates(code: str) -> tuple[str, ...]:
 
 
 class MarketDataService:
-    """market.db 読み取りサービス"""
+    """DuckDB market data 読み取りサービス"""
 
     def __init__(self, reader: MarketDbReader) -> None:
         self._reader = reader

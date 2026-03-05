@@ -17,7 +17,7 @@
       "rowsPerRun": 50000
     },
     "dataSnapshot": {
-      "marketDbPath": "$HOME/.local/share/trading25/market.db",
+      "marketDbPath": "$HOME/.local/share/trading25/market-timeseries/market.duckdb",
       "marketDbSizeBytes": 258846720,
       "tableCounts": {
         "stocks": 4455,
@@ -287,7 +287,7 @@
   },
   "failures": [],
   "notes": [
-    "Screening/backtest are measured via in-process FastAPI job endpoints using market.db + production strategy config.",
+    "Screening/backtest are measured via in-process FastAPI job endpoints using market.duckdb + production strategy config.",
     "Backtest artifacts are written under runtimeRoot to avoid mutating the source data directory.",
     "datasetBuildThroughputRowsPerMinute is synthetic build_stock_data_row throughput."
   ]

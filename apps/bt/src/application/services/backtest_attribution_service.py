@@ -107,6 +107,11 @@ class BacktestAttributionService:
         job_status = getattr(job, "status", None) if job is not None else None
         status_raw = getattr(job_status, "value", job_status)
         status_value = str(status_raw) if status_raw else ""
+        market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
+        if market_timeseries_dir:
+            market_db_path = str(Path(market_timeseries_dir) / "market.duckdb")
+        else:
+            market_db_path = str(getattr(settings, "market_db_path", "") or "")
 
         return {
             "saved_at": now.isoformat(),
@@ -129,7 +134,7 @@ class BacktestAttributionService:
                 "random_seed": random_seed,
             },
             "databases": {
-                "market_db": self._db_entry(settings.market_db_path),
+                "market_db": self._db_entry(market_db_path),
                 "portfolio_db": self._db_entry(settings.portfolio_db_path),
                 "dataset_base_dir": self._db_entry(settings.dataset_base_path),
                 "dataset_name": dataset_name,

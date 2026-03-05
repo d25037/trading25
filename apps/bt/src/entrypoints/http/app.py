@@ -97,33 +97,35 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.roe_service = ROEService(jquants_client)
     app.state.margin_analytics_service = MarginAnalyticsService(jquants_client)
 
-    # market.db reader (Phase 3B-2a)
+    # Market time-series reader (DuckDB SoT)
     market_reader: MarketDbReader | None = None
-    if settings.market_db_path:
+    reader_path = Path(settings.market_timeseries_dir) / "market.duckdb"
+    if reader_path.exists():
         try:
-            market_reader = MarketDbReader(settings.market_db_path)
+            market_reader = MarketDbReader(str(reader_path))
             app.state.market_data_service = MarketDataService(market_reader)
-            logger.info(f"market.db 読み取りリーダーを初期化: {settings.market_db_path}")
+            logger.info(f"Market data reader を初期化: {reader_path}")
         except Exception as e:
-            logger.warning(f"market.db の初期化に失敗: {e}")
+            logger.warning(f"Market data reader の初期化に失敗: {e}")
             app.state.market_data_service = None
     else:
+        logger.warning(f"Market data reader の初期化をスキップ: DuckDB が存在しません ({reader_path})")
         app.state.market_data_service = None
 
     # Phase 3B-3: market_reader を直接公開（ranking/factor-regression/screening 用）
     app.state.market_reader = market_reader
 
-    # Chart service (Phase 3B-2b) — market.db reader + JQuants fallback
+    # Chart service — DuckDB reader + JQuants fallback
     app.state.chart_service = ChartService(market_reader, jquants_client)
 
-    # Phase 3C: SQLAlchemy Core DB accessors
+    # Phase 3C: DuckDB metadata accessor
     market_db: MarketDb | None = None
-    if settings.market_db_path:
-        try:
-            market_db = MarketDb(settings.market_db_path, read_only=False)
-            logger.info(f"MarketDb (SQLAlchemy) を初期化: {settings.market_db_path}")
-        except Exception as e:
-            logger.warning(f"MarketDb の初期化に失敗: {e}")
+    market_duckdb_path = str(Path(settings.market_timeseries_dir) / "market.duckdb")
+    try:
+        market_db = MarketDb(market_duckdb_path, read_only=False)
+        logger.info(f"MarketDb (DuckDB metadata) を初期化: {market_duckdb_path}")
+    except Exception as e:
+        logger.warning(f"MarketDb の初期化に失敗: {e}")
     app.state.market_db = market_db
 
     # Phase 2: market data plane (DuckDB + Parquet SoT)
@@ -169,11 +171,11 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # JQuants client shutdown
     await jquants_client.close()
 
-    # market.db reader shutdown
+    # market reader shutdown
     if market_reader is not None:
         market_reader.close()
 
-    # Phase 3C: SQLAlchemy DB shutdown
+    # Phase 3C: DB shutdown
     if market_db is not None:
         market_db.close()
     market_time_series_store = getattr(app.state, "market_time_series_store", None)
@@ -323,7 +325,7 @@ def create_app() -> FastAPI:
     # Phase 3B-1: JQuants Proxy + Analytics
     app.include_router(jquants_proxy.router)
     app.include_router(analytics_jquants.router)
-    # Phase 3B-2a: Market Data (market.db)
+    # Phase 3B-2a: Market Data (DuckDB)
     app.include_router(market_data.router)
     # Phase 3B-2b: Chart + Sector Stocks
     app.include_router(chart.router)

@@ -2,7 +2,7 @@
 Chart Service Unit Tests
 """
 
-import sqlite3
+import duckdb
 
 import pytest
 
@@ -13,8 +13,7 @@ from src.application.services.chart_service import ChartService
 @pytest.fixture
 def chart_db(tmp_path):
     db_path = str(tmp_path / "chart.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = duckdb.connect(db_path)
 
     conn.execute("""
         CREATE TABLE stocks (
@@ -78,7 +77,6 @@ def chart_db(tmp_path):
             (code, "2026-02-06", 100 + i, 110 + i, 95 + i, 105 + i, 100_000 + i * 1000, 1.0, None),
         )
 
-    conn.commit()
     conn.close()
     return db_path
 

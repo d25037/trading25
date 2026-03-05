@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -20,23 +19,15 @@ from src.infrastructure.db.market.market_db import MarketDb
 
 @pytest.fixture
 def market_db_path(tmp_path):
-    db_path = os.path.join(str(tmp_path), "market.db")
-    conn = sqlite3.connect(db_path)
-    conn.executescript("""
-        CREATE TABLE stocks (code TEXT PRIMARY KEY, company_name TEXT NOT NULL, company_name_english TEXT, market_code TEXT NOT NULL, market_name TEXT NOT NULL, sector_17_code TEXT NOT NULL, sector_17_name TEXT NOT NULL, sector_33_code TEXT NOT NULL, sector_33_name TEXT NOT NULL, scale_category TEXT, listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT);
-        CREATE TABLE stock_data (code TEXT NOT NULL, date TEXT NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume INTEGER NOT NULL, adjustment_factor REAL, created_at TEXT, PRIMARY KEY (code, date));
-        CREATE TABLE topix_data (date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, created_at TEXT);
-        CREATE TABLE indices_data (code TEXT NOT NULL, date TEXT NOT NULL, open REAL, high REAL, low REAL, close REAL, sector_name TEXT, created_at TEXT, PRIMARY KEY (code, date));
-        CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT);
-        CREATE TABLE index_master (code TEXT PRIMARY KEY, name TEXT NOT NULL, name_english TEXT, category TEXT NOT NULL, data_start_date TEXT, created_at TEXT, updated_at TEXT);
-
-        INSERT INTO sync_metadata VALUES ('init_completed', 'true', NULL);
-        INSERT INTO sync_metadata VALUES ('last_sync_date', '2024-01-06T10:00:00', NULL);
-
-        INSERT INTO topix_data VALUES ('2024-01-04', 2500, 2520, 2490, 2510, NULL);
-        INSERT INTO topix_data VALUES ('2024-01-05', 2510, 2530, 2500, 2520, NULL);
-    """)
-    conn.close()
+    db_path = os.path.join(str(tmp_path), "market.duckdb")
+    db = MarketDb(db_path, read_only=False)
+    db.upsert_topix_data([
+        {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2490, "close": 2510},
+        {"date": "2024-01-05", "open": 2510, "high": 2530, "low": 2500, "close": 2520},
+    ])
+    db.set_sync_metadata("init_completed", "true")
+    db.set_sync_metadata("last_sync_date", "2024-01-06T10:00:00")
+    db.close()
     return db_path
 
 

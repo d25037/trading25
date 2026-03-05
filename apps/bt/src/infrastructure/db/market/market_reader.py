@@ -1,35 +1,67 @@
 """
 Market Database Reader
 
-market.db への読み取り専用アクセスを提供する。
-SQLite read-only URI モードを使用し、Hono (ts/api) の書き込みと干渉しない。
-WAL pragma は読み取り側で設定しない（書き込み側の ts/api が設定済み、read-only 接続は自動認識）。
+market time-series データ（DuckDB SoT）への読み取り専用アクセスを提供する。
 """
 
 from __future__ import annotations
 
-import sqlite3
 import threading
+from dataclasses import dataclass
 from typing import Any
 
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 
 
+@dataclass(frozen=True)
+class _DuckDbRow:
+    """DuckDB row adapter with mapping-style access patterns."""
+
+    _columns: tuple[str, ...]
+    _values: tuple[Any, ...]
+    _index_map: dict[str, int]
+
+    def __getitem__(self, key: str | int) -> Any:
+        if isinstance(key, int):
+            return self._values[key]
+        idx = self._index_map[str(key)]
+        return self._values[idx]
+
+    def __getattr__(self, name: str) -> Any:
+        try:
+            return self[name]
+        except KeyError as exc:
+            raise AttributeError(name) from exc
+
+    def __iter__(self):  # type: ignore[override]
+        return iter(zip(self._columns, self._values))
+
+    def keys(self) -> tuple[str, ...]:
+        return self._columns
+
+    def items(self):
+        return zip(self._columns, self._values)
+
+    def values(self) -> tuple[Any, ...]:
+        return self._values
+
+
 class MarketDbReader:
-    """market.db 読み取り専用リーダー"""
+    """Market time-series 読み取り専用リーダー（DuckDB 専用）。"""
 
     def __init__(self, db_path: str) -> None:
         self._db_path = db_path
-        self._conns: dict[int, sqlite3.Connection] = {}
+        self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()
 
-    def _create_connection(self) -> sqlite3.Connection:
-        uri = f"file:{self._db_path}?mode=ro"
-        conn = sqlite3.connect(uri, uri=True, check_same_thread=False)
-        conn.row_factory = sqlite3.Row
-        return conn
+    def _create_connection(self) -> Any:
+        import duckdb  # type: ignore[import-not-found]
 
-    def _get_thread_connection(self) -> sqlite3.Connection:
+        # Keep the same default connection mode as the time-series store.
+        # DuckDB rejects mixed configs (e.g. read_only + read_write) for one file in a process.
+        return duckdb.connect(self._db_path)
+
+    def _get_thread_connection(self) -> Any:
         thread_id = threading.get_ident()
         conn = self._conns.get(thread_id)
         if conn is not None:
@@ -43,7 +75,7 @@ class MarketDbReader:
         return conn
 
     @property
-    def conn(self) -> sqlite3.Connection:
+    def conn(self) -> Any:
         return self._get_thread_connection()
 
     def close(self) -> None:
@@ -53,15 +85,40 @@ class MarketDbReader:
         for conn in conns:
             conn.close()
 
-    def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[sqlite3.Row]:
-        """SQL クエリを実行して結果を返す"""
-        cursor = self.conn.execute(sql, params)
-        return cursor.fetchall()
+    def _adapt_duckdb_rows(self, cursor: Any, rows: list[tuple[Any, ...]]) -> list[_DuckDbRow]:
+        description = getattr(cursor, "description", None) or []
+        columns = tuple(str(column[0]) for column in description if column)
+        if not columns:
+            return []
+        index_map = {column: idx for idx, column in enumerate(columns)}
+        return [
+            _DuckDbRow(_columns=columns, _values=tuple(row), _index_map=index_map)
+            for row in rows
+        ]
 
-    def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> sqlite3.Row | None:
-        """SQL クエリを実行して最初の 1 行を返す"""
+    @staticmethod
+    def _assert_read_only_sql(sql: str) -> None:
+        normalized = sql.lstrip().lower()
+        if normalized.startswith(("select", "with", "pragma", "show", "describe", "explain")):
+            return
+        raise PermissionError("attempt to write through MarketDbReader")
+
+    def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
+        """SQL クエリを実行して結果を返す"""
+        self._assert_read_only_sql(sql)
         cursor = self.conn.execute(sql, params)
-        return cursor.fetchone()
+        rows = cursor.fetchall()
+        return self._adapt_duckdb_rows(cursor, rows)
+
+    def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> Any | None:
+        """SQL クエリを実行して最初の 1 行を返す"""
+        self._assert_read_only_sql(sql)
+        cursor = self.conn.execute(sql, params)
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        adapted = self._adapt_duckdb_rows(cursor, [tuple(row)])
+        return adapted[0] if adapted else None
 
     def get_latest_price(self, code: str) -> float | None:
         """単一銘柄の最新終値を取得（4桁/5桁両対応）"""

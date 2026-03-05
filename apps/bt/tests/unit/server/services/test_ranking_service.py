@@ -2,7 +2,7 @@
 Ranking Service Unit Tests
 """
 
-import sqlite3
+import duckdb
 
 import pytest
 
@@ -27,8 +27,7 @@ from src.application.services.ranking_service import (
 def ranking_db(tmp_path):
     """ランキングテスト用DB"""
     db_path = str(tmp_path / "ranking.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = duckdb.connect(db_path)
 
     conn.execute("""
         CREATE TABLE stocks (
@@ -324,7 +323,7 @@ class TestGetRankings:
     def test_no_data_raises(self, tmp_path):
         """データなしDBの場合"""
         db_path = str(tmp_path / "empty.db")
-        conn = sqlite3.connect(db_path)
+        conn = duckdb.connect(db_path)
         conn.execute("""CREATE TABLE stocks (
             code TEXT PRIMARY KEY, company_name TEXT, company_name_english TEXT,
             market_code TEXT, market_name TEXT, sector_17_code TEXT, sector_17_name TEXT,
@@ -452,7 +451,7 @@ class TestGetFundamentalRankings:
 
     def test_no_data_raises_for_fundamental(self, tmp_path):
         db_path = str(tmp_path / "empty_fundamental.db")
-        conn = sqlite3.connect(db_path)
+        conn = duckdb.connect(db_path)
         conn.execute("""CREATE TABLE stocks (
             code TEXT PRIMARY KEY, company_name TEXT, company_name_english TEXT,
             market_code TEXT, market_name TEXT, sector_17_code TEXT, sector_17_name TEXT,

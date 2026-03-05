@@ -4,7 +4,7 @@
 
 ## 固定条件
 
-- 実データ SoT: `~/.local/share/trading25/market.db`
+- 実データ SoT: `~/.local/share/trading25/market-timeseries/market.duckdb`
   - `stocks=4,455`
   - `stock_data=1,660,958`
   - `topix_data=2,443`
