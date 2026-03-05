@@ -6,6 +6,7 @@ from unittest.mock import patch
 import pytest
 
 
+from src.domains.lab_agent.evaluator.data_preparation import BatchPreparedData
 from src.domains.lab_agent.models import (
     EvaluationResult,
     EvolutionConfig,
@@ -28,13 +29,19 @@ def _make_candidate(sid="test", entry_params=None, exit_params=None):
     )
 
 
-def _make_result(candidate, score=0.5):
+def _make_result(
+    candidate,
+    score=0.5,
+    sharpe_ratio=1.0,
+    calmar_ratio=0.5,
+    total_return=0.1,
+):
     return EvaluationResult(
         candidate=candidate,
         score=score,
-        sharpe_ratio=1.0,
-        calmar_ratio=0.5,
-        total_return=0.1,
+        sharpe_ratio=sharpe_ratio,
+        calmar_ratio=calmar_ratio,
+        total_return=total_return,
         max_drawdown=-0.1,
         win_rate=0.5,
         trade_count=100,
@@ -232,6 +239,20 @@ class TestMutateSignalParams:
             assert 10 <= result["short_period"] <= 100
             assert 50 <= result["long_period"] <= 300
 
+    def test_enforces_dependent_period_constraints(self):
+        evolver = _make_evolver()
+        params = {"enabled": True, "short_period": 99, "long_period": 100}
+        with (
+            patch("src.domains.lab_agent.parameter_evolver.random.random", return_value=0.0),
+            patch("src.domains.lab_agent.parameter_evolver.random.gauss", return_value=10.0),
+        ):
+            result = evolver._mutate_signal_params(
+                "volume",
+                params,
+                mutation_strength=1.0,
+            )
+        assert result["long_period"] > result["short_period"]
+
 
 class TestCrossover:
     def test_crossover_returns_candidate(self):
@@ -395,6 +416,17 @@ class TestEvolveFlow:
             patch.object(evolver, "_initialize_population", return_value=population_g1),
             patch.object(
                 evolver.evaluator,
+                "prepare_batch_data",
+                return_value=BatchPreparedData(
+                    stock_codes=["7203"],
+                    ohlcv_data={},
+                    benchmark_data={},
+                ),
+            ),
+            patch.object(evolver.evaluator, "evaluate_single", return_value=_make_result(base, score=0.9)),
+            patch.object(evolver.evaluator, "requires_forecast_revision", return_value=False),
+            patch.object(
+                evolver.evaluator,
                 "evaluate_batch",
                 side_effect=[results_g1, results_g2],
             ),
@@ -426,6 +458,17 @@ class TestEvolveFlow:
             patch.object(evolver, "_initialize_population", return_value=population_g1),
             patch.object(
                 evolver.evaluator,
+                "prepare_batch_data",
+                return_value=BatchPreparedData(
+                    stock_codes=["7203"],
+                    ohlcv_data={},
+                    benchmark_data={},
+                ),
+            ),
+            patch.object(evolver.evaluator, "evaluate_single", return_value=_make_result(base, score=0.9)),
+            patch.object(evolver.evaluator, "requires_forecast_revision", return_value=False),
+            patch.object(
+                evolver.evaluator,
                 "evaluate_batch",
                 side_effect=[results_g1, results_g2],
             ),
@@ -447,9 +490,190 @@ class TestEvolveFlow:
             patch.object(evolver, "_initialize_population", return_value=[base]),
             patch.object(
                 evolver.evaluator,
+                "prepare_batch_data",
+                return_value=BatchPreparedData(
+                    stock_codes=["7203"],
+                    ohlcv_data={},
+                    benchmark_data={},
+                ),
+            ),
+            patch.object(evolver.evaluator, "evaluate_single", return_value=_make_result(base, score=0.9)),
+            patch.object(evolver.evaluator, "requires_forecast_revision", return_value=False),
+            patch.object(
+                evolver.evaluator,
                 "evaluate_batch",
                 side_effect=[[failed], [failed]],
             ),
         ):
             with pytest.raises(RuntimeError, match="no successful evaluations"):
                 evolver.evolve("demo_strategy")
+
+    def test_evolve_reuses_prefetched_data_between_generations(self):
+        evolver = _make_evolver(pop_size=10, generations=2)
+        base = _make_candidate("base")
+        population_g1 = [_make_candidate("g1_a"), _make_candidate("g1_b")]
+        population_g2 = [_make_candidate("g2_a"), _make_candidate("g2_b")]
+        results_g1 = [_make_result(population_g1[0], score=0.6), _make_result(population_g1[1], score=0.5)]
+        results_g2 = [_make_result(population_g2[0], score=0.7), _make_result(population_g2[1], score=0.4)]
+        prepared = BatchPreparedData(
+            stock_codes=["7203"],
+            ohlcv_data={},
+            benchmark_data={},
+            include_forecast_revision=False,
+        )
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=population_g1),
+            patch.object(evolver.evaluator, "prepare_batch_data", return_value=prepared) as mock_prepare,
+            patch.object(evolver.evaluator, "evaluate_single", return_value=_make_result(base, score=0.9)),
+            patch.object(evolver.evaluator, "requires_forecast_revision", return_value=False),
+            patch.object(
+                evolver.evaluator,
+                "evaluate_batch",
+                side_effect=[results_g1, results_g2],
+            ) as mock_eval_batch,
+            patch.object(evolver, "_evolve_population", return_value=population_g2),
+        ):
+            evolver.evolve("demo_strategy")
+
+        assert mock_prepare.call_count == 1
+        for call in mock_eval_batch.call_args_list:
+            assert call.kwargs["prepared_data"] is prepared
+
+    def test_evolve_refreshes_prefetch_when_forecast_revision_becomes_required(self):
+        evolver = _make_evolver(pop_size=10, generations=2)
+        base = _make_candidate("base")
+        population_g1 = [_make_candidate("g1_a"), _make_candidate("g1_b")]
+        population_g2 = [_make_candidate("g2_a"), _make_candidate("g2_b")]
+        results_g1 = [_make_result(population_g1[0], score=0.6), _make_result(population_g1[1], score=0.5)]
+        results_g2 = [_make_result(population_g2[0], score=0.7), _make_result(population_g2[1], score=0.4)]
+        prepared_v1 = BatchPreparedData(
+            stock_codes=["7203"],
+            ohlcv_data={},
+            benchmark_data={},
+            include_forecast_revision=False,
+        )
+        prepared_v2 = BatchPreparedData(
+            stock_codes=["7203"],
+            ohlcv_data={},
+            benchmark_data={},
+            include_forecast_revision=True,
+        )
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=population_g1),
+            patch.object(
+                evolver.evaluator,
+                "prepare_batch_data",
+                side_effect=[prepared_v1, prepared_v2],
+            ) as mock_prepare,
+            patch.object(evolver.evaluator, "evaluate_single", return_value=_make_result(base, score=0.9)),
+            patch.object(
+                evolver.evaluator,
+                "requires_forecast_revision",
+                side_effect=[False, True],
+            ),
+            patch.object(
+                evolver.evaluator,
+                "evaluate_batch",
+                side_effect=[results_g1, results_g2],
+            ) as mock_eval_batch,
+            patch.object(evolver, "_evolve_population", return_value=population_g2),
+        ):
+            evolver.evolve("demo_strategy")
+
+        assert mock_prepare.call_count == 2
+        assert mock_eval_batch.call_args_list[0].kwargs["prepared_data"] is prepared_v1
+        assert mock_eval_batch.call_args_list[1].kwargs["prepared_data"] is prepared_v2
+
+    def test_evolve_falls_back_to_base_when_best_score_is_worse_than_baseline(self):
+        evolver = _make_evolver(pop_size=10, generations=1)
+        base = _make_candidate("base")
+        population = [_make_candidate("g1_a"), _make_candidate("g1_b")]
+        worse_best = _make_result(
+            population[0],
+            score=0.9,
+            sharpe_ratio=0.1,
+            calmar_ratio=0.1,
+            total_return=0.05,
+        )
+        other = _make_result(
+            population[1],
+            score=0.2,
+            sharpe_ratio=0.0,
+            calmar_ratio=0.0,
+            total_return=0.01,
+        )
+        baseline = _make_result(
+            base,
+            score=1.0,
+            sharpe_ratio=1.5,
+            calmar_ratio=1.2,
+            total_return=0.2,
+        )
+        prepared = BatchPreparedData(
+            stock_codes=["7203"],
+            ohlcv_data={},
+            benchmark_data={},
+        )
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=population),
+            patch.object(evolver.evaluator, "prepare_batch_data", return_value=prepared),
+            patch.object(evolver.evaluator, "evaluate_single", return_value=baseline),
+            patch.object(evolver.evaluator, "requires_forecast_revision", return_value=False),
+            patch.object(evolver.evaluator, "evaluate_batch", return_value=[worse_best, other]),
+        ):
+            best_candidate, _ = evolver.evolve("demo_strategy")
+
+        assert best_candidate.strategy_id == "base"
+
+    def test_evolve_falls_back_to_base_when_best_return_is_too_low(self):
+        evolver = _make_evolver(pop_size=10, generations=1)
+        base = _make_candidate("base")
+        population = [_make_candidate("g1_a"), _make_candidate("g1_b")]
+        score_better_but_return_worse = _make_result(
+            population[0],
+            score=0.9,
+            sharpe_ratio=2.0,
+            calmar_ratio=2.0,
+            total_return=0.10,
+        )
+        other = _make_result(
+            population[1],
+            score=0.2,
+            sharpe_ratio=0.5,
+            calmar_ratio=0.4,
+            total_return=0.08,
+        )
+        baseline = _make_result(
+            base,
+            score=1.0,
+            sharpe_ratio=1.0,
+            calmar_ratio=0.8,
+            total_return=0.2,
+        )
+        prepared = BatchPreparedData(
+            stock_codes=["7203"],
+            ohlcv_data={},
+            benchmark_data={},
+        )
+
+        with (
+            patch.object(evolver, "_load_base_strategy", return_value=base),
+            patch.object(evolver, "_initialize_population", return_value=population),
+            patch.object(evolver.evaluator, "prepare_batch_data", return_value=prepared),
+            patch.object(evolver.evaluator, "evaluate_single", return_value=baseline),
+            patch.object(evolver.evaluator, "requires_forecast_revision", return_value=False),
+            patch.object(
+                evolver.evaluator,
+                "evaluate_batch",
+                return_value=[score_better_but_return_worse, other],
+            ),
+        ):
+            best_candidate, _ = evolver.evolve("demo_strategy")
+
+        assert best_candidate.strategy_id == "base"

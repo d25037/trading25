@@ -123,6 +123,8 @@ uv run pyright src/              # 型チェック
 - Lab `evolve/optimize` の API/Web は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を受け付ける（`entry_filter_only` は互換フラグとして維持）
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
 - Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
+- Lab `evolve` は依存パラメータ制約付き mutation（`long>short` / `slow>fast` / `max>min`）を適用し、baseline（ベース戦略）より悪化した候補は guardrail で棄却して base 採用へフォールバックする
+- Lab `evolve` は世代間で OHLCV/benchmark prefetch を再利用し、forecast revision が必要になった場合のみ再prefetch する
 - Lab `optimize`（Optuna）は開始時に OHLCV/benchmark を1回プリフェッチして trial 間で再利用し、`pruning=true` 時は第1段階バックテストの暫定スコアで早期枝刈りを行う
 - Lab `optimize`（Optuna）は依存パラメータ制約付きサンプリング（`long>short` / `slow>fast` / `max>min`）を適用し、`n_trials>=40` では `stage1(広域)+stage2(局所)` の2段階探索を行う
 - Lab `optimize` は `GET /api/lab/optimize/recommendation` を提供し、戦略の探索次元数から `minimum/recommended/high_quality` trial 推奨値を返す。web の Optimize form は `target_scope` / `allowed_categories` 選択に追従して推奨値を再取得し、最低推奨未満を警告表示する

@@ -42,6 +42,7 @@ from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.optimization.scoring import calculate_weighted_score_from_metrics
 
 from .models import LabTargetScope, OptunaConfig, SignalCategory, StrategyCandidate
+from .param_constraints import apply_param_dependency_constraints
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
 from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
@@ -1026,36 +1027,13 @@ class OptunaOptimizer:
         sibling_params: dict[str, Any],
     ) -> tuple[float, float]:
         """相互依存パラメータの制約を sampling range に反映する。"""
-        lower_bound = min_val
-        upper_bound = max_val
-
-        if key == "long_period" and "short_period" in sibling_params:
-            lower_bound = max(lower_bound, float(sibling_params["short_period"]) + 1.0)
-        elif key == "short_period" and "long_period" in sibling_params:
-            upper_bound = min(upper_bound, float(sibling_params["long_period"]) - 1.0)
-        elif key == "slow_period" and "fast_period" in sibling_params:
-            lower_bound = max(lower_bound, float(sibling_params["fast_period"]) + 1.0)
-        elif key == "fast_period" and "slow_period" in sibling_params:
-            upper_bound = min(upper_bound, float(sibling_params["slow_period"]) - 1.0)
-        elif key == "max_threshold" and "min_threshold" in sibling_params:
-            lower_bound = max(lower_bound, float(sibling_params["min_threshold"]) + 1e-6)
-        elif key == "min_threshold" and "max_threshold" in sibling_params:
-            upper_bound = min(upper_bound, float(sibling_params["max_threshold"]) - 1e-6)
-        elif key == "max_beta" and "min_beta" in sibling_params:
-            lower_bound = max(lower_bound, float(sibling_params["min_beta"]) + 1e-6)
-        elif key == "min_beta" and "max_beta" in sibling_params:
-            upper_bound = min(upper_bound, float(sibling_params["max_beta"]) - 1e-6)
-
-        if param_type == "int":
-            lower_bound = float(int(np.ceil(lower_bound)))
-            upper_bound = float(int(np.floor(upper_bound)))
-            if lower_bound > upper_bound:
-                lower_bound = upper_bound
-            return lower_bound, upper_bound
-
-        if lower_bound >= upper_bound:
-            upper_bound = float(np.nextafter(lower_bound, float("inf")))
-        return lower_bound, upper_bound
+        return apply_param_dependency_constraints(
+            key=key,
+            min_val=min_val,
+            max_val=max_val,
+            param_type=param_type,
+            sibling_params=sibling_params,
+        )
 
     def _is_signal_optimization_allowed(self, signal_name: str, usage_type: str) -> bool:
         """制約に基づいて最適化対象に含めるか判定する。"""

@@ -1,8 +1,10 @@
 """agent/evaluator/evaluator.py のテスト"""
 
 from contextlib import contextmanager
+from typing import Any
 
 from src.domains.lab_agent.evaluator import evaluator as evaluator_module
+from src.domains.lab_agent.evaluator.data_preparation import BatchPreparedData
 from src.domains.lab_agent.evaluator.evaluator import StrategyEvaluator
 from src.domains.lab_agent.models import EvaluationResult, StrategyCandidate
 
@@ -55,7 +57,7 @@ def test_evaluate_batch_forces_direct_mode(monkeypatch) -> None:
     monkeypatch.setattr(
         StrategyEvaluator,
         "_evaluate_batch_internal",
-        lambda self, candidates, top_k=None: [],
+        lambda self, candidates, top_k=None, prepared_data=None: [],
     )
 
     evaluator = StrategyEvaluator(shared_config_dict={"stock_codes": ["7203"]})
@@ -108,7 +110,7 @@ def test_evaluate_batch_enables_and_disables_cache(monkeypatch) -> None:
     monkeypatch.setattr(
         StrategyEvaluator,
         "_evaluate_batch_internal",
-        lambda self, candidates, top_k=None: [],
+        lambda self, candidates, top_k=None, prepared_data=None: [],
     )
 
     evaluator = StrategyEvaluator(shared_config_dict={"stock_codes": ["7203"]})
@@ -121,11 +123,16 @@ def test_evaluate_batch_enables_and_disables_cache(monkeypatch) -> None:
 def test_evaluate_batch_internal_uses_prepare_and_execute(monkeypatch) -> None:
     prepared = object()
     expected = [EvaluationResult(candidate=_candidate(), score=0.5)]
-    observed: dict[str, object] = {}
+    observed: dict[str, Any] = {}
 
-    def _fake_prepare_batch_data(shared_config_dict, candidates):
+    def _fake_prepare_batch_data(
+        shared_config_dict,
+        candidates,
+        force_include_forecast_revision=False,
+    ):
         observed["shared_config_dict"] = shared_config_dict
         observed["candidates"] = candidates
+        observed["force_include_forecast_revision"] = force_include_forecast_revision
         return prepared
 
     def _fake_execute_batch_evaluation(
@@ -170,6 +177,43 @@ def test_evaluate_batch_internal_uses_prepare_and_execute(monkeypatch) -> None:
     assert result == expected
     assert observed["shared_config_dict"]["stock_codes"] == ["7203"]
     assert observed["candidates"] == input_candidates
+    assert observed["force_include_forecast_revision"] is False
+
+
+def test_evaluate_batch_internal_uses_provided_prepared_data(monkeypatch) -> None:
+    expected = [EvaluationResult(candidate=_candidate(), score=0.5)]
+    provided = BatchPreparedData(
+        stock_codes=["7203"],
+        ohlcv_data={},
+        benchmark_data={},
+    )
+
+    monkeypatch.setattr(evaluator_module, "get_max_workers", lambda n_jobs: 2)
+    monkeypatch.setattr(
+        StrategyEvaluator,
+        "prepare_batch_data",
+        lambda self, candidates: (_ for _ in ()).throw(
+            AssertionError("prepare_batch_data should not be called")
+        ),
+    )
+    monkeypatch.setattr(
+        evaluator_module,
+        "execute_batch_evaluation",
+        lambda *args, **kwargs: expected,
+    )
+    monkeypatch.setattr(
+        StrategyEvaluator,
+        "_finalize_batch_results",
+        lambda self, results, top_k: results,
+    )
+
+    evaluator = StrategyEvaluator(shared_config_dict={"stock_codes": ["7203"]}, n_jobs=2)
+    result = evaluator._evaluate_batch_internal(
+        [_candidate()],
+        top_k=1,
+        prepared_data=provided,
+    )
+    assert result == expected
 
 
 def test_finalize_batch_results_sorts_and_applies_topk(monkeypatch) -> None:

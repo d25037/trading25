@@ -166,6 +166,25 @@ class TestPrepareBatchData:
 
         assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True
 
+    def test_force_include_forecast_revision(self):
+        with (
+            patch("src.domains.lab_agent.evaluator.batch_executor.fetch_stock_codes") as mock_codes,
+            patch("src.domains.lab_agent.evaluator.batch_executor.fetch_ohlcv_data") as mock_ohlcv,
+            patch("src.domains.lab_agent.evaluator.batch_executor.fetch_benchmark_data") as mock_bench,
+        ):
+            mock_codes.return_value = ["1234"]
+            mock_ohlcv.return_value = {"1234": {"data": "test"}}
+            mock_bench.return_value = {"index": [], "columns": [], "data": []}
+
+            result = prepare_batch_data(
+                {"dataset": "test"},
+                [],
+                force_include_forecast_revision=True,
+            )
+
+        assert result.include_forecast_revision is True
+        assert mock_ohlcv.call_args.kwargs["include_forecast_revision"] is True
+
 
 class TestForecastRevisionHelpers:
     def test_is_forecast_signal_enabled_handles_invalid_and_disabled_payloads(self):
