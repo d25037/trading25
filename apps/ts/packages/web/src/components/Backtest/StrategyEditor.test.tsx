@@ -1,5 +1,6 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import yaml from 'js-yaml';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { StrategyEditor } from './StrategyEditor';
@@ -94,7 +95,14 @@ vi.mock('@/components/ui/button', () => ({
 }));
 
 vi.mock('./SignalReferencePanel', () => ({
-  SignalReferencePanel: () => <div>Signal Reference</div>,
+  SignalReferencePanel: ({ onCopySnippet }: { onCopySnippet: (snippet: string) => void }) => (
+    <div>
+      <div>Signal Reference</div>
+      <button type="button" onClick={() => onCopySnippet('entry_filter_params:\n  snippet: true')}>
+        Insert Snippet
+      </button>
+    </div>
+  ),
 }));
 
 describe('StrategyEditor', () => {
@@ -183,6 +191,25 @@ describe('StrategyEditor', () => {
     expect(await screen.findByText(/YAML parse error:/)).toBeInTheDocument();
   });
 
+  it('shows object parse error when YAML is not an object', async () => {
+    const user = userEvent.setup();
+
+    render(<StrategyEditor open onOpenChange={vi.fn()} strategyName="experimental/sample" />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('YAML Editor') as HTMLTextAreaElement).value).toContain('entry_filter_params');
+    });
+
+    await user.clear(screen.getByLabelText('YAML Editor'));
+    fireEvent.change(screen.getByLabelText('YAML Editor'), {
+      target: { value: '42' },
+    });
+    await user.click(screen.getByRole('button', { name: 'Validate' }));
+
+    expect(mockValidateMutateAsync).not.toHaveBeenCalled();
+    expect(await screen.findByText('Invalid YAML: Must be an object')).toBeInTheDocument();
+  });
+
   it('shows validation passed with warnings from backend response', async () => {
     const user = userEvent.setup();
     mockValidateMutateAsync.mockResolvedValueOnce({
@@ -259,5 +286,40 @@ describe('StrategyEditor', () => {
     render(<StrategyEditor open onOpenChange={vi.fn()} strategyName="experimental/sample" />);
 
     expect(screen.getByText('Error: update failed')).toBeInTheDocument();
+  });
+
+  it('falls back to JSON stringify when yaml.dump throws', async () => {
+    const dumpSpy = vi.spyOn(yaml, 'dump').mockImplementation(() => {
+      throw new Error('dump failed');
+    });
+    mockBacktestHooks.strategyData = {
+      config: {
+        foo: 'bar',
+      },
+    };
+
+    render(<StrategyEditor open onOpenChange={vi.fn()} strategyName="experimental/sample" />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('YAML Editor') as HTMLTextAreaElement).value).toContain('"foo": "bar"');
+    });
+
+    dumpSpy.mockRestore();
+  });
+
+  it('appends copied snippet to current yaml', async () => {
+    const user = userEvent.setup();
+
+    render(<StrategyEditor open onOpenChange={vi.fn()} strategyName="experimental/sample" />);
+
+    await waitFor(() => {
+      expect((screen.getByLabelText('YAML Editor') as HTMLTextAreaElement).value).toContain('entry_filter_params');
+    });
+
+    await user.click(screen.getByRole('button', { name: 'Insert Snippet' }));
+
+    const value = (screen.getByLabelText('YAML Editor') as HTMLTextAreaElement).value;
+    expect(value).toContain('entry_filter_params:');
+    expect(value).toContain('snippet: true');
   });
 });

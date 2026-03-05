@@ -29,7 +29,61 @@ function tabButtonClass(isActive: boolean): string {
   }`;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: UI component with conditional rendering
+function isRunningStatus(status: string | null | undefined): boolean {
+  return status === 'pending' || status === 'running';
+}
+
+function resolveIsJobActive(params: {
+  generatePending: boolean;
+  evolvePending: boolean;
+  optimizePending: boolean;
+  improvePending: boolean;
+  sseStatus: string | null | undefined;
+  jobStatus: string | null | undefined;
+}): boolean {
+  return (
+    params.generatePending ||
+    params.evolvePending ||
+    params.optimizePending ||
+    params.improvePending ||
+    isRunningStatus(params.sseStatus) ||
+    isRunningStatus(params.jobStatus)
+  );
+}
+
+interface LabOperationFormProps {
+  operation: LabType;
+  strategyName: string | null;
+  disabled: boolean;
+  onGenerateSubmit: (request: unknown) => Promise<void>;
+  onEvolveSubmit: (request: unknown) => Promise<void>;
+  onOptimizeSubmit: (request: unknown) => Promise<void>;
+  onImproveSubmit: (request: unknown) => Promise<void>;
+}
+
+function LabOperationForm({
+  operation,
+  strategyName,
+  disabled,
+  onGenerateSubmit,
+  onEvolveSubmit,
+  onOptimizeSubmit,
+  onImproveSubmit,
+}: LabOperationFormProps) {
+  switch (operation) {
+    case 'generate':
+      return <LabGenerateForm onSubmit={onGenerateSubmit} disabled={disabled} />;
+    case 'evolve':
+      return <LabEvolveForm strategyName={strategyName} onSubmit={onEvolveSubmit} disabled={disabled} />;
+    case 'optimize':
+      return <LabOptimizeForm strategyName={strategyName} onSubmit={onOptimizeSubmit} disabled={disabled} />;
+    case 'improve':
+      return <LabImproveForm strategyName={strategyName} onSubmit={onImproveSubmit} disabled={disabled} />;
+    default:
+      return null;
+  }
+}
+
 export function LabPanel() {
   const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
   const [operation, setOperation] = useState<LabType>('generate');
@@ -52,15 +106,14 @@ export function LabPanel() {
   const labImprove = useLabImprove();
   const cancelLabJob = useCancelLabJob();
 
-  const isJobActive =
-    labGenerate.isPending ||
-    labEvolve.isPending ||
-    labOptimize.isPending ||
-    labImprove.isPending ||
-    sse.status === 'pending' ||
-    sse.status === 'running' ||
-    jobStatus?.status === 'pending' ||
-    jobStatus?.status === 'running';
+  const isJobActive = resolveIsJobActive({
+    generatePending: labGenerate.isPending,
+    evolvePending: labEvolve.isPending,
+    optimizePending: labOptimize.isPending,
+    improvePending: labImprove.isPending,
+    sseStatus: sse.status,
+    jobStatus: jobStatus?.status,
+  });
 
   const needsStrategy = operation !== 'generate';
 
@@ -86,6 +139,26 @@ export function LabPanel() {
   };
 
   const mutationError = labGenerate.error ?? labEvolve.error ?? labOptimize.error ?? labImprove.error;
+  const shouldShowProgress = !!activeLabJobId && !!currentStatus;
+  const cancelHandler =
+    activeLabJobId && isRunningStatus(currentStatus) ? () => cancelLabJob.mutate(activeLabJobId) : undefined;
+
+  const handleGenerateSubmit = async (request: unknown) => {
+    const result = await labGenerate.mutateAsync(request as Parameters<typeof labGenerate.mutateAsync>[0]);
+    handleJobStart(result.job_id, 'generate');
+  };
+  const handleEvolveSubmit = async (request: unknown) => {
+    const result = await labEvolve.mutateAsync(request as Parameters<typeof labEvolve.mutateAsync>[0]);
+    handleJobStart(result.job_id, 'evolve');
+  };
+  const handleOptimizeSubmit = async (request: unknown) => {
+    const result = await labOptimize.mutateAsync(request as Parameters<typeof labOptimize.mutateAsync>[0]);
+    handleJobStart(result.job_id, 'optimize');
+  };
+  const handleImproveSubmit = async (request: unknown) => {
+    const result = await labImprove.mutateAsync(request as Parameters<typeof labImprove.mutateAsync>[0]);
+    handleJobStart(result.job_id, 'improve');
+  };
 
   return (
     <div className="max-w-2xl space-y-4">
@@ -129,48 +202,15 @@ export function LabPanel() {
             </div>
           )}
 
-          {operation === 'generate' && (
-            <LabGenerateForm
-              onSubmit={async (req) => {
-                const result = await labGenerate.mutateAsync(req);
-                handleJobStart(result.job_id, 'generate');
-              }}
-              disabled={isJobActive}
-            />
-          )}
-
-          {operation === 'evolve' && (
-            <LabEvolveForm
-              strategyName={selectedStrategy}
-              onSubmit={async (req) => {
-                const result = await labEvolve.mutateAsync(req);
-                handleJobStart(result.job_id, 'evolve');
-              }}
-              disabled={isJobActive}
-            />
-          )}
-
-          {operation === 'optimize' && (
-            <LabOptimizeForm
-              strategyName={selectedStrategy}
-              onSubmit={async (req) => {
-                const result = await labOptimize.mutateAsync(req);
-                handleJobStart(result.job_id, 'optimize');
-              }}
-              disabled={isJobActive}
-            />
-          )}
-
-          {operation === 'improve' && (
-            <LabImproveForm
-              strategyName={selectedStrategy}
-              onSubmit={async (req) => {
-                const result = await labImprove.mutateAsync(req);
-                handleJobStart(result.job_id, 'improve');
-              }}
-              disabled={isJobActive}
-            />
-          )}
+          <LabOperationForm
+            operation={operation}
+            strategyName={selectedStrategy}
+            disabled={isJobActive}
+            onGenerateSubmit={handleGenerateSubmit}
+            onEvolveSubmit={handleEvolveSubmit}
+            onOptimizeSubmit={handleOptimizeSubmit}
+            onImproveSubmit={handleImproveSubmit}
+          />
 
           {mutationError && (
             <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{mutationError.message}</div>
@@ -189,7 +229,7 @@ export function LabPanel() {
         />
       )}
 
-      {activeLabJobId && currentStatus && (
+      {shouldShowProgress && (
         <LabJobProgress
           status={currentStatus}
           progress={currentProgress}
@@ -197,11 +237,7 @@ export function LabPanel() {
           error={jobStatus?.error}
           createdAt={jobStatus?.created_at}
           startedAt={jobStatus?.started_at}
-          onCancel={
-            currentStatus === 'pending' || currentStatus === 'running'
-              ? () => cancelLabJob.mutate(activeLabJobId)
-              : undefined
-          }
+          onCancel={cancelHandler}
           isCancelling={cancelLabJob.isPending}
         />
       )}

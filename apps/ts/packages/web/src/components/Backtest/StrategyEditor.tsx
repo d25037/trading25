@@ -23,7 +23,173 @@ interface StrategyEditorProps {
   onSuccess?: () => void;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Complex component with multiple validation states
+function parseYamlConfig(content: string): { config: Record<string, unknown> | null; parseError: string | null } {
+  try {
+    const parsed = yaml.load(content);
+    if (typeof parsed !== 'object' || parsed === null) {
+      return { config: null, parseError: 'Invalid YAML: Must be an object' };
+    }
+    return { config: parsed as Record<string, unknown>, parseError: null };
+  } catch (error) {
+    return {
+      config: null,
+      parseError: `YAML parse error: ${error instanceof Error ? error.message : 'Unknown error'}`,
+    };
+  }
+}
+
+async function requestBackendValidation({
+  mutateAsync,
+  strategyName,
+  config,
+}: {
+  mutateAsync: ReturnType<typeof useValidateStrategy>['mutateAsync'];
+  strategyName: string;
+  config: Record<string, unknown>;
+}): Promise<StrategyValidationResponse> {
+  try {
+    return await mutateAsync({
+      name: strategyName,
+      request: { config },
+    });
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Unknown validation error';
+    return {
+      valid: false,
+      errors: [`Validation request failed: ${message}`],
+      warnings: [],
+    };
+  }
+}
+
+function resolveValidationViewState(validationResult: StrategyValidationResponse) {
+  const hasValidationErrors = !validationResult.valid;
+  const hasValidationWarnings = validationResult.warnings.length > 0;
+
+  if (hasValidationErrors) {
+    return {
+      containerClass: 'bg-destructive/10',
+      icon: <AlertCircle className="h-4 w-4 text-destructive" />,
+      titleClass: 'text-destructive',
+      title: 'Validation failed',
+    };
+  }
+  if (hasValidationWarnings) {
+    return {
+      containerClass: 'bg-yellow-500/10',
+      icon: <CheckCircle2 className="h-4 w-4 text-yellow-500" />,
+      titleClass: 'text-yellow-500',
+      title: 'Validation passed with warnings',
+    };
+  }
+  return {
+    containerClass: 'bg-green-500/10',
+    icon: <CheckCircle2 className="h-4 w-4 text-green-500" />,
+    titleClass: 'text-green-500',
+    title: 'Validation passed',
+  };
+}
+
+function ValidationFeedback({
+  parseError,
+  validationResult,
+  updateErrorMessage,
+}: {
+  parseError: string | null;
+  validationResult: StrategyValidationResponse | null;
+  updateErrorMessage: string | null;
+}) {
+  const validationViewState = validationResult ? resolveValidationViewState(validationResult) : null;
+
+  return (
+    <div className="mt-4 space-y-2">
+      {parseError && (
+        <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span className="text-sm">{parseError}</span>
+        </div>
+      )}
+
+      {validationResult && (
+        <div className={cn('p-3 rounded-md space-y-2', validationViewState?.containerClass)}>
+          <div className="flex items-center gap-2">
+            {validationViewState?.icon}
+            <span className={cn('text-sm font-medium', validationViewState?.titleClass)}>
+              {validationViewState?.title}
+            </span>
+          </div>
+          {validationResult.errors.length > 0 && (
+            <ul className="list-disc list-inside text-sm text-destructive space-y-1">
+              {validationResult.errors.map((error) => (
+                <li key={error}>{error}</li>
+              ))}
+            </ul>
+          )}
+          {validationResult.warnings.length > 0 && (
+            <ul className="list-disc list-inside text-sm text-yellow-600 space-y-1">
+              {validationResult.warnings.map((warning) => (
+                <li key={warning}>{warning}</li>
+              ))}
+            </ul>
+          )}
+        </div>
+      )}
+
+      {updateErrorMessage && (
+        <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
+          <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
+          <span className="text-sm">Error: {updateErrorMessage}</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EditorContent({
+  isLoadingStrategy,
+  yamlContent,
+  onYamlChange,
+  onCopySnippet,
+  parseError,
+  validationResult,
+  updateErrorMessage,
+}: {
+  isLoadingStrategy: boolean;
+  yamlContent: string;
+  onYamlChange: (value: string) => void;
+  onCopySnippet: (snippet: string) => void;
+  parseError: string | null;
+  validationResult: StrategyValidationResponse | null;
+  updateErrorMessage: string | null;
+}) {
+  if (isLoadingStrategy) {
+    return (
+      <div className="flex items-center justify-center h-[500px]">
+        <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[500px]">
+      <div className="lg:col-span-2 flex flex-col min-h-0">
+        <div className="flex-1 min-h-0">
+          <MonacoYamlEditor value={yamlContent} onChange={onYamlChange} height="400px" />
+        </div>
+        <ValidationFeedback
+          parseError={parseError}
+          validationResult={validationResult}
+          updateErrorMessage={updateErrorMessage}
+        />
+      </div>
+
+      <div className="lg:col-span-1 border rounded-md overflow-hidden min-h-0">
+        <SignalReferencePanel onCopySnippet={onCopySnippet} />
+      </div>
+    </div>
+  );
+}
+
 export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: StrategyEditorProps) {
   const [yamlContent, setYamlContent] = useState('');
   const [parseError, setParseError] = useState<string | null>(null);
@@ -44,35 +210,21 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
   }, [strategyDetail]);
 
   const parseYaml = useCallback((): Record<string, unknown> | null => {
-    try {
-      const parsed = yaml.load(yamlContent);
-      if (typeof parsed !== 'object' || parsed === null) {
-        setParseError('Invalid YAML: Must be an object');
-        return null;
-      }
-      setParseError(null);
-      return parsed as Record<string, unknown>;
-    } catch (e) {
-      setParseError(`YAML parse error: ${e instanceof Error ? e.message : 'Unknown error'}`);
+    const parsed = parseYamlConfig(yamlContent);
+    setParseError(parsed.parseError);
+    if (!parsed.config) {
       return null;
     }
+    return parsed.config;
   }, [yamlContent]);
 
   const validateWithBackend = useCallback(
     async (config: Record<string, unknown>): Promise<StrategyValidationResponse> => {
-      try {
-        return await validateStrategy.mutateAsync({
-          name: strategyName,
-          request: { config },
-        });
-      } catch (error) {
-        const message = error instanceof Error ? error.message : 'Unknown validation error';
-        return {
-          valid: false,
-          errors: [`Validation request failed: ${message}`],
-          warnings: [],
-        };
-      }
+      return requestBackendValidation({
+        mutateAsync: validateStrategy.mutateAsync,
+        strategyName,
+        config,
+      });
     },
     [strategyName, validateStrategy]
   );
@@ -135,9 +287,6 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
     [yamlContent]
   );
 
-  const hasValidationErrors = validationResult && !validationResult.valid;
-  const hasValidationWarnings = validationResult?.warnings && validationResult.warnings.length > 0;
-
   return (
     <Dialog open={open} onOpenChange={handleOpenChange}>
       <DialogContent className="max-w-6xl max-h-[90vh] flex flex-col">
@@ -152,95 +301,15 @@ export function StrategyEditor({ open, onOpenChange, strategyName, onSuccess }: 
         </DialogHeader>
 
         <div className="flex-1 min-h-0 py-4 overflow-hidden">
-          {isLoadingStrategy ? (
-            <div className="flex items-center justify-center h-[500px]">
-              <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 h-[500px]">
-              {/* Monaco Editor */}
-              <div className="lg:col-span-2 flex flex-col min-h-0">
-                <div className="flex-1 min-h-0">
-                  <MonacoYamlEditor value={yamlContent} onChange={handleYamlChange} height="400px" />
-                </div>
-
-                {/* Error/Validation Messages */}
-                <div className="mt-4 space-y-2">
-                  {parseError && (
-                    <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
-                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                      <span className="text-sm">{parseError}</span>
-                    </div>
-                  )}
-
-                  {validationResult && (
-                    <div
-                      className={cn(
-                        'p-3 rounded-md space-y-2',
-                        hasValidationErrors
-                          ? 'bg-destructive/10'
-                          : hasValidationWarnings
-                            ? 'bg-yellow-500/10'
-                            : 'bg-green-500/10'
-                      )}
-                    >
-                      <div className="flex items-center gap-2">
-                        {hasValidationErrors ? (
-                          <AlertCircle className="h-4 w-4 text-destructive" />
-                        ) : (
-                          <CheckCircle2
-                            className={cn('h-4 w-4', hasValidationWarnings ? 'text-yellow-500' : 'text-green-500')}
-                          />
-                        )}
-                        <span
-                          className={cn(
-                            'text-sm font-medium',
-                            hasValidationErrors
-                              ? 'text-destructive'
-                              : hasValidationWarnings
-                                ? 'text-yellow-500'
-                                : 'text-green-500'
-                          )}
-                        >
-                          {hasValidationErrors
-                            ? 'Validation failed'
-                            : hasValidationWarnings
-                              ? 'Validation passed with warnings'
-                              : 'Validation passed'}
-                        </span>
-                      </div>
-                      {validationResult.errors.length > 0 && (
-                        <ul className="list-disc list-inside text-sm text-destructive space-y-1">
-                          {validationResult.errors.map((error) => (
-                            <li key={error}>{error}</li>
-                          ))}
-                        </ul>
-                      )}
-                      {validationResult.warnings.length > 0 && (
-                        <ul className="list-disc list-inside text-sm text-yellow-600 space-y-1">
-                          {validationResult.warnings.map((warning) => (
-                            <li key={warning}>{warning}</li>
-                          ))}
-                        </ul>
-                      )}
-                    </div>
-                  )}
-
-                  {updateStrategy.isError && (
-                    <div className="flex items-start gap-2 p-3 rounded-md bg-destructive/10 text-destructive">
-                      <AlertCircle className="h-4 w-4 mt-0.5 shrink-0" />
-                      <span className="text-sm">Error: {updateStrategy.error.message}</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Signal Reference Panel */}
-              <div className="lg:col-span-1 border rounded-md overflow-hidden min-h-0">
-                <SignalReferencePanel onCopySnippet={handleCopySnippet} />
-              </div>
-            </div>
-          )}
+          <EditorContent
+            isLoadingStrategy={isLoadingStrategy}
+            yamlContent={yamlContent}
+            onYamlChange={handleYamlChange}
+            onCopySnippet={handleCopySnippet}
+            parseError={parseError}
+            validationResult={validationResult}
+            updateErrorMessage={updateStrategy.isError ? updateStrategy.error.message : null}
+          />
         </div>
 
         <DialogFooter className="gap-2">

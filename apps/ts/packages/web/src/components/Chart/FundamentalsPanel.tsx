@@ -19,6 +19,19 @@ interface FundamentalsPanelProps {
   metricVisibility?: Record<FundamentalMetricId, boolean>;
 }
 
+type DailyValuationPoint = {
+  per?: number | null;
+  pbr?: number | null;
+  close?: number | null;
+};
+
+type FundamentalsViewData = {
+  data: ApiFundamentalDataPoint[];
+  latestMetrics?: ApiFundamentalDataPoint | null;
+  dailyValuation?: DailyValuationPoint[] | null;
+  forecastEpsLookbackFyCount?: number | null;
+};
+
 function resolveChangeRate(
   actualValue: number | null | undefined,
   forecastValue: number | null | undefined
@@ -65,6 +78,159 @@ function resolveForecastEpsAboveRecentFyActuals(
   return forecastValue > Math.max(...recentActuals);
 }
 
+function findLatestFiscalYearWithActualData(rows: ApiFundamentalDataPoint[]): ApiFundamentalDataPoint | undefined {
+  return rows.find((item) => isFiscalYear(item.periodType) && hasActualFinancialData(item));
+}
+
+function firstNonNull<T>(...values: Array<T | null | undefined>): T | null {
+  for (const value of values) {
+    if (value != null) {
+      return value;
+    }
+  }
+  return null;
+}
+
+function resolveForecastEpsFields(
+  fyData: ApiFundamentalDataPoint,
+  latestMetrics: ApiFundamentalDataPoint | null | undefined
+) {
+  const revisedForecastEps = firstNonNull(latestMetrics?.revisedForecastEps, fyData.revisedForecastEps);
+  const revisedForecastSource = firstNonNull(latestMetrics?.revisedForecastSource, fyData.revisedForecastSource);
+  const forecastEps = firstNonNull(revisedForecastEps, latestMetrics?.forecastEps);
+  const adjustedForecastEps =
+    revisedForecastEps != null ? null : firstNonNull(latestMetrics?.adjustedForecastEps, fyData.adjustedForecastEps);
+
+  return {
+    forecastEps,
+    adjustedForecastEps,
+    revisedForecastEps,
+    revisedForecastSource,
+  };
+}
+
+function resolveForecastAboveRecentFlag(
+  fyData: ApiFundamentalDataPoint,
+  latestMetrics: ApiFundamentalDataPoint | null | undefined
+): boolean | null {
+  return firstNonNull(
+    latestMetrics?.forecastEpsAboveRecentFyActuals,
+    latestMetrics?.forecastEpsAboveAllHistoricalActuals,
+    fyData.forecastEpsAboveRecentFyActuals,
+    fyData.forecastEpsAboveAllHistoricalActuals
+  );
+}
+
+function mergeLatestMetrics(
+  fyData: ApiFundamentalDataPoint,
+  latestMetrics: ApiFundamentalDataPoint | null | undefined,
+  forecastEpsLookbackFyCount: number
+): ApiFundamentalDataPoint {
+  const forecastEpsFields = resolveForecastEpsFields(fyData, latestMetrics);
+
+  return {
+    ...fyData,
+    forecastEps: forecastEpsFields.forecastEps,
+    adjustedForecastEps: forecastEpsFields.adjustedForecastEps,
+    forecastEpsChangeRate: latestMetrics?.forecastEpsChangeRate ?? null,
+    revisedForecastEps: forecastEpsFields.revisedForecastEps,
+    revisedForecastSource: forecastEpsFields.revisedForecastSource,
+    forecastDividendFy: latestMetrics?.forecastDividendFy ?? null,
+    adjustedForecastDividendFy: latestMetrics?.adjustedForecastDividendFy ?? fyData.adjustedForecastDividendFy ?? null,
+    forecastDividendFyChangeRate: latestMetrics?.forecastDividendFyChangeRate ?? null,
+    payoutRatio: latestMetrics?.payoutRatio ?? fyData.payoutRatio ?? null,
+    forecastPayoutRatio: latestMetrics?.forecastPayoutRatio ?? null,
+    forecastPayoutRatioChangeRate: latestMetrics?.forecastPayoutRatioChangeRate ?? null,
+    prevCashFlowOperating: latestMetrics?.prevCashFlowOperating ?? null,
+    prevCashFlowInvesting: latestMetrics?.prevCashFlowInvesting ?? null,
+    prevCashFlowFinancing: latestMetrics?.prevCashFlowFinancing ?? null,
+    prevCashAndEquivalents: latestMetrics?.prevCashAndEquivalents ?? null,
+    cfoToNetProfitRatio: latestMetrics?.cfoToNetProfitRatio ?? fyData.cfoToNetProfitRatio ?? null,
+    tradingValueToMarketCapRatio:
+      latestMetrics?.tradingValueToMarketCapRatio ?? fyData.tradingValueToMarketCapRatio ?? null,
+    forecastEpsAboveRecentFyActuals: resolveForecastAboveRecentFlag(fyData, latestMetrics),
+    forecastEpsLookbackFyCount,
+  };
+}
+
+function applyForecastChangeRates(metrics: ApiFundamentalDataPoint): ApiFundamentalDataPoint {
+  let nextMetrics = metrics;
+
+  const displayActualEps = metrics.adjustedEps ?? metrics.eps ?? null;
+  const displayForecastEps = metrics.revisedForecastEps ?? metrics.adjustedForecastEps ?? metrics.forecastEps ?? null;
+  const epsChangeRate = resolveChangeRate(displayActualEps, displayForecastEps);
+  if (epsChangeRate != null) {
+    nextMetrics = { ...nextMetrics, forecastEpsChangeRate: epsChangeRate };
+  }
+
+  const displayActualDividend = metrics.adjustedDividendFy ?? metrics.dividendFy ?? null;
+  const displayForecastDividend = metrics.adjustedForecastDividendFy ?? metrics.forecastDividendFy ?? null;
+  const dividendChangeRate = resolveChangeRate(displayActualDividend, displayForecastDividend);
+  if (dividendChangeRate != null) {
+    nextMetrics = { ...nextMetrics, forecastDividendFyChangeRate: dividendChangeRate };
+  }
+
+  const payoutChangeRate = resolveChangeRate(metrics.payoutRatio ?? null, metrics.forecastPayoutRatio ?? null);
+  if (payoutChangeRate != null) {
+    nextMetrics = { ...nextMetrics, forecastPayoutRatioChangeRate: payoutChangeRate };
+  }
+
+  return nextMetrics;
+}
+
+function applyForecastFlagFallback(
+  metrics: ApiFundamentalDataPoint,
+  rows: ApiFundamentalDataPoint[]
+): ApiFundamentalDataPoint {
+  if (metrics.forecastEpsAboveRecentFyActuals != null) {
+    return metrics;
+  }
+
+  const displayForecastEps = metrics.revisedForecastEps ?? metrics.adjustedForecastEps ?? metrics.forecastEps ?? null;
+  return {
+    ...metrics,
+    forecastEpsAboveRecentFyActuals: resolveForecastEpsAboveRecentFyActuals(
+      rows,
+      displayForecastEps,
+      metrics.forecastEpsLookbackFyCount ?? 3
+    ),
+  };
+}
+
+function applyLatestDailyValuation(
+  metrics: ApiFundamentalDataPoint,
+  dailyValuation: DailyValuationPoint[] | null | undefined
+): ApiFundamentalDataPoint {
+  const latestDaily = dailyValuation?.[dailyValuation.length - 1];
+  if (!latestDaily) {
+    return metrics;
+  }
+
+  return {
+    ...metrics,
+    per: latestDaily.per ?? null,
+    pbr: latestDaily.pbr ?? null,
+    stockPrice: latestDaily.close ?? null,
+  };
+}
+
+function resolveLatestFyMetrics(data: FundamentalsViewData | undefined): ApiFundamentalDataPoint | undefined {
+  if (!data?.data || data.data.length === 0) {
+    return undefined;
+  }
+
+  const latestFyData = findLatestFiscalYearWithActualData(data.data);
+  if (!latestFyData) {
+    return undefined;
+  }
+
+  const lookbackCount = data.forecastEpsLookbackFyCount ?? 3;
+  const merged = mergeLatestMetrics(latestFyData, data.latestMetrics, lookbackCount);
+  const withRates = applyForecastChangeRates(merged);
+  const withForecastFlag = applyForecastFlagFallback(withRates, data.data);
+  return applyLatestDailyValuation(withForecastFlag, data.dailyValuation);
+}
+
 export function FundamentalsPanel({
   symbol,
   enabled = true,
@@ -82,109 +248,7 @@ export function FundamentalsPanel({
   // Get the latest FY (full year) data with actual financial data for summary card
   // Then update PER/PBR/stockPrice with latest daily valuation for current prices
   // Also merge forecastEps and prevCashFlow* from latestMetrics (which has enhanced data)
-  // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: data merging logic with multiple conditional fields
-  const latestFyMetrics = useMemo(() => {
-    if (!data?.data) return undefined;
-
-    // Find latest FY with actual financial data (not forecast)
-    const fyData = data.data.find((d) => isFiscalYear(d.periodType) && hasActualFinancialData(d));
-
-    if (!fyData) return undefined;
-
-    // Start with FY data and merge enhanced fields from latestMetrics
-    const revisedForecastEps = data.latestMetrics?.revisedForecastEps ?? fyData.revisedForecastEps ?? null;
-    const revisedForecastSource = data.latestMetrics?.revisedForecastSource ?? fyData.revisedForecastSource ?? null;
-    const forecastEps = revisedForecastEps ?? data.latestMetrics?.forecastEps ?? null;
-    const adjustedForecastEps =
-      revisedForecastEps != null ? null : data.latestMetrics?.adjustedForecastEps ?? fyData.adjustedForecastEps ?? null;
-
-    let result = {
-      ...fyData,
-      // Merge forecast and previous period data from latestMetrics (API enhances these)
-      forecastEps,
-      adjustedForecastEps,
-      forecastEpsChangeRate: data.latestMetrics?.forecastEpsChangeRate ?? null,
-      revisedForecastEps,
-      revisedForecastSource,
-      forecastDividendFy: data.latestMetrics?.forecastDividendFy ?? null,
-      adjustedForecastDividendFy:
-        data.latestMetrics?.adjustedForecastDividendFy ?? fyData.adjustedForecastDividendFy ?? null,
-      forecastDividendFyChangeRate: data.latestMetrics?.forecastDividendFyChangeRate ?? null,
-      payoutRatio: data.latestMetrics?.payoutRatio ?? fyData.payoutRatio ?? null,
-      forecastPayoutRatio: data.latestMetrics?.forecastPayoutRatio ?? null,
-      forecastPayoutRatioChangeRate: data.latestMetrics?.forecastPayoutRatioChangeRate ?? null,
-      prevCashFlowOperating: data.latestMetrics?.prevCashFlowOperating ?? null,
-      prevCashFlowInvesting: data.latestMetrics?.prevCashFlowInvesting ?? null,
-      prevCashFlowFinancing: data.latestMetrics?.prevCashFlowFinancing ?? null,
-      prevCashAndEquivalents: data.latestMetrics?.prevCashAndEquivalents ?? null,
-      cfoToNetProfitRatio: data.latestMetrics?.cfoToNetProfitRatio ?? fyData.cfoToNetProfitRatio ?? null,
-      tradingValueToMarketCapRatio:
-        data.latestMetrics?.tradingValueToMarketCapRatio ?? fyData.tradingValueToMarketCapRatio ?? null,
-      forecastEpsAboveRecentFyActuals:
-        data.latestMetrics?.forecastEpsAboveRecentFyActuals ??
-        data.latestMetrics?.forecastEpsAboveAllHistoricalActuals ??
-        fyData.forecastEpsAboveRecentFyActuals ??
-        fyData.forecastEpsAboveAllHistoricalActuals ??
-        null,
-      forecastEpsLookbackFyCount: data.forecastEpsLookbackFyCount ?? 3,
-    };
-
-    const displayActualEps = result.adjustedEps ?? result.eps ?? null;
-    const displayForecastEps = result.revisedForecastEps ?? result.adjustedForecastEps ?? result.forecastEps ?? null;
-    const epsChangeRate = resolveChangeRate(displayActualEps, displayForecastEps);
-    if (epsChangeRate != null) {
-      result = {
-        ...result,
-        forecastEpsChangeRate: epsChangeRate,
-      };
-    }
-
-    const displayActualDividend = result.adjustedDividendFy ?? result.dividendFy ?? null;
-    const displayForecastDividend =
-      result.adjustedForecastDividendFy ?? result.forecastDividendFy ?? null;
-    const dividendChangeRate = resolveChangeRate(displayActualDividend, displayForecastDividend);
-    if (dividendChangeRate != null) {
-      result = {
-        ...result,
-        forecastDividendFyChangeRate: dividendChangeRate,
-      };
-    }
-
-    const payoutChangeRate = resolveChangeRate(result.payoutRatio ?? null, result.forecastPayoutRatio ?? null);
-    if (payoutChangeRate != null) {
-      result = {
-        ...result,
-        forecastPayoutRatioChangeRate: payoutChangeRate,
-      };
-    }
-
-    result = {
-      ...result,
-      forecastEpsAboveRecentFyActuals:
-        result.forecastEpsAboveRecentFyActuals ??
-        resolveForecastEpsAboveRecentFyActuals(
-          data.data,
-          displayForecastEps,
-          result.forecastEpsLookbackFyCount ?? 3
-        ),
-    };
-
-    // Update with latest daily valuation (current stock price PER/PBR)
-    const dailyValuation = data.dailyValuation;
-    if (dailyValuation && dailyValuation.length > 0) {
-      const latestDaily = dailyValuation[dailyValuation.length - 1];
-      if (latestDaily) {
-        result = {
-          ...result,
-          per: latestDaily.per,
-          pbr: latestDaily.pbr,
-          stockPrice: latestDaily.close,
-        };
-      }
-    }
-
-    return result;
-  }, [data]);
+  const latestFyMetrics = useMemo(() => resolveLatestFyMetrics(data), [data]);
 
   if (!symbol) {
     return (

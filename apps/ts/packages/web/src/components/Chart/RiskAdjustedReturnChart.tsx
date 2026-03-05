@@ -131,7 +131,7 @@ export function RiskAdjustedReturnChart({
     if (chartRef.current) {
       setChartVisibleBars(chartRef.current, ratioData.length, settings.visibleBars);
     }
-  }, [condition, data, settings.visibleBars, threshold]);
+  }, [data, settings.visibleBars, threshold]);
 
   useEffect(() => {
     const container = chartContainerRef.current;
