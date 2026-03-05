@@ -96,6 +96,7 @@ Total paths: **121**
 | `/api/db/sync` | `POST` |
 | `/api/db/sync/jobs/active` | `GET` |
 | `/api/db/sync/jobs/{jobId}` | `GET, DELETE` |
+| `/api/db/sync/jobs/{jobId}/fetch-details` | `GET` |
 | `/api/db/validate` | `GET` |
 
 ## /api/fundamentals

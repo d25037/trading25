@@ -30,6 +30,8 @@ from src.entrypoints.http.schemas.db import (
     MarketValidationResponse,
     RefreshRequest,
     RefreshResponse,
+    SyncFetchDetail,
+    SyncFetchDetailsResponse,
     SyncProgress,
     SyncRequest,
     SyncJobResponse,
@@ -156,6 +158,7 @@ async def start_sync_job(request: Request, body: SyncRequest) -> JSONResponse:
         jquants_client,
         time_series_store=time_series_store,
         close_time_series_store=False,
+        enforce_bulk_for_stock_data=body.enforceBulkForStockData,
     )
 
     if job is None:
@@ -181,11 +184,25 @@ def _to_sync_job_response(job: JobInfo[SyncJobData, SyncProgress, SyncResult]) -
         jobId=job.job_id,
         status=job.status.value,
         mode=job.data.resolved_mode or job.data.mode.value,
+        enforceBulkForStockData=job.data.enforce_bulk_for_stock_data,
         progress=job.progress,
         result=job.result,
         startedAt=(job.started_at or job.created_at).isoformat(),
         completedAt=job.completed_at.isoformat() if job.completed_at else None,
         error=job.error,
+    )
+
+
+def _to_sync_fetch_details_response(job: JobInfo[SyncJobData, SyncProgress, SyncResult]) -> SyncFetchDetailsResponse:
+    # Snapshot first to avoid concurrent append side effects while serializing.
+    snapshot = list(job.data.fetch_details)
+    items = [SyncFetchDetail.model_validate(item) for item in snapshot]
+    return SyncFetchDetailsResponse(
+        jobId=job.job_id,
+        status=job.status.value,
+        mode=job.data.resolved_mode or job.data.mode.value,
+        latest=items[-1] if items else None,
+        items=items,
     )
 
 
@@ -211,6 +228,18 @@ def get_sync_job(jobId: str) -> SyncJobResponse:
     if job is None:
         raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
     return _to_sync_job_response(job)
+
+
+@router.get(
+    "/api/db/sync/jobs/{jobId}/fetch-details",
+    response_model=SyncFetchDetailsResponse,
+    summary="Get sync job fetch details",
+)
+def get_sync_job_fetch_details(jobId: str) -> SyncFetchDetailsResponse:
+    job = sync_job_manager.get_job(jobId)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
+    return _to_sync_fetch_details_response(job)
 
 
 @router.delete(

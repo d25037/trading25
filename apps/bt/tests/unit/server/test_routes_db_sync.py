@@ -62,6 +62,28 @@ class TestSyncRoutes:
             assert mock_start.await_count == 1
             assert mock_start.await_args.kwargs["time_series_store"] is default_store
             assert mock_start.await_args.kwargs["close_time_series_store"] is False
+            assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is False
+
+    def test_sync_start_with_bulk_enforcement(self, client: TestClient) -> None:
+        default_store = MagicMock()
+        client.app.state.market_time_series_store = default_store
+
+        with patch("src.entrypoints.http.routes.db.start_sync", new_callable=AsyncMock) as mock_start:
+            mock_job = MagicMock()
+            mock_job.job_id = "test-job-bulk-on"
+            mock_job.data.resolved_mode = "incremental"
+            mock_job.cancelled = MagicMock()
+            mock_start.return_value = mock_job
+
+            resp = client.post(
+                "/api/db/sync",
+                json={"mode": "incremental", "enforceBulkForStockData": True},
+            )
+
+            assert resp.status_code == 202
+            assert mock_start.await_count == 1
+            assert mock_start.await_args.kwargs["time_series_store"] is default_store
+            assert mock_start.await_args.kwargs["enforce_bulk_for_stock_data"] is True
 
     def test_sync_start_with_data_plane_override(self, client: TestClient) -> None:
         client.app.state.market_time_series_store = None
@@ -210,6 +232,7 @@ class TestSyncRoutes:
             job.status = JobStatus.RUNNING
             job.data.resolved_mode = "incremental"
             job.data.mode.value = "incremental"
+            job.data.enforce_bulk_for_stock_data = False
             job.progress = None
             job.result = None
             job.created_at = datetime.now(UTC)
@@ -224,6 +247,7 @@ class TestSyncRoutes:
             assert body["jobId"] == "job-active"
             assert body["status"] == "running"
             assert body["mode"] == "incremental"
+            assert body["enforceBulkForStockData"] is False
 
     def test_get_sync_job_success(self, client: TestClient) -> None:
         with patch("src.entrypoints.http.routes.db.sync_job_manager.get_job") as mock_get_job:
@@ -232,6 +256,7 @@ class TestSyncRoutes:
             job.status = JobStatus.RUNNING
             job.data.resolved_mode = ""
             job.data.mode.value = "auto"
+            job.data.enforce_bulk_for_stock_data = False
             job.progress = None
             job.result = None
             job.created_at = datetime.now(UTC)
@@ -243,6 +268,44 @@ class TestSyncRoutes:
             resp = client.get("/api/db/sync/jobs/job-1")
             assert resp.status_code == 200
             assert resp.json()["jobId"] == "job-1"
+
+    def test_get_sync_job_fetch_details_success(self, client: TestClient) -> None:
+        with patch("src.entrypoints.http.routes.db.sync_job_manager.get_job") as mock_get_job:
+            job = MagicMock()
+            job.job_id = "job-1"
+            job.status = JobStatus.RUNNING
+            job.data.resolved_mode = "incremental"
+            job.data.mode.value = "incremental"
+            job.data.fetch_details = [
+                {
+                    "eventType": "strategy",
+                    "stage": "stock_data",
+                    "endpoint": "/equities/bars/daily",
+                    "method": "bulk",
+                    "targetLabel": "42 dates",
+                    "reason": "bulk_estimate_lower",
+                    "reasonDetail": None,
+                    "estimatedRestCalls": 120,
+                    "estimatedBulkCalls": 6,
+                    "plannerApiCalls": 1,
+                    "fallback": False,
+                    "fallbackReason": None,
+                    "timestamp": "2026-03-05T00:00:00+00:00",
+                }
+            ]
+            mock_get_job.return_value = job
+
+            resp = client.get("/api/db/sync/jobs/job-1/fetch-details")
+            assert resp.status_code == 200
+            body = resp.json()
+            assert body["jobId"] == "job-1"
+            assert body["latest"]["endpoint"] == "/equities/bars/daily"
+            assert body["latest"]["eventType"] == "strategy"
+            assert len(body["items"]) == 1
+
+    def test_get_sync_job_fetch_details_not_found(self, client: TestClient) -> None:
+        resp = client.get("/api/db/sync/jobs/nonexistent-id/fetch-details")
+        assert resp.status_code == 404
 
     def test_cancel_sync_job_not_found(self, client: TestClient) -> None:
         resp = client.delete("/api/db/sync/jobs/nonexistent-id")
