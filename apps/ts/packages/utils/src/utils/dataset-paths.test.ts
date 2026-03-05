@@ -1,6 +1,6 @@
 /**
  * Dataset Paths - Testing
- * Tests for dataset path utilities including market database path
+ * Tests for dataset path utilities including market DuckDB path
  */
 
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
@@ -41,7 +41,14 @@ describe('Dataset Paths', () => {
       delete process.env.XDG_DATA_HOME;
 
       const dbPath = getMarketDbPath();
-      const expectedPath = path.join(os.homedir(), '.local', 'share', 'trading25', 'market.db');
+      const expectedPath = path.join(
+        os.homedir(),
+        '.local',
+        'share',
+        'trading25',
+        'market-timeseries',
+        'market.duckdb'
+      );
 
       expect(dbPath).toBe(expectedPath);
     });
@@ -53,7 +60,12 @@ describe('Dataset Paths', () => {
 
       try {
         const dbPath = getMarketDbPath();
-        const expectedPath = path.join(customDataHome, 'trading25', 'market.db');
+        const expectedPath = path.join(
+          customDataHome,
+          'trading25',
+          'market-timeseries',
+          'market.duckdb'
+        );
 
         expect(dbPath).toBe(expectedPath);
       } finally {
@@ -77,11 +89,16 @@ describe('Dataset Paths', () => {
         const dbPath = getMarketDbPath();
 
         // Directory should now exist
-        const tradingDir = path.join(customDataHome, 'trading25');
-        expect(fs.existsSync(tradingDir)).toBe(true);
+        const timeseriesDir = path.join(customDataHome, 'trading25', 'market-timeseries');
+        expect(fs.existsSync(timeseriesDir)).toBe(true);
 
         // Path should be correct
-        const expectedPath = path.join(customDataHome, 'trading25', 'market.db');
+        const expectedPath = path.join(
+          customDataHome,
+          'trading25',
+          'market-timeseries',
+          'market.duckdb'
+        );
         expect(dbPath).toBe(expectedPath);
       } finally {
         // Clean up
@@ -94,7 +111,7 @@ describe('Dataset Paths', () => {
     test('should handle existing directory gracefully', () => {
       const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'trading25-test-'));
       const customDataHome = path.join(tempDir, 'custom-data');
-      const tradingDir = path.join(customDataHome, 'trading25');
+      const tradingDir = path.join(customDataHome, 'trading25', 'market-timeseries');
 
       try {
         // Create directory beforehand
@@ -105,7 +122,12 @@ describe('Dataset Paths', () => {
         const dbPath = getMarketDbPath();
 
         // Path should be correct
-        const expectedPath = path.join(customDataHome, 'trading25', 'market.db');
+        const expectedPath = path.join(
+          customDataHome,
+          'trading25',
+          'market-timeseries',
+          'market.duckdb'
+        );
         expect(dbPath).toBe(expectedPath);
         expect(fs.existsSync(tradingDir)).toBe(true);
       } finally {
@@ -122,10 +144,10 @@ describe('Dataset Paths', () => {
       expect(path.isAbsolute(dbPath)).toBe(true);
     });
 
-    test('should always end with market.db', () => {
+    test('should always end with market.duckdb', () => {
       const dbPath = getMarketDbPath();
 
-      expect(dbPath.endsWith('market.db')).toBe(true);
+      expect(dbPath.endsWith('market.duckdb')).toBe(true);
     });
 
     test('should contain trading25 directory in path', () => {

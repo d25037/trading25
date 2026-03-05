@@ -366,7 +366,7 @@ export function SettingsPage() {
             <CardTitle>Stock Refresh (Recovery)</CardTitle>
           </div>
           <CardDescription>
-            Re-fetch specific market.db stock series when individual symbols are corrupted or stale.
+            Re-fetch specific DuckDB stock series when individual symbols are corrupted or stale.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

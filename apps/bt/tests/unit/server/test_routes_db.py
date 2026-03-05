@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-import sqlite3
 
 import pytest
 from fastapi.testclient import TestClient
@@ -15,64 +14,56 @@ from src.infrastructure.db.market.market_db import MarketDb
 
 @pytest.fixture
 def market_db_path(tmp_path):
-    """テスト用 market.db"""
-    db_path = os.path.join(str(tmp_path), "market.db")
-    conn = sqlite3.connect(db_path)
-    conn.executescript("""
-        CREATE TABLE stocks (
-            code TEXT PRIMARY KEY, company_name TEXT NOT NULL,
-            company_name_english TEXT, market_code TEXT NOT NULL,
-            market_name TEXT NOT NULL, sector_17_code TEXT NOT NULL,
-            sector_17_name TEXT NOT NULL, sector_33_code TEXT NOT NULL,
-            sector_33_name TEXT NOT NULL, scale_category TEXT,
-            listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT
-        );
-        CREATE TABLE stock_data (
-            code TEXT NOT NULL, date TEXT NOT NULL,
-            open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL,
-            close REAL NOT NULL, volume INTEGER NOT NULL,
-            adjustment_factor REAL, created_at TEXT,
-            PRIMARY KEY (code, date)
-        );
-        CREATE TABLE topix_data (
-            date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL,
-            low REAL NOT NULL, close REAL NOT NULL, created_at TEXT
-        );
-        CREATE TABLE indices_data (
-            code TEXT NOT NULL, date TEXT NOT NULL,
-            open REAL, high REAL, low REAL, close REAL,
-            sector_name TEXT, created_at TEXT,
-            PRIMARY KEY (code, date)
-        );
-        CREATE TABLE sync_metadata (
-            key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT
-        );
-        CREATE TABLE index_master (
-            code TEXT PRIMARY KEY, name TEXT NOT NULL,
-            name_english TEXT, category TEXT NOT NULL,
-            data_start_date TEXT, created_at TEXT, updated_at TEXT
-        );
-
-        INSERT INTO stocks VALUES ('7203', 'トヨタ', 'TOYOTA', '0111', 'プライム', '7', '輸送用機器', '3050', '輸送用機器', 'TOPIX Core30', '1949-05-16', NULL, NULL);
-        INSERT INTO stocks VALUES ('9984', 'SBG', 'SB', '0112', 'スタンダード', '9', '情報・通信', '3700', '情報・通信', NULL, '1994-07-22', NULL, NULL);
-
-        INSERT INTO stock_data VALUES ('7203', '2024-01-04', 100, 110, 90, 105, 1000, 1.0, NULL);
-        INSERT INTO stock_data VALUES ('7203', '2024-01-05', 105, 115, 95, 110, 1100, 0.5, NULL);
-        INSERT INTO stock_data VALUES ('9984', '2024-01-04', 200, 210, 190, 205, 500, 1.0, NULL);
-
-        INSERT INTO topix_data VALUES ('2024-01-04', 2500, 2520, 2490, 2510, NULL);
-        INSERT INTO topix_data VALUES ('2024-01-05', 2510, 2530, 2500, 2520, NULL);
-        INSERT INTO topix_data VALUES ('2024-01-06', 2520, 2540, 2510, 2530, NULL);
-
-        INSERT INTO indices_data VALUES ('0010', '2024-01-04', 100, 102, 99, 101, '食料品', NULL);
-
-        INSERT INTO index_master VALUES ('0010', '食料品', 'Food', 'sector33', NULL, NULL, NULL);
-
-        INSERT INTO sync_metadata VALUES ('init_completed', 'true', NULL);
-        INSERT INTO sync_metadata VALUES ('last_sync_date', '2024-01-06T10:00:00', NULL);
-        INSERT INTO sync_metadata VALUES ('failed_dates', '["2024-01-03"]', NULL);
-    """)
-    conn.close()
+    """テスト用 DuckDB market file"""
+    db_path = os.path.join(str(tmp_path), "market.duckdb")
+    db = MarketDb(db_path, read_only=False)
+    db.upsert_stocks([
+        {
+            "code": "7203",
+            "company_name": "トヨタ",
+            "company_name_english": "TOYOTA",
+            "market_code": "0111",
+            "market_name": "プライム",
+            "sector_17_code": "7",
+            "sector_17_name": "輸送用機器",
+            "sector_33_code": "3050",
+            "sector_33_name": "輸送用機器",
+            "scale_category": "TOPIX Core30",
+            "listed_date": "1949-05-16",
+        },
+        {
+            "code": "9984",
+            "company_name": "SBG",
+            "company_name_english": "SB",
+            "market_code": "0112",
+            "market_name": "スタンダード",
+            "sector_17_code": "9",
+            "sector_17_name": "情報・通信",
+            "sector_33_code": "3700",
+            "sector_33_name": "情報・通信",
+            "listed_date": "1994-07-22",
+        },
+    ])
+    db.upsert_stock_data([
+        {"code": "7203", "date": "2024-01-04", "open": 100, "high": 110, "low": 90, "close": 105, "volume": 1000, "adjustment_factor": 1.0},
+        {"code": "7203", "date": "2024-01-05", "open": 105, "high": 115, "low": 95, "close": 110, "volume": 1100, "adjustment_factor": 0.5},
+        {"code": "9984", "date": "2024-01-04", "open": 200, "high": 210, "low": 190, "close": 205, "volume": 500, "adjustment_factor": 1.0},
+    ])
+    db.upsert_topix_data([
+        {"date": "2024-01-04", "open": 2500, "high": 2520, "low": 2490, "close": 2510},
+        {"date": "2024-01-05", "open": 2510, "high": 2530, "low": 2500, "close": 2520},
+        {"date": "2024-01-06", "open": 2520, "high": 2540, "low": 2510, "close": 2530},
+    ])
+    db.upsert_indices_data([
+        {"code": "0010", "date": "2024-01-04", "open": 100, "high": 102, "low": 99, "close": 101, "sector_name": "食料品"},
+    ])
+    db.upsert_index_master([
+        {"code": "0010", "name": "食料品", "name_english": "Food", "category": "sector33"},
+    ])
+    db.set_sync_metadata("init_completed", "true")
+    db.set_sync_metadata("last_sync_date", "2024-01-06T10:00:00")
+    db.set_sync_metadata("failed_dates", "[\"2024-01-03\"]")
+    db.close()
     return db_path
 
 
@@ -171,17 +162,9 @@ class TestDbValidateRoute:
         assert len(data["recommendations"]) > 0
 
     def test_validate_not_initialized(self, tmp_path) -> None:
-        db_path = os.path.join(str(tmp_path), "empty.db")
-        conn = sqlite3.connect(db_path)
-        conn.executescript("""
-            CREATE TABLE stocks (code TEXT PRIMARY KEY, company_name TEXT NOT NULL, company_name_english TEXT, market_code TEXT NOT NULL, market_name TEXT NOT NULL, sector_17_code TEXT NOT NULL, sector_17_name TEXT NOT NULL, sector_33_code TEXT NOT NULL, sector_33_name TEXT NOT NULL, scale_category TEXT, listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT);
-            CREATE TABLE stock_data (code TEXT NOT NULL, date TEXT NOT NULL, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, volume INTEGER NOT NULL, adjustment_factor REAL, created_at TEXT, PRIMARY KEY (code, date));
-            CREATE TABLE topix_data (date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL, close REAL NOT NULL, created_at TEXT);
-            CREATE TABLE indices_data (code TEXT NOT NULL, date TEXT NOT NULL, open REAL, high REAL, low REAL, close REAL, sector_name TEXT, created_at TEXT, PRIMARY KEY (code, date));
-            CREATE TABLE sync_metadata (key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT);
-            CREATE TABLE index_master (code TEXT PRIMARY KEY, name TEXT NOT NULL, name_english TEXT, category TEXT NOT NULL, data_start_date TEXT, created_at TEXT, updated_at TEXT);
-        """)
-        conn.close()
+        db_path = os.path.join(str(tmp_path), "empty.duckdb")
+        db = MarketDb(db_path, read_only=False)
+        db.close()
         app = create_app()
         app.state.market_db = MarketDb(db_path, read_only=False)
         app.state.market_time_series_store = _build_time_series_store(

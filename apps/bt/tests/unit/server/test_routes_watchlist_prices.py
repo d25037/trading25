@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sqlite3
+import duckdb
 from pathlib import Path
 
 import pytest
@@ -14,9 +14,9 @@ from src.infrastructure.db.market.portfolio_db import PortfolioDb
 
 
 def _create_market_db(path: str) -> None:
-    """テスト用 market.db を作成"""
-    conn = sqlite3.connect(path)
-    conn.executescript("""
+    """テスト用 market.duckdb を作成"""
+    conn = duckdb.connect(path)
+    conn.execute("""
         CREATE TABLE stock_data (
             code TEXT NOT NULL, date TEXT NOT NULL,
             open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL,
@@ -35,7 +35,7 @@ def _create_market_db(path: str) -> None:
 
 @pytest.fixture()
 def market_db_path(tmp_path: Path) -> str:
-    path = str(tmp_path / "market.db")
+    path = str(tmp_path / "market.duckdb")
     _create_market_db(path)
     return path
 

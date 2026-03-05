@@ -48,7 +48,7 @@ class Settings(BaseModel):
     jquants_api_key: str = Field(default="", alias="JQUANTS_API_KEY")
     jquants_plan: str = Field(default="free", alias="JQUANTS_PLAN")
 
-    # market.db (Phase 3B-2a)
+    # Deprecated alias (legacy name): now points to DuckDB time-series file.
     market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
 
     # market time-series data plane (DuckDB SoT)
@@ -65,10 +65,10 @@ class Settings(BaseModel):
     def model_post_init(self, __context: Any) -> None:
         """環境変数未設定時にXDGデフォルトパスを自動設定"""
         data_dir = _default_data_dir()
-        if not self.market_db_path:
-            self.market_db_path = str(Path(data_dir) / "market.db")
         if not self.market_timeseries_dir:
             self.market_timeseries_dir = str(Path(data_dir) / "market-timeseries")
+        if not self.market_db_path:
+            self.market_db_path = str(Path(self.market_timeseries_dir) / "market.duckdb")
         if not self.portfolio_db_path:
             self.portfolio_db_path = str(Path(data_dir) / "portfolio.db")
         if not self.dataset_base_path:

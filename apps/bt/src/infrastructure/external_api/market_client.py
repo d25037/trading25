@@ -1,4 +1,4 @@
-"""API client for market.db operations (market analysis)."""
+"""API client for DuckDB market operations (market analysis)."""
 
 from __future__ import annotations
 
@@ -10,9 +10,9 @@ from src.infrastructure.external_api.client import BaseAPIClient
 
 
 class MarketAPIClient(BaseAPIClient):
-    """API client for market.db operations.
+    """API client for DuckDB market operations.
 
-    This client provides access to market analysis data stored in market.db
+    This client provides access to market analysis data stored in DuckDB
     through the localhost:3002 API.
 
     Endpoints used:
@@ -38,7 +38,7 @@ class MarketAPIClient(BaseAPIClient):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> pd.DataFrame:
-        """Get OHLCV data for a specific stock from market.db.
+        """Get OHLCV data for a specific stock from DuckDB.
 
         Args:
             stock_code: Stock code (e.g., "7203")
@@ -118,7 +118,7 @@ class MarketAPIClient(BaseAPIClient):
         start_date: Optional[str] = None,
         end_date: Optional[str] = None,
     ) -> pd.DataFrame:
-        """Get TOPIX data from market.db (topix_data table).
+        """Get TOPIX data from DuckDB (topix_data table).
 
         Args:
             start_date: Start date in YYYY-MM-DD format (optional)

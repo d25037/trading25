@@ -19,28 +19,28 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 | ts/web | 5173 | Vite + React 19 |
 
 - **FastAPI** が唯一のバックエンド
-- **bt** は SQLite に直接アクセス（`contracts/` スキーマ準拠、SQLAlchemy Core 使用）
-  - **market.db**: 読み書き（SQLAlchemy Core）
+- **bt** はデータ種別ごとに DuckDB / SQLite に直接アクセス（`contracts/` スキーマ準拠）
+  - **market.duckdb + parquet**: market time-series / metadata 読み書き（DuckDB SoT）
   - **portfolio.db**: portfolio/watchlist CRUD + jobs metadata 永続化（SQLAlchemy Core）
   - **dataset.db**: 読み書き（SQLAlchemy Core）
 - market 時系列 Data Plane の SoT は DuckDB + Parquet のみ（SQLite mirror は廃止）
 - `POST /api/db/sync` の `dataPlane` override は `backend=duckdb-parquet` のみ受け付ける
 - `GET /api/db/stats` / `GET /api/db/validate` の時系列スナップショット SoT は DuckDB inspection（`timeSeriesSource` を返却）
-- `market.db` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
+- `market.duckdb` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
 - `/api/db/sync`（`initial` / `incremental`）は `Bulk+REST hybrid` を stage 単位で選択し、予測外部request数が最小の手法を優先する。`stock_data` stage は bulk 必須とし、bulk 不可時は REST fallback せず理由付きでエラー終了する。`incremental` で DuckDB inspection の `topix/stock/indices` が空かつアンカー不在なら cold-start bootstrap を選び、全日付 fallback 暴走を回避する
 - `/api/db/sync/jobs/active` は実行中ジョブの再取得 SoT とし、web は再読み込み/再訪時に localStorage と組み合わせて active job 追跡を復元する。`/api/db/sync/jobs/{jobId}` が 404 の場合は stale な jobId を破棄する
 - `stock_data` の bulk ingest は bulk file 単位で publish し、大量期間同期時のメモリピークによる bulk 失敗→REST fallback を抑制する。fallback 時の progress message は reason を含める
-- `/api/db/sync` と `POST /api/db/stocks/refresh` の時系列アンカー判定・publish/index は DuckDB inspection + time-series store を必須 SoT とし、SQLite `market.db` 時系列テーブルへの fallback を禁止する（inspection 失敗時はエラーで停止）
+- `/api/db/sync` と `POST /api/db/stocks/refresh` の時系列アンカー判定・publish/index は DuckDB inspection + time-series store を必須 SoT とし、旧 SQLite 時系列テーブルへの fallback を禁止する（inspection 失敗時はエラーで停止）
 - DuckDB time-series store は `publish/index/inspect/close` をプロセス内ロックで直列化し、sync 実行と `/api/db/stats` `/api/db/validate` 参照の同時実行による 500 を防止する
 - DuckDB time-series store の Parquet export は `stock_data` / `indices_data` で全件 `ORDER BY` を行わず、同期スループットを優先する（row order 非依存を前提とする）
-- `market.db` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
+- `market.duckdb` の `statements` upsert は `(code, disclosed_date)` 衝突時に非NULL優先マージ（`coalesce(excluded, existing)`）とし、同日別ドキュメント取り込み時の forecast 欠損上書きを防止する
 - Backtest 実行パスは `BT_DATA_ACCESS_MODE=direct` で DatasetDb/MarketDb を直接参照し、FastAPI 内部HTTPを経由しない
 - DatasetDb の `statements` 読み取りは legacy snapshot（配当/配当性向の forecast 列欠落）でも `NULL` 補完で継続し、必須列 `code` / `disclosed_date` 欠落時はエラーにする
 - Dataset API `GET /api/dataset/{name}/info` の SoT は `snapshot` + `stats` + `validation`（`details.dataCoverage` / `details.fkIntegrity` / `details.stockCountValidation` 含む）とし、web 側は legacy `snapshot` 形式を正規化して後方互換を維持する
 - Dataset create/resume（`POST /api/dataset` / `POST /api/dataset/resume`）は `indices_data`（sector index catalog: `0040-0060` / `0080-0090`）を取り込み、`stock_data` は `build_stock_data_row` で欠損OHLCV行をスキップして warning 集約を返す。`resume` は既存 `stock_data` / `topix_data` / `indices_data` / `statements` / `margin_data` を再利用して不足分のみ取得し、`timeoutMinutes` は backend job timeout として create/resume の双方で適用する（web/cli から伝播）
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
-- Screening 実行時のデータ SoT は `market.db`（`stock_data` / `topix_data` / `indices_data` / `stocks`）とし、dataset へのフォールバックを禁止する
+- Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks`）とし、dataset へのフォールバックを禁止する
 - Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定
 - Strategy `rename` / `delete` の権限判定はトップレベルカテゴリ基準で行い、`experimental/**`（例: `experimental/optuna/foo`）は許可する
@@ -99,7 +99,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 ## 共有XDGパス
 
 両プロジェクトが `~/.local/share/trading25/` を共有:
-- `market.db` / `datasets/` / `portfolio.db` — FastAPI が管理
+- `market-timeseries/market.duckdb` + `datasets/` + `portfolio.db` — FastAPI が管理
 - `strategies/experimental/` / `strategies/production/` / `strategies/legacy/` / `backtest/results/` / `backtest/attribution/` — bt が管理
 
 ## bt (Python / uv)
@@ -133,7 +133,7 @@ uv run pyright src/              # 型チェック
 - Fundamentals は EPS に加えて `dividend_fy` / `forecast_dividend_fy` と `payout_ratio` / `forecast_payout_ratio`（実績/予想）を SoT とし、Charts の Fundamentals panel と Backtest Signal system（`forward_dividend_growth` / `dividend_per_share_growth` / `payout_ratio` / `forward_payout_ratio`）で同一指標を使う。配当性向は API 返却時に percent 単位へ正規化し、decimal スケール値（例: 0.283）を 28.3% として扱う
 - fundamentals 最新値の forecast EPS は同一期末内で `DiscDate` が新しい開示を優先し、旧開示値の逆転表示を防ぐ
 - Charts Fundamentals panel は `forecastEpsAboveRecentFyActuals`（最新予想EPS > 直近FY X回の実績EPS最大値）を latest metrics で返し、`forecastEpsLookbackFyCount` に応じた true/false を表示する（旧 `forecastEpsAboveAllHistoricalActuals` は互換フィールド）
-- `/api/analytics/fundamental-ranking` は `market.db`（`statements`/`stocks`/`stock_data`）を SoT とし、`metricKey` と `rankings.ratioHigh` / `rankings.ratioLow` を返す。現在の `metricKey` は `eps_forecast_to_actual`（最新の予想EPS / 最新の実績EPS）で、予想EPSは `revised(四半期) > adjusted FY forecast > raw FY forecast`、実績EPSは最新 FY EPS（share補正）を採用する。`forecastAboveRecentFyActuals=true` と `forecastLookbackFyCount` で「最新予想EPS > 直近FY X回の実績EPS最大値」条件を追加フィルタできる（旧 `forecastAboveAllActuals` も互換）。将来の比率指標追加は `metricKey` で識別する
+- `/api/analytics/fundamental-ranking` は `market.duckdb`（`statements`/`stocks`/`stock_data`）を SoT とし、`metricKey` と `rankings.ratioHigh` / `rankings.ratioLow` を返す。現在の `metricKey` は `eps_forecast_to_actual`（最新の予想EPS / 最新の実績EPS）で、予想EPSは `revised(四半期) > adjusted FY forecast > raw FY forecast`、実績EPSは最新 FY EPS（share補正）を採用する。`forecastAboveRecentFyActuals=true` と `forecastLookbackFyCount` で「最新予想EPS > 直近FY X回の実績EPS最大値」条件を追加フィルタできる（旧 `forecastAboveAllActuals` も互換）。将来の比率指標追加は `metricKey` で識別する
 - Financial analysis の計算ロジック SoT は `src/domains/*`（`analytics` / `fundamentals` / `strategy/indicators`）とし、`src/application/services/*` と `entrypoints` は I/O + orchestration に限定する
 - Strategy group 再振り分けは `/api/strategies/{strategy_name}/move`（`target_category`: `production` / `experimental` / `legacy`）を SoT とし、web の `Backtest > Strategies` から実行する
 

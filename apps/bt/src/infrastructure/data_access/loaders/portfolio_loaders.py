@@ -1,7 +1,7 @@
 """
 ポートフォリオデータローダー
 
-localhost:3002 API経由でportfolio管理とmarket.dbを統合して、
+localhost:3002 API経由でportfolio管理とDuckDB market dataを統合して、
 ポートフォリオ分析用のデータを提供します。
 """
 
@@ -21,13 +21,13 @@ from src.shared.models.portfolio import Portfolio, PortfolioItem, PortfolioSumma
 
 def _convert_portfolio_code_to_market_code(code: str) -> str:
     """
-    portfolio.dbの銘柄コードをmarket.dbの銘柄コードに変換
+    portfolio.dbの銘柄コードを市場データコードに変換
 
     Args:
         code: portfolio.dbの銘柄コード（例: "2207", "285A"）
 
     Returns:
-        str: market.dbの銘柄コード（例: "22070", "285A0"）
+        str: 市場データ側の銘柄コード（例: "22070", "285A0"）
 
     Note:
         4文字の銘柄コードは末尾に"0"を追加して5桁にする
@@ -176,7 +176,7 @@ def load_portfolio_stock_data(
     with MarketAPIClient() as market_client:
         for code in codes:
             try:
-                # portfolio.dbのコードをmarket.dbのコードに変換
+                # portfolio.dbのコードを市場データ側コードに変換
                 market_code = _convert_portfolio_code_to_market_code(code)
                 logger.debug(f"Converting code: {code} -> {market_code}")
 

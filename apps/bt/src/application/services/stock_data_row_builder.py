@@ -1,7 +1,7 @@
 """
 Stock Data Row Builder
 
-J-Quants の日足レスポンスを market.db の stock_data 行へ安全に変換する。
+J-Quants の日足レスポンスを DuckDB stock_data 行へ安全に変換する。
 新規上場銘柄などで OHLCV が欠損している行は None を返してスキップする。
 """
 

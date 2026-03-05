@@ -42,7 +42,7 @@ Phase 6 のリリースゲートとして、以下を実装した。
 | dataset_build | 2.7708 sec | 2.9228 sec |
 | dataset_build_throughput | 60,007,600.5689 rows/min | 64,568,430.8582 rows/min |
 
-本番相当 smoke（market.db 実データ + production strategy）:
+本番相当 smoke（market.duckdb 実データ + production strategy）:
 
 | workload | median | p95 |
 |---|---:|---:|

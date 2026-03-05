@@ -43,7 +43,7 @@ def get_market_stats(
     last_sync = market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
     inspection = time_series_store.inspect()
 
-    # Metadata / reference data (SQLite)
+    # Metadata / reference data (DuckDB metadata tables)
     basic = market_db.get_stats()
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)

@@ -1,14 +1,14 @@
 """
 Ranking Service
 
-market.db からランキングデータを取得するサービス。
+DuckDB market data からランキングデータを取得するサービス。
 Hono MarketRankingService 互換。
 """
 
 from __future__ import annotations
 
-import sqlite3
 from datetime import UTC, datetime
+from collections.abc import Mapping
 from typing import Any
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
@@ -54,7 +54,7 @@ _QUARTER_PERIODS = {"1Q", "2Q", "3Q"}
 _SUPPORTED_FUNDAMENTAL_RATIO_METRIC_KEY = "eps_forecast_to_actual"
 
 
-def _row_to_item(row: sqlite3.Row, rank: int, **extra: Any) -> RankingItem:
+def _row_to_item(row: Mapping[str, Any], rank: int, **extra: Any) -> RankingItem:
     """DB行をRankingItemに変換"""
     return RankingItem(
         rank=rank,
@@ -230,7 +230,7 @@ class RankingService:
         self,
         date: str,
         market_codes: list[str],
-    ) -> list[sqlite3.Row]:
+    ) -> list[Mapping[str, Any]]:
         market_clause, market_params = _build_market_filter(market_codes)
         sql = f"""
             SELECT {FUNDAMENTAL_BASE_COLUMNS}
@@ -244,7 +244,7 @@ class RankingService:
         self,
         date: str,
         market_codes: list[str],
-    ) -> list[sqlite3.Row]:
+    ) -> list[Mapping[str, Any]]:
         market_clause, market_params = _build_market_filter(market_codes)
         sql = f"""
             SELECT
@@ -332,7 +332,7 @@ class RankingService:
 
     def _build_fundamental_item(
         self,
-        stock_row: sqlite3.Row,
+        stock_row: Mapping[str, Any],
         snapshot: _ForecastValue,
     ) -> FundamentalItem:
         return self._fundamental_calculator.build_fundamental_item(stock_row, snapshot)

@@ -7,7 +7,7 @@ VectorBTで使用できる形式に変換します。
 TOPIXデータの二重ロードパス:
     1. load_topix_data() — dataset.db の topix テーブルからロード（バックテスト専用）
        長期間の過去データを使用するバックテストシミュレーション向け。
-    2. load_topix_data_from_market_db() — market.db の topix_data テーブルからロード
+    2. load_topix_data_from_market_db() — DuckDB の topix_data テーブルからロード
        日次更新の直近データを使用する signal_screening のβ値計算 および portfolio factor regression API向け。
 """
 
@@ -66,7 +66,7 @@ def load_topix_data_from_market_db(
     _dataset: str = "", start_date: Optional[str] = None, end_date: Optional[str] = None
 ) -> pd.DataFrame:
     """
-    市場データベース（market.db）からTOPIXデータを読み込み
+    市場データベース（DuckDB）からTOPIXデータを読み込み
 
     日次更新の直近データを使用する以下の用途向け:
         - signal_screening: β値シグナル計算のベンチマークデータ
@@ -84,7 +84,7 @@ def load_topix_data_from_market_db(
         ValueError: TOPIXデータが見つからない場合
 
     Note:
-        - market.dbは topix_data テーブルを使用（dataset/*.dbの topix とは異なる）
+        - DuckDB は topix_data テーブルを使用（dataset/*.dbの topix とは異なる）
         - 直近1年間の市場データ（日次更新）
         - バックテスト用のload_topix_data()とはテーブル名・データソースが異なる
     """
@@ -97,7 +97,7 @@ def load_topix_data_from_market_db(
     # NaNを除去
     df = df.dropna()
 
-    logger.debug("TOPIXデータ読み込み成功（market.db）")
+    logger.debug("TOPIXデータ読み込み成功（DuckDB）")
     return df
 
 

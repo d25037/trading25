@@ -7,7 +7,7 @@ FastAPI サーバー（`:3002`）と Python CLI（`bt`）を提供します。
 ## Responsibilities
 
 - FastAPI API（OpenAPI 公開、統一エラーレスポンス、correlation ID）
-- SQLite 管理（`market.db` / `portfolio.db` / `datasets`）
+- DB 管理（`market-timeseries/market.duckdb` / `portfolio.db` / `datasets`）
 - vectorbt ベースのバックテストと最適化
 - strategy config / signal / lab の実行基盤
 
@@ -61,7 +61,7 @@ uv run pytest tests
 
 共有データルート: `~/.local/share/trading25/`
 
-- `market.db`
+- `market-timeseries/market.duckdb`
 - `portfolio.db`
 - `datasets/`
 - `strategies/experimental/`

@@ -91,7 +91,7 @@ NODE_ENV
 
 ## XDG Data Paths
 
-- `$HOME/.local/share/trading25/market.db`
+- `$HOME/.local/share/trading25/market-timeseries/market.duckdb`
 - `$HOME/.local/share/trading25/datasets/`
 - `$HOME/.local/share/trading25/portfolio.db`
 

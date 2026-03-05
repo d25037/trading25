@@ -17837,7 +17837,7 @@
     },
     "/api/fundamentals/compute": {
       "post": {
-        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: JQuants API via apps/ts/api proxy\n- Stock prices: market.db via apps/ts/api proxy\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Latest metrics with daily valuation applied\n- `dailyValuation`: Daily PER/PBR time-series for charting",
+        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: JQuants API via apps/ts/api proxy\n- Stock prices: market.duckdb via apps/ts/api proxy\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Latest metrics with daily valuation applied\n- `dailyValuation`: Daily PER/PBR time-series for charting",
         "operationId": "compute_fundamentals_api_fundamentals_compute_post",
         "requestBody": {
           "content": {

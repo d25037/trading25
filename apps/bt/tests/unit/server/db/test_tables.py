@@ -81,7 +81,7 @@ def _resolve_column_spec(spec: dict) -> dict:
 # ===========================================================================
 
 class TestMarketDbContract:
-    """market.db テーブル定義が market-db-schema-v1.json と一致"""
+    """market.duckdb テーブル定義が market-db-schema-v1.json と一致"""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
@@ -154,7 +154,7 @@ class TestMarketDbContract:
 # ===========================================================================
 
 class TestMarketDbContractV2:
-    """market.db statements 追加契約（v2）"""
+    """market.duckdb statements 追加契約（v2）"""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
@@ -549,7 +549,7 @@ class TestDrizzleRoundTrip:
     def test_market_create_all_and_insert(self, tmp_path: Path) -> None:
         from sqlalchemy import create_engine, insert, select
 
-        db_path = tmp_path / "test_market.db"
+        db_path = tmp_path / "test_market.duckdb"
         engine = create_engine(f"sqlite:///{db_path}")
 
         market_meta.create_all(engine)

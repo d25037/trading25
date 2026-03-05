@@ -321,7 +321,7 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         "src.application.services.backtest_attribution_service.get_settings",
         lambda: SimpleNamespace(
-            market_db_path="/tmp/market.db",
+            market_db_path="/tmp/market.duckdb",
             portfolio_db_path="/tmp/portfolio.db",
             dataset_base_path="/tmp/datasets",
         ),
@@ -353,7 +353,7 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
     assert payload["strategy"]["yaml_path"] == "/tmp/strategies/experimental/range_break_v18.yaml"
     assert payload["strategy"]["effective_parameters"]["shared_config"]["dataset"] == "prime_202601"
     assert payload["runtime"]["shapley_top_n"] == 5
-    assert payload["databases"]["market_db"]["name"] == "market.db"
+    assert payload["databases"]["market_db"]["name"] == "market.duckdb"
     assert payload["databases"]["dataset_name"] == "prime_202601"
     assert payload["result"]["baseline_metrics"]["total_return"] == pytest.approx(0.12)
     service._executor.shutdown(wait=False)

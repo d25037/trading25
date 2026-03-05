@@ -1,7 +1,7 @@
 """
 Chart Service
 
-チャートデータの提供サービス。market.db + JQuants fallback。
+チャートデータの提供サービス。DuckDB + JQuants fallback。
 Hono chart/indices, chart/stocks 系ルートと同等のロジック。
 """
 
@@ -128,8 +128,8 @@ class ChartService:
         from_date: str | None = None,
         to_date: str | None = None,
     ) -> TopixDataResponse | None:
-        """TOPIX データを取得（market.db → JQuants fallback）"""
-        # market.db を試行
+        """TOPIX データを取得（DuckDB → JQuants fallback）"""
+        # DuckDB を試行
         if self._reader is not None:
             data = self._get_topix_from_db(from_date, to_date)
             if data is not None:
@@ -143,7 +143,7 @@ class ChartService:
         from_date: str | None,
         to_date: str | None,
     ) -> TopixDataResponse | None:
-        """market.db から TOPIX データを取得"""
+        """DuckDB から TOPIX データを取得"""
         if self._reader is None:
             return None
 
@@ -224,8 +224,8 @@ class ChartService:
         timeframe: str = "daily",
         adjusted: bool = True,
     ) -> StockDataResponse | None:
-        """銘柄チャートデータを取得（market.db → JQuants fallback）"""
-        # market.db を試行
+        """銘柄チャートデータを取得（DuckDB → JQuants fallback）"""
+        # DuckDB を試行
         if self._reader is not None:
             data = self._get_stock_from_db(symbol, timeframe)
             if data is not None:
@@ -235,7 +235,7 @@ class ChartService:
         return await self._get_stock_from_jquants(symbol, timeframe, adjusted)
 
     def _get_stock_from_db(self, symbol: str, timeframe: str) -> StockDataResponse | None:
-        """market.db から銘柄データを取得"""
+        """DuckDB から銘柄データを取得"""
         if self._reader is None:
             return None
 
@@ -344,7 +344,7 @@ class ChartService:
     # --- Stock Search ---
 
     def search_stocks(self, query: str, limit: int = 20) -> StockSearchResponse:
-        """銘柄検索（market.db のみ）"""
+        """銘柄検索（DuckDB のみ）"""
         if self._reader is None or not query.strip():
             return StockSearchResponse(query=query, results=[], count=0)
 

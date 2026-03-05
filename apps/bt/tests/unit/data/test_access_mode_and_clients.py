@@ -31,7 +31,8 @@ def _patch_settings(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
         "get_settings",
         lambda: _ns(
             dataset_base_path=str(tmp_path),
-            market_db_path=str(tmp_path / "market.db"),
+            market_db_path=str(tmp_path / "market.duckdb"),
+            market_timeseries_dir=str(tmp_path / "market-timeseries"),
         ),
     )
 
@@ -92,7 +93,7 @@ def test_resolve_market_reader_raises_when_missing(
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
 
-    with pytest.raises(FileNotFoundError, match="market.db not found"):
+    with pytest.raises(FileNotFoundError, match="market\\.duckdb not found"):
         clients._resolve_market_reader()
 
 
@@ -100,7 +101,9 @@ def test_resolve_market_reader_uses_singleton(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
-    (tmp_path / "market.db").write_text("", encoding="utf-8")
+    timeseries_dir = tmp_path / "market-timeseries"
+    timeseries_dir.mkdir(parents=True, exist_ok=True)
+    (timeseries_dir / "market.duckdb").write_text("", encoding="utf-8")
 
     init_calls: list[str] = []
 

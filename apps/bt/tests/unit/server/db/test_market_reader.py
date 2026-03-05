@@ -1,10 +1,10 @@
 """
 MarketDbReader Unit Tests
 
-in-memory SQLite を使用したテスト。
+in-memory DuckDB を使用したテスト。
 """
 
-import sqlite3
+import duckdb
 
 import pytest
 
@@ -53,7 +53,7 @@ class TestMarketDbReader:
 
     def test_readonly_write_fails(self, reader):
         """read-only 接続で書き込み不可"""
-        with pytest.raises(sqlite3.OperationalError):
+        with pytest.raises(PermissionError):
             reader.query("INSERT INTO stocks (code, company_name, market_code, market_name, sector_17_code, sector_17_name, sector_33_code, sector_33_name, listed_date) VALUES ('99990', 'test', 'prime', 'p', 's17', 's17n', 's33', 's33n', '2024-01-01')")
 
     def test_get_latest_price(self, reader):
@@ -76,7 +76,7 @@ class TestMarketDbReader:
 
     def test_get_stock_prices_by_date_prefers_4digit(self, market_db_path):
         """4桁/5桁が同居する場合は4桁を優先マージ"""
-        conn = sqlite3.connect(market_db_path)
+        conn = duckdb.connect(market_db_path)
         conn.execute(
             "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
             (
@@ -100,7 +100,7 @@ class TestMarketDbReader:
             conn.execute(
                 "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 ("7203", d, base, base + 20, base - 10, base + 5, 999999 + i, 1.0, None),
-            )
+        )
         conn.commit()
         conn.close()
 

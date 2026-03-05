@@ -27,7 +27,7 @@ description: bt 側の SQLite 管理を扱うスキル。`apps/bt/src/lib/market
 - DB 管理の単一実装は `apps/bt`。`apps/ts` は FastAPI (`:3002`) 経由のみ。
 - SQLite アクセスは SQLAlchemy Core (`Table`, `select`, `insert`, `update`) を維持し、ORM セッションを導入しない。
 - 役割分離を維持する。
-  - `market.db`: 市場データ読み書き
+  - `market-timeseries/market.duckdb`: 市場データ読み書き
   - `portfolio.db`: portfolio / watchlist CRUD
   - `datasets/*/dataset.db`: `DatasetDb` が読み取り、`dataset_writer` が書き込みを担当
 - dataset 名・パスは `DatasetResolver` で検証し、絶対パス・`..` を許可しない。

@@ -5,11 +5,11 @@ Screening Service Unit Tests
 from __future__ import annotations
 
 import os
-import sqlite3
 import time
 from datetime import datetime
 from pathlib import Path
 
+import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
@@ -31,8 +31,7 @@ from src.application.services.screening_service import (
 @pytest.fixture
 def screening_db(tmp_path):
     db_path = str(tmp_path / "screening.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
+    conn = duckdb.connect(db_path)
 
     conn.execute(
         """
@@ -61,7 +60,6 @@ def screening_db(tmp_path):
             (code, company_name, market_code, "TOPIX Small 1", "情報・通信業"),
         )
 
-    conn.commit()
     conn.close()
     return db_path
 

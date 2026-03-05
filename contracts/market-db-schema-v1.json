@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Trading25 Market DB Schema v1",
-  "description": "market.db スキーマ契約。Phase 3B-2a/2b で使用するテーブル定義。dataset-db-schema-v2.json のサブセット + index_master テーブル。",
+  "description": "market.duckdb スキーマ契約。Phase 3B-2a/2b で使用するテーブル定義。dataset-db-schema-v2.json のサブセット + index_master テーブル。",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "tables"],

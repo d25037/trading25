@@ -1,7 +1,7 @@
 """
 Sync Strategies
 
-market.db 同期のための 3 つの戦略。
+DuckDB market data 同期のための 3 つの戦略。
 Hono sync-strategies.ts からの移植。
 """
 

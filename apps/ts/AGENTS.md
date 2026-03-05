@@ -103,7 +103,7 @@ NODE_ENV                # development, production
 
 ## XDG-Compliant Paths
 
-- **Market DB**: `$HOME/.local/share/trading25/market.db`
+- **Market DB (DuckDB)**: `$HOME/.local/share/trading25/market-timeseries/market.duckdb`
 - **Datasets**: `$HOME/.local/share/trading25/datasets/`
 - **Portfolio**: `$HOME/.local/share/trading25/portfolio.db`
 

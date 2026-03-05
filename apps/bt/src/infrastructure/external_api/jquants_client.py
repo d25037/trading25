@@ -92,7 +92,7 @@ class JQuantsStatement(BaseModel):
 
 
 class StockInfo(BaseModel):
-    """Stock information from market.db."""
+    """Stock information from DuckDB market data."""
 
     code: str
     companyName: str
@@ -193,7 +193,7 @@ class JQuantsAPIClient(BaseAPIClient):
         return [JQuantsStatement.model_validate(stmt) for stmt in statements_data]
 
     def get_stock_info(self, code: str) -> StockInfo | None:
-        """Get stock information from market.db.
+        """Get stock information from DuckDB market data.
 
         Args:
             code: Stock code (e.g., "7203")

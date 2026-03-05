@@ -3,8 +3,8 @@ Factor Regression Service Unit Tests
 """
 
 import math
-import sqlite3
 
+import duckdb
 import pytest
 
 import src.domains.analytics.regression_core as regression_core
@@ -166,7 +166,7 @@ def factor_db(tmp_path):
     random.seed(42)
 
     db_path = str(tmp_path / "factor.db")
-    conn = sqlite3.connect(db_path)
+    conn = duckdb.connect(db_path)
 
     conn.execute("""CREATE TABLE stocks (
         code TEXT PRIMARY KEY, company_name TEXT, company_name_english TEXT,
@@ -218,7 +218,6 @@ def factor_db(tmp_path):
             conn.execute("INSERT INTO indices_data VALUES (?,?,?,?,?,?,?,?)",
                          (idx_code, d_str, ip * 0.99, ip * 1.01, ip * 0.98, ip, None, None))
 
-    conn.commit()
     conn.close()
     return db_path
 

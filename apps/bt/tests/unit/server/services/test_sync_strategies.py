@@ -30,6 +30,7 @@ from src.application.services.sync_strategies import (
     _extract_dates_after,
     _extract_list_items,
     _fetch_fins_summary_by_code,
+    _get_paginated_rows_with_call_count,
     _is_date_after,
     _latest_date,
     _load_metadata_json_list,
@@ -37,6 +38,7 @@ from src.application.services.sync_strategies import (
     _normalize_iso_date_text,
     _plan_fetch_method,
     _parse_date,
+    _to_iso_date_text,
     _to_jquants_date_param,
     get_strategy,
 )
@@ -2483,3 +2485,79 @@ async def test_fetch_fins_summary_by_code_returns_empty_when_all_candidates_empt
     assert calls == 2
     fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
     assert [str((params or {}).get("code")) for _, params in fins_calls] == ["72030", "7203"]
+
+
+@pytest.mark.asyncio
+async def test_get_paginated_rows_with_call_count_uses_meta_when_available() -> None:
+    class _ClientWithMeta:
+        async def get_paginated_with_meta(
+            self,
+            path: str,
+            *,
+            params: dict[str, Any] | None = None,
+        ) -> tuple[list[dict[str, Any]], int]:
+            assert path == "/fins/summary"
+            assert params == {"code": "72030"}
+            return ([{"code": "72030"}], 3)
+
+    rows, calls = await _get_paginated_rows_with_call_count(
+        _ClientWithMeta(),  # type: ignore[arg-type]
+        "/fins/summary",
+        params={"code": "72030"},
+    )
+
+    assert rows == [{"code": "72030"}]
+    assert calls == 3
+
+
+@pytest.mark.asyncio
+async def test_get_paginated_rows_with_call_count_falls_back_without_meta() -> None:
+    class _ClientWithoutMeta:
+        async def get_paginated(
+            self,
+            path: str,
+            *,
+            params: dict[str, Any] | None = None,
+        ) -> list[dict[str, Any]]:
+            assert path == "/prices/daily_quotes"
+            assert params == {"date": "20260210"}
+            return [{"Date": "2026-02-10"}]
+
+    rows, calls = await _get_paginated_rows_with_call_count(
+        _ClientWithoutMeta(),  # type: ignore[arg-type]
+        "/prices/daily_quotes",
+        params={"date": "20260210"},
+    )
+
+    assert rows == [{"Date": "2026-02-10"}]
+    assert calls == 1
+
+
+@pytest.mark.asyncio
+async def test_plan_fetch_method_uses_rest_when_rest_estimate_is_too_small() -> None:
+    ctx = _build_ctx(
+        client=DummyClient(),  # type: ignore[arg-type]
+        market_db=DummyMarketDb(),  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        bulk_probe_disabled=False,
+    )
+
+    decision = await _plan_fetch_method(
+        ctx,
+        stage="stock_data",
+        endpoint="/equities/bars/daily",
+        estimated_rest_calls=1,
+    )
+
+    assert decision.method == "rest"
+    assert decision.reason == "rest_estimate_too_small"
+    assert decision.planner_api_calls == 0
+
+
+def test_to_iso_date_text_handles_fast_paths_and_invalid_input() -> None:
+    assert _to_iso_date_text(None) is None
+    assert _to_iso_date_text("   ") is None
+    assert _to_iso_date_text("2026-02-10") == "2026-02-10"
+    assert _to_iso_date_text("20260210") == "2026-02-10"
+    assert _to_iso_date_text("invalid-date") is None

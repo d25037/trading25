@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import sqlite3
+import duckdb
 from pathlib import Path
 
 import pytest
@@ -13,8 +13,8 @@ from src.application.services.watchlist_prices_service import WatchlistPricesSer
 
 
 def _create_market_db(path: str) -> None:
-    conn = sqlite3.connect(path)
-    conn.executescript("""
+    conn = duckdb.connect(path)
+    conn.execute("""
         CREATE TABLE stock_data (
             code TEXT NOT NULL, date TEXT NOT NULL,
             open REAL, high REAL, low REAL,
@@ -32,7 +32,7 @@ def _create_market_db(path: str) -> None:
 
 @pytest.fixture()
 def service(tmp_path: Path) -> WatchlistPricesService:
-    market_path = str(tmp_path / "market.db")
+    market_path = str(tmp_path / "market.duckdb")
     _create_market_db(market_path)
     reader = MarketDbReader(market_path)
     pdb = PortfolioDb(str(tmp_path / "portfolio.db"))

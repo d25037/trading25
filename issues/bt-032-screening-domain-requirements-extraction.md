@@ -36,4 +36,4 @@ parent: null
 - `apps/bt/tests/unit/server/services/test_screening_service_helpers.py` と併せて回帰確認し、既存 API 契約互換を維持。
 
 ## 補足
-- SoT は `market.db` 前提（dataset フォールバック禁止）を維持する
+- SoT は `market.duckdb` 前提（dataset フォールバック禁止）を維持する

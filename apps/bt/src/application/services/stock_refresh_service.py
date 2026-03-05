@@ -2,7 +2,7 @@
 Stock Refresh Service
 
 POST /api/db/stocks/refresh のビジネスロジック。
-指定銘柄の株価データを JQuants API から再取得して market.db を更新する。
+指定銘柄の株価データを JQuants API から再取得して DuckDB time-series を更新する。
 """
 
 from __future__ import annotations

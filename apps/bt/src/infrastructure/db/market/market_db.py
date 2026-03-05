@@ -1,30 +1,18 @@
 """
-Market Database Access (SQLAlchemy Core)
+Market Metadata DB Access (DuckDB)
 
-market.db の読み取り + 書き込み操作を提供する。
-Phase 3D（/api/db/* エンドポイント）の基盤。
+market time-series SoT (DuckDB/Parquet) と同じ DuckDB ファイル上で、
+metadata / reference data（stocks, sync_metadata, index_master）と
+補助クエリを扱う。
 """
 
 from __future__ import annotations
 
 import os
+import threading
 from datetime import datetime
+from pathlib import Path
 from typing import Any
-
-from sqlalchemy import func, insert, select, text
-from sqlalchemy.dialects.sqlite import insert as sqlite_insert
-
-from src.infrastructure.db.market.base import BaseDbAccess
-from src.infrastructure.db.market.tables import (
-    index_master,
-    indices_data,
-    market_meta,
-    market_statements,
-    stock_data,
-    stocks,
-    sync_metadata,
-    topix_data,
-)
 
 # Hono 互換 metadata キー
 METADATA_KEYS = {
@@ -39,177 +27,378 @@ METADATA_KEYS = {
     "FUNDAMENTALS_FAILED_CODES": "fundamentals_failed_codes",
 }
 
+_STATS_TABLES: tuple[str, ...] = (
+    "stocks",
+    "stock_data",
+    "topix_data",
+    "indices_data",
+    "statements",
+    "sync_metadata",
+    "index_master",
+)
+
+_STATEMENTS_UPDATABLE_COLUMNS: tuple[str, ...] = (
+    "earnings_per_share",
+    "profit",
+    "equity",
+    "type_of_current_period",
+    "type_of_document",
+    "next_year_forecast_earnings_per_share",
+    "bps",
+    "sales",
+    "operating_profit",
+    "ordinary_profit",
+    "operating_cash_flow",
+    "dividend_fy",
+    "forecast_dividend_fy",
+    "next_year_forecast_dividend_fy",
+    "payout_ratio",
+    "forecast_payout_ratio",
+    "next_year_forecast_payout_ratio",
+    "forecast_eps",
+    "investing_cash_flow",
+    "financing_cash_flow",
+    "cash_and_equivalents",
+    "total_assets",
+    "shares_outstanding",
+    "treasury_shares",
+)
+
 _STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
-    ("forecast_dividend_fy", "REAL"),
-    ("next_year_forecast_dividend_fy", "REAL"),
-    ("payout_ratio", "REAL"),
-    ("forecast_payout_ratio", "REAL"),
-    ("next_year_forecast_payout_ratio", "REAL"),
+    ("forecast_dividend_fy", "DOUBLE"),
+    ("next_year_forecast_dividend_fy", "DOUBLE"),
+    ("payout_ratio", "DOUBLE"),
+    ("forecast_payout_ratio", "DOUBLE"),
+    ("next_year_forecast_payout_ratio", "DOUBLE"),
 )
 
 
-class MarketDb(BaseDbAccess):
-    """market.db アクセス（read + write）"""
+class MarketDb:
+    """DuckDB ベースの market metadata / helper query アクセス。"""
 
     def __init__(self, db_path: str, *, read_only: bool = False) -> None:
-        super().__init__(db_path, read_only=read_only)
+        self._db_path = str(db_path)
+        self._read_only = read_only
+        Path(self._db_path).parent.mkdir(parents=True, exist_ok=True)
+
+        import duckdb  # type: ignore[import-not-found]
+
+        self._conn = duckdb.connect(self._db_path, read_only=read_only)
+        self._lock = threading.RLock()
         if not read_only:
             self.ensure_schema()
 
+    @property
+    def db_path(self) -> str:
+        return self._db_path
+
+    def close(self) -> None:
+        with self._lock:
+            self._conn.close()
+
+    def _assert_writable(self) -> None:
+        if self._read_only:
+            raise PermissionError("market metadata database is read-only")
+
+    @staticmethod
+    def _quote_identifier(identifier: str) -> str:
+        return '"' + identifier.replace('"', '""') + '"'
+
+    def _execute(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None) -> Any:
+        with self._lock:
+            if params is None:
+                return self._conn.execute(sql)
+            return self._conn.execute(sql, params)
+
+    def _executemany(self, sql: str, params_seq: list[tuple[Any, ...]]) -> None:
+        with self._lock:
+            self._conn.executemany(sql, params_seq)
+
+    def _table_exists(self, table_name: str) -> bool:
+        row = self._execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_name = ?
+            LIMIT 1
+            """,
+            [table_name],
+        ).fetchone()
+        return row is not None
+
+    def _count_rows(self, table_name: str) -> int:
+        if not self._table_exists(table_name):
+            return 0
+        escaped = self._quote_identifier(table_name)
+        row = self._execute(f"SELECT COUNT(*) FROM {escaped}").fetchone()
+        return int(row[0] or 0) if row else 0
+
     def ensure_schema(self) -> None:
-        """不足テーブルを補完する（既存DB互換）"""
-        market_meta.create_all(self.engine, checkfirst=True)
+        """不足テーブルを補完する（DuckDB SoT）。"""
+        self._assert_writable()
+
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stocks (
+                code TEXT PRIMARY KEY,
+                company_name TEXT NOT NULL,
+                company_name_english TEXT,
+                market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL,
+                sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL,
+                sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL,
+                scale_category TEXT,
+                listed_date TEXT NOT NULL,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_data (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                volume BIGINT,
+                adjustment_factor DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS topix_data (
+                date TEXT PRIMARY KEY,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                created_at TEXT
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS indices_data (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                sector_name TEXT,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS statements (
+                code TEXT,
+                disclosed_date TEXT,
+                earnings_per_share DOUBLE,
+                profit DOUBLE,
+                equity DOUBLE,
+                type_of_current_period TEXT,
+                type_of_document TEXT,
+                next_year_forecast_earnings_per_share DOUBLE,
+                bps DOUBLE,
+                sales DOUBLE,
+                operating_profit DOUBLE,
+                ordinary_profit DOUBLE,
+                operating_cash_flow DOUBLE,
+                dividend_fy DOUBLE,
+                forecast_dividend_fy DOUBLE,
+                next_year_forecast_dividend_fy DOUBLE,
+                payout_ratio DOUBLE,
+                forecast_payout_ratio DOUBLE,
+                next_year_forecast_payout_ratio DOUBLE,
+                forecast_eps DOUBLE,
+                investing_cash_flow DOUBLE,
+                financing_cash_flow DOUBLE,
+                cash_and_equivalents DOUBLE,
+                total_assets DOUBLE,
+                shares_outstanding DOUBLE,
+                treasury_shares DOUBLE,
+                PRIMARY KEY (code, disclosed_date)
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS sync_metadata (
+                key TEXT PRIMARY KEY,
+                value TEXT NOT NULL,
+                updated_at TEXT
+            )
+            """
+        )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS index_master (
+                code TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                name_english TEXT,
+                category TEXT NOT NULL,
+                data_start_date TEXT,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
         self._ensure_statements_columns()
 
     def _ensure_statements_columns(self) -> None:
         """既存 statements テーブルに不足カラムを追加する。"""
-        with self.engine.begin() as conn:
-            existing_columns = {
-                row[1]
-                for row in conn.execute(text("PRAGMA table_info(statements)")).fetchall()
-                if len(row) > 1
-            }
-            for column_name, column_type in _STATEMENTS_ADDITIONAL_COLUMNS:
-                if column_name in existing_columns:
-                    continue
-                conn.execute(
-                    text(
-                        f"ALTER TABLE statements ADD COLUMN {column_name} {column_type}"  # noqa: S608
-                    )
-                )
+        existing_columns = {
+            str(row[1])
+            for row in self._execute("PRAGMA table_info('statements')").fetchall()
+            if row and len(row) > 1
+        }
+        for column_name, column_type in _STATEMENTS_ADDITIONAL_COLUMNS:
+            if column_name in existing_columns:
+                continue
+            self._execute(
+                f"ALTER TABLE statements ADD COLUMN {self._quote_identifier(column_name)} {column_type}"
+            )
 
     # --- Read ---
 
     def get_stats(self) -> dict[str, Any]:
-        """DB 統計情報を取得"""
-        with self.engine.connect() as conn:
-            result: dict[str, Any] = {}
-            for table in [
-                stocks,
-                stock_data,
-                topix_data,
-                indices_data,
-                market_statements,
-                sync_metadata,
-                index_master,
-            ]:
-                count = conn.execute(select(func.count()).select_from(table)).scalar() or 0
-                result[table.name] = count
-            return result
+        """DB 統計情報を取得。"""
+        return {table_name: self._count_rows(table_name) for table_name in _STATS_TABLES}
 
     def validate_schema(self) -> dict[str, Any]:
-        """スキーマ検証: 必要なテーブルが存在するか確認"""
-        with self.engine.connect() as conn:
-            existing = set(
-                row[0]
-                for row in conn.execute(
-                    text("SELECT name FROM sqlite_master WHERE type='table'")
-                ).fetchall()
-            )
-            required = {t.name for t in market_meta.tables.values()}
-            missing = required - existing
-            return {
-                "valid": len(missing) == 0,
-                "required_tables": sorted(required),
-                "existing_tables": sorted(existing & required),
-                "missing_tables": sorted(missing),
-            }
+        """スキーマ検証: 必要なテーブルが存在するか確認。"""
+        existing = {
+            str(row[0])
+            for row in self._execute("SELECT table_name FROM information_schema.tables").fetchall()
+            if row and row[0]
+        }
+        required = set(_STATS_TABLES)
+        missing = required - existing
+        return {
+            "valid": len(missing) == 0,
+            "required_tables": sorted(required),
+            "existing_tables": sorted(existing & required),
+            "missing_tables": sorted(missing),
+        }
 
     def get_sync_metadata(self, key: str) -> str | None:
-        """sync_metadata からキーの値を取得"""
-        with self.engine.connect() as conn:
-            row = conn.execute(
-                select(sync_metadata.c.value).where(sync_metadata.c.key == key)
-            ).fetchone()
-            return row[0] if row else None
+        """sync_metadata からキーの値を取得。"""
+        if not self._table_exists("sync_metadata"):
+            return None
+        row = self._execute(
+            "SELECT value FROM sync_metadata WHERE key = ?",
+            [key],
+        ).fetchone()
+        return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_trading_date(self) -> str | None:
-        """topix_data の最新取引日を取得"""
-        with self.engine.connect() as conn:
-            row = conn.execute(select(func.max(topix_data.c.date))).fetchone()
-            return row[0] if row else None
+        """topix_data の最新取引日を取得。"""
+        if not self._table_exists("topix_data"):
+            return None
+        row = self._execute("SELECT MAX(date) FROM topix_data").fetchone()
+        return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_stock_data_date(self) -> str | None:
-        """stock_data の最新取引日を取得"""
-        with self.engine.connect() as conn:
-            row = conn.execute(select(func.max(stock_data.c.date))).fetchone()
-            return row[0] if row else None
+        """stock_data の最新取引日を取得。"""
+        if not self._table_exists("stock_data"):
+            return None
+        row = self._execute("SELECT MAX(date) FROM stock_data").fetchone()
+        return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
-        """indices_data の銘柄コードごとの最新取引日を取得"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                select(
-                    indices_data.c.code,
-                    func.max(indices_data.c.date).label("max_date"),
-                )
-                .group_by(indices_data.c.code)
-            ).fetchall()
+        """indices_data の銘柄コードごとの最新取引日を取得。"""
+        if not self._table_exists("indices_data"):
+            return {}
+        rows = self._execute(
+            """
+            SELECT code, MAX(date) AS max_date
+            FROM indices_data
+            GROUP BY code
+            """
+        ).fetchall()
         return {
-            row.code: row.max_date
+            str(row[0]): str(row[1])
             for row in rows
-            if row.code and row.max_date
+            if row and row[0] and row[1]
         }
 
     def get_index_master_codes(self) -> set[str]:
-        """index_master に存在する指数コード一覧を取得"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(select(index_master.c.code)).fetchall()
-        return {
-            row.code
-            for row in rows
-            if row.code
-        }
-
-    def get_latest_statement_disclosed_date(self) -> str | None:
-        """statements の最新開示日を取得"""
-        with self.engine.connect() as conn:
-            row = conn.execute(select(func.max(market_statements.c.disclosed_date))).fetchone()
-            return row[0] if row else None
-
-    def get_statement_codes(self) -> set[str]:
-        """statements に存在する銘柄コード一覧を取得"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(select(func.distinct(market_statements.c.code))).fetchall()
+        """index_master に存在する指数コード一覧を取得。"""
+        if not self._table_exists("index_master"):
+            return set()
+        rows = self._execute("SELECT code FROM index_master").fetchall()
         return {
             str(row[0])
             for row in rows
-            if row[0]
+            if row and row[0]
+        }
+
+    def get_latest_statement_disclosed_date(self) -> str | None:
+        """statements の最新開示日を取得。"""
+        if not self._table_exists("statements"):
+            return None
+        row = self._execute("SELECT MAX(disclosed_date) FROM statements").fetchone()
+        return str(row[0]) if row and row[0] is not None else None
+
+    def get_statement_codes(self) -> set[str]:
+        """statements に存在する銘柄コード一覧を取得。"""
+        if not self._table_exists("statements"):
+            return set()
+        rows = self._execute("SELECT DISTINCT code FROM statements WHERE code IS NOT NULL").fetchall()
+        return {
+            str(row[0])
+            for row in rows
+            if row and row[0]
         }
 
     def get_statement_non_null_counts(self, columns: list[str]) -> dict[str, int]:
         """statements 指定カラムの非NULL件数を返す。"""
-        if not columns:
-            return {}
+        if not columns or not self._table_exists("statements"):
+            return {column: 0 for column in columns}
 
-        available = {column.name for column in market_statements.columns}
+        available = {
+            str(row[1])
+            for row in self._execute("PRAGMA table_info('statements')").fetchall()
+            if row and len(row) > 1
+        }
         counts: dict[str, int] = {}
-
-        with self.engine.connect() as conn:
-            for column in columns:
-                if column not in available:
-                    counts[column] = 0
-                    continue
-
-                stmt = select(func.count()).select_from(market_statements).where(
-                    getattr(market_statements.c, column).isnot(None)
-                )
-                counts[column] = int(conn.execute(stmt).scalar() or 0)
-
+        for column in columns:
+            if column not in available:
+                counts[column] = 0
+                continue
+            escaped = self._quote_identifier(column)
+            row = self._execute(
+                f"SELECT COUNT(*) FROM statements WHERE {escaped} IS NOT NULL"
+            ).fetchone()
+            counts[column] = int(row[0] or 0) if row else 0
         return counts
 
     def get_prime_codes(self) -> set[str]:
-        """stocks から Prime 銘柄コードを取得（legacy 表記も吸収）"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                select(stocks.c.code).where(
-                    func.lower(func.trim(stocks.c.market_code)).in_(["0111", "prime"])
-                )
-            ).fetchall()
+        """stocks から Prime 銘柄コードを取得（legacy 表記も吸収）。"""
+        if not self._table_exists("stocks"):
+            return set()
+        rows = self._execute(
+            """
+            SELECT code
+            FROM stocks
+            WHERE lower(trim(market_code)) IN ('0111', 'prime')
+            """
+        ).fetchall()
         return {
             str(row[0])
             for row in rows
-            if row[0]
+            if row and row[0]
         }
 
     def get_prime_statement_coverage(
@@ -217,371 +406,470 @@ class MarketDb(BaseDbAccess):
         *,
         limit_missing: int | None = 20,
     ) -> dict[str, Any]:
-        """Prime 銘柄に対する statements カバレッジを集計"""
-        prime_filter = func.lower(func.trim(stocks.c.market_code)).in_(["0111", "prime"])
+        """Prime 銘柄に対する statements カバレッジを集計。"""
+        prime_codes = self.get_prime_codes()
+        statement_codes = self.get_statement_codes()
 
-        with self.engine.connect() as conn:
-            prime_count = conn.execute(
-                select(func.count(func.distinct(stocks.c.code))).where(prime_filter)
-            ).scalar() or 0
+        missing_codes = sorted(prime_codes - statement_codes)
+        covered_count = len(prime_codes & statement_codes)
+        prime_count = len(prime_codes)
+        missing_count = len(missing_codes)
+        coverage_ratio = covered_count / prime_count if prime_count > 0 else 0.0
 
-            covered_count = conn.execute(
-                select(func.count(func.distinct(stocks.c.code)))
-                .select_from(
-                    stocks.join(
-                        market_statements,
-                        market_statements.c.code == stocks.c.code,
-                    )
-                )
-                .where(prime_filter)
-            ).scalar() or 0
-
-            missing_count = conn.execute(
-                select(func.count(func.distinct(stocks.c.code)))
-                .select_from(
-                    stocks.outerjoin(
-                        market_statements,
-                        market_statements.c.code == stocks.c.code,
-                    )
-                )
-                .where(prime_filter)
-                .where(market_statements.c.code.is_(None))
-            ).scalar() or 0
-
-            missing_stmt = (
-                select(stocks.c.code)
-                .select_from(
-                    stocks.outerjoin(
-                        market_statements,
-                        market_statements.c.code == stocks.c.code,
-                    )
-                )
-                .where(prime_filter)
-                .where(market_statements.c.code.is_(None))
-                .order_by(stocks.c.code)
-            )
-            if limit_missing is not None and limit_missing >= 0:
-                missing_stmt = missing_stmt.limit(limit_missing)
-            missing_rows = conn.execute(missing_stmt).fetchall()
-
-        coverage_ratio = 0.0
-        if prime_count > 0:
-            coverage_ratio = covered_count / prime_count
+        if limit_missing is None:
+            missing_limited = missing_codes
+        else:
+            missing_limited = missing_codes[: max(limit_missing, 0)]
 
         return {
-            "primeCount": int(prime_count),
-            "coveredCount": int(covered_count),
-            "missingCount": int(missing_count),
+            "primeCount": prime_count,
+            "coveredCount": covered_count,
+            "missingCount": missing_count,
             "coverageRatio": round(coverage_ratio, 4),
-            "missingCodes": [str(row[0]) for row in missing_rows if row[0]],
+            "missingCodes": missing_limited,
         }
 
     # --- Write ---
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
-        """stocks テーブルに upsert"""
+        """stocks テーブルに upsert。"""
         if not rows:
             return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                row["updated_at"] = datetime.now().isoformat()  # noqa: DTZ005
-                conn.execute(
-                    insert(stocks)
-                    .values(row)
-                    .prefix_with("OR REPLACE")
-                )
-            return len(rows)
+        self._assert_writable()
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        params = [
+            (
+                row.get("code"),
+                row.get("company_name"),
+                row.get("company_name_english"),
+                row.get("market_code"),
+                row.get("market_name"),
+                row.get("sector_17_code"),
+                row.get("sector_17_name"),
+                row.get("sector_33_code"),
+                row.get("sector_33_name"),
+                row.get("scale_category"),
+                row.get("listed_date"),
+                row.get("created_at"),
+                now_iso,
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO stocks (
+                code, company_name, company_name_english, market_code, market_name,
+                sector_17_code, sector_17_name, sector_33_code, sector_33_name,
+                scale_category, listed_date, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code) DO UPDATE
+            SET company_name = excluded.company_name,
+                company_name_english = excluded.company_name_english,
+                market_code = excluded.market_code,
+                market_name = excluded.market_name,
+                sector_17_code = excluded.sector_17_code,
+                sector_17_name = excluded.sector_17_name,
+                sector_33_code = excluded.sector_33_code,
+                sector_33_name = excluded.sector_33_name,
+                scale_category = excluded.scale_category,
+                listed_date = excluded.listed_date,
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at
+            """,
+            params,
+        )
+        return len(rows)
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        """stock_data テーブルに upsert"""
+        """stock_data テーブルに upsert。"""
         if not rows:
             return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(
-                    insert(stock_data)
-                    .values(row)
-                    .prefix_with("OR REPLACE")
-                )
-            return len(rows)
+        self._assert_writable()
+        params = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+                row.get("volume"),
+                row.get("adjustment_factor"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO stock_data (
+                code, date, open, high, low, close, volume, adjustment_factor, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code, date) DO UPDATE
+            SET open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                volume = excluded.volume,
+                adjustment_factor = excluded.adjustment_factor,
+                created_at = excluded.created_at
+            """,
+            params,
+        )
+        return len(rows)
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        """topix_data テーブルに upsert"""
+        """topix_data テーブルに upsert。"""
         if not rows:
             return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(
-                    insert(topix_data)
-                    .values(row)
-                    .prefix_with("OR REPLACE")
-                )
-            return len(rows)
+        self._assert_writable()
+        params = [
+            (
+                row.get("date"),
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO topix_data (date, open, high, low, close, created_at)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT (date) DO UPDATE
+            SET open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                created_at = excluded.created_at
+            """,
+            params,
+        )
+        return len(rows)
 
     def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        """indices_data テーブルに upsert"""
+        """indices_data テーブルに upsert。"""
         if not rows:
             return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(
-                    insert(indices_data)
-                    .values(row)
-                    .prefix_with("OR REPLACE")
-                )
-            return len(rows)
+        self._assert_writable()
+        params = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("open"),
+                row.get("high"),
+                row.get("low"),
+                row.get("close"),
+                row.get("sector_name"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO indices_data (code, date, open, high, low, close, sector_name, created_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code, date) DO UPDATE
+            SET open = excluded.open,
+                high = excluded.high,
+                low = excluded.low,
+                close = excluded.close,
+                sector_name = excluded.sector_name,
+                created_at = excluded.created_at
+            """,
+            params,
+        )
+        return len(rows)
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
-        """statements テーブルに upsert"""
+        """statements テーブルに upsert（非NULL優先マージ）。"""
         if not rows:
             return 0
-        updatable_columns = [
-            "earnings_per_share",
-            "profit",
-            "equity",
-            "type_of_current_period",
-            "type_of_document",
-            "next_year_forecast_earnings_per_share",
-            "bps",
-            "sales",
-            "operating_profit",
-            "ordinary_profit",
-            "operating_cash_flow",
-            "dividend_fy",
-            "forecast_eps",
-            "investing_cash_flow",
-            "financing_cash_flow",
-            "cash_and_equivalents",
-            "total_assets",
-            "shares_outstanding",
-            "treasury_shares",
+        self._assert_writable()
+
+        insert_columns = [
+            "code",
+            "disclosed_date",
+            *_STATEMENTS_UPDATABLE_COLUMNS,
         ]
-        with self.engine.begin() as conn:
-            for row in rows:
-                stmt = sqlite_insert(market_statements).values(row)
-                conn.execute(
-                    stmt.on_conflict_do_update(
-                        index_elements=[
-                            market_statements.c.code,
-                            market_statements.c.disclosed_date,
-                        ],
-                        set_={
-                            column: func.coalesce(
-                                getattr(stmt.excluded, column),
-                                getattr(market_statements.c, column),
-                            )
-                            for column in updatable_columns
-                        },
-                    )
-                )
-            return len(rows)
+        placeholders = ", ".join("?" for _ in insert_columns)
+        update_clause = ", ".join(
+            f"{column} = COALESCE(excluded.{column}, statements.{column})"
+            for column in _STATEMENTS_UPDATABLE_COLUMNS
+        )
+        sql = (
+            f"INSERT INTO statements ({', '.join(insert_columns)}) "
+            f"VALUES ({placeholders}) "
+            "ON CONFLICT (code, disclosed_date) DO UPDATE "
+            f"SET {update_clause}"
+        )
+        params = [
+            tuple(row.get(column) for column in insert_columns)
+            for row in rows
+        ]
+        self._executemany(sql, params)
+        return len(rows)
 
     def set_sync_metadata(self, key: str, value: str) -> None:
-        """sync_metadata にキーバリューを設定（upsert）"""
-        with self.engine.begin() as conn:
-            conn.execute(
-                insert(sync_metadata)
-                .values(key=key, value=value, updated_at=datetime.now().isoformat())  # noqa: DTZ005
-                .prefix_with("OR REPLACE")
-            )
+        """sync_metadata にキーバリューを設定（upsert）。"""
+        self._assert_writable()
+        self._execute(
+            """
+            INSERT INTO sync_metadata (key, value, updated_at)
+            VALUES (?, ?, ?)
+            ON CONFLICT (key) DO UPDATE
+            SET value = excluded.value,
+                updated_at = excluded.updated_at
+            """,
+            [key, value, datetime.now().isoformat()],  # noqa: DTZ005
+        )
 
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> int:
-        """index_master テーブルに upsert"""
+        """index_master テーブルに upsert。"""
         if not rows:
             return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                payload = dict(row)
-                payload["updated_at"] = datetime.now().isoformat()  # noqa: DTZ005
-                stmt = sqlite_insert(index_master).values(payload)
-                conn.execute(
-                    stmt.on_conflict_do_update(
-                        index_elements=[index_master.c.code],
-                        set_={
-                            "name": stmt.excluded.name,
-                            "name_english": stmt.excluded.name_english,
-                            "category": stmt.excluded.category,
-                            "data_start_date": func.coalesce(
-                                stmt.excluded.data_start_date,
-                                index_master.c.data_start_date,
-                            ),
-                            "updated_at": stmt.excluded.updated_at,
-                        },
-                    )
-                )
-            return len(rows)
+        self._assert_writable()
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        params = [
+            (
+                row.get("code"),
+                row.get("name"),
+                row.get("name_english"),
+                row.get("category"),
+                row.get("data_start_date"),
+                row.get("created_at"),
+                now_iso,
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO index_master (
+                code, name, name_english, category, data_start_date, created_at, updated_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code) DO UPDATE
+            SET name = excluded.name,
+                name_english = excluded.name_english,
+                category = excluded.category,
+                data_start_date = COALESCE(excluded.data_start_date, index_master.data_start_date),
+                created_at = excluded.created_at,
+                updated_at = excluded.updated_at
+            """,
+            params,
+        )
+        return len(rows)
 
     # --- Stats (Phase 3D-2) ---
 
     def get_topix_date_range(self) -> dict[str, Any] | None:
-        """TOPIX 日付範囲 + 件数"""
-        with self.engine.connect() as conn:
-            row = conn.execute(
-                select(
-                    func.count(topix_data.c.date).label("count"),
-                    func.min(topix_data.c.date).label("min"),
-                    func.max(topix_data.c.date).label("max"),
-                )
-            ).fetchone()
-        if row is None or row.min is None:
+        """TOPIX 日付範囲 + 件数。"""
+        if not self._table_exists("topix_data"):
             return None
-        return {"count": row.count, "min": row.min, "max": row.max}
+        row = self._execute(
+            "SELECT COUNT(date), MIN(date), MAX(date) FROM topix_data"
+        ).fetchone()
+        if row is None or row[1] is None:
+            return None
+        return {"count": int(row[0] or 0), "min": str(row[1]), "max": str(row[2])}
 
     def get_stock_data_date_range(self) -> dict[str, Any] | None:
-        """stock_data 日付範囲 + 統計"""
-        with self.engine.connect() as conn:
-            row = conn.execute(
-                select(
-                    func.count().label("count"),
-                    func.min(stock_data.c.date).label("min"),
-                    func.max(stock_data.c.date).label("max"),
-                    func.count(func.distinct(stock_data.c.date)).label("date_count"),
-                )
-            ).fetchone()
-        if row is None or row.min is None:
+        """stock_data 日付範囲 + 統計。"""
+        if not self._table_exists("stock_data"):
             return None
-        avg_per_day = row.count / row.date_count if row.date_count > 0 else 0
+        row = self._execute(
+            """
+            SELECT
+                COUNT(*),
+                MIN(date),
+                MAX(date),
+                COUNT(DISTINCT date)
+            FROM stock_data
+            """
+        ).fetchone()
+        if row is None or row[1] is None:
+            return None
+        count = int(row[0] or 0)
+        date_count = int(row[3] or 0)
+        avg_per_day = count / date_count if date_count > 0 else 0.0
         return {
-            "count": row.count,
-            "min": row.min,
-            "max": row.max,
-            "dateCount": row.date_count,
+            "count": count,
+            "min": str(row[1]),
+            "max": str(row[2]),
+            "dateCount": date_count,
             "averageStocksPerDay": round(avg_per_day, 1),
         }
 
     def get_stock_count_by_market(self) -> dict[str, int]:
-        """市場別の銘柄数"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                select(
-                    stocks.c.market_name,
-                    func.count(stocks.c.code).label("count"),
-                )
-                .group_by(stocks.c.market_name)
-            ).fetchall()
-        return {row[0]: row[1] for row in rows}
+        """市場別の銘柄数。"""
+        if not self._table_exists("stocks"):
+            return {}
+        rows = self._execute(
+            """
+            SELECT market_name, COUNT(code)
+            FROM stocks
+            GROUP BY market_name
+            """
+        ).fetchall()
+        return {
+            str(row[0]): int(row[1] or 0)
+            for row in rows
+            if row and row[0]
+        }
 
     def get_indices_data_range(self) -> dict[str, Any] | None:
-        """indices_data 統計"""
-        with self.engine.connect() as conn:
-            master_count = conn.execute(select(func.count()).select_from(index_master)).scalar() or 0
-            row = conn.execute(
-                select(
-                    func.count().label("count"),
-                    func.count(func.distinct(indices_data.c.date)).label("date_count"),
-                    func.min(indices_data.c.date).label("min"),
-                    func.max(indices_data.c.date).label("max"),
-                )
-            ).fetchone()
-            cat_rows = conn.execute(
-                select(
-                    index_master.c.category,
-                    func.count(index_master.c.code).label("count"),
-                )
-                .group_by(index_master.c.category)
-            ).fetchall()
-        by_category = {r.category: r.count for r in cat_rows}
-        if row is None or row.min is None:
-            return {"masterCount": master_count, "dataCount": 0, "dateCount": 0, "dateRange": None, "byCategory": by_category}
+        """indices_data 統計。"""
+        master_count = self._count_rows("index_master")
+        if not self._table_exists("indices_data"):
+            by_category = self._load_index_master_category_counts()
+            return {
+                "masterCount": master_count,
+                "dataCount": 0,
+                "dateCount": 0,
+                "dateRange": None,
+                "byCategory": by_category,
+            }
+
+        row = self._execute(
+            """
+            SELECT
+                COUNT(*),
+                COUNT(DISTINCT date),
+                MIN(date),
+                MAX(date)
+            FROM indices_data
+            """
+        ).fetchone()
+        by_category = self._load_index_master_category_counts()
+        if row is None or row[2] is None:
+            return {
+                "masterCount": master_count,
+                "dataCount": 0,
+                "dateCount": 0,
+                "dateRange": None,
+                "byCategory": by_category,
+            }
         return {
             "masterCount": master_count,
-            "dataCount": row.count,
-            "dateCount": row.date_count,
-            "dateRange": {"min": row.min, "max": row.max},
+            "dataCount": int(row[0] or 0),
+            "dateCount": int(row[1] or 0),
+            "dateRange": {"min": str(row[2]), "max": str(row[3])},
             "byCategory": by_category,
         }
 
+    def _load_index_master_category_counts(self) -> dict[str, int]:
+        if not self._table_exists("index_master"):
+            return {}
+        rows = self._execute(
+            """
+            SELECT category, COUNT(code)
+            FROM index_master
+            GROUP BY category
+            """
+        ).fetchall()
+        return {
+            str(row[0]): int(row[1] or 0)
+            for row in rows
+            if row and row[0]
+        }
+
     def is_initialized(self) -> bool:
-        """sync_metadata に init_completed があるか"""
+        """sync_metadata に init_completed があるか。"""
         val = self.get_sync_metadata(METADATA_KEYS["INIT_COMPLETED"])
         return val == "true"
 
     def get_db_file_size(self) -> int:
-        """DB ファイルサイズ"""
-        # engine URL から取得
-        url_str = str(self.engine.url)
-        if url_str.startswith("sqlite:///"):
-            path = url_str[len("sqlite:///"):]
-        else:
-            # creator モードの場合
-            return 0
+        """DB ファイルサイズ。"""
         try:
-            return os.path.getsize(path)
+            return int(os.path.getsize(self._db_path))
         except OSError:
             return 0
 
     # --- Validate (Phase 3D-2) ---
 
     def get_missing_stock_data_dates(self, *, limit: int = 100) -> list[str]:
-        """TOPIX 日付のうち stock_data に存在しない日付（新しい順）"""
+        """TOPIX 日付のうち stock_data に存在しない日付（新しい順）。"""
         if limit <= 0:
             return []
+        if not self._table_exists("topix_data") or not self._table_exists("stock_data"):
+            return []
 
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                text("""
-                    SELECT t.date FROM topix_data t
-                    WHERE t.date NOT IN (SELECT DISTINCT date FROM stock_data)
-                    ORDER BY t.date DESC
-                    LIMIT :limit
-                """),
-                {"limit": int(limit)},
-            ).fetchall()
-        return [r[0] for r in rows]
+        rows = self._execute(
+            """
+            SELECT t.date
+            FROM topix_data t
+            LEFT JOIN (SELECT DISTINCT date FROM stock_data) s ON t.date = s.date
+            WHERE s.date IS NULL
+            ORDER BY t.date DESC
+            LIMIT ?
+            """,
+            [int(limit)],
+        ).fetchall()
+        return [str(row[0]) for row in rows if row and row[0]]
 
     def get_missing_stock_data_dates_count(self) -> int:
-        """TOPIX 日付のうち stock_data に存在しない日付の総数"""
-        with self.engine.connect() as conn:
-            row = conn.execute(
-                text("""
-                    SELECT COUNT(*) FROM (
-                        SELECT t.date FROM topix_data t
-                        WHERE t.date NOT IN (SELECT DISTINCT date FROM stock_data)
-                    ) missing
-                """)
-            ).fetchone()
-        if row is None:
+        """TOPIX 日付のうち stock_data に存在しない日付の総数。"""
+        if not self._table_exists("topix_data") or not self._table_exists("stock_data"):
             return 0
-        return int(row[0] or 0)
+        row = self._execute(
+            """
+            SELECT COUNT(*)
+            FROM topix_data t
+            LEFT JOIN (SELECT DISTINCT date FROM stock_data) s ON t.date = s.date
+            WHERE s.date IS NULL
+            """
+        ).fetchone()
+        return int(row[0] or 0) if row else 0
 
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]:
-        """adjustment_factor != 1.0 のイベント"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                select(
-                    stock_data.c.code,
-                    stock_data.c.date,
-                    stock_data.c.adjustment_factor,
-                    stock_data.c.close,
-                )
-                .where(stock_data.c.adjustment_factor != 1.0)
-                .where(stock_data.c.adjustment_factor.isnot(None))
-                .order_by(stock_data.c.date.desc())
-                .limit(limit)
-            ).fetchall()
+        """adjustment_factor != 1.0 のイベント。"""
+        if limit <= 0 or not self._table_exists("stock_data"):
+            return []
+        rows = self._execute(
+            """
+            SELECT code, date, adjustment_factor, close
+            FROM stock_data
+            WHERE adjustment_factor IS NOT NULL
+              AND adjustment_factor != 1.0
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            [int(limit)],
+        ).fetchall()
         return [
             {
-                "code": r.code,
-                "date": r.date,
-                "adjustmentFactor": r.adjustment_factor,
-                "close": r.close,
-                "eventType": "stock_split" if r.adjustment_factor < 1.0 else "reverse_split",
+                "code": str(row[0]),
+                "date": str(row[1]),
+                "adjustmentFactor": float(row[2]),
+                "close": float(row[3]) if row[3] is not None else None,
+                "eventType": "stock_split" if float(row[2]) < 1.0 else "reverse_split",
             }
-            for r in rows
+            for row in rows
+            if row and row[0] and row[1] and row[2] is not None
         ]
 
     def get_stocks_needing_refresh(self, limit: int = 20) -> list[str]:
-        """調整イベントがある銘柄のうち再取得が必要なもの"""
-        with self.engine.connect() as conn:
-            rows = conn.execute(
-                select(func.distinct(stock_data.c.code))
-                .where(stock_data.c.adjustment_factor != 1.0)
-                .where(stock_data.c.adjustment_factor.isnot(None))
-                .limit(limit)
-            ).fetchall()
-        return [r[0] for r in rows]
+        """調整イベントがある銘柄のうち再取得が必要なもの。"""
+        if limit <= 0 or not self._table_exists("stock_data"):
+            return []
+        rows = self._execute(
+            """
+            SELECT DISTINCT code
+            FROM stock_data
+            WHERE adjustment_factor IS NOT NULL
+              AND adjustment_factor != 1.0
+            LIMIT ?
+            """,
+            [int(limit)],
+        ).fetchall()
+        return [str(row[0]) for row in rows if row and row[0]]
 
     def get_stock_data_unique_date_count(self) -> int:
-        """stock_data のユニーク日付数"""
-        with self.engine.connect() as conn:
-            return conn.execute(select(func.count(func.distinct(stock_data.c.date)))).scalar() or 0
+        """stock_data のユニーク日付数。"""
+        if not self._table_exists("stock_data"):
+            return 0
+        row = self._execute("SELECT COUNT(DISTINCT date) FROM stock_data").fetchone()
+        return int(row[0] or 0) if row else 0

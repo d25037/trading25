@@ -114,7 +114,7 @@ class TradingValueRangeSignalParamsValidated(BaseModel):
 
 def is_signal_available_in_market_db(signal_name: str) -> bool:
     """
-    シグナルがmarket.dbで利用可能かチェック
+    シグナルがDuckDB market dataで利用可能かチェック
 
     Args:
         signal_name: シグナル名（YAML キー名）

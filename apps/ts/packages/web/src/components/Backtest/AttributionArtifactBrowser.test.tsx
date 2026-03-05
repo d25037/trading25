@@ -93,7 +93,7 @@ describe('AttributionArtifactBrowser', () => {
             },
             databases: {
               dataset_name: 'prime_202601',
-              market_db: { name: 'market.db' },
+              market_db: { name: 'market.duckdb' },
               portfolio_db: { name: 'portfolio.db' },
             },
             result: {

@@ -8,6 +8,7 @@ import httpx
 import pytest
 import pandas as pd
 import numpy as np
+from pathlib import Path
 from unittest.mock import Mock
 from fastapi.testclient import TestClient
 
@@ -161,19 +162,25 @@ def mock_jquants_env(monkeypatch):
     monkeypatch.setenv("JQUANTS_PLAN", "free")
 
 
-# --- Phase 3B-2a: market.db fixtures ---
+# --- Phase 3B-2a: market db fixtures (DuckDB SoT) ---
 
 
 @pytest.fixture
-def market_db_path(tmp_path):
-    """テスト用 in-memory 風 market.db を tmp_path に作成"""
-    import sqlite3
+def market_db_path(market_duckdb_path: str) -> str:
+    """後方互換 fixture 名。実体は DuckDB market path を返す。"""
+    return market_duckdb_path
 
-    db_path = str(tmp_path / "market.db")
-    conn = sqlite3.connect(db_path)
-    conn.execute("PRAGMA journal_mode=WAL")
 
-    # stocks テーブル
+@pytest.fixture
+def market_timeseries_dir(tmp_path: Path) -> str:
+    """テスト用 DuckDB time-series ディレクトリを作成"""
+    import duckdb
+
+    base_dir = tmp_path / "market-timeseries"
+    base_dir.mkdir(parents=True, exist_ok=True)
+    duckdb_path = base_dir / "market.duckdb"
+    conn = duckdb.connect(str(duckdb_path))
+
     conn.execute("""
         CREATE TABLE stocks (
             code TEXT PRIMARY KEY,
@@ -192,65 +199,31 @@ def market_db_path(tmp_path):
         )
     """)
 
-    # stock_data テーブル
     conn.execute("""
         CREATE TABLE stock_data (
             code TEXT NOT NULL,
             date TEXT NOT NULL,
-            open REAL NOT NULL,
-            high REAL NOT NULL,
-            low REAL NOT NULL,
-            close REAL NOT NULL,
-            volume INTEGER NOT NULL,
-            adjustment_factor REAL,
+            open DOUBLE NOT NULL,
+            high DOUBLE NOT NULL,
+            low DOUBLE NOT NULL,
+            close DOUBLE NOT NULL,
+            volume BIGINT NOT NULL,
+            adjustment_factor DOUBLE,
             created_at TEXT,
             PRIMARY KEY (code, date)
         )
     """)
 
-    # topix_data テーブル
     conn.execute("""
         CREATE TABLE topix_data (
             date TEXT PRIMARY KEY,
-            open REAL NOT NULL,
-            high REAL NOT NULL,
-            low REAL NOT NULL,
-            close REAL NOT NULL,
+            open DOUBLE NOT NULL,
+            high DOUBLE NOT NULL,
+            low DOUBLE NOT NULL,
+            close DOUBLE NOT NULL,
             created_at TEXT
         )
     """)
-
-    # テストデータ挿入
-    conn.execute(
-        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("72030", "トヨタ自動車", "TOYOTA MOTOR", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
-    )
-    conn.execute(
-        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("67580", "ソニーグループ", "SONY GROUP", "prime", "プライム", "S17_2", "電気機器", "S33_2", "電気機器", "TOPIX Large70", "1958-12-01", None, None),
-    )
-    conn.execute(
-        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        ("99840", "テスト銘柄", "TEST STOCK", "standard", "スタンダード", "S17_3", "情報通信", "S33_3", "情報通信", None, "2020-01-01", None, None),
-    )
-
-    # OHLCV データ
-    for code in ("72030", "67580"):
-        for i, d in enumerate(("2024-01-15", "2024-01-16", "2024-01-17")):
-            base = 2500.0 + i * 10 if code == "72030" else 13000.0 + i * 50
-            conn.execute(
-                "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                (code, d, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
-            )
-
-    # TOPIX データ
-    for d in ("2024-01-15", "2024-01-16", "2024-01-17"):
-        conn.execute(
-            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
-            (d, 2500.0, 2520.0, 2480.0, 2510.0, None),
-        )
-
-    # --- Phase 3B-2b: index_master + indices_data ---
 
     conn.execute("""
         CREATE TABLE index_master (
@@ -266,15 +239,42 @@ def market_db_path(tmp_path):
         CREATE TABLE indices_data (
             code TEXT NOT NULL,
             date TEXT NOT NULL,
-            open REAL,
-            high REAL,
-            low REAL,
-            close REAL,
+            open DOUBLE,
+            high DOUBLE,
+            low DOUBLE,
+            close DOUBLE,
             sector_name TEXT,
             created_at TEXT,
             PRIMARY KEY (code, date)
         )
     """)
+
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("72030", "トヨタ自動車", "TOYOTA MOTOR", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("67580", "ソニーグループ", "SONY GROUP", "prime", "プライム", "S17_2", "電気機器", "S33_2", "電気機器", "TOPIX Large70", "1958-12-01", None, None),
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("99840", "テスト銘柄", "TEST STOCK", "standard", "スタンダード", "S17_3", "情報通信", "S33_3", "情報通信", None, "2020-01-01", None, None),
+    )
+
+    for code in ("72030", "67580"):
+        for i, d in enumerate(("2024-01-15", "2024-01-16", "2024-01-17")):
+            base = 2500.0 + i * 10 if code == "72030" else 13000.0 + i * 50
+            conn.execute(
+                "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                (code, d, base, base + 20, base - 10, base + 5, 1000000 + i * 100, 1.0, None),
+            )
+
+    for d in ("2024-01-15", "2024-01-16", "2024-01-17"):
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
+            (d, 2500.0, 2520.0, 2480.0, 2510.0, None),
+        )
 
     conn.execute(
         "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
@@ -295,6 +295,10 @@ def market_db_path(tmp_path):
             ("0001", d, 1200.0, 1220.0, 1190.0, 1210.0, "電気機器", None),
         )
 
-    conn.commit()
     conn.close()
-    return db_path
+    return str(base_dir)
+
+
+@pytest.fixture
+def market_duckdb_path(market_timeseries_dir: str) -> str:
+    return str(Path(market_timeseries_dir) / "market.duckdb")
