@@ -89,6 +89,9 @@ jobs:
   coverage-gate:
     runs-on: ubuntu-latest
     timeout-minutes: 40
+    needs:
+      - package-unit-tests
+      - app-integration-tests
     steps:
       - uses: actions/checkout@v4
         with:
@@ -108,10 +111,17 @@ jobs:
       - name: Install deps (apps/bt)
         run: uv sync --locked
         working-directory: apps/bt
+      - name: Download bt coverage artifacts
+        uses: actions/download-artifact@v4
+        with:
+          pattern: bt-coverage-*
+          path: /tmp/bt-coverage
+          merge-multiple: true
       - name: Run coverage gate
         run: ./scripts/coverage-gate.sh
         env:
           CI_DEPS_READY: "1"
+          BT_COVERAGE_INPUT_DIR: /tmp/bt-coverage
 
   package-unit-tests:
     runs-on: ubuntu-latest
@@ -139,6 +149,15 @@ jobs:
         run: ./scripts/test-packages.sh
         env:
           CI_DEPS_READY: "1"
+          BT_COVERAGE_DATA_FILE: ".coverage.unit"
+      - name: Upload bt coverage artifact (unit)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bt-coverage-unit
+          path: apps/bt/.coverage.unit
+          include-hidden-files: true
+          if-no-files-found: error
 
   app-integration-tests:
     runs-on: ubuntu-latest
@@ -166,6 +185,15 @@ jobs:
         run: ./scripts/test-apps.sh
         env:
           CI_DEPS_READY: "1"
+          BT_COVERAGE_DATA_FILE: ".coverage.app"
+      - name: Upload bt coverage artifact (app)
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: bt-coverage-app
+          path: apps/bt/.coverage.app
+          include-hidden-files: true
+          if-no-files-found: error
 
   secret-scan:
     runs-on: ubuntu-latest

@@ -27,7 +27,18 @@ echo "[coverage] Run TypeScript coverage suites"
 )
 
 echo "[coverage] Run bt coverage suite"
-BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage run -m pytest tests/
+if [[ -n "${BT_COVERAGE_INPUT_DIR:-}" ]]; then
+  mapfile -t bt_coverage_files < <(find "${BT_COVERAGE_INPUT_DIR}" -type f -name '.coverage*' | sort)
+  if [[ ${#bt_coverage_files[@]} -eq 0 ]]; then
+    echo "[coverage] ERROR: no bt coverage files found in ${BT_COVERAGE_INPUT_DIR}" >&2
+    exit 1
+  fi
+  echo "[coverage] Combine bt coverage files (${#bt_coverage_files[@]})"
+  BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage erase
+  BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage combine "${bt_coverage_files[@]}"
+else
+  BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage run -m pytest tests/
+fi
 BT_USE_UV=1 "${repo_root}/scripts/bt-run.sh" coverage report --fail-under=70
 
 echo "[coverage] PASS"
