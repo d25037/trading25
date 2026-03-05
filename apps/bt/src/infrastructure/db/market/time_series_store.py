@@ -102,6 +102,29 @@ class DuckDbParquetTimeSeriesStore:
         "treasury_shares",
     )
 
+    _INVALID_TOPIX_DATE_SUBQUERY = """
+        SELECT date
+        FROM (
+            SELECT
+                date,
+                open,
+                high,
+                low,
+                close,
+                LAG(close) OVER (ORDER BY date) AS prev_close
+            FROM topix_data
+        ) ordered_rows
+        WHERE open IS NOT NULL
+          AND high IS NOT NULL
+          AND low IS NOT NULL
+          AND close IS NOT NULL
+          AND prev_close IS NOT NULL
+          AND open = high
+          AND high = low
+          AND low = close
+          AND open = prev_close
+    """
+
     def __init__(
         self,
         *,
@@ -126,6 +149,7 @@ class DuckDbParquetTimeSeriesStore:
         self._lock = RLock()
         self._dirty_tables: set[str] = set()
         self._ensure_schema()
+        self._cleanup_invalid_topix_rows_on_startup()
 
     def _ensure_schema(self) -> None:
         with self._lock:
@@ -234,8 +258,45 @@ class DuckDbParquetTimeSeriesStore:
                 """,
                 values,
             )
+            removed_count = self._remove_invalid_topix_rows()
+            if removed_count > 0:
+                logger.warning(
+                    "Removed {} invalid TOPIX rows (flat OHLC equal to previous close)",
+                    removed_count,
+                )
             self._dirty_tables.add("topix_data")
         return len(rows)
+
+    def _cleanup_invalid_topix_rows_on_startup(self) -> None:
+        with self._lock:
+            removed_count = self._remove_invalid_topix_rows()
+            if removed_count <= 0:
+                return
+            logger.warning(
+                "Removed {} invalid TOPIX rows from existing snapshot (flat OHLC equal to previous close)",
+                removed_count,
+            )
+            self._dirty_tables.add("topix_data")
+            self._export_if_dirty("topix_data")
+
+    def _remove_invalid_topix_rows(self) -> int:
+        count_row = self._conn.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM ({self._INVALID_TOPIX_DATE_SUBQUERY}) invalid_dates
+            """
+        ).fetchone()
+        invalid_count = int(count_row[0] or 0) if count_row else 0
+        if invalid_count <= 0:
+            return 0
+
+        self._conn.execute(
+            f"""
+            DELETE FROM topix_data
+            WHERE date IN ({self._INVALID_TOPIX_DATE_SUBQUERY})
+            """
+        )
+        return invalid_count
 
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
