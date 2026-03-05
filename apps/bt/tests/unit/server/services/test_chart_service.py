@@ -108,3 +108,77 @@ class TestSectorStocksMarketCodeCompatibility:
         assert result is not None
         assert result.markets == ["prime", "standard"]
         assert len(result.stocks) == 4
+
+
+def test_get_stock_from_db_supports_mixed_stock_and_stock_data_codes(tmp_path) -> None:
+    db_path = str(tmp_path / "chart-mixed-codes.db")
+    conn = duckdb.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE stocks (
+            code TEXT PRIMARY KEY,
+            company_name TEXT NOT NULL,
+            company_name_english TEXT,
+            market_code TEXT NOT NULL,
+            market_name TEXT NOT NULL,
+            sector_17_code TEXT NOT NULL,
+            sector_17_name TEXT NOT NULL,
+            sector_33_code TEXT NOT NULL,
+            sector_33_name TEXT NOT NULL,
+            scale_category TEXT,
+            listed_date TEXT NOT NULL,
+            created_at TEXT,
+            updated_at TEXT
+        )
+        """
+    )
+    conn.execute(
+        """
+        CREATE TABLE stock_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            open REAL NOT NULL,
+            high REAL NOT NULL,
+            low REAL NOT NULL,
+            close REAL NOT NULL,
+            volume INTEGER NOT NULL,
+            adjustment_factor REAL,
+            created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        (
+            "7203",
+            "Toyota",
+            "TOYOTA",
+            "prime",
+            "Market",
+            "S17",
+            "セクター17",
+            "S33",
+            "セクター33",
+            "TOPIX Large70",
+            "2020-01-01",
+            None,
+            None,
+        ),
+    )
+    conn.execute(
+        "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        ("72030", "2026-02-06", 100.0, 110.0, 95.0, 105.0, 100_000, 1.0, None),
+    )
+    conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        service = ChartService(reader, None)
+        result = service._get_stock_from_db("7203", "daily")  # noqa: SLF001
+        assert result is not None
+        assert result.companyName == "Toyota"
+        assert len(result.data) == 1
+        assert result.data[0].close == 105.0
+    finally:
+        reader.close()

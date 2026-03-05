@@ -240,6 +240,8 @@ class ChartService:
             return None
 
         codes = _db_stock_code_candidates(symbol)
+        if not codes:
+            return None
         placeholders = ",".join("?" for _ in codes)
 
         # 銘柄情報
@@ -248,14 +250,33 @@ class ChartService:
             "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
             tuple(codes),
         )
-        if stock is None:
-            return None
-        db_code = stock["code"]
+        resolved_codes = _db_stock_code_candidates(stock["code"]) if stock is not None else codes
+        resolved_placeholders = ",".join("?" for _ in resolved_codes)
 
         # OHLCV データ
         rows = self._reader.query(
-            "SELECT date, open, high, low, close, volume FROM stock_data WHERE code = ? ORDER BY date",
-            (db_code,),
+            f"""
+            WITH ranked AS (
+                SELECT
+                    date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM stock_data
+                WHERE code IN ({resolved_placeholders})
+            )
+            SELECT date, open, high, low, close, volume
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY date
+            """,
+            tuple(resolved_codes),
         )
         if not rows:
             return None
@@ -274,7 +295,7 @@ class ChartService:
 
         return StockDataResponse(
             symbol=symbol,
-            companyName=stock["company_name"],
+            companyName=stock["company_name"] if stock is not None else "",
             timeframe=timeframe,
             data=data,
             lastUpdated=_now_iso(),

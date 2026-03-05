@@ -101,7 +101,6 @@ def validate_market_db(
     ]
     missing_dates = list(inspection.missing_stock_dates)
     missing_dates_count = _resolve_missing_dates_count(inspection)
-    sd_date_count = inspection.stock_date_count
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=20)
@@ -181,7 +180,7 @@ def validate_market_db(
     )
 
     stock_data_val = StockDataValidation(
-        count=sd_date_count,
+        count=inspection.stock_count,
         dateRange=DateRange(
             min=inspection.stock_min,
             max=inspection.stock_max,
