@@ -10,6 +10,8 @@
 - 並列処理: ThreadPoolExecutorで銘柄レベル並列化
 """
 
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
 from typing import Any, cast
