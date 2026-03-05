@@ -17,6 +17,10 @@ import {
   resolveDatasetPath,
 } from './dataset-paths';
 
+function unsetXdgDataHome(): void {
+  Reflect.deleteProperty(process.env, 'XDG_DATA_HOME');
+}
+
 describe('Dataset Paths', () => {
   describe('getMarketDbPath', () => {
     let originalXdgDataHome: string | undefined;
@@ -29,16 +33,14 @@ describe('Dataset Paths', () => {
     afterEach(() => {
       // Restore original environment variable
       if (originalXdgDataHome === undefined) {
-        // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-        delete process.env.XDG_DATA_HOME;
+        unsetXdgDataHome();
       } else {
         process.env.XDG_DATA_HOME = originalXdgDataHome;
       }
     });
 
     test('should return default XDG path when XDG_DATA_HOME is not set', () => {
-      // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-      delete process.env.XDG_DATA_HOME;
+      unsetXdgDataHome();
 
       const dbPath = getMarketDbPath();
       const expectedPath = path.join(
@@ -166,16 +168,14 @@ describe('Dataset Paths', () => {
 
     afterEach(() => {
       if (originalXdgDataHome === undefined) {
-        // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-        delete process.env.XDG_DATA_HOME;
+        unsetXdgDataHome();
       } else {
         process.env.XDG_DATA_HOME = originalXdgDataHome;
       }
     });
 
     test('should return default XDG path when XDG_DATA_HOME not set', () => {
-      // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-      delete process.env.XDG_DATA_HOME;
+      unsetXdgDataHome();
       const dbPath = getDatasetV2Path('prime.db');
       const expectedPath = path.join(os.homedir(), '.local', 'share', 'trading25', 'datasets', 'prime.db');
       expect(dbPath).toBe(expectedPath);
@@ -353,8 +353,7 @@ describe('Dataset Paths', () => {
 
     afterEach(() => {
       if (originalXdgDataHome === undefined) {
-        // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-        delete process.env.XDG_DATA_HOME;
+        unsetXdgDataHome();
       } else {
         process.env.XDG_DATA_HOME = originalXdgDataHome;
       }
@@ -371,8 +370,7 @@ describe('Dataset Paths', () => {
     });
 
     test('uses default XDG path when not set', () => {
-      // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-      delete process.env.XDG_DATA_HOME;
+      unsetXdgDataHome();
       const result = getPortfolioDbPath();
       const expected = path.join(os.homedir(), '.local', 'share', 'trading25', 'portfolio.db');
       expect(result).toBe(expected);
@@ -421,8 +419,7 @@ describe('Dataset Paths', () => {
 
     afterEach(() => {
       if (originalXdgDataHome === undefined) {
-        // biome-ignore lint/performance/noDelete: Need to actually delete env var for testing
-        delete process.env.XDG_DATA_HOME;
+        unsetXdgDataHome();
       } else {
         process.env.XDG_DATA_HOME = originalXdgDataHome;
       }

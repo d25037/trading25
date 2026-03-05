@@ -50,45 +50,51 @@ type FundamentalSpec = {
 
 const FUNDAMENTAL_PARENT_FIELD_FALLBACK = ['enabled', 'period_type', 'use_adjusted'];
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Inference combines parse/fallback/intersection checks.
+function intersectFieldNames(left: Set<string>, right: Set<string>): Set<string> {
+  return new Set([...left].filter((fieldName) => right.has(fieldName)));
+}
+
+function deriveFundamentalParentFields(signal: SignalDefinition): Set<string> {
+  try {
+    const parsed = yaml.load(signal.yaml_snippet);
+    const parsedRecord = isPlainObject(parsed) ? parsed : null;
+    const snippetRoot =
+      parsedRecord && isPlainObject(parsedRecord.fundamental)
+        ? parsedRecord.fundamental
+        : null;
+    const childKey = signal.key.replace(/^fundamental_/, '');
+    return new Set(snippetRoot ? Object.keys(snippetRoot).filter((key) => key !== childKey) : []);
+  } catch {
+    // Ignore snippet parse failures and fall back to known parent fields.
+    return new Set<string>();
+  }
+}
+
+function resolveFallbackFundamentalParentFields(fundamentalDefs: SignalDefinition[]): string[] {
+  return FUNDAMENTAL_PARENT_FIELD_FALLBACK.filter((fieldName) =>
+    fundamentalDefs.every((signal) => signal.fields.some((field) => field.name === fieldName))
+  );
+}
+
 function extractFundamentalParentFieldNames(fundamentalDefs: SignalDefinition[]): string[] {
   let inferredParentFields: Set<string> | null = null;
 
   for (const signal of fundamentalDefs) {
-    try {
-      const parsed = yaml.load(signal.yaml_snippet);
-      const parsedRecord = isPlainObject(parsed) ? parsed : null;
-      const snippetRoot =
-        parsedRecord && isPlainObject(parsedRecord.fundamental)
-          ? parsedRecord.fundamental
-          : null;
-      const childKey = signal.key.replace(/^fundamental_/, '');
-      const currentParentFields = new Set(
-        snippetRoot ? Object.keys(snippetRoot).filter((key) => key !== childKey) : []
-      );
-
-      if (currentParentFields.size === 0) {
-        continue;
-      }
-      if (!inferredParentFields) {
-        inferredParentFields = currentParentFields;
-        continue;
-      }
-      inferredParentFields = new Set(
-        [...inferredParentFields].filter((fieldName) => currentParentFields.has(fieldName))
-      );
-    } catch {
-      // Ignore snippet parse failures and fall back to known parent fields.
+    const currentParentFields = deriveFundamentalParentFields(signal);
+    if (currentParentFields.size === 0) {
+      continue;
     }
+
+    inferredParentFields = inferredParentFields
+      ? intersectFieldNames(inferredParentFields, currentParentFields)
+      : currentParentFields;
   }
 
-  if (inferredParentFields && inferredParentFields.size > 0) {
-    return [...inferredParentFields];
+  if (inferredParentFields?.size) {
+    return Array.from(inferredParentFields);
   }
 
-  return FUNDAMENTAL_PARENT_FIELD_FALLBACK.filter((fieldName) =>
-    fundamentalDefs.every((signal) => signal.fields.some((field) => field.name === fieldName))
-  );
+  return resolveFallbackFundamentalParentFields(fundamentalDefs);
 }
 
 function buildFundamentalSpec(signalDefinitions: SignalDefinition[]): FundamentalSpec {
@@ -172,7 +178,32 @@ function validateFundamentalSection(
   }
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation logic needs explicit branch handling
+function validateNumericFieldConstraints(
+  fieldPath: string,
+  value: number,
+  field: SignalFieldDefinition,
+  errors: string[]
+): void {
+  const constraints = field.constraints;
+  const gt = constraints?.gt;
+  const ge = constraints?.ge;
+  const lt = constraints?.lt;
+  const le = constraints?.le;
+
+  if (isNumericConstraint(gt) && value <= gt) {
+    errors.push(`${fieldPath} must be > ${gt}`);
+  }
+  if (isNumericConstraint(ge) && value < ge) {
+    errors.push(`${fieldPath} must be >= ${ge}`);
+  }
+  if (isNumericConstraint(lt) && value >= lt) {
+    errors.push(`${fieldPath} must be < ${lt}`);
+  }
+  if (isNumericConstraint(le) && value > le) {
+    errors.push(`${fieldPath} must be <= ${le}`);
+  }
+}
+
 function validateFieldValue(
   sectionName: string,
   signalKey: string,
@@ -182,45 +213,31 @@ function validateFieldValue(
 ): void {
   const fieldPath = `${sectionName}.${signalKey}.${field.name}`;
 
-  if (field.type === 'boolean' && typeof value !== 'boolean') {
-    errors.push(`${fieldPath} must be a boolean`);
-    return;
-  }
-
-  if (field.type === 'number') {
-    if (typeof value !== 'number' || Number.isNaN(value)) {
-      errors.push(`${fieldPath} must be a number`);
+  switch (field.type) {
+    case 'boolean':
+      if (typeof value !== 'boolean') {
+        errors.push(`${fieldPath} must be a boolean`);
+      }
       return;
-    }
-
-    const constraints = field.constraints;
-    const gt = constraints?.gt;
-    const ge = constraints?.ge;
-    const lt = constraints?.lt;
-    const le = constraints?.le;
-
-    if (isNumericConstraint(gt) && value <= gt) {
-      errors.push(`${fieldPath} must be > ${gt}`);
-    }
-    if (isNumericConstraint(ge) && value < ge) {
-      errors.push(`${fieldPath} must be >= ${ge}`);
-    }
-    if (isNumericConstraint(lt) && value >= lt) {
-      errors.push(`${fieldPath} must be < ${lt}`);
-    }
-    if (isNumericConstraint(le) && value > le) {
-      errors.push(`${fieldPath} must be <= ${le}`);
-    }
-    return;
-  }
-
-  if ((field.type === 'string' || field.type === 'select') && typeof value !== 'string') {
-    errors.push(`${fieldPath} must be a string`);
-    return;
-  }
-
-  if (field.type === 'select' && field.options && typeof value === 'string' && !field.options.includes(value)) {
-    errors.push(`${fieldPath} must be one of: ${field.options.join(', ')}`);
+    case 'number':
+      if (typeof value !== 'number' || Number.isNaN(value)) {
+        errors.push(`${fieldPath} must be a number`);
+        return;
+      }
+      validateNumericFieldConstraints(fieldPath, value, field, errors);
+      return;
+    case 'string':
+    case 'select':
+      if (typeof value !== 'string') {
+        errors.push(`${fieldPath} must be a string`);
+        return;
+      }
+      if (field.type === 'select' && field.options && !field.options.includes(value)) {
+        errors.push(`${fieldPath} must be one of: ${field.options.join(', ')}`);
+      }
+      return;
+    default:
+      return;
   }
 }
 
@@ -274,11 +291,37 @@ function validateSignalSection(
   }
 }
 
+function validateSharedConfig(sharedConfig: unknown, errors: string[]): void {
+  if (!isPlainObject(sharedConfig)) {
+    errors.push('shared_config must be an object');
+    return;
+  }
+
+  for (const key of Object.keys(sharedConfig)) {
+    if (!ALLOWED_SHARED_CONFIG_KEYS.has(key)) {
+      errors.push(`shared_config.${key} is not a valid parameter name`);
+    }
+  }
+
+  const kelly = sharedConfig.kelly_fraction;
+  if (kelly === undefined) {
+    return;
+  }
+
+  if (typeof kelly !== 'number' || Number.isNaN(kelly)) {
+    errors.push('shared_config.kelly_fraction must be a number');
+    return;
+  }
+
+  if (kelly < 0 || kelly > 2) {
+    errors.push('shared_config.kelly_fraction must be between 0 and 2');
+  }
+}
+
 /**
  * @deprecated Backend strict validation (`/api/strategies/{name}/validate`) is the source of truth.
  * Keep this only for temporary compatibility and tests.
  */
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: Validation combines schema/key/type/range checks in one pass.
 export function validateStrategyConfigLocally(
   config: Record<string, unknown>,
   signalDefinitions: SignalDefinition[]
@@ -289,7 +332,7 @@ export function validateStrategyConfigLocally(
   const entryFilter = config.entry_filter_params;
   const exitTrigger = config.exit_trigger_params;
 
-  if (!entryFilter && !exitTrigger) {
+  if (entryFilter === undefined && exitTrigger === undefined) {
     errors.push('entry_filter_params or exit_trigger_params is required');
   }
 
@@ -302,24 +345,7 @@ export function validateStrategyConfigLocally(
   }
 
   if (config.shared_config !== undefined) {
-    if (!isPlainObject(config.shared_config)) {
-      errors.push('shared_config must be an object');
-    } else {
-      for (const key of Object.keys(config.shared_config)) {
-        if (!ALLOWED_SHARED_CONFIG_KEYS.has(key)) {
-          errors.push(`shared_config.${key} is not a valid parameter name`);
-        }
-      }
-
-      const kelly = config.shared_config.kelly_fraction;
-      if (kelly !== undefined) {
-        if (typeof kelly !== 'number' || Number.isNaN(kelly)) {
-          errors.push('shared_config.kelly_fraction must be a number');
-        } else if (kelly < 0 || kelly > 2) {
-          errors.push('shared_config.kelly_fraction must be between 0 and 2');
-        }
-      }
-    }
+    validateSharedConfig(config.shared_config, errors);
   }
 
   if (signalDefinitions.length === 0) {

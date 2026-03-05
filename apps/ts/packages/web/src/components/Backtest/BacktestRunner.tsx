@@ -24,10 +24,220 @@ import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
 import { StrategySelector } from './StrategySelector';
 import { extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: UI component with conditional rendering
+type BacktestJobStatusData = ReturnType<typeof useJobStatus>['data'];
+type OptimizationJobStatusData = ReturnType<typeof useOptimizationJobStatus>['data'];
+type RunBacktestMutation = ReturnType<typeof useRunBacktest>;
+type RunOptimizationMutation = ReturnType<typeof useRunOptimization>;
+type CancelBacktestMutation = ReturnType<typeof useCancelBacktest>;
+
+function isRunningStatus(status: string | null | undefined): boolean {
+  return status === 'running' || status === 'pending';
+}
+
+function isBacktestTerminalStatus(status: string | null | undefined): boolean {
+  return status === 'completed' || status === 'failed' || status === 'cancelled';
+}
+
+function isOptimizationTerminalStatus(status: string | null | undefined): boolean {
+  return status === 'completed' || status === 'failed';
+}
+
+function StrategyInfoCard({
+  displayName,
+  name,
+  category,
+  description,
+}: {
+  displayName?: string | null;
+  name: string;
+  category: string;
+  description?: string | null;
+}) {
+  return (
+    <Card>
+      <CardHeader className="pb-2">
+        <CardTitle className="text-base">{displayName || name}</CardTitle>
+        <CardDescription>Category: {category}</CardDescription>
+      </CardHeader>
+      <CardContent>{description && <p className="text-sm text-muted-foreground">{description}</p>}</CardContent>
+    </Card>
+  );
+}
+
+function GridConfigSummary({
+  paramCount,
+  combinations,
+  entries,
+}: {
+  paramCount: number;
+  combinations: number;
+  entries: Array<{ path: string; values: unknown[] }>;
+}) {
+  return (
+    <div className="space-y-1">
+      <p className="text-xs text-muted-foreground">
+        Grid config: {paramCount} params, {combinations} combinations
+      </p>
+      {entries.length > 0 && (
+        <div className="max-h-32 overflow-auto rounded-md border border-border/50 bg-muted/20 p-2">
+          <ul className="space-y-1">
+            {entries.map((entry) => (
+              <li key={entry.path} className="text-xs font-mono text-muted-foreground break-all">
+                {entry.path}: [{entry.values.map((value) => formatGridParameterValue(value)).join(', ')}]
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function useInvalidateBacktestHtmlOnTerminalStatus(status: string | null | undefined): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!isBacktestTerminalStatus(status)) return;
+    queryClient.invalidateQueries({ queryKey: backtestKeys.htmlFiles() });
+  }, [status, queryClient]);
+}
+
+function useInvalidateOptimizationHtmlOnTerminalStatus(status: string | null | undefined): void {
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    if (!isOptimizationTerminalStatus(status)) return;
+    queryClient.invalidateQueries({ queryKey: optimizationKeys.htmlFiles() });
+  }, [status, queryClient]);
+}
+
+async function runBacktestForSelectedStrategy({
+  selectedStrategy,
+  runBacktest,
+  setActiveJobId,
+}: {
+  selectedStrategy: string | null;
+  runBacktest: RunBacktestMutation;
+  setActiveJobId: (jobId: string | null) => void;
+}): Promise<void> {
+  if (!selectedStrategy) return;
+  const result = await runBacktest.mutateAsync({ strategy_name: selectedStrategy });
+  setActiveJobId(result.job_id);
+}
+
+async function runOptimizationForSelectedStrategy({
+  selectedStrategy,
+  runOptimization,
+  setActiveOptimizationJobId,
+}: {
+  selectedStrategy: string | null;
+  runOptimization: RunOptimizationMutation;
+  setActiveOptimizationJobId: (jobId: string | null) => void;
+}): Promise<void> {
+  if (!selectedStrategy) return;
+  const result = await runOptimization.mutateAsync({ strategy_name: selectedStrategy });
+  setActiveOptimizationJobId(result.job_id);
+}
+
+function BacktestExecutionSection({
+  selectedStrategy,
+  isRunning,
+  runBacktest,
+  activeJobId,
+  jobStatus,
+  isLoadingJob,
+  cancelBacktest,
+  onRunBacktest,
+}: {
+  selectedStrategy: string | null;
+  isRunning: boolean;
+  runBacktest: RunBacktestMutation;
+  activeJobId: string | null;
+  jobStatus: BacktestJobStatusData;
+  isLoadingJob: boolean;
+  cancelBacktest: CancelBacktestMutation;
+  onRunBacktest: () => Promise<void>;
+}) {
+  return (
+    <>
+      <Button onClick={onRunBacktest} disabled={!selectedStrategy || isRunning} className="w-full gap-2">
+        <Play className="h-4 w-4" />
+        {isRunning ? 'Running...' : 'Run Backtest'}
+      </Button>
+
+      <JobProgressCard
+        job={jobStatus}
+        isLoading={isLoadingJob || runBacktest.isPending}
+        onCancel={activeJobId ? () => cancelBacktest.mutate(activeJobId) : undefined}
+        isCancelling={cancelBacktest.isPending}
+      />
+
+      {runBacktest.isError && (
+        <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runBacktest.error.message}</div>
+      )}
+    </>
+  );
+}
+
+function OptimizationSection({
+  gridConfig,
+  gridParameterEntries,
+  selectedStrategy,
+  isOptRunning,
+  onRunOptimization,
+  optimizationJobStatus,
+  isLoadingOptJob,
+  runOptimization,
+}: {
+  gridConfig: ReturnType<typeof useOptimizationGridConfig>['data'];
+  gridParameterEntries: Array<{ path: string; values: unknown[] }>;
+  selectedStrategy: string | null;
+  isOptRunning: boolean;
+  onRunOptimization: () => Promise<void>;
+  optimizationJobStatus: OptimizationJobStatusData;
+  isLoadingOptJob: boolean;
+  runOptimization: RunOptimizationMutation;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center gap-2">
+        <Settings2 className="h-4 w-4 text-muted-foreground" />
+        <span className="text-sm font-medium">Optimization</span>
+      </div>
+
+      {gridConfig ? (
+        <GridConfigSummary
+          paramCount={gridConfig.param_count}
+          combinations={gridConfig.combinations}
+          entries={gridParameterEntries}
+        />
+      ) : (
+        <p className="text-xs text-muted-foreground">
+          No grid config found. Configure in Strategies &gt; Optimize tab.
+        </p>
+      )}
+
+      <Button
+        onClick={onRunOptimization}
+        disabled={!selectedStrategy || !gridConfig || isOptRunning}
+        variant="outline"
+        className="w-full gap-2"
+      >
+        <Settings2 className="h-4 w-4" />
+        {isOptRunning ? 'Optimizing...' : 'Run Optimization'}
+      </Button>
+
+      <OptimizationJobProgressCard job={optimizationJobStatus} isLoading={isLoadingOptJob || runOptimization.isPending} />
+
+      {runOptimization.isError && (
+        <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runOptimization.error.message}</div>
+      )}
+    </div>
+  );
+}
+
 export function BacktestRunner() {
   const [defaultConfigOpen, setDefaultConfigOpen] = useState(false);
-  const queryClient = useQueryClient();
   const {
     selectedStrategy,
     setSelectedStrategy,
@@ -53,42 +263,25 @@ export function BacktestRunner() {
     [gridConfig]
   );
 
-  useEffect(() => {
-    if (jobStatus?.status === 'completed' || jobStatus?.status === 'failed' || jobStatus?.status === 'cancelled') {
-      queryClient.invalidateQueries({ queryKey: backtestKeys.htmlFiles() });
-    }
-  }, [jobStatus?.status, queryClient]);
+  useInvalidateBacktestHtmlOnTerminalStatus(jobStatus?.status);
+  useInvalidateOptimizationHtmlOnTerminalStatus(optimizationJobStatus?.status);
 
-  useEffect(() => {
-    if (optimizationJobStatus?.status === 'completed' || optimizationJobStatus?.status === 'failed') {
-      queryClient.invalidateQueries({ queryKey: optimizationKeys.htmlFiles() });
-    }
-  }, [optimizationJobStatus?.status, queryClient]);
-
-  const handleRunBacktest = async () => {
-    if (!selectedStrategy) return;
-
-    const result = await runBacktest.mutateAsync({
-      strategy_name: selectedStrategy,
+  const handleRunBacktest = () =>
+    runBacktestForSelectedStrategy({
+      selectedStrategy,
+      runBacktest,
+      setActiveJobId,
     });
-    setActiveJobId(result.job_id);
-  };
 
-  const handleRunOptimization = async () => {
-    if (!selectedStrategy) return;
-
-    const result = await runOptimization.mutateAsync({
-      strategy_name: selectedStrategy,
+  const handleRunOptimization = () =>
+    runOptimizationForSelectedStrategy({
+      selectedStrategy,
+      runOptimization,
+      setActiveOptimizationJobId,
     });
-    setActiveOptimizationJobId(result.job_id);
-  };
 
-  const isRunning = runBacktest.isPending || jobStatus?.status === 'running' || jobStatus?.status === 'pending';
-
-  const isOptRunning =
-    runOptimization.isPending ||
-    optimizationJobStatus?.status === 'running' ||
-    optimizationJobStatus?.status === 'pending';
+  const isRunning = runBacktest.isPending || isRunningStatus(jobStatus?.status);
+  const isOptRunning = runOptimization.isPending || isRunningStatus(optimizationJobStatus?.status);
 
   return (
     <div className="space-y-4">
@@ -106,17 +299,12 @@ export function BacktestRunner() {
 
       {/* Strategy Info */}
       {strategyDetail && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-base">{strategyDetail.display_name || strategyDetail.name}</CardTitle>
-            <CardDescription>Category: {strategyDetail.category}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            {strategyDetail.description && (
-              <p className="text-sm text-muted-foreground">{strategyDetail.description}</p>
-            )}
-          </CardContent>
-        </Card>
+        <StrategyInfoCard
+          displayName={strategyDetail.display_name}
+          name={strategyDetail.name}
+          category={strategyDetail.category}
+          description={strategyDetail.description}
+        />
       )}
 
       {/* Default Config */}
@@ -126,76 +314,30 @@ export function BacktestRunner() {
       </Button>
       <DefaultConfigEditor open={defaultConfigOpen} onOpenChange={setDefaultConfigOpen} />
 
-      {/* Run Button */}
-      <Button onClick={handleRunBacktest} disabled={!selectedStrategy || isRunning} className="w-full gap-2">
-        <Play className="h-4 w-4" />
-        {isRunning ? 'Running...' : 'Run Backtest'}
-      </Button>
-
-      {/* Progress Card */}
-      <JobProgressCard
-        job={jobStatus}
-        isLoading={isLoadingJob || runBacktest.isPending}
-        onCancel={activeJobId ? () => cancelBacktest.mutate(activeJobId) : undefined}
-        isCancelling={cancelBacktest.isPending}
+      <BacktestExecutionSection
+        selectedStrategy={selectedStrategy}
+        isRunning={isRunning}
+        runBacktest={runBacktest}
+        activeJobId={activeJobId}
+        jobStatus={jobStatus}
+        isLoadingJob={isLoadingJob}
+        cancelBacktest={cancelBacktest}
+        onRunBacktest={handleRunBacktest}
       />
-
-      {/* Error Message */}
-      {runBacktest.isError && (
-        <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runBacktest.error.message}</div>
-      )}
 
       {/* Optimization Section */}
       <div className="border-t" />
 
-      <div className="space-y-3">
-        <div className="flex items-center gap-2">
-          <Settings2 className="h-4 w-4 text-muted-foreground" />
-          <span className="text-sm font-medium">Optimization</span>
-        </div>
-
-        {gridConfig ? (
-          <div className="space-y-1">
-            <p className="text-xs text-muted-foreground">
-              Grid config: {gridConfig.param_count} params, {gridConfig.combinations} combinations
-            </p>
-            {gridParameterEntries.length > 0 && (
-              <div className="max-h-32 overflow-auto rounded-md border border-border/50 bg-muted/20 p-2">
-                <ul className="space-y-1">
-                  {gridParameterEntries.map((entry) => (
-                    <li key={entry.path} className="text-xs font-mono text-muted-foreground break-all">
-                      {entry.path}: [{entry.values.map((value) => formatGridParameterValue(value)).join(', ')}]
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-          </div>
-        ) : (
-          <p className="text-xs text-muted-foreground">
-            No grid config found. Configure in Strategies &gt; Optimize tab.
-          </p>
-        )}
-
-        <Button
-          onClick={handleRunOptimization}
-          disabled={!selectedStrategy || !gridConfig || isOptRunning}
-          variant="outline"
-          className="w-full gap-2"
-        >
-          <Settings2 className="h-4 w-4" />
-          {isOptRunning ? 'Optimizing...' : 'Run Optimization'}
-        </Button>
-
-        <OptimizationJobProgressCard
-          job={optimizationJobStatus}
-          isLoading={isLoadingOptJob || runOptimization.isPending}
-        />
-
-        {runOptimization.isError && (
-          <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runOptimization.error.message}</div>
-        )}
-      </div>
+      <OptimizationSection
+        gridConfig={gridConfig}
+        gridParameterEntries={gridParameterEntries}
+        selectedStrategy={selectedStrategy}
+        isOptRunning={isOptRunning}
+        onRunOptimization={handleRunOptimization}
+        optimizationJobStatus={optimizationJobStatus}
+        isLoadingOptJob={isLoadingOptJob}
+        runOptimization={runOptimization}
+      />
     </div>
   );
 }

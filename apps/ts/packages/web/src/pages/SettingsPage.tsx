@@ -244,7 +244,6 @@ function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
   );
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: settings page coordinates sync and refresh sections
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
   const [enforceBulkForStockData, setEnforceBulkForStockData] = useState(false);
@@ -300,7 +299,7 @@ export function SettingsPage() {
     }
     void refetchDbStats();
     void refetchDbValidation();
-  }, [isRunning, jobStatus?.progress?.stage, jobStatus?.progress?.current, refetchDbStats, refetchDbValidation]);
+  }, [isRunning, refetchDbStats, refetchDbValidation]);
 
   const handleStartSync = () => {
     const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData };

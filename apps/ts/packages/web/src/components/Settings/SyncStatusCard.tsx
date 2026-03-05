@@ -74,13 +74,170 @@ function toDisplayMethod(method: SyncFetchDetail['method'] | null | undefined): 
   return null;
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: sync status UI intentionally composes multiple status/detail sections
+function FetchInfoRow({ endpoint, method }: FetchProgressInfo) {
+  if (!method && !endpoint) {
+    return null;
+  }
+
+  return (
+    <div className="flex flex-wrap items-center gap-2 text-xs">
+      <span className="text-muted-foreground">Fetch</span>
+      {method && <span className={`rounded px-2 py-0.5 font-medium ${getMethodBadgeClass(method)}`}>{method}</span>}
+      {endpoint && <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{endpoint}</code>}
+    </div>
+  );
+}
+
+function LatestFetchDetailCard({ detail }: { detail: SyncFetchDetail | null | undefined }) {
+  if (!detail) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-muted-foreground">Detail</span>
+        <span className="rounded bg-muted px-1.5 py-0.5 uppercase">{detail.eventType}</span>
+        <span>{new Date(detail.timestamp).toLocaleTimeString()}</span>
+      </div>
+      {(detail.reason || detail.reasonDetail) && (
+        <p className="text-muted-foreground">
+          {detail.reason}
+          {detail.reasonDetail ? ` (${detail.reasonDetail})` : ''}
+        </p>
+      )}
+      {(detail.estimatedRestCalls !== undefined || detail.estimatedBulkCalls !== undefined) && (
+        <p className="text-muted-foreground">
+          REST est: {detail.estimatedRestCalls ?? 'n/a'}, BULK est: {detail.estimatedBulkCalls ?? 'n/a'}
+        </p>
+      )}
+      {detail.fallback && (
+        <p className="text-amber-600">bulk fallback{detail.fallbackReason ? `: ${detail.fallbackReason}` : ''}</p>
+      )}
+    </div>
+  );
+}
+
+function RecentFetchEvents({ items }: { items: SyncFetchDetail[] }) {
+  if (items.length === 0) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
+      <p className="text-muted-foreground">Recent Fetch Events</p>
+      {items.map((item) => {
+        const displayMethod = toDisplayMethod(item.method) ?? 'REST';
+        return (
+          <div
+            key={`${item.timestamp}-${item.stage}-${item.endpoint}-${item.eventType}`}
+            className="flex flex-wrap items-center gap-2"
+          >
+            <span className="rounded bg-muted px-1 py-0.5 uppercase">{item.eventType}</span>
+            <span className={`rounded px-1 py-0.5 ${getMethodBadgeClass(displayMethod)}`}>{displayMethod}</span>
+            <code className="rounded bg-muted px-1 py-0.5">{item.endpoint}</code>
+            <span className="text-muted-foreground">{item.stage}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function ActiveProgressSection({
+  isActive,
+  progress,
+  fetchInfo,
+  latestFetchDetail,
+  recentFetchDetails,
+}: {
+  isActive: boolean;
+  progress: SyncJobResponse['progress'];
+  fetchInfo: FetchProgressInfo;
+  latestFetchDetail: SyncFetchDetail | null | undefined;
+  recentFetchDetails: SyncFetchDetail[];
+}) {
+  if (!isActive || !progress) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2">
+      <div className="flex justify-between text-sm">
+        <span className="text-muted-foreground">{progress.stage}</span>
+        <span className="font-medium">{progress.percentage.toFixed(1)}%</span>
+      </div>
+      <div className="h-2 w-full rounded-full bg-secondary">
+        <div
+          className="h-full rounded-full bg-blue-500 transition-all duration-300"
+          style={{ width: `${progress.percentage}%` }}
+        />
+      </div>
+      <FetchInfoRow endpoint={fetchInfo.endpoint} method={fetchInfo.method} />
+      <LatestFetchDetailCard detail={latestFetchDetail} />
+      <RecentFetchEvents items={recentFetchDetails} />
+      <p className="text-xs text-muted-foreground">{progress.message}</p>
+    </div>
+  );
+}
+
+function CompletedResultSection({
+  status,
+  result,
+}: {
+  status: SyncJobResponse['status'];
+  result: SyncJobResponse['result'];
+}) {
+  if (status !== 'completed' || !result) {
+    return null;
+  }
+
+  return (
+    <div className="space-y-2 text-sm">
+      <div className="grid grid-cols-2 gap-2">
+        <div>
+          <span className="text-muted-foreground">API Calls:</span>
+          <span className="ml-2 font-medium">{result.totalApiCalls}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Stocks Updated:</span>
+          <span className="ml-2 font-medium">{result.stocksUpdated}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Dates Processed:</span>
+          <span className="ml-2 font-medium">{result.datesProcessed}</span>
+        </div>
+        {result.failedDates.length > 0 && (
+          <div>
+            <span className="text-muted-foreground">Failed Dates:</span>
+            <span className="ml-2 font-medium text-red-500">{result.failedDates.length}</span>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function SyncErrorSection({ status, error }: { status: SyncJobResponse['status']; error: string | null | undefined }) {
+  if (status !== 'failed' || !error) {
+    return null;
+  }
+
+  return <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{error}</div>;
+}
+
+function CancelledSection({ status }: { status: SyncJobResponse['status'] }) {
+  if (status !== 'cancelled') {
+    return null;
+  }
+  return <div className="text-sm text-muted-foreground">Sync was cancelled by user.</div>;
+}
+
 export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCancelling }: SyncStatusCardProps) {
   if (!job) return null;
 
   const isActive = job.status === 'pending' || job.status === 'running';
   const progress = job.progress;
-  const result = job.result;
   const parsedFetchInfo = progress ? parseFetchProgressInfo(progress.message) : { endpoint: null, method: null };
   const latestFetchDetail = fetchDetails?.latest;
   const fetchInfo = {
@@ -108,114 +265,16 @@ export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCance
         <CardDescription>Mode: {job.mode}</CardDescription>
       </CardHeader>
       <CardContent>
-        {/* Progress bar */}
-        {isActive && progress && (
-          <div className="space-y-2">
-            <div className="flex justify-between text-sm">
-              <span className="text-muted-foreground">{progress.stage}</span>
-              <span className="font-medium">{progress.percentage.toFixed(1)}%</span>
-            </div>
-            <div className="h-2 w-full rounded-full bg-secondary">
-              <div
-                className="h-full rounded-full bg-blue-500 transition-all duration-300"
-                style={{ width: `${progress.percentage}%` }}
-              />
-            </div>
-            {(fetchInfo.method || fetchInfo.endpoint) && (
-              <div className="flex flex-wrap items-center gap-2 text-xs">
-                <span className="text-muted-foreground">Fetch</span>
-                {fetchInfo.method && (
-                  <span className={`rounded px-2 py-0.5 font-medium ${getMethodBadgeClass(fetchInfo.method)}`}>
-                    {fetchInfo.method}
-                  </span>
-                )}
-                {fetchInfo.endpoint && (
-                  <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{fetchInfo.endpoint}</code>
-                )}
-              </div>
-            )}
-            {latestFetchDetail && (
-              <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-muted-foreground">Detail</span>
-                  <span className="rounded bg-muted px-1.5 py-0.5 uppercase">{latestFetchDetail.eventType}</span>
-                  <span>{new Date(latestFetchDetail.timestamp).toLocaleTimeString()}</span>
-                </div>
-                {(latestFetchDetail.reason || latestFetchDetail.reasonDetail) && (
-                  <p className="text-muted-foreground">
-                    {latestFetchDetail.reason}
-                    {latestFetchDetail.reasonDetail ? ` (${latestFetchDetail.reasonDetail})` : ''}
-                  </p>
-                )}
-                {(latestFetchDetail.estimatedRestCalls !== undefined || latestFetchDetail.estimatedBulkCalls !== undefined) && (
-                  <p className="text-muted-foreground">
-                    REST est: {latestFetchDetail.estimatedRestCalls ?? 'n/a'}, BULK est:{' '}
-                    {latestFetchDetail.estimatedBulkCalls ?? 'n/a'}
-                  </p>
-                )}
-                {latestFetchDetail.fallback && (
-                  <p className="text-amber-600">
-                    bulk fallback{latestFetchDetail.fallbackReason ? `: ${latestFetchDetail.fallbackReason}` : ''}
-                  </p>
-                )}
-              </div>
-            )}
-            {recentFetchDetails.length > 0 && (
-              <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
-                <p className="text-muted-foreground">Recent Fetch Events</p>
-                {recentFetchDetails.map((item) => {
-                  const displayMethod = toDisplayMethod(item.method) ?? 'REST';
-                  return (
-                    <div
-                      key={`${item.timestamp}-${item.stage}-${item.endpoint}-${item.eventType}`}
-                      className="flex flex-wrap items-center gap-2"
-                    >
-                      <span className="rounded bg-muted px-1 py-0.5 uppercase">{item.eventType}</span>
-                      <span className={`rounded px-1 py-0.5 ${getMethodBadgeClass(displayMethod)}`}>{displayMethod}</span>
-                      <code className="rounded bg-muted px-1 py-0.5">{item.endpoint}</code>
-                      <span className="text-muted-foreground">{item.stage}</span>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            <p className="text-xs text-muted-foreground">{progress.message}</p>
-          </div>
-        )}
-
-        {/* Completed result */}
-        {job.status === 'completed' && result && (
-          <div className="space-y-2 text-sm">
-            <div className="grid grid-cols-2 gap-2">
-              <div>
-                <span className="text-muted-foreground">API Calls:</span>
-                <span className="ml-2 font-medium">{result.totalApiCalls}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Stocks Updated:</span>
-                <span className="ml-2 font-medium">{result.stocksUpdated}</span>
-              </div>
-              <div>
-                <span className="text-muted-foreground">Dates Processed:</span>
-                <span className="ml-2 font-medium">{result.datesProcessed}</span>
-              </div>
-              {result.failedDates.length > 0 && (
-                <div>
-                  <span className="text-muted-foreground">Failed Dates:</span>
-                  <span className="ml-2 font-medium text-red-500">{result.failedDates.length}</span>
-                </div>
-              )}
-            </div>
-          </div>
-        )}
-
-        {/* Failed error */}
-        {job.status === 'failed' && job.error && (
-          <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{job.error}</div>
-        )}
-
-        {/* Cancelled message */}
-        {job.status === 'cancelled' && <div className="text-sm text-muted-foreground">Sync was cancelled by user.</div>}
+        <ActiveProgressSection
+          isActive={isActive}
+          progress={progress}
+          fetchInfo={fetchInfo}
+          latestFetchDetail={latestFetchDetail}
+          recentFetchDetails={recentFetchDetails}
+        />
+        <CompletedResultSection status={job.status} result={job.result} />
+        <SyncErrorSection status={job.status} error={job.error} />
+        <CancelledSection status={job.status} />
       </CardContent>
     </Card>
   );

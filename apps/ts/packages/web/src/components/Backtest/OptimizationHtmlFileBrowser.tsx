@@ -1,5 +1,5 @@
 import { Check, ExternalLink, File, Loader2, Pencil, Search, Trash2, X } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { type RefObject, useEffect, useMemo, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import {
@@ -70,7 +70,291 @@ function FileListItem({
   );
 }
 
-// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: UI component with file list, preview, rename/delete dialogs
+function resolveStrategies(files: OptimizationHtmlFileInfo[] | undefined): string[] {
+  if (!files) return [];
+  return Array.from(new Set(files.map((file) => file.strategy_name))).sort();
+}
+
+function resolveFilteredFiles(files: OptimizationHtmlFileInfo[] | undefined, searchQuery: string): OptimizationHtmlFileInfo[] {
+  if (!files) return [];
+  if (!searchQuery) return files;
+  const query = searchQuery.toLowerCase();
+  return files.filter(
+    (file) =>
+      file.filename.toLowerCase().includes(query) ||
+      file.dataset_name.toLowerCase().includes(query) ||
+      file.strategy_name.toLowerCase().includes(query)
+  );
+}
+
+function resolveSortedFiles(files: OptimizationHtmlFileInfo[]): OptimizationHtmlFileInfo[] {
+  return [...files].sort((left, right) => new Date(right.created_at).getTime() - new Date(left.created_at).getTime());
+}
+
+function openHtmlInNewTab(decodedHtml: string): void {
+  const blob = new Blob([decodedHtml], { type: 'text/html' });
+  const url = URL.createObjectURL(blob);
+  window.open(url, '_blank', 'noopener,noreferrer');
+  setTimeout(() => URL.revokeObjectURL(url), 60000);
+}
+
+type RenameAction =
+  | { type: 'ignore' }
+  | { type: 'cancel' }
+  | {
+      type: 'rename';
+      newFilename: string;
+    };
+
+function resolveRenameAction(selectedFile: OptimizationHtmlFileInfo | null, renameValue: string): RenameAction {
+  if (!selectedFile) {
+    return { type: 'ignore' };
+  }
+  const trimmed = renameValue.trim();
+  if (!trimmed) {
+    return { type: 'ignore' };
+  }
+
+  const newFilename = trimmed.endsWith('.html') ? trimmed : `${trimmed}.html`;
+  if (newFilename === selectedFile.filename) {
+    return { type: 'cancel' };
+  }
+  return { type: 'rename', newFilename };
+}
+
+function OptimizationFileListCard({
+  isLoadingFiles,
+  filteredFiles,
+  sortedFiles,
+  totalFiles,
+  selectedFile,
+  onSelectFile,
+}: {
+  isLoadingFiles: boolean;
+  filteredFiles: OptimizationHtmlFileInfo[];
+  sortedFiles: OptimizationHtmlFileInfo[];
+  totalFiles: number | undefined;
+  selectedFile: OptimizationHtmlFileInfo | null;
+  onSelectFile: (file: OptimizationHtmlFileInfo) => void;
+}) {
+  if (isLoadingFiles) {
+    return (
+      <Card className="lg:col-span-1">
+        <CardContent className="pt-4">
+          <div className="flex items-center justify-center h-48">
+            <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (filteredFiles.length === 0) {
+    return (
+      <Card className="lg:col-span-1">
+        <CardContent className="pt-4">
+          <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
+            <File className="h-12 w-12 mb-2" />
+            <p className="text-sm">No optimization result files found</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return (
+    <Card className="lg:col-span-1">
+      <CardContent className="pt-4">
+        <div className="space-y-4 max-h-[600px] overflow-y-auto">
+          <p className="text-sm text-muted-foreground">
+            {filteredFiles.length} files {totalFiles && totalFiles > filteredFiles.length ? `(${totalFiles} total)` : ''}
+          </p>
+          {sortedFiles.map((file) => (
+            <FileListItem
+              key={`${file.strategy_name}/${file.filename}`}
+              file={file}
+              isSelected={selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename}
+              onSelect={() => onSelectFile(file)}
+            />
+          ))}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OptimizationPreviewCard({
+  selectedFile,
+  isRenaming,
+  renameValue,
+  setRenameValue,
+  renameInputRef,
+  onConfirmRename,
+  onCancelRename,
+  onStartRename,
+  onOpenDeleteDialog,
+  onOpenInNewTab,
+  isRenamePending,
+  renameErrorMessage,
+  htmlContentBase64,
+  isLoadingContent,
+}: {
+  selectedFile: OptimizationHtmlFileInfo | null;
+  isRenaming: boolean;
+  renameValue: string;
+  setRenameValue: (value: string) => void;
+  renameInputRef: RefObject<HTMLInputElement | null>;
+  onConfirmRename: () => void;
+  onCancelRename: () => void;
+  onStartRename: () => void;
+  onOpenDeleteDialog: () => void;
+  onOpenInNewTab: () => void;
+  isRenamePending: boolean;
+  renameErrorMessage: string | null;
+  htmlContentBase64: string | null | undefined;
+  isLoadingContent: boolean;
+}) {
+  if (!selectedFile) {
+    return (
+      <Card className="lg:col-span-2">
+        <CardContent className="pt-4">
+          <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
+            <File className="h-12 w-12 mb-2" />
+            <p className="text-sm">Select a file to preview</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  const decodedHtmlContent = htmlContentBase64 ? safeAtob(htmlContentBase64) : null;
+
+  return (
+    <Card className="lg:col-span-2">
+      <CardContent className="pt-4">
+        <div className="space-y-4">
+          <div className="flex items-center justify-between">
+            <div className="min-w-0 flex-1">
+              {isRenaming ? (
+                <div className="flex items-center gap-2">
+                  <Input
+                    ref={renameInputRef}
+                    value={renameValue}
+                    onChange={(event) => setRenameValue(event.target.value)}
+                    onKeyDown={(event) => {
+                      if (event.key === 'Enter') onConfirmRename();
+                      if (event.key === 'Escape') onCancelRename();
+                    }}
+                    className="h-8 text-sm"
+                    disabled={isRenamePending}
+                  />
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={onConfirmRename}
+                    disabled={isRenamePending}
+                  >
+                    <Check className="h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0"
+                    onClick={onCancelRename}
+                    disabled={isRenamePending}
+                  >
+                    <X className="h-4 w-4" />
+                  </Button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-2">
+                  <h3 className="font-medium truncate">{selectedFile.filename}</h3>
+                  <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={onStartRename}>
+                    <Pencil className="h-3.5 w-3.5" />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
+                    onClick={onOpenDeleteDialog}
+                  >
+                    <Trash2 className="h-3.5 w-3.5" />
+                  </Button>
+                </div>
+              )}
+              <p className="text-sm text-muted-foreground">
+                {selectedFile.strategy_name} | {selectedFile.dataset_name} | {formatDate(selectedFile.created_at)}
+              </p>
+            </div>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={onOpenInNewTab}
+              disabled={!htmlContentBase64}
+              className="shrink-0 ml-2"
+            >
+              <ExternalLink className="h-4 w-4 mr-2" />
+              Open in new tab
+            </Button>
+          </div>
+          {renameErrorMessage && <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">{renameErrorMessage}</div>}
+          <ResultHtmlViewer htmlContent={decodedHtmlContent} isLoading={isLoadingContent} />
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DeleteDialog({
+  open,
+  selectedFilename,
+  isPending,
+  errorMessage,
+  onOpenChange,
+  onDelete,
+}: {
+  open: boolean;
+  selectedFilename: string | undefined;
+  isPending: boolean;
+  errorMessage: string | null;
+  onOpenChange: (open: boolean) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle className="flex items-center gap-2">
+            <Trash2 className="h-5 w-5 text-destructive" />
+            Delete Optimization HTML File
+          </DialogTitle>
+          <DialogDescription>
+            Are you sure you want to delete <span className="font-semibold text-foreground">{selectedFilename}</span>?
+            This action cannot be undone.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>
+            Cancel
+          </Button>
+          <Button variant="destructive" onClick={onDelete} disabled={isPending}>
+            {isPending ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Deleting...
+              </>
+            ) : (
+              'Delete'
+            )}
+          </Button>
+        </DialogFooter>
+        {errorMessage && <p className="text-sm text-destructive">Error: {errorMessage}</p>}
+      </DialogContent>
+    </Dialog>
+  );
+}
+
 export function OptimizationHtmlFileBrowser() {
   const [selectedStrategy, setSelectedStrategy] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -90,27 +374,12 @@ export function OptimizationHtmlFileBrowser() {
   const renameHtmlFile = useRenameOptimizationHtmlFile();
   const deleteHtmlFile = useDeleteOptimizationHtmlFile();
 
-  const strategies = useMemo(() => {
-    if (!htmlFilesData?.files) return [];
-    const strategySet = new Set(htmlFilesData.files.map((f) => f.strategy_name));
-    return Array.from(strategySet).sort();
-  }, [htmlFilesData]);
-
-  const filteredFiles = useMemo(() => {
-    if (!htmlFilesData?.files) return [];
-    if (!searchQuery) return htmlFilesData.files;
-    const query = searchQuery.toLowerCase();
-    return htmlFilesData.files.filter(
-      (f) =>
-        f.filename.toLowerCase().includes(query) ||
-        f.dataset_name.toLowerCase().includes(query) ||
-        f.strategy_name.toLowerCase().includes(query)
-    );
-  }, [htmlFilesData, searchQuery]);
-
-  const sortedFiles = useMemo(() => {
-    return [...filteredFiles].sort((a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime());
-  }, [filteredFiles]);
+  const strategies = useMemo(() => resolveStrategies(htmlFilesData?.files), [htmlFilesData?.files]);
+  const filteredFiles = useMemo(
+    () => resolveFilteredFiles(htmlFilesData?.files, searchQuery),
+    [htmlFilesData?.files, searchQuery]
+  );
+  const sortedFiles = useMemo(() => resolveSortedFiles(filteredFiles), [filteredFiles]);
 
   const handleStartRename = () => {
     if (!selectedFile) return;
@@ -136,17 +405,21 @@ export function OptimizationHtmlFileBrowser() {
   };
 
   const handleConfirmRename = () => {
-    if (!selectedFile || !renameValue.trim()) return;
-    const newFilename = renameValue.trim().endsWith('.html') ? renameValue.trim() : `${renameValue.trim()}.html`;
-    if (newFilename === selectedFile.filename) {
+    const action = resolveRenameAction(selectedFile, renameValue);
+    if (action.type === 'ignore') {
+      return;
+    }
+    if (action.type === 'cancel') {
       handleCancelRename();
       return;
     }
+    if (!selectedFile) return;
+
     renameHtmlFile.mutate(
       {
         strategy: selectedFile.strategy_name,
         filename: selectedFile.filename,
-        request: { new_filename: newFilename },
+        request: { new_filename: action.newFilename },
       },
       {
         onSuccess: (data) => {
@@ -162,13 +435,9 @@ export function OptimizationHtmlFileBrowser() {
   };
 
   const handleOpenInNewTab = () => {
-    if (!selectedFile || !htmlContent?.html_content) return;
-    const htmlString = safeAtob(htmlContent.html_content);
-    if (!htmlString) return;
-    const blob = new Blob([htmlString], { type: 'text/html' });
-    const url = URL.createObjectURL(blob);
-    window.open(url, '_blank', 'noopener,noreferrer');
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+    const decodedHtml = htmlContent?.html_content ? safeAtob(htmlContent.html_content) : null;
+    if (!decodedHtml) return;
+    openHtmlInNewTab(decodedHtml);
   };
 
   const handleDeleteFile = () => {
@@ -218,163 +487,40 @@ export function OptimizationHtmlFileBrowser() {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-        {/* File List */}
-        <Card className="lg:col-span-1">
-          <CardContent className="pt-4">
-            {isLoadingFiles ? (
-              <div className="flex items-center justify-center h-48">
-                <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
-              </div>
-            ) : filteredFiles.length === 0 ? (
-              <div className="flex flex-col items-center justify-center h-48 text-muted-foreground">
-                <File className="h-12 w-12 mb-2" />
-                <p className="text-sm">No optimization result files found</p>
-              </div>
-            ) : (
-              <div className="space-y-4 max-h-[600px] overflow-y-auto">
-                <p className="text-sm text-muted-foreground">
-                  {filteredFiles.length} files{' '}
-                  {htmlFilesData?.total && htmlFilesData.total > filteredFiles.length
-                    ? `(${htmlFilesData.total} total)`
-                    : ''}
-                </p>
-                {sortedFiles.map((file) => (
-                  <FileListItem
-                    key={`${file.strategy_name}/${file.filename}`}
-                    file={file}
-                    isSelected={
-                      selectedFile?.strategy_name === file.strategy_name && selectedFile?.filename === file.filename
-                    }
-                    onSelect={() => setSelectedFile(file)}
-                  />
-                ))}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        {/* Preview */}
-        <Card className="lg:col-span-2">
-          <CardContent className="pt-4">
-            {selectedFile ? (
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
-                  <div className="min-w-0 flex-1">
-                    {isRenaming ? (
-                      <div className="flex items-center gap-2">
-                        <Input
-                          ref={renameInputRef}
-                          value={renameValue}
-                          onChange={(e) => setRenameValue(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === 'Enter') handleConfirmRename();
-                            if (e.key === 'Escape') handleCancelRename();
-                          }}
-                          className="h-8 text-sm"
-                          disabled={renameHtmlFile.isPending}
-                        />
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0"
-                          onClick={handleConfirmRename}
-                          disabled={renameHtmlFile.isPending}
-                        >
-                          <Check className="h-4 w-4" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0"
-                          onClick={handleCancelRename}
-                          disabled={renameHtmlFile.isPending}
-                        >
-                          <X className="h-4 w-4" />
-                        </Button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        <h3 className="font-medium truncate">{selectedFile.filename}</h3>
-                        <Button variant="ghost" size="icon" className="h-7 w-7 shrink-0" onClick={handleStartRename}>
-                          <Pencil className="h-3.5 w-3.5" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-7 w-7 shrink-0 text-destructive hover:text-destructive"
-                          onClick={() => setIsDeleteDialogOpen(true)}
-                        >
-                          <Trash2 className="h-3.5 w-3.5" />
-                        </Button>
-                      </div>
-                    )}
-                    <p className="text-sm text-muted-foreground">
-                      {selectedFile.strategy_name} | {selectedFile.dataset_name} | {formatDate(selectedFile.created_at)}
-                    </p>
-                  </div>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={handleOpenInNewTab}
-                    disabled={!htmlContent?.html_content}
-                    className="shrink-0 ml-2"
-                  >
-                    <ExternalLink className="h-4 w-4 mr-2" />
-                    Open in new tab
-                  </Button>
-                </div>
-                {renameHtmlFile.isError && (
-                  <div className="rounded-md bg-red-500/10 p-2 text-sm text-red-500">
-                    {renameHtmlFile.error.message}
-                  </div>
-                )}
-                <ResultHtmlViewer
-                  htmlContent={htmlContent?.html_content ? safeAtob(htmlContent.html_content) : null}
-                  isLoading={isLoadingContent}
-                />
-              </div>
-            ) : (
-              <div className="flex flex-col items-center justify-center h-[400px] text-muted-foreground">
-                <File className="h-12 w-12 mb-2" />
-                <p className="text-sm">Select a file to preview</p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
+        <OptimizationFileListCard
+          isLoadingFiles={isLoadingFiles}
+          filteredFiles={filteredFiles}
+          sortedFiles={sortedFiles}
+          totalFiles={htmlFilesData?.total}
+          selectedFile={selectedFile}
+          onSelectFile={setSelectedFile}
+        />
+        <OptimizationPreviewCard
+          selectedFile={selectedFile}
+          isRenaming={isRenaming}
+          renameValue={renameValue}
+          setRenameValue={setRenameValue}
+          renameInputRef={renameInputRef}
+          onConfirmRename={handleConfirmRename}
+          onCancelRename={handleCancelRename}
+          onStartRename={handleStartRename}
+          onOpenDeleteDialog={() => setIsDeleteDialogOpen(true)}
+          onOpenInNewTab={handleOpenInNewTab}
+          isRenamePending={renameHtmlFile.isPending}
+          renameErrorMessage={renameHtmlFile.isError ? renameHtmlFile.error.message : null}
+          htmlContentBase64={htmlContent?.html_content}
+          isLoadingContent={isLoadingContent}
+        />
       </div>
 
-      {/* Delete Confirm Dialog */}
-      <Dialog open={isDeleteDialogOpen} onOpenChange={setIsDeleteDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle className="flex items-center gap-2">
-              <Trash2 className="h-5 w-5 text-destructive" />
-              Delete Optimization HTML File
-            </DialogTitle>
-            <DialogDescription>
-              Are you sure you want to delete{' '}
-              <span className="font-semibold text-foreground">{selectedFile?.filename}</span>? This action cannot be
-              undone.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setIsDeleteDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button variant="destructive" onClick={handleDeleteFile} disabled={deleteHtmlFile.isPending}>
-              {deleteHtmlFile.isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Deleting...
-                </>
-              ) : (
-                'Delete'
-              )}
-            </Button>
-          </DialogFooter>
-          {deleteHtmlFile.isError && <p className="text-sm text-destructive">Error: {deleteHtmlFile.error.message}</p>}
-        </DialogContent>
-      </Dialog>
+      <DeleteDialog
+        open={isDeleteDialogOpen}
+        selectedFilename={selectedFile?.filename}
+        isPending={deleteHtmlFile.isPending}
+        errorMessage={deleteHtmlFile.isError ? deleteHtmlFile.error.message : null}
+        onOpenChange={setIsDeleteDialogOpen}
+        onDelete={handleDeleteFile}
+      />
     </div>
   );
 }
