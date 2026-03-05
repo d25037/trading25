@@ -124,6 +124,8 @@ uv run pyright src/              # 型チェック
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
 - Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
 - Lab `optimize`（Optuna）は開始時に OHLCV/benchmark を1回プリフェッチして trial 間で再利用し、`pruning=true` 時は第1段階バックテストの暫定スコアで早期枝刈りを行う
+- Lab `optimize`（Optuna）は依存パラメータ制約付きサンプリング（`long>short` / `slow>fast` / `max>min`）を適用し、`n_trials>=40` では `stage1(広域)+stage2(局所)` の2段階探索を行う
+- Lab `optimize` は `GET /api/lab/optimize/recommendation` を提供し、戦略の探索次元数から `minimum/recommended/high_quality` trial 推奨値を返す。web の Optimize form は `target_scope` / `allowed_categories` 選択に追従して推奨値を再取得し、最低推奨未満を警告表示する
 - Optimization HTML（`notebooks/templates/optimization_analysis.py`）は、各パラメータ組み合わせの `Trades`（closed trades件数）と Best detail の `Trade Count` を表示する
 - `/api/optimize/jobs/{id}` は `best_score` / `total_combinations` に加えて `best_params` / `worst_score` / `worst_params` を返し、最適化ジョブ結果カードで best/worst 条件を比較表示できる
 - `forward_eps_growth` / `peg_ratio` は FY実績EPSを分母に固定し、`period_type=FY` でも必要時のみ追加取得した四半期 FEPS 修正を forecast 側へ反映する

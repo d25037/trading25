@@ -2,7 +2,14 @@ import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { apiGet, apiPost } from '@/lib/api-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
-import type { LabEvolveRequest, LabGenerateRequest, LabImproveRequest, LabOptimizeRequest } from '@/types/backtest';
+import type {
+  LabEvolveRequest,
+  LabGenerateRequest,
+  LabImproveRequest,
+  LabOptimizeRequest,
+  LabSignalCategory,
+  LabTargetScope,
+} from '@/types/backtest';
 import {
   labKeys,
   useCancelLabJob,
@@ -12,6 +19,7 @@ import {
   useLabJobStatus,
   useLabJobs,
   useLabOptimize,
+  useLabOptimizeRecommendation,
 } from './useLab';
 
 vi.mock('@/lib/api-client', () => ({
@@ -40,6 +48,13 @@ describe('labKeys', () => {
     expect(labKeys.jobsAll()).toEqual(['lab', 'jobs']);
     expect(labKeys.jobs(25)).toEqual(['lab', 'jobs', 25]);
     expect(labKeys.job('j1')).toEqual(['lab', 'job', 'j1']);
+    expect(labKeys.optimizeRecommendation('s1', 'both', [])).toEqual([
+      'lab',
+      'optimize-recommendation',
+      's1',
+      'both',
+      [],
+    ]);
   });
 });
 
@@ -118,6 +133,36 @@ describe('useLabOptimize', () => {
     expect(apiPost).toHaveBeenCalledWith('/api/lab/optimize', request);
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.jobsAll() });
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: labKeys.job('opt-1') });
+  });
+});
+
+describe('useLabOptimizeRecommendation', () => {
+  it('fetches recommendation by strategy', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      strategy_name: 'my-strategy',
+      target_scope: 'both',
+      allowed_categories: [],
+      dimension_count: 12,
+      minimum_trials: 96,
+      recommended_trials: 180,
+      high_quality_trials: 300,
+      formula: 'minimum=max(40,8*N), recommended=max(60,15*N), high_quality=max(100,25*N)',
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(
+      () => useLabOptimizeRecommendation('my-strategy', 'both' as LabTargetScope, [] as LabSignalCategory[]),
+      { wrapper }
+    );
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/lab/optimize/recommendation?strategy_name=my-strategy&target_scope=both');
+  });
+
+  it('does not fetch when strategyName is null', () => {
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useLabOptimizeRecommendation(null), { wrapper });
+    expect(result.current.fetchStatus).toBe('idle');
   });
 });
 

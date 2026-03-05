@@ -42,6 +42,7 @@ export type {
   LabImproveResult,
   LabJobResponse,
   LabOptimizeRequest,
+  LabOptimizeTrialRecommendationResponse,
   LabOptimizeResult,
   LabResultData,
   LabSignalCategory,

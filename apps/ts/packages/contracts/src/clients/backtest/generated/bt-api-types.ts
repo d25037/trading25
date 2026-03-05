@@ -1665,6 +1665,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lab/optimize/recommendation": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Lab Optimize Recommendation
+         * @description 戦略の探索次元数から Optuna の試行回数推奨値を返す。
+         */
+        get: operations["get_lab_optimize_recommendation_api_lab_optimize_recommendation_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/stocks": {
         parameters: {
             query?: never;
@@ -4926,6 +4946,53 @@ export interface components {
              * @description 戦略名
              */
             strategy_name?: string | null;
+        };
+        /**
+         * LabOptimizeRecommendationResponse
+         * @description Optuna試行回数の推奨値
+         */
+        LabOptimizeRecommendationResponse: {
+            /**
+             * Allowed Categories
+             * @description カテゴリ制約（未指定は空配列）
+             */
+            allowed_categories?: ("breakout" | "trend" | "oscillator" | "volatility" | "volume" | "macro" | "fundamental" | "sector")[];
+            /**
+             * Dimension Count
+             * @description 探索次元数
+             */
+            dimension_count: number;
+            /**
+             * Formula
+             * @description 推奨値算出式
+             */
+            formula: string;
+            /**
+             * High Quality Trials
+             * @description 高品質探索向け推奨試行数
+             */
+            high_quality_trials: number;
+            /**
+             * Minimum Trials
+             * @description 最小推奨試行数
+             */
+            minimum_trials: number;
+            /**
+             * Recommended Trials
+             * @description 標準推奨試行数
+             */
+            recommended_trials: number;
+            /**
+             * Strategy Name
+             * @description 戦略名
+             */
+            strategy_name: string;
+            /**
+             * Target Scope
+             * @description 最適化対象
+             * @enum {string}
+             */
+            target_scope: "entry_filter_only" | "exit_trigger_only" | "both";
         };
         /**
          * LabOptimizeRequest
@@ -13316,6 +13383,66 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LabJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_lab_optimize_recommendation_api_lab_optimize_recommendation_get: {
+        parameters: {
+            query: {
+                strategy_name: string;
+                target_scope?: "entry_filter_only" | "exit_trigger_only" | "both";
+                allowed_categories?: ("breakout" | "trend" | "oscillator" | "volatility" | "volume" | "macro" | "fundamental" | "sector")[] | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["LabOptimizeRecommendationResponse"];
                 };
             };
             /** @description Bad Request */

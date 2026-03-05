@@ -92,6 +92,7 @@ vi.mock('@/hooks/useLab', () => ({
     isPending: mockHookState.optimize.isPending,
     error: mockHookState.optimize.error,
   }),
+  useLabOptimizeRecommendation: () => ({ data: null }),
   useLabImprove: () => ({
     mutateAsync: mockImproveMutateAsync,
     isPending: mockHookState.improve.isPending,

@@ -39,8 +39,9 @@ from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.optimization.scoring import calculate_weighted_score_from_metrics
 
-from .models import OptunaConfig, SignalCategory, StrategyCandidate
+from .models import LabTargetScope, OptunaConfig, SignalCategory, StrategyCandidate
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
 from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
@@ -56,6 +57,11 @@ class OptunaOptimizer:
     # Backward-compatible alias.
     PARAM_RANGES = PARAM_RANGES
     MIN_ACCEPTABLE_RETURN_RATIO = 0.95
+    MIN_TRIALS_FOR_TWO_STAGE = 40
+    TWO_STAGE_STAGE1_RATIO = 0.6
+    MIN_STAGE2_TRIALS = 10
+    LOCAL_SEARCH_TOP_K = 8
+    LOCAL_SEARCH_MARGIN_RATIO = 0.15
 
     def __init__(
         self,
@@ -94,6 +100,8 @@ class OptunaOptimizer:
         self._prefetched_benchmark_data: pd.DataFrame | None = None
         self._baseline_score: float | None = None
         self._baseline_total_return: float | None = None
+        self._param_specs: dict[str, tuple[float, float, ParamType]] = {}
+        self._active_param_overrides: dict[str, tuple[float, float, ParamType]] = {}
 
     def _is_usage_targeted(self, usage_type: str) -> bool:
         """target_scope に基づき対象サイドか判定する。"""
@@ -116,6 +124,48 @@ class OptunaOptimizer:
             else 0
         )
         return add_entry, add_exit
+
+    @staticmethod
+    def recommend_trials_from_dimension_count(
+        dimension_count: int,
+    ) -> dict[str, int]:
+        """探索次元数に対する試行回数の推奨値を返す。"""
+        dims = max(1, int(dimension_count))
+        minimum_trials = min(1000, max(40, dims * 8))
+        recommended_trials = min(1000, max(60, dims * 15))
+        high_quality_trials = min(1000, max(100, dims * 25))
+        return {
+            "minimum_trials": minimum_trials,
+            "recommended_trials": recommended_trials,
+            "high_quality_trials": high_quality_trials,
+        }
+
+    @classmethod
+    def estimate_trial_recommendation(
+        cls,
+        strategy_name: str,
+        target_scope: LabTargetScope = "both",
+        allowed_categories: list[SignalCategory] | None = None,
+    ) -> dict[str, int]:
+        """戦略の探索次元数を推定し、試行回数の推奨値を返す。"""
+        config = OptunaConfig(
+            n_trials=100,
+            target_scope=target_scope,
+            entry_filter_only=target_scope == "entry_filter_only",
+            allowed_categories=list(allowed_categories or []),
+        )
+        estimator = cls(config=config)
+        base_candidate = estimator._load_base_strategy(strategy_name)
+        estimator.base_entry_params = base_candidate.entry_filter_params
+        estimator.base_exit_params = base_candidate.exit_trigger_params
+        flat_params = estimator._build_optuna_param_dict(
+            estimator.base_entry_params,
+            estimator.base_exit_params,
+        )
+        dimension_count = len(flat_params)
+        recommendation = cls.recommend_trials_from_dimension_count(dimension_count)
+        recommendation["dimension_count"] = dimension_count
+        return recommendation
 
     def optimize(
         self,
@@ -166,13 +216,18 @@ class OptunaOptimizer:
         self.base_entry_params = base_candidate.entry_filter_params
         self.base_exit_params = base_candidate.exit_trigger_params
         self.base_shared_config = base_candidate.shared_config or {}
+        self._param_specs = self._build_param_specs(
+            self.base_entry_params,
+            self.base_exit_params,
+        )
+        self._active_param_overrides = {}
         if self.shared_config_dict is None:
             self.shared_config_dict = {}
         self._prepare_prefetched_data()
 
         logger.info(
             f"Starting Optuna optimization: n_trials={self.config.n_trials}, "
-            f"sampler={self.config.sampler}"
+            f"sampler={self.config.sampler}, dimensions={len(self._param_specs)}"
         )
 
         self._evaluate_baseline_candidate(base_candidate)
@@ -217,14 +272,34 @@ class OptunaOptimizer:
 
             callbacks.append(_optuna_callback)
 
-        # 最適化実行
-        study.optimize(
-            self._objective,
-            n_trials=self.config.n_trials,
-            n_jobs=self.config.n_jobs,
-            show_progress_bar=True,
-            callbacks=callbacks,
+        # 最適化実行（2段階探索）
+        stage1_trials, stage2_trials = self._build_two_stage_plan(self.config.n_trials)
+        logger.info(
+            "Optuna stage plan: "
+            f"stage1={stage1_trials}, stage2={stage2_trials}, total={self.config.n_trials}"
         )
+
+        self._active_param_overrides = {}
+        self._optimize_study(study, stage1_trials, callbacks)
+
+        if stage2_trials > 0:
+            stage2_overrides, seed_trials = self._build_stage2_local_search_space(study)
+            if stage2_overrides:
+                self._active_param_overrides = stage2_overrides
+                self._enqueue_stage2_seed_trials(study, seed_trials, stage2_overrides)
+                logger.info(
+                    "Optuna stage2 local search enabled: "
+                    f"narrowed_dims={len(stage2_overrides)}"
+                )
+            else:
+                self._active_param_overrides = {}
+                logger.info(
+                    "Optuna stage2 local search skipped: "
+                    "insufficient complete trials for narrowing"
+                )
+            self._optimize_study(study, stage2_trials, callbacks)
+
+        self._active_param_overrides = {}
 
         # 最良パラメータで戦略候補を構築
         best_candidate = self._resolve_best_candidate(study, base_candidate)
@@ -235,6 +310,126 @@ class OptunaOptimizer:
         )
 
         return best_candidate, study
+
+    def _optimize_study(
+        self,
+        study: optuna.Study,
+        n_trials: int,
+        callbacks: list[Callable[[optuna.Study, optuna.trial.FrozenTrial], None]],
+    ) -> None:
+        """指定試行数で Study を最適化する。"""
+        if n_trials <= 0:
+            return
+        study.optimize(
+            self._objective,
+            n_trials=n_trials,
+            n_jobs=self.config.n_jobs,
+            show_progress_bar=True,
+            callbacks=callbacks,
+        )
+
+    def _build_two_stage_plan(self, total_trials: int) -> tuple[int, int]:
+        """2段階探索の試行数配分を返す。"""
+        if total_trials < self.MIN_TRIALS_FOR_TWO_STAGE:
+            return total_trials, 0
+
+        stage1_trials = int(total_trials * self.TWO_STAGE_STAGE1_RATIO)
+        stage1_trials = max(1, min(total_trials, stage1_trials))
+        stage2_trials = total_trials - stage1_trials
+
+        if stage2_trials < self.MIN_STAGE2_TRIALS:
+            return total_trials, 0
+        return stage1_trials, stage2_trials
+
+    def _build_stage2_local_search_space(
+        self,
+        study: optuna.Study,
+    ) -> tuple[dict[str, tuple[float, float, ParamType]], list[optuna.trial.FrozenTrial]]:
+        """stage1 上位trialを元に stage2 の局所探索レンジを構築する。"""
+        optuna_rt = cast(Any, optuna_runtime)
+        completed_trials = [
+            trial for trial in study.trials
+            if trial.state == optuna_rt.trial.TrialState.COMPLETE
+            and trial.value is not None
+        ]
+        if len(completed_trials) < 3:
+            return {}, []
+
+        top_k = min(self.LOCAL_SEARCH_TOP_K, len(completed_trials))
+        top_trials = sorted(
+            completed_trials,
+            key=lambda trial: float(cast(float, trial.value)),
+            reverse=True,
+        )[:top_k]
+
+        overrides: dict[str, tuple[float, float, ParamType]] = {}
+        for suggest_name, (global_min, global_max, param_type) in self._param_specs.items():
+            trial_values = [
+                float(trial.params[suggest_name])
+                for trial in top_trials
+                if suggest_name in trial.params
+            ]
+            if not trial_values:
+                continue
+
+            local_min = min(trial_values)
+            local_max = max(trial_values)
+            full_span = float(global_max - global_min)
+            if full_span <= 0:
+                continue
+
+            margin = full_span * self.LOCAL_SEARCH_MARGIN_RATIO
+            if param_type == "int":
+                margin = max(margin, 1.0)
+
+            narrowed_min = max(global_min, local_min - margin)
+            narrowed_max = min(global_max, local_max + margin)
+
+            if param_type == "int":
+                min_int = max(int(global_min), int(np.floor(narrowed_min)))
+                max_int = min(int(global_max), int(np.ceil(narrowed_max)))
+                if min_int >= max_int:
+                    center = int(round(float(np.mean(trial_values))))
+                    min_int = max(int(global_min), center - 1)
+                    max_int = min(int(global_max), center + 1)
+                    if min_int >= max_int:
+                        min_int = max_int = int(np.clip(center, global_min, global_max))
+                overrides[suggest_name] = (float(min_int), float(max_int), "int")
+                continue
+
+            if narrowed_min >= narrowed_max:
+                center = float(np.mean(trial_values))
+                epsilon = max(full_span * 0.01, 1e-6)
+                narrowed_min = max(global_min, center - epsilon)
+                narrowed_max = min(global_max, center + epsilon)
+                if narrowed_min >= narrowed_max:
+                    narrowed_max = float(np.nextafter(narrowed_min, float("inf")))
+
+            overrides[suggest_name] = (float(narrowed_min), float(narrowed_max), "float")
+
+        return overrides, top_trials
+
+    def _enqueue_stage2_seed_trials(
+        self,
+        study: optuna.Study,
+        top_trials: list[optuna.trial.FrozenTrial],
+        overrides: dict[str, tuple[float, float, ParamType]],
+    ) -> None:
+        """局所探索レンジに合わせて上位trialを stage2 の初期点として enqueue する。"""
+        for trial in top_trials[:3]:
+            seeded: dict[str, float | int] = {}
+            for suggest_name, value in trial.params.items():
+                if suggest_name not in overrides:
+                    continue
+                min_val, max_val, param_type = overrides[suggest_name]
+                if param_type == "int":
+                    clamped = int(np.clip(int(round(float(value))), int(min_val), int(max_val)))
+                    seeded[suggest_name] = clamped
+                else:
+                    clamped = float(np.clip(float(value), min_val, max_val))
+                    seeded[suggest_name] = clamped
+            if seeded:
+                study.enqueue_trial(seeded)
 
     def _resolve_best_candidate(
         self,
@@ -380,6 +575,69 @@ class OptunaOptimizer:
             suggest_name = f"{usage_type}_{signal_name}_{suggest_suffix}"
             flattened[suggest_name] = value
 
+    def _build_param_specs(
+        self,
+        entry_params: dict[str, Any],
+        exit_params: dict[str, Any],
+    ) -> dict[str, tuple[float, float, ParamType]]:
+        """最適化対象パラメータの suggest_name -> range/spec マップを構築する。"""
+        specs: dict[str, tuple[float, float, ParamType]] = {}
+        self._collect_param_specs("entry", entry_params, specs)
+        self._collect_param_specs("exit", exit_params, specs)
+        return specs
+
+    def _collect_param_specs(
+        self,
+        usage_type: str,
+        base_params: dict[str, Any],
+        specs: dict[str, tuple[float, float, ParamType]],
+    ) -> None:
+        for signal_name, params in base_params.items():
+            if not isinstance(params, dict):
+                continue
+            if not self._is_signal_optimization_allowed(signal_name, usage_type):
+                continue
+            ranges = self.PARAM_RANGES.get(signal_name, {})
+            self._collect_nested_param_specs(
+                usage_type=usage_type,
+                signal_name=signal_name,
+                params=params,
+                ranges=ranges,
+                specs=specs,
+            )
+
+    def _collect_nested_param_specs(
+        self,
+        usage_type: str,
+        signal_name: str,
+        params: dict[str, Any],
+        ranges: dict[str, tuple[float, float, ParamType]],
+        specs: dict[str, tuple[float, float, ParamType]],
+        prefix: str = "",
+    ) -> None:
+        for key, value in params.items():
+            param_name = f"{prefix}.{key}" if prefix else key
+            if key in CATEGORICAL_PARAMS or param_name in CATEGORICAL_PARAMS:
+                continue
+
+            if isinstance(value, dict):
+                self._collect_nested_param_specs(
+                    usage_type=usage_type,
+                    signal_name=signal_name,
+                    params=value,
+                    ranges=ranges,
+                    specs=specs,
+                    prefix=param_name,
+                )
+                continue
+
+            if param_name not in ranges or isinstance(value, bool):
+                continue
+
+            suggest_suffix = param_name.replace(".", "__")
+            suggest_name = f"{usage_type}_{signal_name}_{suggest_suffix}"
+            specs[suggest_name] = ranges[param_name]
+
     def _load_base_strategy(
         self, base_strategy: str | StrategyCandidate
     ) -> StrategyCandidate:
@@ -420,14 +678,15 @@ class OptunaOptimizer:
         """
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna is not available")
+        seed = self.config.seed
         if self.config.sampler == "tpe":
-            return TPESampler()  # type: ignore[possibly-unbound]
+            return TPESampler(seed=seed)  # type: ignore[possibly-unbound]
         elif self.config.sampler == "random":
-            return RandomSampler()  # type: ignore[possibly-unbound]
+            return RandomSampler(seed=seed)  # type: ignore[possibly-unbound]
         elif self.config.sampler == "cmaes":
-            return CmaEsSampler()  # type: ignore[possibly-unbound]
+            return CmaEsSampler(seed=seed)  # type: ignore[possibly-unbound]
         else:
-            return TPESampler()  # type: ignore[possibly-unbound]
+            return TPESampler(seed=seed)  # type: ignore[possibly-unbound]
 
     def _create_pruner(self) -> BasePruner:
         """Pruner を作成する。"""
@@ -527,14 +786,14 @@ class OptunaOptimizer:
         total_return: float,
     ) -> float:
         """重み付きスコアを計算する。"""
-        score = 0.0
-        if "sharpe_ratio" in self.scoring_weights:
-            score += self.scoring_weights["sharpe_ratio"] * sharpe
-        if "calmar_ratio" in self.scoring_weights:
-            score += self.scoring_weights["calmar_ratio"] * calmar
-        if "total_return" in self.scoring_weights:
-            score += self.scoring_weights["total_return"] * total_return
-        return score
+        return calculate_weighted_score_from_metrics(
+            {
+                "sharpe_ratio": sharpe,
+                "calmar_ratio": calmar,
+                "total_return": total_return,
+            },
+            self.scoring_weights,
+        )
 
     def _run_backtest_for_trial(
         self,
@@ -734,15 +993,69 @@ class OptunaOptimizer:
             min_val, max_val, param_type = ranges[param_name]
             suggest_suffix = param_name.replace(".", "__")
             suggest_name = f"{usage_type}_{signal_name}_{suggest_suffix}"
+            if suggest_name in self._active_param_overrides:
+                min_val, max_val, param_type = self._active_param_overrides[suggest_name]
+
+            min_val, max_val = self._apply_param_dependency_constraints(
+                key=key,
+                min_val=min_val,
+                max_val=max_val,
+                param_type=param_type,
+                sibling_params=params,
+            )
 
             if param_type == "int":
-                params[key] = trial.suggest_int(
-                    suggest_name, int(min_val), int(max_val)
-                )
+                min_int = int(np.ceil(min_val))
+                max_int = int(np.floor(max_val))
+                if min_int > max_int:
+                    min_int = max_int
+                params[key] = trial.suggest_int(suggest_name, min_int, max_int)
             else:
-                params[key] = trial.suggest_float(
-                    suggest_name, min_val, max_val
-                )
+                min_float = float(min_val)
+                max_float = float(max_val)
+                if min_float >= max_float:
+                    max_float = float(np.nextafter(min_float, float("inf")))
+                params[key] = trial.suggest_float(suggest_name, min_float, max_float)
+
+    def _apply_param_dependency_constraints(
+        self,
+        key: str,
+        min_val: float,
+        max_val: float,
+        param_type: ParamType,
+        sibling_params: dict[str, Any],
+    ) -> tuple[float, float]:
+        """相互依存パラメータの制約を sampling range に反映する。"""
+        lower_bound = min_val
+        upper_bound = max_val
+
+        if key == "long_period" and "short_period" in sibling_params:
+            lower_bound = max(lower_bound, float(sibling_params["short_period"]) + 1.0)
+        elif key == "short_period" and "long_period" in sibling_params:
+            upper_bound = min(upper_bound, float(sibling_params["long_period"]) - 1.0)
+        elif key == "slow_period" and "fast_period" in sibling_params:
+            lower_bound = max(lower_bound, float(sibling_params["fast_period"]) + 1.0)
+        elif key == "fast_period" and "slow_period" in sibling_params:
+            upper_bound = min(upper_bound, float(sibling_params["slow_period"]) - 1.0)
+        elif key == "max_threshold" and "min_threshold" in sibling_params:
+            lower_bound = max(lower_bound, float(sibling_params["min_threshold"]) + 1e-6)
+        elif key == "min_threshold" and "max_threshold" in sibling_params:
+            upper_bound = min(upper_bound, float(sibling_params["max_threshold"]) - 1e-6)
+        elif key == "max_beta" and "min_beta" in sibling_params:
+            lower_bound = max(lower_bound, float(sibling_params["min_beta"]) + 1e-6)
+        elif key == "min_beta" and "max_beta" in sibling_params:
+            upper_bound = min(upper_bound, float(sibling_params["max_beta"]) - 1e-6)
+
+        if param_type == "int":
+            lower_bound = float(int(np.ceil(lower_bound)))
+            upper_bound = float(int(np.floor(upper_bound)))
+            if lower_bound > upper_bound:
+                lower_bound = upper_bound
+            return lower_bound, upper_bound
+
+        if lower_bound >= upper_bound:
+            upper_bound = float(np.nextafter(lower_bound, float("inf")))
+        return lower_bound, upper_bound
 
     def _is_signal_optimization_allowed(self, signal_name: str, usage_type: str) -> bool:
         """制約に基づいて最適化対象に含めるか判定する。"""

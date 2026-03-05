@@ -20,6 +20,7 @@ from src.entrypoints.http.schemas.lab import (
     LabImproveResult,
     LabJobResponse,
     LabOptimizeRequest,
+    LabOptimizeRecommendationResponse,
     LabOptimizeResult,
     GenerateResultItem,
     EvolutionHistoryItem,
@@ -362,6 +363,22 @@ class TestLabResultModels:
         assert result.lab_type == "optimize"
         assert result.best_score == 3.0
 
+    def test_optimize_recommendation_response(self) -> None:
+        """LabOptimizeRecommendationResponseが作成できる"""
+        resp = LabOptimizeRecommendationResponse(
+            strategy_name="test",
+            target_scope="both",
+            allowed_categories=[],
+            dimension_count=12,
+            minimum_trials=96,
+            recommended_trials=180,
+            high_quality_trials=300,
+            formula="minimum=max(40,8*N), recommended=max(60,15*N), high_quality=max(100,25*N)",
+        )
+        assert resp.strategy_name == "test"
+        assert resp.dimension_count == 12
+        assert resp.recommended_trials == 180
+
     def test_improve_result(self) -> None:
         """LabImproveResultが作成できる"""
         result = LabImproveResult(
@@ -414,6 +431,47 @@ class TestLabJobResponse:
 
 class TestLabEndpoints:
     """Lab APIエンドポイントのテスト"""
+
+    def test_get_optimize_recommendation(self, client: TestClient) -> None:
+        """Optuna試行回数推奨値が取得できる"""
+        with patch(
+            "src.entrypoints.http.routes.lab.OptunaOptimizer.estimate_trial_recommendation",
+            return_value={
+                "dimension_count": 12,
+                "minimum_trials": 96,
+                "recommended_trials": 180,
+                "high_quality_trials": 300,
+            },
+        ) as mock_estimate:
+            response = client.get(
+                "/api/lab/optimize/recommendation",
+                params={"strategy_name": "test_strategy", "target_scope": "both"},
+            )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["strategy_name"] == "test_strategy"
+        assert data["dimension_count"] == 12
+        assert data["recommended_trials"] == 180
+        mock_estimate.assert_called_once_with(
+            strategy_name="test_strategy",
+            target_scope="both",
+            allowed_categories=[],
+        )
+
+    def test_get_optimize_recommendation_error(self, client: TestClient) -> None:
+        """推奨値算出で例外が発生した場合は500を返す"""
+        with patch(
+            "src.entrypoints.http.routes.lab.OptunaOptimizer.estimate_trial_recommendation",
+            side_effect=RuntimeError("recommendation error"),
+        ):
+            response = client.get(
+                "/api/lab/optimize/recommendation",
+                params={"strategy_name": "test_strategy"},
+            )
+
+        assert response.status_code == 500
+        assert "recommendation error" in response.json()["message"]
 
     def test_get_nonexistent_job(self, client: TestClient) -> None:
         """存在しないジョブIDで404"""

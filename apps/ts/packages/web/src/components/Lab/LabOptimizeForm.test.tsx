@@ -1,9 +1,20 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LabOptimizeForm } from './LabOptimizeForm';
 
+const mockUseLabOptimizeRecommendation = vi.fn();
+
+vi.mock('@/hooks/useLab', () => ({
+  useLabOptimizeRecommendation: (...args: unknown[]) => mockUseLabOptimizeRecommendation(...args),
+}));
+
 describe('LabOptimizeForm', () => {
+  beforeEach(() => {
+    mockUseLabOptimizeRecommendation.mockReset();
+    mockUseLabOptimizeRecommendation.mockReturnValue({ data: null });
+  });
+
   it('submits default payload', async () => {
     const user = userEvent.setup();
     const onSubmit = vi.fn();
@@ -146,5 +157,69 @@ describe('LabOptimizeForm', () => {
     render(<LabOptimizeForm strategyName={null} onSubmit={onSubmit} />);
 
     expect(screen.getByRole('button', { name: 'Start Optimization' })).toBeDisabled();
+  });
+
+  it('shows recommendation summary and warning when trials are below minimum', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(
+      <LabOptimizeForm
+        strategyName="experimental/base_strategy_01"
+        onSubmit={onSubmit}
+        trialRecommendation={{
+          strategy_name: 'experimental/base_strategy_01',
+          target_scope: 'both',
+          allowed_categories: [],
+          dimension_count: 12,
+          minimum_trials: 96,
+          recommended_trials: 180,
+          high_quality_trials: 300,
+          formula: 'minimum=max(40,8*N), recommended=max(60,15*N), high_quality=max(100,25*N)',
+        }}
+      />
+    );
+
+    expect(screen.getByText(/Dimensions: 12/)).toBeInTheDocument();
+    expect(
+      screen.getByText('Current trials are below the minimum recommendation for this search space.')
+    ).toBeInTheDocument();
+
+    await user.clear(screen.getByLabelText('Trials'));
+    await user.type(screen.getByLabelText('Trials'), '120');
+
+    expect(
+      screen.queryByText('Current trials are below the minimum recommendation for this search space.')
+    ).not.toBeInTheDocument();
+  });
+
+  it('requests recommendation with selected scope and categories', async () => {
+    const user = userEvent.setup();
+    const onSubmit = vi.fn();
+
+    render(<LabOptimizeForm strategyName="experimental/base_strategy_01" onSubmit={onSubmit} />);
+    expect(mockUseLabOptimizeRecommendation).toHaveBeenLastCalledWith(
+      'experimental/base_strategy_01',
+      'both',
+      []
+    );
+
+    const comboboxes = screen.getAllByRole('combobox');
+    const targetScopeCombobox = comboboxes[1];
+    const categoryCombobox = comboboxes[2];
+    expect(targetScopeCombobox).toBeDefined();
+    expect(categoryCombobox).toBeDefined();
+    if (!targetScopeCombobox || !categoryCombobox) return;
+
+    await user.click(targetScopeCombobox);
+    await user.click(screen.getByText('entry filter only'));
+    await user.click(categoryCombobox);
+    await user.click(screen.getByText('fundamental only'));
+
+    expect(mockUseLabOptimizeRecommendation).toHaveBeenLastCalledWith(
+      'experimental/base_strategy_01',
+      'entry_filter_only',
+      ['fundamental']
+    );
   });
 });

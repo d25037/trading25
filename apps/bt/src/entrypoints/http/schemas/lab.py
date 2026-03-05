@@ -151,6 +151,22 @@ class LabOptimizeRequest(BaseModel):
         return self
 
 
+class LabOptimizeRecommendationResponse(BaseModel):
+    """Optuna試行回数の推奨値"""
+
+    strategy_name: str = Field(description="戦略名")
+    target_scope: LabTargetScope = Field(description="最適化対象")
+    allowed_categories: list[LabSignalCategory] = Field(
+        default_factory=list,
+        description="カテゴリ制約（未指定は空配列）",
+    )
+    dimension_count: int = Field(description="探索次元数")
+    minimum_trials: int = Field(description="最小推奨試行数")
+    recommended_trials: int = Field(description="標準推奨試行数")
+    high_quality_trials: int = Field(description="高品質探索向け推奨試行数")
+    formula: str = Field(description="推奨値算出式")
+
+
 class LabImproveRequest(BaseModel):
     """戦略改善リクエスト"""
 

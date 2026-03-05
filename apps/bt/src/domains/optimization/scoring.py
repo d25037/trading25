@@ -40,13 +40,13 @@ def calculate_composite_score(
     Returns:
         float: 複合スコア（各指標の重み付け合計）
     """
-    score = 0.0
+    metric_values: dict[str, float] = {}
 
     if "sharpe_ratio" in weights:
         try:
             sharpe = float(portfolio.sharpe_ratio())
             if is_valid_metric(sharpe):
-                score += weights["sharpe_ratio"] * sharpe
+                metric_values["sharpe_ratio"] = sharpe
         except Exception:
             pass
 
@@ -54,7 +54,7 @@ def calculate_composite_score(
         try:
             calmar = float(portfolio.calmar_ratio())
             if is_valid_metric(calmar):
-                score += weights["calmar_ratio"] * calmar
+                metric_values["calmar_ratio"] = calmar
         except Exception:
             pass
 
@@ -62,11 +62,31 @@ def calculate_composite_score(
         try:
             total_return = float(portfolio.total_return())
             if is_valid_metric(total_return):
-                score += weights["total_return"] * total_return
+                metric_values["total_return"] = total_return
         except Exception:
             pass
 
-    return score
+    return calculate_weighted_score_from_metrics(metric_values, weights)
+
+
+def calculate_weighted_score_from_metrics(
+    metric_values: dict[str, float],
+    weights: dict[str, float],
+) -> float:
+    """
+    メトリクス辞書から重み付きスコアを計算
+
+    Args:
+        metric_values: メトリクス値辞書（例: {"sharpe_ratio": 1.2}）
+        weights: 重み辞書
+
+    Returns:
+        float: 重み付きスコア
+    """
+    return sum(
+        weights.get(metric, 0.0) * value
+        for metric, value in metric_values.items()
+    )
 
 
 def normalize_and_recalculate_scores(
@@ -104,7 +124,7 @@ def normalize_and_recalculate_scores(
         normalized_metrics = {}
         composite_score = 0.0
 
-        for metric, weight in scoring_weights.items():
+        for metric in scoring_weights.keys():
             raw_value = result["metric_values"][metric]
             min_val = metric_ranges[metric]["min"]
             max_val = metric_ranges[metric]["max"]
@@ -117,7 +137,11 @@ def normalize_and_recalculate_scores(
                 normalized_value = 0.5
 
             normalized_metrics[metric] = normalized_value
-            composite_score += weight * normalized_value
+
+        composite_score = calculate_weighted_score_from_metrics(
+            normalized_metrics,
+            scoring_weights,
+        )
 
         # 結果を更新
         result["normalized_metrics"] = normalized_metrics

@@ -6,6 +6,9 @@ import type {
   LabImproveRequest,
   LabJobResponse,
   LabOptimizeRequest,
+  LabOptimizeTrialRecommendationResponse,
+  LabTargetScope,
+  LabSignalCategory,
 } from '@/types/backtest';
 import { logger } from '@/utils/logger';
 
@@ -14,6 +17,11 @@ export const labKeys = {
   jobsAll: () => [...labKeys.all, 'jobs'] as const,
   jobs: (limit?: number) => [...labKeys.jobsAll(), limit] as const,
   job: (jobId: string) => [...labKeys.all, 'job', jobId] as const,
+  optimizeRecommendation: (
+    strategyName: string,
+    targetScope: LabTargetScope,
+    allowedCategories: LabSignalCategory[]
+  ) => [...labKeys.all, 'optimize-recommendation', strategyName, targetScope, allowedCategories] as const,
 };
 
 function fetchLabJobs(limit = 50): Promise<LabJobResponse[]> {
@@ -38,6 +46,20 @@ function postLabOptimize(request: LabOptimizeRequest): Promise<LabJobResponse> {
 
 function postLabImprove(request: LabImproveRequest): Promise<LabJobResponse> {
   return apiPost<LabJobResponse>('/api/lab/improve', request);
+}
+
+function fetchLabOptimizeRecommendation(
+  strategyName: string,
+  targetScope: LabTargetScope = 'both',
+  allowedCategories: LabSignalCategory[] = []
+): Promise<LabOptimizeTrialRecommendationResponse> {
+  const query = new URLSearchParams();
+  query.set('strategy_name', strategyName);
+  query.set('target_scope', targetScope);
+  for (const category of allowedCategories) {
+    query.append('allowed_categories', category);
+  }
+  return apiGet<LabOptimizeTrialRecommendationResponse>(`/api/lab/optimize/recommendation?${query.toString()}`);
 }
 
 function cancelLabJob(jobId: string): Promise<LabJobResponse> {
@@ -89,6 +111,24 @@ export function useLabOptimize() {
     onError: (error) => {
       logger.error('Failed to start lab optimize', { error: error.message });
     },
+  });
+}
+
+export function useLabOptimizeRecommendation(
+  strategyName: string | null,
+  targetScope: LabTargetScope = 'both',
+  allowedCategories: LabSignalCategory[] = []
+) {
+  return useQuery({
+    queryKey: strategyName
+      ? labKeys.optimizeRecommendation(strategyName, targetScope, allowedCategories)
+      : [...labKeys.all, 'optimize-recommendation', 'none'],
+    queryFn: () => {
+      if (!strategyName) throw new Error('Strategy name required');
+      return fetchLabOptimizeRecommendation(strategyName, targetScope, allowedCategories);
+    },
+    enabled: !!strategyName,
+    staleTime: 30 * 1000,
   });
 }
 
