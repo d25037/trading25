@@ -8,6 +8,7 @@ import type {
   MarketValidationResponse,
   RefreshStocksRequest,
   StartSyncRequest,
+  SyncFetchDetailsResponse,
   SyncJobResponse,
 } from '@/types/sync';
 import { logger } from '@/utils/logger';
@@ -23,6 +24,10 @@ function fetchJobStatus(jobId: string): Promise<SyncJobResponse> {
 
 function fetchActiveJobStatus(): Promise<SyncJobResponse | null> {
   return apiGet<SyncJobResponse | null>('/api/db/sync/jobs/active');
+}
+
+function fetchSyncFetchDetails(jobId: string): Promise<SyncFetchDetailsResponse> {
+  return apiGet<SyncFetchDetailsResponse>(`/api/db/sync/jobs/${jobId}/fetch-details`);
 }
 
 function cancelJob(jobId: string): Promise<CancelJobResponse> {
@@ -100,6 +105,26 @@ export function useSyncJobStatus(jobId: string | null) {
       return 1000;
     },
     staleTime: 0, // Always fetch fresh data
+  });
+}
+
+export function useSyncFetchDetails(jobId: string | null) {
+  return useQuery({
+    queryKey: ['sync-job-fetch-details', jobId],
+    queryFn: () => {
+      if (!jobId) throw new Error('Job ID required');
+      logger.debug('Polling sync fetch details', { jobId });
+      return fetchSyncFetchDetails(jobId);
+    },
+    enabled: !!jobId,
+    refetchInterval: (query) => {
+      const status = query.state.data?.status;
+      if (status === 'completed' || status === 'failed' || status === 'cancelled') {
+        return false;
+      }
+      return 1000;
+    },
+    staleTime: 0,
   });
 }
 

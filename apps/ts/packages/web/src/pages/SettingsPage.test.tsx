@@ -30,6 +30,7 @@ const mockCancelSyncState = {
 };
 
 const mockUseSyncJobStatus = vi.fn();
+const mockUseSyncFetchDetails = vi.fn();
 const mockUseActiveSyncJob = vi.fn();
 const mockUseDbStats = vi.fn();
 const mockUseDbValidation = vi.fn();
@@ -40,6 +41,7 @@ vi.mock('@/hooks/useDbSync', () => ({
   useCancelSync: () => mockCancelSyncState,
   useActiveSyncJob: () => mockUseActiveSyncJob(),
   useSyncJobStatus: (jobId: string | null) => mockUseSyncJobStatus(jobId),
+  useSyncFetchDetails: (jobId: string | null) => mockUseSyncFetchDetails(jobId),
   useDbStats: (options?: unknown) => mockUseDbStats(options),
   useDbValidation: (options?: unknown) => mockUseDbValidation(options),
   useRefreshStocks: () => mockUseRefreshStocks(),
@@ -52,6 +54,11 @@ beforeEach(() => {
   mockStartSyncState.error = null;
   mockCancelSyncState.isPending = false;
   mockUseActiveSyncJob.mockReturnValue({
+    data: null,
+    isLoading: false,
+    error: null,
+  });
+  mockUseSyncFetchDetails.mockReturnValue({
     data: null,
     isLoading: false,
     error: null,
@@ -158,7 +165,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto' },
+      { mode: 'auto', enforceBulkForStockData: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -190,7 +197,7 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'auto' },
+      { mode: 'auto', enforceBulkForStockData: false },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })
@@ -215,7 +222,23 @@ describe('SettingsPage', () => {
     await user.click(screen.getByRole('button', { name: /Start Sync/i }));
 
     expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
-      { mode: 'incremental' },
+      { mode: 'incremental', enforceBulkForStockData: false },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
+  });
+
+  it('sends enforce bulk option when enabled', async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole('switch', { name: /Enforce BULK for stock_data/i }));
+    await user.click(screen.getByRole('button', { name: /Start Sync/i }));
+
+    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
+      { mode: 'auto', enforceBulkForStockData: true },
       expect.objectContaining({
         onSuccess: expect.any(Function),
       })

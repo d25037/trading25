@@ -30,7 +30,9 @@ from src.application.services.sync_strategies import (
     _extract_dates_after,
     _extract_list_items,
     _fetch_fins_summary_by_code,
+    _get_bulk_service,
     _get_paginated_rows_with_call_count,
+    _inspect_time_series,
     _is_date_after,
     _latest_date,
     _load_metadata_json_list,
@@ -38,6 +40,10 @@ from src.application.services.sync_strategies import (
     _normalize_iso_date_text,
     _plan_fetch_method,
     _parse_date,
+    _publish_indices_rows,
+    _publish_statement_rows,
+    _publish_stock_data_rows,
+    _publish_topix_rows,
     _to_iso_date_text,
     _to_jquants_date_param,
     get_strategy,
@@ -1274,7 +1280,7 @@ async def test_incremental_sync_rechecks_anchor_date_for_index_discovery() -> No
 
 
 @pytest.mark.asyncio
-async def test_incremental_sync_requires_last_sync_metadata() -> None:
+async def test_incremental_sync_works_without_last_sync_metadata() -> None:
     market_db = DummyMarketDb()
     market_db.metadata = {}
 
@@ -1293,8 +1299,10 @@ async def test_incremental_sync_requires_last_sync_metadata() -> None:
 
     result = await IncrementalSyncStrategy().execute(ctx)
 
-    assert not result.success
-    assert result.errors == ["No last_sync_date found. Run initial sync first."]
+    assert result.success
+    topix_calls = [call for call in client.calls if call[0] == "/indices/bars/daily/topix"]
+    assert topix_calls
+    assert topix_calls[0][1] == {"from": "20260206"}
 
 
 @pytest.mark.asyncio
@@ -2561,3 +2569,54 @@ def test_to_iso_date_text_handles_fast_paths_and_invalid_input() -> None:
     assert _to_iso_date_text("2026-02-10") == "2026-02-10"
     assert _to_iso_date_text("20260210") == "2026-02-10"
     assert _to_iso_date_text("invalid-date") is None
+
+
+def test_get_bulk_service_initializes_once_and_reuses_instance() -> None:
+    market_db = DummyMarketDb()
+    ctx = _build_ctx(
+        client=DummyClient(),  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+    ctx.bulk_service = None
+
+    first = _get_bulk_service(ctx)
+    second = _get_bulk_service(ctx)
+
+    assert first is second
+    assert ctx.bulk_service is first
+
+
+def test_inspect_time_series_rejects_non_duckdb_source() -> None:
+    market_db = DummyMarketDb()
+    bad_store = DummyTimeSeriesStore(
+        market_db,
+        inspection=TimeSeriesInspection(source="sqlite"),
+    )
+    ctx = _build_ctx(
+        client=DummyClient(),  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+        time_series_store=bad_store,
+    )
+
+    with pytest.raises(RuntimeError, match="Unexpected time-series source"):
+        _inspect_time_series(ctx)
+
+
+@pytest.mark.asyncio
+async def test_publish_helpers_return_zero_when_rows_empty() -> None:
+    market_db = DummyMarketDb()
+    ctx = _build_ctx(
+        client=DummyClient(),  # type: ignore[arg-type]
+        market_db=market_db,  # type: ignore[arg-type]
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    assert await _publish_topix_rows(ctx, []) == 0
+    assert await _publish_stock_data_rows(ctx, []) == 0
+    assert await _publish_indices_rows(ctx, []) == 0
+    assert await _publish_statement_rows(ctx, []) == 0

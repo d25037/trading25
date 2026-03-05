@@ -189,6 +189,30 @@ export interface JobProgress {
   message: string;
 }
 
+export interface SyncFetchDetail {
+  eventType: 'strategy' | 'execution';
+  stage: string;
+  endpoint: string;
+  method: 'rest' | 'bulk';
+  targetLabel?: string;
+  reason?: string;
+  reasonDetail?: string;
+  estimatedRestCalls?: number;
+  estimatedBulkCalls?: number;
+  plannerApiCalls?: number;
+  fallback?: boolean;
+  fallbackReason?: string;
+  timestamp: string;
+}
+
+export interface SyncFetchDetailsResponse {
+  jobId: string;
+  status: JobStatus;
+  mode: SyncMode;
+  latest?: SyncFetchDetail;
+  items: SyncFetchDetail[];
+}
+
 export interface SyncJobResult {
   success: boolean;
   totalApiCalls: number;
@@ -212,6 +236,7 @@ export interface SyncJobResponse {
   jobId: string;
   status: JobStatus;
   mode: SyncMode;
+  enforceBulkForStockData: boolean;
   progress?: JobProgress;
   result?: SyncJobResult;
   startedAt: string;
@@ -232,6 +257,7 @@ export interface SyncDataPlaneOptions {
 export interface StartSyncRequest {
   mode: SyncMode;
   dataPlane?: SyncDataPlaneOptions;
+  enforceBulkForStockData?: boolean;
 }
 
 // ===== DATASET TYPES =====

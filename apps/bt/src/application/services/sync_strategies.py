@@ -54,6 +54,7 @@ class SyncContext:
     market_db: MarketDb
     cancelled: asyncio.Event
     on_progress: Callable[[str, int, int, str], None]
+    on_fetch_detail: Callable[[dict[str, Any]], None] | None = None
     time_series_store: MarketTimeSeriesStore | None = None
     bulk_service: JQuantsBulkService | None = None
     bulk_probe_disabled: bool = False
@@ -725,6 +726,23 @@ def _emit_fetch_strategy_progress(
             f"BULK est={_format_fetch_estimate(decision.estimated_bulk_calls)}{target_text})"
         ),
     )
+    _emit_fetch_detail(
+        ctx,
+        {
+            "eventType": "strategy",
+            "stage": progress_stage,
+            "endpoint": endpoint,
+            "method": decision.method,
+            "targetLabel": target_label,
+            "reason": decision.reason,
+            "reasonDetail": decision.reason_detail,
+            "estimatedRestCalls": decision.estimated_rest_calls,
+            "estimatedBulkCalls": decision.estimated_bulk_calls,
+            "plannerApiCalls": decision.planner_api_calls,
+            "fallback": False,
+            "fallbackReason": None,
+        },
+    )
 
 
 def _emit_fetch_execution_progress(
@@ -753,6 +771,32 @@ def _emit_fetch_execution_progress(
         total,
         f"Fetching {endpoint} via {method.upper()}{fallback_text}{target_text}...",
     )
+    _emit_fetch_detail(
+        ctx,
+        {
+            "eventType": "execution",
+            "stage": progress_stage,
+            "endpoint": endpoint,
+            "method": method,
+            "targetLabel": target_label,
+            "reason": None,
+            "reasonDetail": None,
+            "estimatedRestCalls": None,
+            "estimatedBulkCalls": None,
+            "plannerApiCalls": None,
+            "fallback": fallback,
+            "fallbackReason": fallback_reason,
+        },
+    )
+
+
+def _emit_fetch_detail(ctx: SyncContext, detail: dict[str, Any]) -> None:
+    if ctx.on_fetch_detail is None:
+        return
+    try:
+        ctx.on_fetch_detail(detail)
+    except Exception as e:  # noqa: BLE001 - fetch detail failures should not abort sync
+        logger.warning("Failed to emit sync fetch detail: {}", e)
 
 
 class IndicesOnlySyncStrategy:
@@ -1198,9 +1242,14 @@ class IncrementalSyncStrategy:
         stock_rows: list[dict[str, Any]] = []
 
         try:
-            last_sync = ctx.market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"])
-            if not last_sync:
-                return SyncResult(success=False, errors=["No last_sync_date found. Run initial sync first."])
+            if not ctx.market_db.get_sync_metadata(METADATA_KEYS["LAST_SYNC_DATE"]):
+                logger.warning(
+                    "LAST_SYNC_DATE metadata is missing; proceeding incremental sync with DuckDB inspection anchors",
+                    event="sync_fetch_strategy",
+                    stage="incremental_bootstrap",
+                    selected="incremental",
+                    reason="missing_last_sync_metadata",
+                )
 
             # Step 1: TOPIX（増分）
             ctx.on_progress("topix", 0, 5, "Fetching incremental TOPIX data...")

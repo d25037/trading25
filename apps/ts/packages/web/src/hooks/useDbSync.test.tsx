@@ -8,6 +8,7 @@ import {
   useDbStats,
   useDbValidation,
   useRefreshStocks,
+  useSyncFetchDetails,
   useStartSync,
   useSyncJobStatus,
 } from './useDbSync';
@@ -50,6 +51,26 @@ describe('useDbSync hooks', () => {
     const { result } = renderHook(() => useSyncJobStatus('abc'), { wrapper });
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/db/sync/jobs/abc');
+  });
+
+  it('useSyncFetchDetails fetches structured fetch details', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      jobId: 'abc',
+      status: 'running',
+      mode: 'incremental',
+      latest: {
+        eventType: 'strategy',
+        stage: 'stock_data',
+        endpoint: '/equities/bars/daily',
+        method: 'bulk',
+        timestamp: '2026-03-05T00:00:00Z',
+      },
+      items: [],
+    });
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useSyncFetchDetails('abc'), { wrapper });
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/db/sync/jobs/abc/fetch-details');
   });
 
   it('useSyncJobStatus is disabled when jobId is null', () => {
