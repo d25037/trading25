@@ -21,24 +21,6 @@ if TYPE_CHECKING:
     from optuna.pruners import BasePruner
     from optuna.samplers import BaseSampler
 
-# Runtime fallback placeholders (when optuna is not installed).
-TPESampler: Any | None = None
-RandomSampler: Any | None = None
-CmaEsSampler: Any | None = None
-NopPruner: Any | None = None
-MedianPruner: Any | None = None
-
-# ランタイムではtry-exceptでインポート
-try:
-    import optuna as optuna_runtime
-    from optuna.pruners import MedianPruner, NopPruner
-    from optuna.samplers import CmaEsSampler, RandomSampler, TPESampler
-
-    OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
-    optuna_runtime: Any | None = None
-
 from src.infrastructure.data_access.mode import data_access_mode_context
 from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 from src.infrastructure.data_access.loaders.index_loaders import load_topix_data
@@ -52,6 +34,22 @@ from .models import LabTargetScope, OptunaConfig, SignalCategory, StrategyCandid
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
 from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
+
+# ランタイムではtry-exceptでインポート
+try:
+    import optuna as optuna_runtime
+    from optuna.pruners import MedianPruner, NopPruner
+    from optuna.samplers import CmaEsSampler, RandomSampler, TPESampler
+
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    optuna_runtime: Any | None = None
+    TPESampler: Any | None = None
+    RandomSampler: Any | None = None
+    CmaEsSampler: Any | None = None
+    NopPruner: Any | None = None
+    MedianPruner: Any | None = None
 
 
 class OptunaOptimizer:
