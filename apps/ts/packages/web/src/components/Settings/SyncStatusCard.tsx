@@ -74,6 +74,7 @@ function toDisplayMethod(method: SyncFetchDetail['method'] | null | undefined): 
   return null;
 }
 
+// biome-ignore lint/complexity/noExcessiveCognitiveComplexity: sync status UI intentionally composes multiple status/detail sections
 export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCancelling }: SyncStatusCardProps) {
   if (!job) return null;
 
