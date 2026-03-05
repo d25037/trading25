@@ -10,6 +10,7 @@ from src.application.services.generic_job_manager import GenericJobManager
 from src.application.services.sync_service import SyncMode
 from src.entrypoints.http.schemas.db import SyncResult
 from src.infrastructure.db.market.market_db import METADATA_KEYS
+from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
 class DummyMarketDb:
@@ -27,8 +28,26 @@ class DummyMarketDb:
 
 
 class DummyTimeSeriesStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        *,
+        inspection: TimeSeriesInspection | None = None,
+        inspect_error: Exception | None = None,
+    ) -> None:
         self.close_calls = 0
+        self._inspection = inspection or TimeSeriesInspection(source="duckdb-parquet")
+        self._inspect_error = inspect_error
+
+    def inspect(
+        self,
+        *,
+        missing_stock_dates_limit: int = 0,
+        statement_non_null_columns: list[str] | None = None,
+    ) -> TimeSeriesInspection:
+        del missing_stock_dates_limit, statement_non_null_columns
+        if self._inspect_error is not None:
+            raise self._inspect_error
+        return self._inspection
 
     def close(self) -> None:
         self.close_calls += 1
@@ -51,6 +70,23 @@ class StrategyProbe:
         self.captured_ctx = ctx
         if self._emit_progress:
             ctx.on_progress("stock_data", 1, 2, "running")
+            if ctx.on_fetch_detail is not None:
+                ctx.on_fetch_detail(
+                    {
+                        "eventType": "strategy",
+                        "stage": "stock_data",
+                        "endpoint": "/equities/bars/daily",
+                        "method": "bulk",
+                        "targetLabel": "42 dates",
+                        "reason": "bulk_estimate_lower",
+                        "reasonDetail": None,
+                        "estimatedRestCalls": 120,
+                        "estimatedBulkCalls": 6,
+                        "plannerApiCalls": 1,
+                        "fallback": False,
+                        "fallbackReason": None,
+                    }
+                )
         if self._error is not None:
             raise self._error
         return self._result
@@ -69,8 +105,43 @@ def test_resolve_mode_prefers_requested_non_auto() -> None:
 
 
 def test_resolve_mode_auto_uses_metadata_anchor() -> None:
-    assert sync_service._resolve_mode(SyncMode.AUTO, DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")) == "incremental"
-    assert sync_service._resolve_mode(SyncMode.AUTO, DummyMarketDb(last_sync_date=None)) == "initial"
+    assert sync_service._resolve_mode(
+        SyncMode.AUTO,
+        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),
+        time_series_store=DummyTimeSeriesStore(),
+    ) == "incremental"
+
+
+def test_resolve_mode_auto_uses_timeseries_snapshot_when_last_sync_missing() -> None:
+    empty_store = DummyTimeSeriesStore(inspection=TimeSeriesInspection(source="duckdb-parquet"))
+    assert sync_service._resolve_mode(
+        SyncMode.AUTO,
+        DummyMarketDb(last_sync_date=None),
+        time_series_store=empty_store,
+    ) == "initial"
+
+    populated_store = DummyTimeSeriesStore(
+        inspection=TimeSeriesInspection(
+            source="duckdb-parquet",
+            stock_count=10,
+            stock_max="2026-03-04",
+        )
+    )
+    assert sync_service._resolve_mode(
+        SyncMode.AUTO,
+        DummyMarketDb(last_sync_date=None),
+        time_series_store=populated_store,
+    ) == "incremental"
+
+
+def test_resolve_mode_auto_raises_when_inspection_fails() -> None:
+    failing_store = DummyTimeSeriesStore(inspect_error=RuntimeError("inspect failed"))
+    with pytest.raises(RuntimeError, match="DuckDB inspection failed while resolving AUTO sync mode"):
+        sync_service._resolve_mode(
+            SyncMode.AUTO,
+            DummyMarketDb(last_sync_date=None),
+            time_series_store=failing_store,
+        )
 
 
 @pytest.mark.asyncio
@@ -134,9 +205,38 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     assert stored.result is not None and stored.result.success is True
     assert stored.progress is not None and stored.progress.percentage == 50.0
     assert strategy.captured_ctx is not None
-    assert strategy.captured_ctx.enforce_bulk_for_stock_data is True
+    assert strategy.captured_ctx.enforce_bulk_for_stock_data is False
+    assert stored.data.enforce_bulk_for_stock_data is False
+    assert len(stored.data.fetch_details) == 1
+    assert stored.data.fetch_details[0]["endpoint"] == "/equities/bars/daily"
+    assert "timestamp" in stored.data.fetch_details[0]
     assert market_db.ensure_schema_calls == 1
     assert store.close_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_start_sync_passes_requested_bulk_enforcement(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe()
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+
+    job = await sync_service.start_sync(
+        SyncMode.INCREMENTAL,
+        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),  # type: ignore[arg-type]
+        object(),  # type: ignore[arg-type]
+        time_series_store=DummyTimeSeriesStore(),  # type: ignore[arg-type]
+        enforce_bulk_for_stock_data=True,
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert strategy.captured_ctx is not None
+    assert strategy.captured_ctx.enforce_bulk_for_stock_data is True
+    assert stored.data.enforce_bulk_for_stock_data is True
 
 
 @pytest.mark.asyncio

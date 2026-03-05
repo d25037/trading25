@@ -143,6 +143,7 @@ class SyncDataPlaneRequest(BaseModel):
 class SyncRequest(BaseModel):
     mode: SyncModeLiteral = "auto"
     dataPlane: SyncDataPlaneRequest | None = None
+    enforceBulkForStockData: bool = False
 
 
 class SyncProgress(BaseModel):
@@ -176,11 +177,36 @@ class SyncJobResponse(BaseModel):
     jobId: str
     status: str
     mode: str
+    enforceBulkForStockData: bool = False
     progress: SyncProgress | None = None
     result: SyncResult | None = None
     startedAt: str
     completedAt: str | None = None
     error: str | None = None
+
+
+class SyncFetchDetail(BaseModel):
+    eventType: Literal["strategy", "execution"]
+    stage: str
+    endpoint: str
+    method: Literal["rest", "bulk"]
+    targetLabel: str | None = None
+    reason: str | None = None
+    reasonDetail: str | None = None
+    estimatedRestCalls: int | None = None
+    estimatedBulkCalls: int | None = None
+    plannerApiCalls: int | None = None
+    fallback: bool = False
+    fallbackReason: str | None = None
+    timestamp: str
+
+
+class SyncFetchDetailsResponse(BaseModel):
+    jobId: str
+    status: str
+    mode: str
+    latest: SyncFetchDetail | None = None
+    items: list[SyncFetchDetail] = Field(default_factory=list)
 
 
 # --- Refresh ---
