@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-import importlib
 from pathlib import Path
 from threading import RLock
 from typing import Any, Protocol, cast
@@ -115,7 +114,7 @@ class DuckDbParquetTimeSeriesStore:
         self._parquet_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            duckdb = importlib.import_module("duckdb")
+            duckdb = __import__("duckdb")
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "DuckDB backend requested but `duckdb` package is not installed. "
