@@ -53,6 +53,78 @@ class TestMarketDbBasics:
         market_db.set_sync_metadata("last_sync", "2024-01-02")
         assert market_db.get_sync_metadata("last_sync") == "2024-01-02"
 
+    def test_is_initialized_falls_back_to_existing_data_when_metadata_is_missing(
+        self, market_db: MarketDb
+    ) -> None:
+        assert market_db.get_sync_metadata("init_completed") is None
+        assert market_db.is_initialized() is False
+
+        market_db.upsert_stocks(
+            [
+                {
+                    "code": "7203",
+                    "company_name": "トヨタ",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "6",
+                    "sector_17_name": "自動車",
+                    "sector_33_code": "3700",
+                    "sector_33_name": "輸送用機器",
+                    "listed_date": "1949-05-16",
+                }
+            ]
+        )
+        market_db.upsert_stock_data(
+            [
+                {
+                    "code": "7203",
+                    "date": "2024-01-15",
+                    "open": 2500.0,
+                    "high": 2510.0,
+                    "low": 2490.0,
+                    "close": 2505.0,
+                    "volume": 1000000,
+                }
+            ]
+        )
+
+        assert market_db.is_initialized() is True
+
+    def test_is_initialized_prioritizes_explicit_metadata_flag(
+        self, market_db: MarketDb
+    ) -> None:
+        market_db.upsert_stocks(
+            [
+                {
+                    "code": "7203",
+                    "company_name": "トヨタ",
+                    "market_code": "0111",
+                    "market_name": "プライム",
+                    "sector_17_code": "6",
+                    "sector_17_name": "自動車",
+                    "sector_33_code": "3700",
+                    "sector_33_name": "輸送用機器",
+                    "listed_date": "1949-05-16",
+                }
+            ]
+        )
+        market_db.upsert_stock_data(
+            [
+                {
+                    "code": "7203",
+                    "date": "2024-01-15",
+                    "open": 2500.0,
+                    "high": 2510.0,
+                    "low": 2490.0,
+                    "close": 2505.0,
+                    "volume": 1000000,
+                }
+            ]
+        )
+        market_db.set_sync_metadata("init_completed", "false")
+
+        assert market_db.is_initialized() is False
+
 
 class TestMarketDbUpserts:
     def test_upsert_stocks_and_counts(self, market_db: MarketDb) -> None:

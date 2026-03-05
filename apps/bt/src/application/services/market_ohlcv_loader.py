@@ -28,28 +28,40 @@ def load_stock_ohlcv_df(
 ) -> pd.DataFrame:
     """DuckDB から銘柄 OHLCV を DataFrame で取得する。"""
     candidates = stock_code_candidates(stock_code)
-    placeholders = ",".join("?" for _ in candidates)
-
-    row = reader.query_one(
-        f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
-        "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
-        tuple(candidates),
-    )
-    if row is None:
+    if not candidates:
         return pd.DataFrame()
 
-    db_code = row["code"]
-    sql = "SELECT date, open, high, low, close, volume FROM stock_data WHERE code = ?"
-    params: list[str] = [db_code]
-
+    placeholders = ",".join("?" for _ in candidates)
+    where_conditions = [f"code IN ({placeholders})"]
+    params: list[str] = list(candidates)
     if start_date:
-        sql += " AND date >= ?"
+        where_conditions.append("date >= ?")
         params.append(start_date)
     if end_date:
-        sql += " AND date <= ?"
+        where_conditions.append("date <= ?")
         params.append(end_date)
 
-    sql += " ORDER BY date"
+    sql = f"""
+        WITH ranked AS (
+            SELECT
+                date,
+                open,
+                high,
+                low,
+                close,
+                volume,
+                ROW_NUMBER() OVER (
+                    PARTITION BY date
+                    ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                ) AS rn
+            FROM stock_data
+            WHERE {" AND ".join(where_conditions)}
+        )
+        SELECT date, open, high, low, close, volume
+        FROM ranked
+        WHERE rn = 1
+        ORDER BY date
+    """
     rows = reader.query(sql, tuple(params))
     if not rows:
         return pd.DataFrame()

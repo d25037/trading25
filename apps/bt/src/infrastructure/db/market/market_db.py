@@ -110,12 +110,24 @@ class MarketDb:
                 return self._conn.execute(sql)
             return self._conn.execute(sql, params)
 
+    def _fetchone(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None) -> Any:
+        with self._lock:
+            if params is None:
+                return self._conn.execute(sql).fetchone()
+            return self._conn.execute(sql, params).fetchone()
+
+    def _fetchall(self, sql: str, params: list[Any] | tuple[Any, ...] | None = None) -> list[Any]:
+        with self._lock:
+            if params is None:
+                return self._conn.execute(sql).fetchall()
+            return self._conn.execute(sql, params).fetchall()
+
     def _executemany(self, sql: str, params_seq: list[tuple[Any, ...]]) -> None:
         with self._lock:
             self._conn.executemany(sql, params_seq)
 
     def _table_exists(self, table_name: str) -> bool:
-        row = self._execute(
+        row = self._fetchone(
             """
             SELECT 1
             FROM information_schema.tables
@@ -123,14 +135,14 @@ class MarketDb:
             LIMIT 1
             """,
             [table_name],
-        ).fetchone()
+        )
         return row is not None
 
     def _count_rows(self, table_name: str) -> int:
         if not self._table_exists(table_name):
             return 0
         escaped = self._quote_identifier(table_name)
-        row = self._execute(f"SELECT COUNT(*) FROM {escaped}").fetchone()
+        row = self._fetchone(f"SELECT COUNT(*) FROM {escaped}")
         return int(row[0] or 0) if row else 0
 
     def ensure_schema(self) -> None:
@@ -260,7 +272,7 @@ class MarketDb:
         """既存 statements テーブルに不足カラムを追加する。"""
         existing_columns = {
             str(row[1])
-            for row in self._execute("PRAGMA table_info('statements')").fetchall()
+            for row in self._fetchall("PRAGMA table_info('statements')")
             if row and len(row) > 1
         }
         for column_name, column_type in _STATEMENTS_ADDITIONAL_COLUMNS:
@@ -280,7 +292,7 @@ class MarketDb:
         """スキーマ検証: 必要なテーブルが存在するか確認。"""
         existing = {
             str(row[0])
-            for row in self._execute("SELECT table_name FROM information_schema.tables").fetchall()
+            for row in self._fetchall("SELECT table_name FROM information_schema.tables")
             if row and row[0]
         }
         required = set(_STATS_TABLES)
@@ -296,37 +308,37 @@ class MarketDb:
         """sync_metadata からキーの値を取得。"""
         if not self._table_exists("sync_metadata"):
             return None
-        row = self._execute(
+        row = self._fetchone(
             "SELECT value FROM sync_metadata WHERE key = ?",
             [key],
-        ).fetchone()
+        )
         return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_trading_date(self) -> str | None:
         """topix_data の最新取引日を取得。"""
         if not self._table_exists("topix_data"):
             return None
-        row = self._execute("SELECT MAX(date) FROM topix_data").fetchone()
+        row = self._fetchone("SELECT MAX(date) FROM topix_data")
         return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_stock_data_date(self) -> str | None:
         """stock_data の最新取引日を取得。"""
         if not self._table_exists("stock_data"):
             return None
-        row = self._execute("SELECT MAX(date) FROM stock_data").fetchone()
+        row = self._fetchone("SELECT MAX(date) FROM stock_data")
         return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         """indices_data の銘柄コードごとの最新取引日を取得。"""
         if not self._table_exists("indices_data"):
             return {}
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT code, MAX(date) AS max_date
             FROM indices_data
             GROUP BY code
             """
-        ).fetchall()
+        )
         return {
             str(row[0]): str(row[1])
             for row in rows
@@ -337,7 +349,7 @@ class MarketDb:
         """index_master に存在する指数コード一覧を取得。"""
         if not self._table_exists("index_master"):
             return set()
-        rows = self._execute("SELECT code FROM index_master").fetchall()
+        rows = self._fetchall("SELECT code FROM index_master")
         return {
             str(row[0])
             for row in rows
@@ -348,14 +360,14 @@ class MarketDb:
         """statements の最新開示日を取得。"""
         if not self._table_exists("statements"):
             return None
-        row = self._execute("SELECT MAX(disclosed_date) FROM statements").fetchone()
+        row = self._fetchone("SELECT MAX(disclosed_date) FROM statements")
         return str(row[0]) if row and row[0] is not None else None
 
     def get_statement_codes(self) -> set[str]:
         """statements に存在する銘柄コード一覧を取得。"""
         if not self._table_exists("statements"):
             return set()
-        rows = self._execute("SELECT DISTINCT code FROM statements WHERE code IS NOT NULL").fetchall()
+        rows = self._fetchall("SELECT DISTINCT code FROM statements WHERE code IS NOT NULL")
         return {
             str(row[0])
             for row in rows
@@ -369,7 +381,7 @@ class MarketDb:
 
         available = {
             str(row[1])
-            for row in self._execute("PRAGMA table_info('statements')").fetchall()
+            for row in self._fetchall("PRAGMA table_info('statements')")
             if row and len(row) > 1
         }
         counts: dict[str, int] = {}
@@ -378,9 +390,9 @@ class MarketDb:
                 counts[column] = 0
                 continue
             escaped = self._quote_identifier(column)
-            row = self._execute(
+            row = self._fetchone(
                 f"SELECT COUNT(*) FROM statements WHERE {escaped} IS NOT NULL"
-            ).fetchone()
+            )
             counts[column] = int(row[0] or 0) if row else 0
         return counts
 
@@ -388,13 +400,13 @@ class MarketDb:
         """stocks から Prime 銘柄コードを取得（legacy 表記も吸収）。"""
         if not self._table_exists("stocks"):
             return set()
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT code
             FROM stocks
             WHERE lower(trim(market_code)) IN ('0111', 'prime')
             """
-        ).fetchall()
+        )
         return {
             str(row[0])
             for row in rows
@@ -669,9 +681,9 @@ class MarketDb:
         """TOPIX 日付範囲 + 件数。"""
         if not self._table_exists("topix_data"):
             return None
-        row = self._execute(
+        row = self._fetchone(
             "SELECT COUNT(date), MIN(date), MAX(date) FROM topix_data"
-        ).fetchone()
+        )
         if row is None or row[1] is None:
             return None
         return {"count": int(row[0] or 0), "min": str(row[1]), "max": str(row[2])}
@@ -680,7 +692,7 @@ class MarketDb:
         """stock_data 日付範囲 + 統計。"""
         if not self._table_exists("stock_data"):
             return None
-        row = self._execute(
+        row = self._fetchone(
             """
             SELECT
                 COUNT(*),
@@ -689,7 +701,7 @@ class MarketDb:
                 COUNT(DISTINCT date)
             FROM stock_data
             """
-        ).fetchone()
+        )
         if row is None or row[1] is None:
             return None
         count = int(row[0] or 0)
@@ -707,13 +719,13 @@ class MarketDb:
         """市場別の銘柄数。"""
         if not self._table_exists("stocks"):
             return {}
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT market_name, COUNT(code)
             FROM stocks
             GROUP BY market_name
             """
-        ).fetchall()
+        )
         return {
             str(row[0]): int(row[1] or 0)
             for row in rows
@@ -733,7 +745,7 @@ class MarketDb:
                 "byCategory": by_category,
             }
 
-        row = self._execute(
+        row = self._fetchone(
             """
             SELECT
                 COUNT(*),
@@ -742,7 +754,7 @@ class MarketDb:
                 MAX(date)
             FROM indices_data
             """
-        ).fetchone()
+        )
         by_category = self._load_index_master_category_counts()
         if row is None or row[2] is None:
             return {
@@ -763,13 +775,13 @@ class MarketDb:
     def _load_index_master_category_counts(self) -> dict[str, int]:
         if not self._table_exists("index_master"):
             return {}
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT category, COUNT(code)
             FROM index_master
             GROUP BY category
             """
-        ).fetchall()
+        )
         return {
             str(row[0]): int(row[1] or 0)
             for row in rows
@@ -777,9 +789,22 @@ class MarketDb:
         }
 
     def is_initialized(self) -> bool:
-        """sync_metadata に init_completed があるか。"""
+        """DB 初期化済みかを判定する。
+
+        優先判定:
+        1. sync_metadata.init_completed が存在する場合はその値を使用
+        2. metadata 欠落時は既存データ量から推定（移行済みDBの後方互換）
+        """
         val = self.get_sync_metadata(METADATA_KEYS["INIT_COMPLETED"])
-        return val == "true"
+        if val is not None:
+            return val.strip().lower() == "true"
+
+        has_stocks = self._count_rows("stocks") > 0
+        has_time_series = any(
+            self._count_rows(table_name) > 0
+            for table_name in ("stock_data", "topix_data", "indices_data")
+        )
+        return has_stocks and has_time_series
 
     def get_db_file_size(self) -> int:
         """DB ファイルサイズ。"""
@@ -797,7 +822,7 @@ class MarketDb:
         if not self._table_exists("topix_data") or not self._table_exists("stock_data"):
             return []
 
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT t.date
             FROM topix_data t
@@ -807,28 +832,28 @@ class MarketDb:
             LIMIT ?
             """,
             [int(limit)],
-        ).fetchall()
+        )
         return [str(row[0]) for row in rows if row and row[0]]
 
     def get_missing_stock_data_dates_count(self) -> int:
         """TOPIX 日付のうち stock_data に存在しない日付の総数。"""
         if not self._table_exists("topix_data") or not self._table_exists("stock_data"):
             return 0
-        row = self._execute(
+        row = self._fetchone(
             """
             SELECT COUNT(*)
             FROM topix_data t
             LEFT JOIN (SELECT DISTINCT date FROM stock_data) s ON t.date = s.date
             WHERE s.date IS NULL
             """
-        ).fetchone()
+        )
         return int(row[0] or 0) if row else 0
 
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]:
         """adjustment_factor != 1.0 のイベント。"""
         if limit <= 0 or not self._table_exists("stock_data"):
             return []
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT code, date, adjustment_factor, close
             FROM stock_data
@@ -838,7 +863,7 @@ class MarketDb:
             LIMIT ?
             """,
             [int(limit)],
-        ).fetchall()
+        )
         return [
             {
                 "code": str(row[0]),
@@ -855,7 +880,7 @@ class MarketDb:
         """調整イベントがある銘柄のうち再取得が必要なもの。"""
         if limit <= 0 or not self._table_exists("stock_data"):
             return []
-        rows = self._execute(
+        rows = self._fetchall(
             """
             SELECT DISTINCT code
             FROM stock_data
@@ -864,12 +889,12 @@ class MarketDb:
             LIMIT ?
             """,
             [int(limit)],
-        ).fetchall()
+        )
         return [str(row[0]) for row in rows if row and row[0]]
 
     def get_stock_data_unique_date_count(self) -> int:
         """stock_data のユニーク日付数。"""
         if not self._table_exists("stock_data"):
             return 0
-        row = self._execute("SELECT COUNT(DISTINCT date) FROM stock_data").fetchone()
+        row = self._fetchone("SELECT COUNT(DISTINCT date) FROM stock_data")
         return int(row[0] or 0) if row else 0

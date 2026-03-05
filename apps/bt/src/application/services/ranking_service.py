@@ -45,6 +45,83 @@ def _build_market_filter(market_codes: list[str]) -> tuple[str, list[str]]:
     return f" AND s.market_code IN ({placeholders})", market_codes
 
 
+def _normalized_code_sql(column_ref: str) -> str:
+    """4桁/5桁コード混在を吸収する正規化SQL式。"""
+    return (
+        "CASE "
+        f"WHEN length({column_ref}) = 5 AND right({column_ref}, 1) = '0' "
+        f"THEN left({column_ref}, 4) "
+        f"ELSE {column_ref} "
+        "END"
+    )
+
+
+def _prefer_4digit_order_sql(column_ref: str) -> str:
+    return f"CASE WHEN length({column_ref}) = 4 THEN 0 ELSE 1 END"
+
+
+def _stocks_canonical_cte() -> str:
+    normalized = _normalized_code_sql("code")
+    order = _prefer_4digit_order_sql("code")
+    return f"""
+        stocks_canonical AS (
+            SELECT
+                code,
+                company_name,
+                market_code,
+                sector_33_name,
+                normalized_code
+            FROM (
+                SELECT
+                    code,
+                    company_name,
+                    market_code,
+                    sector_33_name,
+                    {normalized} AS normalized_code,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {normalized}
+                        ORDER BY {order}
+                    ) AS rn
+                FROM stocks
+            )
+            WHERE rn = 1
+        )
+    """
+
+
+def _stock_data_dedup_cte(
+    cte_name: str,
+    *,
+    where_clause: str,
+    code_ref: str = "code",
+    include_ohlc: bool = True,
+) -> str:
+    normalized = _normalized_code_sql(code_ref)
+    order = _prefer_4digit_order_sql(code_ref)
+    select_ohlc = ", open, high, low, close, volume" if include_ohlc else ", close, volume"
+    return f"""
+        {cte_name} AS (
+            SELECT
+                normalized_code,
+                date
+                {select_ohlc}
+            FROM (
+                SELECT
+                    {normalized} AS normalized_code,
+                    date
+                    {select_ohlc},
+                    ROW_NUMBER() OVER (
+                        PARTITION BY {normalized}, date
+                        ORDER BY {order}
+                    ) AS rn
+                FROM stock_data
+                WHERE {where_clause}
+            )
+            WHERE rn = 1
+        )
+    """
+
+
 RANKING_BASE_COLUMNS = "s.code, s.company_name, s.market_code, s.sector_33_name"
 FUNDAMENTAL_BASE_COLUMNS = (
     "s.code, s.company_name, s.market_code, s.sector_33_name, "
@@ -232,11 +309,17 @@ class RankingService:
         market_codes: list[str],
     ) -> list[Mapping[str, Any]]:
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
         sql = f"""
+            WITH
+            {stocks_cte},
+            {stock_daily_cte}
             SELECT {FUNDAMENTAL_BASE_COLUMNS}
-            FROM stocks s
-            JOIN stock_data sd ON sd.code = s.code
-            WHERE sd.date = ?{market_clause}
+            FROM stocks_canonical s
+            JOIN stock_daily sd
+                ON sd.normalized_code = s.normalized_code
+            WHERE 1 = 1{market_clause}
         """
         return self._reader.query(sql, (date, *market_params))
 
@@ -246,20 +329,55 @@ class RankingService:
         market_codes: list[str],
     ) -> list[Mapping[str, Any]]:
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
+        statements_norm = _normalized_code_sql("code")
+        statements_order = _prefer_4digit_order_sql("code")
         sql = f"""
+            WITH
+            {stocks_cte},
+            {stock_daily_cte},
+            statements_canonical AS (
+                SELECT
+                    normalized_code,
+                    disclosed_date,
+                    type_of_current_period,
+                    earnings_per_share,
+                    forecast_eps,
+                    next_year_forecast_earnings_per_share,
+                    shares_outstanding
+                FROM (
+                    SELECT
+                        {statements_norm} AS normalized_code,
+                        disclosed_date,
+                        type_of_current_period,
+                        earnings_per_share,
+                        forecast_eps,
+                        next_year_forecast_earnings_per_share,
+                        shares_outstanding,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY {statements_norm}, disclosed_date
+                            ORDER BY {statements_order}
+                        ) AS rn
+                    FROM statements
+                )
+                WHERE rn = 1
+            )
             SELECT
-                st.code,
+                s.code,
                 st.disclosed_date,
                 st.type_of_current_period,
                 st.earnings_per_share,
                 st.forecast_eps,
                 st.next_year_forecast_earnings_per_share,
                 st.shares_outstanding
-            FROM statements st
-            JOIN stocks s ON s.code = st.code
-            JOIN stock_data sd ON sd.code = st.code
-            WHERE sd.date = ?{market_clause}
-            ORDER BY st.code, st.disclosed_date DESC
+            FROM statements_canonical st
+            JOIN stocks_canonical s
+                ON s.normalized_code = st.normalized_code
+            JOIN stock_daily sd
+                ON sd.normalized_code = st.normalized_code
+            WHERE 1 = 1{market_clause}
+            ORDER BY s.code, st.disclosed_date DESC
         """
         return self._reader.query(sql, (date, *market_params))
 
@@ -389,14 +507,20 @@ class RankingService:
     ) -> list[RankingItem]:
         """売買代金ランキング（単日）"""
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        stock_daily_cte = _stock_data_dedup_cte("stock_daily", where_clause="date = ?")
         sql = f"""
+            WITH
+            {stocks_cte},
+            {stock_daily_cte}
             SELECT {RANKING_BASE_COLUMNS},
                 sd.close as current_price,
                 sd.volume,
                 sd.close * sd.volume as trading_value
-            FROM stock_data sd
-            JOIN stocks s ON s.code = sd.code
-            WHERE sd.date = ?{market_clause}
+            FROM stock_daily sd
+            JOIN stocks_canonical s
+                ON s.normalized_code = sd.normalized_code
+            WHERE 1 = 1{market_clause}
             ORDER BY trading_value DESC LIMIT ?
         """
         rows = self._reader.query(sql, (date, *market_params, limit))
@@ -414,14 +538,23 @@ class RankingService:
             return []
 
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        stock_window_cte = _stock_data_dedup_cte(
+            "stock_window",
+            where_clause="date >= ? AND date <= ?",
+        )
         sql = f"""
+            WITH
+            {stocks_cte},
+            {stock_window_cte}
             SELECT {RANKING_BASE_COLUMNS},
                 MAX(sd.close) as current_price,
                 SUM(sd.volume) as volume,
                 AVG(sd.close * sd.volume) as avg_trading_value
-            FROM stock_data sd
-            JOIN stocks s ON s.code = sd.code
-            WHERE sd.date >= ? AND sd.date <= ?{market_clause}
+            FROM stock_window sd
+            JOIN stocks_canonical s
+                ON s.normalized_code = sd.normalized_code
+            WHERE 1 = 1{market_clause}
             GROUP BY s.code, s.company_name, s.market_code, s.sector_33_name
             ORDER BY avg_trading_value DESC LIMIT ?
         """
@@ -444,18 +577,26 @@ class RankingService:
             return []
 
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
+        prev_cte = _stock_data_dedup_cte("prev_daily", where_clause="date = ?")
         sql = f"""
+            WITH
+            {stocks_cte},
+            {curr_cte},
+            {prev_cte}
             SELECT {RANKING_BASE_COLUMNS},
                 curr.close as current_price,
                 curr.volume,
                 prev.close as previous_price,
                 (curr.close - prev.close) as change_amount,
                 ((curr.close - prev.close) / prev.close * 100) as change_percentage
-            FROM stock_data curr
-            JOIN stock_data prev ON curr.code = prev.code
-            JOIN stocks s ON s.code = curr.code
-            WHERE curr.date = ?
-                AND prev.date = ?
+            FROM curr_daily curr
+            JOIN prev_daily prev
+                ON curr.normalized_code = prev.normalized_code
+            JOIN stocks_canonical s
+                ON s.normalized_code = curr.normalized_code
+            WHERE 1 = 1
                 AND prev.close > 0
                 AND curr.close > 0
                 AND curr.close != prev.close{market_clause}
@@ -481,18 +622,26 @@ class RankingService:
             return []
 
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
+        base_cte = _stock_data_dedup_cte("base_daily", where_clause="date = ?")
         sql = f"""
+            WITH
+            {stocks_cte},
+            {curr_cte},
+            {base_cte}
             SELECT {RANKING_BASE_COLUMNS},
                 curr.close as current_price,
                 curr.volume,
                 base.close as base_price,
                 (curr.close - base.close) as change_amount,
                 ((curr.close - base.close) / base.close * 100) as change_percentage
-            FROM stock_data curr
-            JOIN stock_data base ON curr.code = base.code
-            JOIN stocks s ON s.code = curr.code
-            WHERE curr.date = ?
-                AND base.date = ?
+            FROM curr_daily curr
+            JOIN base_daily base
+                ON curr.normalized_code = base.normalized_code
+            JOIN stocks_canonical s
+                ON s.normalized_code = curr.normalized_code
+            WHERE 1 = 1
                 AND base.close > 0
                 AND curr.close > 0
                 AND curr.close != base.close{market_clause}
@@ -519,12 +668,21 @@ class RankingService:
             return []
 
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        stock_window_cte = _stock_data_dedup_cte(
+            "stock_window",
+            where_clause="date > ? AND date < ?",
+        )
+        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
         sql = f"""
-            WITH period_high AS (
-                SELECT code, MAX(high) as max_high
-                FROM stock_data
-                WHERE date > ? AND date < ?
-                GROUP BY code
+            WITH
+            {stocks_cte},
+            {stock_window_cte},
+            {curr_cte},
+            period_high AS (
+                SELECT normalized_code, MAX(high) as max_high
+                FROM stock_window
+                GROUP BY normalized_code
             )
             SELECT {RANKING_BASE_COLUMNS},
                 curr.close as current_price,
@@ -533,11 +691,12 @@ class RankingService:
                 ph.max_high as base_price,
                 (curr.close - ph.max_high) as change_amount,
                 ((curr.close - ph.max_high) / ph.max_high * 100) as change_percentage
-            FROM stock_data curr
-            JOIN stocks s ON s.code = curr.code
-            JOIN period_high ph ON ph.code = curr.code
-            WHERE curr.date = ?
-                AND curr.close >= ph.max_high
+            FROM curr_daily curr
+            JOIN stocks_canonical s
+                ON s.normalized_code = curr.normalized_code
+            JOIN period_high ph
+                ON ph.normalized_code = curr.normalized_code
+            WHERE curr.close >= ph.max_high
                 AND ph.max_high > 0{market_clause}
             ORDER BY change_percentage DESC LIMIT ?
         """
@@ -563,12 +722,21 @@ class RankingService:
             return []
 
         market_clause, market_params = _build_market_filter(market_codes)
+        stocks_cte = _stocks_canonical_cte()
+        stock_window_cte = _stock_data_dedup_cte(
+            "stock_window",
+            where_clause="date > ? AND date < ?",
+        )
+        curr_cte = _stock_data_dedup_cte("curr_daily", where_clause="date = ?")
         sql = f"""
-            WITH period_low AS (
-                SELECT code, MIN(low) as min_low
-                FROM stock_data
-                WHERE date > ? AND date < ?
-                GROUP BY code
+            WITH
+            {stocks_cte},
+            {stock_window_cte},
+            {curr_cte},
+            period_low AS (
+                SELECT normalized_code, MIN(low) as min_low
+                FROM stock_window
+                GROUP BY normalized_code
             )
             SELECT {RANKING_BASE_COLUMNS},
                 curr.close as current_price,
@@ -577,11 +745,12 @@ class RankingService:
                 pl.min_low as base_price,
                 (curr.close - pl.min_low) as change_amount,
                 ((curr.close - pl.min_low) / pl.min_low * 100) as change_percentage
-            FROM stock_data curr
-            JOIN stocks s ON s.code = curr.code
-            JOIN period_low pl ON pl.code = curr.code
-            WHERE curr.date = ?
-                AND curr.close <= pl.min_low
+            FROM curr_daily curr
+            JOIN stocks_canonical s
+                ON s.normalized_code = curr.normalized_code
+            JOIN period_low pl
+                ON pl.normalized_code = curr.normalized_code
+            WHERE curr.close <= pl.min_low
                 AND pl.min_low > 0{market_clause}
             ORDER BY change_percentage ASC LIMIT ?
         """

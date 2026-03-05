@@ -96,6 +96,8 @@ def ranking_db(tmp_path):
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("44440", "No Forecast Prime", "NOFC", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
     conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                 ("5555", "Mixed Format Prime", "MIXED", "prime", "P", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
+    conn.execute("INSERT INTO stocks VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                  ("99840", "テスト", "TEST", "standard", "S", "S17", "情報", "S33", "情報通信", None, "2000-01-01", None, None))
 
     # 5日分のOHLCVデータ
@@ -109,6 +111,7 @@ def ranking_db(tmp_path):
         ("22220", 800000),
         ("33330", 780000),
         ("44440", 760000),
+        ("55550", 1700000),
         ("99840", 100000),
     ]:
         for i, d in enumerate(dates):
@@ -249,6 +252,16 @@ def ranking_db(tmp_path):
         """,
         ("44440", "2024-05-22", 140.0, "FY", None, None, 100.0),
     )
+    conn.execute(
+        """
+        INSERT INTO statements (
+            code, disclosed_date, earnings_per_share, type_of_current_period,
+            next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+        )
+        VALUES (?,?,?,?,?,?,?)
+        """,
+        ("5555", "2024-05-25", 50.0, "FY", 60.0, 60.0, 100.0),
+    )
 
     conn.commit()
     conn.close()
@@ -307,6 +320,34 @@ class TestGetRankings:
         market_codes = {item.marketCode for item in result.rankings.tradingValue}
         assert "prime" in market_codes
         assert "0111" in market_codes
+
+    def test_rankings_support_mixed_stock_and_stock_data_code_formats(self, service):
+        result = service.get_rankings(markets="prime", limit=50)
+        codes = {item.code for item in result.rankings.tradingValue}
+        assert "5555" in codes
+
+    def test_price_change_prefers_4digit_row_when_mixed_codes_exist(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        conn.execute(
+            "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+            ("5555", "2024-01-18", 100.0, 101.0, 99.0, 100.0, 100_000, 1.0, None),
+        )
+        conn.execute(
+            "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+            ("5555", "2024-01-19", 110.0, 111.0, 109.0, 110.0, 120_000, 1.0, None),
+        )
+        conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_rankings(date="2024-01-19", markets="prime", limit=100)
+        rows = [item for item in result.rankings.gainers if item.code == "5555"]
+        reader.close()
+
+        assert len(rows) == 1
+        assert rows[0].previousPrice == pytest.approx(100.0)
+        assert rows[0].currentPrice == pytest.approx(110.0)
+        assert rows[0].changePercentage == pytest.approx(10.0)
 
     def test_lookback_days(self, service):
         result = service.get_rankings(lookback_days=3)
@@ -393,6 +434,38 @@ class TestGetFundamentalRankings:
         market_codes = {item.marketCode for item in result.rankings.ratioHigh}
         assert "prime" in market_codes
         assert "0111" in market_codes
+
+    def test_fundamental_rankings_support_mixed_stock_and_stock_data_code_formats(self, service):
+        result = service.get_fundamental_rankings(markets="prime", limit=100)
+        codes = {item.code for item in result.rankings.ratioHigh}
+        assert "5555" in codes
+
+    def test_fundamental_rankings_deduplicate_mixed_codes(self, ranking_db):
+        conn = duckdb.connect(ranking_db)
+        conn.execute(
+            "INSERT INTO stock_data VALUES (?,?,?,?,?,?,?,?,?)",
+            ("5555", "2024-01-19", 600.0, 620.0, 590.0, 610.0, 500_000, 1.0, None),
+        )
+        conn.execute(
+            """
+            INSERT INTO statements (
+                code, disclosed_date, earnings_per_share, type_of_current_period,
+                next_year_forecast_earnings_per_share, forecast_eps, shares_outstanding
+            )
+            VALUES (?,?,?,?,?,?,?)
+            """,
+            ("55550", "2024-05-25", 400.0, "FY", 200.0, 200.0, 100.0),
+        )
+        conn.close()
+
+        reader = MarketDbReader(ranking_db)
+        svc = RankingService(reader)
+        result = svc.get_fundamental_rankings(markets="prime", limit=100)
+        rows = [item for item in result.rankings.ratioHigh if item.code == "5555"]
+        reader.close()
+
+        assert len(rows) == 1
+        assert rows[0].epsValue == pytest.approx(1.2)
 
     def test_skips_stocks_without_statements_and_invalid_ratio(self, service):
         result = service.get_fundamental_rankings(markets="prime", limit=100)
