@@ -1209,6 +1209,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/db/sync/jobs/{jobId}/fetch-details": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get sync job fetch details */
+        get: operations["get_sync_job_fetch_details_api_db_sync_jobs__jobId__fetch_details_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/db/sync/jobs/active": {
         parameters: {
             query?: never;
@@ -7884,10 +7901,65 @@ export interface components {
              */
             backend: "duckdb-parquet";
         };
+        /** SyncFetchDetail */
+        SyncFetchDetail: {
+            /** Endpoint */
+            endpoint: string;
+            /** Estimatedbulkcalls */
+            estimatedBulkCalls?: number | null;
+            /** Estimatedrestcalls */
+            estimatedRestCalls?: number | null;
+            /**
+             * Eventtype
+             * @enum {string}
+             */
+            eventType: "strategy" | "execution";
+            /**
+             * Fallback
+             * @default false
+             */
+            fallback: boolean;
+            /** Fallbackreason */
+            fallbackReason?: string | null;
+            /**
+             * Method
+             * @enum {string}
+             */
+            method: "rest" | "bulk";
+            /** Plannerapicalls */
+            plannerApiCalls?: number | null;
+            /** Reason */
+            reason?: string | null;
+            /** Reasondetail */
+            reasonDetail?: string | null;
+            /** Stage */
+            stage: string;
+            /** Targetlabel */
+            targetLabel?: string | null;
+            /** Timestamp */
+            timestamp: string;
+        };
+        /** SyncFetchDetailsResponse */
+        SyncFetchDetailsResponse: {
+            /** Items */
+            items?: components["schemas"]["SyncFetchDetail"][];
+            /** Jobid */
+            jobId: string;
+            latest?: components["schemas"]["SyncFetchDetail"] | null;
+            /** Mode */
+            mode: string;
+            /** Status */
+            status: string;
+        };
         /** SyncJobResponse */
         SyncJobResponse: {
             /** Completedat */
             completedAt?: string | null;
+            /**
+             * Enforcebulkforstockdata
+             * @default false
+             */
+            enforceBulkForStockData: boolean;
             /** Error */
             error?: string | null;
             /** Jobid */
@@ -7917,6 +7989,11 @@ export interface components {
         /** SyncRequest */
         SyncRequest: {
             dataPlane?: components["schemas"]["SyncDataPlaneRequest"] | null;
+            /**
+             * Enforcebulkforstockdata
+             * @default false
+             */
+            enforceBulkForStockData: boolean;
             /**
              * Mode
              * @default auto
@@ -12106,6 +12183,64 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CancelJobResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_sync_job_fetch_details_api_db_sync_jobs__jobId__fetch_details_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SyncFetchDetailsResponse"];
                 };
             };
             /** @description Bad Request */

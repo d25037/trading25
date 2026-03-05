@@ -13,6 +13,8 @@ export type {
   MarketValidationResponse,
   RefreshStockResult,
   StartSyncRequest,
+  SyncFetchDetail,
+  SyncFetchDetailsResponse,
   SyncDataBackend,
   SyncDataPlaneOptions,
   SyncJobResponse,

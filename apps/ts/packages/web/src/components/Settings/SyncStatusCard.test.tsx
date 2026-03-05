@@ -9,6 +9,7 @@ function createJob(overrides: Partial<SyncJobResponse> = {}): SyncJobResponse {
     jobId: 'job-1',
     status: 'running',
     mode: 'incremental',
+    enforceBulkForStockData: false,
     startedAt: '2026-03-04T00:00:00Z',
     progress: {
       stage: 'stock_data',
@@ -72,6 +73,103 @@ describe('SyncStatusCard', () => {
 
     expect(screen.getByText('REST')).toBeInTheDocument();
     expect(screen.getByText('/indices/bars/daily')).toBeInTheDocument();
+  });
+
+  it('prioritizes structured fetch details when provided', () => {
+    render(
+      <SyncStatusCard
+        job={createJob({
+          progress: {
+            stage: 'stock_data',
+            current: 2,
+            total: 5,
+            percentage: 40,
+            message: 'Preparing fetch plan...',
+          },
+        })}
+        fetchDetails={{
+          jobId: 'job-1',
+          status: 'running',
+          mode: 'incremental',
+          latest: {
+            eventType: 'strategy',
+            stage: 'stock_data',
+            endpoint: '/equities/bars/daily',
+            method: 'bulk',
+            targetLabel: '42 dates',
+            reason: 'bulk_estimate_lower',
+            timestamp: '2026-03-05T00:00:00Z',
+          },
+          items: [],
+        }}
+        isLoading={false}
+        onCancel={vi.fn()}
+        isCancelling={false}
+      />
+    );
+
+    expect(screen.getByText('Detail')).toBeInTheDocument();
+    expect(screen.getByText('/equities/bars/daily')).toBeInTheDocument();
+    expect(screen.getByText('bulk_estimate_lower')).toBeInTheDocument();
+  });
+
+  it('renders structured REST details and recent fetch events list', () => {
+    render(
+      <SyncStatusCard
+        job={createJob({
+          progress: {
+            stage: 'stock_data',
+            current: 3,
+            total: 5,
+            percentage: 60,
+            message: 'Preparing fetch details...',
+          },
+        })}
+        fetchDetails={{
+          jobId: 'job-1',
+          status: 'running',
+          mode: 'incremental',
+          latest: {
+            eventType: 'execution',
+            stage: 'fins_summary',
+            endpoint: '/fins/summary',
+            method: 'rest',
+            targetLabel: '2 dates',
+            fallback: true,
+            fallbackReason: 'bulk_file_missing',
+            timestamp: '2026-03-05T01:23:45Z',
+          },
+          items: [
+            {
+              eventType: 'strategy',
+              stage: 'stock_data',
+              endpoint: '/equities/bars/daily',
+              method: 'bulk',
+              targetLabel: '42 dates',
+              timestamp: '2026-03-05T01:22:00Z',
+            },
+            {
+              eventType: 'execution',
+              stage: 'fins_summary',
+              endpoint: '/fins/summary',
+              method: 'rest',
+              fallback: true,
+              fallbackReason: 'bulk_file_missing',
+              timestamp: '2026-03-05T01:23:45Z',
+            },
+          ],
+        }}
+        isLoading={false}
+        onCancel={vi.fn()}
+        isCancelling={false}
+      />
+    );
+
+    expect(screen.getByText('Detail')).toBeInTheDocument();
+    expect(screen.getAllByText('REST').length).toBeGreaterThan(0);
+    expect(screen.getByText('bulk fallback: bulk_file_missing')).toBeInTheDocument();
+    expect(screen.getByText('Recent Fetch Events')).toBeInTheDocument();
+    expect(screen.getAllByText('/fins/summary').length).toBeGreaterThan(0);
   });
 
   it('hides fetch info when message does not contain method or endpoint', () => {

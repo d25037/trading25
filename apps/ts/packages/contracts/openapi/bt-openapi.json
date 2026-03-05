@@ -11214,6 +11214,169 @@
         "title": "SyncDataPlaneRequest",
         "type": "object"
       },
+      "SyncFetchDetail": {
+        "properties": {
+          "endpoint": {
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "estimatedBulkCalls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimatedbulkcalls"
+          },
+          "estimatedRestCalls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Estimatedrestcalls"
+          },
+          "eventType": {
+            "enum": [
+              "strategy",
+              "execution"
+            ],
+            "title": "Eventtype",
+            "type": "string"
+          },
+          "fallback": {
+            "default": false,
+            "title": "Fallback",
+            "type": "boolean"
+          },
+          "fallbackReason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Fallbackreason"
+          },
+          "method": {
+            "enum": [
+              "rest",
+              "bulk"
+            ],
+            "title": "Method",
+            "type": "string"
+          },
+          "plannerApiCalls": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Plannerapicalls"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reason"
+          },
+          "reasonDetail": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reasondetail"
+          },
+          "stage": {
+            "title": "Stage",
+            "type": "string"
+          },
+          "targetLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Targetlabel"
+          },
+          "timestamp": {
+            "title": "Timestamp",
+            "type": "string"
+          }
+        },
+        "required": [
+          "eventType",
+          "stage",
+          "endpoint",
+          "method",
+          "timestamp"
+        ],
+        "title": "SyncFetchDetail",
+        "type": "object"
+      },
+      "SyncFetchDetailsResponse": {
+        "properties": {
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/SyncFetchDetail"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "jobId": {
+            "title": "Jobid",
+            "type": "string"
+          },
+          "latest": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SyncFetchDetail"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "mode": {
+            "title": "Mode",
+            "type": "string"
+          },
+          "status": {
+            "title": "Status",
+            "type": "string"
+          }
+        },
+        "required": [
+          "jobId",
+          "status",
+          "mode"
+        ],
+        "title": "SyncFetchDetailsResponse",
+        "type": "object"
+      },
       "SyncJobResponse": {
         "properties": {
           "completedAt": {
@@ -11226,6 +11389,11 @@
               }
             ],
             "title": "Completedat"
+          },
+          "enforceBulkForStockData": {
+            "default": false,
+            "title": "Enforcebulkforstockdata",
+            "type": "boolean"
           },
           "error": {
             "anyOf": [
@@ -11328,6 +11496,11 @@
                 "type": "null"
               }
             ]
+          },
+          "enforceBulkForStockData": {
+            "default": false,
+            "title": "Enforcebulkforstockdata",
+            "type": "boolean"
           },
           "mode": {
             "default": "auto",
@@ -17794,6 +17967,78 @@
           }
         },
         "summary": "Get sync job status",
+        "tags": [
+          "Database"
+        ]
+      }
+    },
+    "/api/db/sync/jobs/{jobId}/fetch-details": {
+      "get": {
+        "operationId": "get_sync_job_fetch_details_api_db_sync_jobs__jobId__fetch_details_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "jobId",
+            "required": true,
+            "schema": {
+              "title": "Jobid",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SyncFetchDetailsResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get sync job fetch details",
         "tags": [
           "Database"
         ]

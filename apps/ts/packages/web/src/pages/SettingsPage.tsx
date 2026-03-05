@@ -4,6 +4,8 @@ import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   useActiveSyncJob,
@@ -12,6 +14,7 @@ import {
   useDbValidation,
   useRefreshStocks,
   useStartSync,
+  useSyncFetchDetails,
   useSyncJobStatus,
 } from '@/hooks/useDbSync';
 import { ApiError } from '@/lib/api-client';
@@ -244,6 +247,7 @@ function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
 // biome-ignore lint/complexity/noExcessiveCognitiveComplexity: settings page coordinates sync and refresh sections
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
+  const [enforceBulkForStockData, setEnforceBulkForStockData] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
   const [refreshCodesInput, setRefreshCodesInput] = useState('');
   const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
@@ -252,6 +256,7 @@ export function SettingsPage() {
   const startSync = useStartSync();
   const { data: activeSyncJob } = useActiveSyncJob();
   const { data: jobStatus, isLoading: isPolling, error: syncJobError } = useSyncJobStatus(activeJobId);
+  const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();
 
@@ -298,7 +303,7 @@ export function SettingsPage() {
   }, [isRunning, jobStatus?.progress?.stage, jobStatus?.progress?.current, refetchDbStats, refetchDbValidation]);
 
   const handleStartSync = () => {
-    const request: StartSyncRequest = { mode: syncMode };
+    const request: StartSyncRequest = { mode: syncMode, enforceBulkForStockData };
     startSync.mutate(request, {
       onSuccess: (data) => setActiveJobId(data.jobId),
     });
@@ -350,6 +355,20 @@ export function SettingsPage() {
         </CardHeader>
         <CardContent className="space-y-4">
           <SyncModeSelect value={syncMode} onChange={setSyncMode} disabled={isRunning || startSync.isPending} />
+          <div className="flex items-center justify-between rounded-md border p-3">
+            <div className="space-y-1">
+              <Label htmlFor="enforce-stock-bulk">Enforce BULK for stock_data</Label>
+              <p className="text-xs text-muted-foreground">
+                When enabled, stock_data sync fails if BULK is unavailable (no REST fallback).
+              </p>
+            </div>
+            <Switch
+              id="enforce-stock-bulk"
+              checked={enforceBulkForStockData}
+              onCheckedChange={setEnforceBulkForStockData}
+              disabled={isRunning || startSync.isPending}
+            />
+          </div>
 
           <SyncActionButton isRunning={isRunning} isStarting={startSync.isPending} onClick={handleStartSync} />
 
@@ -421,6 +440,7 @@ export function SettingsPage() {
       {/* Sync Status */}
       <SyncStatusCard
         job={jobStatus}
+        fetchDetails={syncFetchDetails}
         isLoading={isPolling}
         onCancel={handleCancel}
         isCancelling={cancelSync.isPending}

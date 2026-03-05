@@ -1,10 +1,11 @@
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import type { SyncJobResponse } from '@/types/sync';
+import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@/types/sync';
 
 interface SyncStatusCardProps {
   job: SyncJobResponse | null | undefined;
+  fetchDetails?: SyncFetchDetailsResponse | null;
   isLoading: boolean;
   onCancel: () => void;
   isCancelling: boolean;
@@ -63,13 +64,29 @@ function StatusLabel({ status }: { status: SyncJobResponse['status'] }) {
   return <span className="font-medium">{labels[status]}</span>;
 }
 
-export function SyncStatusCard({ job, isLoading, onCancel, isCancelling }: SyncStatusCardProps) {
+function toDisplayMethod(method: SyncFetchDetail['method'] | null | undefined): FetchProgressInfo['method'] {
+  if (method === 'bulk') {
+    return 'BULK';
+  }
+  if (method === 'rest') {
+    return 'REST';
+  }
+  return null;
+}
+
+export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCancelling }: SyncStatusCardProps) {
   if (!job) return null;
 
   const isActive = job.status === 'pending' || job.status === 'running';
   const progress = job.progress;
   const result = job.result;
-  const fetchInfo = progress ? parseFetchProgressInfo(progress.message) : { endpoint: null, method: null };
+  const parsedFetchInfo = progress ? parseFetchProgressInfo(progress.message) : { endpoint: null, method: null };
+  const latestFetchDetail = fetchDetails?.latest;
+  const fetchInfo = {
+    endpoint: latestFetchDetail?.endpoint ?? parsedFetchInfo.endpoint,
+    method: toDisplayMethod(latestFetchDetail?.method) ?? parsedFetchInfo.method,
+  };
+  const recentFetchDetails = fetchDetails?.items.slice(-5).reverse() ?? [];
 
   return (
     <Card className="mt-4">
@@ -114,6 +131,51 @@ export function SyncStatusCard({ job, isLoading, onCancel, isCancelling }: SyncS
                 {fetchInfo.endpoint && (
                   <code className="rounded bg-muted px-1.5 py-0.5 text-[11px]">{fetchInfo.endpoint}</code>
                 )}
+              </div>
+            )}
+            {latestFetchDetail && (
+              <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-muted-foreground">Detail</span>
+                  <span className="rounded bg-muted px-1.5 py-0.5 uppercase">{latestFetchDetail.eventType}</span>
+                  <span>{new Date(latestFetchDetail.timestamp).toLocaleTimeString()}</span>
+                </div>
+                {(latestFetchDetail.reason || latestFetchDetail.reasonDetail) && (
+                  <p className="text-muted-foreground">
+                    {latestFetchDetail.reason}
+                    {latestFetchDetail.reasonDetail ? ` (${latestFetchDetail.reasonDetail})` : ''}
+                  </p>
+                )}
+                {(latestFetchDetail.estimatedRestCalls !== undefined || latestFetchDetail.estimatedBulkCalls !== undefined) && (
+                  <p className="text-muted-foreground">
+                    REST est: {latestFetchDetail.estimatedRestCalls ?? 'n/a'}, BULK est:{' '}
+                    {latestFetchDetail.estimatedBulkCalls ?? 'n/a'}
+                  </p>
+                )}
+                {latestFetchDetail.fallback && (
+                  <p className="text-amber-600">
+                    bulk fallback{latestFetchDetail.fallbackReason ? `: ${latestFetchDetail.fallbackReason}` : ''}
+                  </p>
+                )}
+              </div>
+            )}
+            {recentFetchDetails.length > 0 && (
+              <div className="space-y-1 rounded-md border bg-muted/20 p-2 text-xs">
+                <p className="text-muted-foreground">Recent Fetch Events</p>
+                {recentFetchDetails.map((item) => {
+                  const displayMethod = toDisplayMethod(item.method) ?? 'REST';
+                  return (
+                    <div
+                      key={`${item.timestamp}-${item.stage}-${item.endpoint}-${item.eventType}`}
+                      className="flex flex-wrap items-center gap-2"
+                    >
+                      <span className="rounded bg-muted px-1 py-0.5 uppercase">{item.eventType}</span>
+                      <span className={`rounded px-1 py-0.5 ${getMethodBadgeClass(displayMethod)}`}>{displayMethod}</span>
+                      <code className="rounded bg-muted px-1 py-0.5">{item.endpoint}</code>
+                      <span className="text-muted-foreground">{item.stage}</span>
+                    </div>
+                  );
+                })}
               </div>
             )}
             <p className="text-xs text-muted-foreground">{progress.message}</p>
