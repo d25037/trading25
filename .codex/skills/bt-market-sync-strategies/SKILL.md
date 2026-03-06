@@ -17,12 +17,12 @@ description: bt の market 同期（initial/incremental/indices-only）と J-Qua
 ## Mode Semantics
 
 1. `initial`
-   - `topix` 全量 -> `equities/master` -> Prime fundamentals（code指定） -> `stock_data`（topix取引日ごと日付指定） -> `indices` -> metadata更新。
+   - `topix` 全量 -> `equities/master` -> listed-market fundamentals（code指定） -> `stock_data`（topix取引日ごと日付指定） -> `indices` -> metadata更新。
 2. `incremental`
    - `last_sync_date` が必須。アンカーは `latest_stock_data_date` 優先（なければ `latest_trading_date`）。
    - `topix` を `from=anchor` で取得し、`new_dates` のみ `equities/bars/daily?date=...` を取得。
    - `indices` は code指定増分 + date指定補完で新規コードを回収。
-   - fundamentals は `disclosed_date` 増分 + missing prime code backfill。
+   - fundamentals は `disclosed_date` 増分 + missing listed-market code backfill。
 3. `indices-only`
    - index master catalog seed + 各 index code の時系列同期のみ実施。
 

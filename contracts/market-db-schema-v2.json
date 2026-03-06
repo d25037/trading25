@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Trading25 Market DB Schema v2",
-  "description": "market.duckdb スキーマ契約。Prime fundamentals と margin sync を含む v2 minor update。",
+  "description": "market.duckdb スキーマ契約。listed-market fundamentals と margin sync を含む v2 minor update。",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "tables"],

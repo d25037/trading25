@@ -81,6 +81,7 @@ class DummyMarketDb:
         self.statements_rows: list[dict[str, Any]] = []
         self.metadata: dict[str, str] = {}
         self._prime_codes: set[str] = set()
+        self._fundamentals_target_codes: set[str] = set()
         self._stocks_needing_refresh = list(stocks_needing_refresh or [])
         self.resolved_adjustment_calls: list[list[str] | None] = []
 
@@ -146,6 +147,16 @@ class DummyMarketDb:
             if str(row.get("market_code", "")).lower() in {"0111", "prime"}
         }
 
+    def get_fundamentals_target_codes(self) -> set[str]:
+        configured = set(self._fundamentals_target_codes) | set(self._prime_codes)
+        if configured:
+            return configured
+        return {
+            str(row["code"])
+            for row in self.stocks_rows
+            if str(row.get("market_code", "")).lower() in {"0111", "0112", "0113", "prime", "standard", "growth"}
+        }
+
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]:
         codes = list(dict.fromkeys(self._stocks_needing_refresh))
         if limit is None:
@@ -171,6 +182,8 @@ class DummyMarketDb:
         for row in rows:
             if str(row.get("market_code", "")).lower() in {"0111", "prime"} and row.get("code"):
                 self._prime_codes.add(str(row["code"]))
+            if str(row.get("market_code", "")).lower() in {"0111", "0112", "0113", "prime", "standard", "growth"} and row.get("code"):
+                self._fundamentals_target_codes.add(str(row["code"]))
         return len(rows)
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
@@ -2684,7 +2697,7 @@ async def test_incremental_sync_collects_stock_daily_fetch_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_initial_sync_fundamentals_fetches_prime_only_and_handles_pagination() -> None:
+async def test_initial_sync_fundamentals_fetches_listed_markets_and_handles_pagination() -> None:
     market_db = DummyMarketDb()
     client = DummyClient(
         master_quotes=[
@@ -2733,7 +2746,7 @@ async def test_initial_sync_fundamentals_fetches_prime_only_and_handles_paginati
     assert {row["code"] for row in market_db.statements_rows} == {"7203"}
     fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
     assert any((params or {}).get("code") == "72030" for _, params in fins_calls)
-    assert not any((params or {}).get("code") == "99990" for _, params in fins_calls)
+    assert any((params or {}).get("code") == "99990" for _, params in fins_calls)
 
 
 @pytest.mark.asyncio
@@ -2777,7 +2790,7 @@ async def test_initial_sync_fundamentals_retries_with_4digit_code_when_5digit_fa
 
 
 @pytest.mark.asyncio
-async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
+async def test_incremental_sync_fundamentals_date_and_missing_listed_market_backfill(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206")
@@ -2800,8 +2813,8 @@ async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
             {
                 "Code": "67580",
                 "CoName": "ソニーグループ",
-                "Mkt": "0111",
-                "MktNm": "プライム",
+                "Mkt": "0112",
+                "MktNm": "スタンダード",
                 "S17": "6",
                 "S17Nm": "輸送用機器",
                 "S33": "3700",
@@ -2845,7 +2858,7 @@ async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
 
 
 @pytest.mark.asyncio
-async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_code_backfill_equivalent(
+async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_listed_market_code_backfill_equivalent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206")
@@ -2868,8 +2881,8 @@ async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_code_backfill
             {
                 "Code": "67580",
                 "CoName": "ソニーグループ",
-                "Mkt": "0111",
-                "MktNm": "プライム",
+                "Mkt": "0113",
+                "MktNm": "グロース",
                 "S17": "6",
                 "S17Nm": "輸送用機器",
                 "S33": "3700",
@@ -3006,7 +3019,7 @@ async def test_repair_sync_refreshes_adjustment_stocks_and_backfills_fundamental
         latest_trading_date="20260206",
         stocks_needing_refresh=["7203"],
     )
-    market_db._prime_codes = {"7203"}
+    market_db._fundamentals_target_codes = {"7203"}
     market_db.topix_rows = [
         {"date": "2026-02-05", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
         {"date": "2026-02-06", "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.0},
@@ -3055,7 +3068,7 @@ async def test_repair_sync_stops_after_cancel_during_stock_refresh(
         latest_trading_date="20260206",
         stocks_needing_refresh=["7203", "6758"],
     )
-    market_db._prime_codes = {"7203", "6758"}
+    market_db._fundamentals_target_codes = {"7203", "6758"}
     market_db.topix_rows = [
         {"date": "2026-02-05", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
         {"date": "2026-02-06", "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.0},

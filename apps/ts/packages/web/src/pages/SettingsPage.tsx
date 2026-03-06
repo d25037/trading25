@@ -168,26 +168,17 @@ interface SnapshotItem {
 
 interface RepairTargets {
   stocksNeedingRefresh: number;
-  missingPrimeFundamentals: number;
+  missingListedMarketFundamentals: number;
   failedFundamentalsDates: number;
   failedFundamentalsCodes: number;
 }
 
-type FundamentalsValidationSnapshot = NonNullable<MarketValidationResponse['fundamentals']>;
-
-const EMPTY_FUNDAMENTALS_VALIDATION: FundamentalsValidationSnapshot = {
-  count: 0,
-  uniqueStockCount: 0,
-  latestDisclosedDate: null,
-  missingPrimeStocksCount: 0,
-  missingPrimeStocks: [],
-  failedDatesCount: 0,
-  failedCodesCount: 0,
+const EMPTY_REPAIR_TARGETS: RepairTargets = {
+  stocksNeedingRefresh: 0,
+  missingListedMarketFundamentals: 0,
+  failedFundamentalsDates: 0,
+  failedFundamentalsCodes: 0,
 };
-
-function getFundamentalsValidation(dbValidation: MarketValidationResponse | undefined): FundamentalsValidationSnapshot {
-  return dbValidation?.fundamentals ?? EMPTY_FUNDAMENTALS_VALIDATION;
-}
 
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {
@@ -208,7 +199,7 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
 }
 
 function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketValidationResponse): SnapshotItem[] {
-  const fundamentals = getFundamentalsValidation(dbValidation);
+  const fundamentals = dbValidation.fundamentals;
   return [
     { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
     { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
@@ -223,17 +214,21 @@ function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketVa
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
-    { label: 'Missing Prime Fundamentals', value: fundamentals.missingPrimeStocksCount },
+    { label: 'Missing Listed-Market Fundamentals', value: fundamentals.missingListedMarketStocksCount },
     { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
   ];
 }
 
 function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
-  const fundamentals = getFundamentalsValidation(dbValidation);
+  if (!dbValidation) {
+    return EMPTY_REPAIR_TARGETS;
+  }
+
+  const fundamentals = dbValidation.fundamentals;
 
   return {
-    stocksNeedingRefresh: dbValidation?.stocksNeedingRefreshCount ?? 0,
-    missingPrimeFundamentals: fundamentals.missingPrimeStocksCount,
+    stocksNeedingRefresh: dbValidation.stocksNeedingRefreshCount ?? 0,
+    missingListedMarketFundamentals: fundamentals.missingListedMarketStocksCount,
     failedFundamentalsDates: fundamentals.failedDatesCount,
     failedFundamentalsCodes: fundamentals.failedCodesCount,
   };
@@ -242,7 +237,7 @@ function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined
 function hasRepairTargets(targets: RepairTargets): boolean {
   return (
     targets.stocksNeedingRefresh > 0 ||
-    targets.missingPrimeFundamentals > 0 ||
+    targets.missingListedMarketFundamentals > 0 ||
     targets.failedFundamentalsDates > 0 ||
     targets.failedFundamentalsCodes > 0
   );
@@ -251,7 +246,7 @@ function hasRepairTargets(targets: RepairTargets): boolean {
 function sumRepairTargets(targets: RepairTargets): number {
   return (
     targets.stocksNeedingRefresh +
-    targets.missingPrimeFundamentals +
+    targets.missingListedMarketFundamentals +
     targets.failedFundamentalsDates +
     targets.failedFundamentalsCodes
   );
@@ -512,8 +507,10 @@ function WarningRecoverySection({
             <p className="mt-2 text-lg font-semibold">{repairTargets.stocksNeedingRefresh}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Missing Prime fundamentals</p>
-            <p className="mt-2 text-lg font-semibold">{repairTargets.missingPrimeFundamentals}</p>
+            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">
+              Missing listed-market fundamentals
+            </p>
+            <p className="mt-2 text-lg font-semibold">{repairTargets.missingListedMarketFundamentals}</p>
           </div>
           <div className="rounded-xl border border-border/70 bg-background/60 p-3">
             <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">Failed fundamentals dates</p>
@@ -525,7 +522,7 @@ function WarningRecoverySection({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill Prime fundamentals.
+          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill listed-market fundamentals.
         </p>
         <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/60 p-3">
           <div>

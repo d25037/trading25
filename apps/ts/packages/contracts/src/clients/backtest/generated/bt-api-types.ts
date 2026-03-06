@@ -4037,7 +4037,7 @@ export interface components {
             count: number;
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
-            primeCoverage?: components["schemas"]["PrimeCoverage"];
+            listedMarketCoverage: components["schemas"]["ListedMarketCoverage"];
             /**
              * Uniquestockcount
              * @default 0
@@ -4063,13 +4063,13 @@ export interface components {
             failedDatesCount: number;
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
-            /** Missingprimestocks */
-            missingPrimeStocks?: string[];
+            /** Missinglistedmarketstocks */
+            missingListedMarketStocks: string[];
             /**
-             * Missingprimestockscount
+             * Missinglistedmarketstockscount
              * @default 0
              */
-            missingPrimeStocksCount: number;
+            missingListedMarketStocksCount: number;
             /**
              * Uniquestockcount
              * @default 0
@@ -5133,6 +5133,29 @@ export interface components {
              */
             total_trials: number;
         };
+        /** ListedMarketCoverage */
+        ListedMarketCoverage: {
+            /**
+             * Coverageratio
+             * @default 0
+             */
+            coverageRatio: number;
+            /**
+             * Coveredstocks
+             * @default 0
+             */
+            coveredStocks: number;
+            /**
+             * Listedmarketstocks
+             * @default 0
+             */
+            listedMarketStocks: number;
+            /**
+             * Missingstocks
+             * @default 0
+             */
+            missingStocks: number;
+        };
         /**
          * MarginFlowPressureData
          * @description マージンフロープレッシャーデータ
@@ -5471,7 +5494,7 @@ export interface components {
         MarketStatsResponse: {
             /** Databasesize */
             databaseSize: number;
-            fundamentals?: components["schemas"]["FundamentalsStats"];
+            fundamentals: components["schemas"]["FundamentalsStats"];
             indices: components["schemas"]["IndicesStats"];
             /** Initialized */
             initialized: boolean;
@@ -5526,7 +5549,7 @@ export interface components {
              * @default 0
              */
             failedDatesCount: number;
-            fundamentals?: components["schemas"]["FundamentalsValidation"];
+            fundamentals: components["schemas"]["FundamentalsValidation"];
             /** Initialized */
             initialized: boolean;
             /** Integrityissues */
@@ -6161,29 +6184,6 @@ export interface components {
             description?: string | null;
             /** Name */
             name?: string | null;
-        };
-        /** PrimeCoverage */
-        PrimeCoverage: {
-            /**
-             * Coverageratio
-             * @default 0
-             */
-            coverageRatio: number;
-            /**
-             * Coveredstocks
-             * @default 0
-             */
-            coveredStocks: number;
-            /**
-             * Missingstocks
-             * @default 0
-             */
-            missingStocks: number;
-            /**
-             * Primestocks
-             * @default 0
-             */
-            primeStocks: number;
         };
         /**
          * RankingItem

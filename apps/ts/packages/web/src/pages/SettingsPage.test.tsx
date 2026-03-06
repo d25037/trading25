@@ -119,8 +119,8 @@ beforeEach(() => {
         orphanCount: 3,
       },
       fundamentals: {
-        missingPrimeStocksCount: 7,
-        missingPrimeStocks: ['1301'],
+        missingListedMarketStocksCount: 7,
+        missingListedMarketStocks: ['1301', '9999'],
         failedDatesCount: 0,
         failedCodesCount: 0,
       },
@@ -129,7 +129,7 @@ beforeEach(() => {
       integrityIssuesCount: 0,
       recommendations: [
         'Run repair sync to refresh 100 stocks with pending adjustment backfill',
-        'Run repair sync to backfill fundamentals for 7 Prime stocks',
+        'Run repair sync to backfill fundamentals for 7 listed-market stocks',
       ],
     },
     isLoading: false,
@@ -329,14 +329,12 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText('Stocks Needing Refresh')).toBeInTheDocument();
-    expect(screen.getByText('Missing Prime Fundamentals')).toBeInTheDocument();
+    expect(screen.getByText('Missing Listed-Market Fundamentals')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
     expect(
       screen.getAllByText('Run repair sync to refresh 100 stocks with pending adjustment backfill').length
     ).toBeGreaterThan(0);
-    expect(screen.getAllByText('Run repair sync to backfill fundamentals for 7 Prime stocks').length).toBeGreaterThan(
-      0
-    );
+    expect(screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length).toBeGreaterThan(0);
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
   });
@@ -356,7 +354,7 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('renders warning recovery safely when fundamentals payload is missing', () => {
+  it('renders warning recovery safely when fundamentals counts are zero', () => {
     mockUseDbValidation.mockReturnValue({
       data: {
         status: 'warning',
@@ -367,6 +365,12 @@ describe('SettingsPage', () => {
           dateCount: 0,
           dateRange: null,
           orphanCount: 0,
+        },
+        fundamentals: {
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
+          failedDatesCount: 0,
+          failedCodesCount: 0,
         },
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 3,
@@ -382,7 +386,7 @@ describe('SettingsPage', () => {
 
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Stocks needing refresh')).toBeInTheDocument();
-    expect(screen.getByText('Missing Prime fundamentals')).toBeInTheDocument();
+    expect(screen.getByText('Missing listed-market fundamentals')).toBeInTheDocument();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 
@@ -399,8 +403,8 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          missingPrimeStocksCount: 0,
-          missingPrimeStocks: [],
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -433,8 +437,8 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          missingPrimeStocksCount: 0,
-          missingPrimeStocks: [],
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -467,8 +471,8 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          missingPrimeStocksCount: 0,
-          missingPrimeStocks: [],
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },

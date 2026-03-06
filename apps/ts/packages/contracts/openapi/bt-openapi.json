@@ -3134,8 +3134,8 @@
             ],
             "title": "Latestdiscloseddate"
           },
-          "primeCoverage": {
-            "$ref": "#/components/schemas/PrimeCoverage"
+          "listedMarketCoverage": {
+            "$ref": "#/components/schemas/ListedMarketCoverage"
           },
           "uniqueStockCount": {
             "default": 0,
@@ -3143,6 +3143,9 @@
             "type": "integer"
           }
         },
+        "required": [
+          "listedMarketCoverage"
+        ],
         "title": "FundamentalsStats",
         "type": "object"
       },
@@ -3174,16 +3177,16 @@
             ],
             "title": "Latestdiscloseddate"
           },
-          "missingPrimeStocks": {
+          "missingListedMarketStocks": {
             "items": {
               "type": "string"
             },
-            "title": "Missingprimestocks",
+            "title": "Missinglistedmarketstocks",
             "type": "array"
           },
-          "missingPrimeStocksCount": {
+          "missingListedMarketStocksCount": {
             "default": 0,
-            "title": "Missingprimestockscount",
+            "title": "Missinglistedmarketstockscount",
             "type": "integer"
           },
           "uniqueStockCount": {
@@ -3192,6 +3195,9 @@
             "type": "integer"
           }
         },
+        "required": [
+          "missingListedMarketStocks"
+        ],
         "title": "FundamentalsValidation",
         "type": "object"
       },
@@ -5053,6 +5059,32 @@
         "title": "LabOptimizeResult",
         "type": "object"
       },
+      "ListedMarketCoverage": {
+        "properties": {
+          "coverageRatio": {
+            "default": 0,
+            "title": "Coverageratio",
+            "type": "number"
+          },
+          "coveredStocks": {
+            "default": 0,
+            "title": "Coveredstocks",
+            "type": "integer"
+          },
+          "listedMarketStocks": {
+            "default": 0,
+            "title": "Listedmarketstocks",
+            "type": "integer"
+          },
+          "missingStocks": {
+            "default": 0,
+            "title": "Missingstocks",
+            "type": "integer"
+          }
+        },
+        "title": "ListedMarketCoverage",
+        "type": "object"
+      },
       "MarginFlowPressureData": {
         "description": "マージンフロープレッシャーデータ",
         "properties": {
@@ -5834,6 +5866,7 @@
           "stockData",
           "indices",
           "margin",
+          "fundamentals",
           "lastUpdated"
         ],
         "title": "MarketStatsResponse",
@@ -5993,6 +6026,7 @@
           "stocks",
           "stockData",
           "margin",
+          "fundamentals",
           "lastUpdated"
         ],
         "title": "MarketValidationResponse",
@@ -7295,32 +7329,6 @@
           }
         },
         "title": "PortfolioUpdateRequest",
-        "type": "object"
-      },
-      "PrimeCoverage": {
-        "properties": {
-          "coverageRatio": {
-            "default": 0,
-            "title": "Coverageratio",
-            "type": "number"
-          },
-          "coveredStocks": {
-            "default": 0,
-            "title": "Coveredstocks",
-            "type": "integer"
-          },
-          "missingStocks": {
-            "default": 0,
-            "title": "Missingstocks",
-            "type": "integer"
-          },
-          "primeStocks": {
-            "default": 0,
-            "title": "Primestocks",
-            "type": "integer"
-          }
-        },
-        "title": "PrimeCoverage",
         "type": "object"
       },
       "RankingItem": {
