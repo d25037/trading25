@@ -101,6 +101,11 @@ interface SnapshotStatusProps {
   dbValidation: MarketValidationResponse | undefined;
 }
 
+interface SnapshotItem {
+  label: string;
+  value: string | number;
+}
+
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {
     case 'warning':
@@ -117,6 +122,60 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
     return 'rounded-md border border-border bg-muted/30 p-3';
   }
   return 'rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3';
+}
+
+function buildSnapshotItems(
+  dbStats: MarketStatsResponse,
+  dbValidation: MarketValidationResponse
+): SnapshotItem[] {
+  return [
+    { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
+    { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
+    { label: 'Initialized', value: dbStats.initialized ? 'Yes' : 'No' },
+    { label: 'Last Sync', value: formatTimestamp(dbStats.lastSync) },
+    { label: 'Stock Data Latest', value: dbStats.stockData.dateRange?.max ?? 'n/a' },
+    { label: 'TOPIX Latest', value: dbStats.topix.dateRange?.max ?? 'n/a' },
+    { label: 'Indices Latest', value: dbStats.indices.dateRange?.max ?? 'n/a' },
+    { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
+    { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
+    { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
+    { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
+  ];
+}
+
+function SnapshotDetails({
+  dbStats,
+  dbValidation,
+}: {
+  dbStats: MarketStatsResponse;
+  dbValidation: MarketValidationResponse;
+}) {
+  const recommendations = dbValidation.recommendations ?? [];
+  const snapshotItems = buildSnapshotItems(dbStats, dbValidation);
+
+  return (
+    <div className="space-y-3">
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        {snapshotItems.map((item) => (
+          <div key={item.label}>
+            <span className="text-muted-foreground">{item.label}:</span>
+            <span className="ml-2 font-medium">{item.value}</span>
+          </div>
+        ))}
+      </div>
+
+      {recommendations.length > 0 ? (
+        <div className={getValidationDetailsClassName(dbValidation.status)}>
+          <p className="font-medium">{getValidationDetailsTitle(dbValidation.status)}</p>
+          <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
+            {recommendations.map((recommendation) => (
+              <li key={recommendation}>{recommendation}</li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
+  );
 }
 
 function SnapshotStatus({
@@ -136,57 +195,17 @@ function SnapshotStatus({
     );
   }
 
-  const recommendations = dbValidation?.recommendations ?? [];
-  const stocksNeedingRefreshCount = dbValidation?.stocksNeedingRefreshCount ?? 0;
-  const integrityIssuesCount = dbValidation?.integrityIssuesCount ?? 0;
-  const snapshotItems =
-    dbStats && dbValidation
-      ? [
-          { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
-          { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
-          { label: 'Initialized', value: dbStats.initialized ? 'Yes' : 'No' },
-          { label: 'Last Sync', value: formatTimestamp(dbStats.lastSync) },
-          { label: 'Stock Data Latest', value: dbStats.stockData.dateRange?.max ?? 'n/a' },
-          { label: 'TOPIX Latest', value: dbStats.topix.dateRange?.max ?? 'n/a' },
-          { label: 'Indices Latest', value: dbStats.indices.dateRange?.max ?? 'n/a' },
-          { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
-          { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
-          { label: 'Stocks Needing Refresh', value: stocksNeedingRefreshCount },
-          { label: 'Readiness Issues', value: integrityIssuesCount },
-        ]
-      : [];
+  const errorMessage = statsError?.message ?? validationError?.message ?? null;
 
   return (
     <>
-      {(statsError || validationError) && (
+      {errorMessage ? (
         <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">
-          {(statsError || validationError)?.message ?? 'Failed to load market DB status'}
+          {errorMessage ?? 'Failed to load market DB status'}
         </div>
-      )}
+      ) : null}
 
-      {dbStats && dbValidation && (
-        <div className="space-y-3">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            {snapshotItems.map((item) => (
-              <div key={item.label}>
-                <span className="text-muted-foreground">{item.label}:</span>
-                <span className="ml-2 font-medium">{item.value}</span>
-              </div>
-            ))}
-          </div>
-
-          {recommendations.length > 0 && (
-            <div className={getValidationDetailsClassName(dbValidation.status)}>
-              <p className="font-medium">{getValidationDetailsTitle(dbValidation.status)}</p>
-              <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
-                {recommendations.map((recommendation) => (
-                  <li key={recommendation}>{recommendation}</li>
-                ))}
-              </ul>
-            </div>
-          )}
-        </div>
-      )}
+      {dbStats && dbValidation ? <SnapshotDetails dbStats={dbStats} dbValidation={dbValidation} /> : null}
     </>
   );
 }
