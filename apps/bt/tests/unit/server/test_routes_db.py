@@ -166,7 +166,7 @@ class TestDbValidateRoute:
         # Adjustment events: 7203 on 2024-01-05 has adjustment_factor=0.5
         assert data["adjustmentEventsCount"] >= 1
         assert data["adjustmentEvents"][0]["adjustmentFactor"] == 0.5
-        assert data["stocksNeedingRefreshCount"] >= 1
+        assert data["stocksNeedingRefreshCount"] == 0
         assert data["failedDatesCount"] == 1
         assert data["margin"]["count"] == 1
         assert "fundamentals" in data

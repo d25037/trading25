@@ -22,6 +22,7 @@ from src.application.services.stock_data_row_builder import build_stock_data_row
 
 class StockRefreshMarketDbLike(Protocol):
     def set_sync_metadata(self, key: str, value: str) -> None: ...
+    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
 
 
 class StockRefreshClientLike(Protocol):
@@ -60,6 +61,7 @@ async def refresh_stocks(
     errors: list[str] = []
     any_rows_published = False
     cancelled = False
+    resolved_codes: list[str] = []
     unique_codes = list(dict.fromkeys(codes))
     total_codes = len(unique_codes)
 
@@ -128,6 +130,8 @@ async def refresh_stocks(
             elif rows:
                 stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
                 any_rows_published = True
+                if stored > 0:
+                    resolved_codes.append(normalized)
             total_stored += stored
             results.append(RefreshStockResult(
                 code=normalized,
@@ -154,6 +158,10 @@ async def refresh_stocks(
         except Exception as e:
             logger.warning("Stock refresh index failed: {}", e)
             errors.append(f"stock_data index: {e}")
+        await asyncio.to_thread(
+            market_db.mark_stock_adjustments_resolved,
+            resolved_codes,
+        )
     if cancelled:
         errors.append("Cancelled")
 

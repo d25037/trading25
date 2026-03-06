@@ -401,61 +401,32 @@ class TestMarketDbDerivedStats:
         events = market_db.get_adjustment_events()
         assert len(events) == 2
         assert {event["eventType"] for event in events} == {"stock_split", "reverse_split"}
-        assert set(market_db.get_stocks_needing_refresh()) == {"6501", "7203"}
-        assert market_db.get_stocks_needing_refresh_count() == 2
+        assert market_db.get_stocks_needing_refresh() == []
+        assert market_db.get_stocks_needing_refresh_count() == 0
 
         market_db.upsert_stock_data(
             [
                 {
                     "code": "7203",
-                    "date": "2024-01-15",
-                    "open": 5000.0,
-                    "high": 5020.0,
-                    "low": 4980.0,
-                    "close": 5010.0,
-                    "volume": 1000000,
-                    "adjustment_factor": 1.0,
-                    "created_at": "2024-01-20T00:00:00+00:00",
-                },
-                {
-                    "code": "7203",
-                    "date": "2024-01-16",
-                    "open": 2510.0,
-                    "high": 2520.0,
-                    "low": 2500.0,
-                    "close": 2515.0,
-                    "volume": 1200000,
-                    "adjustment_factor": 0.5,
-                    "created_at": "2024-01-20T00:00:00+00:00",
-                },
-                {
-                    "code": "6501",
-                    "date": "2024-01-15",
-                    "open": 4000.0,
-                    "high": 4020.0,
-                    "low": 3980.0,
-                    "close": 4010.0,
-                    "volume": 450000,
-                    "adjustment_factor": 1.0,
-                    "created_at": "2024-01-20T00:00:00+00:00",
-                },
-                {
-                    "code": "6501",
-                    "date": "2024-01-16",
-                    "open": 8000.0,
-                    "high": 8100.0,
-                    "low": 7900.0,
-                    "close": 8050.0,
-                    "volume": 500000,
-                    "adjustment_factor": 1.5,
+                    "date": "2024-01-17",
+                    "open": 1250.0,
+                    "high": 1260.0,
+                    "low": 1240.0,
+                    "close": 1255.0,
+                    "volume": 2400000,
+                    "adjustment_factor": 0.25,
                     "created_at": "2024-01-20T00:00:00+00:00",
                 },
             ]
         )
 
+        assert market_db.get_stocks_needing_refresh() == ["7203"]
+        assert market_db.get_stocks_needing_refresh_count() == 1
+
+        assert market_db.mark_stock_adjustments_resolved(["7203"]) == 1
         assert market_db.get_stocks_needing_refresh() == []
         assert market_db.get_stocks_needing_refresh_count() == 0
-        assert market_db.get_stock_data_unique_date_count() == 2
+        assert market_db.get_stock_data_unique_date_count() == 3
         assert market_db.get_db_file_size() > 0
 
 
@@ -555,6 +526,51 @@ class TestMarketDbReadOnly:
             )
         ro.close()
 
+    def test_read_only_handles_legacy_db_without_adjustment_refresh_state(
+        self, tmp_path: Path
+    ) -> None:
+        db_path = str(tmp_path / "market_ro_legacy.duckdb")
+        rw = MarketDb(db_path)
+        rw.upsert_stock_data(
+            [
+                {
+                    "code": "7203",
+                    "date": "2024-01-15",
+                    "open": 5000.0,
+                    "high": 5020.0,
+                    "low": 4980.0,
+                    "close": 5010.0,
+                    "volume": 1000000,
+                    "adjustment_factor": 1.0,
+                },
+                {
+                    "code": "7203",
+                    "date": "2024-01-16",
+                    "open": 2510.0,
+                    "high": 2520.0,
+                    "low": 2500.0,
+                    "close": 2515.0,
+                    "volume": 1200000,
+                    "adjustment_factor": 0.5,
+                },
+            ]
+        )
+        rw.close()
+
+        conn = duckdb.connect(db_path)
+        try:
+            conn.execute("DROP TABLE stock_adjustment_refresh_state")
+            conn.execute(
+                "DELETE FROM sync_metadata WHERE key = 'adjustment_refresh_state_initialized'"
+            )
+        finally:
+            conn.close()
+
+        ro = MarketDb(db_path, read_only=True)
+        assert ro.get_stocks_needing_refresh() == []
+        assert ro.get_stocks_needing_refresh_count() == 0
+        ro.close()
+
     def test_get_db_file_size_handles_os_error(
         self, market_db: MarketDb, monkeypatch: pytest.MonkeyPatch
     ) -> None:
@@ -611,7 +627,29 @@ class TestMarketDbEdgeCases:
         assert market_db.get_adjustment_events(limit=0) == []
         assert market_db.get_stocks_needing_refresh(limit=0) == []
         assert market_db.get_stocks_needing_refresh_count() == 0
-        assert market_db.get_stock_data_unique_date_count() == 0
+
+    def test_adjustment_without_prior_history_is_not_flagged(
+        self, market_db: MarketDb
+    ) -> None:
+        market_db.upsert_stock_data(
+            [
+                {
+                    "code": "7203",
+                    "date": "2024-01-16",
+                    "open": 2510.0,
+                    "high": 2520.0,
+                    "low": 2500.0,
+                    "close": 2515.0,
+                    "volume": 1200000,
+                    "adjustment_factor": 0.5,
+                },
+            ]
+        )
+
+        assert market_db.get_adjustment_events()
+        assert market_db.get_stocks_needing_refresh() == []
+        assert market_db.get_stocks_needing_refresh_count() == 0
+        assert market_db.get_stock_data_unique_date_count() == 1
 
         # Coverage helper branches
         assert market_db.get_statement_non_null_counts([]) == {}
