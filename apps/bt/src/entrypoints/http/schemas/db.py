@@ -132,7 +132,7 @@ class MarketValidationResponse(BaseModel):
 # --- Sync ---
 
 
-SyncModeLiteral = Literal["auto", "initial", "incremental", "indices-only"]
+SyncModeLiteral = Literal["auto", "initial", "incremental", "indices-only", "repair"]
 SyncDataBackendLiteral = Literal["duckdb-parquet"]
 
 

@@ -876,19 +876,53 @@ class MarketDb:
             if row and row[0] and row[1] and row[2] is not None
         ]
 
-    def get_stocks_needing_refresh(self, limit: int = 20) -> list[str]:
-        """調整イベントがある銘柄のうち再取得が必要なもの。"""
-        if limit <= 0 or not self._table_exists("stock_data"):
+    def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]:
+        """調整イベント後に履歴再取得が未完了な銘柄コードを返す。"""
+        if limit is not None and limit <= 0:
             return []
+        if not self._table_exists("stock_data"):
+            return []
+        limit_clause = ""
+        params: list[Any] = []
+        if limit is not None:
+            limit_clause = "LIMIT ?"
+            params.append(int(limit))
         rows = self._fetchall(
-            """
-            SELECT DISTINCT code
-            FROM stock_data
-            WHERE adjustment_factor IS NOT NULL
-              AND adjustment_factor != 1.0
-            LIMIT ?
+            f"""
+            WITH latest_adjustment AS (
+                SELECT code, date AS adjustment_date, created_at AS adjustment_created_at
+                FROM (
+                    SELECT
+                        code,
+                        date,
+                        created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY code
+                            ORDER BY date DESC, created_at DESC NULLS LAST
+                        ) AS rn
+                    FROM stock_data
+                    WHERE adjustment_factor IS NOT NULL
+                      AND adjustment_factor != 1.0
+                ) ranked
+                WHERE rn = 1
+            )
+            SELECT latest.code
+            FROM latest_adjustment latest
+            WHERE EXISTS (
+                SELECT 1
+                FROM stock_data history
+                WHERE history.code = latest.code
+                  AND history.date < latest.adjustment_date
+                  AND (
+                      latest.adjustment_created_at IS NULL
+                      OR history.created_at IS NULL
+                      OR history.created_at < latest.adjustment_created_at
+                  )
+            )
+            ORDER BY latest.code
+            {limit_clause}
             """,
-            [int(limit)],
+            params,
         )
         return [str(row[0]) for row in rows if row and row[0]]
 

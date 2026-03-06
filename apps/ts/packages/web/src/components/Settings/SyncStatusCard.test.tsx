@@ -219,8 +219,66 @@ describe('SyncStatusCard', () => {
     expect(screen.getByText('Completed')).toBeInTheDocument();
     expect(screen.getByText('API Calls:')).toBeInTheDocument();
     expect(screen.getByText('55')).toBeInTheDocument();
+    expect(screen.getByText('Fundamentals Updated:')).toBeInTheDocument();
+    expect(screen.getByText('80')).toBeInTheDocument();
     expect(screen.getByText('Failed Dates:')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();
+  });
+
+  it('uses repair-specific stocks label for completed repair jobs', () => {
+    render(
+      <SyncStatusCard
+        job={createJob({
+          status: 'completed',
+          mode: 'repair',
+          progress: undefined,
+          result: {
+            success: true,
+            totalApiCalls: 12,
+            stocksUpdated: 3,
+            datesProcessed: 0,
+            fundamentalsUpdated: 2,
+            fundamentalsDatesProcessed: 0,
+            failedDates: [],
+            errors: [],
+          },
+        })}
+        isLoading={false}
+        onCancel={vi.fn()}
+        isCancelling={false}
+      />
+    );
+
+    expect(screen.getByText('Stocks Refreshed:')).toBeInTheDocument();
+    expect(screen.getByText('Fundamentals Updated:')).toBeInTheDocument();
+  });
+
+  it('shows completed job errors when result contains partial failures', () => {
+    render(
+      <SyncStatusCard
+        job={createJob({
+          status: 'completed',
+          progress: undefined,
+          result: {
+            success: false,
+            totalApiCalls: 7,
+            stocksUpdated: 1,
+            datesProcessed: 0,
+            fundamentalsUpdated: 0,
+            fundamentalsDatesProcessed: 0,
+            failedDates: [],
+            errors: ['7203: network error', '6758: timeout'],
+          },
+        })}
+        isLoading={false}
+        onCancel={vi.fn()}
+        isCancelling={false}
+      />
+    );
+
+    expect(screen.getByText('Errors:')).toBeInTheDocument();
+    expect(screen.getByText('2')).toBeInTheDocument();
+    expect(screen.getByText(/7203: network error/)).toBeInTheDocument();
   });
 
   it('renders failed status with error text', () => {

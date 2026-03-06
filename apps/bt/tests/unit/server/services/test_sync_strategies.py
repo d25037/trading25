@@ -16,6 +16,7 @@ from src.application.services.sync_strategies import (
     IncrementalSyncStrategy,
     IndicesOnlySyncStrategy,
     InitialSyncStrategy,
+    RepairSyncStrategy,
     SyncContext,
     _StageFetchDecision,
     _build_fallback_index_master_rows,
@@ -56,6 +57,7 @@ class DummyMarketDb:
         latest_trading_date: str | None = "20260206",
         latest_stock_data_date: str | None = None,
         latest_indices_data_dates: dict[str, str] | None = None,
+        stocks_needing_refresh: list[str] | None = None,
     ) -> None:
         self._default_last_sync = "2026-02-06T00:00:00+00:00"
         self.latest_trading_date = latest_trading_date
@@ -74,6 +76,7 @@ class DummyMarketDb:
         self.statements_rows: list[dict[str, Any]] = []
         self.metadata: dict[str, str] = {}
         self._prime_codes: set[str] = set()
+        self._stocks_needing_refresh = list(stocks_needing_refresh or [])
 
     def get_sync_metadata(self, key: str) -> str | None:
         if key in self.metadata:
@@ -119,6 +122,12 @@ class DummyMarketDb:
             for row in self.stocks_rows
             if str(row.get("market_code", "")).lower() in {"0111", "prime"}
         }
+
+    def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]:
+        codes = list(dict.fromkeys(self._stocks_needing_refresh))
+        if limit is None:
+            return codes
+        return codes[:limit]
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
         upserted = {
@@ -2230,6 +2239,54 @@ async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
 
 
 @pytest.mark.asyncio
+async def test_repair_sync_refreshes_adjustment_stocks_and_backfills_fundamentals(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(
+        latest_trading_date="20260206",
+        stocks_needing_refresh=["7203"],
+    )
+    market_db._prime_codes = {"7203"}
+    market_db.topix_rows = [
+        {"date": "2026-02-05", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
+        {"date": "2026-02-06", "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.0},
+    ]
+
+    client = DummyClient(
+        daily_quotes=[
+            {"Code": "72030", "Date": "2026-02-05", "O": 10.0, "H": 11.0, "L": 9.0, "C": 10.0, "Vo": 1000, "AdjFactor": 1.0},
+            {"Code": "72030", "Date": "2026-02-06", "O": 5.0, "H": 6.0, "L": 4.0, "C": 5.0, "Vo": 1000, "AdjFactor": 0.5},
+        ],
+        fins_by_code={
+            "72030": [{"Code": "72030", "DiscDate": "2026-02-10", "EPS": 100.0}],
+        },
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    progress_events: list[tuple[str, int, int, str]] = []
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda stage, current, total, message: progress_events.append((stage, current, total, message)),
+    )
+
+    result = await RepairSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.stocksUpdated == 1
+    assert result.fundamentalsUpdated == 1
+    assert {row["code"] for row in market_db.stock_rows} == {"7203"}
+    assert {row["code"] for row in market_db.statements_rows} == {"7203"}
+    assert any(stage == "stock_refresh" for stage, _, _, _ in progress_events)
+    assert any(stage == "fundamentals" for stage, _, _, _ in progress_events)
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -2278,11 +2335,13 @@ def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("initial"), InitialSyncStrategy)
     assert isinstance(get_strategy("incremental"), IncrementalSyncStrategy)
     assert isinstance(get_strategy("indices-only"), IndicesOnlySyncStrategy)
+    assert isinstance(get_strategy("repair"), RepairSyncStrategy)
     assert isinstance(get_strategy("unknown"), InitialSyncStrategy)
 
     assert IndicesOnlySyncStrategy().estimate_api_calls() == 52
     assert InitialSyncStrategy().estimate_api_calls() == 2500
     assert IncrementalSyncStrategy().estimate_api_calls() == 120
+    assert RepairSyncStrategy().estimate_api_calls() == 400
 
 
 def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:

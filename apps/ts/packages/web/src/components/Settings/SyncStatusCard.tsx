@@ -182,15 +182,21 @@ function ActiveProgressSection({
 }
 
 function CompletedResultSection({
+  mode,
   status,
   result,
 }: {
+  mode: SyncJobResponse['mode'];
   status: SyncJobResponse['status'];
   result: SyncJobResponse['result'];
 }) {
   if (status !== 'completed' || !result) {
     return null;
   }
+
+  const stocksLabel = mode === 'repair' ? 'Stocks Refreshed:' : 'Stocks Updated:';
+  const hasErrors = result.errors.length > 0;
+  const visibleErrors = result.errors.slice(0, 3);
 
   return (
     <div className="space-y-2 text-sm">
@@ -200,12 +206,16 @@ function CompletedResultSection({
           <span className="ml-2 font-medium">{result.totalApiCalls}</span>
         </div>
         <div>
-          <span className="text-muted-foreground">Stocks Updated:</span>
+          <span className="text-muted-foreground">{stocksLabel}</span>
           <span className="ml-2 font-medium">{result.stocksUpdated}</span>
         </div>
         <div>
           <span className="text-muted-foreground">Dates Processed:</span>
           <span className="ml-2 font-medium">{result.datesProcessed}</span>
+        </div>
+        <div>
+          <span className="text-muted-foreground">Fundamentals Updated:</span>
+          <span className="ml-2 font-medium">{result.fundamentalsUpdated}</span>
         </div>
         {result.failedDates.length > 0 && (
           <div>
@@ -213,7 +223,18 @@ function CompletedResultSection({
             <span className="ml-2 font-medium text-red-500">{result.failedDates.length}</span>
           </div>
         )}
+        {hasErrors && (
+          <div>
+            <span className="text-muted-foreground">Errors:</span>
+            <span className="ml-2 font-medium text-red-500">{result.errors.length}</span>
+          </div>
+        )}
       </div>
+      {hasErrors && (
+        <div className="rounded-md bg-red-500/10 p-3 text-xs text-red-600">
+          {visibleErrors.join(' | ')}
+        </div>
+      )}
     </div>
   );
 }
@@ -272,7 +293,7 @@ export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCance
           latestFetchDetail={latestFetchDetail}
           recentFetchDetails={recentFetchDetails}
         />
-        <CompletedResultSection status={job.status} result={job.result} />
+        <CompletedResultSection mode={job.mode} status={job.status} result={job.result} />
         <SyncErrorSection status={job.status} error={job.error} />
         <CancelledSection status={job.status} />
       </CardContent>

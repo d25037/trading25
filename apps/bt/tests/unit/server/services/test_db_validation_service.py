@@ -64,7 +64,7 @@ class DummyMarketDb:
         del limit
         return list(self._adjustment_events)
 
-    def get_stocks_needing_refresh(self, limit: int = 100) -> list[str]:
+    def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]:
         del limit
         return list(self._stocks_needing_refresh)
 
@@ -146,8 +146,8 @@ def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_
 
     assert result.status == "error"
     assert any("Run initial sync" in rec for rec in result.recommendations)
-    assert any("Run stock refresh" in rec for rec in result.recommendations)
-    assert any("Backfill fundamentals" in rec for rec in result.recommendations)
+    assert any("repair sync to refresh" in rec for rec in result.recommendations)
+    assert any("repair sync to backfill fundamentals" in rec for rec in result.recommendations)
     assert any("failed fundamentals dates" in rec for rec in result.recommendations)
     assert any("failed fundamentals codes" in rec for rec in result.recommendations)
     assert result.failedDatesCount == 0

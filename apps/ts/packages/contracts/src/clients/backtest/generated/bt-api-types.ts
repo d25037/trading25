@@ -7999,7 +7999,7 @@ export interface components {
              * @default auto
              * @enum {string}
              */
-            mode: "auto" | "initial" | "incremental" | "indices-only";
+            mode: "auto" | "initial" | "incremental" | "indices-only" | "repair";
         };
         /** SyncResult */
         SyncResult: {

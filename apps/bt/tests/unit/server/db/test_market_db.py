@@ -331,12 +331,22 @@ class TestMarketDbDerivedStats:
     def test_stock_refresh_and_missing_date_helpers(self, market_db: MarketDb) -> None:
         market_db.upsert_topix_data(
             [
-                {"date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0},
+                {"date": "2024-01-14", "open": 2490.0, "high": 2500.0, "low": 2480.0, "close": 2495.0},
                 {"date": "2024-01-16", "open": 2510.0, "high": 2520.0, "low": 2500.0, "close": 2515.0},
             ]
         )
         market_db.upsert_stock_data(
             [
+                {
+                    "code": "7203",
+                    "date": "2024-01-15",
+                    "open": 5000.0,
+                    "high": 5020.0,
+                    "low": 4980.0,
+                    "close": 5010.0,
+                    "volume": 1000000,
+                    "adjustment_factor": 1.0,
+                },
                 {
                     "code": "7203",
                     "date": "2024-01-16",
@@ -346,6 +356,16 @@ class TestMarketDbDerivedStats:
                     "close": 2515.0,
                     "volume": 1200000,
                     "adjustment_factor": 0.5,
+                },
+                {
+                    "code": "6501",
+                    "date": "2024-01-15",
+                    "open": 4000.0,
+                    "high": 4020.0,
+                    "low": 3980.0,
+                    "close": 4010.0,
+                    "volume": 450000,
+                    "adjustment_factor": 1.0,
                 },
                 {
                     "code": "6501",
@@ -360,13 +380,64 @@ class TestMarketDbDerivedStats:
             ]
         )
 
-        assert market_db.get_missing_stock_data_dates() == ["2024-01-15"]
+        assert market_db.get_missing_stock_data_dates() == ["2024-01-14"]
         assert market_db.get_missing_stock_data_dates_count() == 1
         events = market_db.get_adjustment_events()
         assert len(events) == 2
         assert {event["eventType"] for event in events} == {"stock_split", "reverse_split"}
         assert set(market_db.get_stocks_needing_refresh()) == {"6501", "7203"}
-        assert market_db.get_stock_data_unique_date_count() == 1
+
+        market_db.upsert_stock_data(
+            [
+                {
+                    "code": "7203",
+                    "date": "2024-01-15",
+                    "open": 5000.0,
+                    "high": 5020.0,
+                    "low": 4980.0,
+                    "close": 5010.0,
+                    "volume": 1000000,
+                    "adjustment_factor": 1.0,
+                    "created_at": "2024-01-20T00:00:00+00:00",
+                },
+                {
+                    "code": "7203",
+                    "date": "2024-01-16",
+                    "open": 2510.0,
+                    "high": 2520.0,
+                    "low": 2500.0,
+                    "close": 2515.0,
+                    "volume": 1200000,
+                    "adjustment_factor": 0.5,
+                    "created_at": "2024-01-20T00:00:00+00:00",
+                },
+                {
+                    "code": "6501",
+                    "date": "2024-01-15",
+                    "open": 4000.0,
+                    "high": 4020.0,
+                    "low": 3980.0,
+                    "close": 4010.0,
+                    "volume": 450000,
+                    "adjustment_factor": 1.0,
+                    "created_at": "2024-01-20T00:00:00+00:00",
+                },
+                {
+                    "code": "6501",
+                    "date": "2024-01-16",
+                    "open": 8000.0,
+                    "high": 8100.0,
+                    "low": 7900.0,
+                    "close": 8050.0,
+                    "volume": 500000,
+                    "adjustment_factor": 1.5,
+                    "created_at": "2024-01-20T00:00:00+00:00",
+                },
+            ]
+        )
+
+        assert market_db.get_stocks_needing_refresh() == []
+        assert market_db.get_stock_data_unique_date_count() == 2
         assert market_db.get_db_file_size() > 0
 
 

@@ -18,6 +18,7 @@ class DummyMarketDb:
 class DummyTimeSeriesStore:
     def __init__(self) -> None:
         self.rows: list[dict[str, Any]] = []
+        self.index_calls = 0
 
     def inspect(self, *, missing_stock_dates_limit: int = 0, statement_non_null_columns: list[str] | None = None) -> Any:
         del missing_stock_dates_limit, statement_non_null_columns
@@ -28,6 +29,7 @@ class DummyTimeSeriesStore:
         return len(rows)
 
     def index_stock_data(self) -> None:
+        self.index_calls += 1
         return None
 
 
@@ -123,3 +125,52 @@ async def test_refresh_stocks_handles_jquants_error() -> None:
     assert result.failedCount == 1
     assert result.totalRecordsStored == 0
     assert len(result.errors) == 1
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_dedupes_codes_and_skips_index_when_no_rows() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {"Code": "72030", "Date": "2026-01-31", "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 100},
+            {"Code": "72030", "Date": "2026-03-01", "O": 20, "H": 22, "L": 19, "C": 21, "Vo": 2000},
+        ]
+    )
+    progress_messages: list[tuple[int, int, str]] = []
+
+    result = await refresh_stocks(
+        ["7203", "7203"],
+        market_db,
+        store,
+        client,
+        progress_callback=lambda current, total, message: progress_messages.append((current, total, message)),
+    )
+
+    assert result.totalStocks == 1
+    assert result.successCount == 1
+    assert result.totalRecordsStored == 0
+    assert store.index_calls == 0
+    assert len(client.calls) == 1
+    assert progress_messages[0][2].startswith("Refreshing stock 1/1")
+    assert progress_messages[-1][2].startswith("Refreshed stock 1/1")
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_reports_progress_for_failures() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore()
+    progress_messages: list[tuple[int, int, str]] = []
+
+    result = await refresh_stocks(
+        ["7203"],
+        market_db,
+        store,
+        DummyFailingJQuantsClient(),
+        progress_callback=lambda current, total, message: progress_messages.append((current, total, message)),
+    )
+
+    assert result.failedCount == 1
+    assert store.index_calls == 0
+    assert progress_messages[0][2].startswith("Refreshing stock 1/1")
+    assert progress_messages[-1][2].startswith("Refresh failed for stock 1/1")

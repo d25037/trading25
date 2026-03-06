@@ -106,6 +106,13 @@ interface SnapshotItem {
   value: string | number;
 }
 
+interface RepairTargets {
+  stocksNeedingRefresh: number;
+  missingPrimeFundamentals: number;
+  failedFundamentalsDates: number;
+  failedFundamentalsCodes: number;
+}
+
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {
     case 'warning':
@@ -139,8 +146,27 @@ function buildSnapshotItems(
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
+    { label: 'Missing Prime Fundamentals', value: dbValidation.fundamentals.missingPrimeStocksCount ?? 0 },
     { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
   ];
+}
+
+function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
+  return {
+    stocksNeedingRefresh: dbValidation?.stocksNeedingRefreshCount ?? 0,
+    missingPrimeFundamentals: dbValidation?.fundamentals.missingPrimeStocksCount ?? 0,
+    failedFundamentalsDates: dbValidation?.fundamentals.failedDatesCount ?? 0,
+    failedFundamentalsCodes: dbValidation?.fundamentals.failedCodesCount ?? 0,
+  };
+}
+
+function hasRepairTargets(targets: RepairTargets): boolean {
+  return (
+    targets.stocksNeedingRefresh > 0 ||
+    targets.missingPrimeFundamentals > 0 ||
+    targets.failedFundamentalsDates > 0 ||
+    targets.failedFundamentalsCodes > 0
+  );
 }
 
 function SnapshotDetails({
@@ -332,6 +358,8 @@ export function SettingsPage() {
     error: validationError,
     refetch: refetchDbValidation,
   } = useDbValidation({ isSyncRunning: isRunning });
+  const repairTargets = resolveRepairTargets(dbValidation);
+  const hasBulkRepairTargets = hasRepairTargets(repairTargets);
 
   useEffect(() => {
     if (!isRunning) {
@@ -346,6 +374,16 @@ export function SettingsPage() {
     startSync.mutate(request, {
       onSuccess: (data) => setActiveJobId(data.jobId),
     });
+  };
+
+  const handleRepairWarnings = () => {
+    setRefreshResult(null);
+    startSync.mutate(
+      { mode: 'repair', enforceBulkForStockData: false },
+      {
+        onSuccess: (data) => setActiveJobId(data.jobId),
+      }
+    );
   };
 
   const handleCancel = () => {
@@ -420,11 +458,61 @@ export function SettingsPage() {
       <Card className="mt-4">
         <CardHeader>
           <div className="flex items-center gap-2">
-            <RotateCcw className="h-5 w-5" />
-            <CardTitle>Stock Refresh (Recovery)</CardTitle>
+            <Database className="h-5 w-5" />
+            <CardTitle>Warning Recovery</CardTitle>
           </div>
           <CardDescription>
-            Re-fetch specific DuckDB stock series when individual symbols are corrupted or stale.
+            Resolve DuckDB snapshot warnings in one async job without entering individual stock codes.
+          </CardDescription>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+            <div>
+              <span className="text-muted-foreground">Stocks needing refresh:</span>
+              <span className="ml-2 font-medium">{repairTargets.stocksNeedingRefresh}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Missing Prime fundamentals:</span>
+              <span className="ml-2 font-medium">{repairTargets.missingPrimeFundamentals}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Failed fundamentals dates:</span>
+              <span className="ml-2 font-medium">{repairTargets.failedFundamentalsDates}</span>
+            </div>
+            <div>
+              <span className="text-muted-foreground">Failed fundamentals codes:</span>
+              <span className="ml-2 font-medium">{repairTargets.failedFundamentalsCodes}</span>
+            </div>
+          </div>
+          <p className="text-xs text-muted-foreground">
+            Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill Prime fundamentals.
+          </p>
+          <Button onClick={handleRepairWarnings} disabled={isRunning || startSync.isPending || !hasBulkRepairTargets} className="w-full">
+            {startSync.isPending || isRunning ? (
+              <>
+                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                Repair Job in Progress...
+              </>
+            ) : hasBulkRepairTargets ? (
+              'Repair Warnings'
+            ) : (
+              'No Repairs Needed'
+            )}
+          </Button>
+          {!hasBulkRepairTargets && !isValidationLoading ? (
+            <p className="text-xs text-muted-foreground">No bulk warning-repair targets were found in the latest snapshot.</p>
+          ) : null}
+        </CardContent>
+      </Card>
+
+      <Card className="mt-4">
+        <CardHeader>
+          <div className="flex items-center gap-2">
+            <RotateCcw className="h-5 w-5" />
+            <CardTitle>Stock Refresh (Manual)</CardTitle>
+          </div>
+          <CardDescription>
+            Re-fetch specific DuckDB stock series when you need a one-off repair outside the bulk warning flow.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3">

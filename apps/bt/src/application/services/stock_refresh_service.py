@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import UTC, datetime
+from collections.abc import Callable
 from typing import Any, Protocol
 
 from loguru import logger
@@ -48,21 +49,28 @@ async def refresh_stocks(
     market_db: StockRefreshMarketDbLike,
     time_series_store: StockRefreshTimeSeriesStoreLike,
     jquants_client: StockRefreshClientLike,
+    *,
+    progress_callback: Callable[[int, int, str], None] | None = None,
 ) -> RefreshResponse:
     """銘柄データを再取得"""
     total_calls = 0
     total_stored = 0
     results: list[RefreshStockResult] = []
     errors: list[str] = []
+    any_rows_published = False
+    unique_codes = list(dict.fromkeys(codes))
+    total_codes = len(unique_codes)
 
     # TOPIX 日付範囲を取得（フィルタ用）
     inspection = await asyncio.to_thread(time_series_store.inspect)
     min_date = inspection.topix_min
     max_date = inspection.topix_max
 
-    for code in codes:
+    for index, code in enumerate(unique_codes, start=1):
         normalized = normalize_stock_code(code)
         expanded = expand_stock_code(normalized)
+        if progress_callback is not None:
+            progress_callback(index - 1, total_codes, f"Refreshing stock {index}/{total_codes}: {normalized}")
         try:
             data = await jquants_client.get_paginated(
                 "/equities/bars/daily",
@@ -101,7 +109,7 @@ async def refresh_stocks(
             stored = 0
             if rows:
                 stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
-                await asyncio.to_thread(time_series_store.index_stock_data)
+                any_rows_published = True
             total_stored += stored
             results.append(RefreshStockResult(
                 code=normalized,
@@ -109,6 +117,8 @@ async def refresh_stocks(
                 recordsFetched=len(data),
                 recordsStored=stored,
             ))
+            if progress_callback is not None:
+                progress_callback(index, total_codes, f"Refreshed stock {index}/{total_codes}: {normalized}")
         except Exception as e:
             logger.warning(f"Refresh failed for {code}: {e}")
             errors.append(f"{code}: {e}")
@@ -117,13 +127,18 @@ async def refresh_stocks(
                 success=False,
                 error=str(e),
             ))
+            if progress_callback is not None:
+                progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
+
+    if any_rows_published:
+        await asyncio.to_thread(time_series_store.index_stock_data)
 
     # Update metadata
     now_iso = datetime.now(UTC).isoformat()
     market_db.set_sync_metadata(METADATA_KEYS["LAST_STOCKS_REFRESH"], now_iso)
 
     return RefreshResponse(
-        totalStocks=len(codes),
+        totalStocks=total_codes,
         successCount=sum(1 for r in results if r.success),
         failedCount=sum(1 for r in results if not r.success),
         totalApiCalls=total_calls,
