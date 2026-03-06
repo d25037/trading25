@@ -96,14 +96,18 @@ def load_market_multi_data(
         daily_index_by_code[code] = pd.DatetimeIndex(daily.index)
 
     if include_margin_data and daily_index_by_code:
-        margin_warnings = _attach_margin(
-            reader,
-            result,
-            daily_index_by_code,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        warnings.extend(margin_warnings)
+        try:
+            margin_warnings = _attach_margin(
+                reader,
+                result,
+                daily_index_by_code,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            warnings.extend(margin_warnings)
+        except Exception as e:  # noqa: BLE001 - degrade to daily/statements without margin
+            logger.warning("market margin_data load failed: {}", e)
+            warnings.append(f"market margin load failed ({e})")
 
     if include_statements_data and daily_index_by_code:
         statements_warnings = _attach_statements(

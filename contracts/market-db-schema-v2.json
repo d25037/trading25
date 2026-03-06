@@ -8,7 +8,7 @@
   "properties": {
     "schema_version": {
       "type": "string",
-      "enum": ["2.1.0"]
+      "enum": ["2.0.0", "2.1.0"]
     },
     "tables": {
       "type": "object",
@@ -18,7 +18,6 @@
         "stock_data",
         "topix_data",
         "indices_data",
-        "margin_data",
         "statements"
       ],
       "properties": {

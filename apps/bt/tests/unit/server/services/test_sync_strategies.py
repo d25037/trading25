@@ -1290,6 +1290,100 @@ async def test_sync_margin_data_bulk_fallback_to_rest_collects_errors(
 
 
 @pytest.mark.asyncio
+async def test_sync_margin_data_bulk_empty_plan_falls_back_to_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=1,
+        estimated_cache_hits=0,
+        estimated_cache_misses=0,
+    )
+    client = DummyClient(
+        margin_by_code={
+            "72030": [
+                {"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            ]
+        }
+    )
+    ctx = _build_ctx(client=client, market_db=market_db)
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=0,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=1,
+            plan=bulk_plan,
+            reason="planner_selected_bulk",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+    )
+
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert result["updated"] == 1
+    assert market_db.get_margin_codes() == {"7203"}
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_bulk_missing_plan_falls_back_to_rest(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    client = DummyClient(
+        margin_by_code={
+            "72030": [
+                {"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            ]
+        }
+    )
+    ctx = _build_ctx(client=client, market_db=market_db)
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=0,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=1,
+            plan=None,
+            reason="planner_selected_bulk",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+    )
+
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert result["updated"] == 1
+    assert market_db.get_margin_codes() == {"7203"}
+
+
+@pytest.mark.asyncio
 async def test_sync_margin_data_bulk_fallback_avoids_duplicate_rest_for_backfill_codes(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

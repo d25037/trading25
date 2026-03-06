@@ -116,6 +116,36 @@ def test_load_market_multi_data_attaches_margin(monkeypatch: pytest.MonkeyPatch)
     assert warnings == ["margin attached"]
 
 
+def test_load_market_multi_data_keeps_daily_when_margin_attach_fails(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    daily = pd.DataFrame(
+        {"Open": [1.0, 1.0], "High": [1.1, 1.2], "Low": [0.9, 1.0], "Close": [1.0, 1.1], "Volume": [100, 200]},
+        index=index,
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._load_daily_by_code",
+        lambda *_args, **_kwargs: {"7203": daily},
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._attach_margin",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("margin query failed")),
+    )
+
+    result, warnings = load_market_multi_data(
+        DummyReader(),
+        ["72030"],
+        include_margin_data=True,
+    )
+
+    assert "7203" in result
+    assert "daily" in result["7203"]
+    assert "margin_daily" not in result["7203"]
+    assert warnings == ["market margin load failed (margin query failed)"]
+
+
 def test_load_market_multi_data_skips_attach_when_daily_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(
         "src.application.services.screening_market_loader._load_daily_by_code",

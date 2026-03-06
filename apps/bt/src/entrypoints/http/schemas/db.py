@@ -77,7 +77,7 @@ class MarketStatsResponse(BaseModel):
     stocks: StockStats
     stockData: StockDataStats
     indices: IndicesStats
-    margin: MarginStats = Field(default_factory=MarginStats)
+    margin: MarginStats
     fundamentals: FundamentalsStats = Field(default_factory=FundamentalsStats)
     lastUpdated: str
 
@@ -132,7 +132,7 @@ class MarketValidationResponse(BaseModel):
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
-    margin: MarginValidation = Field(default_factory=MarginValidation)
+    margin: MarginValidation
     fundamentals: FundamentalsValidation = Field(default_factory=FundamentalsValidation)
     failedDates: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0

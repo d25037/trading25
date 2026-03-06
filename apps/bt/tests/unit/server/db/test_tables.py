@@ -200,6 +200,12 @@ class TestMarketDbContractV2:
             assert idx["name"] in actual_indexes
             assert actual_indexes[idx["name"]] == idx["columns"]
 
+    def test_v2_contract_keeps_additive_backward_compatibility(self) -> None:
+        assert set(self.contract["properties"]["schema_version"]["enum"]) == {"2.0.0", "2.1.0"}
+        required_tables = set(self.contract["properties"]["tables"]["required"])
+        assert "margin_data" not in required_tables
+        assert "margin_data" in self.tables
+
 
 # ===========================================================================
 # dataset-db-schema-v2.json 契約テスト

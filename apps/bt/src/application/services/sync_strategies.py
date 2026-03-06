@@ -789,6 +789,14 @@ def _enforce_stock_bulk_plan_available(
         )
 
 
+def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
+    if plan is None:
+        return "bulk_plan_missing"
+    if len(plan.files) == 0:
+        return "bulk_plan_empty"
+    return "bulk_plan_unavailable"
+
+
 def _emit_fetch_strategy_progress(
     ctx: SyncContext,
     *,
@@ -2362,54 +2370,63 @@ async def _sync_margin_data(
     bulk_result: BulkFetchResult | None = None
     target_code_set = set(normalized_codes)
 
-    if decision.method == "bulk" and decision.plan is not None:
-        try:
-            _emit_fetch_execution_progress(
-                ctx,
-                progress_stage="margin",
-                current=progress_current,
-                total=progress_total,
-                endpoint="/markets/margin-interest",
-                method="bulk",
-                target_label=f"{len(normalized_codes)} codes",
-            )
-
-            async def _consume_margin_bulk_rows(
-                batch_rows: list[dict[str, Any]],
-                _file_info: BulkFileInfo,
-            ) -> None:
-                nonlocal updated
-                updated += await _ingest_margin_bulk_batch(
-                    ctx,
-                    batch_rows=batch_rows,
-                    target_codes=target_code_set,
-                    min_date_exclusive=anchor,
-                )
-
-            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
-                decision.plan,
-                on_rows_batch=_consume_margin_bulk_rows,
-                accumulate_rows=False,
-            )
-            api_calls += bulk_result.api_calls
-            bulk_stage_api_calls += bulk_result.api_calls
-            _log_sync_fetch_execution(
-                stage=stage_name,
-                endpoint="/markets/margin-interest",
-                decision=decision,
-                executed="bulk",
-                actual_api_calls=bulk_stage_api_calls,
-                fallback=False,
-                bulk_result=bulk_result,
-            )
-        except Exception as e:
+    if decision.method == "bulk":
+        if decision.plan is None or len(decision.plan.files) == 0:
             used_rest_fallback = True
-            bulk_fallback_reason = _summarize_exception(e)
+            bulk_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
             logger.warning(
-                "{} bulk fetch failed, falling back to REST: {}",
+                "{} bulk fetch selected but no bulk files were available, falling back to REST: {}",
                 stage_name,
                 bulk_fallback_reason,
             )
+        else:
+            try:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="margin",
+                    current=progress_current,
+                    total=progress_total,
+                    endpoint="/markets/margin-interest",
+                    method="bulk",
+                    target_label=f"{len(normalized_codes)} codes",
+                )
+
+                async def _consume_margin_bulk_rows(
+                    batch_rows: list[dict[str, Any]],
+                    _file_info: BulkFileInfo,
+                ) -> None:
+                    nonlocal updated
+                    updated += await _ingest_margin_bulk_batch(
+                        ctx,
+                        batch_rows=batch_rows,
+                        target_codes=target_code_set,
+                        min_date_exclusive=anchor,
+                    )
+
+                bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                    decision.plan,
+                    on_rows_batch=_consume_margin_bulk_rows,
+                    accumulate_rows=False,
+                )
+                api_calls += bulk_result.api_calls
+                bulk_stage_api_calls += bulk_result.api_calls
+                _log_sync_fetch_execution(
+                    stage=stage_name,
+                    endpoint="/markets/margin-interest",
+                    decision=decision,
+                    executed="bulk",
+                    actual_api_calls=bulk_stage_api_calls,
+                    fallback=False,
+                    bulk_result=bulk_result,
+                )
+            except Exception as e:
+                used_rest_fallback = True
+                bulk_fallback_reason = _summarize_exception(e)
+                logger.warning(
+                    "{} bulk fetch failed, falling back to REST: {}",
+                    stage_name,
+                    bulk_fallback_reason,
+                )
 
     rest_codes = normalized_codes
     if has_existing_margin_snapshot:
