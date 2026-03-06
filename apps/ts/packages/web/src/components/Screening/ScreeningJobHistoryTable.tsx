@@ -1,4 +1,7 @@
+import { useId, useState } from 'react';
 import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import type { ScreeningJobResponse } from '@/types/screening';
 
 interface ScreeningJobHistoryTableProps {
@@ -28,6 +31,9 @@ function truncateJobId(jobId: string): string {
 }
 
 export function ScreeningJobHistoryTable({ jobs, isLoading, selectedJobId, onSelectJob }: ScreeningJobHistoryTableProps) {
+  const [showHistory, setShowHistory] = useState(true);
+  const switchId = useId();
+
   const columns: JobHistoryColumn<ScreeningJobResponse>[] = [
     {
       key: 'jobId',
@@ -52,17 +58,30 @@ export function ScreeningJobHistoryTable({ jobs, isLoading, selectedJobId, onSel
   ];
 
   return (
-    <JobHistoryTable
-      jobs={jobs}
-      isLoading={isLoading}
-      selectedJobId={selectedJobId}
-      title="Job History"
-      emptyMessage="No screening jobs found"
-      columns={columns}
-      getJobId={(job) => job.job_id}
-      getStatus={(job) => job.status}
-      getActionLabel={(job) => actionLabel(job.status)}
-      onSelectJob={onSelectJob}
-    />
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="text-sm font-medium">Job History</h4>
+        <div className="flex items-center gap-2">
+          <Label htmlFor={switchId} className="cursor-pointer text-xs text-muted-foreground">
+            Show History
+          </Label>
+          <Switch id={switchId} checked={showHistory} onCheckedChange={setShowHistory} />
+        </div>
+      </div>
+
+      {showHistory ? (
+        <JobHistoryTable
+          jobs={jobs}
+          isLoading={isLoading}
+          selectedJobId={selectedJobId}
+          emptyMessage="No screening jobs found"
+          columns={columns}
+          getJobId={(job) => job.job_id}
+          getStatus={(job) => job.status}
+          getActionLabel={(job) => actionLabel(job.status)}
+          onSelectJob={onSelectJob}
+        />
+      ) : null}
+    </div>
   );
 }

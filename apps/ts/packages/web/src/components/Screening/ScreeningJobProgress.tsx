@@ -10,6 +10,10 @@ interface ScreeningJobProgressProps {
   isCancelling?: boolean;
 }
 
+interface ScreeningJobStatusInlineProps {
+  job: ScreeningJobResponse;
+}
+
 function StatusIcon({ status }: { status: ScreeningJobResponse['status'] }) {
   switch (status) {
     case 'pending':
@@ -30,6 +34,15 @@ function formatElapsedSeconds(seconds: number): string {
   const minutes = Math.floor(seconds / 60);
   const sec = seconds % 60;
   return `${minutes}:${String(sec).padStart(2, '0')}`;
+}
+
+export function ScreeningJobStatusInline({ job }: ScreeningJobStatusInlineProps) {
+  return (
+    <div className="flex items-center gap-2 text-sm">
+      <StatusIcon status={job.status} />
+      <span className="font-medium">Screening Job: {job.status}</span>
+    </div>
+  );
 }
 
 export function ScreeningJobProgress({ job, onCancel, isCancelling = false }: ScreeningJobProgressProps) {

@@ -9,7 +9,7 @@ import {
 import { RankingFilters, RankingSummary, RankingTable } from '@/components/Ranking';
 import { ScreeningFilters } from '@/components/Screening/ScreeningFilters';
 import { ScreeningJobHistoryTable } from '@/components/Screening/ScreeningJobHistoryTable';
-import { ScreeningJobProgress } from '@/components/Screening/ScreeningJobProgress';
+import { ScreeningJobProgress, ScreeningJobStatusInline } from '@/components/Screening/ScreeningJobProgress';
 import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
@@ -135,19 +135,26 @@ function AnalysisMainContent({
   fundamentalError,
 }: AnalysisMainContentProps) {
   if (activeSubTab === 'screening') {
+    const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
+
     return (
       <>
-        <div className="mb-3 flex justify-end">
+        <div className="mb-3 flex flex-wrap items-center gap-3">
+          <div className="min-w-0 flex-1">
+            {completedScreeningJob ? <ScreeningJobStatusInline job={completedScreeningJob} /> : null}
+          </div>
           <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
             Run Screening
           </Button>
         </div>
 
-        <ScreeningJobProgress
-          job={screeningJob}
-          onCancel={screeningIsRunning ? handleCancelScreening : undefined}
-          isCancelling={cancelScreeningPending}
-        />
+        {completedScreeningJob ? null : (
+          <ScreeningJobProgress
+            job={screeningJob}
+            onCancel={screeningIsRunning ? handleCancelScreening : undefined}
+            isCancelling={cancelScreeningPending}
+          />
+        )}
 
         <ScreeningJobHistoryTable
           jobs={screeningJobHistory}

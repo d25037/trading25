@@ -3,7 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import { createInitialAnalysisState, useAnalysisStore } from '@/stores/analysisStore';
-import type { MarketScreeningResponse } from '@/types/screening';
+import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
 import { AnalysisPage } from './AnalysisPage';
 
 const mockNavigate = vi.fn();
@@ -60,6 +60,19 @@ function createCachedScreeningResult(): MarketScreeningResponse {
         ],
       },
     ],
+  };
+}
+
+function createScreeningJob(overrides: Partial<ScreeningJobResponse> = {}): ScreeningJobResponse {
+  return {
+    job_id: 'job-1',
+    status: 'pending',
+    created_at: '2026-02-18T00:00:00Z',
+    markets: 'prime',
+    recentDays: 10,
+    sortBy: 'matchedDate',
+    order: 'desc',
+    ...overrides,
   };
 }
 
@@ -121,6 +134,7 @@ vi.mock('@/components/Screening/ScreeningFilters', () => ({
 
 vi.mock('@/components/Screening/ScreeningJobProgress', () => ({
   ScreeningJobProgress: () => <div>Screening Job Progress</div>,
+  ScreeningJobStatusInline: ({ job }: { job: ScreeningJobResponse }) => <div>Screening Job: {job.status}</div>,
 }));
 
 vi.mock('@/components/Screening/ScreeningSummary', () => ({
@@ -269,5 +283,17 @@ describe('AnalysisPage', () => {
         ]),
       })
     );
+  });
+
+  it('shows completed screening job status inline beside the run action', () => {
+    mockUseScreeningJobStatus.mockReturnValue({
+      data: createScreeningJob({ status: 'completed' }),
+      error: null,
+    });
+
+    render(<AnalysisPage />);
+
+    expect(screen.getByText('Screening Job: completed')).toBeInTheDocument();
+    expect(screen.queryByText('Screening Job Progress')).not.toBeInTheDocument();
   });
 });
