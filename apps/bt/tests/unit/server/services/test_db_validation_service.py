@@ -64,9 +64,13 @@ class DummyMarketDb:
         del limit
         return list(self._adjustment_events)
 
-    def get_stocks_needing_refresh(self, limit: int = 100) -> list[str]:
-        del limit
-        return list(self._stocks_needing_refresh)
+    def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]:
+        if limit is None:
+            return list(self._stocks_needing_refresh)
+        return list(self._stocks_needing_refresh[:limit])
+
+    def get_stocks_needing_refresh_count(self) -> int:
+        return len(self._stocks_needing_refresh)
 
     def get_prime_codes(self) -> set[str]:
         return set(self._prime_codes)
@@ -147,8 +151,8 @@ def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_
 
     assert result.status == "error"
     assert any("Run initial sync" in rec for rec in result.recommendations)
-    assert any("Run stock refresh" in rec for rec in result.recommendations)
-    assert any("Backfill fundamentals" in rec for rec in result.recommendations)
+    assert any("repair sync to refresh" in rec for rec in result.recommendations)
+    assert any("repair sync to backfill fundamentals" in rec for rec in result.recommendations)
     assert any("failed fundamentals dates" in rec for rec in result.recommendations)
     assert any("failed fundamentals codes" in rec for rec in result.recommendations)
     assert result.failedDatesCount == 0
@@ -176,6 +180,30 @@ def test_validate_market_db_warns_when_failed_dates_metadata_exists() -> None:
     assert result.status == "warning"
     assert result.failedDatesCount == 1
     assert any("failed sync dates" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_limits_refresh_samples_but_uses_total_count() -> None:
+    stocks_needing_refresh = [f"{1000 + idx}" for idx in range(25)]
+    market_db = DummyMarketDb(stocks_needing_refresh=stocks_needing_refresh)
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            statements_count=10,
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.stocksNeedingRefreshCount == 25
+    assert len(result.stocksNeedingRefresh) == 20
+    assert any("refresh 25 stocks" in rec for rec in result.recommendations)
 
 
 def test_build_readiness_issues_marks_all_missing_branches() -> None:

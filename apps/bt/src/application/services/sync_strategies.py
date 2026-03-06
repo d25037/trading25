@@ -11,7 +11,7 @@ import asyncio
 import json
 import math
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime, timedelta
 from typing import Any, Awaitable, Callable, Literal, NoReturn, Protocol, cast
 from zoneinfo import ZoneInfo
@@ -43,6 +43,7 @@ from src.application.services.index_master_catalog import (
     build_index_master_seed_rows,
     get_index_catalog_codes,
 )
+from src.application.services import stock_refresh_service
 from src.application.services.stock_data_row_builder import build_stock_data_row
 
 
@@ -65,6 +66,7 @@ class SyncMarketDbLike(Protocol):
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_prime_codes(self) -> set[str]: ...
+    def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_index_master_codes(self) -> set[str]: ...
 
@@ -1910,6 +1912,96 @@ class IncrementalSyncStrategy:
             return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
 
 
+class RepairSyncStrategy:
+    """warning 解消向け: adjustment refresh + fundamentals backfill"""
+
+    def estimate_api_calls(self) -> int:
+        return 400
+
+    async def execute(self, ctx: SyncContext) -> SyncResult:
+        total_calls = 0
+        stocks_updated = 0
+        fundamentals_updated = 0
+        fundamentals_dates_processed = 0
+        errors: list[str] = []
+
+        try:
+            ctx.on_progress("repair", 0, 300, "Inspecting DuckDB warning repair targets...")
+            if ctx.cancelled.is_set():
+                return _cancelled_sync_result(total_calls)
+
+            stock_codes = await asyncio.to_thread(ctx.market_db.get_stocks_needing_refresh, None)
+            prime_codes = sorted(await asyncio.to_thread(ctx.market_db.get_prime_codes))
+
+            if stock_codes:
+                def _on_refresh_progress(completed: int, total: int, message: str) -> None:
+                    ctx.on_progress(
+                        "stock_refresh",
+                        _scale_repair_progress(completed, total, base=100),
+                        300,
+                        message,
+                    )
+
+                refresh_result = await stock_refresh_service.refresh_stocks(
+                    stock_codes,
+                    ctx.market_db,
+                    _require_time_series_store(ctx),
+                    ctx.client,
+                    progress_callback=_on_refresh_progress,
+                    cancel_check=ctx.cancelled.is_set,
+                )
+                total_calls += refresh_result.totalApiCalls
+                stocks_updated = refresh_result.successCount
+                errors.extend(refresh_result.errors)
+            else:
+                ctx.on_progress("stock_refresh", 200, 300, "No stock adjustment repairs needed.")
+
+            if ctx.cancelled.is_set():
+                return _cancelled_sync_result(total_calls)
+
+            if prime_codes:
+                def _on_fundamentals_progress(stage: str, current: int, total: int, message: str) -> None:
+                    ctx.on_progress(
+                        stage,
+                        _scale_repair_progress(current, total, base=200),
+                        300,
+                        message,
+                    )
+
+                fundamentals_ctx = replace(ctx, on_progress=_on_fundamentals_progress)
+                fundamentals_sync = await _sync_fundamentals_incremental(fundamentals_ctx, prime_codes)
+                total_calls += fundamentals_sync["api_calls"]
+                fundamentals_updated += fundamentals_sync["updated"]
+                fundamentals_dates_processed += fundamentals_sync["dates_processed"]
+                errors.extend(fundamentals_sync["errors"])
+                if fundamentals_sync["cancelled"]:
+                    return _cancelled_sync_result(total_calls)
+            else:
+                ctx.on_progress("fundamentals", 300, 300, "No Prime fundamentals repair needed.")
+
+            ctx.on_progress("complete", 300, 300, "Repair sync complete!")
+            return SyncResult(
+                success=len(errors) == 0,
+                totalApiCalls=total_calls,
+                stocksUpdated=stocks_updated,
+                datesProcessed=0,
+                fundamentalsUpdated=fundamentals_updated,
+                fundamentalsDatesProcessed=fundamentals_dates_processed,
+                errors=errors,
+            )
+        except Exception as e:
+            return SyncResult(success=False, totalApiCalls=total_calls, errors=[str(e)])
+
+
+def _scale_repair_progress(current: int, total: int, *, base: int) -> int:
+    ratio = current / total if total > 0 else 1.0
+    return base + round(min(max(ratio, 0.0), 1.0) * 100)
+
+
+def _cancelled_sync_result(total_api_calls: int) -> SyncResult:
+    return SyncResult(success=False, totalApiCalls=total_api_calls, errors=["Cancelled"])
+
+
 async def _sync_fundamentals_initial(
     ctx: SyncContext,
     prime_codes: list[str],
@@ -2821,6 +2913,8 @@ def get_strategy(resolved_mode: str) -> SyncStrategy:
         return IncrementalSyncStrategy()
     elif resolved_mode == "indices-only":
         return IndicesOnlySyncStrategy()
+    elif resolved_mode == "repair":
+        return RepairSyncStrategy()
     return InitialSyncStrategy()
 
 

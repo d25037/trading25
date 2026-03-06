@@ -119,11 +119,8 @@ beforeEach(() => {
         orphanCount: 3,
       },
       fundamentals: {
-        count: 0,
-        uniqueStockCount: 0,
-        latestDisclosedDate: null,
-        missingPrimeStocksCount: 0,
-        missingPrimeStocks: [],
+        missingPrimeStocksCount: 7,
+        missingPrimeStocks: ['1301'],
         failedDatesCount: 0,
         failedCodesCount: 0,
       },
@@ -131,8 +128,8 @@ beforeEach(() => {
       stocksNeedingRefreshCount: 100,
       integrityIssuesCount: 0,
       recommendations: [
-        'Run stock refresh for 100 stocks with adjustment events',
-        'Backfill fundamentals for 7 Prime stocks',
+        'Run repair sync to refresh 100 stocks with pending adjustment backfill',
+        'Run repair sync to backfill fundamentals for 7 Prime stocks',
       ],
     },
     isLoading: false,
@@ -331,9 +328,57 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Missing Stock Dates:')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText('Stocks Needing Refresh:')).toBeInTheDocument();
+    expect(screen.getByText('Missing Prime Fundamentals:')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
-    expect(screen.getByText('Run stock refresh for 100 stocks with adjustment events')).toBeInTheDocument();
-    expect(screen.getByText('Backfill fundamentals for 7 Prime stocks')).toBeInTheDocument();
+    expect(screen.getByText('Run repair sync to refresh 100 stocks with pending adjustment backfill')).toBeInTheDocument();
+    expect(screen.getByText('Run repair sync to backfill fundamentals for 7 Prime stocks')).toBeInTheDocument();
+    expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
+    expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
+  });
+
+  it('starts repair sync from warning recovery card', async () => {
+    const user = userEvent.setup();
+
+    render(<SettingsPage />);
+
+    await user.click(screen.getByRole('button', { name: /Repair Warnings/i }));
+
+    expect(mockStartSyncState.mutate).toHaveBeenCalledWith(
+      { mode: 'repair', enforceBulkForStockData: false },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+      })
+    );
+  });
+
+  it('renders warning recovery safely when fundamentals payload is missing', () => {
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'warning',
+        stockData: { missingDatesCount: 2 },
+        margin: {
+          count: 0,
+          uniqueStockCount: 0,
+          dateCount: 0,
+          dateRange: null,
+          orphanCount: 0,
+        },
+        failedDatesCount: 0,
+        stocksNeedingRefreshCount: 3,
+        integrityIssuesCount: 0,
+        recommendations: ['Run repair sync to refresh 3 stocks with pending adjustment backfill'],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
+    expect(screen.getByText('Stocks needing refresh:')).toBeInTheDocument();
+    expect(screen.getByText('Missing Prime fundamentals:')).toBeInTheDocument();
+    expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 
   it('shows validation notes when status is healthy and recommendations exist', () => {
@@ -349,9 +394,6 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          count: 0,
-          uniqueStockCount: 0,
-          latestDisclosedDate: null,
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
           failedDatesCount: 0,
@@ -386,9 +428,6 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          count: 0,
-          uniqueStockCount: 0,
-          latestDisclosedDate: null,
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
           failedDatesCount: 0,
@@ -423,9 +462,6 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          count: 0,
-          uniqueStockCount: 0,
-          latestDisclosedDate: null,
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
           failedDatesCount: 0,

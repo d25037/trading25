@@ -177,7 +177,7 @@ export interface IndexDataResponse {
 
 // ===== SYNC TYPES =====
 
-export type SyncMode = 'auto' | 'initial' | 'incremental' | 'indices-only';
+export type SyncMode = 'auto' | 'initial' | 'incremental' | 'indices-only' | 'repair';
 export type SyncDataBackend = 'duckdb-parquet';
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
@@ -220,8 +220,8 @@ export interface SyncJobResult {
   datesProcessed: number;
   fundamentalsUpdated: number;
   fundamentalsDatesProcessed: number;
-  failedDates: string[];
-  errors: string[];
+  failedDates?: string[];
+  errors?: string[];
 }
 
 export interface CreateSyncJobResponse {
@@ -605,7 +605,7 @@ export interface MarketValidationResponse {
     dateRange: { min: string; max: string } | null;
     orphanCount: number;
   };
-  fundamentals: {
+  fundamentals?: {
     count: number;
     uniqueStockCount: number;
     latestDisclosedDate: string | null;

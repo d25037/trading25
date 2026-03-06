@@ -11583,7 +11583,8 @@
               "auto",
               "initial",
               "incremental",
-              "indices-only"
+              "indices-only",
+              "repair"
             ],
             "title": "Mode",
             "type": "string"
