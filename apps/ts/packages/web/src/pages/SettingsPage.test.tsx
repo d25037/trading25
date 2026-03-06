@@ -106,6 +106,12 @@ beforeEach(() => {
       status: 'warning',
       stockData: { missingDatesCount: 12 },
       failedDatesCount: 3,
+      stocksNeedingRefreshCount: 100,
+      integrityIssuesCount: 0,
+      recommendations: [
+        'Run stock refresh for 100 stocks with adjustment events',
+        'Backfill fundamentals for 7 Prime stocks',
+      ],
     },
     isLoading: false,
     error: null,
@@ -299,6 +305,76 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('2026-02-27').length).toBeGreaterThan(0);
     expect(screen.getByText('Missing Stock Dates:')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getByText('Stocks Needing Refresh:')).toBeInTheDocument();
+    expect(screen.getByText('Warning Details')).toBeInTheDocument();
+    expect(screen.getByText('Run stock refresh for 100 stocks with adjustment events')).toBeInTheDocument();
+    expect(screen.getByText('Backfill fundamentals for 7 Prime stocks')).toBeInTheDocument();
+  });
+
+  it('shows validation notes when status is healthy and recommendations exist', () => {
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'healthy',
+        stockData: { missingDatesCount: 0 },
+        failedDatesCount: 0,
+        stocksNeedingRefreshCount: 0,
+        integrityIssuesCount: 0,
+        recommendations: ['Margin signal readiness depends on margin data source and is excluded from this check'],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('Validation Notes')).toBeInTheDocument();
+    expect(
+      screen.getByText('Margin signal readiness depends on margin data source and is excluded from this check')
+    ).toBeInTheDocument();
+  });
+
+  it('shows error details when validation status is error', () => {
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'error',
+        stockData: { missingDatesCount: 0 },
+        failedDatesCount: 0,
+        stocksNeedingRefreshCount: 0,
+        integrityIssuesCount: 1,
+        recommendations: ['Run initial sync to populate the database'],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('Error Details')).toBeInTheDocument();
+    expect(screen.getByText('Run initial sync to populate the database')).toBeInTheDocument();
+  });
+
+  it('hides validation detail panel when no recommendations are returned', () => {
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'warning',
+        stockData: { missingDatesCount: 1 },
+        failedDatesCount: 0,
+        stocksNeedingRefreshCount: 0,
+        integrityIssuesCount: 0,
+        recommendations: [],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.queryByText('Warning Details')).not.toBeInTheDocument();
+    expect(screen.queryByText('Validation Notes')).not.toBeInTheDocument();
+    expect(screen.queryByText('Error Details')).not.toBeInTheDocument();
   });
 
   it('validates stock refresh input before submit', async () => {
