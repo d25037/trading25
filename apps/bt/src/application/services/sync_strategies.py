@@ -3056,15 +3056,6 @@ async def _fetch_margin_by_code(
         raise RuntimeError(f"margin-interest code fetch failed for {code}")
     raise last_error
 
-
-def _extract_fundamentals_target_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> set[str]:
-    return set(extract_listed_market_codes(stock_rows))
-
-
-def _is_fundamentals_target_market_code(value: Any) -> bool:
-    return is_listed_market_code(value)
-
-
 def _load_metadata_json_list(market_db: SyncMarketDbLike, key: str) -> list[str]:
     raw = market_db.get_sync_metadata(key)
     if not raw:
