@@ -33,6 +33,7 @@ _STATS_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
     "indices_data",
+    "margin_data",
     "statements",
     "sync_metadata",
     "index_master",
@@ -213,6 +214,17 @@ class MarketDb:
         )
         self._execute(
             """
+            CREATE TABLE IF NOT EXISTS margin_data (
+                code TEXT,
+                date TEXT,
+                long_margin_volume DOUBLE,
+                short_margin_volume DOUBLE,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        self._execute(
+            """
             CREATE TABLE IF NOT EXISTS statements (
                 code TEXT,
                 disclosed_date TEXT,
@@ -343,6 +355,24 @@ class MarketDb:
             str(row[0]): str(row[1])
             for row in rows
             if row and row[0] and row[1]
+        }
+
+    def get_latest_margin_date(self) -> str | None:
+        """margin_data の最新日付を取得。"""
+        if not self._table_exists("margin_data"):
+            return None
+        row = self._fetchone("SELECT MAX(date) FROM margin_data")
+        return str(row[0]) if row and row[0] is not None else None
+
+    def get_margin_codes(self) -> set[str]:
+        """margin_data に存在する銘柄コード一覧を取得。"""
+        if not self._table_exists("margin_data"):
+            return set()
+        rows = self._fetchall("SELECT DISTINCT code FROM margin_data WHERE code IS NOT NULL")
+        return {
+            str(row[0])
+            for row in rows
+            if row and row[0]
         }
 
     def get_index_master_codes(self) -> set[str]:
@@ -591,6 +621,32 @@ class MarketDb:
                 close = excluded.close,
                 sector_name = excluded.sector_name,
                 created_at = excluded.created_at
+            """,
+            params,
+        )
+        return len(rows)
+
+    def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
+        """margin_data テーブルに upsert。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+        params = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("long_margin_volume"),
+                row.get("short_margin_volume"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO margin_data (code, date, long_margin_volume, short_margin_volume)
+            VALUES (?, ?, ?, ?)
+            ON CONFLICT (code, date) DO UPDATE
+            SET long_margin_volume = excluded.long_margin_volume,
+                short_margin_volume = excluded.short_margin_volume
             """,
             params,
         )

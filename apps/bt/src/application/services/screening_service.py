@@ -684,16 +684,12 @@ class ScreeningService:
             )
             return {}
 
-        if key.include_margin_data:
-            logger.warning(
-                "screening market loader does not provide margin data; margin signals may be skipped",
-            )
-
         multi_data, warnings = load_market_multi_data(
             self._reader,
             list(key.stock_codes),
             start_date=key.start_date,
             end_date=key.end_date,
+            include_margin_data=key.include_margin_data,
             include_statements_data=key.include_statements_data,
             period_type=key.period_type,
             include_forecast_revision=key.include_forecast_revision,

@@ -1,14 +1,14 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "title": "Trading25 Market DB Schema v2",
-  "description": "market.duckdb スキーマ契約。Prime fundamentals 同期向け statements テーブルを追加した v2。",
+  "description": "market.duckdb スキーマ契約。Prime fundamentals と margin sync を含む v2 minor update。",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "tables"],
   "properties": {
     "schema_version": {
       "type": "string",
-      "enum": ["2.0.0"]
+      "enum": ["2.1.0"]
     },
     "tables": {
       "type": "object",
@@ -18,6 +18,7 @@
         "stock_data",
         "topix_data",
         "indices_data",
+        "margin_data",
         "statements"
       ],
       "properties": {
@@ -137,6 +138,36 @@
               }
             },
             "primary_key": { "const": ["code", "date"] }
+          }
+        },
+        "margin_data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["columns", "primary_key", "indexes"],
+          "properties": {
+            "columns": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "date",
+                "long_margin_volume",
+                "short_margin_volume"
+              ],
+              "properties": {
+                "code": { "const": { "type": "text", "nullable": false } },
+                "date": { "const": { "type": "text", "nullable": false } },
+                "long_margin_volume": { "const": { "type": "real", "nullable": true } },
+                "short_margin_volume": { "const": { "type": "real", "nullable": true } }
+              }
+            },
+            "primary_key": { "const": ["code", "date"] },
+            "indexes": {
+              "const": [
+                { "name": "idx_market_margin_data_date", "columns": ["date"] },
+                { "name": "idx_market_margin_data_code", "columns": ["code"] }
+              ]
+            }
           }
         },
         "statements": {

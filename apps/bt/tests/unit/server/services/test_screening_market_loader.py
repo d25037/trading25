@@ -6,10 +6,13 @@ import pandas as pd
 import pytest
 
 from src.application.services.screening_market_loader import (
+    _attach_margin,
     _attach_statements,
+    _group_margin_rows,
     _group_statement_rows,
     _load_daily_by_code,
     _normalize_codes,
+    _query_margin_rows,
     _query_statements_rows,
     _resolve_period_filter_values,
     _rows_to_ohlc_df,
@@ -81,6 +84,36 @@ def test_load_market_multi_data_attaches_statements(monkeypatch: pytest.MonkeyPa
     assert "daily" in result["7203"]
     assert "statements_daily" in result["7203"]
     assert warnings == ["attached"]
+
+
+def test_load_market_multi_data_attaches_margin(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    daily = pd.DataFrame(
+        {"Open": [1.0, 1.0], "High": [1.1, 1.2], "Low": [0.9, 1.0], "Close": [1.0, 1.1], "Volume": [100, 200]},
+        index=index,
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._load_daily_by_code",
+        lambda *_args, **_kwargs: {"7203": daily},
+    )
+
+    def _attach(_reader, result, _daily_index_by_code, **_kwargs):
+        result["7203"]["margin_daily"] = pd.DataFrame({"margin_balance": [1, 2]}, index=index)
+        return ["margin attached"]
+
+    monkeypatch.setattr("src.application.services.screening_market_loader._attach_margin", _attach)
+
+    result, warnings = load_market_multi_data(
+        DummyReader(),
+        ["72030"],
+        include_margin_data=True,
+    )
+
+    assert "7203" in result
+    assert "daily" in result["7203"]
+    assert "margin_daily" in result["7203"]
+    assert warnings == ["margin attached"]
 
 
 def test_load_market_multi_data_skips_attach_when_daily_is_empty(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -281,6 +314,137 @@ def test_attach_statements_returns_empty_when_no_codes() -> None:
         include_forecast_revision=False,
     )
     assert warnings == []
+
+
+def test_attach_margin_missing_table_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = pd.to_datetime(["2026-01-01"])
+    result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
+    daily_index = {"7203": index}
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._query_margin_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("no such table: margin_data")),
+    )
+
+    warnings = _attach_margin(
+        DummyReader(),
+        result,
+        daily_index,
+        start_date=None,
+        end_date=None,
+    )
+    assert warnings == ["market margin_data table is missing; margin signals may be skipped"]
+
+
+def test_attach_margin_returns_empty_when_no_codes() -> None:
+    warnings = _attach_margin(
+        DummyReader(),
+        {},
+        {},
+        start_date=None,
+        end_date=None,
+    )
+    assert warnings == []
+
+
+def test_attach_margin_reraises_unexpected_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = pd.to_datetime(["2026-01-01"])
+    result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
+    daily_index = {"7203": index}
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._query_margin_rows",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("permission denied")),
+    )
+
+    with pytest.raises(RuntimeError):
+        _attach_margin(
+            DummyReader(),
+            result,
+            daily_index,
+            start_date=None,
+            end_date=None,
+        )
+
+
+def test_attach_margin_transform_failure_warning(monkeypatch: pytest.MonkeyPatch) -> None:
+    index = pd.to_datetime(["2026-01-01"])
+    result = {"7203": {"daily": pd.DataFrame({"Close": [1.0]}, index=index)}}
+    daily_index = {"7203": index}
+
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader._query_margin_rows",
+        lambda *_args, **_kwargs: [
+            {
+                "code": "7203",
+                "date": "2026-01-01",
+                "long_margin_volume": 100,
+                "short_margin_volume": 40,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "src.application.services.screening_market_loader.transform_margin_df",
+        lambda *_args, **_kwargs: (_ for _ in ()).throw(RuntimeError("bad margin")),
+    )
+
+    warnings = _attach_margin(
+        DummyReader(),
+        result,
+        daily_index,
+        start_date=None,
+        end_date=None,
+    )
+
+    assert warnings == ["7203 margin transform failed (bad margin)"]
+
+
+def test_query_margin_rows_with_date_filters() -> None:
+    reader = DummyReader(
+        rows=[
+            {
+                "code": "7203",
+                "date": "2026-01-01",
+                "long_margin_volume": 100,
+                "short_margin_volume": 40,
+            }
+        ]
+    )
+
+    rows = _query_margin_rows(
+        reader,
+        ["7203"],
+        start_date="2026-01-01",
+        end_date="2026-01-31",
+    )
+
+    sql, params = reader.calls[0]
+    assert "date >= ?" in sql
+    assert "date <= ?" in sql
+    assert params == ("7203", "2026-01-01", "2026-01-31")
+    assert rows[0]["code"] == "7203"
+
+
+def test_group_margin_rows_normalizes_and_sorts_index() -> None:
+    grouped = _group_margin_rows(
+        [
+            {
+                "code": "72030",
+                "date": "2026-01-02",
+                "long_margin_volume": 120,
+                "short_margin_volume": 60,
+            },
+            {
+                "code": "72030",
+                "date": "2026-01-01",
+                "long_margin_volume": 100,
+                "short_margin_volume": 40,
+            },
+        ]
+    )
+
+    assert list(grouped.keys()) == ["7203"]
+    assert list(grouped["7203"].index.strftime("%Y-%m-%d")) == ["2026-01-01", "2026-01-02"]
 
 
 def test_attach_statements_reraises_unexpected_error(monkeypatch: pytest.MonkeyPatch) -> None:

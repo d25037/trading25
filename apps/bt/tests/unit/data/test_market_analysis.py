@@ -96,7 +96,7 @@ class TestIsSignalAvailableInMarketDb:
         """利用不可シグナル判定"""
         # 外部データ必要シグナル（β値は topix テーブルがあるため利用可能）
         assert is_signal_available_in_market_db("fundamental") is False
-        assert is_signal_available_in_market_db("margin") is False
+        assert is_signal_available_in_market_db("margin") is True
         assert is_signal_available_in_market_db("index_daily_change") is False
 
     def test_unknown_signal(self):
@@ -375,9 +375,9 @@ class TestIsSignalAvailableInMarketDB:
         """財務シグナルが利用不可として判定されること"""
         assert is_signal_available_in_market_db("fundamental") is False
 
-    def test_margin_signal_is_not_available(self):
-        """信用残高シグナルが利用不可として判定されること"""
-        assert is_signal_available_in_market_db("margin") is False
+    def test_margin_signal_is_available(self):
+        """信用残高シグナルが利用可能として判定されること"""
+        assert is_signal_available_in_market_db("margin") is True
 
 
 class TestBetaSignalCalculation:

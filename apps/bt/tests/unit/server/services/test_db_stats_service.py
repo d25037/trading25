@@ -100,4 +100,6 @@ def test_get_market_stats_handles_empty_ranges_and_prime_codes() -> None:
     assert result.stockData.dateRange is None
     assert result.stockData.averageStocksPerDay == 0
     assert result.indices.dateRange is None
+    assert result.margin.count == 0
+    assert result.margin.dateRange is None
     assert result.fundamentals.primeCoverage.coverageRatio == 0

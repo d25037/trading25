@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+import src.application.services.sync_strategies as sync_strategies_module
 from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
@@ -21,11 +22,13 @@ from src.application.services.sync_strategies import (
     _build_fallback_index_master_rows,
     _build_incremental_date_targets,
     _collect_unique_codes,
+    _convert_margin_rows,
     _convert_index_master_rows,
     _convert_indices_data_rows,
     _convert_stock_bulk_rows,
     _convert_stock_rows,
     _date_sort_key,
+    _fetch_margin_by_code,
     _dedupe_preserve_order,
     _extract_dates_after,
     _extract_list_items,
@@ -44,6 +47,7 @@ from src.application.services.sync_strategies import (
     _publish_statement_rows,
     _publish_stock_data_rows,
     _publish_topix_rows,
+    _sync_margin_data,
     _to_iso_date_text,
     _to_jquants_date_param,
     get_strategy,
@@ -71,6 +75,7 @@ class DummyMarketDb:
         self.topix_rows: list[dict[str, Any]] = []
         self.index_master_rows: list[dict[str, Any]] = []
         self.indices_rows: list[dict[str, Any]] = []
+        self.margin_rows: list[dict[str, Any]] = []
         self.statements_rows: list[dict[str, Any]] = []
         self.metadata: dict[str, str] = {}
         self._prime_codes: set[str] = set()
@@ -90,6 +95,23 @@ class DummyMarketDb:
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         return dict(self.latest_indices_data_dates)
+
+    def get_latest_margin_date(self) -> str | None:
+        margin_dates = [
+            str(row["date"])
+            for row in self.margin_rows
+            if row.get("date")
+        ]
+        if not margin_dates:
+            return None
+        return max(margin_dates, key=_date_sort_key)
+
+    def get_margin_codes(self) -> set[str]:
+        return {
+            str(row["code"])
+            for row in self.margin_rows
+            if row.get("code")
+        }
 
     def get_index_master_codes(self) -> set[str]:
         codes: set[str] = set()
@@ -183,6 +205,21 @@ class DummyMarketDb:
                 continue
             upserted[(code, row_date)] = dict(row)
         self.indices_rows = list(upserted.values())
+        return len(rows)
+
+    def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
+        upserted = {
+            (str(row["code"]), str(row["date"])): dict(row)
+            for row in self.margin_rows
+            if row.get("code") and row.get("date")
+        }
+        for row in rows:
+            code = str(row.get("code", "")).strip()
+            row_date = str(row.get("date", "")).strip()
+            if not code or not row_date:
+                continue
+            upserted[(code, row_date)] = dict(row)
+        self.margin_rows = list(upserted.values())
         return len(rows)
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
@@ -279,6 +316,19 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         for row in market_db.statements_rows
         if row.get("code")
     }
+    margin_dates = sorted(
+        {
+            str(row.get("date"))
+            for row in market_db.margin_rows
+            if row.get("date")
+        },
+        key=_date_sort_key,
+    )
+    margin_codes = {
+        str(row.get("code"))
+        for row in market_db.margin_rows
+        if row.get("code")
+    }
 
     return TimeSeriesInspection(
         source="duckdb-parquet",
@@ -294,6 +344,11 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         indices_max=indices_dates[-1] if indices_dates else _latest_date(list(latest_indices_dates.values())),
         indices_date_count=len(indices_dates),
         latest_indices_dates=latest_indices_dates,
+        margin_count=len(market_db.margin_rows),
+        margin_min=margin_dates[0] if margin_dates else market_db.get_latest_margin_date(),
+        margin_max=margin_dates[-1] if margin_dates else market_db.get_latest_margin_date(),
+        margin_date_count=len(margin_dates),
+        margin_codes=margin_codes,
         statements_count=len(market_db.statements_rows),
         latest_statement_disclosed_date=latest_statement_disclosed_date,
         statement_codes=statement_codes,
@@ -318,6 +373,9 @@ class DummyTimeSeriesStore:
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
         return self._market_db.upsert_indices_data(rows)
 
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
+        return self._market_db.upsert_margin_data(rows)
+
     def publish_statements(self, rows: list[dict[str, Any]]) -> int:
         return self._market_db.upsert_statements(rows)
 
@@ -328,6 +386,9 @@ class DummyTimeSeriesStore:
         return None
 
     def index_indices_data(self) -> None:
+        return None
+
+    def index_margin_data(self) -> None:
         return None
 
     def index_statements(self) -> None:
@@ -391,6 +452,7 @@ class DummyClient:
         daily_quotes: list[dict[str, Any]] | None = None,
         indices_quotes: list[dict[str, Any]] | None = None,
         master_quotes: list[dict[str, Any]] | None = None,
+        margin_by_code: dict[str, list[dict[str, Any]]] | None = None,
         daily_error_dates: set[str] | None = None,
         fins_by_code: dict[str, list[dict[str, Any]]] | None = None,
         fins_by_date: dict[str, list[dict[str, Any]]] | None = None,
@@ -402,6 +464,7 @@ class DummyClient:
         self.daily_quotes = daily_quotes
         self.indices_quotes = indices_quotes
         self.master_quotes = master_quotes
+        self.margin_by_code = margin_by_code or {}
         self.daily_error_dates = daily_error_dates or set()
         self.fins_by_code = fins_by_code or {}
         self.fins_by_date = fins_by_date or {}
@@ -510,6 +573,16 @@ class DummyClient:
             return []
         if path == "/equities/master":
             return self.master_quotes or []
+        if path == "/markets/margin-interest":
+            code = str((params or {}).get("code", ""))
+            if code and code in self.margin_by_code:
+                return self.margin_by_code[code]
+            if params and params.get("from") == "20260210":
+                return [{"Code": code or "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200}]
+            return [
+                {"Code": code or "72030", "Date": "2026-02-06", "LongVol": 900, "ShrtVol": 250},
+                {"Code": code or "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            ]
         if path == "/equities/bars/daily":
             if self.daily_quotes is not None:
                 rows: list[dict[str, Any]] = []
@@ -621,6 +694,12 @@ class InitialSyncClient:
             if date_value in self._fail_stock_dates:
                 raise RuntimeError("daily quotes unavailable")
             return [{"Code": "72030", "Date": date_value, "O": 1, "H": 2, "L": 1, "C": 2, "Vo": 1000}]
+        if path == "/markets/margin-interest":
+            code = str((params or {}).get("code", "")) or "72030"
+            return [
+                {"Code": code, "Date": "2026-02-06", "LongVol": 900, "ShrtVol": 250},
+                {"Code": code, "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            ]
         if path == "/indices/bars/daily":
             return [{"Date": "2026-02-10", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"}]
         return []
@@ -891,6 +970,578 @@ async def test_incremental_sync_handles_mixed_date_formats() -> None:
         for _, _, _, message in progresses
     )
     assert progresses[-1][0] == "complete"
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_backfills_margin_when_market_snapshot_lacks_margin() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    inspection = TimeSeriesInspection(
+        source="duckdb-parquet",
+        topix_count=1,
+        topix_min="2026-02-06",
+        topix_max="2026-02-06",
+        stock_count=1,
+        stock_min="2026-02-06",
+        stock_max="2026-02-06",
+        stock_date_count=1,
+        indices_count=1,
+        indices_min="2026-02-06",
+        indices_max="2026-02-06",
+        indices_date_count=1,
+        latest_indices_dates={"0000": "2026-02-06"},
+        margin_count=0,
+        margin_codes=set(),
+    )
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0112",
+                "MktNm": "スタンダード",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            }
+        ],
+        margin_by_code={
+            "72030": [
+                {"Code": "72030", "Date": "2026-02-06", "LongVol": 900, "ShrtVol": 250},
+                {"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            ]
+        },
+    )
+    store = DummyTimeSeriesStore(market_db, inspection)
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        time_series_store=store,
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert any(path == "/markets/margin-interest" for path, _ in client.calls)
+    assert market_db.get_margin_codes() == {"7203"}
+    assert market_db.get_latest_margin_date() == "2026-02-10"
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_logs_margin_backfill_execution_separately(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    inspection = TimeSeriesInspection(
+        source="duckdb-parquet",
+        topix_count=1,
+        topix_min="2026-02-06",
+        topix_max="2026-02-06",
+        stock_count=1,
+        stock_min="2026-02-06",
+        stock_max="2026-02-06",
+        stock_date_count=1,
+        indices_count=1,
+        indices_min="2026-02-06",
+        indices_max="2026-02-06",
+        indices_date_count=1,
+        latest_indices_dates={"0000": "2026-02-06"},
+        margin_count=1,
+        margin_min="2026-02-06",
+        margin_max="2026-02-06",
+        margin_date_count=1,
+        margin_codes={"7203"},
+    )
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0112",
+                "MktNm": "スタンダード",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+            {
+                "Code": "67580",
+                "CoName": "ソニーグループ",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "10",
+                "S17Nm": "電気機器",
+                "S33": "3650",
+                "S33Nm": "電気機器",
+                "Date": "1958-12-01",
+            },
+        ],
+        margin_by_code={
+            "72030": [
+                {"Code": "72030", "Date": "2026-02-10", "LongVol": 1100, "ShrtVol": 210},
+            ],
+            "67580": [
+                {"Code": "67580", "Date": "2026-02-06", "LongVol": 700, "ShrtVol": 180},
+                {"Code": "67580", "Date": "2026-02-10", "LongVol": 720, "ShrtVol": 185},
+            ],
+        },
+    )
+    store = DummyTimeSeriesStore(market_db, inspection)
+    logged_stages: list[tuple[str, str, int]] = []
+
+    def fake_log_sync_fetch_execution(
+        *,
+        stage: str,
+        endpoint: str,
+        decision: _StageFetchDecision,
+        executed: str,
+        actual_api_calls: int,
+        fallback: bool,
+        bulk_result: BulkFetchResult | None = None,
+    ) -> None:
+        del decision, fallback, bulk_result
+        logged_stages.append((stage, endpoint, actual_api_calls))
+
+    monkeypatch.setattr(
+        sync_strategies_module,
+        "_log_sync_fetch_execution",
+        fake_log_sync_fetch_execution,
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        time_series_store=store,
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert ("margin_incremental", "/markets/margin-interest", 1) in logged_stages
+    assert ("margin_incremental_backfill", "/markets/margin-interest", 1) in logged_stages
+
+
+@pytest.mark.asyncio
+async def test_initial_sync_populates_margin_data() -> None:
+    market_db = DummyMarketDb()
+    client = InitialSyncClient(
+        topix_dates=["2026-02-06", "2026-02-10"],
+        master_rows=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0112",
+                "MktNm": "スタンダード",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            }
+        ],
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        on_progress=lambda *_: None,
+    )
+
+    result = await InitialSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert any(path == "/markets/margin-interest" for path, _ in client.calls)
+    assert market_db.get_margin_codes() == {"7203"}
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_bulk_success_backfills_missing_codes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=2,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _FakeBulkService(
+        results_by_endpoint={
+            "/markets/margin-interest": BulkFetchResult(
+                rows=[
+                    {"Code": "72030", "Date": "2026-02-06", "LongVol": 900, "ShrtVol": 250},
+                    {"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+                ],
+                api_calls=2,
+                cache_hits=0,
+                cache_misses=1,
+                selected_files=1,
+            )
+        }
+    )
+    client = DummyClient(
+        margin_by_code={
+            "6758": [
+                {"Code": "6758", "Date": "2026-02-04", "LongVol": 400, "ShrtVol": 100},
+                {"Code": "6758", "Date": "2026-02-10", "LongVol": 450, "ShrtVol": 120},
+            ]
+        }
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=2,
+            estimated_bulk_calls=2,
+            plan=bulk_plan,
+            reason="planner_selected_bulk",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203", "6758"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-06",
+        existing_margin_codes={"7203"},
+    )
+
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert result["updated"] == 3
+    assert market_db.get_margin_codes() == {"7203", "6758"}
+    assert any(path == "/markets/margin-interest" and params == {"code": "67580"} for path, params in client.calls)
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_bulk_fallback_to_rest_collects_errors(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=2,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _FakeBulkService(fail_endpoints={"/markets/margin-interest"})
+
+    class ErrorMarginClient(DummyClient):
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            if path == "/markets/margin-interest" and str((params or {}).get("code", "")) in {"99990", "9999"}:
+                raise RuntimeError("margin failed")
+            return await super().get_paginated(path, params)
+
+    client = ErrorMarginClient()
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=2,
+            estimated_bulk_calls=2,
+            plan=bulk_plan,
+            reason="planner_selected_bulk",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203", "9999"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+    )
+
+    assert result["cancelled"] is False
+    assert len(result["errors"]) == 1
+    assert "Margin code 9999" in result["errors"][0]
+    assert market_db.get_margin_codes() == {"7203"}
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_bulk_fallback_avoids_duplicate_rest_for_backfill_codes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    bulk_plan = BulkFetchPlan(
+        endpoint="/markets/margin-interest",
+        files=[],
+        list_api_calls=1,
+        estimated_api_calls=2,
+        estimated_cache_hits=0,
+        estimated_cache_misses=1,
+    )
+    bulk_service = _FakeBulkService(fail_endpoints={"/markets/margin-interest"})
+
+    class StrictMarginClient(DummyClient):
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            if path == "/markets/margin-interest":
+                self.calls.append((path, params))
+                code = str((params or {}).get("code", ""))
+                return list(self.margin_by_code.get(code, []))
+            return await super().get_paginated(path, params)
+
+    client = StrictMarginClient(
+        margin_by_code={
+            "7203": [
+                {"Code": "7203", "Date": "2026-02-04", "LongVol": 400, "ShrtVol": 100},
+                {"Code": "7203", "Date": "2026-02-10", "LongVol": 450, "ShrtVol": 120},
+            ]
+        }
+    )
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        bulk_service=bulk_service,
+        bulk_probe_disabled=False,
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="bulk",
+            planner_api_calls=1,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=1,
+            plan=bulk_plan,
+            reason="planner_selected_bulk",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-06",
+        existing_margin_codes=set(),
+    )
+
+    margin_calls = [params for path, params in client.calls if path == "/markets/margin-interest"]
+
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert len(margin_calls) == 2
+    assert all("from" not in (params or {}) for params in margin_calls)
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_returns_cancelled_when_rest_loop_is_cancelled(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+    cancelled = asyncio.Event()
+    cancelled.set()
+    ctx = _build_ctx(
+        client=DummyClient(),
+        market_db=market_db,
+        cancelled=cancelled,
+    )
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="rest",
+            planner_api_calls=0,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=None,
+            reason="rest_estimate_too_small",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["7203"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+    )
+
+    assert result == {
+        "api_calls": 0,
+        "updated": 0,
+        "errors": [],
+        "cancelled": True,
+    }
+
+
+@pytest.mark.asyncio
+async def test_fetch_margin_by_code_falls_back_to_4digit_after_empty_5digit() -> None:
+    class StrictMarginClient(DummyClient):
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            if path == "/markets/margin-interest":
+                self.calls.append((path, params))
+                code = str((params or {}).get("code", ""))
+                return list(self.margin_by_code.get(code, []))
+            return await super().get_paginated(path, params)
+
+    client = StrictMarginClient(
+        margin_by_code={
+            "7203": [
+                {"Code": "7203", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            ]
+        }
+    )
+
+    rows, api_calls = await _fetch_margin_by_code(client, "7203")
+
+    assert api_calls == 2
+    assert rows == [{"Code": "7203", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200}]
+
+
+@pytest.mark.asyncio
+async def test_fetch_margin_by_code_returns_empty_when_all_candidates_are_empty() -> None:
+    class EmptyMarginClient(DummyClient):
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            if path == "/markets/margin-interest":
+                return []
+            return await super().get_paginated(path, params)
+
+    client = EmptyMarginClient(margin_by_code={})
+
+    rows, api_calls = await _fetch_margin_by_code(client, "7203")
+
+    assert rows == []
+    assert api_calls == 2
+
+
+def test_convert_margin_rows_filters_and_deduplicates() -> None:
+    rows = _convert_margin_rows(
+        [
+            {"Code": "", "Date": "2026-02-10", "LongVol": 1, "ShrtVol": 2},
+            {"Code": "72030", "Date": None, "LongVol": 1, "ShrtVol": 2},
+            {"Code": "72030", "Date": "2026-02-05", "LongVol": 1, "ShrtVol": 2},
+            {"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
+            {"Code": "72030", "Date": "2026-02-10", "longMarginTradeVolume": 1200, "shortMarginTradeVolume": 300},
+            {"Code": "67580", "Date": "2026-02-10", "long_margin_volume": 400, "short_margin_volume": 100},
+        ],
+        target_codes={"7203"},
+        min_date_exclusive="2026-02-06",
+    )
+
+    assert rows == [
+        {
+            "code": "7203",
+            "date": "2026-02-10",
+            "long_margin_volume": 1000.0,
+            "short_margin_volume": 200.0,
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_sync_margin_data_logs_backfill_execution_api_calls(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+
+    class StrictMarginClient(DummyClient):
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            if path == "/markets/margin-interest":
+                self.calls.append((path, params))
+                code = str((params or {}).get("code", ""))
+                return list(self.margin_by_code.get(code, []))
+            return await super().get_paginated(path, params)
+
+    client = StrictMarginClient(
+        margin_by_code={
+            "6758": [
+                {"Code": "6758", "Date": "2026-02-04", "LongVol": 400, "ShrtVol": 100},
+                {"Code": "6758", "Date": "2026-02-10", "LongVol": 450, "ShrtVol": 120},
+            ]
+        }
+    )
+    ctx = _build_ctx(client=client, market_db=market_db)
+    logged_calls: list[dict[str, Any]] = []
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="rest",
+            planner_api_calls=0,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=None,
+            reason="rest_estimate_too_small",
+        )
+
+    def _capture_log(**kwargs: Any) -> None:
+        logged_calls.append(kwargs)
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._log_sync_fetch_execution",
+        _capture_log,
+    )
+
+    result = await _sync_margin_data(
+        ctx,
+        ["6758"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-06",
+        existing_margin_codes=set(),
+    )
+
+    assert result["cancelled"] is False
+    assert result["errors"] == []
+    assert logged_calls == [
+        {
+            "stage": "margin_incremental_backfill",
+            "endpoint": "/markets/margin-interest",
+            "decision": _StageFetchDecision(
+                method="rest",
+                planner_api_calls=0,
+                estimated_rest_calls=1,
+                estimated_bulk_calls=None,
+                reason="rest_estimate_too_small",
+            ),
+            "executed": "rest",
+            "actual_api_calls": 2,
+            "fallback": False,
+            "bulk_result": None,
+        }
+    ]
 
 
 @pytest.mark.asyncio
@@ -2281,8 +2932,8 @@ def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("unknown"), InitialSyncStrategy)
 
     assert IndicesOnlySyncStrategy().estimate_api_calls() == 52
-    assert InitialSyncStrategy().estimate_api_calls() == 2500
-    assert IncrementalSyncStrategy().estimate_api_calls() == 120
+    assert InitialSyncStrategy().estimate_api_calls() == 3200
+    assert IncrementalSyncStrategy().estimate_api_calls() == 180
 
 
 def test_data_conversion_helpers_handle_aliases_and_invalid_rows() -> None:

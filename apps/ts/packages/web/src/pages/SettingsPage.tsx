@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   useActiveSyncJob,
   useCancelSync,
@@ -124,10 +124,7 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
   return 'rounded-md border border-yellow-500/30 bg-yellow-500/10 p-3';
 }
 
-function buildSnapshotItems(
-  dbStats: MarketStatsResponse,
-  dbValidation: MarketValidationResponse
-): SnapshotItem[] {
+function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketValidationResponse): SnapshotItem[] {
   return [
     { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
     { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
@@ -136,6 +133,9 @@ function buildSnapshotItems(
     { label: 'Stock Data Latest', value: dbStats.stockData.dateRange?.max ?? 'n/a' },
     { label: 'TOPIX Latest', value: dbStats.topix.dateRange?.max ?? 'n/a' },
     { label: 'Indices Latest', value: dbStats.indices.dateRange?.max ?? 'n/a' },
+    { label: 'Margin Latest', value: dbStats.margin?.dateRange?.max ?? 'n/a' },
+    { label: 'Margin Stocks', value: dbStats.margin?.uniqueStockCount ?? 0 },
+    { label: 'Margin Orphans', value: dbValidation.margin?.orphanCount ?? 0 },
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
@@ -451,7 +451,9 @@ export function SettingsPage() {
             )}
           </Button>
 
-          {refreshInputError && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshInputError}</div>}
+          {refreshInputError && (
+            <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshInputError}</div>
+          )}
           {refreshStocks.error && (
             <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshStocks.error.message}</div>
           )}
@@ -462,7 +464,9 @@ export function SettingsPage() {
       <Card className="mt-4">
         <CardHeader>
           <CardTitle>DuckDB Snapshot</CardTitle>
-          <CardDescription>Current DuckDB SoT status from FastAPI (`/api/db/stats`, `/api/db/validate`).</CardDescription>
+          <CardDescription>
+            Current DuckDB SoT status from FastAPI (`/api/db/stats`, `/api/db/validate`).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <SnapshotStatus

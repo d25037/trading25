@@ -96,6 +96,22 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
             }
         ]
     )
+    store.publish_margin_data(
+        [
+            {
+                "code": "7203",
+                "date": "2026-02-07",
+                "long_margin_volume": 900.0,
+                "short_margin_volume": 120.0,
+            },
+            {
+                "code": "7203",
+                "date": "2026-02-10",
+                "long_margin_volume": 1000.0,
+                "short_margin_volume": 150.0,
+            },
+        ]
+    )
     store.publish_statements(
         [
             {
@@ -114,6 +130,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     store.index_topix_data()
     store.index_stock_data()
     store.index_indices_data()
+    store.index_margin_data()
     store.index_statements()
 
     inspection = store.inspect(
@@ -129,6 +146,11 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.indices_min == "2026-02-10"
     assert inspection.indices_max == "2026-02-10"
     assert inspection.indices_date_count == 1
+    assert inspection.margin_count == 2
+    assert inspection.margin_min == "2026-02-07"
+    assert inspection.margin_max == "2026-02-10"
+    assert inspection.margin_date_count == 2
+    assert inspection.margin_codes == {"7203"}
     assert inspection.missing_stock_dates == ["2026-02-11"]
     assert inspection.missing_stock_dates_count == 1
     assert inspection.statements_count == 2
@@ -386,6 +408,7 @@ def test_publish_methods_return_zero_for_empty_rows(tmp_path: Path) -> None:
     assert store.publish_topix_data([]) == 0
     assert store.publish_stock_data([]) == 0
     assert store.publish_indices_data([]) == 0
+    assert store.publish_margin_data([]) == 0
     assert store.publish_statements([]) == 0
 
 

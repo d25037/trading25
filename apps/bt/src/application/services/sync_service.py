@@ -67,10 +67,12 @@ def _inspection_has_existing_snapshot(inspection: TimeSeriesInspection) -> bool:
             inspection.topix_count > 0,
             inspection.stock_count > 0,
             inspection.indices_count > 0,
+            inspection.margin_count > 0,
             inspection.statements_count > 0,
             bool(inspection.topix_max),
             bool(inspection.stock_max),
             bool(inspection.indices_max),
+            bool(inspection.margin_max),
             bool(inspection.latest_statement_disclosed_date),
         )
     )

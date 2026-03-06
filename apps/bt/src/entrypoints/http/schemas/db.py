@@ -47,6 +47,13 @@ class IndicesStats(BaseModel):
     byCategory: dict[str, int] = Field(default_factory=dict)
 
 
+class MarginStats(BaseModel):
+    count: int = 0
+    uniqueStockCount: int = 0
+    dateCount: int = 0
+    dateRange: DateRange | None = None
+
+
 class PrimeCoverage(BaseModel):
     primeStocks: int = 0
     coveredStocks: int = 0
@@ -70,6 +77,7 @@ class MarketStatsResponse(BaseModel):
     stocks: StockStats
     stockData: StockDataStats
     indices: IndicesStats
+    margin: MarginStats = Field(default_factory=MarginStats)
     fundamentals: FundamentalsStats = Field(default_factory=FundamentalsStats)
     lastUpdated: str
 
@@ -97,6 +105,14 @@ class StockDataValidation(BaseModel):
     missingDatesCount: int = 0
 
 
+class MarginValidation(BaseModel):
+    count: int = 0
+    uniqueStockCount: int = 0
+    dateCount: int = 0
+    dateRange: DateRange | None = None
+    orphanCount: int = 0
+
+
 class FundamentalsValidation(BaseModel):
     count: int = 0
     uniqueStockCount: int = 0
@@ -116,6 +132,7 @@ class MarketValidationResponse(BaseModel):
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
+    margin: MarginValidation = Field(default_factory=MarginValidation)
     fundamentals: FundamentalsValidation = Field(default_factory=FundamentalsValidation)
     failedDates: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0

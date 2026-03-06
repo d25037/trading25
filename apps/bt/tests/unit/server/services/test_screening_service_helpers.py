@@ -432,7 +432,7 @@ class TestRuntimeEvaluationHelpers:
 
         assert service._load_multi_data(key) == {}  # noqa: SLF001
 
-    def test_load_multi_data_margin_and_loader_warnings_are_logged(
+    def test_load_multi_data_loader_warnings_are_logged(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ):
@@ -460,7 +460,6 @@ class TestRuntimeEvaluationHelpers:
         )
 
         assert service._load_multi_data(key) == {}  # noqa: SLF001
-        assert any("does not provide margin data" in message for message in logged)
         assert any("screening market loader warning: loader warning" in message for message in logged)
 
     def test_market_loader_wrappers_for_benchmark_sector_and_mapping(

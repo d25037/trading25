@@ -124,7 +124,7 @@ def is_signal_available_in_market_db(signal_name: str) -> bool:
     Returns:
         bool: 利用可能な場合True、利用不可の場合False
 
-    利用可能シグナル（OHLCV系 + benchmark_data）:
+    利用可能シグナル（OHLCV系 + benchmark_data + margin_data）:
         - volume, trading_value, trading_value_range
         - period_breakout, ma_breakout
         - crossover, bollinger_bands
@@ -133,10 +133,10 @@ def is_signal_available_in_market_db(signal_name: str) -> bool:
         - mean_reversion
         - buy_and_hold
         - beta (benchmark_data: topix_dataテーブルを使用)
+        - margin (margin_dataテーブルを使用)
 
     利用不可シグナル（外部データ必要）:
         - fundamental (statements_data必要)
-        - margin (margin_data必要)
         - index_daily_change (benchmark_data必要)
         - index_macd_histogram (benchmark_data必要)
     """
@@ -156,6 +156,7 @@ def is_signal_available_in_market_db(signal_name: str) -> bool:
         "mean_reversion",
         "buy_and_hold",
         "beta",  # topix_dataテーブルからベンチマークデータをロード
+        "margin",  # margin_dataテーブルから信用残データをロード
     }
 
     return signal_name in available_signals

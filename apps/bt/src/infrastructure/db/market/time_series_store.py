@@ -9,17 +9,20 @@ from typing import Any, Protocol, cast
 
 from loguru import logger
 
+
 class MarketTimeSeriesStore(Protocol):
     """時系列 publish/index インターフェース。"""
 
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> int: ...
 
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
+    def index_margin_data(self) -> None: ...
     def index_statements(self) -> None: ...
 
     def inspect(
@@ -58,6 +61,12 @@ class TimeSeriesInspection:
     indices_max: str | None = None
     indices_date_count: int = 0
     latest_indices_dates: dict[str, str] = field(default_factory=dict)
+    margin_count: int = 0
+    margin_min: str | None = None
+    margin_max: str | None = None
+    margin_date_count: int = 0
+    margin_codes: set[str] = field(default_factory=set)
+    margin_orphan_count: int = 0
     statements_count: int = 0
     latest_statement_disclosed_date: str | None = None
     statement_codes: set[str] = field(default_factory=set)
@@ -72,6 +81,7 @@ class DuckDbParquetTimeSeriesStore:
         # 高カーディナリティ表は export 時の全件 sort が支配的になりやすいため非ソートで出力する。
         "stock_data": _TableSpec("stock_data", "stock_data.parquet"),
         "indices_data": _TableSpec("indices_data", "indices_data.parquet"),
+        "margin_data": _TableSpec("margin_data", "margin_data.parquet"),
         "statements": _TableSpec("statements", "statements.parquet", "disclosed_date, code"),
     }
 
@@ -192,6 +202,17 @@ class DuckDbParquetTimeSeriesStore:
                     close DOUBLE,
                     sector_name TEXT,
                     created_at TEXT,
+                    PRIMARY KEY (code, date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS margin_data (
+                    code TEXT,
+                    date TEXT,
+                    long_margin_volume DOUBLE,
+                    short_margin_volume DOUBLE,
                     PRIMARY KEY (code, date)
                 )
                 """
@@ -370,6 +391,33 @@ class DuckDbParquetTimeSeriesStore:
             self._dirty_tables.add("indices_data")
         return len(rows)
 
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        values = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("long_margin_volume"),
+                row.get("short_margin_volume"),
+            )
+            for row in rows
+        ]
+        with self._lock:
+            self._conn.executemany(
+                """
+                INSERT INTO margin_data
+                    (code, date, long_margin_volume, short_margin_volume)
+                VALUES (?, ?, ?, ?)
+                ON CONFLICT (code, date) DO UPDATE
+                SET long_margin_volume = excluded.long_margin_volume,
+                    short_margin_volume = excluded.short_margin_volume
+                """,
+                values,
+            )
+            self._dirty_tables.add("margin_data")
+        return len(rows)
+
     def publish_statements(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
             return 0
@@ -409,6 +457,9 @@ class DuckDbParquetTimeSeriesStore:
 
     def index_indices_data(self) -> None:
         self._export_if_dirty("indices_data")
+
+    def index_margin_data(self) -> None:
+        self._export_if_dirty("margin_data")
 
     def index_statements(self) -> None:
         self._export_if_dirty("statements")
@@ -450,6 +501,19 @@ class DuckDbParquetTimeSeriesStore:
                 GROUP BY code
                 """
             ).fetchall()
+            margin_row_raw = self._conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS count,
+                    MIN(date) AS min_date,
+                    MAX(date) AS max_date,
+                    COUNT(DISTINCT date) AS date_count
+                FROM margin_data
+                """
+            ).fetchone()
+            margin_codes_rows = self._conn.execute(
+                "SELECT DISTINCT code FROM margin_data WHERE code IS NOT NULL"
+            ).fetchall()
             statements_row_raw = self._conn.execute(
                 """
                 SELECT
@@ -472,8 +536,26 @@ class DuckDbParquetTimeSeriesStore:
             topix_row = topix_row_raw if topix_row_raw is not None else (0, None, None)
             stock_row = stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
             indices_row = indices_row_raw if indices_row_raw is not None else (0, None, None, 0)
+            margin_row = margin_row_raw if margin_row_raw is not None else (0, None, None, 0)
             statements_row = statements_row_raw if statements_row_raw is not None else (0, None)
             missing_stock_dates_count = int(missing_count_row[0] or 0) if missing_count_row else 0
+            margin_codes = {
+                str(row[0])
+                for row in margin_codes_rows
+                if row and row[0]
+            }
+            margin_orphan_count = 0
+            if self._table_exists("stocks"):
+                margin_orphan_row = self._conn.execute(
+                    """
+                    SELECT COUNT(DISTINCT m.code)
+                    FROM margin_data m
+                    LEFT JOIN stocks s ON m.code = s.code
+                    WHERE m.code IS NOT NULL
+                      AND s.code IS NULL
+                    """
+                ).fetchone()
+                margin_orphan_count = int(margin_orphan_row[0] or 0) if margin_orphan_row else 0
 
             missing_stock_dates: list[str] = []
             if missing_stock_dates_limit > 0:
@@ -521,6 +603,12 @@ class DuckDbParquetTimeSeriesStore:
                 indices_max=cast(str | None, indices_row[2]),
                 indices_date_count=int(indices_row[3] or 0),
                 latest_indices_dates=latest_indices_dates,
+                margin_count=int(margin_row[0] or 0),
+                margin_min=cast(str | None, margin_row[1]),
+                margin_max=cast(str | None, margin_row[2]),
+                margin_date_count=int(margin_row[3] or 0),
+                margin_codes=margin_codes,
+                margin_orphan_count=margin_orphan_count,
                 statements_count=int(statements_row[0] or 0),
                 latest_statement_disclosed_date=cast(str | None, statements_row[1]),
                 statement_codes=statement_codes,
@@ -554,6 +642,18 @@ class DuckDbParquetTimeSeriesStore:
     @staticmethod
     def _quote_identifier(identifier: str) -> str:
         return '"' + identifier.replace('"', '""') + '"'
+
+    def _table_exists(self, table_name: str) -> bool:
+        row = self._conn.execute(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_name = ?
+            LIMIT 1
+            """,
+            [table_name],
+        ).fetchone()
+        return row is not None
 
     def _export_if_dirty(self, table_name: str) -> None:
         with self._lock:
