@@ -1,5 +1,5 @@
-import { BarChart3, Bell, Briefcase, FlaskConical, LineChart, Settings, TrendingUp } from 'lucide-react';
 import { useNavigate, useRouterState } from '@tanstack/react-router';
+import { BarChart3, Bell, Briefcase, Database, FlaskConical, LineChart, TrendingUp } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ThemeToggle } from '@/components/ui/theme-toggle';
 import { cn } from '@/lib/utils';
@@ -10,7 +10,7 @@ const navigationItems = [
   { path: '/indices', label: 'Indices', icon: TrendingUp },
   { path: '/analysis', label: 'Analysis', icon: BarChart3 },
   { path: '/backtest', label: 'Backtest', icon: FlaskConical },
-  { path: '/settings', label: 'Settings', icon: Settings },
+  { path: '/market-db', label: 'Market DB', icon: Database },
 ];
 
 export function Header() {
@@ -39,7 +39,7 @@ export function Header() {
         <nav className="flex items-center gap-1">
           {navigationItems.map((item) => {
             const Icon = item.icon;
-            const isActive = pathname === item.path;
+            const isActive = pathname === item.path || (item.path === '/market-db' && pathname === '/settings');
 
             return (
               <button
