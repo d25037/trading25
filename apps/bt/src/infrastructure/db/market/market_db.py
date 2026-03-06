@@ -876,21 +876,66 @@ class MarketDb:
             if row and row[0] and row[1] and row[2] is not None
         ]
 
-    def get_stocks_needing_refresh(self, limit: int = 20) -> list[str]:
-        """調整イベントがある銘柄のうち再取得が必要なもの。"""
-        if limit <= 0 or not self._table_exists("stock_data"):
+    @staticmethod
+    def _stocks_needing_refresh_query(select_clause: str) -> str:
+        return f"""
+            WITH latest_adjustment AS (
+                SELECT code, date AS adjustment_date, created_at AS adjustment_created_at
+                FROM (
+                    SELECT
+                        code,
+                        date,
+                        created_at,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY code
+                            ORDER BY date DESC, created_at DESC NULLS LAST
+                        ) AS rn
+                    FROM stock_data
+                    WHERE adjustment_factor IS NOT NULL
+                      AND adjustment_factor != 1.0
+                ) ranked
+                WHERE rn = 1
+            )
+            SELECT {select_clause}
+            FROM latest_adjustment latest
+            WHERE EXISTS (
+                SELECT 1
+                FROM stock_data history
+                WHERE history.code = latest.code
+                  AND history.date < latest.adjustment_date
+                  AND (
+                      latest.adjustment_created_at IS NULL
+                      OR history.created_at IS NULL
+                      OR history.created_at < latest.adjustment_created_at
+                  )
+            )
+        """
+
+    def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]:
+        """調整イベント後に履歴再取得が未完了な銘柄コードを返す。"""
+        if limit is not None and limit <= 0:
             return []
+        if not self._table_exists("stock_data"):
+            return []
+        sql = self._stocks_needing_refresh_query("latest.code")
+        params: list[Any] = []
+        if limit is not None:
+            sql += "\n            ORDER BY latest.code\n            LIMIT ?"
+            params.append(int(limit))
+        else:
+            sql += "\n            ORDER BY latest.code"
         rows = self._fetchall(
-            """
-            SELECT DISTINCT code
-            FROM stock_data
-            WHERE adjustment_factor IS NOT NULL
-              AND adjustment_factor != 1.0
-            LIMIT ?
-            """,
-            [int(limit)],
+            sql,
+            params,
         )
         return [str(row[0]) for row in rows if row and row[0]]
+
+    def get_stocks_needing_refresh_count(self) -> int:
+        """調整イベント後に履歴再取得が未完了な銘柄数を返す。"""
+        if not self._table_exists("stock_data"):
+            return 0
+        row = self._fetchone(self._stocks_needing_refresh_query("COUNT(*)"))
+        return int(row[0] or 0) if row else 0
 
     def get_stock_data_unique_date_count(self) -> int:
         """stock_data のユニーク日付数。"""

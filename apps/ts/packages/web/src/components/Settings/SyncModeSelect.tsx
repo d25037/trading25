@@ -13,6 +13,7 @@ const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }
   { value: 'initial', label: 'Initial', description: 'Rebuild DuckDB SoT from scratch' },
   { value: 'incremental', label: 'Incremental', description: 'Backfill missing dates and append latest market data' },
   { value: 'indices-only', label: 'Indices Only', description: 'Resync index series only (indices_data)' },
+  { value: 'repair', label: 'Repair Warnings', description: 'Bulk-fix adjustment refresh and Prime fundamentals warnings' },
 ];
 
 export function SyncModeSelect({ value, onChange, disabled }: SyncModeSelectProps) {
