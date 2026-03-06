@@ -8,9 +8,10 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Protocol
 
-from src.infrastructure.db.market.time_series_store import MarketTimeSeriesStore
-from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
+from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
+from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.entrypoints.http.schemas.db import (
     DateRange,
     FundamentalsStats,
@@ -23,7 +24,19 @@ from src.entrypoints.http.schemas.db import (
 )
 
 
-def _resolve_duckdb_size_bytes(time_series_store: MarketTimeSeriesStore) -> int:
+class MarketDbStatsLike(Protocol):
+    def is_initialized(self) -> bool: ...
+    def get_sync_metadata(self, key: str) -> str | None: ...
+    def get_stats(self) -> dict[str, int]: ...
+    def get_stock_count_by_market(self) -> dict[str, int]: ...
+    def get_prime_codes(self) -> set[str]: ...
+
+
+class TimeSeriesStoreStatsLike(Protocol):
+    def inspect(self) -> TimeSeriesInspection: ...
+
+
+def _resolve_duckdb_size_bytes(time_series_store: object) -> int:
     duckdb_path = getattr(time_series_store, "_duckdb_path", None)
     if not isinstance(duckdb_path, Path):
         return 0
@@ -34,9 +47,9 @@ def _resolve_duckdb_size_bytes(time_series_store: MarketTimeSeriesStore) -> int:
 
 
 def get_market_stats(
-    market_db: MarketDb,
+    market_db: MarketDbStatsLike,
     *,
-    time_series_store: MarketTimeSeriesStore,
+    time_series_store: TimeSeriesStoreStatsLike,
 ) -> MarketStatsResponse:
     """DuckDB 時系列 SoT と market metadata を統合した統計情報を返す。"""
     initialized = market_db.is_initialized()

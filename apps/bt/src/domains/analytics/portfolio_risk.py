@@ -12,6 +12,12 @@ import numpy as np
 from loguru import logger
 
 
+def _to_scalar_float(value: Any) -> float:
+    if isinstance(value, complex):
+        return float(value.real)
+    return float(value)
+
+
 def calculate_correlation_matrix(returns_df: pd.DataFrame) -> pd.DataFrame:
     """
     銘柄間の相関係数行列を計算
@@ -52,7 +58,7 @@ def calculate_portfolio_volatility(
 
     # ポートフォリオ分散 = w^T * Cov * w
     portfolio_variance_scalar = weights.dot(cov_matrix).dot(weights)
-    portfolio_variance = float(portfolio_variance_scalar.real) if hasattr(portfolio_variance_scalar, 'real') else float(portfolio_variance_scalar)  # type: ignore[union-attr]
+    portfolio_variance = _to_scalar_float(portfolio_variance_scalar)
 
     # 年率換算（252営業日）
     annual_volatility: float = np.sqrt(portfolio_variance * 252)
@@ -85,7 +91,7 @@ def calculate_risk_contribution(
 
     # ポートフォリオ分散
     portfolio_variance_scalar = weights.dot(cov_matrix).dot(weights)
-    portfolio_variance = float(portfolio_variance_scalar.real) if hasattr(portfolio_variance_scalar, 'real') else float(portfolio_variance_scalar)  # type: ignore[union-attr]
+    portfolio_variance = _to_scalar_float(portfolio_variance_scalar)
 
     # 各銘柄のリスク寄与度 = w_i * (Cov * w)_i / portfolio_variance
     marginal_risk = cov_matrix.dot(weights)

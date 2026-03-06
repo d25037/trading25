@@ -8,6 +8,8 @@ PRAGMA は event.listens_for で接続ごとに確実に設定される。
 
 from __future__ import annotations
 
+from typing import Any, cast
+
 from sqlalchemy import Engine, create_engine, event
 from sqlalchemy.pool import NullPool
 
@@ -45,7 +47,7 @@ class BaseDbAccess:
         # 全接続で PRAGMA を確実に設定（プール再利用時も）
         @event.listens_for(self._engine, "connect")
         def _set_pragmas(dbapi_conn: object, _connection_record: object) -> None:  # pyright: ignore[reportUnusedFunction]
-            cursor = dbapi_conn.cursor()  # type: ignore[union-attr]
+            cursor = cast(Any, dbapi_conn).cursor()
             cursor.execute("PRAGMA busy_timeout=30000")
             if not read_only:
                 cursor.execute("PRAGMA journal_mode=WAL")

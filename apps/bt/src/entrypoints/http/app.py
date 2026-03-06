@@ -8,7 +8,7 @@ import asyncio
 from contextlib import asynccontextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import AsyncGenerator
+from typing import Any, AsyncGenerator, cast
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.exceptions import RequestValidationError
@@ -249,7 +249,7 @@ def create_app() -> FastAPI:
     )
 
     # カスタム OpenAPI スキーマ（ErrorResponse 共通注入）
-    app.openapi = lambda: customize_openapi(app)  # type: ignore[assignment]
+    cast(Any, app).openapi = lambda: customize_openapi(app)
 
     # --- ミドルウェア登録（LIFO: 下から上に実行される） ---
 

@@ -6,6 +6,7 @@ import sys
 import types
 import time
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -45,7 +46,7 @@ def test_run_backtest_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
             }
 
         def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
-            return strategy_config["shared_config"]  # type: ignore[index]
+            return cast(dict[str, object], strategy_config.get("shared_config", {}))
 
         def get_output_directory(self, _strategy_config: dict[str, object]) -> Path:
             return tmp_path
@@ -93,7 +94,7 @@ def test_run_backtest_execution_error(monkeypatch: pytest.MonkeyPatch, tmp_path:
             return {"shared_config": {"dataset": "sample"}}
 
         def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
-            return strategy_config["shared_config"]  # type: ignore[index]
+            return cast(dict[str, object], strategy_config.get("shared_config", {}))
 
         def get_output_directory(self, _strategy_config: dict[str, object]) -> Path:
             return tmp_path

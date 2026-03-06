@@ -7,6 +7,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pandas as pd
 import pytest
@@ -152,7 +153,7 @@ class TestSortHelpers:
         by_date = service._sort_results([row1, row2], "matchedDate", "asc")  # noqa: SLF001
         by_code = service._sort_results([row2, row1], "stockCode", "desc")  # noqa: SLF001
         by_count = service._sort_results([row2, row1], "matchStrategyCount", "desc")  # noqa: SLF001
-        passthrough = service._sort_results([row1], "unknown", "asc")  # type: ignore[arg-type]  # noqa: SLF001
+        passthrough = service._sort_results([row1], cast(Any, "unknown"), "asc")  # noqa: SLF001
 
         assert [r.stockCode for r in by_date] == ["1002", "1001"]
         assert [r.stockCode for r in by_code] == ["1002", "1001"]
@@ -166,21 +167,25 @@ class TestDataLoadingHelpers:
         assert service._load_stock_universe([]) == []  # noqa: SLF001
 
     def test_load_stock_universe_deduplicates_normalized_codes(self):
-        reader = DummyReader()
-        reader.query = lambda _sql, _params=(): [  # type: ignore[assignment]
-            {
-                "code": "10010",
-                "company_name": "A",
-                "scale_category": "Small",
-                "sector_33_name": "情報・通信業",
-            },
-            {
-                "code": "1001",
-                "company_name": "A duplicate",
-                "scale_category": "Small",
-                "sector_33_name": "情報・通信業",
-            },
-        ]
+        class _Reader(DummyReader):
+            def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, str]]:
+                del sql, params
+                return [
+                    {
+                        "code": "10010",
+                        "company_name": "A",
+                        "scale_category": "Small",
+                        "sector_33_name": "情報・通信業",
+                    },
+                    {
+                        "code": "1001",
+                        "company_name": "A duplicate",
+                        "scale_category": "Small",
+                        "sector_33_name": "情報・通信業",
+                    },
+                ]
+
+        reader = _Reader()
         service = ScreeningService(reader)
 
         universe = service._load_stock_universe(["prime"])  # noqa: SLF001
@@ -583,8 +588,8 @@ class TestRuntimeEvaluationHelpers:
 
         entry = SignalParams()
         exit_ = SignalParams()
-        entry.fundamental.period_type = ""  # type: ignore[assignment]
-        exit_.fundamental.period_type = ""  # type: ignore[assignment]
+        entry.fundamental = entry.fundamental.model_copy(update={"period_type": ""})
+        exit_.fundamental = exit_.fundamental.model_copy(update={"period_type": ""})
         assert service._resolve_period_type(entry, exit_) == "FY"  # noqa: SLF001
 
         entry.fundamental.enabled = True

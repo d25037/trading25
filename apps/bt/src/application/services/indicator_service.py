@@ -8,7 +8,7 @@ Indicator Service
 from __future__ import annotations
 
 from datetime import date
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 from loguru import logger
@@ -100,12 +100,12 @@ class IndicatorService:
         }
 
         if timeframe == "weekly":
-            resampled = df.resample("W").agg(agg_rules).dropna(subset=["Close"])  # type: ignore[arg-type]
+            resampled = df.resample("W").agg(cast(Any, agg_rules)).dropna(subset=["Close"])
             resampled.index = resampled.index - pd.Timedelta(days=6)
             return resampled
 
         if timeframe == "monthly":
-            resampled = df.resample("ME").agg(agg_rules).dropna(subset=["Close"])  # type: ignore[arg-type]
+            resampled = df.resample("ME").agg(cast(Any, agg_rules)).dropna(subset=["Close"])
             resampled.index = resampled.index.to_period("M").to_timestamp()
             return resampled
 

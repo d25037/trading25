@@ -42,7 +42,8 @@ class DummyJQuantsClient:
 
 
 class DummyFailingJQuantsClient:
-    async def get_paginated(self, _path: str, _params: dict[str, str] | None = None) -> list[dict[str, Any]]:
+    async def get_paginated(self, path: str, params: dict[str, str] | None = None) -> list[dict[str, Any]]:
+        del path, params
         raise RuntimeError("network error")
 
 
@@ -75,7 +76,7 @@ async def test_refresh_stocks_skips_incomplete_ohlcv_rows() -> None:
         ]
     )
 
-    result = await refresh_stocks(["131A"], market_db, store, client)  # type: ignore[arg-type]
+    result = await refresh_stocks(["131A"], market_db, store, client)
 
     assert result.successCount == 1
     assert result.failedCount == 0
@@ -97,7 +98,7 @@ async def test_refresh_stocks_applies_topix_date_range_filter() -> None:
         ]
     )
 
-    result = await refresh_stocks(["7203"], market_db, store, client)  # type: ignore[arg-type]
+    result = await refresh_stocks(["7203"], market_db, store, client)
 
     assert result.successCount == 1
     assert result.failedCount == 0
@@ -116,7 +117,7 @@ async def test_refresh_stocks_handles_jquants_error() -> None:
         market_db,
         store,
         DummyFailingJQuantsClient(),
-    )  # type: ignore[arg-type]
+    )
 
     assert result.successCount == 0
     assert result.failedCount == 1

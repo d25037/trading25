@@ -24,6 +24,8 @@ from src.infrastructure.db.market.tables import (
     watchlists,
 )
 
+_UNSET = object()
+
 
 class PortfolioDb(BaseDbAccess):
     """portfolio.db CRUD"""
@@ -181,19 +183,22 @@ class PortfolioDb(BaseDbAccess):
                 )
             )
             portfolio_id = result.lastrowid
-        return self.get_portfolio(portfolio_id)  # type: ignore[return-value]
+        portfolio = self.get_portfolio(int(portfolio_id))
+        if portfolio is None:
+            raise RuntimeError("Failed to create portfolio row")
+        return portfolio
 
     def update_portfolio(
         self,
         portfolio_id: int,
         *,
         name: str | None = None,
-        description: str | None = ...,  # type: ignore[assignment]
+        description: str | None | object = _UNSET,
     ) -> Row[Any] | None:
         values: dict[str, Any] = {"updated_at": self._now()}
         if name is not None:
             values["name"] = name
-        if description is not ...:
+        if description is not _UNSET:
             values["description"] = description
         with self.engine.begin() as conn:
             conn.execute(
@@ -206,7 +211,7 @@ class PortfolioDb(BaseDbAccess):
             result = conn.execute(
                 delete(portfolios).where(portfolios.c.id == portfolio_id)
             )
-            return result.rowcount > 0  # type: ignore[union-attr]
+            return int(result.rowcount or 0) > 0
 
     # ===== Portfolio Items CRUD =====
 
@@ -255,7 +260,10 @@ class PortfolioDb(BaseDbAccess):
                 )
             )
             item_id = result.lastrowid
-        return self.get_item(item_id)  # type: ignore[return-value]
+        item = self.get_item(int(item_id))
+        if item is None:
+            raise RuntimeError("Failed to create portfolio item row")
+        return item
 
     def update_item(self, item_id: int, **kwargs: Any) -> Row[Any] | None:
         kwargs["updated_at"] = self._now()
@@ -270,7 +278,7 @@ class PortfolioDb(BaseDbAccess):
             result = conn.execute(
                 delete(portfolio_items).where(portfolio_items.c.id == item_id)
             )
-            return result.rowcount > 0  # type: ignore[union-attr]
+            return int(result.rowcount or 0) > 0
 
     def get_item_by_code(self, portfolio_id: int, code: str) -> Row[Any] | None:
         code = normalize_stock_code(code)
@@ -306,7 +314,7 @@ class PortfolioDb(BaseDbAccess):
             portfolio = self.create_portfolio(portfolio_name)
         existing = self.get_item_by_code(portfolio.id, code)
         if existing:
-            return self.update_item(  # type: ignore[return-value]
+            updated = self.update_item(
                 existing.id,
                 company_name=company_name,
                 quantity=quantity,
@@ -314,6 +322,9 @@ class PortfolioDb(BaseDbAccess):
                 purchase_date=purchase_date,
                 **kwargs,
             )
+            if updated is None:
+                raise RuntimeError("Failed to update portfolio item row")
+            return updated
         return self.add_item(
             portfolio.id,
             code,
@@ -444,7 +455,10 @@ class PortfolioDb(BaseDbAccess):
                 )
             )
             watchlist_id = result.lastrowid
-        return self.get_watchlist(watchlist_id)  # type: ignore[return-value]
+        watchlist = self.get_watchlist(int(watchlist_id))
+        if watchlist is None:
+            raise RuntimeError("Failed to create watchlist row")
+        return watchlist
 
     def update_watchlist(self, watchlist_id: int, **kwargs: Any) -> Row[Any] | None:
         kwargs["updated_at"] = self._now()
@@ -459,7 +473,7 @@ class PortfolioDb(BaseDbAccess):
             result = conn.execute(
                 delete(watchlists).where(watchlists.c.id == watchlist_id)
             )
-            return result.rowcount > 0  # type: ignore[union-attr]
+            return int(result.rowcount or 0) > 0
 
     # ===== Watchlist Items =====
 
@@ -494,13 +508,16 @@ class PortfolioDb(BaseDbAccess):
             )
             item_id = result.lastrowid
         with self.engine.connect() as conn:
-            return conn.execute(  # type: ignore[return-value]
+            row = conn.execute(
                 select(watchlist_items).where(watchlist_items.c.id == item_id)
             ).fetchone()
+            if row is None:
+                raise RuntimeError("Failed to create watchlist item row")
+            return row
 
     def delete_watchlist_item(self, item_id: int) -> bool:
         with self.engine.begin() as conn:
             result = conn.execute(
                 delete(watchlist_items).where(watchlist_items.c.id == item_id)
             )
-            return result.rowcount > 0  # type: ignore[union-attr]
+            return int(result.rowcount or 0) > 0

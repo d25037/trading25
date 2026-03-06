@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import json
 import math
 import os
@@ -13,7 +14,7 @@ import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from fastapi.testclient import TestClient
 from loguru import logger
@@ -151,11 +152,11 @@ def set_runtime_env(data_root: Path, runtime_root: Path) -> None:
 
 
 def query_counts(db_path: Path) -> dict[str, int]:
-    import duckdb  # type: ignore[import-not-found]
+    duckdb = importlib.import_module("duckdb")
 
     tables = ("stocks", "stock_data", "topix_data", "indices_data", "statements")
     counts: dict[str, int] = {}
-    conn = duckdb.connect(str(db_path), read_only=True)
+    conn = cast(Any, duckdb).connect(str(db_path), read_only=True)
     try:
         for table in tables:
             row = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()

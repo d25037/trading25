@@ -86,15 +86,8 @@ default:
             "src.domains.lab_agent.evaluator.data_preparation.Path",
             return_value=yaml_file,
         ):
-            # Need to patch the Path constructor
-            from src.domains.lab_agent.evaluator import data_preparation
-            original = data_preparation.Path
-            data_preparation.Path = lambda x: yaml_file  # type: ignore
-            try:
-                config = load_default_shared_config()
-                assert config.get("initial_cash") == 5000000
-            finally:
-                data_preparation.Path = original
+            config = load_default_shared_config()
+            assert config.get("initial_cash") == 5000000
 
 
 class TestBatchPreparedData:

@@ -397,13 +397,17 @@ def test_compute_shapley_permutation_path() -> None:
         assert player["sharpe_ratio"] == pytest.approx(1.0)
 
 
-def test_load_parameters_uses_runner_when_hook_absent() -> None:
+def test_load_parameters_uses_runner_when_hook_absent(monkeypatch: pytest.MonkeyPatch) -> None:
     built_parameters = {"shared_config": {"dataset": "sample"}}
     analyzer = SignalAttributionAnalyzer(
         strategy_name="production/demo",
         config_override={"shared_config": {"initial_cash": 123}},
     )
-    analyzer._runner.build_parameters_for_strategy = lambda strategy, config_override: built_parameters  # type: ignore[assignment]
+    monkeypatch.setattr(
+        analyzer._runner,
+        "build_parameters_for_strategy",
+        lambda strategy, config_override: built_parameters,
+    )
 
     loaded = analyzer._load_parameters()
     loaded["shared_config"]["dataset"] = "changed"

@@ -662,7 +662,7 @@ def test_move_strategy_rename_oserror_raises(tmp_path, monkeypatch):
 
     original_rename = Path.rename
 
-    def _raise_oserror(self: Path, target: Path):  # type: ignore[override]
+    def _raise_oserror(self: Path, target: str | Path) -> Path:
         if self == source_path:
             raise OSError("disk full")
         return original_rename(self, target)

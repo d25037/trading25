@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import tempfile
+from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -13,6 +14,10 @@ from src.entrypoints.http.app import create_app
 from src.entrypoints.http.schemas.job import JobStatus
 from src.application.services.dataset_builder_service import DatasetJobData, DatasetResult
 from src.application.services.generic_job_manager import JobInfo
+
+
+def _dataset_resolver(client: TestClient) -> Any:
+    return cast(Any, client.app.state).dataset_resolver
 
 
 @pytest.fixture
@@ -44,7 +49,7 @@ def test_create_dataset_existing_no_overwrite(client: TestClient) -> None:
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     try:
-        resolver = client.app.state.dataset_resolver  # type: ignore[union-attr]
+        resolver = _dataset_resolver(client)
         resolver.get_db_path.return_value = path
 
         resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
@@ -55,7 +60,7 @@ def test_create_dataset_existing_no_overwrite(client: TestClient) -> None:
 
 
 def test_create_dataset_success(client: TestClient) -> None:
-    resolver = client.app.state.dataset_resolver  # type: ignore[union-attr]
+    resolver = _dataset_resolver(client)
     resolver.get_db_path.return_value = "/nonexistent/test.db"
 
     mock_job = MagicMock()
@@ -77,7 +82,7 @@ def test_create_dataset_success(client: TestClient) -> None:
 
 
 def test_create_dataset_conflict(client: TestClient) -> None:
-    resolver = client.app.state.dataset_resolver  # type: ignore[union-attr]
+    resolver = _dataset_resolver(client)
     resolver.get_db_path.return_value = "/nonexistent/test.db"
 
     with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
@@ -92,7 +97,7 @@ def test_create_dataset_conflict(client: TestClient) -> None:
 
 
 def test_resume_dataset_not_found(client: TestClient) -> None:
-    resolver = client.app.state.dataset_resolver  # type: ignore[union-attr]
+    resolver = _dataset_resolver(client)
     resolver.get_db_path.return_value = "/nonexistent/test.db"
 
     resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
@@ -103,7 +108,7 @@ def test_resume_dataset_success(client: TestClient) -> None:
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     try:
-        resolver = client.app.state.dataset_resolver  # type: ignore[union-attr]
+        resolver = _dataset_resolver(client)
         resolver.get_db_path.return_value = path
 
         mock_job = MagicMock()

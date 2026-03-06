@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 import random
+from typing import Any
 
 from src.domains.lab_agent.models import StrategyCandidate
 from src.domains.lab_agent.signal_augmentation import (
@@ -30,14 +32,14 @@ class DeterministicRng:
     def uniform(self, a: float, b: float) -> float:  # noqa: ARG002
         return (a + b) / 2.0
 
-    def choice(self, seq):  # type: ignore[no-untyped-def]
+    def choice(self, seq: Sequence[Any]) -> Any:
         return seq[0]
 
 
 class PreferDividendGrowthRng(DeterministicRng):
     """fundamental選択時に dividend_per_share_growth を優先する乱数"""
 
-    def choice(self, seq):  # type: ignore[no-untyped-def]
+    def choice(self, seq: Sequence[Any]) -> Any:
         if "dividend_per_share_growth" in seq:
             return "dividend_per_share_growth"
         return seq[0]

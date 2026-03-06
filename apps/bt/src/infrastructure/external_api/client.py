@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, TypeVar
+from typing import Any, TypeVar, cast
 
 import httpx
 from pydantic import BaseModel
@@ -164,7 +164,7 @@ class BaseAPIClient:
 
             response = self.client.request(**request_kwargs)
             self._handle_response_error(response)
-            return response.json()  # type: ignore[no-any-return]
+            return cast(dict[str, Any] | list[dict[str, Any]], response.json())
         except httpx.TimeoutException as e:
             raise APITimeoutError(f"Request timeout: {path}") from e
         except httpx.ConnectError as e:

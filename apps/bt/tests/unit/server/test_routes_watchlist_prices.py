@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 import duckdb
 from pathlib import Path
 
@@ -41,20 +42,20 @@ def market_db_path(tmp_path: Path) -> str:
 
 
 @pytest.fixture()
-def pdb(tmp_path: Path) -> PortfolioDb:
+def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
     db = PortfolioDb(str(tmp_path / "portfolio.db"))
-    yield db  # type: ignore[misc]
+    yield db
     db.close()
 
 
 @pytest.fixture()
-def client(pdb: PortfolioDb, market_db_path: str) -> TestClient:
+def client(pdb: PortfolioDb, market_db_path: str) -> Generator[TestClient, None, None]:
     app = create_app()
     app.state.portfolio_db = pdb
     reader = MarketDbReader(market_db_path)
     app.state.market_reader = reader
     c = TestClient(app, raise_server_exceptions=False)
-    yield c  # type: ignore[misc]
+    yield c
     reader.close()
 
 

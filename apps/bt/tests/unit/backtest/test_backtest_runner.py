@@ -243,14 +243,16 @@ def test_backtest_runner_raises_when_html_missing(monkeypatch, tmp_path: Path):
     runner = BacktestRunner()
 
     class _MissingHtmlExecutor(_FakeExecutor):
-        def execute_notebook(  # type: ignore[override]
+        def execute_notebook(
             self,
             template_path: str,
-            parameters: dict,
-            strategy_name: str,
+            parameters: dict[str, Any],
+            strategy_name: str | None = None,
+            output_filename: str | None = None,
+            timeout: int = 600,
             extra_env: dict[str, str] | None = None,
-        ):
-            _ = (template_path, parameters, strategy_name, extra_env)
+        ) -> Path:
+            _ = (template_path, parameters, strategy_name, output_filename, timeout, extra_env)
             return Path(self.output_dir) / "missing.html"
 
     monkeypatch.setattr(

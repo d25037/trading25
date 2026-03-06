@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from pathlib import Path
 from types import SimpleNamespace
+from typing import Any, cast
 
 import pytest
 
@@ -358,7 +359,7 @@ def test_prefetch_data_skips_benchmark_when_not_requested(monkeypatch):
 
 def test_grid_may_enable_forecast_signals_returns_false_for_non_dict_ranges():
     engine = _make_engine()
-    engine.parameter_ranges = []  # type: ignore[assignment]
+    engine.parameter_ranges = cast(Any, [])
 
     assert engine._grid_may_enable_forecast_signals() is False
 

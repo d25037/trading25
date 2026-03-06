@@ -33,8 +33,8 @@ def test_needs_data_requirement_matches_prefix_and_enabled_checker() -> None:
 def test_resolve_period_type_defaults_to_fy() -> None:
     entry = SignalParams()
     exit_ = SignalParams()
-    entry.fundamental.period_type = ""  # type: ignore[assignment]
-    exit_.fundamental.period_type = ""  # type: ignore[assignment]
+    entry.fundamental = entry.fundamental.model_copy(update={"period_type": ""})
+    exit_.fundamental = exit_.fundamental.model_copy(update={"period_type": ""})
 
     assert resolve_period_type(entry, exit_) == "FY"
 
@@ -42,7 +42,7 @@ def test_resolve_period_type_defaults_to_fy() -> None:
 def test_resolve_period_type_prefers_explicit_fundamental_setting() -> None:
     entry = SignalParams()
     exit_ = SignalParams()
-    entry.fundamental.period_type = ""  # type: ignore[assignment]
+    entry.fundamental = entry.fundamental.model_copy(update={"period_type": ""})
     exit_.fundamental.period_type = "2Q"
 
     assert resolve_period_type(entry, exit_) == "2Q"

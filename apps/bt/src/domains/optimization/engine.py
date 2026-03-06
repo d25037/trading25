@@ -10,6 +10,7 @@ import threading
 import signal
 from contextlib import contextmanager
 from collections.abc import Iterator
+from types import FrameType
 from typing import Any, Callable, Dict, List, Optional, Tuple, TypeVar
 
 import pandas as pd
@@ -44,7 +45,7 @@ T = TypeVar("T")
 
 
 @contextmanager
-def _timeout_guard(seconds: int) -> Iterator[None]:  # type: ignore[override]
+def _timeout_guard(seconds: int) -> Iterator[None]:
     """指定秒数でTimeoutErrorを発生させるガード（UNIXシグナルベース）"""
     if seconds <= 0:
         yield
@@ -53,7 +54,7 @@ def _timeout_guard(seconds: int) -> Iterator[None]:  # type: ignore[override]
         yield
         return
 
-    def _handler(signum, frame):  # type: ignore[override]
+    def _handler(signum: int, frame: FrameType | None) -> None:  # noqa: ARG001
         raise TimeoutError(f"Optimization step timed out after {seconds} seconds")
 
     previous_handler = signal.signal(signal.SIGALRM, _handler)

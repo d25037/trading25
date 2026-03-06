@@ -115,7 +115,10 @@ def evaluate_single_candidate(
 
         # 勝率・トレード数
         try:
-            trades = portfolio.trades.records_readable  # type: ignore[attr-defined]
+            trades_obj = getattr(portfolio, "trades", None)
+            trades = getattr(trades_obj, "records_readable", None)
+            if trades is None:
+                raise ValueError("trades.records_readable is unavailable")
             if len(trades) > 0:
                 win_rate = float((trades["Return"] > 0).mean())
                 trade_count = len(trades)

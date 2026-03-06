@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Generator
 import duckdb
 from pathlib import Path
 
@@ -31,13 +32,13 @@ def _create_market_db(path: str) -> None:
 
 
 @pytest.fixture()
-def service(tmp_path: Path) -> WatchlistPricesService:
+def service(tmp_path: Path) -> Generator[WatchlistPricesService, None, None]:
     market_path = str(tmp_path / "market.duckdb")
     _create_market_db(market_path)
     reader = MarketDbReader(market_path)
     pdb = PortfolioDb(str(tmp_path / "portfolio.db"))
     svc = WatchlistPricesService(reader, pdb)
-    yield svc  # type: ignore[misc]
+    yield svc
     reader.close()
     pdb.close()
 

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 
@@ -27,11 +27,11 @@ def compute_margin_long_pressure(
         av = avg_vol.get(idx)
         if pd.isna(av) or av == 0:
             continue
-        nm = float(net_margin[idx])  # type: ignore[arg-type]
+        nm = float(cast(Any, net_margin[idx]))
         if pd.isna(nm):
             continue
-        lv = float(margin_df.at[idx, "longMarginVolume"])  # type: ignore[arg-type]
-        sv = float(margin_df.at[idx, "shortMarginVolume"])  # type: ignore[arg-type]
+        lv = float(cast(Any, margin_df.at[idx, "longMarginVolume"]))
+        sv = float(cast(Any, margin_df.at[idx, "shortMarginVolume"]))
         records.append(
             {
                 "date": _format_date(idx),
@@ -63,12 +63,12 @@ def compute_margin_flow_pressure(
         d = delta.get(idx)
         if pd.isna(av) or av == 0 or pd.isna(d):
             continue
-        prev_val = float(prev_net_margin[idx])  # type: ignore[arg-type]
+        prev_val = float(cast(Any, prev_net_margin[idx]))
         records.append(
             {
                 "date": _format_date(idx),
                 "flowPressure": round(float(d) / float(av), 4),
-                "currentNetMargin": int(float(net_margin[idx])),  # type: ignore[arg-type]
+                "currentNetMargin": int(float(cast(Any, net_margin[idx]))),
                 "previousNetMargin": int(prev_val) if not pd.isna(prev_val) else None,
                 "avgVolume": round(float(av), 2),
             }
@@ -129,8 +129,8 @@ def compute_margin_volume_ratio(
         if avg_vol is None or avg_vol == 0:
             continue
 
-        lv = float(margin_df.at[idx, "longMarginVolume"])  # type: ignore[arg-type]
-        sv = float(margin_df.at[idx, "shortMarginVolume"])  # type: ignore[arg-type]
+        lv = float(cast(Any, margin_df.at[idx, "longMarginVolume"]))
+        sv = float(cast(Any, margin_df.at[idx, "shortMarginVolume"]))
         if pd.isna(lv) or pd.isna(sv):
             continue
         avg_vol_f = float(avg_vol)

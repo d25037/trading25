@@ -10,9 +10,11 @@
 - 並列処理: ThreadPoolExecutorで銘柄レベル並列化
 """
 
+from __future__ import annotations
+
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from threading import Lock
-from typing import Any
+from typing import Any, cast
 
 import pandas as pd
 import vectorbt as vbt
@@ -164,7 +166,7 @@ def calculate_signal_for_stock(
     signal_name: str,
     signal_params: dict[str, Any],
     benchmark_data: pd.DataFrame | None = None,
-) -> tuple[pd.Series, float | None]:  # type: ignore[type-arg]
+) -> tuple[pd.Series[Any], float | None]:
     """
     特定銘柄のシグナル計算（型安全性・パラメータ検証強化版）
 
@@ -193,7 +195,7 @@ def calculate_signal_for_stock(
             # Pydanticモデルでパラメータ検証
             validated_params = VolumeSignalParamsValidated(**signal_params)
 
-            result: pd.Series = volume_signal(  # type: ignore[type-arg]
+            result: pd.Series[Any] = volume_signal(
                 volume=stock_data["Volume"],
                 direction=validated_params.direction,
                 threshold=validated_params.threshold,
@@ -214,7 +216,7 @@ def calculate_signal_for_stock(
                 else stock_data["Low"]
             )
 
-            result_pb: pd.Series = period_breakout_signal(  # type: ignore[type-arg]
+            result_pb: pd.Series[Any] = period_breakout_signal(
                 price=price,
                 period=validated_params_pb.period,
                 direction=validated_params_pb.direction,
@@ -227,7 +229,7 @@ def calculate_signal_for_stock(
             # Pydanticモデルでパラメータ検証
             validated_params_bb = BollingerBandsParamsValidated(**signal_params)
 
-            result_bb: pd.Series = bollinger_bands_signal(  # type: ignore[type-arg]
+            result_bb: pd.Series[Any] = bollinger_bands_signal(
                 ohlc_data=stock_data,
                 window=validated_params_bb.window,
                 alpha=validated_params_bb.alpha,  # YAMLキー'alpha'と一致
@@ -239,7 +241,7 @@ def calculate_signal_for_stock(
             # Pydanticモデルでパラメータ検証
             validated_params_co = CrossoverParamsValidated(**signal_params)
 
-            result_co: pd.Series = indicator_crossover_signal(  # type: ignore[type-arg]
+            result_co: pd.Series[Any] = indicator_crossover_signal(
                 close=stock_data["Close"],
                 indicator_type=validated_params_co.type,
                 fast_period=validated_params_co.fast_period,
@@ -254,7 +256,7 @@ def calculate_signal_for_stock(
             # Pydanticモデルでパラメータ検証
             validated_params_rsi = RSIThresholdParamsValidated(**signal_params)
 
-            result_rsi: pd.Series = rsi_threshold_signal(  # type: ignore[type-arg]
+            result_rsi: pd.Series[Any] = rsi_threshold_signal(
                 close=stock_data["Close"],
                 period=validated_params_rsi.period,
                 threshold=validated_params_rsi.threshold,
@@ -267,7 +269,7 @@ def calculate_signal_for_stock(
             validated_params_tv = TradingValueSignalParamsValidated(**signal_params)
 
             # 売買代金シグナル計算
-            result_tv: pd.Series = trading_value_signal(  # type: ignore[type-arg]
+            result_tv: pd.Series[Any] = trading_value_signal(
                 close=stock_data["Close"],
                 volume=stock_data["Volume"],
                 direction=validated_params_tv.direction,
@@ -295,7 +297,7 @@ def calculate_signal_for_stock(
             )
 
             # 売買代金範囲シグナル計算
-            result_tvr: pd.Series = trading_value_range_signal(  # type: ignore[type-arg]
+            result_tvr: pd.Series[Any] = trading_value_range_signal(
                 close=stock_data["Close"],
                 volume=stock_data["Volume"],
                 period=validated_params_tvr.period,
@@ -398,7 +400,7 @@ def _process_single_stock(
     company_name: str,
     strategies_signals: dict[str, dict[str, dict[str, Any]]],
     target_dates_str: list[str],
-    target_dates_dt: pd.Index,  # type: ignore[type-arg]
+    target_dates_dt: pd.Index[Any],
     benchmark_data: pd.DataFrame | None,
 ) -> dict[str, dict[str, list[dict[str, Any]]]]:
     """
@@ -417,7 +419,7 @@ def _process_single_stock(
         dict: {戦略名: {日付: [銘柄情報]}}
     """
     results: dict[str, dict[str, list[dict[str, Any]]]] = {}
-    signal_cache: dict[str, tuple[pd.Series, float | None]] = {}  # type: ignore[type-arg]
+    signal_cache: dict[str, tuple[pd.Series[Any], float | None]] = {}
 
     for strategy_name, signals in strategies_signals.items():
         results[strategy_name] = {date: [] for date in target_dates_str}
@@ -467,8 +469,8 @@ def _process_single_stock(
                     result_item: dict[str, Any] = {
                         "code": code,
                         "company_name": company_name,
-                        "close": float(stock_df.loc[date_dt, "Close"]),  # type: ignore[arg-type]
-                        "volume": int(stock_df.loc[date_dt, "Volume"]),  # type: ignore[arg-type]
+                        "close": float(cast(Any, stock_df.at[date_dt, "Close"])),
+                        "volume": int(cast(Any, stock_df.at[date_dt, "Volume"])),
                     }
                     if beta_value is not None:
                         result_item["beta"] = beta_value

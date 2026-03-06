@@ -2,6 +2,8 @@
 MarketDataService Unit Tests
 """
 
+from typing import cast
+
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
@@ -111,7 +113,7 @@ class TestGetStockOhlcv:
                     }
                 ]
 
-        svc = MarketDataService(MockReader())  # type: ignore[arg-type]
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
         result = svc.get_stock_ohlcv("285A")
         assert result is not None
         assert result[0].date == "2024-01-15"

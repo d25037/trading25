@@ -222,7 +222,7 @@ class BacktestExecutorMixin:
             if self.max_exposure is not None:
                 portfolio_kwargs["max_size"] = self.max_exposure
 
-            return vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
+            return vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
 
         # シングル銘柄戦略: 従来通り
         portfolio_kwargs = dict(
@@ -243,7 +243,7 @@ class BacktestExecutorMixin:
         if self.max_exposure is not None:
             portfolio_kwargs["max_size"] = self.max_exposure
 
-        return vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
+        return vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
 
     def run_multi_backtest_from_cached_signals(
         self: "StrategyProtocol",
@@ -413,36 +413,45 @@ class BacktestExecutorMixin:
                 and relative_data_dict is not None
                 and execution_data_dict is not None
             ):
+                relative_stock_data = relative_data_dict.get(stock_code)
+                execution_stock_data = execution_data_dict.get(stock_code)
+                if relative_stock_data is None or execution_stock_data is None:
+                    self._log(
+                        f"{stock_code}: Relative Mode データが不足しているためスキップします",
+                        "warning",
+                    )
+                    continue
+
                 # Relative Mode: 相対価格データでシグナル生成、実際の価格データでポートフォリオ実行
                 signal_data = cast(
                     pd.DataFrame,
-                    relative_data_dict[stock_code]["daily"],  # type: ignore[index]
+                    relative_stock_data["daily"],
                 )  # シグナル用相対データ
                 execution_data = cast(
                     pd.DataFrame,
-                    execution_data_dict[stock_code]["daily"],  # type: ignore[index]
+                    execution_stock_data["daily"],
                 )  # 実行用実データ
 
                 # margin_dataを取得（利用可能な場合）
                 margin_data = None
                 if (
                     self.include_margin_data
-                    and "margin_daily" in execution_data_dict[stock_code]  # type: ignore[index]
+                    and "margin_daily" in execution_stock_data
                 ):
                     margin_data = cast(
                         pd.DataFrame,
-                        execution_data_dict[stock_code]["margin_daily"],  # type: ignore[index]
+                        execution_stock_data["margin_daily"],
                     )
 
                 # statements_dataの取得
                 statements_data = None
                 if (
                     self.include_statements_data
-                    and "statements_daily" in execution_data_dict[stock_code]  # type: ignore[index]
+                    and "statements_daily" in execution_stock_data
                 ):
                     statements_data = cast(
                         pd.DataFrame,
-                        execution_data_dict[stock_code]["statements_daily"],  # type: ignore[index]
+                        execution_stock_data["statements_daily"],
                     )
 
                 # 相対価格データでシグナル生成（実価格データも渡す）
@@ -657,7 +666,7 @@ class BacktestExecutorMixin:
         if self.max_exposure is not None:
             portfolio_kwargs["max_size"] = self.max_exposure
 
-        portfolio = vbt.Portfolio.from_signals(**portfolio_kwargs)  # type: ignore[arg-type]
+        portfolio = vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
 
         self.portfolio = portfolio
         self._log("個別ポートフォリオ作成完了", "info")
@@ -678,7 +687,8 @@ class BacktestExecutorMixin:
             true_cols = row[row].index.tolist()
             drop_cols = true_cols[max_positions:]
             if drop_cols:
-                limited.loc[idx, drop_cols] = False  # type: ignore[index]
+                for column in drop_cols:
+                    limited.at[cast(Any, idx), cast(Any, column)] = False
         return limited
 
     def run_optimized_backtest(

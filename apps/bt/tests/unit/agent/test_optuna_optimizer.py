@@ -1,6 +1,7 @@
 """optuna_optimizer.py のテスト"""
 
 from types import SimpleNamespace
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pandas as pd
@@ -294,7 +295,7 @@ class TestOptimizeFlow:
             ]
         )
 
-        overrides, top_trials = optimizer._build_stage2_local_search_space(study)  # type: ignore[arg-type]
+        overrides, top_trials = optimizer._build_stage2_local_search_space(cast(Any, study))
 
         assert overrides == {}
         assert top_trials == []
@@ -335,7 +336,7 @@ class TestOptimizeFlow:
         ]
         study = SimpleNamespace(trials=trials)
 
-        overrides, top_trials = optimizer._build_stage2_local_search_space(study)  # type: ignore[arg-type]
+        overrides, top_trials = optimizer._build_stage2_local_search_space(cast(Any, study))
 
         assert len(top_trials) == 3
         assert "entry_volume_short_period" in overrides
@@ -365,7 +366,7 @@ class TestOptimizeFlow:
             "entry_volume_threshold": (1.0, 2.0, "float"),
         }
 
-        optimizer._enqueue_stage2_seed_trials(study, top_trials, overrides)  # type: ignore[arg-type]
+        optimizer._enqueue_stage2_seed_trials(cast(Any, study), cast(Any, top_trials), overrides)
 
         study.enqueue_trial.assert_called_once()
         seeded = study.enqueue_trial.call_args.args[0]

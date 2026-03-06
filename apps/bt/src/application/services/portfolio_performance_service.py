@@ -141,12 +141,12 @@ class PortfolioPerformanceService:
             warnings=warnings,
         )
 
-    def _empty_response(self, portfolio: object, warnings: list[str]) -> PortfolioPerformanceResponse:
+    def _empty_response(self, portfolio: Row[Any], warnings: list[str]) -> PortfolioPerformanceResponse:
         """空のポートフォリオ用レスポンス"""
         return PortfolioPerformanceResponse(
-            portfolioId=portfolio.id,  # type: ignore[union-attr]
-            portfolioName=portfolio.name,  # type: ignore[union-attr]
-            portfolioDescription=portfolio.description,  # type: ignore[union-attr]
+            portfolioId=portfolio.id,
+            portfolioName=portfolio.name,
+            portfolioDescription=portfolio.description,
             summary=PerformanceSummary(
                 totalCost=0.0, currentValue=0.0, totalPnL=0.0, returnRate=0.0
             ),
@@ -172,7 +172,7 @@ class PortfolioPerformanceService:
         daily_returns_by_code: dict[str, list[tuple[str, float]]] = {}
 
         for item in items:
-            code4 = item.code  # type: ignore[union-attr]
+            code4 = item.code
             prices = self._reader.get_stock_prices_by_date(code4)
             if len(prices) >= 2:
                 returns = calculate_daily_returns(prices)

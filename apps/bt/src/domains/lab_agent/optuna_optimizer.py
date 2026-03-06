@@ -21,17 +21,6 @@ if TYPE_CHECKING:
     from optuna.pruners import BasePruner
     from optuna.samplers import BaseSampler
 
-# ランタイムではtry-exceptでインポート
-try:
-    import optuna as optuna_runtime
-    from optuna.pruners import MedianPruner, NopPruner
-    from optuna.samplers import CmaEsSampler, RandomSampler, TPESampler
-
-    OPTUNA_AVAILABLE = True
-except ImportError:
-    OPTUNA_AVAILABLE = False
-    optuna_runtime = None  # type: ignore
-
 from src.infrastructure.data_access.mode import data_access_mode_context
 from src.infrastructure.data_access.loaders.data_preparation import prepare_multi_data
 from src.infrastructure.data_access.loaders.index_loaders import load_topix_data
@@ -46,6 +35,22 @@ from .param_constraints import apply_param_dependency_constraints
 from .signal_filters import is_signal_allowed
 from .signal_augmentation import apply_random_add_structure
 from .signal_search_space import CATEGORICAL_PARAMS, PARAM_RANGES, ParamType
+
+# ランタイムではtry-exceptでインポート
+try:
+    import optuna as optuna_runtime
+    from optuna.pruners import MedianPruner, NopPruner
+    from optuna.samplers import CmaEsSampler, RandomSampler, TPESampler
+
+    OPTUNA_AVAILABLE = True
+except ImportError:
+    OPTUNA_AVAILABLE = False
+    optuna_runtime: Any | None = None
+    TPESampler: Any | None = None
+    RandomSampler: Any | None = None
+    CmaEsSampler: Any | None = None
+    NopPruner: Any | None = None
+    MedianPruner: Any | None = None
 
 
 class OptunaOptimizer:
@@ -680,27 +685,34 @@ class OptunaOptimizer:
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna is not available")
         seed = self.config.seed
+        if TPESampler is None or RandomSampler is None or CmaEsSampler is None:
+            raise ImportError("Optuna samplers are unavailable")
         if self.config.sampler == "tpe":
-            return TPESampler(seed=seed)  # type: ignore[possibly-unbound]
+            return cast(Any, TPESampler(seed=seed))
         elif self.config.sampler == "random":
-            return RandomSampler(seed=seed)  # type: ignore[possibly-unbound]
+            return cast(Any, RandomSampler(seed=seed))
         elif self.config.sampler == "cmaes":
-            return CmaEsSampler(seed=seed)  # type: ignore[possibly-unbound]
+            return cast(Any, CmaEsSampler(seed=seed))
         else:
-            return TPESampler(seed=seed)  # type: ignore[possibly-unbound]
+            return cast(Any, TPESampler(seed=seed))
 
     def _create_pruner(self) -> BasePruner:
         """Pruner を作成する。"""
         if not OPTUNA_AVAILABLE:
             raise ImportError("Optuna is not available")
+        if NopPruner is None or MedianPruner is None:
+            raise ImportError("Optuna pruners are unavailable")
         if not self.config.pruning:
-            return NopPruner()  # type: ignore[possibly-unbound]
+            return cast(Any, NopPruner())
 
         startup_trials = max(5, min(20, self.config.n_trials // 10))
-        return MedianPruner(  # type: ignore[possibly-unbound]
-            n_startup_trials=startup_trials,
-            n_warmup_steps=0,
-            interval_steps=1,
+        return cast(
+            Any,
+            MedianPruner(
+                n_startup_trials=startup_trials,
+                n_warmup_steps=0,
+                interval_steps=1,
+            ),
         )
 
     def _prepare_prefetched_data(self) -> None:

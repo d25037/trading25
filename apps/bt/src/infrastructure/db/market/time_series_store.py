@@ -137,14 +137,14 @@ class DuckDbParquetTimeSeriesStore:
         self._parquet_dir.mkdir(parents=True, exist_ok=True)
 
         try:
-            import duckdb  # type: ignore[import-not-found]
+            duckdb = __import__("duckdb")
         except ModuleNotFoundError as exc:
             raise RuntimeError(
                 "DuckDB backend requested but `duckdb` package is not installed. "
                 "Install duckdb and retry."
             ) from exc
 
-        self._conn = duckdb.connect(str(self._duckdb_path))
+        self._conn = cast(Any, duckdb).connect(str(self._duckdb_path))
         # app state で共有されるため、sync 書き込みと stats/validate 読み取りを直列化する。
         self._lock = RLock()
         self._dirty_tables: set[str] = set()

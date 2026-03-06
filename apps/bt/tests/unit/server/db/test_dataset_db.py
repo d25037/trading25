@@ -4,6 +4,7 @@ Tests for DatasetDb
 
 from __future__ import annotations
 
+from collections.abc import Generator
 import sqlite3
 from pathlib import Path
 
@@ -108,15 +109,15 @@ def _create_test_db(tmp_path: Path) -> str:
 
 
 @pytest.fixture()
-def ds_db(tmp_path: Path) -> DatasetDb:
+def ds_db(tmp_path: Path) -> Generator[DatasetDb, None, None]:
     db_path = _create_test_db(tmp_path)
     db = DatasetDb(db_path)
-    yield db  # type: ignore[misc]
+    yield db
     db.close()
 
 
 @pytest.fixture()
-def legacy_ds_db(tmp_path: Path) -> DatasetDb:
+def legacy_ds_db(tmp_path: Path) -> Generator[DatasetDb, None, None]:
     """旧 statements スキーマ（配当/配当性向予想カラムなし）の DatasetDb。"""
     db_path = tmp_path / "legacy-dataset.db"
     conn = sqlite3.connect(db_path)
@@ -162,7 +163,7 @@ def legacy_ds_db(tmp_path: Path) -> DatasetDb:
 
 
 @pytest.fixture()
-def invalid_schema_ds_db(tmp_path: Path) -> DatasetDb:
+def invalid_schema_ds_db(tmp_path: Path) -> Generator[DatasetDb, None, None]:
     """必須列が不足した statements スキーマ（破損想定）。"""
     db_path = tmp_path / "invalid-schema.db"
     conn = sqlite3.connect(db_path)

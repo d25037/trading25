@@ -41,7 +41,7 @@ class DummyStore:
 
 
 def test_resolve_duckdb_size_bytes_returns_zero_when_path_is_missing() -> None:
-    size = db_stats_service._resolve_duckdb_size_bytes(  # type: ignore[arg-type]
+    size = db_stats_service._resolve_duckdb_size_bytes(
         DummyStore(TimeSeriesInspection(source="duckdb-parquet"))
     )
     assert size == 0
@@ -51,7 +51,7 @@ def test_resolve_duckdb_size_bytes_returns_file_size(tmp_path: Path) -> None:
     duckdb_file = tmp_path / "market.duckdb"
     duckdb_file.write_bytes(b"abcde")
 
-    size = db_stats_service._resolve_duckdb_size_bytes(  # type: ignore[arg-type]
+    size = db_stats_service._resolve_duckdb_size_bytes(
         DummyStore(TimeSeriesInspection(source="duckdb-parquet"), duckdb_path=duckdb_file)
     )
     assert size == 5
@@ -69,7 +69,7 @@ def test_resolve_duckdb_size_bytes_handles_oserror(
 
     monkeypatch.setattr(Path, "exists", _raise_exists)
 
-    size = db_stats_service._resolve_duckdb_size_bytes(  # type: ignore[arg-type]
+    size = db_stats_service._resolve_duckdb_size_bytes(
         DummyStore(TimeSeriesInspection(source="duckdb-parquet"), duckdb_path=duckdb_file)
     )
     assert size == 0
@@ -89,9 +89,9 @@ def test_get_market_stats_handles_empty_ranges_and_prime_codes() -> None:
     )
     store = DummyStore(inspection)
 
-    result = db_stats_service.get_market_stats(  # type: ignore[arg-type]
+    result = db_stats_service.get_market_stats(
         market_db=market_db,
-        time_series_store=store,  # type: ignore[arg-type]
+        time_series_store=store,
     )
 
     assert result.timeSeriesSource == "duckdb-parquet"

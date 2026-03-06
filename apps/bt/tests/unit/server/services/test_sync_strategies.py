@@ -8,7 +8,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult
+from src.application.services.jquants_bulk_service import BulkFetchPlan, BulkFetchResult, BulkFileInfo
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.application.services.sync_strategies import (
@@ -92,11 +92,12 @@ class DummyMarketDb:
         return dict(self.latest_indices_data_dates)
 
     def get_index_master_codes(self) -> set[str]:
-        return {
-            row.get("code")
-            for row in self.index_master_rows
-            if row.get("code")
-        }
+        codes: set[str] = set()
+        for row in self.index_master_rows:
+            code = row.get("code")
+            if code is not None:
+                codes.add(str(code))
+        return codes
 
     def get_latest_statement_disclosed_date(self) -> str | None:
         if not self.statements_rows:
@@ -373,12 +374,12 @@ def _build_ctx(
     resolved_on_progress = on_progress or (lambda *_: None)
     resolved_store = time_series_store or DummyTimeSeriesStore(market_db)
     return SyncContext(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=resolved_cancelled,
         on_progress=resolved_on_progress,
-        time_series_store=resolved_store,  # type: ignore[arg-type]
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        time_series_store=resolved_store,
+        bulk_service=bulk_service,
         bulk_probe_disabled=bulk_probe_disabled,
         enforce_bulk_for_stock_data=enforce_bulk_for_stock_data,
     )
@@ -682,6 +683,14 @@ class _PlanOnlyClient:
     def __init__(self, plan: str) -> None:
         self.plan = plan
 
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        del path, params
+        return {"data": []}
+
+    async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        del path, params
+        return []
+
 
 class _PlanOnlyBulkService:
     def __init__(self, plan: BulkFetchPlan | Exception) -> None:
@@ -760,11 +769,11 @@ async def test_plan_fetch_method_probes_bulk_even_if_plan_hint_is_free() -> None
     )
     bulk_service = _PlanOnlyBulkService(bulk_plan)
     ctx = _build_ctx(
-        client=_PlanOnlyClient("free"),  # type: ignore[arg-type]
-        market_db=DummyMarketDb(),  # type: ignore[arg-type]
+        client=_PlanOnlyClient("free"),
+        market_db=DummyMarketDb(),
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_service=bulk_service,
         bulk_probe_disabled=False,
     )
 
@@ -785,11 +794,11 @@ async def test_plan_fetch_method_probes_bulk_even_if_plan_hint_is_free() -> None
 async def test_plan_fetch_method_disables_future_probe_after_bulk_probe_failure() -> None:
     bulk_service = _PlanOnlyBulkService(RuntimeError("bulk list forbidden"))
     ctx = _build_ctx(
-        client=_PlanOnlyClient("free"),  # type: ignore[arg-type]
-        market_db=DummyMarketDb(),  # type: ignore[arg-type]
+        client=_PlanOnlyClient("free"),
+        market_db=DummyMarketDb(),
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_service=bulk_service,
         bulk_probe_disabled=False,
     )
 
@@ -826,11 +835,11 @@ async def test_plan_fetch_method_requires_bulk_even_when_rest_estimate_is_small(
     )
     bulk_service = _PlanOnlyBulkService(bulk_plan)
     ctx = _build_ctx(
-        client=_PlanOnlyClient("premium"),  # type: ignore[arg-type]
-        market_db=DummyMarketDb(),  # type: ignore[arg-type]
+        client=_PlanOnlyClient("premium"),
+        market_db=DummyMarketDb(),
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_service=bulk_service,
         bulk_probe_disabled=False,
     )
 
@@ -859,8 +868,8 @@ async def test_incremental_sync_handles_mixed_date_formats() -> None:
         progresses.append((stage, current, total, message))
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=on_progress,
     )
@@ -905,11 +914,11 @@ async def test_incremental_sync_does_not_fallback_to_sqlite_anchor_when_duckdb_h
     store = DummyTimeSeriesStore(market_db, inspection)
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        time_series_store=store,  # type: ignore[arg-type]
+        time_series_store=store,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -929,11 +938,11 @@ async def test_incremental_sync_fails_when_duckdb_inspection_raises() -> None:
         TimeSeriesInspection(source="duckdb-parquet"),
     )
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        time_series_store=store,  # type: ignore[arg-type]
+        time_series_store=store,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -947,8 +956,8 @@ async def test_incremental_sync_fails_when_time_series_store_is_missing() -> Non
     market_db = DummyMarketDb(latest_trading_date="20260206")
     client = DummyClient()
     ctx = SyncContext(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
         time_series_store=None,
@@ -966,8 +975,8 @@ async def test_incremental_sync_uses_stock_data_anchor_when_topix_is_ahead() -> 
     client = DummyClient()
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1005,11 +1014,11 @@ async def test_incremental_sync_uses_timeseries_inspection_anchor_when_sqlite_is
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        time_series_store=store,  # type: ignore[arg-type]
+        time_series_store=store,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -1041,11 +1050,11 @@ async def test_incremental_sync_bootstraps_when_timeseries_store_is_empty() -> N
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        time_series_store=store,  # type: ignore[arg-type]
+        time_series_store=store,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -1068,8 +1077,8 @@ async def test_incremental_sync_skips_rows_with_missing_ohlcv() -> None:
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1094,8 +1103,8 @@ async def test_incremental_sync_skips_index_rows_with_missing_date() -> None:
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1118,8 +1127,8 @@ async def test_incremental_sync_supplements_indices_with_date_based_discovery() 
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1144,8 +1153,8 @@ async def test_incremental_sync_indices_bulk_result_matches_rest_discovery(
     rest_market_db = DummyMarketDb(latest_trading_date="20260206")
     rest_client = DummyClient(indices_quotes=indices_quotes)
     rest_ctx = _build_ctx(
-        client=rest_client,  # type: ignore[arg-type]
-        market_db=rest_market_db,  # type: ignore[arg-type]
+        client=rest_client,
+        market_db=rest_market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1196,11 +1205,11 @@ async def test_incremental_sync_indices_bulk_result_matches_rest_discovery(
     monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
 
     bulk_ctx = _build_ctx(
-        client=bulk_client,  # type: ignore[arg-type]
-        market_db=bulk_market_db,  # type: ignore[arg-type]
+        client=bulk_client,
+        market_db=bulk_market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_service=bulk_service,
     )
     bulk_result = await IncrementalSyncStrategy().execute(bulk_ctx)
     assert bulk_result.success
@@ -1233,8 +1242,8 @@ async def test_incremental_sync_fallback_inserts_missing_master_for_fk_compatibi
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1264,8 +1273,8 @@ async def test_incremental_sync_rechecks_anchor_date_for_index_discovery() -> No
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1281,18 +1290,19 @@ async def test_incremental_sync_rechecks_anchor_date_for_index_discovery() -> No
 
 @pytest.mark.asyncio
 async def test_incremental_sync_works_without_last_sync_metadata() -> None:
-    market_db = DummyMarketDb()
+    class _NoLastSyncMarketDb(DummyMarketDb):
+        def get_sync_metadata(self, key: str) -> str | None:
+            if key == METADATA_KEYS["LAST_SYNC_DATE"]:
+                return None
+            return self.metadata.get(key)
+
+    market_db = _NoLastSyncMarketDb()
     market_db.metadata = {}
-
-    def _no_last_sync(key: str) -> str | None:
-        return None if key == METADATA_KEYS["LAST_SYNC_DATE"] else market_db.metadata.get(key)
-
-    market_db.get_sync_metadata = _no_last_sync  # type: ignore[method-assign]
     client = DummyClient()
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1313,8 +1323,8 @@ async def test_incremental_sync_cancelled_before_start() -> None:
     cancelled.set()
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=cancelled,
         on_progress=lambda *_: None,
     )
@@ -1328,15 +1338,16 @@ async def test_incremental_sync_cancelled_before_start() -> None:
 @pytest.mark.asyncio
 async def test_incremental_sync_handles_unexpected_topix_exception() -> None:
     market_db = DummyMarketDb()
-    client = DummyClient()
 
-    async def _raise(*_args: Any, **_kwargs: Any) -> list[dict[str, Any]]:
-        raise RuntimeError("topix fail")
+    class _TopixFailingClient(DummyClient):
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            del path, params
+            raise RuntimeError("topix fail")
 
-    client.get_paginated = _raise  # type: ignore[method-assign]
+    client = _TopixFailingClient()
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1381,8 +1392,8 @@ async def test_indices_only_sync_collects_errors_and_continues_other_codes(
     progresses: list[tuple[str, int, int, str]] = []
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda stage, current, total, msg: progresses.append((stage, current, total, msg)),
     )
@@ -1408,7 +1419,15 @@ async def test_indices_only_sync_uses_bulk_when_selected(
 
     bulk_plan = BulkFetchPlan(
         endpoint="/indices/bars/daily",
-        files=[{"id": "indices-2026-02-10", "date": "2026-02-10", "size": 1024}],
+        files=[
+            BulkFileInfo(
+                key="indices-2026-02-10.csv.gz",
+                last_modified="2026-02-10T00:00:00Z",
+                size=1024,
+                range_start=None,
+                range_end=None,
+            )
+        ],
         list_api_calls=1,
         estimated_api_calls=3,
         estimated_cache_hits=0,
@@ -1458,11 +1477,11 @@ async def test_indices_only_sync_uses_bulk_when_selected(
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda stage, current, total, message: progresses.append((stage, current, total, message)),
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_service=bulk_service,
     )
 
     result = await IndicesOnlySyncStrategy().execute(ctx)
@@ -1482,8 +1501,8 @@ async def test_indices_only_sync_cancelled_immediately() -> None:
     cancelled = asyncio.Event()
     cancelled.set()
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=cancelled,
         on_progress=lambda *_: None,
     )
@@ -1510,8 +1529,8 @@ async def test_indices_only_sync_cancelled_during_loop() -> None:
             return [{"Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11}]
 
     ctx = _build_ctx(
-        client=_Client(),  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=_Client(),
+        market_db=market_db,
         cancelled=cancelled,
         on_progress=lambda *_: None,
     )
@@ -1538,8 +1557,8 @@ async def test_indices_only_sync_handles_seed_exception(
             return []
 
     ctx = _build_ctx(
-        client=_Client(),  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=_Client(),
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1557,8 +1576,8 @@ async def test_initial_sync_breaks_after_consecutive_failures_and_sets_metadata(
     client = InitialSyncClient(topix_dates=topix_dates, fail_stock_dates=set(topix_dates))
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1582,8 +1601,8 @@ async def test_initial_sync_success_path_without_failed_dates() -> None:
     client = InitialSyncClient(topix_dates=topix_dates)
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1651,8 +1670,8 @@ async def test_initial_sync_stock_data_uses_bulk_when_selected(
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1708,8 +1727,8 @@ async def test_initial_sync_stock_data_bulk_failure_falls_back_to_rest(
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1765,8 +1784,8 @@ async def test_initial_sync_stock_data_bulk_failure_raises_when_bulk_enforced(
 
     progress_messages: list[str] = []
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda _stage, _current, _total, message: progress_messages.append(message),
         enforce_bulk_for_stock_data=True,
@@ -1786,8 +1805,8 @@ async def test_initial_sync_with_empty_topix_and_empty_master() -> None:
     client = InitialSyncClient(topix_dates=[], master_rows=[])
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1811,8 +1830,8 @@ async def test_initial_sync_returns_cancelled_when_flag_set_during_stock_loop() 
             cancelled.set()
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=cancelled,
         on_progress=on_progress,
     )
@@ -1831,8 +1850,8 @@ async def test_initial_sync_cancelled_before_start() -> None:
     cancelled.set()
 
     ctx = _build_ctx(
-        client=InitialSyncClient(topix_dates=["2026-02-10"]),  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=InitialSyncClient(topix_dates=["2026-02-10"]),
+        market_db=market_db,
         cancelled=cancelled,
         on_progress=lambda *_: None,
     )
@@ -1863,8 +1882,8 @@ async def test_incremental_sync_without_anchor_date_and_with_stock_master_update
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1882,8 +1901,8 @@ async def test_incremental_sync_collects_stock_daily_fetch_errors() -> None:
     client = DummyClient(daily_error_dates={"2026-02-06", "2026-02-10"})
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1932,8 +1951,8 @@ async def test_initial_sync_fundamentals_fetches_prime_only_and_handles_paginati
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -1972,8 +1991,8 @@ async def test_initial_sync_fundamentals_retries_with_4digit_code_when_5digit_fa
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -2038,8 +2057,8 @@ async def test_incremental_sync_fundamentals_date_and_missing_prime_backfill(
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -2142,11 +2161,11 @@ async def test_incremental_sync_fundamentals_bulk_date_phase_keeps_code_backfill
     monkeypatch.setattr("src.application.services.sync_strategies._plan_fetch_method", _plan_stub)
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
-        bulk_service=bulk_service,  # type: ignore[arg-type]
+        bulk_service=bulk_service,
     )
 
     result = await IncrementalSyncStrategy().execute(ctx)
@@ -2194,8 +2213,8 @@ async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
     )
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -2242,8 +2261,8 @@ async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata
     monkeypatch.setattr("src.application.services.sync_strategies._build_incremental_date_targets", _capture)
 
     ctx = _build_ctx(
-        client=client,  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=client,
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -2498,6 +2517,14 @@ async def test_fetch_fins_summary_by_code_returns_empty_when_all_candidates_empt
 @pytest.mark.asyncio
 async def test_get_paginated_rows_with_call_count_uses_meta_when_available() -> None:
     class _ClientWithMeta:
+        async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+            del path, params
+            return {"data": []}
+
+        async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+            del path, params
+            return []
+
         async def get_paginated_with_meta(
             self,
             path: str,
@@ -2509,7 +2536,7 @@ async def test_get_paginated_rows_with_call_count_uses_meta_when_available() -> 
             return ([{"code": "72030"}], 3)
 
     rows, calls = await _get_paginated_rows_with_call_count(
-        _ClientWithMeta(),  # type: ignore[arg-type]
+        _ClientWithMeta(),
         "/fins/summary",
         params={"code": "72030"},
     )
@@ -2524,15 +2551,18 @@ async def test_get_paginated_rows_with_call_count_falls_back_without_meta() -> N
         async def get_paginated(
             self,
             path: str,
-            *,
             params: dict[str, Any] | None = None,
         ) -> list[dict[str, Any]]:
             assert path == "/prices/daily_quotes"
             assert params == {"date": "20260210"}
             return [{"Date": "2026-02-10"}]
 
+        async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+            del path, params
+            return {"data": []}
+
     rows, calls = await _get_paginated_rows_with_call_count(
-        _ClientWithoutMeta(),  # type: ignore[arg-type]
+        _ClientWithoutMeta(),
         "/prices/daily_quotes",
         params={"date": "20260210"},
     )
@@ -2544,8 +2574,8 @@ async def test_get_paginated_rows_with_call_count_falls_back_without_meta() -> N
 @pytest.mark.asyncio
 async def test_plan_fetch_method_uses_rest_when_rest_estimate_is_too_small() -> None:
     ctx = _build_ctx(
-        client=DummyClient(),  # type: ignore[arg-type]
-        market_db=DummyMarketDb(),  # type: ignore[arg-type]
+        client=DummyClient(),
+        market_db=DummyMarketDb(),
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
         bulk_probe_disabled=False,
@@ -2574,8 +2604,8 @@ def test_to_iso_date_text_handles_fast_paths_and_invalid_input() -> None:
 def test_get_bulk_service_initializes_once_and_reuses_instance() -> None:
     market_db = DummyMarketDb()
     ctx = _build_ctx(
-        client=DummyClient(),  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=DummyClient(),
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
@@ -2595,8 +2625,8 @@ def test_inspect_time_series_rejects_non_duckdb_source() -> None:
         inspection=TimeSeriesInspection(source="sqlite"),
     )
     ctx = _build_ctx(
-        client=DummyClient(),  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=DummyClient(),
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
         time_series_store=bad_store,
@@ -2610,8 +2640,8 @@ def test_inspect_time_series_rejects_non_duckdb_source() -> None:
 async def test_publish_helpers_return_zero_when_rows_empty() -> None:
     market_db = DummyMarketDb()
     ctx = _build_ctx(
-        client=DummyClient(),  # type: ignore[arg-type]
-        market_db=market_db,  # type: ignore[arg-type]
+        client=DummyClient(),
+        market_db=market_db,
         cancelled=asyncio.Event(),
         on_progress=lambda *_: None,
     )
