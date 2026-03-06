@@ -8,8 +8,8 @@ POST /api/db/stocks/refresh のビジネスロジック。
 from __future__ import annotations
 
 import asyncio
-from datetime import UTC, datetime
 from collections.abc import Callable
+from datetime import UTC, datetime
 from typing import Any, Protocol
 
 from loguru import logger
@@ -51,6 +51,7 @@ async def refresh_stocks(
     jquants_client: StockRefreshClientLike,
     *,
     progress_callback: Callable[[int, int, str], None] | None = None,
+    cancel_check: Callable[[], bool] | None = None,
 ) -> RefreshResponse:
     """銘柄データを再取得"""
     total_calls = 0
@@ -58,6 +59,7 @@ async def refresh_stocks(
     results: list[RefreshStockResult] = []
     errors: list[str] = []
     any_rows_published = False
+    cancelled = False
     unique_codes = list(dict.fromkeys(codes))
     total_codes = len(unique_codes)
 
@@ -67,6 +69,11 @@ async def refresh_stocks(
     max_date = inspection.topix_max
 
     for index, code in enumerate(unique_codes, start=1):
+        if cancel_check is not None and cancel_check():
+            cancelled = True
+            if progress_callback is not None:
+                progress_callback(index - 1, total_codes, f"Cancelled stock refresh before stock {index}/{total_codes}")
+            break
         normalized = normalize_stock_code(code)
         expanded = expand_stock_code(normalized)
         if progress_callback is not None:
@@ -77,6 +84,12 @@ async def refresh_stocks(
                 params={"code": expanded},
             )
             total_calls += 1
+
+            if cancel_check is not None and cancel_check():
+                cancelled = True
+                if progress_callback is not None:
+                    progress_callback(index - 1, total_codes, f"Cancelled stock refresh after fetching stock {index}/{total_codes}: {normalized}")
+                break
 
             # TOPIX 日付範囲でフィルタ
             rows: list[dict[str, Any]] = []
@@ -107,7 +120,12 @@ async def refresh_stocks(
                 )
 
             stored = 0
-            if rows:
+            if cancel_check is not None and cancel_check():
+                cancelled = True
+                if progress_callback is not None:
+                    progress_callback(index - 1, total_codes, f"Cancelled stock refresh before publishing stock {index}/{total_codes}: {normalized}")
+                break
+            elif rows:
                 stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
                 any_rows_published = True
             total_stored += stored
@@ -131,7 +149,13 @@ async def refresh_stocks(
                 progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
 
     if any_rows_published:
-        await asyncio.to_thread(time_series_store.index_stock_data)
+        try:
+            await asyncio.to_thread(time_series_store.index_stock_data)
+        except Exception as e:
+            logger.warning("Stock refresh index failed: {}", e)
+            errors.append(f"stock_data index: {e}")
+    if cancelled:
+        errors.append("Cancelled")
 
     # Update metadata
     now_iso = datetime.now(UTC).isoformat()

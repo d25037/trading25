@@ -2287,6 +2287,54 @@ async def test_repair_sync_refreshes_adjustment_stocks_and_backfills_fundamental
 
 
 @pytest.mark.asyncio
+async def test_repair_sync_stops_after_cancel_during_stock_refresh(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(
+        latest_trading_date="20260206",
+        stocks_needing_refresh=["7203", "6758"],
+    )
+    market_db._prime_codes = {"7203", "6758"}
+    market_db.topix_rows = [
+        {"date": "2026-02-05", "open": 100.0, "high": 101.0, "low": 99.0, "close": 100.0},
+        {"date": "2026-02-06", "open": 101.0, "high": 102.0, "low": 100.0, "close": 101.0},
+    ]
+    client = DummyClient(
+        daily_quotes=[
+            {"Code": "72030", "Date": "2026-02-05", "O": 10.0, "H": 11.0, "L": 9.0, "C": 10.0, "Vo": 1000, "AdjFactor": 1.0},
+            {"Code": "72030", "Date": "2026-02-06", "O": 5.0, "H": 6.0, "L": 4.0, "C": 5.0, "Vo": 1000, "AdjFactor": 0.5},
+        ],
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    cancelled = asyncio.Event()
+
+    def _on_progress(stage: str, current: int, total: int, message: str) -> None:
+        del current, total
+        if stage == "stock_refresh" and message.startswith("Refreshed stock 1/2"):
+            cancelled.set()
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=cancelled,
+        on_progress=_on_progress,
+    )
+
+    result = await RepairSyncStrategy().execute(ctx)
+
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
+    assert len(client.calls) == 1
+    assert {row["code"] for row in market_db.stock_rows} == {"7203"}
+    assert market_db.statements_rows == []
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_fundamentals_uses_latest_disclosed_when_metadata_missing(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

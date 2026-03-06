@@ -1861,6 +1861,7 @@ class RepairSyncStrategy:
                     _require_time_series_store(ctx),
                     ctx.client,
                     progress_callback=_on_refresh_progress,
+                    cancel_check=ctx.cancelled.is_set,
                 )
                 total_calls += refresh_result.totalApiCalls
                 stocks_updated = refresh_result.successCount

@@ -113,6 +113,24 @@ interface RepairTargets {
   failedFundamentalsCodes: number;
 }
 
+type FundamentalsValidationSnapshot = NonNullable<MarketValidationResponse['fundamentals']>;
+
+const EMPTY_FUNDAMENTALS_VALIDATION: FundamentalsValidationSnapshot = {
+  count: 0,
+  uniqueStockCount: 0,
+  latestDisclosedDate: null,
+  missingPrimeStocksCount: 0,
+  missingPrimeStocks: [],
+  failedDatesCount: 0,
+  failedCodesCount: 0,
+};
+
+function getFundamentalsValidation(
+  dbValidation: MarketValidationResponse | undefined
+): FundamentalsValidationSnapshot {
+  return dbValidation?.fundamentals ?? EMPTY_FUNDAMENTALS_VALIDATION;
+}
+
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {
     case 'warning':
@@ -135,6 +153,8 @@ function buildSnapshotItems(
   dbStats: MarketStatsResponse,
   dbValidation: MarketValidationResponse
 ): SnapshotItem[] {
+  const fundamentals = getFundamentalsValidation(dbValidation);
+
   return [
     { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
     { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
@@ -146,17 +166,19 @@ function buildSnapshotItems(
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
-    { label: 'Missing Prime Fundamentals', value: dbValidation.fundamentals.missingPrimeStocksCount ?? 0 },
+    { label: 'Missing Prime Fundamentals', value: fundamentals.missingPrimeStocksCount },
     { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
   ];
 }
 
 function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
+  const fundamentals = getFundamentalsValidation(dbValidation);
+
   return {
     stocksNeedingRefresh: dbValidation?.stocksNeedingRefreshCount ?? 0,
-    missingPrimeFundamentals: dbValidation?.fundamentals.missingPrimeStocksCount ?? 0,
-    failedFundamentalsDates: dbValidation?.fundamentals.failedDatesCount ?? 0,
-    failedFundamentalsCodes: dbValidation?.fundamentals.failedCodesCount ?? 0,
+    missingPrimeFundamentals: fundamentals.missingPrimeStocksCount,
+    failedFundamentalsDates: fundamentals.failedDatesCount,
+    failedFundamentalsCodes: fundamentals.failedCodesCount,
   };
 }
 
@@ -310,6 +332,192 @@ function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
   );
 }
 
+interface DatabaseSyncSectionProps {
+  syncMode: SyncMode;
+  onSyncModeChange: (mode: SyncMode) => void;
+  enforceBulkForStockData: boolean;
+  onEnforceBulkChange: (checked: boolean) => void;
+  isRunning: boolean;
+  isStarting: boolean;
+  onStartSync: () => void;
+  errorMessage: string | null;
+}
+
+function DatabaseSyncSection({
+  syncMode,
+  onSyncModeChange,
+  enforceBulkForStockData,
+  onEnforceBulkChange,
+  isRunning,
+  isStarting,
+  onStartSync,
+  errorMessage,
+}: DatabaseSyncSectionProps) {
+  return (
+    <Card>
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          <CardTitle>Database Sync</CardTitle>
+        </div>
+        <CardDescription>
+          Synchronize J-Quants market data into DuckDB SoT. Use incremental to resume interrupted syncs.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <SyncModeSelect value={syncMode} onChange={onSyncModeChange} disabled={isRunning || isStarting} />
+        <div className="flex items-center justify-between rounded-md border p-3">
+          <div className="space-y-1">
+            <Label htmlFor="enforce-stock-bulk">Enforce BULK for stock_data</Label>
+            <p className="text-xs text-muted-foreground">
+              When enabled, stock_data sync fails if BULK is unavailable (no REST fallback).
+            </p>
+          </div>
+          <Switch
+            id="enforce-stock-bulk"
+            checked={enforceBulkForStockData}
+            onCheckedChange={onEnforceBulkChange}
+            disabled={isRunning || isStarting}
+          />
+        </div>
+
+        <SyncActionButton isRunning={isRunning} isStarting={isStarting} onClick={onStartSync} />
+
+        {errorMessage && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{errorMessage}</div>}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface WarningRecoverySectionProps {
+  repairTargets: RepairTargets;
+  isValidationLoading: boolean;
+  isRunning: boolean;
+  isStarting: boolean;
+  onRepairWarnings: () => void;
+}
+
+function WarningRecoverySection({
+  repairTargets,
+  isValidationLoading,
+  isRunning,
+  isStarting,
+  onRepairWarnings,
+}: WarningRecoverySectionProps) {
+  const canRepair = hasRepairTargets(repairTargets);
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <Database className="h-5 w-5" />
+          <CardTitle>Warning Recovery</CardTitle>
+        </div>
+        <CardDescription>
+          Resolve DuckDB snapshot warnings in one async job without entering individual stock codes.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+          <div>
+            <span className="text-muted-foreground">Stocks needing refresh:</span>
+            <span className="ml-2 font-medium">{repairTargets.stocksNeedingRefresh}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Missing Prime fundamentals:</span>
+            <span className="ml-2 font-medium">{repairTargets.missingPrimeFundamentals}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Failed fundamentals dates:</span>
+            <span className="ml-2 font-medium">{repairTargets.failedFundamentalsDates}</span>
+          </div>
+          <div>
+            <span className="text-muted-foreground">Failed fundamentals codes:</span>
+            <span className="ml-2 font-medium">{repairTargets.failedFundamentalsCodes}</span>
+          </div>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill Prime fundamentals.
+        </p>
+        <Button onClick={onRepairWarnings} disabled={isRunning || isStarting || !canRepair} className="w-full">
+          {isStarting || isRunning ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Repair Job in Progress...
+            </>
+          ) : canRepair ? (
+            'Repair Warnings'
+          ) : (
+            'No Repairs Needed'
+          )}
+        </Button>
+        {!canRepair && !isValidationLoading ? (
+          <p className="text-xs text-muted-foreground">No bulk warning-repair targets were found in the latest snapshot.</p>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+interface ManualStockRefreshSectionProps {
+  refreshCodesInput: string;
+  refreshInputError: string | null;
+  refreshErrorMessage: string | null;
+  refreshResult: MarketRefreshResponse | null;
+  isRefreshing: boolean;
+  onRefreshCodesInputChange: (value: string) => void;
+  onRefreshStocks: () => void;
+}
+
+function ManualStockRefreshSection({
+  refreshCodesInput,
+  refreshInputError,
+  refreshErrorMessage,
+  refreshResult,
+  isRefreshing,
+  onRefreshCodesInputChange,
+  onRefreshStocks,
+}: ManualStockRefreshSectionProps) {
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <div className="flex items-center gap-2">
+          <RotateCcw className="h-5 w-5" />
+          <CardTitle>Stock Refresh (Manual)</CardTitle>
+        </div>
+        <CardDescription>
+          Re-fetch specific DuckDB stock series when you need a one-off repair outside the bulk warning flow.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-3">
+        <Input
+          placeholder="e.g. 7203, 6758, 9984"
+          value={refreshCodesInput}
+          onChange={(e) => onRefreshCodesInputChange(e.target.value)}
+          disabled={isRefreshing}
+        />
+        <p className="text-xs text-muted-foreground">
+          Accepts comma/space/newline separated 4-digit codes, up to 50 at once.
+        </p>
+        <Button onClick={onRefreshStocks} disabled={isRefreshing} className="w-full">
+          {isRefreshing ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Refreshing...
+            </>
+          ) : (
+            'Refresh Stocks'
+          )}
+        </Button>
+
+        {refreshInputError && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshInputError}</div>}
+        {refreshErrorMessage && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshErrorMessage}</div>}
+        {refreshResult && <RefreshResultTable result={refreshResult} />}
+      </CardContent>
+    </Card>
+  );
+}
+
 export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
   const [enforceBulkForStockData, setEnforceBulkForStockData] = useState(false);
@@ -359,7 +567,8 @@ export function SettingsPage() {
     refetch: refetchDbValidation,
   } = useDbValidation({ isSyncRunning: isRunning });
   const repairTargets = resolveRepairTargets(dbValidation);
-  const hasBulkRepairTargets = hasRepairTargets(repairTargets);
+  const startSyncErrorMessage = startSync.error?.message ?? null;
+  const refreshErrorMessage = refreshStocks.error?.message ?? null;
 
   useEffect(() => {
     if (!isRunning) {
@@ -419,133 +628,37 @@ export function SettingsPage() {
     <div className="p-6 max-w-2xl mx-auto">
       <h2 className="text-2xl font-bold mb-6">Settings</h2>
 
-      {/* Database Sync Section */}
-      <Card>
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            <CardTitle>Database Sync</CardTitle>
-          </div>
-          <CardDescription>
-            Synchronize J-Quants market data into DuckDB SoT. Use incremental to resume interrupted syncs.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <SyncModeSelect value={syncMode} onChange={setSyncMode} disabled={isRunning || startSync.isPending} />
-          <div className="flex items-center justify-between rounded-md border p-3">
-            <div className="space-y-1">
-              <Label htmlFor="enforce-stock-bulk">Enforce BULK for stock_data</Label>
-              <p className="text-xs text-muted-foreground">
-                When enabled, stock_data sync fails if BULK is unavailable (no REST fallback).
-              </p>
-            </div>
-            <Switch
-              id="enforce-stock-bulk"
-              checked={enforceBulkForStockData}
-              onCheckedChange={setEnforceBulkForStockData}
-              disabled={isRunning || startSync.isPending}
-            />
-          </div>
+      <DatabaseSyncSection
+        syncMode={syncMode}
+        onSyncModeChange={setSyncMode}
+        enforceBulkForStockData={enforceBulkForStockData}
+        onEnforceBulkChange={setEnforceBulkForStockData}
+        isRunning={isRunning}
+        isStarting={startSync.isPending}
+        onStartSync={handleStartSync}
+        errorMessage={startSyncErrorMessage}
+      />
 
-          <SyncActionButton isRunning={isRunning} isStarting={startSync.isPending} onClick={handleStartSync} />
+      <WarningRecoverySection
+        repairTargets={repairTargets}
+        isValidationLoading={isValidationLoading}
+        isRunning={isRunning}
+        isStarting={startSync.isPending}
+        onRepairWarnings={handleRepairWarnings}
+      />
 
-          {startSync.error && (
-            <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{startSync.error.message}</div>
-          )}
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <Database className="h-5 w-5" />
-            <CardTitle>Warning Recovery</CardTitle>
-          </div>
-          <CardDescription>
-            Resolve DuckDB snapshot warnings in one async job without entering individual stock codes.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
-            <div>
-              <span className="text-muted-foreground">Stocks needing refresh:</span>
-              <span className="ml-2 font-medium">{repairTargets.stocksNeedingRefresh}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Missing Prime fundamentals:</span>
-              <span className="ml-2 font-medium">{repairTargets.missingPrimeFundamentals}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Failed fundamentals dates:</span>
-              <span className="ml-2 font-medium">{repairTargets.failedFundamentalsDates}</span>
-            </div>
-            <div>
-              <span className="text-muted-foreground">Failed fundamentals codes:</span>
-              <span className="ml-2 font-medium">{repairTargets.failedFundamentalsCodes}</span>
-            </div>
-          </div>
-          <p className="text-xs text-muted-foreground">
-            Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill Prime fundamentals.
-          </p>
-          <Button onClick={handleRepairWarnings} disabled={isRunning || startSync.isPending || !hasBulkRepairTargets} className="w-full">
-            {startSync.isPending || isRunning ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Repair Job in Progress...
-              </>
-            ) : hasBulkRepairTargets ? (
-              'Repair Warnings'
-            ) : (
-              'No Repairs Needed'
-            )}
-          </Button>
-          {!hasBulkRepairTargets && !isValidationLoading ? (
-            <p className="text-xs text-muted-foreground">No bulk warning-repair targets were found in the latest snapshot.</p>
-          ) : null}
-        </CardContent>
-      </Card>
-
-      <Card className="mt-4">
-        <CardHeader>
-          <div className="flex items-center gap-2">
-            <RotateCcw className="h-5 w-5" />
-            <CardTitle>Stock Refresh (Manual)</CardTitle>
-          </div>
-          <CardDescription>
-            Re-fetch specific DuckDB stock series when you need a one-off repair outside the bulk warning flow.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-3">
-          <Input
-            placeholder="e.g. 7203, 6758, 9984"
-            value={refreshCodesInput}
-            onChange={(e) => {
-              setRefreshCodesInput(e.target.value);
-              setRefreshInputError(null);
-            }}
-            disabled={refreshStocks.isPending}
-          />
-          <p className="text-xs text-muted-foreground">
-            Accepts comma/space/newline separated 4-digit codes, up to 50 at once.
-          </p>
-          <Button onClick={handleRefreshStocks} disabled={refreshStocks.isPending} className="w-full">
-            {refreshStocks.isPending ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Refreshing...
-              </>
-            ) : (
-              'Refresh Stocks'
-            )}
-          </Button>
-
-          {refreshInputError && <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshInputError}</div>}
-          {refreshStocks.error && (
-            <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{refreshStocks.error.message}</div>
-          )}
-          {refreshResult && <RefreshResultTable result={refreshResult} />}
-        </CardContent>
-      </Card>
+      <ManualStockRefreshSection
+        refreshCodesInput={refreshCodesInput}
+        refreshInputError={refreshInputError}
+        refreshErrorMessage={refreshErrorMessage}
+        refreshResult={refreshResult}
+        isRefreshing={refreshStocks.isPending}
+        onRefreshCodesInputChange={(value) => {
+          setRefreshCodesInput(value);
+          setRefreshInputError(null);
+        }}
+        onRefreshStocks={handleRefreshStocks}
+      />
 
       <Card className="mt-4">
         <CardHeader>

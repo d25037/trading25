@@ -220,8 +220,8 @@ export interface SyncJobResult {
   datesProcessed: number;
   fundamentalsUpdated: number;
   fundamentalsDatesProcessed: number;
-  failedDates: string[];
-  errors: string[];
+  failedDates?: string[];
+  errors?: string[];
 }
 
 export interface CreateSyncJobResponse {
@@ -592,7 +592,7 @@ export interface MarketValidationResponse {
     missingDates: string[];
     missingDatesCount: number;
   };
-  fundamentals: {
+  fundamentals?: {
     count: number;
     uniqueStockCount: number;
     latestDisclosedDate: string | null;

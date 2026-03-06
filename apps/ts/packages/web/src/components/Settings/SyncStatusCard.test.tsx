@@ -281,6 +281,32 @@ describe('SyncStatusCard', () => {
     expect(screen.getByText(/7203: network error/)).toBeInTheDocument();
   });
 
+  it('handles completed results with omitted optional arrays', () => {
+    render(
+      <SyncStatusCard
+        job={createJob({
+          status: 'completed',
+          progress: undefined,
+          result: {
+            success: true,
+            totalApiCalls: 5,
+            stocksUpdated: 2,
+            datesProcessed: 1,
+            fundamentalsUpdated: 0,
+            fundamentalsDatesProcessed: 0,
+          },
+        })}
+        isLoading={false}
+        onCancel={vi.fn()}
+        isCancelling={false}
+      />
+    );
+
+    expect(screen.getByText('Completed')).toBeInTheDocument();
+    expect(screen.queryByText('Errors:')).not.toBeInTheDocument();
+    expect(screen.queryByText('Failed Dates:')).not.toBeInTheDocument();
+  });
+
   it('renders failed status with error text', () => {
     render(
       <SyncStatusCard

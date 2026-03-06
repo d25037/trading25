@@ -335,6 +335,29 @@ describe('SettingsPage', () => {
     );
   });
 
+  it('renders warning recovery safely when fundamentals payload is missing', () => {
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'warning',
+        stockData: { missingDatesCount: 2 },
+        failedDatesCount: 0,
+        stocksNeedingRefreshCount: 3,
+        integrityIssuesCount: 0,
+        recommendations: ['Run repair sync to refresh 3 stocks with pending adjustment backfill'],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
+    expect(screen.getByText('Stocks needing refresh:')).toBeInTheDocument();
+    expect(screen.getByText('Missing Prime fundamentals:')).toBeInTheDocument();
+    expect(screen.getAllByText('0').length).toBeGreaterThan(0);
+  });
+
   it('shows validation notes when status is healthy and recommendations exist', () => {
     mockUseDbValidation.mockReturnValue({
       data: {

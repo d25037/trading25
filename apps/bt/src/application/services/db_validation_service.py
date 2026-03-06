@@ -79,7 +79,8 @@ class ValidationMarketDbLike(Protocol):
     def get_stats(self) -> dict[str, int]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
-    def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
+    def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]: ...
+    def get_stocks_needing_refresh_count(self) -> int: ...
     def get_prime_codes(self) -> set[str]: ...
 
 
@@ -121,7 +122,8 @@ def validate_market_db(
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=20)
-    all_needing = market_db.get_stocks_needing_refresh(limit=None)
+    sample_needing = market_db.get_stocks_needing_refresh(limit=20)
+    all_needing_count = market_db.get_stocks_needing_refresh_count()
 
     # Failed dates from metadata
     failed_dates_raw = market_db.get_sync_metadata(METADATA_KEYS["FAILED_DATES"])
@@ -148,9 +150,9 @@ def validate_market_db(
         recommendations.append("Run initial sync to populate the database")
     if missing_dates_count > 0:
         recommendations.append(f"Run incremental sync to fill {missing_dates_count} missing dates")
-    if all_needing:
+    if all_needing_count > 0:
         recommendations.append(
-            f"Run repair sync to refresh {len(all_needing)} stocks with pending adjustment backfill"
+            f"Run repair sync to refresh {all_needing_count} stocks with pending adjustment backfill"
         )
     if failed_dates:
         recommendations.append(f"Retry {len(failed_dates)} failed sync dates")
@@ -175,7 +177,7 @@ def validate_market_db(
     elif (
         missing_dates_count > 0
         or failed_dates
-        or all_needing
+        or all_needing_count > 0
         or missing_prime_count > 0
         or fundamentals_failed_dates
         or fundamentals_failed_codes
@@ -236,8 +238,8 @@ def validate_market_db(
             AdjustmentEvent(**e) for e in adjustment_events
         ],
         adjustmentEventsCount=len(adjustment_events),
-        stocksNeedingRefresh=all_needing[:20],
-        stocksNeedingRefreshCount=len(all_needing),
+        stocksNeedingRefresh=sample_needing,
+        stocksNeedingRefreshCount=all_needing_count,
         integrityIssues=integrity_issues,
         integrityIssuesCount=len(integrity_issues),
         recommendations=recommendations,

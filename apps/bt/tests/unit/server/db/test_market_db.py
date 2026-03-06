@@ -386,6 +386,7 @@ class TestMarketDbDerivedStats:
         assert len(events) == 2
         assert {event["eventType"] for event in events} == {"stock_split", "reverse_split"}
         assert set(market_db.get_stocks_needing_refresh()) == {"6501", "7203"}
+        assert market_db.get_stocks_needing_refresh_count() == 2
 
         market_db.upsert_stock_data(
             [
@@ -437,6 +438,7 @@ class TestMarketDbDerivedStats:
         )
 
         assert market_db.get_stocks_needing_refresh() == []
+        assert market_db.get_stocks_needing_refresh_count() == 0
         assert market_db.get_stock_data_unique_date_count() == 2
         assert market_db.get_db_file_size() > 0
 
@@ -588,6 +590,7 @@ class TestMarketDbEdgeCases:
         assert market_db.get_missing_stock_data_dates_count() == 0
         assert market_db.get_adjustment_events(limit=0) == []
         assert market_db.get_stocks_needing_refresh(limit=0) == []
+        assert market_db.get_stocks_needing_refresh_count() == 0
         assert market_db.get_stock_data_unique_date_count() == 0
 
         # Coverage helper branches
