@@ -82,6 +82,7 @@ class DummyMarketDb:
         self.metadata: dict[str, str] = {}
         self._prime_codes: set[str] = set()
         self._stocks_needing_refresh = list(stocks_needing_refresh or [])
+        self.resolved_adjustment_calls: list[list[str] | None] = []
 
     def get_sync_metadata(self, key: str) -> str | None:
         if key in self.metadata:
@@ -256,6 +257,19 @@ class DummyMarketDb:
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         self.metadata[key] = value
+
+    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int:
+        normalized = None if codes is None else list(dict.fromkeys(str(code) for code in codes))
+        self.resolved_adjustment_calls.append(normalized)
+        if normalized is None:
+            self._stocks_needing_refresh = []
+            return 0
+        resolved = set(normalized)
+        self._stocks_needing_refresh = [
+            code for code in self._stocks_needing_refresh
+            if code not in resolved
+        ]
+        return len(normalized)
 
     def ensure_schema(self) -> None:
         return None
@@ -1164,6 +1178,7 @@ async def test_initial_sync_populates_margin_data() -> None:
     assert result.success
     assert any(path == "/markets/margin-interest" for path, _ in client.calls)
     assert market_db.get_margin_codes() == {"7203"}
+    assert market_db.resolved_adjustment_calls == [None]
 
 
 @pytest.mark.asyncio
@@ -3027,6 +3042,7 @@ async def test_repair_sync_refreshes_adjustment_stocks_and_backfills_fundamental
     assert result.fundamentalsUpdated == 1
     assert {row["code"] for row in market_db.stock_rows} == {"7203"}
     assert {row["code"] for row in market_db.statements_rows} == {"7203"}
+    assert market_db.resolved_adjustment_calls == [["7203"]]
     assert any(stage == "stock_refresh" for stage, _, _, _ in progress_events)
     assert any(stage == "fundamentals" for stage, _, _, _ in progress_events)
 

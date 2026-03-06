@@ -10,9 +10,14 @@ from src.application.services.stock_refresh_service import refresh_stocks
 class DummyMarketDb:
     def __init__(self) -> None:
         self.metadata: dict[str, str] = {}
+        self.resolved_calls: list[list[str] | None] = []
 
     def set_sync_metadata(self, key: str, value: str) -> None:
         self.metadata[key] = value
+
+    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int:
+        self.resolved_calls.append(None if codes is None else list(codes))
+        return len(codes or [])
 
 
 class DummyTimeSeriesStore:
@@ -92,6 +97,7 @@ async def test_refresh_stocks_skips_incomplete_ohlcv_rows() -> None:
     assert len(store.rows) == 1
     assert store.rows[0]["code"] == "131A"
     assert store.rows[0]["date"] == "2026-02-10"
+    assert market_db.resolved_calls == [["131A"]]
 
 
 @pytest.mark.asyncio
@@ -131,6 +137,7 @@ async def test_refresh_stocks_handles_jquants_error() -> None:
     assert result.failedCount == 1
     assert result.totalRecordsStored == 0
     assert len(result.errors) == 1
+    assert market_db.resolved_calls == []
 
 
 @pytest.mark.asyncio

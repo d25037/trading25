@@ -64,6 +64,7 @@ class SyncClientLike(Protocol):
 class SyncMarketDbLike(Protocol):
     def get_sync_metadata(self, key: str) -> str | None: ...
     def set_sync_metadata(self, key: str, value: str) -> None: ...
+    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_prime_codes(self) -> set[str]: ...
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
@@ -1291,6 +1292,7 @@ class InitialSyncStrategy:
                 )
 
             await _index_stock_data_rows(ctx)
+            await asyncio.to_thread(ctx.market_db.mark_stock_adjustments_resolved, None)
 
             # Step 5: 指数データ
             ctx.on_progress("indices", 4, 7, "Fetching index data...")
@@ -1602,6 +1604,8 @@ class IncrementalSyncStrategy:
                 )
 
             await _index_stock_data_rows(ctx)
+            if cold_start_bootstrap:
+                await asyncio.to_thread(ctx.market_db.mark_stock_adjustments_resolved, None)
 
             # Step 4: 指数データ（増分）
             ctx.on_progress("indices", 3, 6, "Fetching incremental index data...")

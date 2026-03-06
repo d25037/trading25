@@ -26,6 +26,7 @@ METADATA_KEYS = {
     "FUNDAMENTALS_LAST_DISCLOSED_DATE": "fundamentals_last_disclosed_date",
     "FUNDAMENTALS_FAILED_DATES": "fundamentals_failed_dates",
     "FUNDAMENTALS_FAILED_CODES": "fundamentals_failed_codes",
+    "ADJUSTMENT_REFRESH_STATE_INITIALIZED": "adjustment_refresh_state_initialized",
 }
 
 _STATS_TABLES: tuple[str, ...] = (
@@ -278,7 +279,17 @@ class MarketDb:
             )
             """
         )
+        self._execute(
+            """
+            CREATE TABLE IF NOT EXISTS stock_adjustment_refresh_state (
+                code TEXT PRIMARY KEY,
+                resolved_adjustment_date TEXT,
+                updated_at TEXT
+            )
+            """
+        )
         self._ensure_statements_columns()
+        self._ensure_adjustment_refresh_state_initialized()
 
     def _ensure_statements_columns(self) -> None:
         """既存 statements テーブルに不足カラムを追加する。"""
@@ -932,16 +943,103 @@ class MarketDb:
             if row and row[0] and row[1] and row[2] is not None
         ]
 
+    def _latest_adjustment_rows(self, codes: list[str] | None = None) -> list[tuple[str, str]]:
+        if not self._table_exists("stock_data"):
+            return []
+
+        normalized_codes: list[str] = []
+        if codes is not None:
+            seen: set[str] = set()
+            for code in codes:
+                text = str(code).strip()
+                if not text or text in seen:
+                    continue
+                seen.add(text)
+                normalized_codes.append(text)
+            if not normalized_codes:
+                return []
+
+        code_filter = ""
+        params: list[Any] = []
+        if normalized_codes:
+            placeholders = ", ".join("?" for _ in normalized_codes)
+            code_filter = f" AND code IN ({placeholders})"
+            params.extend(normalized_codes)
+
+        rows = self._fetchall(
+            f"""
+            SELECT code, adjustment_date
+            FROM (
+                SELECT
+                    code,
+                    date AS adjustment_date,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY code
+                        ORDER BY date DESC, created_at DESC NULLS LAST
+                    ) AS rn
+                FROM stock_data
+                WHERE adjustment_factor IS NOT NULL
+                  AND adjustment_factor != 1.0
+                  {code_filter}
+            ) ranked
+            WHERE rn = 1
+            """,
+            params,
+        )
+        return [
+            (str(row[0]), str(row[1]))
+            for row in rows
+            if row and row[0] and row[1]
+        ]
+
+    def _upsert_adjustment_refresh_state_rows(
+        self,
+        latest_rows: list[tuple[str, str]],
+        *,
+        updated_at: str,
+    ) -> None:
+        if not latest_rows:
+            return
+        self._executemany(
+            """
+            INSERT INTO stock_adjustment_refresh_state (
+                code, resolved_adjustment_date, updated_at
+            )
+            VALUES (?, ?, ?)
+            ON CONFLICT (code) DO UPDATE
+            SET resolved_adjustment_date = excluded.resolved_adjustment_date,
+                updated_at = excluded.updated_at
+            """,
+            [
+                (code, adjustment_date, updated_at)
+                for code, adjustment_date in latest_rows
+            ],
+        )
+
+    def _ensure_adjustment_refresh_state_initialized(self) -> None:
+        if self._read_only:
+            return
+        if not self._table_exists("stock_adjustment_refresh_state"):
+            return
+        if self.get_sync_metadata(METADATA_KEYS["ADJUSTMENT_REFRESH_STATE_INITIALIZED"]):
+            return
+        if self._count_rows("stock_data") <= 0:
+            return
+
+        latest_rows = self._latest_adjustment_rows()
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        self._upsert_adjustment_refresh_state_rows(latest_rows, updated_at=now_iso)
+        self.set_sync_metadata(METADATA_KEYS["ADJUSTMENT_REFRESH_STATE_INITIALIZED"], now_iso)
+
     @staticmethod
     def _stocks_needing_refresh_query(select_clause: str) -> str:
         return f"""
             WITH latest_adjustment AS (
-                SELECT code, date AS adjustment_date, created_at AS adjustment_created_at
+                SELECT code, date AS adjustment_date
                 FROM (
                     SELECT
                         code,
                         date,
-                        created_at,
                         ROW_NUMBER() OVER (
                             PARTITION BY code
                             ORDER BY date DESC, created_at DESC NULLS LAST
@@ -954,17 +1052,18 @@ class MarketDb:
             )
             SELECT {select_clause}
             FROM latest_adjustment latest
-            WHERE EXISTS (
-                SELECT 1
-                FROM stock_data history
-                WHERE history.code = latest.code
-                  AND history.date < latest.adjustment_date
-                  AND (
-                      latest.adjustment_created_at IS NULL
-                      OR history.created_at IS NULL
-                      OR history.created_at < latest.adjustment_created_at
-                  )
+            LEFT JOIN stock_adjustment_refresh_state refresh_state
+              ON refresh_state.code = latest.code
+            WHERE (
+                refresh_state.resolved_adjustment_date IS NULL
+                OR refresh_state.resolved_adjustment_date < latest.adjustment_date
             )
+              AND EXISTS (
+                  SELECT 1
+                  FROM stock_data history
+                  WHERE history.code = latest.code
+                    AND history.date < latest.adjustment_date
+              )
         """
 
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]:
@@ -972,6 +1071,9 @@ class MarketDb:
         if limit is not None and limit <= 0:
             return []
         if not self._table_exists("stock_data"):
+            return []
+        self._ensure_adjustment_refresh_state_initialized()
+        if not self._table_exists("stock_adjustment_refresh_state"):
             return []
         sql = self._stocks_needing_refresh_query("latest.code")
         params: list[Any] = []
@@ -990,8 +1092,20 @@ class MarketDb:
         """調整イベント後に履歴再取得が未完了な銘柄数を返す。"""
         if not self._table_exists("stock_data"):
             return 0
+        self._ensure_adjustment_refresh_state_initialized()
+        if not self._table_exists("stock_adjustment_refresh_state"):
+            return 0
         row = self._fetchone(self._stocks_needing_refresh_query("COUNT(*)"))
         return int(row[0] or 0) if row else 0
+
+    def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int:
+        """指定銘柄の最新 adjustment event を refresh 済みとして記録する。"""
+        self._assert_writable()
+        latest_rows = self._latest_adjustment_rows(codes)
+        now_iso = datetime.now().isoformat()  # noqa: DTZ005
+        self._upsert_adjustment_refresh_state_rows(latest_rows, updated_at=now_iso)
+        self.set_sync_metadata(METADATA_KEYS["ADJUSTMENT_REFRESH_STATE_INITIALIZED"], now_iso)
+        return len(latest_rows)
 
     def get_stock_data_unique_date_count(self) -> int:
         """stock_data のユニーク日付数。"""
