@@ -108,7 +108,7 @@ interface SnapshotItem {
 
 interface RepairTargets {
   stocksNeedingRefresh: number;
-  missingPrimeFundamentals: number;
+  missingListedMarketFundamentals: number;
   failedFundamentalsDates: number;
   failedFundamentalsCodes: number;
 }
@@ -168,7 +168,7 @@ function buildSnapshotItems(
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
-    { label: 'Missing Prime Fundamentals', value: fundamentals.missingPrimeStocksCount },
+    { label: 'Missing Listed-Market Fundamentals', value: fundamentals.missingPrimeStocksCount },
     { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
   ];
 }
@@ -178,7 +178,7 @@ function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined
 
   return {
     stocksNeedingRefresh: dbValidation?.stocksNeedingRefreshCount ?? 0,
-    missingPrimeFundamentals: fundamentals.missingPrimeStocksCount,
+    missingListedMarketFundamentals: fundamentals.missingPrimeStocksCount,
     failedFundamentalsDates: fundamentals.failedDatesCount,
     failedFundamentalsCodes: fundamentals.failedCodesCount,
   };
@@ -187,7 +187,7 @@ function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined
 function hasRepairTargets(targets: RepairTargets): boolean {
   return (
     targets.stocksNeedingRefresh > 0 ||
-    targets.missingPrimeFundamentals > 0 ||
+    targets.missingListedMarketFundamentals > 0 ||
     targets.failedFundamentalsDates > 0 ||
     targets.failedFundamentalsCodes > 0
   );
@@ -426,8 +426,8 @@ function WarningRecoverySection({
             <span className="ml-2 font-medium">{repairTargets.stocksNeedingRefresh}</span>
           </div>
           <div>
-            <span className="text-muted-foreground">Missing Prime fundamentals:</span>
-            <span className="ml-2 font-medium">{repairTargets.missingPrimeFundamentals}</span>
+            <span className="text-muted-foreground">Missing listed-market fundamentals:</span>
+            <span className="ml-2 font-medium">{repairTargets.missingListedMarketFundamentals}</span>
           </div>
           <div>
             <span className="text-muted-foreground">Failed fundamentals dates:</span>
@@ -439,7 +439,7 @@ function WarningRecoverySection({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill Prime fundamentals.
+          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill listed-market fundamentals.
         </p>
         <Button onClick={onRepairWarnings} disabled={isRunning || isStarting || !canRepair} className="w-full">
           {isStarting || isRunning ? (

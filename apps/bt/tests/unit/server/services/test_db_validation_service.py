@@ -36,12 +36,12 @@ class DummyMarketDb:
         initialized: bool = True,
         stocks_needing_refresh: list[str] | None = None,
         adjustment_events: list[dict[str, Any]] | None = None,
-        prime_codes: set[str] | None = None,
+        fundamentals_target_codes: set[str] | None = None,
     ) -> None:
         self._initialized = initialized
         self._stocks_needing_refresh = stocks_needing_refresh or []
         self._adjustment_events = adjustment_events or []
-        self._prime_codes = prime_codes or {"1301", "7203"}
+        self._fundamentals_target_codes = fundamentals_target_codes or {"1301", "7203"}
         self._metadata = {
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
@@ -72,8 +72,8 @@ class DummyMarketDb:
     def get_stocks_needing_refresh_count(self) -> int:
         return len(self._stocks_needing_refresh)
 
-    def get_prime_codes(self) -> set[str]:
-        return set(self._prime_codes)
+    def get_fundamentals_target_codes(self) -> set[str]:
+        return set(self._fundamentals_target_codes)
 
 
 def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> None:
@@ -127,7 +127,7 @@ def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_
                 "eventType": "split",
             }
         ],
-        prime_codes={"1301", "7203"},
+        fundamentals_target_codes={"1301", "7203"},
     )
     market_db._metadata[METADATA_KEYS["FAILED_DATES"]] = "{invalid-json"
     market_db._metadata[METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"]] = '["2026-02-27"]'

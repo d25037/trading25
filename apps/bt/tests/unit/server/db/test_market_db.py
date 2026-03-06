@@ -431,7 +431,7 @@ class TestMarketDbDerivedStats:
 
 
 class TestMarketDbFundamentals:
-    def test_prime_coverage_helpers(self, market_db: MarketDb) -> None:
+    def test_fundamentals_target_coverage_helpers(self, market_db: MarketDb) -> None:
         market_db.upsert_stocks(
             [
                 {
@@ -458,7 +458,7 @@ class TestMarketDbFundamentals:
                 },
                 {
                     "code": "9999",
-                    "company_name": "NonPrime",
+                    "company_name": "Standard",
                     "market_code": "0112",
                     "market_name": "スタンダード",
                     "sector_17_code": "8",
@@ -466,6 +466,17 @@ class TestMarketDbFundamentals:
                     "sector_33_code": "3600",
                     "sector_33_name": "電気機器",
                     "listed_date": "1958-12-01",
+                },
+                {
+                    "code": "4477",
+                    "company_name": "Growth",
+                    "market_code": "growth",
+                    "market_name": "グロース",
+                    "sector_17_code": "8",
+                    "sector_17_name": "電気機器",
+                    "sector_33_code": "3600",
+                    "sector_33_name": "電気機器",
+                    "listed_date": "2019-04-24",
                 },
             ]
         )
@@ -493,6 +504,7 @@ class TestMarketDbFundamentals:
         assert market_db.get_latest_statement_disclosed_date() == "2024-05-10"
         assert market_db.get_statement_codes() == {"7203", "9999"}
         assert market_db.get_prime_codes() == {"6758", "7203"}
+        assert market_db.get_fundamentals_target_codes() == {"4477", "6758", "7203", "9999"}
 
         coverage = market_db.get_prime_statement_coverage()
         assert coverage["primeCount"] == 2
@@ -618,6 +630,7 @@ class TestMarketDbEdgeCases:
         assert market_db.get_latest_statement_disclosed_date() is None
         assert market_db.get_statement_codes() == set()
         assert market_db.get_prime_codes() == set()
+        assert market_db.get_fundamentals_target_codes() == set()
         assert market_db.get_stock_count_by_market() == {}
         assert market_db.get_topix_date_range() is None
         assert market_db.get_stock_data_date_range() is None

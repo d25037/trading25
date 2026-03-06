@@ -75,6 +75,16 @@ _STATEMENTS_ADDITIONAL_COLUMNS: tuple[tuple[str, str], ...] = (
     ("next_year_forecast_payout_ratio", "DOUBLE"),
 )
 
+_PRIME_MARKET_CODES: tuple[str, ...] = ("0111", "prime")
+_FUNDAMENTALS_TARGET_MARKET_CODES: tuple[str, ...] = (
+    "0111",
+    "0112",
+    "0113",
+    "prime",
+    "standard",
+    "growth",
+)
+
 
 class MarketDb:
     """DuckDB ベースの market metadata / helper query アクセス。"""
@@ -439,14 +449,23 @@ class MarketDb:
 
     def get_prime_codes(self) -> set[str]:
         """stocks から Prime 銘柄コードを取得（legacy 表記も吸収）。"""
+        return self._get_codes_by_market_codes(_PRIME_MARKET_CODES)
+
+    def get_fundamentals_target_codes(self) -> set[str]:
+        """stocks から fundamentals sync 対象市場の銘柄コードを取得。"""
+        return self._get_codes_by_market_codes(_FUNDAMENTALS_TARGET_MARKET_CODES)
+
+    def _get_codes_by_market_codes(self, market_codes: tuple[str, ...]) -> set[str]:
         if not self._table_exists("stocks"):
             return set()
+        placeholders = ", ".join("?" for _ in market_codes)
         rows = self._fetchall(
-            """
+            f"""
             SELECT code
             FROM stocks
-            WHERE lower(trim(market_code)) IN ('0111', 'prime')
-            """
+            WHERE lower(trim(market_code)) IN ({placeholders})
+            """,
+            list(market_codes),
         )
         return {
             str(row[0])

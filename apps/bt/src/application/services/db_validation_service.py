@@ -82,7 +82,7 @@ class ValidationMarketDbLike(Protocol):
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]: ...
     def get_stocks_needing_refresh_count(self) -> int: ...
-    def get_prime_codes(self) -> set[str]: ...
+    def get_fundamentals_target_codes(self) -> set[str]: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -109,14 +109,14 @@ def validate_market_db(
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)
     latest_disclosed = inspection.latest_statement_disclosed_date
-    prime_coverage = _build_prime_statement_coverage(
+    fundamentals_coverage = _build_fundamentals_target_statement_coverage(
         market_db,
         statement_codes,
         limit_missing=20,
     )
-    missing_prime_count = int(prime_coverage.get("missingCount", 0) or 0)
-    missing_prime_codes = [
-        str(code) for code in prime_coverage.get("missingCodes", [])
+    missing_fundamentals_count = int(fundamentals_coverage.get("missingCount", 0) or 0)
+    missing_fundamentals_codes = [
+        str(code) for code in fundamentals_coverage.get("missingCodes", [])
     ]
     missing_dates = list(inspection.missing_stock_dates)
     missing_dates_count = _resolve_missing_dates_count(inspection)
@@ -157,9 +157,9 @@ def validate_market_db(
         )
     if failed_dates:
         recommendations.append(f"Retry {len(failed_dates)} failed sync dates")
-    if missing_prime_count > 0:
+    if missing_fundamentals_count > 0:
         recommendations.append(
-            f"Run repair sync to backfill fundamentals for {missing_prime_count} Prime stocks"
+            f"Run repair sync to backfill fundamentals for {missing_fundamentals_count} listed-market stocks"
         )
     if fundamentals_failed_dates:
         recommendations.append(
@@ -179,7 +179,7 @@ def validate_market_db(
         missing_dates_count > 0
         or failed_dates
         or all_needing_count > 0
-        or missing_prime_count > 0
+        or missing_fundamentals_count > 0
         or fundamentals_failed_dates
         or fundamentals_failed_codes
         or integrity_issues
@@ -230,8 +230,9 @@ def validate_market_db(
         count=inspection.statements_count,
         uniqueStockCount=len(statement_codes),
         latestDisclosedDate=latest_disclosed,
-        missingPrimeStocksCount=missing_prime_count,
-        missingPrimeStocks=missing_prime_codes,
+        # Keep the response shape stable while broadening the covered market scope.
+        missingPrimeStocksCount=missing_fundamentals_count,
+        missingPrimeStocks=missing_fundamentals_codes,
         failedDatesCount=len(fundamentals_failed_dates),
         failedCodesCount=len(fundamentals_failed_codes),
     )
@@ -271,21 +272,21 @@ def _resolve_time_series_inspection(
     )
 
 
-def _build_prime_statement_coverage(
+def _build_fundamentals_target_statement_coverage(
     market_db: ValidationMarketDbLike,
     statement_codes: set[str],
     *,
     limit_missing: int = 20,
 ) -> dict[str, Any]:
-    prime_codes = market_db.get_prime_codes()
-    covered_codes = sorted(prime_codes & statement_codes)
-    missing_codes = sorted(prime_codes - statement_codes)
-    prime_count = len(prime_codes)
+    target_codes = market_db.get_fundamentals_target_codes()
+    covered_codes = sorted(target_codes & statement_codes)
+    missing_codes = sorted(target_codes - statement_codes)
+    target_count = len(target_codes)
     covered_count = len(covered_codes)
 
-    coverage_ratio = round((covered_count / prime_count), 4) if prime_count > 0 else 0.0
+    coverage_ratio = round((covered_count / target_count), 4) if target_count > 0 else 0.0
     return {
-        "primeCount": prime_count,
+        "primeCount": target_count,
         "coveredCount": covered_count,
         "missingCount": len(missing_codes),
         "coverageRatio": coverage_ratio,

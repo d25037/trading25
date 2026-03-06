@@ -66,7 +66,7 @@ class SyncMarketDbLike(Protocol):
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
-    def get_prime_codes(self) -> set[str]: ...
+    def get_fundamentals_target_codes(self) -> set[str]: ...
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_index_master_codes(self) -> set[str]: ...
@@ -131,7 +131,7 @@ class SyncStrategy(Protocol):
 
 
 _JST = ZoneInfo("Asia/Tokyo")
-_PRIME_MARKET_CODES = {"0111", "prime"}
+_FUNDAMENTALS_TARGET_MARKET_CODES = {"0111", "0112", "0113", "prime", "standard", "growth"}
 _MAX_FINS_SUMMARY_PAGES = 2000
 
 _FetchMethod = Literal["rest", "bulk"]
@@ -1107,18 +1107,18 @@ class InitialSyncStrategy:
             if stock_rows:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
-            # Step 3: Prime fundamentals（初回: code指定フル取得）
-            ctx.on_progress("fundamentals", 2, 7, "Fetching Prime fundamentals (full)...")
+            # Step 3: listed markets fundamentals（初回: code指定フル取得）
+            ctx.on_progress("fundamentals", 2, 7, "Fetching listed-market fundamentals (full)...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            prime_codes = _extract_prime_codes_from_stock_rows(stock_rows)
-            if not prime_codes:
-                prime_codes = await asyncio.to_thread(ctx.market_db.get_prime_codes)
+            fundamentals_target_codes = _extract_fundamentals_target_codes_from_stock_rows(stock_rows)
+            if not fundamentals_target_codes:
+                fundamentals_target_codes = await asyncio.to_thread(ctx.market_db.get_fundamentals_target_codes)
 
             fundamentals_sync = await _sync_fundamentals_initial(
                 ctx,
-                sorted(prime_codes),
+                sorted(fundamentals_target_codes),
                 progress_current=2,
                 progress_total=7,
             )
@@ -1850,18 +1850,18 @@ class IncrementalSyncStrategy:
 
             await _index_indices_rows(ctx)
 
-            # Step 5: Prime fundamentals（増分: date 指定 + 欠損補完）
-            ctx.on_progress("fundamentals", 4, 6, "Fetching incremental Prime fundamentals...")
+            # Step 5: listed markets fundamentals（増分: date 指定 + 欠損補完）
+            ctx.on_progress("fundamentals", 4, 6, "Fetching incremental listed-market fundamentals...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            prime_codes = _extract_prime_codes_from_stock_rows(stock_rows)
-            if not prime_codes:
-                prime_codes = await asyncio.to_thread(ctx.market_db.get_prime_codes)
+            fundamentals_target_codes = _extract_fundamentals_target_codes_from_stock_rows(stock_rows)
+            if not fundamentals_target_codes:
+                fundamentals_target_codes = await asyncio.to_thread(ctx.market_db.get_fundamentals_target_codes)
 
             fundamentals_sync = await _sync_fundamentals_incremental(
                 ctx,
-                sorted(prime_codes),
+                sorted(fundamentals_target_codes),
                 progress_current=4,
                 progress_total=6,
             )
@@ -1935,7 +1935,9 @@ class RepairSyncStrategy:
                 return _cancelled_sync_result(total_calls)
 
             stock_codes = await asyncio.to_thread(ctx.market_db.get_stocks_needing_refresh, None)
-            prime_codes = sorted(await asyncio.to_thread(ctx.market_db.get_prime_codes))
+            fundamentals_target_codes = sorted(
+                await asyncio.to_thread(ctx.market_db.get_fundamentals_target_codes)
+            )
 
             if stock_codes:
                 def _on_refresh_progress(completed: int, total: int, message: str) -> None:
@@ -1963,7 +1965,7 @@ class RepairSyncStrategy:
             if ctx.cancelled.is_set():
                 return _cancelled_sync_result(total_calls)
 
-            if prime_codes:
+            if fundamentals_target_codes:
                 def _on_fundamentals_progress(stage: str, current: int, total: int, message: str) -> None:
                     ctx.on_progress(
                         stage,
@@ -1973,7 +1975,10 @@ class RepairSyncStrategy:
                     )
 
                 fundamentals_ctx = replace(ctx, on_progress=_on_fundamentals_progress)
-                fundamentals_sync = await _sync_fundamentals_incremental(fundamentals_ctx, prime_codes)
+                fundamentals_sync = await _sync_fundamentals_incremental(
+                    fundamentals_ctx,
+                    fundamentals_target_codes,
+                )
                 total_calls += fundamentals_sync["api_calls"]
                 fundamentals_updated += fundamentals_sync["updated"]
                 fundamentals_dates_processed += fundamentals_sync["dates_processed"]
@@ -1981,7 +1986,7 @@ class RepairSyncStrategy:
                 if fundamentals_sync["cancelled"]:
                     return _cancelled_sync_result(total_calls)
             else:
-                ctx.on_progress("fundamentals", 300, 300, "No Prime fundamentals repair needed.")
+                ctx.on_progress("fundamentals", 300, 300, "No listed-market fundamentals repair needed.")
 
             ctx.on_progress("complete", 300, 300, "Repair sync complete!")
             return SyncResult(
@@ -2008,17 +2013,17 @@ def _cancelled_sync_result(total_api_calls: int) -> SyncResult:
 
 async def _sync_fundamentals_initial(
     ctx: SyncContext,
-    prime_codes: list[str],
+    target_codes: list[str],
     *,
     progress_current: int = 2,
     progress_total: int = 6,
 ) -> dict[str, Any]:
-    """Prime 銘柄を code 指定でフル同期"""
+    """fundamentals 対象市場を code 指定でフル同期"""
     api_calls = 0
     updated = 0
     failed_codes: list[str] = []
     errors: list[str] = []
-    prime_code_set = set(prime_codes)
+    target_code_set = set(target_codes)
     bulk_succeeded = False
     stage_api_calls = 0
     bulk_result: BulkFetchResult | None = None
@@ -2027,7 +2032,7 @@ async def _sync_fundamentals_initial(
         ctx,
         stage="fundamentals_initial",
         endpoint="/fins/summary",
-        estimated_rest_calls=max(len(prime_codes), 1),
+        estimated_rest_calls=max(len(target_codes), 1),
     )
     api_calls += decision.planner_api_calls
     _emit_fetch_strategy_progress(
@@ -2037,7 +2042,7 @@ async def _sync_fundamentals_initial(
         total=progress_total,
         endpoint="/fins/summary",
         decision=decision,
-        target_label=f"{len(prime_codes)} prime codes",
+        target_label=f"{len(target_codes)} listed-market codes",
     )
 
     if decision.method == "bulk" and decision.plan is not None:
@@ -2049,13 +2054,13 @@ async def _sync_fundamentals_initial(
                 total=progress_total,
                 endpoint="/fins/summary",
                 method="bulk",
-                target_label=f"{len(prime_codes)} prime codes",
+                target_label=f"{len(target_codes)} listed-market codes",
             )
             bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
             api_calls += bulk_result.api_calls
             stage_api_calls += bulk_result.api_calls
             bulk_rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(bulk_result.rows))
-            rows = [row for row in bulk_rows if row.get("code") in prime_code_set]
+            rows = [row for row in bulk_rows if row.get("code") in target_code_set]
             rows = validate_rows_required_fields(
                 rows,
                 required_fields=("code", "disclosed_date"),
@@ -2085,10 +2090,10 @@ async def _sync_fundamentals_initial(
             total=progress_total,
             endpoint="/fins/summary",
             method="rest",
-            target_label=f"{len(prime_codes)} prime codes",
+            target_label=f"{len(target_codes)} listed-market codes",
             fallback=decision.method == "bulk",
         )
-        for idx, code in enumerate(prime_codes):
+        for idx, code in enumerate(target_codes):
             if ctx.cancelled.is_set():
                 return {
                     "api_calls": api_calls,
@@ -2103,7 +2108,7 @@ async def _sync_fundamentals_initial(
                     "fundamentals",
                     progress_current,
                     progress_total,
-                    f"Fetching /fins/summary via REST: {idx}/{len(prime_codes)} codes...",
+                    f"Fetching /fins/summary via REST: {idx}/{len(target_codes)} codes...",
                 )
 
             try:
@@ -2169,18 +2174,18 @@ async def _sync_fundamentals_initial(
 
 async def _sync_fundamentals_incremental(
     ctx: SyncContext,
-    prime_codes: list[str],
+    target_codes: list[str],
     *,
     progress_current: int = 4,
     progress_total: int = 5,
 ) -> dict[str, Any]:
-    """date 指定増分 + 欠損 Prime 補完"""
+    """date 指定増分 + 欠損 listed-market 補完"""
     api_calls = 0
     updated = 0
     errors: list[str] = []
     failed_dates: list[str] = []
     failed_codes: list[str] = []
-    prime_code_set = set(prime_codes)
+    target_code_set = set(target_codes)
 
     previous_failed_dates = _normalize_date_list(
         _load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"])
@@ -2237,7 +2242,7 @@ async def _sync_fundamentals_incremental(
                 api_calls += date_phase_bulk_result.api_calls
                 date_phase_api_calls += date_phase_bulk_result.api_calls
                 bulk_rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(date_phase_bulk_result.rows))
-                rows = [row for row in bulk_rows if row.get("code") in prime_code_set]
+                rows = [row for row in bulk_rows if row.get("code") in target_code_set]
                 if normalized_targets:
                     rows = [
                         row
@@ -2303,7 +2308,7 @@ async def _sync_fundamentals_incremental(
                     api_calls += page_calls
                     date_phase_api_calls += page_calls
                     rows = convert_fins_summary_rows(data)
-                    rows = [row for row in rows if row.get("code") in prime_code_set]
+                    rows = [row for row in rows if row.get("code") in target_code_set]
                     rows = validate_rows_required_fields(
                         rows,
                         required_fields=("code", "disclosed_date"),
@@ -2327,8 +2332,8 @@ async def _sync_fundamentals_incremental(
             )
 
     statement_codes = _get_statement_codes(ctx)
-    missing_prime_codes = sorted(set(prime_codes) - set(statement_codes))
-    code_targets = _collect_unique_codes(previous_failed_codes + missing_prime_codes)
+    missing_target_codes = sorted(set(target_codes) - set(statement_codes))
+    code_targets = _collect_unique_codes(previous_failed_codes + missing_target_codes)
 
     if code_targets:
         ctx.on_progress(
@@ -2360,7 +2365,7 @@ async def _sync_fundamentals_incremental(
             data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
             api_calls += page_calls
             rows = convert_fins_summary_rows(data, default_code=code)
-            rows = [row for row in rows if row.get("code") in prime_code_set]
+            rows = [row for row in rows if row.get("code") in target_code_set]
             rows = validate_rows_required_fields(
                 rows,
                 required_fields=("code", "disclosed_date"),
@@ -2777,11 +2782,11 @@ async def _fetch_margin_by_code(
     raise last_error
 
 
-def _extract_prime_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> set[str]:
+def _extract_fundamentals_target_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> set[str]:
     codes: set[str] = set()
     for row in stock_rows:
         market_code = row.get("market_code")
-        if not _is_prime_market_code(market_code):
+        if not _is_fundamentals_target_market_code(market_code):
             continue
         code = normalize_stock_code(str(row.get("code", "")))
         if code:
@@ -2789,11 +2794,11 @@ def _extract_prime_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> se
     return codes
 
 
-def _is_prime_market_code(value: Any) -> bool:
+def _is_fundamentals_target_market_code(value: Any) -> bool:
     if value is None:
         return False
     normalized = str(value).strip().lower()
-    return normalized in _PRIME_MARKET_CODES
+    return normalized in _FUNDAMENTALS_TARGET_MARKET_CODES
 
 
 def _load_metadata_json_list(market_db: SyncMarketDbLike, key: str) -> list[str]:

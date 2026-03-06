@@ -30,7 +30,7 @@ class MarketDbStatsLike(Protocol):
     def get_sync_metadata(self, key: str) -> str | None: ...
     def get_stats(self) -> dict[str, int]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
-    def get_prime_codes(self) -> set[str]: ...
+    def get_fundamentals_target_codes(self) -> set[str]: ...
 
 
 class TimeSeriesStoreStatsLike(Protocol):
@@ -62,11 +62,11 @@ def get_market_stats(
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)
     latest_disclosed_date = inspection.latest_statement_disclosed_date
-    prime_codes = market_db.get_prime_codes()
-    prime_count = len(prime_codes)
-    covered_count = len(prime_codes & statement_codes)
-    missing_count = len(prime_codes - statement_codes)
-    coverage_ratio = round(covered_count / prime_count, 4) if prime_count > 0 else 0.0
+    target_codes = market_db.get_fundamentals_target_codes()
+    target_count = len(target_codes)
+    covered_count = len(target_codes & statement_codes)
+    missing_count = len(target_codes - statement_codes)
+    coverage_ratio = round(covered_count / target_count, 4) if target_count > 0 else 0.0
 
     # Topix
     topix = TopixStats(
@@ -120,8 +120,9 @@ def get_market_stats(
         count=inspection.statements_count,
         uniqueStockCount=len(statement_codes),
         latestDisclosedDate=latest_disclosed_date,
+        # Keep the response shape stable while broadening the covered market scope.
         primeCoverage=PrimeCoverage(
-            primeStocks=prime_count,
+            primeStocks=target_count,
             coveredStocks=covered_count,
             missingStocks=missing_count,
             coverageRatio=coverage_ratio,

@@ -129,7 +129,7 @@ beforeEach(() => {
       integrityIssuesCount: 0,
       recommendations: [
         'Run repair sync to refresh 100 stocks with pending adjustment backfill',
-        'Run repair sync to backfill fundamentals for 7 Prime stocks',
+        'Run repair sync to backfill fundamentals for 7 listed-market stocks',
       ],
     },
     isLoading: false,
@@ -328,10 +328,10 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Missing Stock Dates:')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText('Stocks Needing Refresh:')).toBeInTheDocument();
-    expect(screen.getByText('Missing Prime Fundamentals:')).toBeInTheDocument();
+    expect(screen.getByText('Missing Listed-Market Fundamentals:')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
     expect(screen.getByText('Run repair sync to refresh 100 stocks with pending adjustment backfill')).toBeInTheDocument();
-    expect(screen.getByText('Run repair sync to backfill fundamentals for 7 Prime stocks')).toBeInTheDocument();
+    expect(screen.getByText('Run repair sync to backfill fundamentals for 7 listed-market stocks')).toBeInTheDocument();
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
   });
@@ -377,7 +377,7 @@ describe('SettingsPage', () => {
 
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Stocks needing refresh:')).toBeInTheDocument();
-    expect(screen.getByText('Missing Prime fundamentals:')).toBeInTheDocument();
+    expect(screen.getByText('Missing listed-market fundamentals:')).toBeInTheDocument();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 

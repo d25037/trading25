@@ -10,8 +10,8 @@ from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 
 
 class DummyMarketDb:
-    def __init__(self, prime_codes: set[str] | None = None) -> None:
-        self._prime_codes = prime_codes or set()
+    def __init__(self, fundamentals_target_codes: set[str] | None = None) -> None:
+        self._fundamentals_target_codes = fundamentals_target_codes or set()
 
     def is_initialized(self) -> bool:
         return True
@@ -26,8 +26,8 @@ class DummyMarketDb:
     def get_stock_count_by_market(self) -> dict[str, int]:
         return {"プライム": 2}
 
-    def get_prime_codes(self) -> set[str]:
-        return set(self._prime_codes)
+    def get_fundamentals_target_codes(self) -> set[str]:
+        return set(self._fundamentals_target_codes)
 
 
 class DummyStore:
@@ -75,8 +75,8 @@ def test_resolve_duckdb_size_bytes_handles_oserror(
     assert size == 0
 
 
-def test_get_market_stats_handles_empty_ranges_and_prime_codes() -> None:
-    market_db = DummyMarketDb(prime_codes=set())
+def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -> None:
+    market_db = DummyMarketDb(fundamentals_target_codes=set())
     inspection = TimeSeriesInspection(
         source="duckdb-parquet",
         topix_count=0,
