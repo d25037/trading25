@@ -574,6 +574,12 @@ export interface MarketStatsResponse {
       missingStocks: number;
       coverageRatio: number;
     };
+    listedMarketCoverage: {
+      listedMarketStocks: number;
+      coveredStocks: number;
+      missingStocks: number;
+      coverageRatio: number;
+    };
   };
   lastUpdated: string;
 }
@@ -611,6 +617,8 @@ export interface MarketValidationResponse {
     latestDisclosedDate: string | null;
     missingPrimeStocksCount: number;
     missingPrimeStocks: string[];
+    missingListedMarketStocksCount: number;
+    missingListedMarketStocks: string[];
     failedDatesCount: number;
     failedCodesCount: number;
   };

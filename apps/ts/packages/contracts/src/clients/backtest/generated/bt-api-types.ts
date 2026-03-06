@@ -4037,6 +4037,7 @@ export interface components {
             count: number;
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
+            listedMarketCoverage?: components["schemas"]["ListedMarketCoverage"];
             primeCoverage?: components["schemas"]["PrimeCoverage"];
             /**
              * Uniquestockcount
@@ -4063,6 +4064,13 @@ export interface components {
             failedDatesCount: number;
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
+            /** Missinglistedmarketstocks */
+            missingListedMarketStocks?: string[];
+            /**
+             * Missinglistedmarketstockscount
+             * @default 0
+             */
+            missingListedMarketStocksCount: number;
             /** Missingprimestocks */
             missingPrimeStocks?: string[];
             /**
@@ -5132,6 +5140,29 @@ export interface components {
              * @description 総トライアル数
              */
             total_trials: number;
+        };
+        /** ListedMarketCoverage */
+        ListedMarketCoverage: {
+            /**
+             * Coverageratio
+             * @default 0
+             */
+            coverageRatio: number;
+            /**
+             * Coveredstocks
+             * @default 0
+             */
+            coveredStocks: number;
+            /**
+             * Listedmarketstocks
+             * @default 0
+             */
+            listedMarketStocks: number;
+            /**
+             * Missingstocks
+             * @default 0
+             */
+            missingStocks: number;
         };
         /**
          * MarginFlowPressureData

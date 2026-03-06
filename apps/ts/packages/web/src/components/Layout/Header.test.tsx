@@ -31,7 +31,7 @@ describe('Header', () => {
     expect(screen.getByText('Indices')).toBeInTheDocument();
     expect(screen.getByText('Analysis')).toBeInTheDocument();
     expect(screen.getByText('Backtest')).toBeInTheDocument();
-    expect(screen.getByText('Settings')).toBeInTheDocument();
+    expect(screen.getByText('Market DB')).toBeInTheDocument();
   });
 
   it('changes active tab on click', async () => {

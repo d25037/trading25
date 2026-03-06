@@ -1,4 +1,4 @@
-import { Link, Outlet, createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router';
+import { createRootRoute, createRoute, createRouter, Link, Outlet, redirect } from '@tanstack/react-router';
 import { MainLayout } from '@/components/Layout/MainLayout';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { BacktestPage } from '@/pages/BacktestPage';
@@ -15,7 +15,7 @@ const LEGACY_TAB_ROUTE_MAP = {
   analysis: '/analysis',
   backtest: '/backtest',
   history: '/history',
-  settings: '/settings',
+  settings: '/market-db',
 } as const;
 
 type LegacyTab = keyof typeof LEGACY_TAB_ROUTE_MAP;
@@ -91,10 +91,18 @@ const historyRoute = createRoute({
   component: HistoryPage,
 });
 
+const marketDbRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/market-db',
+  component: SettingsPage,
+});
+
 const settingsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/settings',
-  component: SettingsPage,
+  beforeLoad: () => {
+    throw redirect({ to: '/market-db' });
+  },
 });
 
 const routeTree = rootRoute.addChildren([
@@ -105,6 +113,7 @@ const routeTree = rootRoute.addChildren([
   analysisRoute,
   backtestRoute,
   historyRoute,
+  marketDbRoute,
   settingsRoute,
 ]);
 

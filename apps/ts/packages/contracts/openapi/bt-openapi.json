@@ -3134,6 +3134,9 @@
             ],
             "title": "Latestdiscloseddate"
           },
+          "listedMarketCoverage": {
+            "$ref": "#/components/schemas/ListedMarketCoverage"
+          },
           "primeCoverage": {
             "$ref": "#/components/schemas/PrimeCoverage"
           },
@@ -3173,6 +3176,18 @@
               }
             ],
             "title": "Latestdiscloseddate"
+          },
+          "missingListedMarketStocks": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missinglistedmarketstocks",
+            "type": "array"
+          },
+          "missingListedMarketStocksCount": {
+            "default": 0,
+            "title": "Missinglistedmarketstockscount",
+            "type": "integer"
           },
           "missingPrimeStocks": {
             "items": {
@@ -5051,6 +5066,32 @@
           "history"
         ],
         "title": "LabOptimizeResult",
+        "type": "object"
+      },
+      "ListedMarketCoverage": {
+        "properties": {
+          "coverageRatio": {
+            "default": 0,
+            "title": "Coverageratio",
+            "type": "number"
+          },
+          "coveredStocks": {
+            "default": 0,
+            "title": "Coveredstocks",
+            "type": "integer"
+          },
+          "listedMarketStocks": {
+            "default": 0,
+            "title": "Listedmarketstocks",
+            "type": "integer"
+          },
+          "missingStocks": {
+            "default": 0,
+            "title": "Missingstocks",
+            "type": "integer"
+          }
+        },
+        "title": "ListedMarketCoverage",
         "type": "object"
       },
       "MarginFlowPressureData": {

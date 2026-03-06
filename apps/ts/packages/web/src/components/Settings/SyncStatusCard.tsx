@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { cn } from '@/lib/utils';
 import type { SyncFetchDetail, SyncFetchDetailsResponse, SyncJobResponse } from '@/types/sync';
 
 interface SyncStatusCardProps {
@@ -9,6 +10,7 @@ interface SyncStatusCardProps {
   isLoading: boolean;
   onCancel: () => void;
   isCancelling: boolean;
+  className?: string;
 }
 
 interface FetchProgressInfo {
@@ -233,9 +235,7 @@ function CompletedResultSection({
         )}
       </div>
       {hasErrors && (
-        <div className="rounded-md bg-red-500/10 p-3 text-xs text-red-600">
-          {visibleErrors.join(' | ')}
-        </div>
+        <div className="rounded-md bg-red-500/10 p-3 text-xs text-red-600">{visibleErrors.join(' | ')}</div>
       )}
     </div>
   );
@@ -256,7 +256,14 @@ function CancelledSection({ status }: { status: SyncJobResponse['status'] }) {
   return <div className="text-sm text-muted-foreground">Sync was cancelled by user.</div>;
 }
 
-export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCancelling }: SyncStatusCardProps) {
+export function SyncStatusCard({
+  job,
+  fetchDetails,
+  isLoading,
+  onCancel,
+  isCancelling,
+  className,
+}: SyncStatusCardProps) {
   if (!job) return null;
 
   const isActive = job.status === 'pending' || job.status === 'running';
@@ -270,7 +277,7 @@ export function SyncStatusCard({ job, fetchDetails, isLoading, onCancel, isCance
   const recentFetchDetails = fetchDetails?.items.slice(-5).reverse() ?? [];
 
   return (
-    <Card className="mt-4">
+    <Card className={cn(className)}>
       <CardHeader className="pb-3">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-2">

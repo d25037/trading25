@@ -119,8 +119,10 @@ beforeEach(() => {
         orphanCount: 3,
       },
       fundamentals: {
-        missingPrimeStocksCount: 7,
+        missingPrimeStocksCount: 2,
         missingPrimeStocks: ['1301'],
+        missingListedMarketStocksCount: 7,
+        missingListedMarketStocks: ['1301', '9999'],
         failedDatesCount: 0,
         failedCodesCount: 0,
       },
@@ -319,19 +321,22 @@ describe('SettingsPage', () => {
   it('renders market db snapshot from stats/validate', () => {
     render(<SettingsPage />);
 
+    expect(screen.getByRole('heading', { name: 'Market DB' })).toBeInTheDocument();
     expect(screen.getByText('DuckDB Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('Stock Data Latest:')).toBeInTheDocument();
+    expect(screen.getByText('Stock Data Latest')).toBeInTheDocument();
     expect(screen.getAllByText('2026-02-27').length).toBeGreaterThan(0);
-    expect(screen.getByText('Margin Latest:')).toBeInTheDocument();
-    expect(screen.getByText('Margin Stocks:')).toBeInTheDocument();
-    expect(screen.getByText('Margin Orphans:')).toBeInTheDocument();
-    expect(screen.getByText('Missing Stock Dates:')).toBeInTheDocument();
+    expect(screen.getByText('Margin Latest')).toBeInTheDocument();
+    expect(screen.getByText('Margin Stocks')).toBeInTheDocument();
+    expect(screen.getByText('Margin Orphans')).toBeInTheDocument();
+    expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
-    expect(screen.getByText('Stocks Needing Refresh:')).toBeInTheDocument();
-    expect(screen.getByText('Missing Listed-Market Fundamentals:')).toBeInTheDocument();
+    expect(screen.getByText('Stocks Needing Refresh')).toBeInTheDocument();
+    expect(screen.getByText('Missing Listed-Market Fundamentals')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
-    expect(screen.getByText('Run repair sync to refresh 100 stocks with pending adjustment backfill')).toBeInTheDocument();
-    expect(screen.getByText('Run repair sync to backfill fundamentals for 7 listed-market stocks')).toBeInTheDocument();
+    expect(
+      screen.getAllByText('Run repair sync to refresh 100 stocks with pending adjustment backfill').length
+    ).toBeGreaterThan(0);
+    expect(screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length).toBeGreaterThan(0);
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
   });
@@ -376,8 +381,8 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
-    expect(screen.getByText('Stocks needing refresh:')).toBeInTheDocument();
-    expect(screen.getByText('Missing listed-market fundamentals:')).toBeInTheDocument();
+    expect(screen.getByText('Stocks needing refresh')).toBeInTheDocument();
+    expect(screen.getByText('Missing listed-market fundamentals')).toBeInTheDocument();
     expect(screen.getAllByText('0').length).toBeGreaterThan(0);
   });
 
@@ -396,6 +401,8 @@ describe('SettingsPage', () => {
         fundamentals: {
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -412,7 +419,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Validation Notes')).toBeInTheDocument();
-    expect(screen.getByText('Backtest signal readiness: unmet requirements (margin)')).toBeInTheDocument();
+    expect(screen.getAllByText('Backtest signal readiness: unmet requirements (margin)').length).toBeGreaterThan(0);
   });
 
   it('shows error details when validation status is error', () => {
@@ -430,6 +437,8 @@ describe('SettingsPage', () => {
         fundamentals: {
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -446,7 +455,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Error Details')).toBeInTheDocument();
-    expect(screen.getByText('Run initial sync to populate the database')).toBeInTheDocument();
+    expect(screen.getAllByText('Run initial sync to populate the database').length).toBeGreaterThan(0);
   });
 
   it('hides validation detail panel when no recommendations are returned', () => {
@@ -464,6 +473,8 @@ describe('SettingsPage', () => {
         fundamentals: {
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -535,7 +546,7 @@ describe('SettingsPage', () => {
       { codes: ['7203', '6758'] },
       expect.objectContaining({ onSuccess: expect.any(Function) })
     );
-    expect(await screen.findByText('Total Stocks:')).toBeInTheDocument();
+    expect(await screen.findByText('Total Stocks')).toBeInTheDocument();
     expect(screen.getByText('120')).toBeInTheDocument();
     expect(screen.getByText('7203')).toBeInTheDocument();
     expect(screen.getByText('6758')).toBeInTheDocument();

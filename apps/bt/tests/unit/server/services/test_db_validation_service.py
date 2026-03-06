@@ -36,11 +36,13 @@ class DummyMarketDb:
         initialized: bool = True,
         stocks_needing_refresh: list[str] | None = None,
         adjustment_events: list[dict[str, Any]] | None = None,
+        prime_codes: set[str] | None = None,
         fundamentals_target_codes: set[str] | None = None,
     ) -> None:
         self._initialized = initialized
         self._stocks_needing_refresh = stocks_needing_refresh or []
         self._adjustment_events = adjustment_events or []
+        self._prime_codes = prime_codes or {"1301", "7203"}
         self._fundamentals_target_codes = fundamentals_target_codes or {"1301", "7203"}
         self._metadata = {
             "init_completed": "true",
@@ -71,6 +73,9 @@ class DummyMarketDb:
 
     def get_stocks_needing_refresh_count(self) -> int:
         return len(self._stocks_needing_refresh)
+
+    def get_prime_codes(self) -> set[str]:
+        return set(self._prime_codes)
 
     def get_fundamentals_target_codes(self) -> set[str]:
         return set(self._fundamentals_target_codes)
@@ -156,6 +161,8 @@ def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_
     assert any("failed fundamentals dates" in rec for rec in result.recommendations)
     assert any("failed fundamentals codes" in rec for rec in result.recommendations)
     assert result.failedDatesCount == 0
+    assert result.fundamentals.missingPrimeStocksCount == 2
+    assert result.fundamentals.missingListedMarketStocksCount == 2
 
 
 def test_validate_market_db_warns_when_failed_dates_metadata_exists() -> None:

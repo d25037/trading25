@@ -82,6 +82,7 @@ class ValidationMarketDbLike(Protocol):
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]: ...
     def get_stocks_needing_refresh_count(self) -> int: ...
+    def get_prime_codes(self) -> set[str]: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
 
 
@@ -109,11 +110,18 @@ def validate_market_db(
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)
     latest_disclosed = inspection.latest_statement_disclosed_date
-    fundamentals_coverage = _build_fundamentals_target_statement_coverage(
-        market_db,
+    prime_coverage = _build_statement_coverage(
+        market_db.get_prime_codes(),
         statement_codes,
         limit_missing=20,
     )
+    fundamentals_coverage = _build_statement_coverage(
+        market_db.get_fundamentals_target_codes(),
+        statement_codes,
+        limit_missing=20,
+    )
+    missing_prime_count = int(prime_coverage.get("missingCount", 0) or 0)
+    missing_prime_codes = [str(code) for code in prime_coverage.get("missingCodes", [])]
     missing_fundamentals_count = int(fundamentals_coverage.get("missingCount", 0) or 0)
     missing_fundamentals_codes = [
         str(code) for code in fundamentals_coverage.get("missingCodes", [])
@@ -230,9 +238,10 @@ def validate_market_db(
         count=inspection.statements_count,
         uniqueStockCount=len(statement_codes),
         latestDisclosedDate=latest_disclosed,
-        # Keep the response shape stable while broadening the covered market scope.
-        missingPrimeStocksCount=missing_fundamentals_count,
-        missingPrimeStocks=missing_fundamentals_codes,
+        missingPrimeStocksCount=missing_prime_count,
+        missingPrimeStocks=missing_prime_codes,
+        missingListedMarketStocksCount=missing_fundamentals_count,
+        missingListedMarketStocks=missing_fundamentals_codes,
         failedDatesCount=len(fundamentals_failed_dates),
         failedCodesCount=len(fundamentals_failed_codes),
     )
@@ -272,13 +281,12 @@ def _resolve_time_series_inspection(
     )
 
 
-def _build_fundamentals_target_statement_coverage(
-    market_db: ValidationMarketDbLike,
+def _build_statement_coverage(
+    target_codes: set[str],
     statement_codes: set[str],
     *,
     limit_missing: int = 20,
 ) -> dict[str, Any]:
-    target_codes = market_db.get_fundamentals_target_codes()
     covered_codes = sorted(target_codes & statement_codes)
     missing_codes = sorted(target_codes - statement_codes)
     target_count = len(target_codes)

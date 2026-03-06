@@ -33,7 +33,7 @@ vi.mock('@/pages/HistoryPage', () => ({
 }));
 
 vi.mock('@/pages/SettingsPage', () => ({
-  SettingsPage: () => <h1>Settings Page</h1>,
+  SettingsPage: () => <h1>Market DB Page</h1>,
 }));
 
 function renderRouterAt(path: string) {
@@ -67,12 +67,46 @@ describe('router', () => {
     expect(screen.getByRole('link', { name: 'Open suggested route (/history)' })).toHaveAttribute('href', '/history');
   });
 
-  it('renders settings page when path is /settings', async () => {
+  it('omits the suggested route link for unknown legacy tabs', async () => {
+    renderRouterAt('/?tab=unknown');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
+    });
+
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?tab=unknown');
+    expect(screen.getByText('Requested URL:')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
+  });
+
+  it('omits suggested route for unknown legacy tabs', async () => {
+    renderRouterAt('/?tab=unknown');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: '404: Legacy URL is no longer supported' })).toBeInTheDocument();
+    });
+    expect(window.location.pathname).toBe('/');
+    expect(window.location.search).toBe('?tab=unknown');
+    expect(screen.getByText('Requested URL:')).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open suggested route/i })).not.toBeInTheDocument();
+  });
+
+  it('renders market db page when path is /market-db', async () => {
+    renderRouterAt('/market-db');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Market DB Page' })).toBeInTheDocument();
+    });
+    expect(window.location.pathname).toBe('/market-db');
+  });
+
+  it('redirects legacy /settings path to /market-db', async () => {
     renderRouterAt('/settings');
 
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: 'Settings Page' })).toBeInTheDocument();
+      expect(window.location.pathname).toBe('/market-db');
     });
-    expect(window.location.pathname).toBe('/settings');
+    expect(screen.getByRole('heading', { name: 'Market DB Page' })).toBeInTheDocument();
   });
 });
