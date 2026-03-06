@@ -157,6 +157,36 @@ class DummyMarketDb:
             if str(row.get("market_code", "")).lower() in {"0111", "0112", "0113", "prime", "standard", "growth"}
         }
 
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]:
+        configured = self.get_fundamentals_target_codes()
+        if configured:
+            rows_by_code = {
+                str(row["code"]): {
+                    "code": str(row["code"]),
+                    "company_name": str(row.get("company_name", "") or ""),
+                    "market_code": str(row.get("market_code", "") or "0111"),
+                }
+                for row in self.stocks_rows
+                if row.get("code")
+            }
+            return [
+                rows_by_code.get(
+                    code,
+                    {"code": code, "company_name": "", "market_code": "0111"},
+                )
+                for code in sorted(configured)
+            ]
+        return [
+            {
+                "code": str(row["code"]),
+                "company_name": str(row.get("company_name", "") or ""),
+                "market_code": str(row.get("market_code", "") or ""),
+            }
+            for row in self.stocks_rows
+            if str(row.get("market_code", "")).lower() in {"0111", "0112", "0113", "prime", "standard", "growth"}
+            and row.get("code")
+        ]
+
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]:
         codes = list(dict.fromkeys(self._stocks_needing_refresh))
         if limit is None:
@@ -1676,6 +1706,77 @@ async def test_sync_margin_data_logs_backfill_execution_api_calls(
 
 
 @pytest.mark.asyncio
+async def test_sync_margin_data_persists_empty_cache_and_skips_same_frontier_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb()
+
+    class EmptyMarginClient(DummyClient):
+        async def get_paginated(
+            self,
+            path: str,
+            params: dict[str, Any] | None = None,
+        ) -> list[dict[str, Any]]:
+            if path == "/markets/margin-interest":
+                self.calls.append((path, params))
+                return []
+            return await super().get_paginated(path, params)
+
+    client = EmptyMarginClient()
+    ctx = _build_ctx(client=client, market_db=market_db)
+
+    async def _fake_plan_fetch_method(*_args: Any, **_kwargs: Any) -> _StageFetchDecision:
+        return _StageFetchDecision(
+            method="rest",
+            planner_api_calls=0,
+            estimated_rest_calls=1,
+            estimated_bulk_calls=None,
+            reason="rest_estimate_too_small",
+        )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._plan_fetch_method",
+        _fake_plan_fetch_method,
+    )
+
+    result_first = await _sync_margin_data(
+        ctx,
+        ["4957"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-27",
+        existing_margin_codes=set(),
+        trading_frontier="2026-03-06",
+    )
+    margin_calls_after_first = len([call for call in client.calls if call[0] == "/markets/margin-interest"])
+
+    assert result_first["cancelled"] is False
+    assert result_first["updated"] == 0
+    assert margin_calls_after_first == 2
+    assert json.loads(market_db.metadata[METADATA_KEYS["MARGIN_EMPTY_CODES"]]) == {
+        "frontier": "2026-03-06",
+        "codes": ["4957"],
+    }
+
+    result_second = await _sync_margin_data(
+        ctx,
+        ["4957"],
+        progress_current=1,
+        progress_total=2,
+        stage_name="margin_incremental",
+        anchor="2026-02-27",
+        existing_margin_codes=set(),
+        trading_frontier="2026-03-06",
+    )
+    margin_calls_after_second = len([call for call in client.calls if call[0] == "/markets/margin-interest"])
+
+    assert result_second["cancelled"] is False
+    assert result_second["updated"] == 0
+    assert margin_calls_after_second == margin_calls_after_first
+
+
+@pytest.mark.asyncio
 async def test_incremental_sync_does_not_fallback_to_sqlite_anchor_when_duckdb_has_no_anchor() -> None:
     market_db = DummyMarketDb(latest_trading_date="20260206", latest_stock_data_date="20260206")
     client = DummyClient()
@@ -3009,6 +3110,169 @@ async def test_incremental_sync_fundamentals_backfill_uses_5digit_code_first(
     fins_calls = [call for call in client.calls if call[0] == "/fins/summary"]
     assert any((params or {}).get("code") == "72030" for _, params in fins_calls)
     assert not any((params or {}).get("code") == "7203" for _, params in fins_calls)
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_alias_coverage_skips_preferred_share_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.statements_rows = [
+        {"code": "2593", "disclosed_date": "2026-03-02", "earnings_per_share": 100.0},
+    ]
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "259350",
+                "CoName": "伊藤園（優先株式）",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "1",
+                "S17Nm": "食品",
+                "S33": "1050",
+                "S33Nm": "食料品",
+                "Date": "2026-03-06",
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert result.fundamentalsUpdated == 0
+    assert [call for call in client.calls if call[0] == "/fins/summary"] == []
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_fundamentals_persists_empty_cache_and_skips_same_frontier_retry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-06"
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "464A0",
+                "CoName": "ＱＰＳホールディングス",
+                "Mkt": "0113",
+                "MktNm": "グロース",
+                "S17": "10",
+                "S17Nm": "情報・通信",
+                "S33": "5250",
+                "S33Nm": "情報・通信",
+                "Date": "2026-03-06",
+            }
+        ],
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result_first = await IncrementalSyncStrategy().execute(ctx)
+    fins_calls_after_first = len([call for call in client.calls if call[0] == "/fins/summary"])
+
+    assert result_first.success
+    assert result_first.fundamentalsUpdated == 0
+    assert json.loads(market_db.metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]]) == {
+        "frontier": "2026-03-06",
+        "codes": ["464A"],
+    }
+    assert fins_calls_after_first == 2
+
+    result_second = await IncrementalSyncStrategy().execute(ctx)
+    fins_calls_after_second = len([call for call in client.calls if call[0] == "/fins/summary"])
+
+    assert result_second.success
+    assert result_second.fundamentalsUpdated == 0
+    assert fins_calls_after_second == fins_calls_after_first
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_margin_filters_non_listed_market_backfill_targets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    market_db.metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-06"
+
+    client = DummyClient(
+        master_quotes=[
+            {
+                "Code": "72030",
+                "CoName": "トヨタ自動車",
+                "Mkt": "0111",
+                "MktNm": "プライム",
+                "S17": "6",
+                "S17Nm": "輸送用機器",
+                "S33": "3700",
+                "S33Nm": "輸送用機器",
+                "Date": "1949-05-16",
+            },
+            {
+                "Code": "511A0",
+                "CoName": "ヴァンガードスミス",
+                "Mkt": "0105",
+                "MktNm": "TOKYO PRO MARKET",
+                "Date": "2026-03-06",
+            },
+            {
+                "Code": "516A0",
+                "CoName": "大和アセットマネジメント株式会社　ｉＦｒｅｅＥＴＦ　米ドル・ブル（１倍）",
+                "Mkt": "0109",
+                "MktNm": "その他",
+                "Date": "2026-03-06",
+            },
+        ],
+        margin_by_code={
+            "72030": [{"Code": "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200}],
+        },
+    )
+
+    monkeypatch.setattr(
+        "src.application.services.sync_strategies._build_incremental_date_targets",
+        lambda _anchor, _retry: [],
+    )
+
+    progress_messages: list[str] = []
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda _stage, _current, _total, message: progress_messages.append(message),
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    margin_calls = [
+        str((params or {}).get("code"))
+        for path, params in client.calls
+        if path == "/markets/margin-interest"
+    ]
+    assert margin_calls == ["72030"]
+    assert any("skipped_market=2" in message for message in progress_messages)
 
 
 @pytest.mark.asyncio

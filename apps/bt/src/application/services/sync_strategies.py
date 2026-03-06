@@ -24,6 +24,16 @@ from src.application.services.jquants_bulk_service import (
     BulkFetchResult,
     JQuantsBulkService,
 )
+from src.application.services.listed_market_targets import (
+    build_fundamentals_fetch_codes,
+    build_fundamentals_target_map,
+    extract_listed_market_codes,
+    group_target_codes_by_canonical,
+    is_listed_market_code,
+    normalize_frontier_date,
+    resolve_frontier_cache_codes,
+    serialize_frontier_code_cache,
+)
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
@@ -67,6 +77,7 @@ class SyncMarketDbLike(Protocol):
     def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
     def upsert_index_master(self, rows: list[dict[str, Any]]) -> Any: ...
     def get_index_master_codes(self) -> set[str]: ...
@@ -131,7 +142,6 @@ class SyncStrategy(Protocol):
 
 
 _JST = ZoneInfo("Asia/Tokyo")
-_FUNDAMENTALS_TARGET_MARKET_CODES = {"0111", "0112", "0113", "prime", "standard", "growth"}
 _MAX_FINS_SUMMARY_PAGES = 2000
 
 _FetchMethod = Literal["rest", "bulk"]
@@ -707,6 +717,67 @@ def _summarize_exception(exc: Exception, *, limit: int = 200) -> str:
     return f"{text[: limit - 3]}..."
 
 
+def _format_target_label(
+    count: int,
+    unit: str,
+    *,
+    skipped_empty: int = 0,
+    skipped_market: int = 0,
+    issuer_alias: int = 0,
+) -> str:
+    parts = [f"{count} {unit}"]
+    if skipped_market > 0:
+        parts.append(f"skipped_market={skipped_market}")
+    if skipped_empty > 0:
+        parts.append(f"skipped_empty={skipped_empty}")
+    if issuer_alias > 0:
+        parts.append(f"issuer_alias={issuer_alias}")
+    return ", ".join(parts)
+
+
+def _extract_listed_market_target_rows(
+    stock_rows: list[dict[str, Any]],
+) -> list[dict[str, str]]:
+    deduped: list[dict[str, str]] = []
+    seen: set[str] = set()
+    for row in stock_rows:
+        if not is_listed_market_code(row.get("market_code")):
+            continue
+        code = normalize_stock_code(str(row.get("code", "")).strip())
+        if not code or code in seen:
+            continue
+        seen.add(code)
+        deduped.append(
+            {
+                "code": code,
+                "company_name": str(row.get("company_name", "") or ""),
+                "market_code": str(row.get("market_code", "") or ""),
+            }
+        )
+    return deduped
+
+
+def _load_frontier_code_cache(
+    market_db: SyncMarketDbLike,
+    key: str,
+    frontier: str | None,
+) -> set[str]:
+    return resolve_frontier_cache_codes(market_db.get_sync_metadata(key), frontier)
+
+
+async def _save_frontier_code_cache(
+    ctx: SyncContext,
+    key: str,
+    frontier: str | None,
+    codes: set[str] | list[str],
+) -> None:
+    await asyncio.to_thread(
+        ctx.market_db.set_sync_metadata,
+        key,
+        serialize_frontier_code_cache(frontier, codes),
+    )
+
+
 def _describe_bulk_unavailable_reason(
     *,
     reason: str,
@@ -1112,13 +1183,15 @@ class InitialSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            fundamentals_target_codes = _extract_fundamentals_target_codes_from_stock_rows(stock_rows)
-            if not fundamentals_target_codes:
-                fundamentals_target_codes = await asyncio.to_thread(ctx.market_db.get_fundamentals_target_codes)
+            fundamentals_target_rows = _extract_listed_market_target_rows(stock_rows)
+            if not fundamentals_target_rows:
+                fundamentals_target_rows = await asyncio.to_thread(
+                    ctx.market_db.get_fundamentals_target_stock_rows
+                )
 
             fundamentals_sync = await _sync_fundamentals_initial(
                 ctx,
-                sorted(fundamentals_target_codes),
+                fundamentals_target_rows,
                 progress_current=2,
                 progress_total=7,
             )
@@ -1303,17 +1376,24 @@ class InitialSyncStrategy:
 
             # Step 6: 信用残データ
             ctx.on_progress("margin", 5, 7, "Fetching margin data...")
-            margin_target_codes = [
-                str(row.get("code", ""))
-                for row in stock_rows
-                if row.get("code")
-            ]
+            all_stock_codes = _collect_unique_codes(
+                [str(row.get("code", "")) for row in stock_rows if row.get("code")]
+            )
+            margin_target_codes = extract_listed_market_codes(stock_rows)
+            margin_frontier = (
+                _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
+                or ctx.market_db.get_latest_trading_date()
+                or ctx.market_db.get_latest_stock_data_date()
+                or ctx.market_db.get_latest_margin_date()
+            )
             margin_sync = await _sync_margin_data(
                 ctx,
                 margin_target_codes,
                 progress_current=5,
                 progress_total=7,
                 stage_name="margin_initial",
+                trading_frontier=margin_frontier,
+                skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
             )
             total_calls += margin_sync["api_calls"]
             errors.extend(margin_sync["errors"])
@@ -1855,13 +1935,15 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            fundamentals_target_codes = _extract_fundamentals_target_codes_from_stock_rows(stock_rows)
-            if not fundamentals_target_codes:
-                fundamentals_target_codes = await asyncio.to_thread(ctx.market_db.get_fundamentals_target_codes)
+            fundamentals_target_rows = _extract_listed_market_target_rows(stock_rows)
+            if not fundamentals_target_rows:
+                fundamentals_target_rows = await asyncio.to_thread(
+                    ctx.market_db.get_fundamentals_target_stock_rows
+                )
 
             fundamentals_sync = await _sync_fundamentals_incremental(
                 ctx,
-                sorted(fundamentals_target_codes),
+                fundamentals_target_rows,
                 progress_current=4,
                 progress_total=6,
             )
@@ -1877,11 +1959,16 @@ class IncrementalSyncStrategy:
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            margin_target_codes = [
-                str(row.get("code", ""))
-                for row in stock_rows
-                if row.get("code")
-            ]
+            all_stock_codes = _collect_unique_codes(
+                [str(row.get("code", "")) for row in stock_rows if row.get("code")]
+            )
+            margin_target_codes = extract_listed_market_codes(stock_rows)
+            margin_frontier = (
+                _latest_date([str(row.get("date")) for row in topix_rows if row.get("date")])
+                or inspection.topix_max
+                or inspection.stock_max
+                or inspection.margin_max
+            )
             margin_sync = await _sync_margin_data(
                 ctx,
                 margin_target_codes,
@@ -1890,6 +1977,8 @@ class IncrementalSyncStrategy:
                 stage_name="margin_incremental",
                 anchor=inspection.margin_max,
                 existing_margin_codes=set(inspection.margin_codes),
+                trading_frontier=margin_frontier,
+                skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
             )
             total_calls += margin_sync["api_calls"]
             errors.extend(margin_sync["errors"])
@@ -1935,8 +2024,8 @@ class RepairSyncStrategy:
                 return _cancelled_sync_result(total_calls)
 
             stock_codes = await asyncio.to_thread(ctx.market_db.get_stocks_needing_refresh, None)
-            fundamentals_target_codes = sorted(
-                await asyncio.to_thread(ctx.market_db.get_fundamentals_target_codes)
+            fundamentals_target_rows = await asyncio.to_thread(
+                ctx.market_db.get_fundamentals_target_stock_rows
             )
 
             if stock_codes:
@@ -1965,7 +2054,7 @@ class RepairSyncStrategy:
             if ctx.cancelled.is_set():
                 return _cancelled_sync_result(total_calls)
 
-            if fundamentals_target_codes:
+            if fundamentals_target_rows:
                 def _on_fundamentals_progress(stage: str, current: int, total: int, message: str) -> None:
                     ctx.on_progress(
                         stage,
@@ -1977,7 +2066,7 @@ class RepairSyncStrategy:
                 fundamentals_ctx = replace(ctx, on_progress=_on_fundamentals_progress)
                 fundamentals_sync = await _sync_fundamentals_incremental(
                     fundamentals_ctx,
-                    fundamentals_target_codes,
+                    fundamentals_target_rows,
                 )
                 total_calls += fundamentals_sync["api_calls"]
                 fundamentals_updated += fundamentals_sync["updated"]
@@ -2013,7 +2102,7 @@ def _cancelled_sync_result(total_api_calls: int) -> SyncResult:
 
 async def _sync_fundamentals_initial(
     ctx: SyncContext,
-    target_codes: list[str],
+    target_rows: list[dict[str, Any]],
     *,
     progress_current: int = 2,
     progress_total: int = 6,
@@ -2023,10 +2112,42 @@ async def _sync_fundamentals_initial(
     updated = 0
     failed_codes: list[str] = []
     errors: list[str] = []
-    target_code_set = set(target_codes)
+    target_map = build_fundamentals_target_map(target_rows)
+    if not target_map:
+        return {
+            "api_calls": api_calls,
+            "updated": updated,
+            "dates_processed": 0,
+            "errors": errors,
+            "cancelled": False,
+        }
+    allowed_statement_codes = set(target_map) | set(target_map.values())
+    target_groups = group_target_codes_by_canonical(target_map)
+    statement_codes = _get_statement_codes(ctx)
+    current_frontier = normalize_frontier_date(
+        ctx.market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
+        or _get_latest_statement_disclosed_date(ctx)
+    )
+    current_empty_codes = _load_frontier_code_cache(
+        ctx.market_db,
+        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
+        current_frontier,
+    )
+    target_codes = build_fundamentals_fetch_codes(
+        target_map,
+        statement_codes,
+        empty_skipped_codes=current_empty_codes,
+    )
+    skipped_empty_exact_codes = {
+        code
+        for code, canonical in target_map.items()
+        if canonical not in statement_codes and code in current_empty_codes
+    }
+    issuer_alias_count = sum(1 for code, canonical in target_map.items() if canonical != code)
     bulk_succeeded = False
     stage_api_calls = 0
     bulk_result: BulkFetchResult | None = None
+    empty_fetch_codes: set[str] = set()
 
     decision = await _plan_fetch_method(
         ctx,
@@ -2042,7 +2163,12 @@ async def _sync_fundamentals_initial(
         total=progress_total,
         endpoint="/fins/summary",
         decision=decision,
-        target_label=f"{len(target_codes)} listed-market codes",
+        target_label=_format_target_label(
+            len(target_codes),
+            "listed-market fetch codes",
+            skipped_empty=len(skipped_empty_exact_codes),
+            issuer_alias=issuer_alias_count,
+        ),
     )
 
     if decision.method == "bulk" and decision.plan is not None:
@@ -2054,13 +2180,18 @@ async def _sync_fundamentals_initial(
                 total=progress_total,
                 endpoint="/fins/summary",
                 method="bulk",
-                target_label=f"{len(target_codes)} listed-market codes",
+                target_label=_format_target_label(
+                    len(target_codes),
+                    "listed-market fetch codes",
+                    skipped_empty=len(skipped_empty_exact_codes),
+                    issuer_alias=issuer_alias_count,
+                ),
             )
             bulk_result = await _get_bulk_service(ctx).fetch_with_plan(decision.plan)
             api_calls += bulk_result.api_calls
             stage_api_calls += bulk_result.api_calls
             bulk_rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(bulk_result.rows))
-            rows = [row for row in bulk_rows if row.get("code") in target_code_set]
+            rows = [row for row in bulk_rows if row.get("code") in allowed_statement_codes]
             rows = validate_rows_required_fields(
                 rows,
                 required_fields=("code", "disclosed_date"),
@@ -2090,7 +2221,12 @@ async def _sync_fundamentals_initial(
             total=progress_total,
             endpoint="/fins/summary",
             method="rest",
-            target_label=f"{len(target_codes)} listed-market codes",
+            target_label=_format_target_label(
+                len(target_codes),
+                "listed-market fetch codes",
+                skipped_empty=len(skipped_empty_exact_codes),
+                issuer_alias=issuer_alias_count,
+            ),
             fallback=decision.method == "bulk",
         )
         for idx, code in enumerate(target_codes):
@@ -2115,14 +2251,20 @@ async def _sync_fundamentals_initial(
                 data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
                 api_calls += page_calls
                 stage_api_calls += page_calls
+                if not data:
+                    empty_fetch_codes.add(code)
+                    continue
                 rows = validate_rows_required_fields(
                     convert_fins_summary_rows(data, default_code=code),
                     required_fields=("code", "disclosed_date"),
                     dedupe_keys=("code", "disclosed_date"),
                     stage="fundamentals",
                 )
+                rows = [row for row in rows if row.get("code") in allowed_statement_codes]
                 if rows:
                     updated += await _publish_statement_rows(ctx, rows)
+                else:
+                    empty_fetch_codes.add(code)
             except Exception as e:
                 failed_codes.append(code)
                 errors.append(f"Fundamentals code {code}: {e}")
@@ -2139,6 +2281,7 @@ async def _sync_fundamentals_initial(
     await _index_statement_rows(ctx)
 
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
+    normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
     now_iso = datetime.now(UTC).isoformat()
 
     await asyncio.to_thread(
@@ -2152,10 +2295,26 @@ async def _sync_fundamentals_initial(
             METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
             latest_disclosed,
         )
+    empty_cache_frontier = normalized_latest_disclosed or current_frontier
+    next_empty_codes = set(current_empty_codes) if empty_cache_frontier == current_frontier else set()
+    for fetch_code in empty_fetch_codes:
+        next_empty_codes.update(target_groups.get(fetch_code, ()))
+    latest_statement_codes = _get_statement_codes(ctx)
+    next_empty_codes = {
+        code
+        for code in next_empty_codes
+        if code in target_map and target_map[code] not in latest_statement_codes
+    }
     await asyncio.to_thread(
         ctx.market_db.set_sync_metadata,
         METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
         "[]",
+    )
+    await _save_frontier_code_cache(
+        ctx,
+        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
+        empty_cache_frontier,
+        next_empty_codes,
     )
     await _save_metadata_json_list(
         ctx,
@@ -2174,7 +2333,7 @@ async def _sync_fundamentals_initial(
 
 async def _sync_fundamentals_incremental(
     ctx: SyncContext,
-    target_codes: list[str],
+    target_rows: list[dict[str, Any]],
     *,
     progress_current: int = 4,
     progress_total: int = 5,
@@ -2185,7 +2344,18 @@ async def _sync_fundamentals_incremental(
     errors: list[str] = []
     failed_dates: list[str] = []
     failed_codes: list[str] = []
-    target_code_set = set(target_codes)
+    target_map = build_fundamentals_target_map(target_rows)
+    if not target_map:
+        return {
+            "api_calls": api_calls,
+            "updated": updated,
+            "dates_processed": 0,
+            "errors": errors,
+            "cancelled": False,
+        }
+    allowed_statement_codes = set(target_map) | set(target_map.values())
+    target_groups = group_target_codes_by_canonical(target_map)
+    issuer_alias_count = sum(1 for code, canonical in target_map.items() if canonical != code)
 
     previous_failed_dates = _normalize_date_list(
         _load_metadata_json_list(ctx.market_db, METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"])
@@ -2242,7 +2412,7 @@ async def _sync_fundamentals_incremental(
                 api_calls += date_phase_bulk_result.api_calls
                 date_phase_api_calls += date_phase_bulk_result.api_calls
                 bulk_rows = convert_fins_summary_rows(_normalize_bulk_fins_rows(date_phase_bulk_result.rows))
-                rows = [row for row in bulk_rows if row.get("code") in target_code_set]
+                rows = [row for row in bulk_rows if row.get("code") in allowed_statement_codes]
                 if normalized_targets:
                     rows = [
                         row
@@ -2308,7 +2478,7 @@ async def _sync_fundamentals_incremental(
                     api_calls += page_calls
                     date_phase_api_calls += page_calls
                     rows = convert_fins_summary_rows(data)
-                    rows = [row for row in rows if row.get("code") in target_code_set]
+                    rows = [row for row in rows if row.get("code") in allowed_statement_codes]
                     rows = validate_rows_required_fields(
                         rows,
                         required_fields=("code", "disclosed_date"),
@@ -2331,16 +2501,43 @@ async def _sync_fundamentals_incremental(
                 bulk_result=date_phase_bulk_result,
             )
 
+    current_frontier = normalize_frontier_date(
+        _get_latest_statement_disclosed_date(ctx) or anchor
+    )
+    current_empty_codes = _load_frontier_code_cache(
+        ctx.market_db,
+        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
+        current_frontier,
+    )
     statement_codes = _get_statement_codes(ctx)
-    missing_target_codes = sorted(set(target_codes) - set(statement_codes))
-    code_targets = _collect_unique_codes(previous_failed_codes + missing_target_codes)
+    skipped_empty_exact_codes = {
+        code
+        for code, canonical in target_map.items()
+        if canonical not in statement_codes and code in current_empty_codes
+    }
+    code_targets = build_fundamentals_fetch_codes(
+        target_map,
+        statement_codes,
+        previous_failed_codes=previous_failed_codes,
+        empty_skipped_codes=current_empty_codes,
+    )
+    empty_fetch_codes: set[str] = set()
+    code_phase_api_calls = 0
 
     if code_targets:
-        ctx.on_progress(
-            "fundamentals",
-            progress_current,
-            progress_total,
-            f"Fetching /fins/summary via REST, targets={len(code_targets)} backfill codes...",
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage="fundamentals",
+            current=progress_current,
+            total=progress_total,
+            endpoint="/fins/summary",
+            method="rest",
+            target_label=_format_target_label(
+                len(code_targets),
+                "backfill codes",
+                skipped_empty=len(skipped_empty_exact_codes),
+                issuer_alias=issuer_alias_count,
+            ),
         )
 
     for idx, code in enumerate(code_targets):
@@ -2364,8 +2561,12 @@ async def _sync_fundamentals_incremental(
         try:
             data, page_calls = await _fetch_fins_summary_by_code(ctx.client, code)
             api_calls += page_calls
+            code_phase_api_calls += page_calls
+            if not data:
+                empty_fetch_codes.add(code)
+                continue
             rows = convert_fins_summary_rows(data, default_code=code)
-            rows = [row for row in rows if row.get("code") in target_code_set]
+            rows = [row for row in rows if row.get("code") in allowed_statement_codes]
             rows = validate_rows_required_fields(
                 rows,
                 required_fields=("code", "disclosed_date"),
@@ -2374,13 +2575,33 @@ async def _sync_fundamentals_incremental(
             )
             if rows:
                 updated += await _publish_statement_rows(ctx, rows)
+            else:
+                empty_fetch_codes.add(code)
         except Exception as e:
             failed_codes.append(code)
             errors.append(f"Fundamentals code {code}: {e}")
 
+    if code_targets:
+        _log_sync_fetch_execution(
+            stage="fundamentals_incremental_backfill",
+            endpoint="/fins/summary",
+            decision=_StageFetchDecision(
+                method="rest",
+                planner_api_calls=0,
+                estimated_rest_calls=len(code_targets),
+                estimated_bulk_calls=None,
+                reason="code_backfill",
+            ),
+            executed="rest",
+            actual_api_calls=code_phase_api_calls,
+            fallback=False,
+            bulk_result=None,
+        )
+
     await _index_statement_rows(ctx)
 
     latest_disclosed = _get_latest_statement_disclosed_date(ctx)
+    normalized_latest_disclosed = normalize_frontier_date(latest_disclosed)
     now_iso = datetime.now(UTC).isoformat()
     await asyncio.to_thread(
         ctx.market_db.set_sync_metadata,
@@ -2393,11 +2614,27 @@ async def _sync_fundamentals_incremental(
             METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"],
             latest_disclosed,
         )
+    empty_cache_frontier = normalized_latest_disclosed or current_frontier
+    next_empty_codes = set(current_empty_codes) if empty_cache_frontier == current_frontier else set()
+    for fetch_code in empty_fetch_codes:
+        next_empty_codes.update(target_groups.get(fetch_code, ()))
+    latest_statement_codes = _get_statement_codes(ctx)
+    next_empty_codes = {
+        code
+        for code in next_empty_codes
+        if code in target_map and target_map[code] not in latest_statement_codes
+    }
 
     await _save_metadata_json_list(
         ctx,
         METADATA_KEYS["FUNDAMENTALS_FAILED_DATES"],
         failed_dates,
+    )
+    await _save_frontier_code_cache(
+        ctx,
+        METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"],
+        empty_cache_frontier,
+        next_empty_codes,
     )
     await _save_metadata_json_list(
         ctx,
@@ -2423,6 +2660,8 @@ async def _sync_margin_data(
     stage_name: str,
     anchor: str | None = None,
     existing_margin_codes: set[str] | None = None,
+    trading_frontier: str | None = None,
+    skipped_market_count: int = 0,
 ) -> dict[str, Any]:
     api_calls = 0
     updated = 0
@@ -2437,11 +2676,37 @@ async def _sync_margin_data(
             "cancelled": False,
         }
 
+    has_existing_margin_snapshot = anchor is not None and existing_margin_codes is not None
+    existing_margin_code_set = set(existing_margin_codes or set())
+    current_frontier = normalize_frontier_date(trading_frontier)
+    current_empty_codes = _load_frontier_code_cache(
+        ctx.market_db,
+        METADATA_KEYS["MARGIN_EMPTY_CODES"],
+        current_frontier,
+    )
+    all_backfill_codes = (
+        sorted(set(normalized_codes) - existing_margin_code_set)
+        if has_existing_margin_snapshot
+        else []
+    )
+    skipped_empty_codes = sorted(code for code in all_backfill_codes if code in current_empty_codes)
+    backfill_codes = [code for code in all_backfill_codes if code not in current_empty_codes]
+    rest_codes = normalized_codes
+    if has_existing_margin_snapshot:
+        rest_codes = [code for code in normalized_codes if code in existing_margin_code_set]
+    target_code_set = set(rest_codes) | set(backfill_codes)
+    target_label = _format_target_label(
+        len(normalized_codes),
+        "codes",
+        skipped_empty=len(skipped_empty_codes),
+        skipped_market=skipped_market_count,
+    )
+
     decision = await _plan_fetch_method(
         ctx,
         stage=stage_name,
         endpoint="/markets/margin-interest",
-        estimated_rest_calls=max(len(normalized_codes), 1),
+        estimated_rest_calls=max(len(rest_codes) + len(backfill_codes), 1),
         date_from=anchor,
     )
     api_calls += decision.planner_api_calls
@@ -2452,15 +2717,7 @@ async def _sync_margin_data(
         total=progress_total,
         endpoint="/markets/margin-interest",
         decision=decision,
-        target_label=f"{len(normalized_codes)} codes",
-    )
-
-    has_existing_margin_snapshot = anchor is not None and existing_margin_codes is not None
-    existing_margin_code_set = set(existing_margin_codes or set())
-    backfill_codes = (
-        sorted(set(normalized_codes) - existing_margin_code_set)
-        if has_existing_margin_snapshot
-        else []
+        target_label=target_label,
     )
 
     used_rest_fallback = False
@@ -2469,7 +2726,7 @@ async def _sync_margin_data(
     rest_stage_api_calls = 0
     backfill_stage_api_calls = 0
     bulk_result: BulkFetchResult | None = None
-    target_code_set = set(normalized_codes)
+    empty_fetch_codes: set[str] = set()
 
     if decision.method == "bulk":
         if decision.plan is None or len(decision.plan.files) == 0:
@@ -2489,7 +2746,7 @@ async def _sync_margin_data(
                     total=progress_total,
                     endpoint="/markets/margin-interest",
                     method="bulk",
-                    target_label=f"{len(normalized_codes)} codes",
+                    target_label=target_label,
                 )
 
                 async def _consume_margin_bulk_rows(
@@ -2529,10 +2786,6 @@ async def _sync_margin_data(
                     bulk_fallback_reason,
                 )
 
-    rest_codes = normalized_codes
-    if has_existing_margin_snapshot:
-        rest_codes = [code for code in normalized_codes if code in existing_margin_code_set]
-
     if (decision.method == "rest" or used_rest_fallback) and rest_codes:
         _emit_fetch_execution_progress(
             ctx,
@@ -2541,7 +2794,7 @@ async def _sync_margin_data(
             total=progress_total,
             endpoint="/markets/margin-interest",
             method="rest",
-            target_label=f"{len(rest_codes)} codes",
+            target_label=target_label,
             fallback=used_rest_fallback,
             fallback_reason=bulk_fallback_reason,
         )
@@ -2603,7 +2856,11 @@ async def _sync_margin_data(
             total=progress_total,
             endpoint="/markets/margin-interest",
             method="rest",
-            target_label=f"{len(backfill_codes)} backfill codes",
+            target_label=_format_target_label(
+                len(backfill_codes),
+                "backfill codes",
+                skipped_empty=len(skipped_empty_codes),
+            ),
         )
         for idx, code in enumerate(backfill_codes, start=1):
             if ctx.cancelled.is_set():
@@ -2629,6 +2886,9 @@ async def _sync_margin_data(
                 data, page_calls = await _fetch_margin_by_code(ctx.client, code)
                 api_calls += page_calls
                 backfill_stage_api_calls += page_calls
+                if not data:
+                    empty_fetch_codes.add(code)
+                    continue
                 rows = validate_rows_required_fields(
                     _convert_margin_rows(data, default_code=code),
                     required_fields=("code", "date"),
@@ -2637,6 +2897,8 @@ async def _sync_margin_data(
                 )
                 if rows:
                     updated += await _publish_margin_rows(ctx, rows)
+                else:
+                    empty_fetch_codes.add(code)
             except Exception as e:
                 errors.append(f"Margin backfill code {code}: {e}")
 
@@ -2651,6 +2913,19 @@ async def _sync_margin_data(
         )
 
     await _index_margin_rows(ctx)
+    next_empty_codes = set(current_empty_codes)
+    next_empty_codes.update(empty_fetch_codes)
+    latest_margin_codes = set(_inspect_time_series(ctx).margin_codes)
+    next_empty_codes = {
+        code for code in next_empty_codes
+        if code not in latest_margin_codes
+    }
+    await _save_frontier_code_cache(
+        ctx,
+        METADATA_KEYS["MARGIN_EMPTY_CODES"],
+        current_frontier,
+        next_empty_codes,
+    )
 
     return {
         "api_calls": api_calls,
@@ -2783,22 +3058,11 @@ async def _fetch_margin_by_code(
 
 
 def _extract_fundamentals_target_codes_from_stock_rows(stock_rows: list[dict[str, Any]]) -> set[str]:
-    codes: set[str] = set()
-    for row in stock_rows:
-        market_code = row.get("market_code")
-        if not _is_fundamentals_target_market_code(market_code):
-            continue
-        code = normalize_stock_code(str(row.get("code", "")))
-        if code:
-            codes.add(code)
-    return codes
+    return set(extract_listed_market_codes(stock_rows))
 
 
 def _is_fundamentals_target_market_code(value: Any) -> bool:
-    if value is None:
-        return False
-    normalized = str(value).strip().lower()
-    return normalized in _FUNDAMENTALS_TARGET_MARKET_CODES
+    return is_listed_market_code(value)
 
 
 def _load_metadata_json_list(market_db: SyncMarketDbLike, key: str) -> list[str]:

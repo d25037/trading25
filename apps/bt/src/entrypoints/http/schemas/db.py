@@ -111,6 +111,8 @@ class MarginValidation(BaseModel):
     dateCount: int = 0
     dateRange: DateRange | None = None
     orphanCount: int = 0
+    emptySkippedCount: int = 0
+    emptySkippedCodes: list[str] = Field(default_factory=list)
 
 
 class FundamentalsValidation(BaseModel):
@@ -118,7 +120,10 @@ class FundamentalsValidation(BaseModel):
     uniqueStockCount: int = 0
     latestDisclosedDate: str | None = None
     missingListedMarketStocksCount: int = 0
-    missingListedMarketStocks: list[str]
+    missingListedMarketStocks: list[str] = Field(default_factory=list)
+    issuerAliasCoveredCount: int = 0
+    emptySkippedCount: int = 0
+    emptySkippedCodes: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0
     failedCodesCount: int = 0
 

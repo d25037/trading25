@@ -166,6 +166,13 @@ interface SnapshotItem {
   value: string | number;
 }
 
+interface ValidationDiagnostic {
+  label: string;
+  value: number;
+  helpText: string;
+  sampleCodes?: string[];
+}
+
 interface RepairTargets {
   stocksNeedingRefresh: number;
   missingListedMarketFundamentals: number;
@@ -200,6 +207,9 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
 
 function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketValidationResponse): SnapshotItem[] {
   const fundamentals = dbValidation.fundamentals;
+  const marginEmptySkippedCount = dbValidation.margin.emptySkippedCount ?? 0;
+  const fundamentalsEmptySkippedCount = fundamentals.emptySkippedCount ?? 0;
+  const issuerAliasCoveredCount = fundamentals.issuerAliasCoveredCount ?? 0;
   return [
     { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
     { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
@@ -215,8 +225,60 @@ function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketVa
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
     { label: 'Missing Listed-Market Fundamentals', value: fundamentals.missingListedMarketStocksCount },
+    { label: 'Unsupported/Empty Fundamentals', value: fundamentalsEmptySkippedCount },
+    { label: 'Preferred Alias Covered', value: issuerAliasCoveredCount },
+    { label: 'Unsupported/Empty Margin Codes', value: marginEmptySkippedCount },
     { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
   ];
+}
+
+function buildValidationDiagnostics(dbValidation: MarketValidationResponse): ValidationDiagnostic[] {
+  const diagnostics: ValidationDiagnostic[] = [];
+  const fundamentals = dbValidation.fundamentals;
+  const margin = dbValidation.margin;
+  const missingListedMarketStocks = fundamentals.missingListedMarketStocks ?? [];
+  const fundamentalsEmptySkippedCount = fundamentals.emptySkippedCount ?? 0;
+  const fundamentalsEmptySkippedCodes = fundamentals.emptySkippedCodes ?? [];
+  const marginEmptySkippedCount = margin.emptySkippedCount ?? 0;
+  const marginEmptySkippedCodes = margin.emptySkippedCodes ?? [];
+  const issuerAliasCoveredCount = fundamentals.issuerAliasCoveredCount ?? 0;
+
+  if (missingListedMarketStocks.length > 0) {
+    diagnostics.push({
+      label: 'Missing Listed-Market Fundamentals',
+      value: fundamentals.missingListedMarketStocksCount,
+      helpText: 'Repair sync will retry these listed-market issuers.',
+      sampleCodes: missingListedMarketStocks,
+    });
+  }
+
+  if (fundamentalsEmptySkippedCount > 0) {
+    diagnostics.push({
+      label: 'Unsupported/Empty Fundamentals',
+      value: fundamentalsEmptySkippedCount,
+      helpText: 'Suppressed until a newer disclosure frontier is available.',
+      sampleCodes: fundamentalsEmptySkippedCodes,
+    });
+  }
+
+  if (marginEmptySkippedCount > 0) {
+    diagnostics.push({
+      label: 'Unsupported/Empty Margin Codes',
+      value: marginEmptySkippedCount,
+      helpText: 'Suppressed until a newer margin frontier is available.',
+      sampleCodes: marginEmptySkippedCodes,
+    });
+  }
+
+  if (issuerAliasCoveredCount > 0) {
+    diagnostics.push({
+      label: 'Preferred Alias Covered',
+      value: issuerAliasCoveredCount,
+      helpText: 'Preferred-share listed codes already covered by parent issuer statements.',
+    });
+  }
+
+  return diagnostics;
 }
 
 function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
@@ -228,9 +290,9 @@ function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined
 
   return {
     stocksNeedingRefresh: dbValidation.stocksNeedingRefreshCount ?? 0,
-    missingListedMarketFundamentals: fundamentals.missingListedMarketStocksCount,
-    failedFundamentalsDates: fundamentals.failedDatesCount,
-    failedFundamentalsCodes: fundamentals.failedCodesCount,
+    missingListedMarketFundamentals: fundamentals.missingListedMarketStocksCount ?? 0,
+    failedFundamentalsDates: fundamentals.failedDatesCount ?? 0,
+    failedFundamentalsCodes: fundamentals.failedCodesCount ?? 0,
   };
 }
 
@@ -261,6 +323,7 @@ function SnapshotDetails({
 }) {
   const recommendations = dbValidation.recommendations ?? [];
   const snapshotItems = buildSnapshotItems(dbStats, dbValidation);
+  const validationDiagnostics = buildValidationDiagnostics(dbValidation);
 
   return (
     <div className="space-y-4">
@@ -272,6 +335,26 @@ function SnapshotDetails({
           </div>
         ))}
       </div>
+
+      {validationDiagnostics.length > 0 ? (
+        <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+          <p className="font-medium">Coverage Diagnostics</p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {validationDiagnostics.map((diagnostic) => (
+              <div key={diagnostic.label} className="rounded-xl border border-border/70 bg-card/80 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{diagnostic.label}</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">{diagnostic.value}</p>
+                <p className="mt-2 text-xs text-muted-foreground">{diagnostic.helpText}</p>
+                {diagnostic.sampleCodes && diagnostic.sampleCodes.length > 0 ? (
+                  <p className="mt-2 text-xs text-muted-foreground">
+                    Sample codes: {diagnostic.sampleCodes.join(', ')}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
 
       {recommendations.length > 0 ? (
         <div className={getValidationDetailsClassName(dbValidation.status)}>

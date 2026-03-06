@@ -604,6 +604,8 @@ export interface MarketValidationResponse {
     dateCount: number;
     dateRange: { min: string; max: string } | null;
     orphanCount: number;
+    emptySkippedCount: number;
+    emptySkippedCodes: string[];
   };
   fundamentals: {
     count: number;
@@ -611,6 +613,9 @@ export interface MarketValidationResponse {
     latestDisclosedDate: string | null;
     missingListedMarketStocksCount: number;
     missingListedMarketStocks: string[];
+    issuerAliasCoveredCount: number;
+    emptySkippedCount: number;
+    emptySkippedCodes: string[];
     failedDatesCount: number;
     failedCodesCount: number;
   };

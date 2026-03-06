@@ -13,24 +13,26 @@ from sqlalchemy.sql import Select
 
 
 def normalize_stock_code(code: str) -> str:
-    """5桁→4桁変換（Drizzle stockCode() と同一ロジック）
+    """JQuants API code を DB 格納向けの実コードへ正規化する。
 
-    JQuants API は 5桁コード（末尾0）を使用するが、DB 格納は 4桁。
+    JQuants API は実コードの末尾に 0 を付けるため、
+    4桁銘柄は 5桁 API code、5桁銘柄は 6桁 API code になる。
     """
-    if len(code) == 5 and code.endswith("0"):
-        return code[:4]
+    if len(code) in {5, 6} and code.endswith("0"):
+        return code[:-1]
     return code
 
 
 def expand_stock_code(code: str) -> str:
-    """4桁→5桁変換（JQuants API 向け）"""
-    if len(code) == 4:
-        return f"{code}0"
-    return code
+    """実コードを JQuants API code へ展開する。"""
+    normalized = normalize_stock_code(code)
+    if len(normalized) in {4, 5}:
+        return f"{normalized}0"
+    return normalized
 
 
 def stock_code_candidates(code: str) -> tuple[str, ...]:
-    """DB検索向けの銘柄コード候補（4桁優先、必要なら5桁も含む）"""
+    """DB 検索向けの実コード/API code 候補を返す。"""
     code4 = normalize_stock_code(code)
     code5 = expand_stock_code(code4)
     if code4 == code5:

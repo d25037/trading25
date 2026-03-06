@@ -22,10 +22,12 @@ METADATA_KEYS = {
     "LAST_STOCKS_REFRESH": "last_stocks_refresh",
     "FAILED_DATES": "failed_dates",
     "REFETCHED_STOCKS": "refetched_stocks",
+    "MARGIN_EMPTY_CODES": "margin_empty_codes",
     "FUNDAMENTALS_LAST_SYNC_DATE": "fundamentals_last_sync_date",
     "FUNDAMENTALS_LAST_DISCLOSED_DATE": "fundamentals_last_disclosed_date",
     "FUNDAMENTALS_FAILED_DATES": "fundamentals_failed_dates",
     "FUNDAMENTALS_FAILED_CODES": "fundamentals_failed_codes",
+    "FUNDAMENTALS_EMPTY_CODES": "fundamentals_empty_codes",
     "ADJUSTMENT_REFRESH_STATE_INITIALIZED": "adjustment_refresh_state_initialized",
 }
 
@@ -454,6 +456,30 @@ class MarketDb:
     def get_fundamentals_target_codes(self) -> set[str]:
         """stocks から fundamentals sync 対象市場の銘柄コードを取得。"""
         return self._get_codes_by_market_codes(_FUNDAMENTALS_TARGET_MARKET_CODES)
+
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]:
+        """listed-market target universe の基礎情報を返す。"""
+        if not self._table_exists("stocks"):
+            return []
+        placeholders = ", ".join("?" for _ in _FUNDAMENTALS_TARGET_MARKET_CODES)
+        rows = self._fetchall(
+            f"""
+            SELECT code, company_name, market_code
+            FROM stocks
+            WHERE lower(trim(market_code)) IN ({placeholders})
+            ORDER BY code
+            """,
+            list(_FUNDAMENTALS_TARGET_MARKET_CODES),
+        )
+        return [
+            {
+                "code": str(row[0]),
+                "company_name": str(row[1] or ""),
+                "market_code": str(row[2] or ""),
+            }
+            for row in rows
+            if row and row[0]
+        ]
 
     def _get_codes_by_market_codes(self, market_codes: tuple[str, ...]) -> set[str]:
         if not self._table_exists("stocks"):

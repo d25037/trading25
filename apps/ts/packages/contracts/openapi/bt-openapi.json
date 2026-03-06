@@ -3156,6 +3156,18 @@
             "title": "Count",
             "type": "integer"
           },
+          "emptySkippedCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Emptyskippedcodes",
+            "type": "array"
+          },
+          "emptySkippedCount": {
+            "default": 0,
+            "title": "Emptyskippedcount",
+            "type": "integer"
+          },
           "failedCodesCount": {
             "default": 0,
             "title": "Failedcodescount",
@@ -3164,6 +3176,11 @@
           "failedDatesCount": {
             "default": 0,
             "title": "Faileddatescount",
+            "type": "integer"
+          },
+          "issuerAliasCoveredCount": {
+            "default": 0,
+            "title": "Issueraliascoveredcount",
             "type": "integer"
           },
           "latestDisclosedDate": {
@@ -3195,9 +3212,6 @@
             "type": "integer"
           }
         },
-        "required": [
-          "missingListedMarketStocks"
-        ],
         "title": "FundamentalsValidation",
         "type": "object"
       },
@@ -5503,6 +5517,18 @@
                 "type": "null"
               }
             ]
+          },
+          "emptySkippedCodes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Emptyskippedcodes",
+            "type": "array"
+          },
+          "emptySkippedCount": {
+            "default": 0,
+            "title": "Emptyskippedcount",
+            "type": "integer"
           },
           "orphanCount": {
             "default": 0,
