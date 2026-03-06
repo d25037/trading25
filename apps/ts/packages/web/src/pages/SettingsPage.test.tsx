@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
@@ -594,7 +594,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     const codes = Array.from({ length: 51 }, (_, index) => `${(1000 + index).toString().padStart(4, '0')}`).join(',');
-    await user.type(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), codes);
+    fireEvent.change(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), { target: { value: codes } });
     await user.click(screen.getByRole('button', { name: /Refresh Stocks/i }));
 
     expect(screen.getByText(/Maximum 50 stock codes are allowed/i)).toBeInTheDocument();
@@ -674,11 +674,11 @@ describe('SettingsPage', () => {
 
     render(<SettingsPage />);
 
-    await user.type(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), '7203');
+    fireEvent.change(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), { target: { value: '7203' } });
     await user.click(screen.getByRole('button', { name: /Refresh Stocks/i }));
 
-    expect(await screen.findByText('failed')).toBeInTheDocument();
-    expect(screen.getByText('api error')).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'failed' })).toBeInTheDocument();
+    expect(await screen.findByText('api error')).toBeInTheDocument();
     expect(screen.getByText('not-a-date')).toBeInTheDocument();
   });
 });
