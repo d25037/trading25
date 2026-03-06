@@ -4037,8 +4037,7 @@ export interface components {
             count: number;
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
-            listedMarketCoverage?: components["schemas"]["ListedMarketCoverage"];
-            primeCoverage?: components["schemas"]["PrimeCoverage"];
+            listedMarketCoverage: components["schemas"]["ListedMarketCoverage"];
             /**
              * Uniquestockcount
              * @default 0
@@ -4065,19 +4064,12 @@ export interface components {
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
             /** Missinglistedmarketstocks */
-            missingListedMarketStocks?: string[];
+            missingListedMarketStocks: string[];
             /**
              * Missinglistedmarketstockscount
              * @default 0
              */
             missingListedMarketStocksCount: number;
-            /** Missingprimestocks */
-            missingPrimeStocks?: string[];
-            /**
-             * Missingprimestockscount
-             * @default 0
-             */
-            missingPrimeStocksCount: number;
             /**
              * Uniquestockcount
              * @default 0
@@ -5502,7 +5494,7 @@ export interface components {
         MarketStatsResponse: {
             /** Databasesize */
             databaseSize: number;
-            fundamentals?: components["schemas"]["FundamentalsStats"];
+            fundamentals: components["schemas"]["FundamentalsStats"];
             indices: components["schemas"]["IndicesStats"];
             /** Initialized */
             initialized: boolean;
@@ -5557,7 +5549,7 @@ export interface components {
              * @default 0
              */
             failedDatesCount: number;
-            fundamentals?: components["schemas"]["FundamentalsValidation"];
+            fundamentals: components["schemas"]["FundamentalsValidation"];
             /** Initialized */
             initialized: boolean;
             /** Integrityissues */
@@ -6192,29 +6184,6 @@ export interface components {
             description?: string | null;
             /** Name */
             name?: string | null;
-        };
-        /** PrimeCoverage */
-        PrimeCoverage: {
-            /**
-             * Coverageratio
-             * @default 0
-             */
-            coverageRatio: number;
-            /**
-             * Coveredstocks
-             * @default 0
-             */
-            coveredStocks: number;
-            /**
-             * Missingstocks
-             * @default 0
-             */
-            missingStocks: number;
-            /**
-             * Primestocks
-             * @default 0
-             */
-            primeStocks: number;
         };
         /**
          * RankingItem

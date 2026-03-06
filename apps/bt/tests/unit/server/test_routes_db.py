@@ -138,7 +138,7 @@ class TestDbStatsRoute:
         assert data["margin"]["count"] == 1
         assert data["margin"]["uniqueStockCount"] == 1
         assert data["fundamentals"]["count"] == 0
-        assert data["fundamentals"]["primeCoverage"]["primeStocks"] >= 1
+        assert data["fundamentals"]["listedMarketCoverage"]["listedMarketStocks"] >= 1
         assert data["databaseSize"] >= 0
 
     def test_stats_no_db(self) -> None:

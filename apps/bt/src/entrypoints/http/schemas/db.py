@@ -54,13 +54,6 @@ class MarginStats(BaseModel):
     dateRange: DateRange | None = None
 
 
-class PrimeCoverage(BaseModel):
-    primeStocks: int = 0
-    coveredStocks: int = 0
-    missingStocks: int = 0
-    coverageRatio: float = 0
-
-
 class ListedMarketCoverage(BaseModel):
     listedMarketStocks: int = 0
     coveredStocks: int = 0
@@ -72,8 +65,7 @@ class FundamentalsStats(BaseModel):
     count: int = 0
     uniqueStockCount: int = 0
     latestDisclosedDate: str | None = None
-    primeCoverage: PrimeCoverage = Field(default_factory=PrimeCoverage)
-    listedMarketCoverage: ListedMarketCoverage = Field(default_factory=ListedMarketCoverage)
+    listedMarketCoverage: ListedMarketCoverage
 
 
 class MarketStatsResponse(BaseModel):
@@ -86,7 +78,7 @@ class MarketStatsResponse(BaseModel):
     stockData: StockDataStats
     indices: IndicesStats
     margin: MarginStats
-    fundamentals: FundamentalsStats = Field(default_factory=FundamentalsStats)
+    fundamentals: FundamentalsStats
     lastUpdated: str
 
 
@@ -125,10 +117,8 @@ class FundamentalsValidation(BaseModel):
     count: int = 0
     uniqueStockCount: int = 0
     latestDisclosedDate: str | None = None
-    missingPrimeStocksCount: int = 0
-    missingPrimeStocks: list[str] = Field(default_factory=list)
     missingListedMarketStocksCount: int = 0
-    missingListedMarketStocks: list[str] = Field(default_factory=list)
+    missingListedMarketStocks: list[str]
     failedDatesCount: int = 0
     failedCodesCount: int = 0
 
@@ -143,7 +133,7 @@ class MarketValidationResponse(BaseModel):
     stocks: StockStats
     stockData: StockDataValidation
     margin: MarginValidation
-    fundamentals: FundamentalsValidation = Field(default_factory=FundamentalsValidation)
+    fundamentals: FundamentalsValidation
     failedDates: list[str] = Field(default_factory=list)
     failedDatesCount: int = 0
     adjustmentEvents: list[AdjustmentEvent] = Field(default_factory=list)

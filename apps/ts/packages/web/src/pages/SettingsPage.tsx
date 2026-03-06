@@ -173,30 +173,12 @@ interface RepairTargets {
   failedFundamentalsCodes: number;
 }
 
-type FundamentalsValidationSnapshot = NonNullable<MarketValidationResponse['fundamentals']>;
-
-const EMPTY_FUNDAMENTALS_VALIDATION: FundamentalsValidationSnapshot = {
-  count: 0,
-  uniqueStockCount: 0,
-  latestDisclosedDate: null,
-  missingPrimeStocksCount: 0,
-  missingPrimeStocks: [],
-  missingListedMarketStocksCount: 0,
-  missingListedMarketStocks: [],
-  failedDatesCount: 0,
-  failedCodesCount: 0,
+const EMPTY_REPAIR_TARGETS: RepairTargets = {
+  stocksNeedingRefresh: 0,
+  missingListedMarketFundamentals: 0,
+  failedFundamentalsDates: 0,
+  failedFundamentalsCodes: 0,
 };
-
-function getFundamentalsValidation(dbValidation: MarketValidationResponse | undefined): FundamentalsValidationSnapshot {
-  return {
-    ...EMPTY_FUNDAMENTALS_VALIDATION,
-    ...(dbValidation?.fundamentals ?? {}),
-  };
-}
-
-function getMissingListedMarketFundamentalsCount(fundamentals: FundamentalsValidationSnapshot): number {
-  return fundamentals.missingListedMarketStocksCount ?? fundamentals.missingPrimeStocksCount;
-}
 
 function getValidationDetailsTitle(status: MarketValidationResponse['status']): string {
   switch (status) {
@@ -217,7 +199,7 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
 }
 
 function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketValidationResponse): SnapshotItem[] {
-  const fundamentals = getFundamentalsValidation(dbValidation);
+  const fundamentals = dbValidation.fundamentals;
   return [
     { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
     { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
@@ -232,17 +214,21 @@ function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketVa
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
-    { label: 'Missing Listed-Market Fundamentals', value: getMissingListedMarketFundamentalsCount(fundamentals) },
+    { label: 'Missing Listed-Market Fundamentals', value: fundamentals.missingListedMarketStocksCount },
     { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
   ];
 }
 
 function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
-  const fundamentals = getFundamentalsValidation(dbValidation);
+  if (!dbValidation) {
+    return EMPTY_REPAIR_TARGETS;
+  }
+
+  const fundamentals = dbValidation.fundamentals;
 
   return {
-    stocksNeedingRefresh: dbValidation?.stocksNeedingRefreshCount ?? 0,
-    missingListedMarketFundamentals: getMissingListedMarketFundamentalsCount(fundamentals),
+    stocksNeedingRefresh: dbValidation.stocksNeedingRefreshCount ?? 0,
+    missingListedMarketFundamentals: fundamentals.missingListedMarketStocksCount,
     failedFundamentalsDates: fundamentals.failedDatesCount,
     failedFundamentalsCodes: fundamentals.failedCodesCount,
   };

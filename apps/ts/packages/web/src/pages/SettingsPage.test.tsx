@@ -119,8 +119,6 @@ beforeEach(() => {
         orphanCount: 3,
       },
       fundamentals: {
-        missingPrimeStocksCount: 2,
-        missingPrimeStocks: ['1301'],
         missingListedMarketStocksCount: 7,
         missingListedMarketStocks: ['1301', '9999'],
         failedDatesCount: 0,
@@ -356,7 +354,7 @@ describe('SettingsPage', () => {
     );
   });
 
-  it('renders warning recovery safely when fundamentals payload is missing', () => {
+  it('renders warning recovery safely when fundamentals counts are zero', () => {
     mockUseDbValidation.mockReturnValue({
       data: {
         status: 'warning',
@@ -367,6 +365,12 @@ describe('SettingsPage', () => {
           dateCount: 0,
           dateRange: null,
           orphanCount: 0,
+        },
+        fundamentals: {
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
+          failedDatesCount: 0,
+          failedCodesCount: 0,
         },
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 3,
@@ -399,8 +403,6 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          missingPrimeStocksCount: 0,
-          missingPrimeStocks: [],
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
           failedDatesCount: 0,
@@ -435,8 +437,6 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          missingPrimeStocksCount: 0,
-          missingPrimeStocks: [],
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
           failedDatesCount: 0,
@@ -471,8 +471,6 @@ describe('SettingsPage', () => {
           orphanCount: 0,
         },
         fundamentals: {
-          missingPrimeStocksCount: 0,
-          missingPrimeStocks: [],
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
           failedDatesCount: 0,

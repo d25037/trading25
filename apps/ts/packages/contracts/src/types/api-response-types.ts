@@ -568,12 +568,6 @@ export interface MarketStatsResponse {
     count: number;
     uniqueStockCount: number;
     latestDisclosedDate: string | null;
-    primeCoverage: {
-      primeStocks: number;
-      coveredStocks: number;
-      missingStocks: number;
-      coverageRatio: number;
-    };
     listedMarketCoverage: {
       listedMarketStocks: number;
       coveredStocks: number;
@@ -611,12 +605,10 @@ export interface MarketValidationResponse {
     dateRange: { min: string; max: string } | null;
     orphanCount: number;
   };
-  fundamentals?: {
+  fundamentals: {
     count: number;
     uniqueStockCount: number;
     latestDisclosedDate: string | null;
-    missingPrimeStocksCount: number;
-    missingPrimeStocks: string[];
     missingListedMarketStocksCount: number;
     missingListedMarketStocks: string[];
     failedDatesCount: number;

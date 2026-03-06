@@ -3137,15 +3137,15 @@
           "listedMarketCoverage": {
             "$ref": "#/components/schemas/ListedMarketCoverage"
           },
-          "primeCoverage": {
-            "$ref": "#/components/schemas/PrimeCoverage"
-          },
           "uniqueStockCount": {
             "default": 0,
             "title": "Uniquestockcount",
             "type": "integer"
           }
         },
+        "required": [
+          "listedMarketCoverage"
+        ],
         "title": "FundamentalsStats",
         "type": "object"
       },
@@ -3189,24 +3189,15 @@
             "title": "Missinglistedmarketstockscount",
             "type": "integer"
           },
-          "missingPrimeStocks": {
-            "items": {
-              "type": "string"
-            },
-            "title": "Missingprimestocks",
-            "type": "array"
-          },
-          "missingPrimeStocksCount": {
-            "default": 0,
-            "title": "Missingprimestockscount",
-            "type": "integer"
-          },
           "uniqueStockCount": {
             "default": 0,
             "title": "Uniquestockcount",
             "type": "integer"
           }
         },
+        "required": [
+          "missingListedMarketStocks"
+        ],
         "title": "FundamentalsValidation",
         "type": "object"
       },
@@ -5875,6 +5866,7 @@
           "stockData",
           "indices",
           "margin",
+          "fundamentals",
           "lastUpdated"
         ],
         "title": "MarketStatsResponse",
@@ -6034,6 +6026,7 @@
           "stocks",
           "stockData",
           "margin",
+          "fundamentals",
           "lastUpdated"
         ],
         "title": "MarketValidationResponse",
@@ -7336,32 +7329,6 @@
           }
         },
         "title": "PortfolioUpdateRequest",
-        "type": "object"
-      },
-      "PrimeCoverage": {
-        "properties": {
-          "coverageRatio": {
-            "default": 0,
-            "title": "Coverageratio",
-            "type": "number"
-          },
-          "coveredStocks": {
-            "default": 0,
-            "title": "Coveredstocks",
-            "type": "integer"
-          },
-          "missingStocks": {
-            "default": 0,
-            "title": "Missingstocks",
-            "type": "integer"
-          },
-          "primeStocks": {
-            "default": 0,
-            "title": "Primestocks",
-            "type": "integer"
-          }
-        },
-        "title": "PrimeCoverage",
         "type": "object"
       },
       "RankingItem": {
