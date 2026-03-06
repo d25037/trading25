@@ -10,6 +10,7 @@ type TaskStep =
   | {
       command: string[];
       withEnvFile?: boolean;
+      cwd?: string;
     }
   | {
       shell: string;
@@ -21,7 +22,9 @@ type TaskDefinition = {
 };
 
 const ROOT = resolve(import.meta.dir, '..');
+const WEB_ROOT = resolve(ROOT, 'packages/web');
 const ENV_FILE = '../../.env';
+const ROOT_ENV_FILE = resolve(ROOT, ENV_FILE);
 
 const TASKS: Record<string, TaskDefinition> = {
   'api:hint': {
@@ -107,7 +110,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'web:dev': {
     description: 'Run web dev server',
-    steps: [{ command: ['run', '--filter', '@trading25/web', 'dev'], withEnvFile: true }],
+    steps: [{ command: ['x', '--bun', 'vite', '--configLoader', 'native'], withEnvFile: true, cwd: WEB_ROOT }],
   },
   'web:test': {
     description: 'Run web tests',
@@ -156,11 +159,11 @@ const TASKS: Record<string, TaskDefinition> = {
   },
 };
 
-async function runBun(args: string[], options: { withEnvFile?: boolean } = {}): Promise<number> {
-  const bunArgs = options.withEnvFile ? ['--env-file=' + ENV_FILE, ...args] : args;
+async function runBun(args: string[], options: { withEnvFile?: boolean; cwd?: string } = {}): Promise<number> {
+  const bunArgs = options.withEnvFile ? [`--env-file=${ROOT_ENV_FILE}`, ...args] : args;
   const proc = Bun.spawn({
     cmd: ['bun', ...bunArgs],
-    cwd: ROOT,
+    cwd: options.cwd ?? ROOT,
     stdin: 'inherit',
     stdout: 'inherit',
     stderr: 'inherit',
@@ -218,7 +221,7 @@ async function runTask(taskName: string): Promise<number> {
     }
 
     if ('command' in step) {
-      const code = await runBun(step.command, { withEnvFile: step.withEnvFile });
+      const code = await runBun(step.command, { withEnvFile: step.withEnvFile, cwd: step.cwd });
       if (code !== 0) {
         return code;
       }
