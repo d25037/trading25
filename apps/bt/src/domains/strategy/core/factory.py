@@ -59,6 +59,11 @@ class StrategyFactory:
         entry_filter_params_obj, exit_trigger_params_obj = (
             cls._convert_to_signal_params(entry_filter_params, exit_trigger_params)
         )
+        cls._validate_next_session_round_trip(
+            shared_config_obj,
+            exit_trigger_params,
+            exit_trigger_params_obj,
+        )
 
         # YamlConfigurableStrategy直接インスタンス化（SharedConfigが既にstock_codes解決済み）
         strategy = YamlConfigurableStrategy(
@@ -69,6 +74,43 @@ class StrategyFactory:
 
         logger.info("戦略インスタンス作成成功 (YamlConfigurableStrategy)")
         return strategy
+
+    @staticmethod
+    def _has_configured_exit_trigger_params(
+        raw_exit_trigger_params: Union[Dict[str, Any], Any, None],
+        exit_trigger_params_obj: Any,
+    ) -> bool:
+        if isinstance(raw_exit_trigger_params, dict):
+            return raw_exit_trigger_params not in ({},)
+        if raw_exit_trigger_params is not None:
+            fields_set = getattr(raw_exit_trigger_params, "model_fields_set", None)
+            if isinstance(fields_set, set):
+                return len(fields_set) > 0
+            return True
+        if exit_trigger_params_obj is None:
+            return False
+        fields_set = getattr(exit_trigger_params_obj, "model_fields_set", None)
+        if isinstance(fields_set, set):
+            return len(fields_set) > 0
+        return True
+
+    @classmethod
+    def _validate_next_session_round_trip(
+        cls,
+        shared_config: SharedConfig,
+        raw_exit_trigger_params: Union[Dict[str, Any], Any, None],
+        exit_trigger_params_obj: Any,
+    ) -> None:
+        if not shared_config.next_session_round_trip:
+            return
+        if cls._has_configured_exit_trigger_params(
+            raw_exit_trigger_params,
+            exit_trigger_params_obj,
+        ):
+            raise ValueError(
+                "exit_trigger_params must be empty when "
+                "shared_config.next_session_round_trip is true"
+            )
 
     @classmethod
     def get_available_strategies(cls) -> Dict[str, str]:

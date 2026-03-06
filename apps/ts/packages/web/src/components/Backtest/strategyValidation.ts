@@ -33,6 +33,7 @@ const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'parameter_optimization',
   'walk_forward',
   'timeframe',
+  'next_session_round_trip',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

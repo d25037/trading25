@@ -86,11 +86,11 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain('shared_config.kelly_fraction must be between 0 and 2');
   });
 
-  it('passes valid config', () => {
+  it('accepts next_session_round_trip in shared_config', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
-        shared_config: { kelly_fraction: 2 },
+        shared_config: { kelly_fraction: 2, next_session_round_trip: true },
       },
       signalDefs
     );
@@ -336,7 +336,7 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain('entry_filter_params.constraint_signal.le_only must be <= 10');
   });
 
-  it('validates shared_config object shape and kelly type', () => {
+  it('validates shared_config object shape, unknown keys, and kelly type', () => {
     const nonObject = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },

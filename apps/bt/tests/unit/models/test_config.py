@@ -59,6 +59,7 @@ class TestSharedConfig:
         assert cfg.direction == "longonly"
         assert cfg.timeframe == "daily"
         assert cfg.kelly_fraction == 1.0
+        assert cfg.next_session_round_trip is False
 
     def test_valid_directions(self):
         for d in ["longonly", "shortonly", "both"]:
@@ -152,6 +153,10 @@ class TestSharedConfig:
     def test_timeframe_invalid(self):
         with pytest.raises(ValidationError):
             self._make(timeframe="monthly")
+
+    def test_next_session_round_trip_requires_daily_timeframe(self):
+        with pytest.raises(ValidationError, match="next_session_round_trip"):
+            self._make(next_session_round_trip=True, timeframe="weekly")
 
     def test_nested_parameter_optimization(self):
         cfg = self._make()

@@ -9,6 +9,7 @@
 #   fees: 0.0005  # 取引手数料を変更
 #   min_allocation: 0.02  # 最小配分率を変更
 #   max_allocation: 0.4  # 最大配分率を変更
+#   next_session_round_trip: true  # 翌営業日Openで建て、同日Closeで閉じる
 #
 # 注意:
 # - shared_config セクションを省略した場合は、default.yaml の設定が使用されます

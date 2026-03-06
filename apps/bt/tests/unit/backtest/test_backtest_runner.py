@@ -573,3 +573,43 @@ class TestBuildParametersConfigOverride:
         }
         with pytest.raises(ValueError, match="Invalid entry_filter_params"):
             runner._build_parameters(strategy_config, config_override)
+
+    def test_next_session_round_trip_rejects_non_empty_exit_trigger_params(
+        self,
+        monkeypatch: Any,
+    ):
+        import pytest
+
+        runner = self._make_runner_with_defaults(monkeypatch)
+        strategy_config: dict[str, Any] = {
+            "shared_config": {"dataset": "sample"},
+            "entry_filter_params": {"volume": {"enabled": True}},
+        }
+        config_override: dict[str, Any] = {
+            "shared_config": {"next_session_round_trip": True},
+            "exit_trigger_params": {"volume": {"enabled": True}},
+        }
+
+        with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
+            runner._build_parameters(strategy_config, config_override)
+
+    def test_next_session_round_trip_rejects_invalid_shared_config_after_merge(
+        self,
+        monkeypatch: Any,
+    ):
+        import pytest
+
+        runner = self._make_runner_with_defaults(monkeypatch)
+        strategy_config: dict[str, Any] = {
+            "shared_config": {"dataset": "sample"},
+            "entry_filter_params": {"volume": {"enabled": True}},
+        }
+        config_override: dict[str, Any] = {
+            "shared_config": {
+                "next_session_round_trip": True,
+                "timeframe": "weekly",
+            },
+        }
+
+        with pytest.raises(ValueError, match="Invalid shared_config after config merge"):
+            runner._build_parameters(strategy_config, config_override)

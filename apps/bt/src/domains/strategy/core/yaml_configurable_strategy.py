@@ -82,6 +82,7 @@ class YamlConfigurableStrategy(
         self.group_by = shared_config.group_by
         self.cash_sharing = shared_config.cash_sharing
         self.direction = shared_config.direction
+        self.next_session_round_trip = shared_config.next_session_round_trip
 
         # Timeframe設定
         self.timeframe = shared_config.timeframe
@@ -100,7 +101,7 @@ class YamlConfigurableStrategy(
         self.combined_portfolio: Optional[vbt.Portfolio] = None
         self.portfolio: Optional[vbt.Portfolio] = None
         self._grouped_portfolio_inputs_cache: Optional[
-            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+            tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
         ] = None
 
         # Relative Mode用の追加属性
@@ -191,11 +192,13 @@ class YamlConfigurableStrategy(
         )
         entries, exits = enhanced_signals.entries, enhanced_signals.exits
 
-        # 最終日売りシグナル
-        last_valid_idx = data["Close"].last_valid_index()
-        if last_valid_idx is not None:
-            exits = exits.copy()
-            exits.at[last_valid_idx] = True
+        # 通常モードのみ最終日に強制エグジットする。
+        # next_session_round_trip は execution policy が同日クローズを担う。
+        if not self.next_session_round_trip:
+            last_valid_idx = data["Close"].last_valid_index()
+            if last_valid_idx is not None:
+                exits = exits.copy()
+                exits.at[last_valid_idx] = True
 
         return Signals(entries=entries, exits=exits)
 
