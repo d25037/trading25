@@ -42,4 +42,23 @@ describe('ScreeningJobHistoryTable', () => {
     render(<ScreeningJobHistoryTable jobs={[job]} isLoading={false} selectedJobId={null} onSelectJob={vi.fn()} />);
     expect(screen.getByRole('button', { name: 'Monitor' })).toBeInTheDocument();
   });
+
+  it('toggles job history visibility', async () => {
+    const user = userEvent.setup();
+    const job = createJob({ job_id: 'job-toggle' });
+
+    render(<ScreeningJobHistoryTable jobs={[job]} isLoading={false} selectedJobId={null} onSelectJob={vi.fn()} />);
+
+    const toggle = screen.getByRole('switch', { name: 'Show History' });
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).not.toBeChecked();
+    expect(screen.queryByRole('button', { name: 'View' })).not.toBeInTheDocument();
+
+    await user.click(toggle);
+    expect(toggle).toBeChecked();
+    expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
+  });
 });
