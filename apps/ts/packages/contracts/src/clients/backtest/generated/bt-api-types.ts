@@ -5280,6 +5280,25 @@ export interface components {
             /** Shortmarginvolume */
             shortMarginVolume?: number | null;
         };
+        /** MarginStats */
+        MarginStats: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /**
+             * Uniquestockcount
+             * @default 0
+             */
+            uniqueStockCount: number;
+        };
         /**
          * MarginTurnoverDaysData
          * @description マージン回転日数データ
@@ -5296,6 +5315,30 @@ export interface components {
              * @description LongVol / N-day avg volume
              */
             turnoverDays: number;
+        };
+        /** MarginValidation */
+        MarginValidation: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /**
+             * Orphancount
+             * @default 0
+             */
+            orphanCount: number;
+            /**
+             * Uniquestockcount
+             * @default 0
+             */
+            uniqueStockCount: number;
         };
         /**
          * MarginVolumeRatioData
@@ -5436,6 +5479,7 @@ export interface components {
             lastSync?: string | null;
             /** Lastupdated */
             lastUpdated: string;
+            margin: components["schemas"]["MarginStats"];
             stockData: components["schemas"]["StockDataStats"];
             stocks: components["schemas"]["StockStats"];
             /**
@@ -5498,6 +5542,7 @@ export interface components {
             lastSync?: string | null;
             /** Lastupdated */
             lastUpdated: string;
+            margin: components["schemas"]["MarginValidation"];
             /** Recommendations */
             recommendations?: string[];
             /**

@@ -103,6 +103,7 @@ def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> 
         time_series_store=store,
     )
 
+    assert result.margin.count == 0
     assert result.stockData.missingDatesCount == 2438
     issue = next(
         (item for item in result.integrityIssues if item.code == "chart.stock_data.missing_dates"),
@@ -227,7 +228,7 @@ def test_build_readiness_issues_marks_all_missing_branches() -> None:
     if any(req.startswith("statements:") for req in _SIGNAL_REQUIREMENTS):
         assert "backtest.signal_requirements.missing" in codes
     if "margin" in _SIGNAL_REQUIREMENTS:
-        assert any("Margin signal readiness" in rec for rec in recommendations)
+        assert any("unmet requirements" in rec and "margin" in rec for rec in recommendations)
 
 
 def test_collect_missing_signal_requirements_covers_ohlc_benchmark_sector_and_statements() -> None:
@@ -245,6 +246,8 @@ def test_collect_missing_signal_requirements_covers_ohlc_benchmark_sector_and_st
         assert "ohlc" in missing
     if "benchmark" in _SIGNAL_REQUIREMENTS:
         assert "benchmark" in missing
+    if "margin" in _SIGNAL_REQUIREMENTS:
+        assert "margin" in missing
     if "sector" in _SIGNAL_REQUIREMENTS:
         assert "sector" in missing
     if any(req.startswith("statements:") for req in _SIGNAL_REQUIREMENTS):

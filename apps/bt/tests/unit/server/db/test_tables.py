@@ -24,6 +24,7 @@ from src.infrastructure.db.market.tables import (
     index_master,
     indices_data,
     jobs,
+    market_margin_data,
     market_statements,
     margin_data,
     market_meta,
@@ -136,8 +137,8 @@ class TestMarketDbContract:
         pk_cols = [c.name for c in indices_data.primary_key.columns]
         assert pk_cols == self.tables["indices_data"]["properties"]["primary_key"]["const"]
 
-    def test_market_meta_has_7_tables(self) -> None:
-        assert len(market_meta.tables) == 7
+    def test_market_meta_has_8_tables(self) -> None:
+        assert len(market_meta.tables) == 8
 
     def test_sync_metadata_structure(self) -> None:
         assert sync_metadata.c.key.primary_key
@@ -154,7 +155,7 @@ class TestMarketDbContract:
 # ===========================================================================
 
 class TestMarketDbContractV2:
-    """market.duckdb statements 追加契約（v2）"""
+    """market.duckdb statements + margin_data 契約（v2 minor update）"""
 
     @pytest.fixture(autouse=True)
     def _load(self) -> None:
@@ -179,6 +180,31 @@ class TestMarketDbContractV2:
         for idx in expected_indexes:
             assert idx["name"] in actual_indexes
             assert actual_indexes[idx["name"]] == idx["columns"]
+
+    def test_margin_data_columns(self) -> None:
+        spec = self.tables["margin_data"]["properties"]["columns"]["properties"]
+        for col_name, col_spec in spec.items():
+            col = market_margin_data.c[col_name]
+            expected = col_spec["const"]
+            assert _sa_type_name(col.type) == expected["type"], f"market.margin_data.{col_name} type mismatch"
+            assert col.nullable == expected["nullable"], f"market.margin_data.{col_name} nullable mismatch"
+
+    def test_margin_data_primary_key(self) -> None:
+        pk_cols = [c.name for c in market_margin_data.primary_key.columns]
+        assert pk_cols == self.tables["margin_data"]["properties"]["primary_key"]["const"]
+
+    def test_margin_data_indexes(self) -> None:
+        expected_indexes = self.tables["margin_data"]["properties"]["indexes"]["const"]
+        actual_indexes = {idx.name: [c.name for c in idx.columns] for idx in market_margin_data.indexes}
+        for idx in expected_indexes:
+            assert idx["name"] in actual_indexes
+            assert actual_indexes[idx["name"]] == idx["columns"]
+
+    def test_v2_contract_keeps_additive_backward_compatibility(self) -> None:
+        assert set(self.contract["properties"]["schema_version"]["enum"]) == {"2.0.0", "2.1.0"}
+        required_tables = set(self.contract["properties"]["tables"]["required"])
+        assert "margin_data" not in required_tables
+        assert "margin_data" in self.tables
 
 
 # ===========================================================================

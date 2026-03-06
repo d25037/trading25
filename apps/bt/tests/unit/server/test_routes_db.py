@@ -57,6 +57,9 @@ def market_db_path(tmp_path):
     db.upsert_indices_data([
         {"code": "0010", "date": "2024-01-04", "open": 100, "high": 102, "low": 99, "close": 101, "sector_name": "食料品"},
     ])
+    db.upsert_margin_data([
+        {"code": "7203", "date": "2024-01-04", "long_margin_volume": 50000, "short_margin_volume": 30000},
+    ])
     db.upsert_index_master([
         {"code": "0010", "name": "食料品", "name_english": "Food", "category": "sector33"},
     ])
@@ -105,6 +108,11 @@ def client(market_db_path: str):
             indices_max="2024-01-04",
             indices_date_count=1,
             latest_indices_dates={"0010": "2024-01-04"},
+            margin_count=1,
+            margin_min="2024-01-04",
+            margin_max="2024-01-04",
+            margin_date_count=1,
+            margin_codes={"7203"},
             statements_count=0,
             statement_codes=set(),
         )
@@ -127,6 +135,8 @@ class TestDbStatsRoute:
         assert data["stockData"]["dateCount"] == 2
         assert data["indices"]["masterCount"] == 1
         assert data["indices"]["dataCount"] == 1
+        assert data["margin"]["count"] == 1
+        assert data["margin"]["uniqueStockCount"] == 1
         assert data["fundamentals"]["count"] == 0
         assert data["fundamentals"]["primeCoverage"]["primeStocks"] >= 1
         assert data["databaseSize"] >= 0
@@ -158,6 +168,7 @@ class TestDbValidateRoute:
         assert data["adjustmentEvents"][0]["adjustmentFactor"] == 0.5
         assert data["stocksNeedingRefreshCount"] >= 1
         assert data["failedDatesCount"] == 1
+        assert data["margin"]["count"] == 1
         assert "fundamentals" in data
         assert len(data["recommendations"]) > 0
 

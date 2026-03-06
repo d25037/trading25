@@ -16,6 +16,7 @@ from src.entrypoints.http.schemas.db import (
     DateRange,
     FundamentalsStats,
     IndicesStats,
+    MarginStats,
     MarketStatsResponse,
     PrimeCoverage,
     StockDataStats,
@@ -106,6 +107,15 @@ def get_market_stats(
         byCategory={},
     )
 
+    margin = MarginStats(
+        count=inspection.margin_count,
+        uniqueStockCount=len(inspection.margin_codes),
+        dateCount=inspection.margin_date_count,
+        dateRange=DateRange(min=inspection.margin_min, max=inspection.margin_max)
+        if inspection.margin_min and inspection.margin_max
+        else None,
+    )
+
     fundamentals = FundamentalsStats(
         count=inspection.statements_count,
         uniqueStockCount=len(statement_codes),
@@ -127,6 +137,7 @@ def get_market_stats(
         stocks=stocks_stats,
         stockData=stock_data,
         indices=indices,
+        margin=margin,
         fundamentals=fundamentals,
         lastUpdated=datetime.now(UTC).isoformat(),
     )

@@ -558,6 +558,12 @@ export interface MarketStatsResponse {
     dateRange: { min: string; max: string } | null;
     byCategory: Record<string, number>;
   };
+  margin: {
+    count: number;
+    uniqueStockCount: number;
+    dateCount: number;
+    dateRange: { min: string; max: string } | null;
+  };
   fundamentals: {
     count: number;
     uniqueStockCount: number;
@@ -591,6 +597,13 @@ export interface MarketValidationResponse {
     dateRange: { min: string; max: string } | null;
     missingDates: string[];
     missingDatesCount: number;
+  };
+  margin: {
+    count: number;
+    uniqueStockCount: number;
+    dateCount: number;
+    dateRange: { min: string; max: string } | null;
+    orphanCount: number;
   };
   fundamentals?: {
     count: number;

@@ -3,10 +3,10 @@ import { useEffect, useState } from 'react';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   useActiveSyncJob,
   useCancelSync,
@@ -154,7 +154,6 @@ function buildSnapshotItems(
   dbValidation: MarketValidationResponse
 ): SnapshotItem[] {
   const fundamentals = getFundamentalsValidation(dbValidation);
-
   return [
     { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
     { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
@@ -163,6 +162,9 @@ function buildSnapshotItems(
     { label: 'Stock Data Latest', value: dbStats.stockData.dateRange?.max ?? 'n/a' },
     { label: 'TOPIX Latest', value: dbStats.topix.dateRange?.max ?? 'n/a' },
     { label: 'Indices Latest', value: dbStats.indices.dateRange?.max ?? 'n/a' },
+    { label: 'Margin Latest', value: dbStats.margin.dateRange?.max ?? 'n/a' },
+    { label: 'Margin Stocks', value: dbStats.margin.uniqueStockCount },
+    { label: 'Margin Orphans', value: dbValidation.margin.orphanCount },
     { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
     { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
     { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
@@ -663,7 +665,9 @@ export function SettingsPage() {
       <Card className="mt-4">
         <CardHeader>
           <CardTitle>DuckDB Snapshot</CardTitle>
-          <CardDescription>Current DuckDB SoT status from FastAPI (`/api/db/stats`, `/api/db/validate`).</CardDescription>
+          <CardDescription>
+            Current DuckDB SoT status from FastAPI (`/api/db/stats`, `/api/db/validate`).
+          </CardDescription>
         </CardHeader>
         <CardContent className="space-y-3 text-sm">
           <SnapshotStatus

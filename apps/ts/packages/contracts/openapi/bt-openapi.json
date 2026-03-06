@@ -5386,6 +5386,37 @@
         "title": "MarginRecord",
         "type": "object"
       },
+      "MarginStats": {
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "uniqueStockCount": {
+            "default": 0,
+            "title": "Uniquestockcount",
+            "type": "integer"
+          }
+        },
+        "title": "MarginStats",
+        "type": "object"
+      },
       "MarginTurnoverDaysData": {
         "description": "マージン回転日数データ",
         "properties": {
@@ -5417,6 +5448,42 @@
           "avgVolume"
         ],
         "title": "MarginTurnoverDaysData",
+        "type": "object"
+      },
+      "MarginValidation": {
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "orphanCount": {
+            "default": 0,
+            "title": "Orphancount",
+            "type": "integer"
+          },
+          "uniqueStockCount": {
+            "default": 0,
+            "title": "Uniquestockcount",
+            "type": "integer"
+          }
+        },
+        "title": "MarginValidation",
         "type": "object"
       },
       "MarginVolumeRatioData": {
@@ -5741,6 +5808,9 @@
             "title": "Lastupdated",
             "type": "string"
           },
+          "margin": {
+            "$ref": "#/components/schemas/MarginStats"
+          },
           "stockData": {
             "$ref": "#/components/schemas/StockDataStats"
           },
@@ -5763,6 +5833,7 @@
           "stocks",
           "stockData",
           "indices",
+          "margin",
           "lastUpdated"
         ],
         "title": "MarketStatsResponse",
@@ -5869,6 +5940,9 @@
             "title": "Lastupdated",
             "type": "string"
           },
+          "margin": {
+            "$ref": "#/components/schemas/MarginValidation"
+          },
           "recommendations": {
             "items": {
               "type": "string"
@@ -5918,6 +5992,7 @@
           "topix",
           "stocks",
           "stockData",
+          "margin",
           "lastUpdated"
         ],
         "title": "MarketValidationResponse",

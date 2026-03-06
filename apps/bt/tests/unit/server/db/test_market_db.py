@@ -35,6 +35,7 @@ class TestMarketDbBasics:
         assert stats["stock_data"] == 0
         assert stats["topix_data"] == 0
         assert stats["indices_data"] == 0
+        assert stats["margin_data"] == 0
         assert stats["sync_metadata"] == 0
 
         schema = market_db.validate_schema()
@@ -42,6 +43,7 @@ class TestMarketDbBasics:
         assert "stocks" in schema["required_tables"]
         assert "stock_data" in schema["required_tables"]
         assert "topix_data" in schema["required_tables"]
+        assert "margin_data" in schema["required_tables"]
         assert "sync_metadata" in schema["required_tables"]
 
     def test_sync_metadata_roundtrip(self, market_db: MarketDb) -> None:
@@ -189,6 +191,9 @@ class TestMarketDbUpserts:
         assert market_db.upsert_indices_data(
             [{"code": "0000", "date": "2024-01-15", "open": 2500.0, "high": 2510.0, "low": 2490.0, "close": 2505.0}]
         ) == 1
+        assert market_db.upsert_margin_data(
+            [{"code": "7203", "date": "2024-01-15", "long_margin_volume": 1000.0, "short_margin_volume": 200.0}]
+        ) == 1
 
     def test_upsert_statements_merges_non_null_fields_on_conflict(self, market_db: MarketDb) -> None:
         market_db.upsert_statements(
@@ -280,6 +285,8 @@ class TestMarketDbDerivedStats:
         assert market_db.get_latest_trading_date() is None
         assert market_db.get_latest_stock_data_date() is None
         assert market_db.get_latest_indices_data_dates() == {}
+        assert market_db.get_latest_margin_date() is None
+        assert market_db.get_margin_codes() == set()
         assert market_db.get_topix_date_range() is None
         assert market_db.get_stock_data_date_range() is None
 
@@ -305,6 +312,13 @@ class TestMarketDbDerivedStats:
                 {"code": "0001", "date": "2024-01-14", "close": 1110.0},
             ]
         )
+        market_db.upsert_margin_data(
+            [
+                {"code": "7203", "date": "2024-01-10", "long_margin_volume": 900.0, "short_margin_volume": 150.0},
+                {"code": "7203", "date": "2024-01-17", "long_margin_volume": 1000.0, "short_margin_volume": 200.0},
+                {"code": "6758", "date": "2024-01-12", "long_margin_volume": 800.0, "short_margin_volume": 120.0},
+            ]
+        )
 
         assert market_db.get_latest_trading_date() == "2024-01-16"
         assert market_db.get_latest_stock_data_date() == "2024-01-16"
@@ -312,6 +326,8 @@ class TestMarketDbDerivedStats:
             "0000": "2024-01-16",
             "0001": "2024-01-14",
         }
+        assert market_db.get_latest_margin_date() == "2024-01-17"
+        assert market_db.get_margin_codes() == {"6758", "7203"}
 
         topix_range = market_db.get_topix_date_range()
         assert topix_range == {"count": 2, "min": "2024-01-15", "max": "2024-01-16"}
@@ -558,6 +574,7 @@ class TestMarketDbEdgeCases:
         assert market_db.upsert_stock_data([]) == 0
         assert market_db.upsert_topix_data([]) == 0
         assert market_db.upsert_indices_data([]) == 0
+        assert market_db.upsert_margin_data([]) == 0
         assert market_db.upsert_statements([]) == 0
         assert market_db.upsert_index_master([]) == 0
 
@@ -567,6 +584,7 @@ class TestMarketDbEdgeCases:
             "topix_data",
             "stock_data",
             "indices_data",
+            "margin_data",
             "index_master",
             "statements",
             "stocks",
@@ -578,6 +596,8 @@ class TestMarketDbEdgeCases:
         assert market_db.get_latest_trading_date() is None
         assert market_db.get_latest_stock_data_date() is None
         assert market_db.get_latest_indices_data_dates() == {}
+        assert market_db.get_latest_margin_date() is None
+        assert market_db.get_margin_codes() == set()
         assert market_db.get_index_master_codes() == set()
         assert market_db.get_latest_statement_disclosed_date() is None
         assert market_db.get_statement_codes() == set()

@@ -101,10 +101,12 @@ class SyncTimeSeriesStoreLike(Protocol):
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_margin_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> int: ...
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
+    def index_margin_data(self) -> None: ...
     def index_statements(self) -> None: ...
 
 
@@ -181,6 +183,24 @@ _BULK_INDEX_KEY_ALIASES: dict[str, str] = {
     "sector_name": "SectorName",
     "indexcode": "Code",
     "index_code": "Code",
+}
+
+_BULK_MARGIN_KEY_ALIASES: dict[str, str] = {
+    "code": "Code",
+    "date": "Date",
+    "longvol": "LongVol",
+    "longvolume": "LongVol",
+    "longmarginvolume": "LongVol",
+    "longmargintradevolume": "LongVol",
+    "longmarginoutstandingbalance": "LongVol",
+    "long_margin_volume": "LongVol",
+    "shrtvol": "ShrtVol",
+    "shortvol": "ShrtVol",
+    "shortvolume": "ShrtVol",
+    "shortmarginvolume": "ShrtVol",
+    "shortmargintradevolume": "ShrtVol",
+    "shortmarginoutstandingbalance": "ShrtVol",
+    "short_margin_volume": "ShrtVol",
 }
 
 _BULK_FINS_KEY_ALIASES: dict[str, str] = {
@@ -439,6 +459,10 @@ def _normalize_bulk_indices_rows(rows: list[dict[str, Any]]) -> list[dict[str, A
     return _normalize_bulk_row_keys(rows, _BULK_INDEX_KEY_ALIASES)
 
 
+def _normalize_bulk_margin_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _normalize_bulk_row_keys(rows, _BULK_MARGIN_KEY_ALIASES)
+
+
 def _normalize_bulk_fins_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _normalize_bulk_row_keys(rows, _BULK_FINS_KEY_ALIASES)
 
@@ -621,6 +645,7 @@ def _is_incremental_cold_start(
         inspection.topix_max
         or inspection.stock_max
         or inspection.indices_max
+        or inspection.margin_max
         or inspection.latest_indices_dates
     )
     if has_anchor_signal:
@@ -629,6 +654,7 @@ def _is_incremental_cold_start(
         inspection.topix_count == 0
         and inspection.stock_count == 0
         and inspection.indices_count == 0
+        and inspection.margin_count == 0
     )
 
 
@@ -763,6 +789,14 @@ def _enforce_stock_bulk_plan_available(
             reason="bulk_plan_empty",
             reason_detail=f"targets={target_count} dates",
         )
+
+
+def _resolve_bulk_fallback_reason(plan: BulkFetchPlan | None) -> str:
+    if plan is None:
+        return "bulk_plan_missing"
+    if len(plan.files) == 0:
+        return "bulk_plan_empty"
+    return "bulk_plan_unavailable"
 
 
 def _emit_fetch_strategy_progress(
@@ -1014,8 +1048,8 @@ class InitialSyncStrategy:
     """初回同期: TOPIX + 全銘柄 + 株価データ + 指数データ"""
 
     def estimate_api_calls(self) -> int:
-        # TOPIX/株価/指数に加えて Prime 全銘柄の /fins/summary(code=...) を含む。
-        return 2500
+        # TOPIX/株価/指数/信用残に加えて Prime 全銘柄の /fins/summary(code=...) を含む。
+        return 3200
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
@@ -1029,7 +1063,7 @@ class InitialSyncStrategy:
 
         try:
             # Step 1: TOPIX
-            ctx.on_progress("topix", 0, 6, "Fetching TOPIX data...")
+            ctx.on_progress("topix", 0, 7, "Fetching TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1059,7 +1093,7 @@ class InitialSyncStrategy:
             dates_processed = len(topix_rows)
 
             # Step 2: 銘柄マスタ
-            ctx.on_progress("stocks", 1, 6, "Fetching stock master data...")
+            ctx.on_progress("stocks", 1, 7, "Fetching stock master data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1073,7 +1107,7 @@ class InitialSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
             # Step 3: Prime fundamentals（初回: code指定フル取得）
-            ctx.on_progress("fundamentals", 2, 6, "Fetching Prime fundamentals (full)...")
+            ctx.on_progress("fundamentals", 2, 7, "Fetching Prime fundamentals (full)...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1081,7 +1115,12 @@ class InitialSyncStrategy:
             if not prime_codes:
                 prime_codes = await asyncio.to_thread(ctx.market_db.get_prime_codes)
 
-            fundamentals_sync = await _sync_fundamentals_initial(ctx, sorted(prime_codes))
+            fundamentals_sync = await _sync_fundamentals_initial(
+                ctx,
+                sorted(prime_codes),
+                progress_current=2,
+                progress_total=7,
+            )
             total_calls += fundamentals_sync["api_calls"]
             fundamentals_updated += fundamentals_sync["updated"]
             fundamentals_dates_processed += fundamentals_sync["dates_processed"]
@@ -1090,7 +1129,7 @@ class InitialSyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             # Step 4: 株価データ（日付ベース、TOPIX 日付を使用）
-            ctx.on_progress("stock_data", 3, 6, "Fetching daily stock prices...")
+            ctx.on_progress("stock_data", 3, 7, "Fetching daily stock prices...")
             trading_dates = sorted({r["date"] for r in topix_rows})
             from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
             decision = await _plan_fetch_method(
@@ -1108,7 +1147,7 @@ class InitialSyncStrategy:
                 ctx,
                 progress_stage="stock_data",
                 current=3,
-                total=6,
+                total=7,
                 endpoint="/equities/bars/daily",
                 decision=decision,
                 target_label=f"{len(trading_dates)} dates",
@@ -1120,7 +1159,7 @@ class InitialSyncStrategy:
                 endpoint="/equities/bars/daily",
                 progress_stage="stock_data",
                 current=3,
-                total=6,
+                total=7,
                 target_count=len(trading_dates),
             )
 
@@ -1134,7 +1173,7 @@ class InitialSyncStrategy:
                         ctx,
                         progress_stage="stock_data",
                         current=3,
-                        total=6,
+                        total=7,
                         endpoint="/equities/bars/daily",
                         method="bulk",
                         target_label=f"{len(trading_dates)} dates",
@@ -1174,7 +1213,7 @@ class InitialSyncStrategy:
                             ctx,
                             progress_stage="stock_data",
                             current=3,
-                            total=6,
+                            total=7,
                             endpoint="/equities/bars/daily",
                             reason="bulk_fetch_failed",
                             reason_detail=_summarize_exception(e),
@@ -1191,7 +1230,7 @@ class InitialSyncStrategy:
                     ctx,
                     progress_stage="stock_data",
                     current=3,
-                    total=6,
+                    total=7,
                     endpoint="/equities/bars/daily",
                     method="rest",
                     target_label=f"{len(trading_dates)} dates",
@@ -1206,7 +1245,7 @@ class InitialSyncStrategy:
                         ctx.on_progress(
                             "stock_data",
                             3,
-                            6,
+                            7,
                             f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
                         )
                     try:
@@ -1254,14 +1293,33 @@ class InitialSyncStrategy:
             await _index_stock_data_rows(ctx)
 
             # Step 5: 指数データ
-            ctx.on_progress("indices", 4, 6, "Fetching index data...")
+            ctx.on_progress("indices", 4, 7, "Fetching index data...")
             indices_strategy = IndicesOnlySyncStrategy()
             indices_result = await indices_strategy.execute(ctx)
             total_calls += indices_result.totalApiCalls
             errors.extend(indices_result.errors)
 
-            # Step 6: メタデータ更新
-            ctx.on_progress("finalize", 5, 6, "Finalizing sync...")
+            # Step 6: 信用残データ
+            ctx.on_progress("margin", 5, 7, "Fetching margin data...")
+            margin_target_codes = [
+                str(row.get("code", ""))
+                for row in stock_rows
+                if row.get("code")
+            ]
+            margin_sync = await _sync_margin_data(
+                ctx,
+                margin_target_codes,
+                progress_current=5,
+                progress_total=7,
+                stage_name="margin_initial",
+            )
+            total_calls += margin_sync["api_calls"]
+            errors.extend(margin_sync["errors"])
+            if margin_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            # Step 7: メタデータ更新
+            ctx.on_progress("finalize", 6, 7, "Finalizing sync...")
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["INIT_COMPLETED"], "true")
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
@@ -1270,7 +1328,7 @@ class InitialSyncStrategy:
             else:
                 await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["FAILED_DATES"], "[]")
 
-            ctx.on_progress("complete", 6, 6, "Sync complete!")
+            ctx.on_progress("complete", 7, 7, "Sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
@@ -1291,7 +1349,7 @@ class IncrementalSyncStrategy:
     """増分同期: 最終同期日以降のデータのみ取得"""
 
     def estimate_api_calls(self) -> int:
-        return 120
+        return 180
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
@@ -1312,7 +1370,7 @@ class IncrementalSyncStrategy:
                 )
 
             # Step 1: TOPIX（増分）
-            ctx.on_progress("topix", 0, 5, "Fetching incremental TOPIX data...")
+            ctx.on_progress("topix", 0, 6, "Fetching incremental TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1364,7 +1422,7 @@ class IncrementalSyncStrategy:
             topix_rows = topix_batch.rows
 
             # Step 2: 銘柄マスタ更新
-            ctx.on_progress("stocks", 1, 5, "Updating stock master...")
+            ctx.on_progress("stocks", 1, 6, "Updating stock master...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1378,7 +1436,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
             # Step 3: 新しい日付の株価データ
-            ctx.on_progress("stock_data", 2, 5, "Fetching new stock data...")
+            ctx.on_progress("stock_data", 2, 6, "Fetching new stock data...")
             if last_date:
                 new_dates = sorted(
                     {
@@ -1406,7 +1464,7 @@ class IncrementalSyncStrategy:
                 ctx,
                 progress_stage="stock_data",
                 current=2,
-                total=5,
+                total=6,
                 endpoint="/equities/bars/daily",
                 decision=decision_stock_data,
                 target_label=f"{len(new_dates)} dates",
@@ -1418,7 +1476,7 @@ class IncrementalSyncStrategy:
                 endpoint="/equities/bars/daily",
                 progress_stage="stock_data",
                 current=2,
-                total=5,
+                total=6,
                 target_count=len(new_dates),
             )
 
@@ -1432,7 +1490,7 @@ class IncrementalSyncStrategy:
                         ctx,
                         progress_stage="stock_data",
                         current=2,
-                        total=5,
+                        total=6,
                         endpoint="/equities/bars/daily",
                         method="bulk",
                         target_label=f"{len(new_dates)} dates",
@@ -1472,7 +1530,7 @@ class IncrementalSyncStrategy:
                             ctx,
                             progress_stage="stock_data",
                             current=2,
-                            total=5,
+                            total=6,
                             endpoint="/equities/bars/daily",
                             reason="bulk_fetch_failed",
                             reason_detail=_summarize_exception(e),
@@ -1489,7 +1547,7 @@ class IncrementalSyncStrategy:
                     ctx,
                     progress_stage="stock_data",
                     current=2,
-                    total=5,
+                    total=6,
                     endpoint="/equities/bars/daily",
                     method="rest",
                     target_label=f"{len(new_dates)} dates",
@@ -1503,7 +1561,7 @@ class IncrementalSyncStrategy:
                         ctx.on_progress(
                             "stock_data",
                             2,
-                            5,
+                            6,
                             f"Fetching /equities/bars/daily via REST: {i}/{len(new_dates)} dates...",
                         )
                     try:
@@ -1546,7 +1604,7 @@ class IncrementalSyncStrategy:
             await _index_stock_data_rows(ctx)
 
             # Step 4: 指数データ（増分）
-            ctx.on_progress("indices", 3, 5, "Fetching incremental index data...")
+            ctx.on_progress("indices", 3, 6, "Fetching incremental index data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1609,7 +1667,7 @@ class IncrementalSyncStrategy:
                 ctx,
                 progress_stage="indices",
                 current=3,
-                total=5,
+                total=6,
                 endpoint="/indices/bars/daily",
                 decision=decision_indices,
                 target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
@@ -1624,7 +1682,7 @@ class IncrementalSyncStrategy:
                         ctx,
                         progress_stage="indices",
                         current=3,
-                        total=5,
+                        total=6,
                         endpoint="/indices/bars/daily",
                         method="bulk",
                         target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
@@ -1689,7 +1747,7 @@ class IncrementalSyncStrategy:
                     ctx,
                     progress_stage="indices",
                     current=3,
-                    total=5,
+                    total=6,
                     endpoint="/indices/bars/daily",
                     method="rest",
                     target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
@@ -1702,7 +1760,7 @@ class IncrementalSyncStrategy:
                         ctx.on_progress(
                             "indices",
                             3,
-                            5,
+                            6,
                             f"Fetching /indices/bars/daily via REST: {code_idx}/{len(target_codes)} codes...",
                         )
 
@@ -1748,7 +1806,7 @@ class IncrementalSyncStrategy:
                         ctx.on_progress(
                             "indices",
                             3,
-                            5,
+                            6,
                             f"Fetching /indices/bars/daily via REST: {date_idx}/{len(fallback_dates)} dates...",
                         )
 
@@ -1789,7 +1847,7 @@ class IncrementalSyncStrategy:
             await _index_indices_rows(ctx)
 
             # Step 5: Prime fundamentals（増分: date 指定 + 欠損補完）
-            ctx.on_progress("fundamentals", 4, 5, "Fetching incremental Prime fundamentals...")
+            ctx.on_progress("fundamentals", 4, 6, "Fetching incremental Prime fundamentals...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1797,7 +1855,12 @@ class IncrementalSyncStrategy:
             if not prime_codes:
                 prime_codes = await asyncio.to_thread(ctx.market_db.get_prime_codes)
 
-            fundamentals_sync = await _sync_fundamentals_incremental(ctx, sorted(prime_codes))
+            fundamentals_sync = await _sync_fundamentals_incremental(
+                ctx,
+                sorted(prime_codes),
+                progress_current=4,
+                progress_total=6,
+            )
             total_calls += fundamentals_sync["api_calls"]
             fundamentals_updated += fundamentals_sync["updated"]
             fundamentals_dates_processed += fundamentals_sync["dates_processed"]
@@ -1805,11 +1868,35 @@ class IncrementalSyncStrategy:
             if fundamentals_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
+            # Step 6: 信用残データ（増分 + 欠損コードバックフィル）
+            ctx.on_progress("margin", 5, 6, "Fetching incremental margin data...")
+            if ctx.cancelled.is_set():
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            margin_target_codes = [
+                str(row.get("code", ""))
+                for row in stock_rows
+                if row.get("code")
+            ]
+            margin_sync = await _sync_margin_data(
+                ctx,
+                margin_target_codes,
+                progress_current=5,
+                progress_total=6,
+                stage_name="margin_incremental",
+                anchor=inspection.margin_max,
+                existing_margin_codes=set(inspection.margin_codes),
+            )
+            total_calls += margin_sync["api_calls"]
+            errors.extend(margin_sync["errors"])
+            if margin_sync["cancelled"]:
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
             # メタデータ更新
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 5, 5, "Incremental sync complete!")
+            ctx.on_progress("complete", 6, 6, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
@@ -1918,6 +2005,9 @@ def _cancelled_sync_result(total_api_calls: int) -> SyncResult:
 async def _sync_fundamentals_initial(
     ctx: SyncContext,
     prime_codes: list[str],
+    *,
+    progress_current: int = 2,
+    progress_total: int = 6,
 ) -> dict[str, Any]:
     """Prime 銘柄を code 指定でフル同期"""
     api_calls = 0
@@ -1939,8 +2029,8 @@ async def _sync_fundamentals_initial(
     _emit_fetch_strategy_progress(
         ctx,
         progress_stage="fundamentals",
-        current=2,
-        total=6,
+        current=progress_current,
+        total=progress_total,
         endpoint="/fins/summary",
         decision=decision,
         target_label=f"{len(prime_codes)} prime codes",
@@ -1951,8 +2041,8 @@ async def _sync_fundamentals_initial(
             _emit_fetch_execution_progress(
                 ctx,
                 progress_stage="fundamentals",
-                current=2,
-                total=6,
+                current=progress_current,
+                total=progress_total,
                 endpoint="/fins/summary",
                 method="bulk",
                 target_label=f"{len(prime_codes)} prime codes",
@@ -1987,8 +2077,8 @@ async def _sync_fundamentals_initial(
         _emit_fetch_execution_progress(
             ctx,
             progress_stage="fundamentals",
-            current=2,
-            total=6,
+            current=progress_current,
+            total=progress_total,
             endpoint="/fins/summary",
             method="rest",
             target_label=f"{len(prime_codes)} prime codes",
@@ -2007,8 +2097,8 @@ async def _sync_fundamentals_initial(
             if idx > 0 and idx % 100 == 0:
                 ctx.on_progress(
                     "fundamentals",
-                    2,
-                    6,
+                    progress_current,
+                    progress_total,
                     f"Fetching /fins/summary via REST: {idx}/{len(prime_codes)} codes...",
                 )
 
@@ -2076,6 +2166,9 @@ async def _sync_fundamentals_initial(
 async def _sync_fundamentals_incremental(
     ctx: SyncContext,
     prime_codes: list[str],
+    *,
+    progress_current: int = 4,
+    progress_total: int = 5,
 ) -> dict[str, Any]:
     """date 指定増分 + 欠損 Prime 補完"""
     api_calls = 0
@@ -2118,8 +2211,8 @@ async def _sync_fundamentals_incremental(
         _emit_fetch_strategy_progress(
             ctx,
             progress_stage="fundamentals",
-            current=4,
-            total=5,
+            current=progress_current,
+            total=progress_total,
             endpoint="/fins/summary",
             decision=decision,
             target_label=f"{len(date_targets)} dates",
@@ -2130,8 +2223,8 @@ async def _sync_fundamentals_incremental(
                 _emit_fetch_execution_progress(
                     ctx,
                     progress_stage="fundamentals",
-                    current=4,
-                    total=5,
+                    current=progress_current,
+                    total=progress_total,
                     endpoint="/fins/summary",
                     method="bulk",
                     target_label=f"{len(date_targets)} dates",
@@ -2173,8 +2266,8 @@ async def _sync_fundamentals_incremental(
             _emit_fetch_execution_progress(
                 ctx,
                 progress_stage="fundamentals",
-                current=4,
-                total=5,
+                current=progress_current,
+                total=progress_total,
                 endpoint="/fins/summary",
                 method="rest",
                 target_label=f"{len(date_targets)} dates",
@@ -2193,8 +2286,8 @@ async def _sync_fundamentals_incremental(
                 if idx > 0 and idx % 30 == 0:
                     ctx.on_progress(
                         "fundamentals",
-                        4,
-                        5,
+                        progress_current,
+                        progress_total,
                         f"Fetching /fins/summary via REST: {idx}/{len(date_targets)} dates...",
                     )
 
@@ -2236,8 +2329,8 @@ async def _sync_fundamentals_incremental(
     if code_targets:
         ctx.on_progress(
             "fundamentals",
-            4,
-            5,
+            progress_current,
+            progress_total,
             f"Fetching /fins/summary via REST, targets={len(code_targets)} backfill codes...",
         )
 
@@ -2254,8 +2347,8 @@ async def _sync_fundamentals_incremental(
         if idx > 0 and idx % 100 == 0:
             ctx.on_progress(
                 "fundamentals",
-                4,
-                5,
+                progress_current,
+                progress_total,
                 f"Fetching /fins/summary via REST: {idx}/{len(code_targets)} backfill codes...",
             )
 
@@ -2307,6 +2400,252 @@ async def _sync_fundamentals_incremental(
         "api_calls": api_calls,
         "updated": updated,
         "dates_processed": dates_phase_completed,
+        "errors": errors,
+        "cancelled": False,
+    }
+
+
+async def _sync_margin_data(
+    ctx: SyncContext,
+    target_codes: list[str],
+    *,
+    progress_current: int,
+    progress_total: int,
+    stage_name: str,
+    anchor: str | None = None,
+    existing_margin_codes: set[str] | None = None,
+) -> dict[str, Any]:
+    api_calls = 0
+    updated = 0
+    errors: list[str] = []
+
+    normalized_codes = _collect_unique_codes(target_codes)
+    if not normalized_codes:
+        return {
+            "api_calls": api_calls,
+            "updated": updated,
+            "errors": errors,
+            "cancelled": False,
+        }
+
+    decision = await _plan_fetch_method(
+        ctx,
+        stage=stage_name,
+        endpoint="/markets/margin-interest",
+        estimated_rest_calls=max(len(normalized_codes), 1),
+        date_from=anchor,
+    )
+    api_calls += decision.planner_api_calls
+    _emit_fetch_strategy_progress(
+        ctx,
+        progress_stage="margin",
+        current=progress_current,
+        total=progress_total,
+        endpoint="/markets/margin-interest",
+        decision=decision,
+        target_label=f"{len(normalized_codes)} codes",
+    )
+
+    has_existing_margin_snapshot = anchor is not None and existing_margin_codes is not None
+    existing_margin_code_set = set(existing_margin_codes or set())
+    backfill_codes = (
+        sorted(set(normalized_codes) - existing_margin_code_set)
+        if has_existing_margin_snapshot
+        else []
+    )
+
+    used_rest_fallback = False
+    bulk_fallback_reason: str | None = None
+    bulk_stage_api_calls = 0
+    rest_stage_api_calls = 0
+    backfill_stage_api_calls = 0
+    bulk_result: BulkFetchResult | None = None
+    target_code_set = set(normalized_codes)
+
+    if decision.method == "bulk":
+        if decision.plan is None or len(decision.plan.files) == 0:
+            used_rest_fallback = True
+            bulk_fallback_reason = _resolve_bulk_fallback_reason(decision.plan)
+            logger.warning(
+                "{} bulk fetch selected but no bulk files were available, falling back to REST: {}",
+                stage_name,
+                bulk_fallback_reason,
+            )
+        else:
+            try:
+                _emit_fetch_execution_progress(
+                    ctx,
+                    progress_stage="margin",
+                    current=progress_current,
+                    total=progress_total,
+                    endpoint="/markets/margin-interest",
+                    method="bulk",
+                    target_label=f"{len(normalized_codes)} codes",
+                )
+
+                async def _consume_margin_bulk_rows(
+                    batch_rows: list[dict[str, Any]],
+                    _file_info: BulkFileInfo,
+                ) -> None:
+                    nonlocal updated
+                    updated += await _ingest_margin_bulk_batch(
+                        ctx,
+                        batch_rows=batch_rows,
+                        target_codes=target_code_set,
+                        min_date_exclusive=anchor,
+                    )
+
+                bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                    decision.plan,
+                    on_rows_batch=_consume_margin_bulk_rows,
+                    accumulate_rows=False,
+                )
+                api_calls += bulk_result.api_calls
+                bulk_stage_api_calls += bulk_result.api_calls
+                _log_sync_fetch_execution(
+                    stage=stage_name,
+                    endpoint="/markets/margin-interest",
+                    decision=decision,
+                    executed="bulk",
+                    actual_api_calls=bulk_stage_api_calls,
+                    fallback=False,
+                    bulk_result=bulk_result,
+                )
+            except Exception as e:
+                used_rest_fallback = True
+                bulk_fallback_reason = _summarize_exception(e)
+                logger.warning(
+                    "{} bulk fetch failed, falling back to REST: {}",
+                    stage_name,
+                    bulk_fallback_reason,
+                )
+
+    rest_codes = normalized_codes
+    if has_existing_margin_snapshot:
+        rest_codes = [code for code in normalized_codes if code in existing_margin_code_set]
+
+    if (decision.method == "rest" or used_rest_fallback) and rest_codes:
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage="margin",
+            current=progress_current,
+            total=progress_total,
+            endpoint="/markets/margin-interest",
+            method="rest",
+            target_label=f"{len(rest_codes)} codes",
+            fallback=used_rest_fallback,
+            fallback_reason=bulk_fallback_reason,
+        )
+        for idx, code in enumerate(rest_codes, start=1):
+            if ctx.cancelled.is_set():
+                return {
+                    "api_calls": api_calls,
+                    "updated": updated,
+                    "errors": errors,
+                    "cancelled": True,
+                }
+
+            if idx > 1 and idx % 100 == 0:
+                ctx.on_progress(
+                    "margin",
+                    progress_current,
+                    progress_total,
+                    f"Fetching /markets/margin-interest via REST: {idx}/{len(rest_codes)} codes...",
+                )
+
+            try:
+                data, page_calls = await _fetch_margin_by_code(
+                    ctx.client,
+                    code,
+                    date_from=anchor,
+                )
+                api_calls += page_calls
+                rest_stage_api_calls += page_calls
+                rows = validate_rows_required_fields(
+                    _convert_margin_rows(
+                        data,
+                        default_code=code,
+                        min_date_exclusive=anchor,
+                    ),
+                    required_fields=("code", "date"),
+                    dedupe_keys=("code", "date"),
+                    stage="margin_data",
+                )
+                if rows:
+                    updated += await _publish_margin_rows(ctx, rows)
+            except Exception as e:
+                errors.append(f"Margin code {code}: {e}")
+
+        _log_sync_fetch_execution(
+            stage=stage_name,
+            endpoint="/markets/margin-interest",
+            decision=decision,
+            executed="rest",
+            actual_api_calls=rest_stage_api_calls,
+            fallback=used_rest_fallback,
+            bulk_result=bulk_result,
+        )
+
+    if backfill_codes:
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage="margin",
+            current=progress_current,
+            total=progress_total,
+            endpoint="/markets/margin-interest",
+            method="rest",
+            target_label=f"{len(backfill_codes)} backfill codes",
+        )
+        for idx, code in enumerate(backfill_codes, start=1):
+            if ctx.cancelled.is_set():
+                return {
+                    "api_calls": api_calls,
+                    "updated": updated,
+                    "errors": errors,
+                    "cancelled": True,
+                }
+
+            if idx > 1 and idx % 100 == 0:
+                ctx.on_progress(
+                    "margin",
+                    progress_current,
+                    progress_total,
+                    (
+                        "Fetching /markets/margin-interest via REST: "
+                        f"{idx}/{len(backfill_codes)} backfill codes..."
+                    ),
+                )
+
+            try:
+                data, page_calls = await _fetch_margin_by_code(ctx.client, code)
+                api_calls += page_calls
+                backfill_stage_api_calls += page_calls
+                rows = validate_rows_required_fields(
+                    _convert_margin_rows(data, default_code=code),
+                    required_fields=("code", "date"),
+                    dedupe_keys=("code", "date"),
+                    stage="margin_data",
+                )
+                if rows:
+                    updated += await _publish_margin_rows(ctx, rows)
+            except Exception as e:
+                errors.append(f"Margin backfill code {code}: {e}")
+
+        _log_sync_fetch_execution(
+            stage=f"{stage_name}_backfill",
+            endpoint="/markets/margin-interest",
+            decision=decision,
+            executed="rest",
+            actual_api_calls=backfill_stage_api_calls,
+            fallback=used_rest_fallback,
+            bulk_result=None,
+        )
+
+    await _index_margin_rows(ctx)
+
+    return {
+        "api_calls": api_calls,
+        "updated": updated,
         "errors": errors,
         "cancelled": False,
     }
@@ -2383,6 +2722,54 @@ async def _fetch_fins_summary_by_code(
 
     if last_error is None:
         raise RuntimeError(f"fins/summary code fetch failed for {code}")
+    raise last_error
+
+
+async def _fetch_margin_by_code(
+    client: SyncClientLike,
+    code: str,
+    *,
+    date_from: str | None = None,
+) -> tuple[list[dict[str, Any]], int]:
+    """Fetch /markets/margin-interest by trying 5-digit then 4-digit code formats."""
+    normalized_code = normalize_stock_code(code)
+    candidates = list(
+        dict.fromkeys(
+            (
+                expand_stock_code(normalized_code),
+                *stock_code_candidates(normalized_code),
+            )
+        )
+    )
+
+    total_calls = 0
+    last_error: Exception | None = None
+    saw_empty_payload = False
+
+    for candidate in candidates:
+        params: dict[str, Any] = {"code": candidate}
+        if date_from:
+            params["from"] = _to_jquants_date_param(date_from)
+        try:
+            data, page_calls = await _get_paginated_rows_with_call_count(
+                client,
+                "/markets/margin-interest",
+                params=params,
+            )
+            total_calls += page_calls
+            if data:
+                return data, total_calls
+            saw_empty_payload = True
+            continue
+        except Exception as exc:
+            last_error = exc
+            continue
+
+    if saw_empty_payload:
+        return [], total_calls
+
+    if last_error is None:
+        raise RuntimeError(f"margin-interest code fetch failed for {code}")
     raise last_error
 
 
@@ -2580,6 +2967,13 @@ async def _publish_indices_rows(ctx: SyncContext, rows: list[dict[str, Any]]) ->
     return await asyncio.to_thread(store.publish_indices_data, rows)
 
 
+async def _publish_margin_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(store.publish_margin_data, rows)
+
+
 async def _publish_statement_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
@@ -2600,6 +2994,11 @@ async def _index_stock_data_rows(ctx: SyncContext) -> None:
 async def _index_indices_rows(ctx: SyncContext) -> None:
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_indices_data)
+
+
+async def _index_margin_rows(ctx: SyncContext) -> None:
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.index_margin_data)
 
 
 async def _index_statement_rows(ctx: SyncContext) -> None:
@@ -2763,6 +3162,106 @@ def _convert_indices_data_rows(data: list[dict[str, Any]], code: str | None) -> 
     if skipped_missing_code > 0:
         logger.warning("Skipped {} index rows with missing code", skipped_missing_code)
     return rows
+
+
+def _resolve_margin_volume(
+    row: dict[str, Any],
+    *keys: str,
+) -> float | None:
+    for key in keys:
+        if key in row:
+            return _coerce_float_fast(row.get(key))
+    return None
+
+
+def _convert_margin_rows(
+    data: list[dict[str, Any]],
+    *,
+    default_code: str | None = None,
+    target_codes: set[str] | None = None,
+    min_date_exclusive: str | None = None,
+) -> list[dict[str, Any]]:
+    """JQuants 信用残データ → DB 行。"""
+    rows: list[dict[str, Any]] = []
+    seen: set[tuple[str, str]] = set()
+    skipped_missing_date = 0
+    skipped_missing_code = 0
+
+    for item in data:
+        code = normalize_stock_code(item.get("Code") or item.get("code") or default_code or "")
+        if not code:
+            skipped_missing_code += 1
+            continue
+        if target_codes is not None and code not in target_codes:
+            continue
+
+        row_date = _normalize_iso_date_text(item.get("Date", item.get("date")))
+        if row_date is None:
+            skipped_missing_date += 1
+            continue
+        if min_date_exclusive and not _is_date_after(row_date, min_date_exclusive):
+            continue
+
+        row_key = (code, row_date)
+        if row_key in seen:
+            continue
+        seen.add(row_key)
+
+        rows.append(
+            {
+                "code": code,
+                "date": row_date,
+                "long_margin_volume": _resolve_margin_volume(
+                    item,
+                    "LongVol",
+                    "longVol",
+                    "long_volume",
+                    "longMarginVolume",
+                    "longMarginTradeVolume",
+                    "longMarginOutstandingBalance",
+                    "long_margin_volume",
+                ),
+                "short_margin_volume": _resolve_margin_volume(
+                    item,
+                    "ShrtVol",
+                    "shortVol",
+                    "short_volume",
+                    "shortMarginVolume",
+                    "shortMarginTradeVolume",
+                    "shortMarginOutstandingBalance",
+                    "short_margin_volume",
+                ),
+            }
+        )
+
+    if skipped_missing_date > 0:
+        logger.warning("Skipped {} margin rows with missing date", skipped_missing_date)
+    if skipped_missing_code > 0:
+        logger.warning("Skipped {} margin rows with missing code", skipped_missing_code)
+    return rows
+
+
+async def _ingest_margin_bulk_batch(
+    ctx: SyncContext,
+    *,
+    batch_rows: list[dict[str, Any]],
+    target_codes: set[str] | None,
+    min_date_exclusive: str | None,
+) -> int:
+    normalized_rows = _normalize_bulk_margin_rows(batch_rows)
+    rows = validate_rows_required_fields(
+        _convert_margin_rows(
+            normalized_rows,
+            target_codes=target_codes,
+            min_date_exclusive=min_date_exclusive,
+        ),
+        required_fields=("code", "date"),
+        dedupe_keys=("code", "date"),
+        stage="margin_data",
+    )
+    if not rows:
+        return 0
+    return await _publish_margin_rows(ctx, rows)
 
 
 def _build_fallback_index_master_rows(

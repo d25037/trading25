@@ -12,6 +12,7 @@ import pandas as pd
 from loguru import logger
 
 from src.infrastructure.external_api.dataset.statements_mixin import APIPeriodType
+from src.infrastructure.data_access.loaders.margin_loaders import transform_margin_df
 from src.infrastructure.data_access.loaders.statements_loaders import (
     merge_forward_forecast_revision,
     resolve_shared_baseline_shares,
@@ -62,6 +63,7 @@ def load_market_multi_data(
     *,
     start_date: str | None = None,
     end_date: str | None = None,
+    include_margin_data: bool = False,
     include_statements_data: bool = False,
     period_type: APIPeriodType = "FY",
     include_forecast_revision: bool = False,
@@ -92,6 +94,20 @@ def load_market_multi_data(
             continue
         result[code] = {"daily": daily}
         daily_index_by_code[code] = pd.DatetimeIndex(daily.index)
+
+    if include_margin_data and daily_index_by_code:
+        try:
+            margin_warnings = _attach_margin(
+                reader,
+                result,
+                daily_index_by_code,
+                start_date=start_date,
+                end_date=end_date,
+            )
+            warnings.extend(margin_warnings)
+        except Exception as e:  # noqa: BLE001 - degrade to daily/statements without margin
+            logger.warning("market margin_data load failed: {}", e)
+            warnings.append(f"market margin load failed ({e})")
 
     if include_statements_data and daily_index_by_code:
         statements_warnings = _attach_statements(
@@ -259,6 +275,50 @@ def _load_daily_by_code(
     }
 
 
+def _attach_margin(
+    reader: MarketDbReader,
+    result: dict[str, dict[str, pd.DataFrame]],
+    daily_index_by_code: dict[str, pd.DatetimeIndex],
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> list[str]:
+    warnings: list[str] = []
+    codes = list(daily_index_by_code.keys())
+    if not codes:
+        return warnings
+
+    try:
+        rows = _query_margin_rows(
+            reader,
+            codes,
+            start_date=start_date,
+            end_date=end_date,
+        )
+    except Exception as e:  # noqa: BLE001 - backend error path
+        if _is_missing_table_error(e):
+            warnings.append("market margin_data table is missing; margin signals may be skipped")
+            return warnings
+        raise
+
+    margin_map = _group_margin_rows(rows)
+    for code, daily_index in daily_index_by_code.items():
+        margin_df = margin_map.get(code)
+        if margin_df is None or margin_df.empty:
+            continue
+        try:
+            result.setdefault(code, {})["margin_daily"] = (
+                transform_margin_df(margin_df)
+                .reindex(daily_index)
+                .ffill()
+                .fillna(0)
+            )
+        except Exception as e:  # noqa: BLE001 - screening should continue
+            warnings.append(f"{code} margin transform failed ({e})")
+
+    return warnings
+
+
 def _attach_statements(
     reader: MarketDbReader,
     result: dict[str, dict[str, pd.DataFrame]],
@@ -410,6 +470,36 @@ def _query_statements_rows(
     return reader.query(sql, tuple(params))
 
 
+def _query_margin_rows(
+    reader: MarketDbReader,
+    stock_codes: list[str],
+    *,
+    start_date: str | None,
+    end_date: str | None,
+) -> list[Any]:
+    placeholders = ",".join("?" for _ in stock_codes)
+    sql = f"""
+        SELECT
+            code,
+            date,
+            long_margin_volume,
+            short_margin_volume
+        FROM margin_data
+        WHERE code IN ({placeholders})
+    """
+    params: list[Any] = list(stock_codes)
+
+    if start_date:
+        sql += " AND date >= ?"
+        params.append(start_date)
+    if end_date:
+        sql += " AND date <= ?"
+        params.append(end_date)
+
+    sql += " ORDER BY code, date"
+    return reader.query(sql, tuple(params))
+
+
 def _resolve_period_filter_values(period_type: str) -> list[str] | None:
     normalized = normalize_period_type(period_type)
     if normalized is None or normalized == "all":
@@ -441,6 +531,29 @@ def _group_statement_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
         df = pd.DataFrame(records)
         df["disclosedDate"] = pd.to_datetime(df["disclosedDate"])
         df = df.set_index("disclosedDate").sort_index()
+        result[code] = df
+    return result
+
+
+def _group_margin_rows(rows: list[Any]) -> dict[str, pd.DataFrame]:
+    grouped: dict[str, list[dict[str, Any]]] = {}
+    for row in rows:
+        code = normalize_stock_code(str(row["code"]))
+        grouped.setdefault(code, []).append(
+            {
+                "date": row["date"],
+                "longMarginVolume": row["long_margin_volume"],
+                "shortMarginVolume": row["short_margin_volume"],
+            }
+        )
+
+    result: dict[str, pd.DataFrame] = {}
+    for code, records in grouped.items():
+        if not records:
+            continue
+        df = pd.DataFrame(records)
+        df["date"] = pd.to_datetime(df["date"])
+        df = df.set_index("date").sort_index()
         result[code] = df
     return result
 

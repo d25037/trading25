@@ -20,6 +20,7 @@ from src.entrypoints.http.schemas.db import (
     DateRange,
     FundamentalsValidation,
     IntegrityIssue,
+    MarginValidation,
     MarketValidationResponse,
     StockDataValidation,
     StockStats,
@@ -212,6 +213,19 @@ def validate_market_db(
         missingDatesCount=missing_dates_count,
     )
 
+    margin_val = MarginValidation(
+        count=inspection.margin_count,
+        uniqueStockCount=len(inspection.margin_codes),
+        dateCount=inspection.margin_date_count,
+        dateRange=DateRange(
+            min=inspection.margin_min,
+            max=inspection.margin_max,
+        )
+        if inspection.margin_min and inspection.margin_max
+        else None,
+        orphanCount=inspection.margin_orphan_count,
+    )
+
     fundamentals_val = FundamentalsValidation(
         count=inspection.statements_count,
         uniqueStockCount=len(statement_codes),
@@ -231,6 +245,7 @@ def validate_market_db(
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data_val,
+        margin=margin_val,
         fundamentals=fundamentals_val,
         failedDates=failed_dates[:10],
         failedDatesCount=len(failed_dates),
@@ -304,6 +319,16 @@ def _build_readiness_issues(
         recommendations.append(
             "Chart readiness: stock_data is missing trading dates; run incremental sync to backfill"
         )
+    if inspection.margin_orphan_count > 0:
+        issues.append(
+            IntegrityIssue(
+                code="backtest.margin_data.orphans",
+                count=inspection.margin_orphan_count,
+            )
+        )
+        recommendations.append(
+            "Backtest signal readiness: margin_data contains codes missing from stocks table"
+        )
 
     missing_signal_requirements = _collect_missing_signal_requirements(inspection)
     if missing_signal_requirements:
@@ -319,11 +344,6 @@ def _build_readiness_issues(
             f"Backtest signal readiness: unmet requirements ({sample}{suffix})"
         )
 
-    if "margin" in _SIGNAL_REQUIREMENTS:
-        recommendations.append(
-            "Margin signal readiness depends on margin data source and is excluded from this check"
-        )
-
     return issues, recommendations
 
 
@@ -331,11 +351,13 @@ def _collect_missing_signal_requirements(inspection: TimeSeriesInspection) -> li
     missing: list[str] = []
 
     for requirement in _SIGNAL_REQUIREMENTS:
-        if requirement == "margin":
-            continue
-
         if requirement in {"ohlc", "volume"}:
             if inspection.stock_count <= 0:
+                missing.append(requirement)
+            continue
+
+        if requirement == "margin":
+            if inspection.margin_count <= 0:
                 missing.append(requirement)
             continue
 

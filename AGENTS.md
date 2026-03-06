@@ -21,13 +21,13 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - **FastAPI** が唯一のバックエンド
 - **bt** はデータ種別ごとに DuckDB / SQLite に直接アクセス（`contracts/` スキーマ準拠）
   - **market.duckdb + parquet**: market time-series / metadata 読み書き（DuckDB SoT）
-  - **portfolio.db**: portfolio/watchlist CRUD + jobs metadata 永続化（SQLAlchemy Core）
-  - **dataset.db**: 読み書き（SQLAlchemy Core）
+- **portfolio.db**: portfolio/watchlist CRUD + jobs metadata 永続化（SQLAlchemy Core）
+- **dataset.db**: 読み書き（SQLAlchemy Core）
 - market 時系列 Data Plane の SoT は DuckDB + Parquet のみ（SQLite mirror は廃止）
 - `POST /api/db/sync` の `dataPlane` override は `backend=duckdb-parquet` のみ受け付ける
-- `GET /api/db/stats` / `GET /api/db/validate` の時系列スナップショット SoT は DuckDB inspection（`timeSeriesSource` を返却）
-- `market.duckdb` の `incremental sync` は `topix_data` / `stock_data` だけでなく `indices_data` も更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
-- `/api/db/sync`（`initial` / `incremental` / `repair`）は `Bulk+REST hybrid` を stage 単位で選択し、予測外部request数が最小の手法を優先する。`stock_data` stage は `enforceBulkForStockData=true` の場合に bulk 必須とし、bulk 不可時は REST fallback せず理由付きでエラー終了する。`incremental` で DuckDB inspection の `topix/stock/indices` が空かつアンカー不在なら cold-start bootstrap を選び、全日付 fallback 暴走を回避する。`repair` は warning 対象の adjustment refresh と Prime fundamentals backfill を一括実行する
+- `GET /api/db/stats` / `GET /api/db/validate` の時系列スナップショット SoT は DuckDB inspection（`timeSeriesSource` を返却）で、`margin_data` の件数・日付範囲・orphan count もここから返す
+- `market.duckdb` の `incremental sync` は `topix_data` / `stock_data` / `indices_data` / `margin_data` を更新する。`index_master` はローカル catalog を SoT として補完し、`indices_data` は code 指定同期（catalog + 既存DBコード）を基本に、日付指定同期で新規コードを補完する（`indices-only` は指数再同期専用モード）。不足 `index_master` はプレースホルダ補完し、FK 制約付きの既存DBでも継続可能にする
+- `/api/db/sync`（`initial` / `incremental` / `repair`）は `Bulk+REST hybrid` を stage 単位で選択し、予測外部request数が最小の手法を優先する。`stock_data` stage は `enforceBulkForStockData=true` の場合に bulk 必須とし、bulk 不可時は REST fallback せず理由付きでエラー終了する。`margin_data` stage も `/markets/margin-interest` で bulk/rest を選択し、既存 `market.duckdb` に margin snapshot が無い場合は `incremental` でも full backfill する。`incremental` で DuckDB inspection の `topix/stock/indices` が空かつアンカー不在なら cold-start bootstrap を選び、全日付 fallback 暴走を回避する。`repair` は warning 対象の adjustment refresh と Prime fundamentals backfill を一括実行する
 - `/api/db/sync/jobs/active` は実行中ジョブの再取得 SoT、`/api/db/sync/jobs/{jobId}/fetch-details` は fetch strategy/execution 詳細の SoT とし、web は再読み込み/再訪時に localStorage と組み合わせて active job 追跡を復元する。`/api/db/sync/jobs/{jobId}` が 404 の場合は stale な jobId を破棄する
 - `stock_data` の bulk ingest は bulk file 単位で publish し、大量期間同期時のメモリピークによる bulk 失敗→REST fallback を抑制する。fallback 時の progress message は reason を含める
 - `/api/db/sync` と `POST /api/db/stocks/refresh` の時系列アンカー判定・publish/index は DuckDB inspection + time-series store を必須 SoT とし、旧 SQLite 時系列テーブルへの fallback を禁止する（inspection 失敗時はエラーで停止）
@@ -41,7 +41,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - Dataset create/resume（`POST /api/dataset` / `POST /api/dataset/resume`）は `indices_data`（sector index catalog: `0040-0060` / `0080-0090`）を取り込み、`stock_data` は `build_stock_data_row` で欠損OHLCV行をスキップして warning 集約を返す。`resume` は既存 `stock_data` / `topix_data` / `indices_data` / `statements` / `margin_data` を再利用して不足分のみ取得し、`timeoutMinutes` は backend job timeout として create/resume の双方で適用する（web/cli から伝播）
 - Backtest result summary の SoT は成果物セット（`result.html` + `*.metrics.json`）。`/api/backtest/jobs/{id}` と `/api/backtest/result/{id}` は成果物から再解決し、必要時のみ job memory/raw_result をフォールバックとして使う
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
-- Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks`）とし、dataset へのフォールバックを禁止する
+- Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks` / `margin_data`）とし、dataset へのフォールバックを禁止する
 - `Charts`/`Analysis` の `stock_data` 読み取りは 4桁/5桁コード混在を正規化し、同日重複行は 4桁コード優先で 1 行化する。`stocks` 欠落時でも `stock_data` からの OHLCV 取得を継続する
 - Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定

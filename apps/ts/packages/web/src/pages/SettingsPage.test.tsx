@@ -96,6 +96,12 @@ beforeEach(() => {
       stockData: { dateRange: { min: '2024-01-01', max: '2026-02-27' } },
       topix: { dateRange: { min: '2016-02-29', max: '2026-02-27' } },
       indices: { dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+      margin: {
+        count: 2400,
+        uniqueStockCount: 1200,
+        dateCount: 120,
+        dateRange: { min: '2024-01-05', max: '2026-02-27' },
+      },
     },
     isLoading: false,
     error: null,
@@ -105,6 +111,13 @@ beforeEach(() => {
     data: {
       status: 'warning',
       stockData: { missingDatesCount: 12 },
+      margin: {
+        count: 2400,
+        uniqueStockCount: 1200,
+        dateCount: 120,
+        dateRange: { min: '2024-01-05', max: '2026-02-27' },
+        orphanCount: 3,
+      },
       fundamentals: {
         missingPrimeStocksCount: 7,
         missingPrimeStocks: ['1301'],
@@ -309,6 +322,9 @@ describe('SettingsPage', () => {
     expect(screen.getByText('DuckDB Snapshot')).toBeInTheDocument();
     expect(screen.getByText('Stock Data Latest:')).toBeInTheDocument();
     expect(screen.getAllByText('2026-02-27').length).toBeGreaterThan(0);
+    expect(screen.getByText('Margin Latest:')).toBeInTheDocument();
+    expect(screen.getByText('Margin Stocks:')).toBeInTheDocument();
+    expect(screen.getByText('Margin Orphans:')).toBeInTheDocument();
     expect(screen.getByText('Missing Stock Dates:')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText('Stocks Needing Refresh:')).toBeInTheDocument();
@@ -340,6 +356,13 @@ describe('SettingsPage', () => {
       data: {
         status: 'warning',
         stockData: { missingDatesCount: 2 },
+        margin: {
+          count: 0,
+          uniqueStockCount: 0,
+          dateCount: 0,
+          dateRange: null,
+          orphanCount: 0,
+        },
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 3,
         integrityIssuesCount: 0,
@@ -363,6 +386,13 @@ describe('SettingsPage', () => {
       data: {
         status: 'healthy',
         stockData: { missingDatesCount: 0 },
+        margin: {
+          count: 0,
+          uniqueStockCount: 0,
+          dateCount: 0,
+          dateRange: null,
+          orphanCount: 0,
+        },
         fundamentals: {
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
@@ -372,7 +402,7 @@ describe('SettingsPage', () => {
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 0,
         integrityIssuesCount: 0,
-        recommendations: ['Margin signal readiness depends on margin data source and is excluded from this check'],
+        recommendations: ['Backtest signal readiness: unmet requirements (margin)'],
       },
       isLoading: false,
       error: null,
@@ -382,9 +412,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Validation Notes')).toBeInTheDocument();
-    expect(
-      screen.getByText('Margin signal readiness depends on margin data source and is excluded from this check')
-    ).toBeInTheDocument();
+    expect(screen.getByText('Backtest signal readiness: unmet requirements (margin)')).toBeInTheDocument();
   });
 
   it('shows error details when validation status is error', () => {
@@ -392,6 +420,13 @@ describe('SettingsPage', () => {
       data: {
         status: 'error',
         stockData: { missingDatesCount: 0 },
+        margin: {
+          count: 0,
+          uniqueStockCount: 0,
+          dateCount: 0,
+          dateRange: null,
+          orphanCount: 0,
+        },
         fundamentals: {
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
@@ -419,6 +454,13 @@ describe('SettingsPage', () => {
       data: {
         status: 'warning',
         stockData: { missingDatesCount: 1 },
+        margin: {
+          count: 0,
+          uniqueStockCount: 0,
+          dateCount: 0,
+          dateRange: null,
+          orphanCount: 0,
+        },
         fundamentals: {
           missingPrimeStocksCount: 0,
           missingPrimeStocks: [],
