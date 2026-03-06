@@ -827,7 +827,6 @@ class BacktestExecutorMixin:
         Returns:
             vbt.Portfolio: 個別ポートフォリオ
         """
-        open_data = pd.DataFrame({k: v["Open"] for k, v in data_dict.items()})
         close_data = pd.DataFrame({k: v["Close"] for k, v in data_dict.items()})
         entries_data = pd.DataFrame(entries_dict)
         exits_data = pd.DataFrame(exits_dict)
@@ -849,6 +848,7 @@ class BacktestExecutorMixin:
                 )
 
         if getattr(self, "next_session_round_trip", False):
+            open_data = pd.DataFrame({k: v["Open"] for k, v in data_dict.items()})
             portfolio = self._create_next_session_round_trip_portfolio(
                 open_data=open_data,
                 close_data=close_data,
