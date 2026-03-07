@@ -12,11 +12,18 @@ from src.shared.models.signals import SignalParams
 
 # シグナル関数のimport
 from .beta import beta_range_signal
+from .baseline import (
+    baseline_cross_signal,
+    baseline_deviation_signal,
+    baseline_position_signal,
+)
 from .breakout import (
-    atr_support_break_signal,
-    ma_breakout_signal,
-    period_breakout_signal,
-    retracement_signal,
+    atr_support_cross_signal,
+    atr_support_position_signal,
+    period_extrema_break_signal,
+    period_extrema_position_signal,
+    retracement_cross_signal,
+    retracement_position_signal,
 )
 from .buy_and_hold import generate_buy_and_hold_signals
 from .crossover import indicator_crossover_signal
@@ -51,7 +58,6 @@ from .index_daily_change import index_daily_change_signal
 from .index_macd_histogram import index_macd_histogram_signal
 from .oracle_index_open_gap_regime import oracle_index_open_gap_regime_signal
 from .margin import margin_balance_percentile_signal
-from .mean_reversion import mean_reversion_combined_signal
 from .rsi_spread import rsi_spread_signal
 from .risk_adjusted import risk_adjusted_return_signal
 from .rsi_threshold import rsi_threshold_signal
@@ -62,8 +68,12 @@ from .sector_strength import (
 )
 from .trading_value import trading_value_signal
 from .trading_value_range import trading_value_range_signal
-from .volatility import bollinger_bands_signal
-from .volume import volume_signal
+from .volatility import (
+    bollinger_cross_signal,
+    bollinger_position_signal,
+    volatility_percentile_signal,
+)
+from .volume import volume_ratio_above_signal, volume_ratio_below_signal
 
 logger = logging.getLogger(__name__)
 
@@ -93,7 +103,7 @@ class SignalDefinition:
     param_builder: Callable[[SignalParams, dict], dict]
     entry_purpose: str
     exit_purpose: str
-    category: str  # 'breakout'|'volume'|'oscillator'|'volatility'|'macro'|'fundamental'|'sector'
+    category: str  # 'breakout'|'trend'|'volume'|'oscillator'|'volatility'|'macro'|'fundamental'|'sector'
     description: str
     param_key: str  # SignalParams内のフィールドパス
     data_checker: Callable[[dict], bool] | None = None
@@ -319,24 +329,43 @@ def _has_stock_sector_close_and_benchmark(d: dict[str, Any]) -> bool:
 # ===== シグナルレジストリ（全シグナル定義） =====
 
 SIGNAL_REGISTRY: list[SignalDefinition] = [
-    # 1. 出来高シグナル（direction統一版）
+    # 1. 出来高比率上抜けシグナル
     SignalDefinition(
-        name="出来高",
-        signal_func=volume_signal,
-        enabled_checker=lambda p: p.volume.enabled,
+        name="出来高比率上抜け",
+        signal_func=volume_ratio_above_signal,
+        enabled_checker=lambda p: p.volume_ratio_above.enabled,
         param_builder=lambda p, d: {
             "volume": d["volume"],
-            "direction": p.volume.direction,
-            "threshold": p.volume.threshold,
-            "short_period": p.volume.short_period,
-            "long_period": p.volume.long_period,
-            "ma_type": p.volume.ma_type,
+            "ratio_threshold": p.volume_ratio_above.ratio_threshold,
+            "short_period": p.volume_ratio_above.short_period,
+            "long_period": p.volume_ratio_above.long_period,
+            "ma_type": p.volume_ratio_above.ma_type,
         },
-        entry_purpose="急増絞り込み/減少除外",
-        exit_purpose="急増利確/減少損切り",
+        entry_purpose="出来高増加銘柄を絞り込む",
+        exit_purpose="出来高再加速を検出",
         category="volume",
-        description="出来高の急増/急減を検出",
-        param_key="volume",
+        description="短期出来高MAが長期出来高MAを上回った状態を判定",
+        param_key="volume_ratio_above",
+        data_checker=lambda d: "volume" in d,
+        data_requirements=["volume"],
+    ),
+    # 1-2. 出来高比率下抜けシグナル
+    SignalDefinition(
+        name="出来高比率下抜け",
+        signal_func=volume_ratio_below_signal,
+        enabled_checker=lambda p: p.volume_ratio_below.enabled,
+        param_builder=lambda p, d: {
+            "volume": d["volume"],
+            "ratio_threshold": p.volume_ratio_below.ratio_threshold,
+            "short_period": p.volume_ratio_below.short_period,
+            "long_period": p.volume_ratio_below.long_period,
+            "ma_type": p.volume_ratio_below.ma_type,
+        },
+        entry_purpose="出来高低迷銘柄を除外する",
+        exit_purpose="出来高減速を検出",
+        category="volume",
+        description="短期出来高MAが長期出来高MAを下回った状態を判定",
+        param_key="volume_ratio_below",
         data_checker=lambda d: "volume" in d,
         data_requirements=["volume"],
     ),
@@ -475,25 +504,25 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=_has_margin_data,
         data_requirements=["margin"],
     ),
-    # 8. ATRサポートブレイクシグナル（direction統一設計）
+    # 8. ATRサポート位置シグナル
     SignalDefinition(
-        name="ATRサポートブレイク",
-        signal_func=atr_support_break_signal,
-        enabled_checker=lambda p: p.atr_support_break.enabled,
+        name="ATRサポート位置",
+        signal_func=atr_support_position_signal,
+        enabled_checker=lambda p: p.atr_support_position.enabled,
         param_builder=lambda p, d: {
             "high": d["ohlc_data"]["High"],
             "low": d["ohlc_data"]["Low"],
             "close": d["close"],
-            "lookback_period": p.atr_support_break.lookback_period,
-            "atr_multiplier": p.atr_support_break.atr_multiplier,
-            "direction": p.atr_support_break.direction,
-            "price_column": p.atr_support_break.price_column,
+            "lookback_period": p.atr_support_position.lookback_period,
+            "atr_multiplier": p.atr_support_position.atr_multiplier,
+            "direction": p.atr_support_position.direction,
+            "price_column": p.atr_support_position.price_column,
         },
-        entry_purpose="損切り/ショートエントリー",
-        exit_purpose="反発/ショートエグジット",
+        entry_purpose="価格がATRサポートラインの上側/下側にいる状態を判定",
+        exit_purpose="価格がATRサポートラインの上側/下側にいる状態を判定",
         category="breakout",
-        description="ATRベースのサポートライン突破を検出",
-        param_key="atr_support_break",
+        description="価格とATRサポートラインの位置関係を判定",
+        param_key="atr_support_position",
         data_checker=lambda d: (
             "ohlc_data" in d
             and all(col in d["ohlc_data"].columns for col in ["High", "Low"])
@@ -501,50 +530,122 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         ),
         data_requirements=["ohlc"],
     ),
-    # 9. リトレースメントシグナル（フィボナッチ下落率ベース）
+    # 9. ATRサポートクロスシグナル
     SignalDefinition(
-        name="リトレースメント",
-        signal_func=retracement_signal,
-        enabled_checker=lambda p: hasattr(p, "retracement") and p.retracement.enabled,
+        name="ATRサポートクロス",
+        signal_func=atr_support_cross_signal,
+        enabled_checker=lambda p: p.atr_support_cross.enabled,
+        param_builder=lambda p, d: {
+            "high": d["ohlc_data"]["High"],
+            "low": d["ohlc_data"]["Low"],
+            "close": d["close"],
+            "lookback_period": p.atr_support_cross.lookback_period,
+            "atr_multiplier": p.atr_support_cross.atr_multiplier,
+            "direction": p.atr_support_cross.direction,
+            "lookback_days": p.atr_support_cross.lookback_days,
+            "price_column": p.atr_support_cross.price_column,
+        },
+        entry_purpose="価格がATRサポートラインをクロスしたイベントを判定",
+        exit_purpose="価格がATRサポートラインをクロスしたイベントを判定",
+        category="breakout",
+        description="価格がATRサポートラインをクロスしたかを判定",
+        param_key="atr_support_cross",
+        data_checker=lambda d: (
+            "ohlc_data" in d
+            and all(col in d["ohlc_data"].columns for col in ["High", "Low"])
+            and "close" in d
+        ),
+        data_requirements=["ohlc"],
+    ),
+    # 10. リトレースメント位置シグナル
+    SignalDefinition(
+        name="リトレースメント位置",
+        signal_func=retracement_position_signal,
+        enabled_checker=lambda p: p.retracement_position.enabled,
         param_builder=lambda p, d: {
             "high": d["ohlc_data"]["High"],
             "close": d["close"],
             "low": d["ohlc_data"]["Low"] if "Low" in d["ohlc_data"].columns else None,
-            "lookback_period": p.retracement.lookback_period,
-            "retracement_level": p.retracement.retracement_level,
-            "direction": p.retracement.direction,
-            "price_column": p.retracement.price_column,
+            "lookback_period": p.retracement_position.lookback_period,
+            "retracement_level": p.retracement_position.retracement_level,
+            "direction": p.retracement_position.direction,
+            "price_column": p.retracement_position.price_column,
         },
-        entry_purpose="押し目買い（フィボナッチレベル下抜け）",
-        exit_purpose="戻り売り（フィボナッチレベル上抜け）",
-        category="breakout",
-        description="高値からの押し目を検出",
-        param_key="retracement",
+        entry_purpose="価格がリトレースメント水準の上側/下側にいる状態を判定",
+        exit_purpose="価格がリトレースメント水準の上側/下側にいる状態を判定",
+        category="trend",
+        description="価格とリトレースメント水準の位置関係を判定",
+        param_key="retracement_position",
         data_checker=lambda d: (
             "ohlc_data" in d and "High" in d["ohlc_data"].columns and "close" in d
         ),
         data_requirements=["ohlc"],
     ),
-    # 10. 期間ブレイクアウトシグナル（direction統一設計）
+    # 11. リトレースメントクロスシグナル
     SignalDefinition(
-        name="期間ブレイクアウト",
-        signal_func=period_breakout_signal,
-        enabled_checker=lambda p: hasattr(p, "period_breakout")
-        and p.period_breakout.enabled,
+        name="リトレースメントクロス",
+        signal_func=retracement_cross_signal,
+        enabled_checker=lambda p: p.retracement_cross.enabled,
+        param_builder=lambda p, d: {
+            "high": d["ohlc_data"]["High"],
+            "close": d["close"],
+            "low": d["ohlc_data"]["Low"] if "Low" in d["ohlc_data"].columns else None,
+            "lookback_period": p.retracement_cross.lookback_period,
+            "retracement_level": p.retracement_cross.retracement_level,
+            "direction": p.retracement_cross.direction,
+            "lookback_days": p.retracement_cross.lookback_days,
+            "price_column": p.retracement_cross.price_column,
+        },
+        entry_purpose="価格がリトレースメント水準をクロスしたイベントを判定",
+        exit_purpose="価格がリトレースメント水準をクロスしたイベントを判定",
+        category="trend",
+        description="価格がリトレースメント水準をクロスしたかを判定",
+        param_key="retracement_cross",
+        data_checker=lambda d: (
+            "ohlc_data" in d and "High" in d["ohlc_data"].columns and "close" in d
+        ),
+        data_requirements=["ohlc"],
+    ),
+    # 12. 期間極値ブレイクシグナル
+    SignalDefinition(
+        name="期間極値ブレイク",
+        signal_func=period_extrema_break_signal,
+        enabled_checker=lambda p: p.period_extrema_break.enabled,
         param_builder=lambda p, d: {
             "price": d["ohlc_data"]["High"]
-            if p.period_breakout.direction == "high"
+            if p.period_extrema_break.direction == "high"
             else d["ohlc_data"]["Low"],
-            "period": p.period_breakout.period,
-            "direction": p.period_breakout.direction,
-            "condition": p.period_breakout.condition,
-            "lookback_days": p.period_breakout.lookback_days,
+            "period": p.period_extrema_break.period,
+            "direction": p.period_extrema_break.direction,
+            "lookback_days": p.period_extrema_break.lookback_days,
         },
-        entry_purpose="高値/安値ブレイク",
-        exit_purpose="高値/安値維持",
+        entry_purpose="期間高値/安値更新のイベントを判定",
+        exit_purpose="期間高値/安値更新のイベントを判定",
         category="breakout",
-        description="指定期間の高値/安値をブレイクしたかを判定",
-        param_key="period_breakout",
+        description="指定期間の高値/安値を更新したかを判定",
+        param_key="period_extrema_break",
+        data_checker=lambda d: "ohlc_data" in d,
+        data_requirements=["ohlc"],
+    ),
+    # 13. 期間極値位置シグナル
+    SignalDefinition(
+        name="期間極値位置",
+        signal_func=period_extrema_position_signal,
+        enabled_checker=lambda p: p.period_extrema_position.enabled,
+        param_builder=lambda p, d: {
+            "price": d["ohlc_data"]["High"]
+            if p.period_extrema_position.direction == "high"
+            else d["ohlc_data"]["Low"],
+            "period": p.period_extrema_position.period,
+            "direction": p.period_extrema_position.direction,
+            "state": p.period_extrema_position.state,
+            "lookback_days": p.period_extrema_position.lookback_days,
+        },
+        entry_purpose="価格が期間高値/安値圏にいるかを判定",
+        exit_purpose="価格が期間高値/安値圏から離れているかを判定",
+        category="breakout",
+        description="指定期間の高値/安値圏との位置関係を判定",
+        param_key="period_extrema_position",
         data_checker=lambda d: "ohlc_data" in d,
         data_requirements=["ohlc"],
     ),
@@ -564,30 +665,69 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         },
         entry_purpose="ゴールデンクロス/デッドクロス",
         exit_purpose="ゴールデンクロス/デッドクロス",
-        category="breakout",
+        category="trend",
         description="2つの指標のクロスオーバーを検出",
         param_key="crossover",
         data_checker=lambda d: "close" in d,
         data_requirements=["ohlc"],
     ),
-    # 12. ボリンジャーバンドシグナル（エントリー・エグジット両用）
+    # 14. ボリンジャーバンド位置シグナル
     SignalDefinition(
-        name="ボリンジャーバンド",
-        signal_func=bollinger_bands_signal,
-        enabled_checker=lambda p: hasattr(p, "bollinger_bands")
-        and p.bollinger_bands.enabled,
+        name="ボリンジャーバンド位置",
+        signal_func=bollinger_position_signal,
+        enabled_checker=lambda p: p.bollinger_position.enabled,
         param_builder=lambda p, d: {
             "ohlc_data": d["ohlc_data"],
-            "window": p.bollinger_bands.window,
-            "alpha": p.bollinger_bands.alpha,
-            "position": p.bollinger_bands.position,
+            "window": p.bollinger_position.window,
+            "alpha": p.bollinger_position.alpha,
+            "level": p.bollinger_position.level,
+            "direction": p.bollinger_position.direction,
         },
-        entry_purpose="過熱回避/売られすぎ回避/トレンド確認",
-        exit_purpose="過熱利確/売られすぎ損切り",
+        entry_purpose="価格がバンドの上側/下側にいる状態を判定",
+        exit_purpose="価格がバンドの上側/下側にいる状態を判定",
         category="volatility",
-        description="ボリンジャーバンドの位置判定",
-        param_key="bollinger_bands",
+        description="価格とボリンジャーバンドの位置関係を判定",
+        param_key="bollinger_position",
         data_checker=lambda d: "ohlc_data" in d and "Close" in d["ohlc_data"].columns,
+        data_requirements=["ohlc"],
+    ),
+    # 15. ボリンジャーバンドクロスシグナル
+    SignalDefinition(
+        name="ボリンジャーバンドクロス",
+        signal_func=bollinger_cross_signal,
+        enabled_checker=lambda p: p.bollinger_cross.enabled,
+        param_builder=lambda p, d: {
+            "ohlc_data": d["ohlc_data"],
+            "window": p.bollinger_cross.window,
+            "alpha": p.bollinger_cross.alpha,
+            "level": p.bollinger_cross.level,
+            "direction": p.bollinger_cross.direction,
+            "lookback_days": p.bollinger_cross.lookback_days,
+        },
+        entry_purpose="価格がバンドをクロスしたイベントを判定",
+        exit_purpose="価格がバンドをクロスしたイベントを判定",
+        category="volatility",
+        description="価格がボリンジャーバンドをクロスしたかを判定",
+        param_key="bollinger_cross",
+        data_checker=lambda d: "ohlc_data" in d and "Close" in d["ohlc_data"].columns,
+        data_requirements=["ohlc"],
+    ),
+    SignalDefinition(
+        name="ボラティリティパーセンタイル",
+        signal_func=volatility_percentile_signal,
+        enabled_checker=lambda p: p.volatility_percentile.enabled,
+        param_builder=lambda p, d: {
+            "price": d["close"],
+            "window": p.volatility_percentile.window,
+            "lookback": p.volatility_percentile.lookback,
+            "percentile": p.volatility_percentile.percentile,
+        },
+        entry_purpose="現在ボラティリティが過去分布の低位にある状態を判定",
+        exit_purpose="現在ボラティリティが過去分布の低位にある状態を判定",
+        category="volatility",
+        description="現在ボラティリティが過去の指定パーセンタイル以下かを判定",
+        param_key="volatility_percentile",
+        data_checker=lambda d: "close" in d,
         data_requirements=["ohlc"],
     ),
     # 13. Buy&Holdシグナル（全日程エントリー可能）
@@ -647,51 +787,73 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=lambda d: "close" in d,
         data_requirements=["ohlc"],
     ),
-    # 16. 平均回帰シグナル（SMA/EMA基準線・乖離・回復統合）
+    # 16. 基準線乖離シグナル
     SignalDefinition(
-        name="平均回帰",
-        signal_func=mean_reversion_combined_signal,
-        enabled_checker=lambda p: hasattr(p, "mean_reversion")
-        and p.mean_reversion.enabled,
+        name="基準線乖離",
+        signal_func=baseline_deviation_signal,
+        enabled_checker=lambda p: hasattr(p, "baseline_deviation")
+        and p.baseline_deviation.enabled,
         param_builder=lambda p, d: {
             "ohlc_data": d["ohlc_data"],
-            "baseline_type": p.mean_reversion.baseline_type,
-            "baseline_period": p.mean_reversion.baseline_period,
-            "deviation_threshold": p.mean_reversion.deviation_threshold,
-            "deviation_direction": p.mean_reversion.deviation_direction,
-            "recovery_price": p.mean_reversion.recovery_price,
-            "recovery_direction": p.mean_reversion.recovery_direction,
+            "baseline_type": p.baseline_deviation.baseline_type,
+            "baseline_period": p.baseline_deviation.baseline_period,
+            "deviation_threshold": p.baseline_deviation.deviation_threshold,
+            "direction": p.baseline_deviation.direction,
         },
-        entry_purpose="乖離エントリー（割安買い）",
-        exit_purpose="回復エグジット（平均回帰利確）",
+        entry_purpose="基準線からの押し目/伸び過ぎ判定",
+        exit_purpose="基準線からの行き過ぎ利確/損切り判定",
         category="breakout",
-        description="移動平均からの乖離と回復を検出",
-        param_key="mean_reversion",
+        description="価格と基準線の乖離率が閾値を超えたかを判定",
+        param_key="baseline_deviation",
         data_checker=lambda d: "ohlc_data" in d
         and all(col in d["ohlc_data"].columns for col in ["High", "Low", "Close"]),
         data_requirements=["ohlc"],
     ),
-    # 17. MA線ブレイクアウトシグナル（クロス検出版）
+    # 17. 基準線位置シグナル
     SignalDefinition(
-        name="MA線ブレイクアウト",
-        signal_func=ma_breakout_signal,
-        enabled_checker=lambda p: hasattr(p, "ma_breakout") and p.ma_breakout.enabled,
+        name="基準線位置",
+        signal_func=baseline_position_signal,
+        enabled_checker=lambda p: hasattr(p, "baseline_position")
+        and p.baseline_position.enabled,
         param_builder=lambda p, d: {
-            "price": d["close"],
-            "period": p.ma_breakout.period,
-            "ma_type": p.ma_breakout.ma_type,
-            "direction": p.ma_breakout.direction,
-            "lookback_days": p.ma_breakout.lookback_days,
+            "ohlc_data": d["ohlc_data"],
+            "baseline_type": p.baseline_position.baseline_type,
+            "baseline_period": p.baseline_position.baseline_period,
+            "direction": p.baseline_position.direction,
+            "price_column": p.baseline_position.price_column,
         },
-        entry_purpose="MA線クロス検出（エントリー）",
-        exit_purpose="MA線クロス検出（エグジット）",
-        category="breakout",
-        description="株価が移動平均線を上抜け/下抜けしたかを判定",
-        param_key="ma_breakout",
+        entry_purpose="価格が基準線の上側/下側にいる状態判定",
+        exit_purpose="価格が基準線の上側/下側にいる状態判定",
+        category="trend",
+        description="価格が基準線の上側か下側かを判定",
+        param_key="baseline_position",
         data_checker=lambda d: "close" in d,
         data_requirements=["ohlc"],
     ),
-    # 18. 指数前日比シグナル（市場環境フィルター）
+    # 18. 基準線クロスシグナル
+    SignalDefinition(
+        name="基準線クロス",
+        signal_func=baseline_cross_signal,
+        enabled_checker=lambda p: hasattr(p, "baseline_cross")
+        and p.baseline_cross.enabled,
+        param_builder=lambda p, d: {
+            "ohlc_data": d["ohlc_data"],
+            "baseline_type": p.baseline_cross.baseline_type,
+            "baseline_period": p.baseline_cross.baseline_period,
+            "direction": p.baseline_cross.direction,
+            "lookback_days": p.baseline_cross.lookback_days,
+            "price_column": p.baseline_cross.price_column,
+        },
+        entry_purpose="価格が基準線を上抜け/下抜けしたイベント判定",
+        exit_purpose="価格が基準線を上抜け/下抜けしたイベント判定",
+        category="trend",
+        description="価格が基準線をクロスしたかを判定",
+        param_key="baseline_cross",
+        data_checker=lambda d: "ohlc_data" in d
+        and all(col in d["ohlc_data"].columns for col in ["High", "Low", "Close"]),
+        data_requirements=["ohlc"],
+    ),
+    # 19. 指数前日比シグナル（市場環境フィルター）
     SignalDefinition(
         name="指数前日比",
         signal_func=index_daily_change_signal,
@@ -710,7 +872,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=_has_benchmark_data,
         data_requirements=["benchmark"],
     ),
-    # 19. INDEXヒストグラムシグナル（市場モメンタム強弱判定）
+    # 20. INDEXヒストグラムシグナル（市場モメンタム強弱判定）
     SignalDefinition(
         name="INDEXヒストグラム",
         signal_func=index_macd_histogram_signal,
@@ -731,7 +893,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=_has_benchmark_data,
         data_requirements=["benchmark"],
     ),
-    # 20. Same-session oracle 指数寄り付きギャップレジームシグナル
+    # 21. Same-session oracle 指数寄り付きギャップレジームシグナル
     SignalDefinition(
         name="Oracle指数寄り付きギャップレジーム",
         signal_func=oracle_index_open_gap_regime_signal,
@@ -751,7 +913,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=_has_benchmark_open_and_close_data,
         data_requirements=["benchmark"],
     ),
-    # 21. リスク調整リターンシグナル（シャープ/ソルティノレシオベース）
+    # 22. リスク調整リターンシグナル（シャープ/ソルティノレシオベース）
     SignalDefinition(
         name="リスク調整リターン",
         signal_func=risk_adjusted_return_signal,

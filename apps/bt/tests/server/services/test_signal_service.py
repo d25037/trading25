@@ -36,11 +36,11 @@ def _make_ohlcv_df(n: int = 5) -> pd.DataFrame:
 class TestGetSignalDefinition:
     """_get_signal_definition関数のテスト"""
 
-    def test_volume_signal(self):
-        """出来高シグナルの定義取得"""
-        sig_def = _get_signal_definition("volume")
+    def test_volume_ratio_signal(self):
+        """出来高比率シグナルの定義取得"""
+        sig_def = _get_signal_definition("volume_ratio_above")
         assert sig_def is not None
-        assert sig_def.name == "出来高"
+        assert sig_def.name == "出来高比率上抜け"
         assert sig_def.category == "volume"
 
     def test_rsi_threshold_signal(self):
@@ -64,11 +64,17 @@ class TestPhase1SignalNames:
         expected = {
             "rsi_threshold",
             "rsi_spread",
-            "period_breakout",
-            "ma_breakout",
-            "volume",
+            "baseline_cross",
+            "baseline_deviation",
+            "baseline_position",
+            "period_extrema_break",
+            "period_extrema_position",
+            "volume_ratio_above",
+            "volume_ratio_below",
             "trading_value",
-            "bollinger_bands",
+            "volatility_percentile",
+            "bollinger_position",
+            "bollinger_cross",
         }
         assert expected.issubset(PHASE1_SIGNAL_NAMES)
 
@@ -199,7 +205,7 @@ class TestSignalDefinitionMap:
         """_build_signal_definition_map関数のテスト"""
         mapping = _build_signal_definition_map()
         assert isinstance(mapping, dict)
-        assert "volume" in mapping
+        assert "volume_ratio_above" in mapping
         assert "rsi_threshold" in mapping
 
     def test_nested_param_key_extraction(self):
@@ -210,14 +216,14 @@ class TestSignalDefinitionMap:
         assert mapping["per"].param_key == "fundamental.per"
 
     def test_build_signal_definition_map_logs_duplicate_warning(self):
-        sig_def = _get_signal_definition("volume")
+        sig_def = _get_signal_definition("volume_ratio_above")
         assert sig_def is not None
 
         with patch("src.application.services.signal_service.SIGNAL_REGISTRY", [sig_def, sig_def]):
             with patch("src.application.services.signal_service.logger") as mock_logger:
                 mapping = _build_signal_definition_map()
 
-        assert mapping["volume"] is sig_def
+        assert mapping["volume_ratio_above"] is sig_def
         mock_logger.warning.assert_called_once()
 
 
@@ -390,7 +396,7 @@ class TestDateRangeValidation:
                 stock_code="7203",
                 source="market",
                 timeframe="daily",
-                signals=[{"type": "volume", "params": {}}],
+                signals=[{"type": "volume_ratio_above", "params": {}}],
                 start_date=date(2025, 12, 31),
                 end_date=date(2025, 1, 1),
             )
@@ -459,7 +465,7 @@ class TestResampleDataQualityValidation:
                     stock_code="7203",
                     source="market",
                     timeframe="weekly",  # リサンプルでCloseがNaNになりdropnaで空に
-                    signals=[{"type": "volume", "params": {}}],
+                    signals=[{"type": "volume_ratio_above", "params": {}}],
                 )
 
     def test_valid_resampled_data_no_error(self):

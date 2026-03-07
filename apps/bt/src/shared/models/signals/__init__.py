@@ -6,12 +6,14 @@
 
 from .base import BaseSignalParams, Signals, _validate_condition_above_below, _validate_period_order
 from .breakout import (
+    BaselineCrossSignalParams,
+    BaselineDeviationSignalParams,
+    BaselinePositionSignalParams,
     BreakoutSignalParams,
     BuyAndHoldSignalParams,
     CrossoverSignalParams,
-    MABreakoutParams,
-    MeanReversionSignalParams,
-    PeriodBreakoutParams,
+    PeriodExtremaBreakSignalParams,
+    PeriodExtremaPositionSignalParams,
     RiskAdjustedReturnSignalParams,
 )
 from .composite import SignalParams
@@ -29,16 +31,23 @@ from .macro import (
     OracleIndexOpenGapRegimeSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
-from .trend import RetracementSignalParams, TrendSignalParams
+from .trend import (
+    RetracementCrossSignalParams,
+    RetracementPositionSignalParams,
+    TrendSignalParams,
+)
 from .volatility import (
-    ATRSupportBreakParams,
-    BollingerBandsSignalParams,
-    VolatilitySignalParams,
+    ATRSupportCrossParams,
+    ATRSupportPositionParams,
+    BollingerCrossSignalParams,
+    BollingerPositionSignalParams,
+    VolatilityPercentileSignalParams,
 )
 from .volume import (
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
-    VolumeSignalParams,
+    VolumeRatioAboveSignalParams,
+    VolumeRatioBelowSignalParams,
 )
 
 __all__ = [
@@ -50,14 +59,18 @@ __all__ = [
     # volume
     "TradingValueRangeSignalParams",
     "TradingValueSignalParams",
-    "VolumeSignalParams",
+    "VolumeRatioAboveSignalParams",
+    "VolumeRatioBelowSignalParams",
     # trend
-    "RetracementSignalParams",
+    "RetracementCrossSignalParams",
+    "RetracementPositionSignalParams",
     "TrendSignalParams",
     # volatility
-    "ATRSupportBreakParams",
-    "BollingerBandsSignalParams",
-    "VolatilitySignalParams",
+    "ATRSupportCrossParams",
+    "ATRSupportPositionParams",
+    "BollingerCrossSignalParams",
+    "BollingerPositionSignalParams",
+    "VolatilityPercentileSignalParams",
     # oscillator
     "RSISpreadSignalParams",
     "RSIThresholdSignalParams",
@@ -70,12 +83,14 @@ __all__ = [
     # fundamental
     "FundamentalSignalParams",
     # breakout
+    "BaselineCrossSignalParams",
+    "BaselineDeviationSignalParams",
+    "BaselinePositionSignalParams",
     "BreakoutSignalParams",
     "BuyAndHoldSignalParams",
     "CrossoverSignalParams",
-    "MABreakoutParams",
-    "MeanReversionSignalParams",
-    "PeriodBreakoutParams",
+    "PeriodExtremaBreakSignalParams",
+    "PeriodExtremaPositionSignalParams",
     "RiskAdjustedReturnSignalParams",
     # sector
     "SectorRotationPhaseParams",

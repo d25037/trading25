@@ -4,8 +4,8 @@ import { mergeValidationResults, validateStrategyConfigLocally } from './strateg
 
 const signalDefs: SignalDefinition[] = [
   {
-    key: 'volume',
-    name: 'Volume',
+    key: 'volume_ratio_above',
+    name: 'Volume Ratio Above',
     category: 'volume',
     description: '',
     usage_hint: '',
@@ -14,8 +14,8 @@ const signalDefs: SignalDefinition[] = [
     data_requirements: [],
     fields: [
       { name: 'enabled', type: 'boolean', description: '' },
-      { name: 'direction', type: 'select', description: '', options: ['surge', 'drop'] },
-      { name: 'threshold', type: 'number', description: '', constraints: { gt: 0 } },
+      { name: 'ratio_threshold', type: 'number', description: '', constraints: { gt: 0 } },
+      { name: 'ma_type', type: 'select', description: '', options: ['sma', 'ema'] },
     ],
   },
   {
@@ -60,7 +60,7 @@ describe('validateStrategyConfigLocally', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: {
-          volume: {
+          volume_ratio_above: {
             enabled: true,
             unknown_param: 123,
           },
@@ -70,13 +70,13 @@ describe('validateStrategyConfigLocally', () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('entry_filter_params.volume.unknown_param is not a valid parameter name');
+    expect(result.errors).toContain('entry_filter_params.volume_ratio_above.unknown_param is not a valid parameter name');
   });
 
   it('validates kelly_fraction max as 2', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'surge', threshold: 1.2 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
         shared_config: { kelly_fraction: 2.1 },
       },
       signalDefs
@@ -89,7 +89,7 @@ describe('validateStrategyConfigLocally', () => {
   it('accepts next_session_round_trip when companion constraints are satisfied', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: {},
         shared_config: { kelly_fraction: 2, next_session_round_trip: true, timeframe: 'daily' },
       },
@@ -103,8 +103,8 @@ describe('validateStrategyConfigLocally', () => {
   it('rejects non-empty exit_trigger_params for next_session_round_trip', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
-        exit_trigger_params: { volume: { enabled: true, direction: 'surge', threshold: 1.2 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
+        exit_trigger_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
         shared_config: { next_session_round_trip: true },
       },
       signalDefs
@@ -119,7 +119,7 @@ describe('validateStrategyConfigLocally', () => {
   it('rejects non-daily timeframe for next_session_round_trip', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         shared_config: { next_session_round_trip: true, timeframe: 'weekly' },
       },
       signalDefs
@@ -132,7 +132,7 @@ describe('validateStrategyConfigLocally', () => {
   it('accepts current_session_round_trip_oracle when companion constraints are satisfied', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: {},
         shared_config: { current_session_round_trip_oracle: true, timeframe: 'daily' },
       },
@@ -146,8 +146,8 @@ describe('validateStrategyConfigLocally', () => {
   it('rejects non-empty exit_trigger_params for current_session_round_trip_oracle', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
-        exit_trigger_params: { volume: { enabled: true, direction: 'surge', threshold: 1.2 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
+        exit_trigger_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
         shared_config: { current_session_round_trip_oracle: true },
       },
       signalDefs
@@ -162,7 +162,7 @@ describe('validateStrategyConfigLocally', () => {
   it('rejects non-daily timeframe for current_session_round_trip_oracle', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         shared_config: { current_session_round_trip_oracle: true, timeframe: 'weekly' },
       },
       signalDefs
@@ -175,7 +175,7 @@ describe('validateStrategyConfigLocally', () => {
   it('rejects enabling both round trip execution modes at once', () => {
     const result = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         shared_config: {
           next_session_round_trip: true,
           current_session_round_trip_oracle: true,
@@ -294,7 +294,7 @@ describe('validateStrategyConfigLocally', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: {
-          period_breakout: { enabled: true, period: 20 },
+          period_extrema_break: { enabled: true, period: 20 },
         },
       },
       []
@@ -341,14 +341,14 @@ describe('validateStrategyConfigLocally', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: {
-          volume: true,
+          volume_ratio_above: true,
         },
       },
       signalDefs
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('entry_filter_params.volume must be an object');
+    expect(result.errors).toContain('entry_filter_params.volume_ratio_above must be an object');
   });
 
   it('returns error when nested fundamental value is not an object', () => {
@@ -369,10 +369,10 @@ describe('validateStrategyConfigLocally', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: {
-          volume: {
+          volume_ratio_above: {
             enabled: 'true',
-            direction: 'invalid',
-            threshold: '1.0',
+            ma_type: 'invalid',
+            ratio_threshold: '1.0',
           },
         },
       },
@@ -380,9 +380,9 @@ describe('validateStrategyConfigLocally', () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain('entry_filter_params.volume.enabled must be a boolean');
-    expect(result.errors).toContain('entry_filter_params.volume.direction must be one of: surge, drop');
-    expect(result.errors).toContain('entry_filter_params.volume.threshold must be a number');
+    expect(result.errors).toContain('entry_filter_params.volume_ratio_above.enabled must be a boolean');
+    expect(result.errors).toContain('entry_filter_params.volume_ratio_above.ma_type must be one of: sma, ema');
+    expect(result.errors).toContain('entry_filter_params.volume_ratio_above.ratio_threshold must be a number');
   });
 
   it('validates numeric constraints for gt/ge/lt/le', () => {
@@ -431,7 +431,7 @@ describe('validateStrategyConfigLocally', () => {
   it('validates shared_config object shape, unknown keys, and kelly type', () => {
     const nonObject = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         shared_config: 'invalid',
       },
       signalDefs
@@ -441,7 +441,7 @@ describe('validateStrategyConfigLocally', () => {
 
     const invalidFieldAndType = validateStrategyConfigLocally(
       {
-        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         shared_config: { unknown_key: true, kelly_fraction: 'x' },
       },
       signalDefs

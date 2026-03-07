@@ -90,25 +90,25 @@ shared_config:
 strategy_params:
   name: "example_strategy"    # 戦略名
 
-entry_signal_params:          # エントリーシグナル（AND結合）
-  volume:
-    surge_enabled: true       # 出来高急増フィルター
-    surge_threshold: 1.5      # 急増閾値
+entry_filter_params:          # エントリーシグナル（AND結合）
+  volume_ratio_above:
+    enabled: true
+    ratio_threshold: 1.5
   fundamental:
     per:
       enabled: true           # PERフィルター
       threshold: 15.0         # PER閾値
 
-exit_signal_params:           # エグジットシグナル（OR結合）
-  volume:
-    drop_enabled: true        # 出来高減少トリガー
-    drop_threshold: 0.7       # 減少閾値
+exit_trigger_params:          # エグジットシグナル（OR結合）
+  volume_ratio_below:
+    enabled: true
+    ratio_threshold: 0.7
 ```
 
 ### **利用可能シグナル種類**
 
 #### **エントリーシグナル（絞り込み）**
-- **volume**: 出来高急増による絞り込み
+- **volume_ratio_above**: 出来高比率上昇による絞り込み
 - **fundamental**: 財務指標（PER・ROE・EPS成長率・PEG Ratio）
 - **beta**: 市場感応度β値（Numba最適化で10-50倍高速）
 - **price_action**: プライスアクション（サポート維持・ブレイク）
@@ -117,7 +117,7 @@ exit_signal_params:           # エグジットシグナル（OR結合）
 - **trend**: トレンド（EMA傾きベース）
 
 #### **エグジットシグナル（発火）**
-- **volume**: 出来高減少による損切り・急増による利確
+- **volume_ratio_below**: 出来高比率低下によるエグジット
 - **fundamental**: 財務悪化による警告
 - **beta**: 市場相関変化による警告
 - **price_action**: サポート割れ・抵抗接近警告
@@ -126,16 +126,16 @@ exit_signal_params:           # エグジットシグナル（OR結合）
 
 ### **統一Signalsシステム**
 ```
-src/strategies/signals/
+src/domains/strategy/signals/
 ├── processor.py              # SignalProcessor統合処理クラス
-├── volume.py                 # 出来高シグナル（両用）
+├── volume.py                 # volume_ratio_above / volume_ratio_below
+├── baseline.py               # baseline_deviation / position / cross
+├── breakout.py               # period_extrema / atr_support / retracement
+├── volatility.py             # bollinger_position / bollinger_cross
 ├── fundamental.py            # 財務指標シグナル
-├── beta.py                   # β値シグナル（Numba最適化）
-├── horizontal_price_action.py # プライスアクションシグナル
+├── beta.py                   # β値シグナル
 ├── margin.py                 # 信用残高シグナル
-├── volatility.py             # ボラティリティシグナル
-├── performance.py            # 相対パフォーマンスシグナル
-└── sector.py                 # セクターシグナル
+└── sector_strength.py        # セクターシグナル
 ```
 
 ### **実行フロー**

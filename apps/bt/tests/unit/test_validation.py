@@ -9,15 +9,15 @@ from pydantic import ValidationError
 
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import (
-    SignalParams,
-    VolumeSignalParams,
+    ATRSupportPositionParams,
+    BaselineDeviationSignalParams,
+    BollingerPositionSignalParams,
     CrossoverSignalParams,
-    MeanReversionSignalParams,
-    BollingerBandsSignalParams,
-    PeriodBreakoutParams,
-    FundamentalSignalParams,
     BetaSignalParams,
-    ATRSupportBreakParams,
+    FundamentalSignalParams,
+    PeriodExtremaBreakSignalParams,
+    SignalParams,
+    VolumeRatioAboveSignalParams,
 )
 
 
@@ -98,11 +98,11 @@ class TestSignalParams:
         params = SignalParams()
 
         # デフォルトで全シグナル無効
-        assert params.volume.enabled is False
+        assert params.volume_ratio_above.enabled is False
         assert params.crossover.enabled is False
-        assert params.mean_reversion.enabled is False
-        assert params.bollinger_bands.enabled is False
-        assert params.period_breakout.enabled is False
+        assert params.baseline_deviation.enabled is False
+        assert params.bollinger_position.enabled is False
+        assert params.period_extrema_break.enabled is False
 
     def test_signal_params_has_any_enabled(self):
         """has_any_enabled()メソッドテスト"""
@@ -112,7 +112,7 @@ class TestSignalParams:
         assert params.has_any_enabled() is False
 
         # 1つ有効化
-        params.volume.enabled = True
+        params.volume_ratio_above.enabled = True
         assert params.has_any_enabled() is True
 
     def test_signal_params_entry_exit_alias(self):
@@ -124,26 +124,24 @@ class TestSignalParams:
         assert params.has_any_exit_enabled() is True
 
 
-class TestVolumeSignalParams:
-    """VolumeSignalParamsのテスト"""
+class TestVolumeRatioAboveSignalParams:
+    """VolumeRatioAboveSignalParamsのテスト"""
 
     def test_valid_volume_params(self):
-        """有効なVolumeSignalParams作成"""
-        params = VolumeSignalParams(
+        """有効なVolumeRatioAboveSignalParams作成"""
+        params = VolumeRatioAboveSignalParams(
             enabled=True,
-            direction="surge",
-            threshold=1.5,
+            ratio_threshold=1.5,
             short_period=20,
             long_period=100,
         )
         assert params.enabled is True
-        assert params.direction == "surge"
-        assert params.threshold == 1.5
+        assert params.ratio_threshold == 1.5
 
     def test_invalid_period_order(self):
         """期間順序が無効でValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            VolumeSignalParams(
+            VolumeRatioAboveSignalParams(
                 enabled=True,
                 short_period=100,
                 long_period=20,  # short_period以下は無効
@@ -153,19 +151,19 @@ class TestVolumeSignalParams:
         )
 
     def test_valid_ma_type_sma(self):
-        """有効なma_type=smaでVolumeSignalParams作成"""
-        params = VolumeSignalParams(enabled=True, ma_type="sma")
+        """有効なma_type=smaでVolumeRatioAboveSignalParams作成"""
+        params = VolumeRatioAboveSignalParams(enabled=True, ma_type="sma")
         assert params.ma_type == "sma"
 
     def test_valid_ma_type_ema(self):
-        """有効なma_type=emaでVolumeSignalParams作成"""
-        params = VolumeSignalParams(enabled=True, ma_type="ema")
+        """有効なma_type=emaでVolumeRatioAboveSignalParams作成"""
+        params = VolumeRatioAboveSignalParams(enabled=True, ma_type="ema")
         assert params.ma_type == "ema"
 
     def test_invalid_ma_type(self):
         """無効なma_typeでValidationError"""
         with pytest.raises(ValidationError) as exc_info:
-            VolumeSignalParams(
+            VolumeRatioAboveSignalParams(
                 enabled=True,
                 ma_type="wma",  # wmaは未対応
             )
@@ -173,7 +171,7 @@ class TestVolumeSignalParams:
 
     def test_default_ma_type(self):
         """デフォルトma_typeはsma"""
-        params = VolumeSignalParams(enabled=True)
+        params = VolumeRatioAboveSignalParams(enabled=True)
         assert params.ma_type == "sma"
 
 
@@ -214,17 +212,17 @@ class TestCrossoverSignalParams:
         assert params.signal_period == 9
 
 
-class TestMeanReversionSignalParams:
-    """MeanReversionSignalParamsのテスト"""
+class TestBaselineDeviationSignalParams:
+    """BaselineDeviationSignalParamsのテスト"""
 
-    def test_valid_mean_reversion_params(self):
-        """有効なMeanReversionSignalParams作成"""
-        params = MeanReversionSignalParams(
+    def test_valid_baseline_deviation_params(self):
+        """有効なBaselineDeviationSignalParams作成"""
+        params = BaselineDeviationSignalParams(
             enabled=True,
             baseline_type="sma",
             baseline_period=25,
             deviation_threshold=0.2,
-            deviation_direction="below",
+            direction="below",
         )
         assert params.enabled is True
         assert params.baseline_period == 25
@@ -233,19 +231,19 @@ class TestMeanReversionSignalParams:
     def test_invalid_deviation_threshold(self):
         """無効な乖離閾値でValidationError"""
         with pytest.raises(ValidationError):
-            MeanReversionSignalParams(
+            BaselineDeviationSignalParams(
                 enabled=True,
                 deviation_threshold=1.5,  # >1.0は無効
             )
 
 
-class TestBollingerBandsSignalParams:
-    """BollingerBandsSignalParamsのテスト"""
+class TestBollingerPositionSignalParams:
+    """BollingerPositionSignalParamsのテスト"""
 
     def test_valid_bollinger_params(self):
-        """有効なBollingerBandsSignalParams作成"""
-        params = BollingerBandsSignalParams(
-            enabled=True, window=20, alpha=2.0, position="below_upper"
+        """有効なBollingerPositionSignalParams作成"""
+        params = BollingerPositionSignalParams(
+            enabled=True, window=20, alpha=2.0, level="upper", direction="below"
         )
         assert params.enabled is True
         assert params.window == 20
@@ -254,26 +252,25 @@ class TestBollingerBandsSignalParams:
     def test_boundary_alpha_values(self):
         """α値境界値テスト"""
         # 正常な境界値
-        params = BollingerBandsSignalParams(enabled=True, alpha=0.5)
+        params = BollingerPositionSignalParams(enabled=True, alpha=0.5)
         assert params.alpha == 0.5
 
         # 無効な境界値
         with pytest.raises(ValidationError):
-            BollingerBandsSignalParams(
+            BollingerPositionSignalParams(
                 enabled=True,
                 alpha=0.0,  # <=0は無効
             )
 
 
-class TestPeriodBreakoutParams:
-    """PeriodBreakoutParamsのテスト"""
+class TestPeriodExtremaBreakSignalParams:
+    """PeriodExtremaBreakSignalParamsのテスト"""
 
-    def test_valid_period_breakout_params(self):
-        """有効なPeriodBreakoutParams作成"""
-        params = PeriodBreakoutParams(
+    def test_valid_period_extrema_break_params(self):
+        """有効なPeriodExtremaBreakSignalParams作成"""
+        params = PeriodExtremaBreakSignalParams(
             enabled=True,
             direction="high",
-            condition="break",
             period=20,
             lookback_days=1,
         )
@@ -330,14 +327,14 @@ class TestBetaSignalParams:
         assert "β値上限は下限より大きい必要があります" in str(exc_info.value)
 
 
-class TestATRSupportBreakParams:
-    """ATRSupportBreakParamsのテスト"""
+class TestATRSupportPositionParams:
+    """ATRSupportPositionParamsのテスト"""
 
     def test_valid_atr_support_params(self):
-        """有効なATRSupportBreakParams作成"""
-        params = ATRSupportBreakParams(
+        """有効なATRSupportPositionParams作成"""
+        params = ATRSupportPositionParams(
             enabled=True,
-            direction="break",
+            direction="below",
             lookback_period=20,
             atr_multiplier=2.0,
             price_column="close",
@@ -348,12 +345,12 @@ class TestATRSupportBreakParams:
     def test_boundary_atr_multiplier(self):
         """ATR倍率境界値テスト"""
         # 正常な境界値
-        params = ATRSupportBreakParams(enabled=True, atr_multiplier=0.1)
+        params = ATRSupportPositionParams(enabled=True, atr_multiplier=0.1)
         assert params.atr_multiplier == 0.1
 
         # 無効な境界値
         with pytest.raises(ValidationError):
-            ATRSupportBreakParams(
+            ATRSupportPositionParams(
                 enabled=True,
                 atr_multiplier=0.0,  # <=0は無効
             )
@@ -367,14 +364,14 @@ class TestIntegratedSignalParams:
         entry_params = SignalParams()
 
         # 複数フィルター有効化
-        entry_params.volume.enabled = True
-        entry_params.volume.direction = "surge"
+        entry_params.volume_ratio_above.enabled = True
+        entry_params.volume_ratio_above.ratio_threshold = 1.5
         entry_params.crossover.enabled = True
         entry_params.crossover.type = "sma"
         entry_params.crossover.direction = "golden"
 
         assert entry_params.has_any_entry_enabled() is True
-        assert entry_params.volume.enabled is True
+        assert entry_params.volume_ratio_above.enabled is True
         assert entry_params.crossover.enabled is True
 
     def test_exit_trigger_params_setup(self):
@@ -382,14 +379,15 @@ class TestIntegratedSignalParams:
         exit_params = SignalParams()
 
         # 複数トリガー有効化
-        exit_params.atr_support_break.enabled = True
-        exit_params.atr_support_break.direction = "break"
-        exit_params.bollinger_bands.enabled = True
-        exit_params.bollinger_bands.position = "below_lower"
+        exit_params.atr_support_position.enabled = True
+        exit_params.atr_support_position.direction = "below"
+        exit_params.bollinger_position.enabled = True
+        exit_params.bollinger_position.level = "lower"
+        exit_params.bollinger_position.direction = "below"
 
         assert exit_params.has_any_exit_enabled() is True
-        assert exit_params.atr_support_break.enabled is True
-        assert exit_params.bollinger_bands.enabled is True
+        assert exit_params.atr_support_position.enabled is True
+        assert exit_params.bollinger_position.enabled is True
 
 
 if __name__ == "__main__":

@@ -38,8 +38,8 @@ def test_merge_shared_config_no_override(config_loader):
     戦略YAMLに shared_config がない場合、デフォルト設定をそのまま返すことを確認
     """
     strategy_config = {
-        "entry_filter_params": {"period_breakout": {"enabled": True}},
-        "exit_trigger_params": {"atr_support_break": {"enabled": True}},
+        "entry_filter_params": {"period_extrema_break": {"enabled": True}},
+        "exit_trigger_params": {"atr_support_position": {"enabled": True}},
     }
 
     merged = config_loader.merge_shared_config(strategy_config)
@@ -60,7 +60,7 @@ def test_merge_shared_config_partial_override(config_loader):
             "initial_cash": 20000000,  # override
             "dataset": "topix100-A",  # override
         },
-        "entry_filter_params": {"period_breakout": {"enabled": True}},
+        "entry_filter_params": {"period_extrema_break": {"enabled": True}},
     }
 
     merged = config_loader.merge_shared_config(strategy_config)
@@ -265,8 +265,10 @@ def test_save_strategy_config_experimental(tmp_path):
     loader = ConfigLoader(config_dir=str(config_dir))
 
     config = {
-        "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
-        "exit_trigger_params": {"volume": {"enabled": False}},
+        "entry_filter_params": {
+            "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+        },
+        "exit_trigger_params": {"volume_ratio_below": {"enabled": False}},
     }
 
     path = loader.save_strategy_config("test_strategy", config, force=True)
@@ -295,8 +297,10 @@ def test_save_strategy_config_production_allowed(tmp_path):
     loader = ConfigLoader(config_dir=str(config_dir))
 
     config = {
-        "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
-        "exit_trigger_params": {"volume": {"enabled": False}},
+        "entry_filter_params": {
+            "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+        },
+        "exit_trigger_params": {"volume_ratio_below": {"enabled": False}},
     }
 
     path = loader.save_strategy_config(
@@ -360,11 +364,11 @@ def test_duplicate_strategy_success(tmp_path):
     source_file.write_text(
         """
 entry_filter_params:
-  volume:
+  volume_ratio_above:
     enabled: true
-    threshold: 1.5
+    ratio_threshold: 1.5
 exit_trigger_params:
-  volume:
+  volume_ratio_below:
     enabled: false
 """,
         encoding="utf-8",
@@ -383,8 +387,15 @@ exit_trigger_params:
     with open(path, encoding="utf-8") as f:
         duplicated_config = yaml.safe_load(f)
 
-    assert duplicated_config["entry_filter_params"]["volume"]["enabled"] is True
-    assert duplicated_config["entry_filter_params"]["volume"]["threshold"] == 1.5
+    assert (
+        duplicated_config["entry_filter_params"]["volume_ratio_above"]["enabled"] is True
+    )
+    assert (
+        duplicated_config["entry_filter_params"]["volume_ratio_above"][
+            "ratio_threshold"
+        ]
+        == 1.5
+    )
 
 
 def test_duplicate_strategy_target_exists_raises(tmp_path):
@@ -897,7 +908,11 @@ def test_save_strategy_config_logs_warning_when_force_false(tmp_path):
     existing.write_text("entry_filter_params: {}", encoding="utf-8")
 
     loader = ConfigLoader(config_dir=str(config_dir))
-    config = {"entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}}}
+    config = {
+        "entry_filter_params": {
+            "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+        }
+    }
 
     path = loader.save_strategy_config("test_strategy", config, force=False)
     assert path == existing

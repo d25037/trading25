@@ -73,7 +73,7 @@ class TestParameterSerialization:
                     "stock_codes": ["1234", "5678"],
                     "nested": {"deep": {"value": 123}},
                 },
-                "entry_filter_params": {"volume": {"threshold": 2.0}},
+                "entry_filter_params": {"volume_ratio_above": {"ratio_threshold": 2.0}},
                 "exit_trigger_params": {"atr": {"multiplier": 1.5}},
             }
 

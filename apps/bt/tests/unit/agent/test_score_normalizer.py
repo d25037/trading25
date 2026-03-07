@@ -9,7 +9,7 @@ from src.domains.lab_agent.models import EvaluationResult, StrategyCandidate
 def _make_candidate(sid="test"):
     return StrategyCandidate(
         strategy_id=sid,
-        entry_filter_params={"volume": {"enabled": True}},
+        entry_filter_params={"volume_ratio_above": {"enabled": True}},
         exit_trigger_params={},
     )
 

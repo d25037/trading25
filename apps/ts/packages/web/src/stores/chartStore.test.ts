@@ -105,26 +105,26 @@ describe('chartStore', () => {
     toggleSignalOverlay();
     expect(useChartStore.getState().settings.signalOverlay.enabled).toBe(true);
 
-    addSignal({ type: 'volume', mode: 'entry', params: { threshold: 1.5 } });
+    addSignal({ type: 'volume_ratio_above', mode: 'entry', params: { ratio_threshold: 1.5 } });
     expect(useChartStore.getState().settings.signalOverlay.signals).toEqual([
-      { type: 'volume', mode: 'entry', params: { threshold: 1.5 }, enabled: true },
+      { type: 'volume_ratio_above', mode: 'entry', params: { ratio_threshold: 1.5 }, enabled: true },
     ]);
 
-    addSignal({ type: 'volume', mode: 'exit', params: { threshold: 2.0 } });
+    addSignal({ type: 'volume_ratio_above', mode: 'exit', params: { ratio_threshold: 2.0 } });
     expect(useChartStore.getState().settings.signalOverlay.signals).toHaveLength(1);
 
-    updateSignal('volume', { mode: 'exit', params: { threshold: 2.0 } });
+    updateSignal('volume_ratio_above', { mode: 'exit', params: { ratio_threshold: 2.0 } });
     expect(useChartStore.getState().settings.signalOverlay.signals[0]).toMatchObject({
-      type: 'volume',
+      type: 'volume_ratio_above',
       mode: 'exit',
-      params: { threshold: 2.0 },
+      params: { ratio_threshold: 2.0 },
       enabled: true,
     });
 
-    toggleSignal('volume');
+    toggleSignal('volume_ratio_above');
     expect(useChartStore.getState().settings.signalOverlay.signals[0]?.enabled).toBe(false);
 
-    removeSignal('volume');
+    removeSignal('volume_ratio_above');
     expect(useChartStore.getState().settings.signalOverlay.signals).toEqual([]);
   });
 

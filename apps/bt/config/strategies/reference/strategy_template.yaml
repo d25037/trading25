@@ -18,21 +18,29 @@
 # - バックテスト実行時と最適化実行時の両方で適用されます
 
 entry_filter_params:
-  # 期間ブレイクアウトシグナル
-  period_breakout:
+  # 期間極値ブレイクシグナル
+  period_extrema_break:
     enabled: false
     direction: "high" # 方向（"high"=最高値比較、"low"=最安値比較）
-    condition: "break" # 条件（"break"=ブレイク検出、"maintained"=維持検出）
     period: 200 # 比較対象期間（N日最高値/最安値）
-    lookback_days: 1 # イベント検出期間（1=今日の価格、N=直近N日の最高値/最安値）
+    lookback_days: 1 # イベント検出期間（1=当日のみ、N=直近N日以内）
 
-  # 移動平均線ブレイクアウトシグナル
-  ma_breakout:
+  # 期間極値位置シグナル
+  period_extrema_position:
     enabled: false
-    period: 200 # 移動平均期間
-    ma_type: "sma" # 移動平均タイプ（"sma"/"ema"）
+    direction: "high" # 方向（"high"=最高値比較、"low"=最安値比較）
+    state: "at_extrema" # 状態（"at_extrema"=期間高値/安値圏、"away_from_extrema"=圏外）
+    period: 200 # 比較対象期間（N日最高値/最安値）
+    lookback_days: 1 # 状態判定期間（1=当日のみ、N=直近N日以内）
+
+  # 基準線クロスシグナル
+  baseline_cross:
+    enabled: false
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"/"vwema"）
+    baseline_period: 200 # 基準線期間
     direction: "above" # 方向（"above"=上抜け、"below"=下抜け）
     lookback_days: 1 # 検出期間（1=その日のみ、N=直近N日以内）
+    price_column: "close" # 判定価格カラム（"close"/"high"/"low"）
 
   # クロスオーバーシグナル（SMA/RSI/MACD/EMA）
   crossover:
@@ -44,29 +52,54 @@ entry_filter_params:
     signal_period: 9 # MACDシグナル期間（type=macd時のみ使用）
     lookback_days: 1 # クロス検出期間（1=その日のみ、N=直近N日以内）
 
-  # 平均回帰シグナル
-  mean_reversion:
+  # 基準線乖離シグナル
+  baseline_deviation:
     enabled: false
-    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"）
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"/"vwema"）
     baseline_period: 25 # 基準線期間
     deviation_threshold: 0.2 # 乖離率閾値（0.2 = 20%乖離）
-    deviation_direction: "below" # 乖離方向（"below"=基準線より安い、"above"=基準線より高い）
-    recovery_price: "high" # 回復判定価格（"high"/"close"）
-    recovery_direction: "above" # 回復方向（"above"=上抜け、"below"=下抜け）
+    direction: "below" # 乖離方向（"below"=基準線より安い、"above"=基準線より高い）
 
-  # ボリンジャーバンドシグナル
-  bollinger_bands:
+  # 基準線位置シグナル
+  baseline_position:
+    enabled: false
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"/"vwema"）
+    baseline_period: 25 # 基準線期間
+    price_column: "close" # 判定価格カラム（"close"/"high"/"low"）
+    direction: "above" # 位置方向（"above"=基準線より上、"below"=基準線より下）
+
+  # ボリンジャーバンド位置シグナル
+  bollinger_position:
     enabled: false
     window: 20 # ボリンジャーバンド期間
     alpha: 2.0 # 標準偏差倍率（2.0 = 2σ）
-    position: "below_lower" # 判定位置（below_lower=下限下抜け、above_lower=下限上抜け、below_upper=上限下抜け、above_upper=上限上抜け、below_middle=中央線下抜け、above_middle=中央線上抜け）
+    level: "lower" # 判定水準（"upper"/"middle"/"lower"）
+    direction: "below" # 方向（"above"/"below"）
 
-  # ATRサポートブレイクシグナル
-  atr_support_break:
+  # ボリンジャーバンドクロスシグナル
+  bollinger_cross:
     enabled: false
-    direction: "break" # "break"（サポート割れ）/"recovery"（サポート回復）
+    window: 20 # ボリンジャーバンド期間
+    alpha: 2.0 # 標準偏差倍率（2.0 = 2σ）
+    level: "middle" # 判定水準（"upper"/"middle"/"lower"）
+    direction: "above" # 方向（"above"/"below"）
+    lookback_days: 1 # クロス検出期間
+
+  # ATRサポート位置シグナル
+  atr_support_position:
+    enabled: false
+    direction: "below" # 方向（"below"=サポートライン下側、"above"=上側）
     lookback_period: 20 # サポートライン・ATR両方の計算期間（統一期間）
     atr_multiplier: 2.0 # ATR倍率
+    price_column: "close" # 判定価格カラム（"close"/"low"）
+
+  # ATRサポートクロスシグナル
+  atr_support_cross:
+    enabled: false
+    direction: "above" # 方向（"below"=下抜け、"above"=上抜け）
+    lookback_period: 20 # サポートライン・ATR両方の計算期間（統一期間）
+    atr_multiplier: 2.0 # ATR倍率
+    lookback_days: 1 # クロス検出期間
     price_column: "close" # 判定価格カラム（"close"/"low"）
 
   # RSI閾値シグナル
@@ -84,13 +117,21 @@ entry_filter_params:
     threshold: 10.0 # スプレッド閾値（0-100）
     condition: "above" # above=短期RSI>長期RSI+閾値（上昇モメンタム強）
 
-  # 出来高シグナル
-  volume:
+  # 出来高比率上抜けシグナル
+  volume_ratio_above:
     enabled: true # 出来高フィルター有効化
-    direction: "surge" # "surge"（急増）/"drop"（減少）
-    threshold: 1.5 # 出来高倍率閾値
+    ratio_threshold: 1.5 # 出来高倍率閾値（短期MA / 長期MA）
     short_period: 20 # 出来高短期平均期間
     long_period: 100 # 出来高長期平均期間
+    ma_type: "sma" # 移動平均タイプ（"sma"/"ema"）
+
+  # 出来高比率下抜けシグナル
+  volume_ratio_below:
+    enabled: false
+    ratio_threshold: 0.7 # 出来高倍率閾値（短期MA / 長期MA）
+    short_period: 20
+    long_period: 100
+    ma_type: "sma"
 
   # 信用残高シグナル
   margin:
@@ -122,11 +163,12 @@ entry_filter_params:
       condition: "above" # above=大型株選定
       use_floating_shares: true
 
-  # ボラティリティシグナル
-  volatility:
+  # ボラティリティパーセンタイルシグナル
+  volatility_percentile:
     enabled: false
-    lookback_period: 100 # ボラティリティ計算期間
-    threshold_multiplier: 1.0 # ベンチマークボラティリティ倍率閾値
+    window: 20 # 現在ボラティリティ計算期間
+    lookback: 252 # パーセンタイル比較期間
+    percentile: 50.0 # 過去分布に対する閾値（0-100）
 
   # β値シグナル
   beta:
@@ -143,21 +185,29 @@ entry_filter_params:
 
 # Exit Trigger設定（戦略固有exitをOR条件で拡張）
 exit_trigger_params:
-  # 期間ブレイクアウトシグナル
-  period_breakout:
+  # 期間極値位置シグナル
+  period_extrema_position:
     enabled: false
     direction: "high" # 方向（"high"=最高値比較、"low"=最安値比較）
-    condition: "maintained" # 条件（"break"=ブレイク検出、"maintained"=維持検出）※エグジットは通常maintained
+    state: "away_from_extrema" # 直近高値/安値圏から離れたらエグジット
     period: 200 # 比較対象期間（N日最高値/最安値）
-    lookback_days: 10 # イベント検出期間（10=直近10日間最高値未更新でエグジット）
+    lookback_days: 10 # 状態判定期間（10=直近10日間で高値圏を維持できない場合）
 
-  # 移動平均線ブレイクアウトシグナル
-  ma_breakout:
+  # 期間極値ブレイクシグナル
+  period_extrema_break:
     enabled: false
-    period: 50 # 移動平均期間（エグジットは短期推奨）
-    ma_type: "sma" # 移動平均タイプ（"sma"/"ema"）
+    direction: "low" # 方向（"high"=上抜け、"low"=下抜け）
+    period: 50 # 比較対象期間
+    lookback_days: 1 # クロス検出期間
+
+  # 基準線クロスシグナル
+  baseline_cross:
+    enabled: false
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"/"vwema"）
+    baseline_period: 50 # 基準線期間（エグジットは短期推奨）
     direction: "below" # 方向（"above"=上抜け利確、"below"=下抜け損切り）
     lookback_days: 1 # 検出期間（1=その日のみ、N=直近N日以内）
+    price_column: "close" # 判定価格カラム（"close"/"high"/"low"）
 
   # クロスオーバーシグナル（SMA/RSI/MACD/EMA）
   crossover:
@@ -169,29 +219,54 @@ exit_trigger_params:
     signal_period: 9 # MACDシグナル期間（type=macd時のみ使用）
     lookback_days: 1 # クロス検出期間（1=その日のみ、N=直近N日以内）
 
-  # 平均回帰シグナル
-  mean_reversion:
+  # 基準線乖離シグナル
+  baseline_deviation:
     enabled: false
-    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"）
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"/"vwema"）
     baseline_period: 25 # 基準線期間
     deviation_threshold: 0.1 # 乖離率閾値（0.1 = 10%オーバーシュートで利確）
-    deviation_direction: "above" # 乖離方向（"below"=基準線割れ損切り、"above"=基準線超過利確）
-    recovery_price: "high" # 回復判定価格（"high"/"close"）
-    recovery_direction: "above" # 回復方向（"above"=上抜け利確、"below"=下抜け損切り）
+    direction: "above" # 乖離方向（"below"=基準線割れ損切り、"above"=基準線超過利確）
 
-  # ボリンジャーバンドシグナル
-  bollinger_bands:
+  # 基準線位置シグナル
+  baseline_position:
+    enabled: false
+    baseline_type: "sma" # 基準線タイプ（"sma"/"ema"/"vwema"）
+    baseline_period: 25 # 基準線期間
+    price_column: "close" # 判定価格カラム（"close"/"high"/"low"）
+    direction: "above" # 位置方向（"above"=基準線より上、"below"=基準線より下）
+
+  # ボリンジャーバンド位置シグナル
+  bollinger_position:
     enabled: false
     window: 20 # ボリンジャーバンド期間
     alpha: 2.0 # 標準偏差倍率（2.0 = 2σ）
-    position: "above_upper" # 判定位置（above_upper=上限上抜け利確、below_lower=下限下抜け損切り、above_middle=中央線上抜け利確、below_middle=中央線下抜け損切り）
+    level: "upper" # 判定水準
+    direction: "above" # 方向（上限超えで利確など）
 
-  # ATRサポートブレイクシグナル
-  atr_support_break:
+  # ボリンジャーバンドクロスシグナル
+  bollinger_cross:
     enabled: false
-    direction: "recovery" # "break"（サポート割れ）/"recovery"（サポート回復）
+    window: 20 # ボリンジャーバンド期間
+    alpha: 2.0 # 標準偏差倍率（2.0 = 2σ）
+    level: "middle" # 判定水準
+    direction: "below" # 方向（中央線下抜けで損切りなど）
+    lookback_days: 1 # クロス検出期間
+
+  # ATRサポート位置シグナル
+  atr_support_position:
+    enabled: false
+    direction: "above" # 方向（"above"=サポート回復、"below"=サポート割れ）
     lookback_period: 20 # サポートライン・ATR両方の計算期間（統一期間）
     atr_multiplier: 2.0 # ATR倍率
+    price_column: "close" # 判定価格カラム（"close"/"low"）
+
+  # ATRサポートクロスシグナル
+  atr_support_cross:
+    enabled: false
+    direction: "below" # 方向（"below"=下抜け、"above"=上抜け）
+    lookback_period: 20 # サポートライン・ATR両方の計算期間（統一期間）
+    atr_multiplier: 2.0 # ATR倍率
+    lookback_days: 1 # クロス検出期間
     price_column: "close" # 判定価格カラム（"close"/"low"）
 
   # RSI閾値シグナル
@@ -209,13 +284,21 @@ exit_trigger_params:
     threshold: 5.0 # スプレッド閾値（エグジットは小さめ推奨）
     condition: "below" # below=短期RSI<長期RSI-閾値（モメンタム減衰）
 
-  # 出来高シグナル
-  volume:
+  # 出来高比率下抜けシグナル
+  volume_ratio_below:
     enabled: true # 出来高フィルター有効化
-    direction: "drop" # "surge"（急増）/"drop"（減少）
-    threshold: 1.0 # 出来高倍率閾値
+    ratio_threshold: 1.0 # 出来高倍率閾値（短期MA / 長期MA）
     short_period: 20 # 出来高短期平均期間
     long_period: 100 # 出来高長期平均期間
+    ma_type: "sma"
+
+  # 出来高比率上抜けシグナル
+  volume_ratio_above:
+    enabled: false
+    ratio_threshold: 1.5
+    short_period: 20
+    long_period: 100
+    ma_type: "sma"
 
   # 信用残高シグナル
   margin:
@@ -247,11 +330,12 @@ exit_trigger_params:
       condition: "below" # below=時価総額縮小で退出
       use_floating_shares: true
 
-  # ボラティリティシグナル
-  volatility:
+  # ボラティリティパーセンタイルシグナル
+  volatility_percentile:
     enabled: false
-    lookback_period: 100 # ボラティリティ計算期間
-    threshold_multiplier: 2.0 # ベンチマーク比倍率閾値
+    window: 20 # 現在ボラティリティ計算期間
+    lookback: 252 # パーセンタイル比較期間
+    percentile: 80.0 # 過去分布に対する閾値（0-100）
 
   # β値シグナル
   beta:

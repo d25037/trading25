@@ -34,10 +34,10 @@ class StrategyImprover:
 
     # 弱点パターンと対応するシグナル提案
     WEAKNESS_SIGNAL_MAP: dict[str, list[str]] = {
-        "high_drawdown": ["atr_support_break", "rsi_threshold"],
-        "low_win_rate": ["volume", "bollinger_bands"],
+        "high_drawdown": ["atr_support_position", "rsi_threshold"],
+        "low_win_rate": ["volume_ratio_above", "bollinger_position"],
         "low_sharpe": ["beta", "trading_value_range"],
-        "few_trades": ["period_breakout", "ma_breakout"],
+        "few_trades": ["period_extrema_break", "baseline_cross"],
         "market_sensitivity": ["index_daily_change", "index_macd_histogram"],
     }
 
@@ -238,7 +238,7 @@ class StrategyImprover:
         # 高ドローダウン対策
         if report.max_drawdown > 0.3 and (
             self._is_signal_allowed(
-                "atr_support_break", "exit", entry_filter_only, allowed_category_set
+                "atr_support_position", "exit", entry_filter_only, allowed_category_set
             )
             or self._is_signal_allowed(
                 "rsi_threshold", "exit", entry_filter_only, allowed_category_set
@@ -246,7 +246,7 @@ class StrategyImprover:
         ):
             suggestions.append(
                 f"最大ドローダウンが{report.max_drawdown:.1%}と高い。"
-                "ATRサポートブレイクやRSI閾値によるエグジット条件追加を推奨"
+                "ATRサポート位置やRSI閾値によるエグジット条件追加を推奨"
             )
 
         # 連続損失対策
@@ -254,10 +254,10 @@ class StrategyImprover:
             is_consecutive = pattern.get("type") == "consecutive_losses"
             if is_consecutive and pattern.get("count", 0) >= 5 and (
                 self._is_signal_allowed(
-                    "volume", "entry", entry_filter_only, allowed_category_set
+                    "volume_ratio_above", "entry", entry_filter_only, allowed_category_set
                 )
                 or self._is_signal_allowed(
-                    "bollinger_bands",
+                    "bollinger_position",
                     "entry",
                     entry_filter_only,
                     allowed_category_set,
@@ -265,7 +265,7 @@ class StrategyImprover:
             ):
                 suggestions.append(
                     f"連続{pattern['count']}回の損失が発生。"
-                    "ボリュームフィルターやボリンジャーバンドの追加を推奨"
+                    "出来高比率フィルターやボリンジャー位置シグナルの追加を推奨"
                 )
 
         # 市場感応度対策
@@ -344,19 +344,19 @@ class StrategyImprover:
         if (
             report.max_drawdown > 0.3
             and self._is_signal_allowed(
-                "atr_support_break", "exit", entry_filter_only, allowed_category_set
+                "atr_support_position", "exit", entry_filter_only, allowed_category_set
             )
         ):
-            # ATRサポートブレイクをエグジットに追加
-            if "atr_support_break" not in exit_signals:
+            # ATRサポート位置をエグジットに追加
+            if "atr_support_position" not in exit_signals:
                 improvements.append(
                     Improvement(
                         improvement_type="add_signal",
                         target="exit",
-                        signal_name="atr_support_break",
+                        signal_name="atr_support_position",
                         changes={
                             "enabled": True,
-                            "direction": "break",
+                            "direction": "below",
                             "lookback_period": 20,
                             "atr_multiplier": 3.0,
                             "price_column": "close",
@@ -368,20 +368,19 @@ class StrategyImprover:
 
         # ボリュームフィルター追加
         if (
-            "volume" not in entry_signals
+            "volume_ratio_above" not in entry_signals
             and self._is_signal_allowed(
-                "volume", "entry", entry_filter_only, allowed_category_set
+                "volume_ratio_above", "entry", entry_filter_only, allowed_category_set
             )
         ):
             improvements.append(
                 Improvement(
                     improvement_type="add_signal",
                     target="entry",
-                    signal_name="volume",
+                    signal_name="volume_ratio_above",
                     changes={
                         "enabled": True,
-                        "direction": "surge",
-                        "threshold": 1.5,
+                        "ratio_threshold": 1.5,
                         "short_period": 50,
                         "long_period": 150,
                         "ma_type": "sma",

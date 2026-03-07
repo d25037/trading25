@@ -131,11 +131,12 @@ class TestSignalProcessor:
         """シグナル処理でのエラーハンドリングテスト"""
         # エラーが発生する可能性のあるシグナルパラメータを有効化
         params = SignalParams()
-        params.volume.enabled = True
-        params.volume.direction = "surge"
+        params.volume_ratio_above.enabled = True
 
         # モックでエラーを発生させる（データ駆動設計対応: registry経由のシグナル関数）
-        with patch("src.domains.strategy.signals.volume.volume_signal") as mock_volume:
+        with patch(
+            "src.domains.strategy.signals.volume.volume_ratio_above_signal"
+        ) as mock_volume:
             mock_volume.side_effect = Exception("テストエラー")
 
             # エラーが発生してもプロセシングが継続することを確認
@@ -189,8 +190,7 @@ class TestSignalProcessor:
         """シグナルログ記録テスト"""
         # ボリュームシグナルを有効化してログテスト
         params = SignalParams()
-        params.volume.enabled = True
-        params.volume.direction = "surge"
+        params.volume_ratio_above.enabled = True
 
         with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             self.processor.apply_signals(

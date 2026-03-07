@@ -98,34 +98,36 @@ class TestSignalParamsTypeSafety:
         params = SignalParams()
 
         # 全シグナルがデフォルトで無効
-        assert params.volume.enabled is False
+        assert params.volume_ratio_above.enabled is False
         assert params.crossover.enabled is False
-        assert params.mean_reversion.enabled is False
-        assert params.bollinger_bands.enabled is False
-        assert params.period_breakout.enabled is False
+        assert params.baseline_deviation.enabled is False
+        assert params.baseline_position.enabled is False
+        assert params.baseline_cross.enabled is False
+        assert params.bollinger_position.enabled is False
+        assert params.period_extrema_break.enabled is False
         assert params.fundamental.per.enabled is False
         assert params.beta.enabled is False
-        assert params.atr_support_break.enabled is False
+        assert params.atr_support_position.enabled is False
 
     def test_signal_params_volume_validation(self):
         """出来高シグナルパラメータのバリデーション"""
         params = SignalParams()
 
         # 正常な設定
-        params.volume.enabled = True
-        params.volume.threshold = 1.5
-        params.volume.short_period = 20
-        params.volume.long_period = 100
+        params.volume_ratio_above.enabled = True
+        params.volume_ratio_above.ratio_threshold = 1.5
+        params.volume_ratio_above.short_period = 20
+        params.volume_ratio_above.long_period = 100
 
-        assert params.volume.enabled is True
-        assert params.volume.threshold == 1.5
+        assert params.volume_ratio_above.enabled is True
+        assert params.volume_ratio_above.ratio_threshold == 1.5
 
         # 異常な設定（期間順序）
         # Pydanticバリデーションは初期化時に実行されるため、新規オブジェクト作成が必要
         with pytest.raises(ValidationError):
-            from src.shared.models.signals import VolumeSignalParams
+            from src.shared.models.signals import VolumeRatioAboveSignalParams
 
-            VolumeSignalParams(
+            VolumeRatioAboveSignalParams(
                 enabled=True,
                 short_period=100,
                 long_period=20,  # short_period > long_period でエラー
@@ -156,7 +158,7 @@ class TestSignalParamsTypeSafety:
         assert params.has_any_enabled() is False
 
         # 1つ有効化
-        params.volume.enabled = True
+        params.volume_ratio_above.enabled = True
         assert params.has_any_enabled() is True
 
 
@@ -212,10 +214,10 @@ class TestYamlConfigurableStrategyTypeSafety:
         )
 
         entry_filter_params = SignalParams()
-        entry_filter_params.volume.enabled = True
+        entry_filter_params.volume_ratio_above.enabled = True
 
         exit_trigger_params = SignalParams()
-        exit_trigger_params.atr_support_break.enabled = True
+        exit_trigger_params.atr_support_position.enabled = True
 
         strategy = YamlConfigurableStrategy(
             shared_config=shared_config,
@@ -226,8 +228,8 @@ class TestYamlConfigurableStrategyTypeSafety:
         # 型安全性確認
         assert isinstance(strategy.entry_filter_params, SignalParams)
         assert isinstance(strategy.exit_trigger_params, SignalParams)
-        assert strategy.entry_filter_params.volume.enabled is True
-        assert strategy.exit_trigger_params.atr_support_break.enabled is True
+        assert strategy.entry_filter_params.volume_ratio_above.enabled is True
+        assert strategy.exit_trigger_params.atr_support_position.enabled is True
 
     def test_base_strategy_generate_signals_returns_signals(self):
         """generate_signals()がSignalsオブジェクトを返すことを確認"""
@@ -276,18 +278,24 @@ class TestIDECompletionSupport:
         params = SignalParams()
 
         # これらの属性は全て型が確定しており、IDEで補完される
-        assert hasattr(params, "volume")
+        assert hasattr(params, "volume_ratio_above")
+        assert hasattr(params, "volume_ratio_below")
         assert hasattr(params, "crossover")
-        assert hasattr(params, "mean_reversion")
-        assert hasattr(params, "bollinger_bands")
-        assert hasattr(params, "period_breakout")
+        assert hasattr(params, "baseline_deviation")
+        assert hasattr(params, "baseline_position")
+        assert hasattr(params, "baseline_cross")
+        assert hasattr(params, "bollinger_position")
+        assert hasattr(params, "bollinger_cross")
+        assert hasattr(params, "period_extrema_break")
+        assert hasattr(params, "period_extrema_position")
         assert hasattr(params, "fundamental")
         assert hasattr(params, "beta")
-        assert hasattr(params, "atr_support_break")
+        assert hasattr(params, "atr_support_position")
+        assert hasattr(params, "atr_support_cross")
 
         # ネストされた属性も補完される
-        assert hasattr(params.volume, "enabled")
-        assert hasattr(params.volume, "threshold")
+        assert hasattr(params.volume_ratio_above, "enabled")
+        assert hasattr(params.volume_ratio_above, "ratio_threshold")
         assert hasattr(params.fundamental, "per")
         assert hasattr(params.fundamental.per, "enabled")
 

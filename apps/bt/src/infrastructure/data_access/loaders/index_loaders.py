@@ -8,7 +8,8 @@ TOPIXデータの二重ロードパス:
     1. load_topix_data() — dataset.db の topix テーブルからロード（バックテスト専用）
        長期間の過去データを使用するバックテストシミュレーション向け。
     2. load_topix_data_from_market_db() — DuckDB の topix_data テーブルからロード
-       日次更新の直近データを使用する signal_screening のβ値計算 および portfolio factor regression API向け。
+       日次更新の直近データを使用する ScreeningService の市場分析・
+       portfolio factor regression API向け。
 """
 
 from typing import Optional
@@ -69,7 +70,7 @@ def load_topix_data_from_market_db(
     市場データベース（DuckDB）からTOPIXデータを読み込み
 
     日次更新の直近データを使用する以下の用途向け:
-        - signal_screening: β値シグナル計算のベンチマークデータ
+        - ScreeningService: スクリーニング/分析のベンチマークデータ
         - analytics API: ポートフォリオ分析のベンチマークデータ
 
     Args:

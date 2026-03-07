@@ -1,6 +1,8 @@
 """
-ブレイクアウト・クロスオーバー・平均回帰シグナルパラメータ
+ブレイクアウト・クロスオーバー・基準線シグナルパラメータ
 """
+
+from typing import Literal
 
 from pydantic import Field, ValidationInfo, field_validator
 
@@ -31,13 +33,10 @@ class CrossoverSignalParams(BaseSignalParams):
         )
 
 
-class PeriodBreakoutParams(BaseSignalParams):
-    """期間ブレイクアウトパラメータ（統合版）"""
-    direction: str = Field(
+class PeriodExtremaBreakSignalParams(BaseSignalParams):
+    """期間高値/安値ブレイクイベントシグナルパラメータ"""
+    direction: Literal["high", "low"] = Field(
         default="high", description="方向（high=最高値比較、low=最安値比較）"
-    )
-    condition: str = Field(
-        default="break", description="条件（break=ブレイク検出、maintained=維持検出）"
     )
     period: int = Field(
         default=20, gt=0, le=1000, description="比較対象期間（N日最高値/最安値）"
@@ -46,19 +45,42 @@ class PeriodBreakoutParams(BaseSignalParams):
         default=1,
         gt=0,
         le=500,
-        description="イベント検出期間（1=今日の価格、N=直近N日の最高値/最安値）",
+        description="イベント検出期間（1=当日のみ、N=直近N日以内）",
     )
 
 
-class MABreakoutParams(BaseSignalParams):
-    """移動平均線ブレイクアウトパラメータ（統合版）"""
-    period: int = Field(default=200, gt=0, le=1000, description="移動平均期間")
-    ma_type: str = Field(default="sma", description="移動平均タイプ（sma/ema）")
+class PeriodExtremaPositionSignalParams(BaseSignalParams):
+    """期間高値/安値に対する状態シグナルパラメータ"""
+    direction: Literal["high", "low"] = Field(
+        default="high", description="方向（high=最高値比較、low=最安値比較）"
+    )
+    state: Literal["at_extrema", "away_from_extrema"] = Field(
+        default="at_extrema",
+        description="状態（at_extrema=期間高値/安値圏、away_from_extrema=期間高値/安値圏外）",
+    )
+    period: int = Field(
+        default=20, gt=0, le=1000, description="比較対象期間（N日最高値/最安値）"
+    )
+    lookback_days: int = Field(
+        default=1,
+        gt=0,
+        le=500,
+        description="状態判定期間（1=当日のみ、N=直近N日以内）",
+    )
+
+
+class BaselineCrossSignalParams(BaseSignalParams):
+    """基準線クロスシグナルパラメータ"""
+    baseline_type: str = Field(default="sma", description="基準線タイプ（sma/ema/vwema）")
+    baseline_period: int = Field(default=200, gt=0, le=1000, description="基準線期間")
     direction: str = Field(
         default="above", description="方向（above=上抜け、below=下抜け）"
     )
     lookback_days: int = Field(
         default=1, gt=0, le=100, description="検出期間（1=その日のみ、N=直近N日以内）"
+    )
+    price_column: str = Field(
+        default="close", description="判定価格カラム（close/high/low）"
     )
 
 
@@ -78,8 +100,8 @@ class BreakoutSignalParams(BaseSignalParams):
     )
 
 
-class MeanReversionSignalParams(BaseSignalParams):
-    """平均回帰シグナルパラメータ（汎用・シンプル設計）"""
+class BaselineDeviationSignalParams(BaseSignalParams):
+    """基準線乖離シグナルパラメータ"""
     baseline_type: str = Field(default="sma", description="基準線タイプ（sma/ema/vwema）")
     baseline_period: int = Field(default=25, gt=0, le=500, description="基準線期間")
     deviation_threshold: float = Field(
@@ -88,14 +110,20 @@ class MeanReversionSignalParams(BaseSignalParams):
         le=1.0,
         description="乖離率閾値（0.2 = 20%乖離、0.0で無効化）",
     )
-    deviation_direction: str = Field(
+    direction: str = Field(
         default="below", description="乖離方向（below/above）"
     )
-    recovery_price: str = Field(
-        default="high", description="回復判定価格（high/low/close/none、none で無効化）"
+
+
+class BaselinePositionSignalParams(BaseSignalParams):
+    """基準線位置シグナルパラメータ"""
+    baseline_type: str = Field(default="sma", description="基準線タイプ（sma/ema/vwema）")
+    baseline_period: int = Field(default=25, gt=0, le=500, description="基準線期間")
+    price_column: str = Field(
+        default="close", description="判定価格カラム（close/high/low）"
     )
-    recovery_direction: str = Field(
-        default="above", description="回復方向（above/below）"
+    direction: str = Field(
+        default="above", description="位置方向（above/below）"
     )
 
 

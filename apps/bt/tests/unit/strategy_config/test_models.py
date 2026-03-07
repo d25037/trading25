@@ -14,7 +14,7 @@ import pytest
 class TestValidateStrategyConfigDict:
     def test_valid_config(self) -> None:
         config = {
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         result = validate_strategy_config_dict(config)
         assert result.entry_filter_params is not None
@@ -26,7 +26,7 @@ class TestValidateStrategyConfigDict:
 
 class TestTryValidateStrategyConfigDict:
     def test_valid_returns_true(self) -> None:
-        config = {"entry_filter_params": {"volume": {"enabled": True}}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
         is_valid, error = try_validate_strategy_config_dict(config)
         assert is_valid is True
         assert error is None
@@ -40,14 +40,14 @@ class TestTryValidateStrategyConfigDict:
 
 class TestStrictValidation:
     def test_strict_valid_config(self) -> None:
-        config = {"entry_filter_params": {"volume": {"enabled": True}}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
         result = validate_strategy_config_dict_strict(config)
         assert result.entry_filter_params is not None
 
     def test_strict_valid_next_session_round_trip_config(self) -> None:
         config = {
             "shared_config": {"next_session_round_trip": True},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {},
         }
         result = validate_strategy_config_dict_strict(config)
@@ -57,7 +57,7 @@ class TestStrictValidation:
     def test_strict_valid_current_session_round_trip_oracle_config(self) -> None:
         config = {
             "shared_config": {"current_session_round_trip_oracle": True},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {},
         }
         result = validate_strategy_config_dict_strict(config)
@@ -67,8 +67,8 @@ class TestStrictValidation:
     def test_strict_valid_shared_config_without_round_trip_allows_exit_params(self) -> None:
         config = {
             "shared_config": {"next_session_round_trip": False},
-            "entry_filter_params": {"volume": {"enabled": True}},
-            "exit_trigger_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
         }
 
         result = validate_strategy_config_dict_strict(config)
@@ -107,7 +107,7 @@ class TestStrictValidation:
     def test_strict_next_session_round_trip_rejects_non_empty_exit_params(self) -> None:
         config = {
             "shared_config": {"next_session_round_trip": True},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
         }
 
@@ -119,7 +119,7 @@ class TestStrictValidation:
     ) -> None:
         config = {
             "shared_config": {"current_session_round_trip_oracle": True},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
         }
 

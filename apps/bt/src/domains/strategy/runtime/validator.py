@@ -65,23 +65,6 @@ def validate_strategy_config(config: dict[str, Any]) -> bool:
         )
         return False
 
-    # entry_filter_params の構造チェック（基本的な構造の存在確認）
-    entry_filter_params = config.get("entry_filter_params", {})
-    expected_filter_types = [
-        "volume",
-        "trend",
-        "fundamental",
-        "volatility",
-        "relative_performance",
-        "margin",
-    ]
-
-    for filter_type in expected_filter_types:
-        if filter_type not in entry_filter_params:
-            logger.warning(
-                f"フィルター設定が不足（デフォルト値を使用）: entry_filter_params.{filter_type}"
-            )
-
     logger.info("戦略設定の妥当性チェック成功")
     return True
 

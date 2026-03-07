@@ -384,6 +384,15 @@ class TestSignalRegistry:
         assert sig.category == "volatility"
         assert sig.data_requirements == ["ohlc"]
 
+    def test_volatility_percentile_registered(self) -> None:
+        """volatility_percentile が独立シグナルとして登録されること"""
+        matches = [s for s in SIGNAL_REGISTRY if s.param_key == "volatility_percentile"]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "ボラティリティパーセンタイル"
+        assert sig.category == "volatility"
+        assert sig.data_requirements == ["ohlc"]
+
 
 class TestFundamentalAdjustedSelection:
     def _get_signal(self, param_key: str):

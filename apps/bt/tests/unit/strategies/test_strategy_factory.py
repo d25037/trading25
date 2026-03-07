@@ -41,7 +41,7 @@ class TestStrategyFactoryHelpers:
         assert StrategyFactory._has_configured_exit_trigger_params({}, None) is False
         assert (
             StrategyFactory._has_configured_exit_trigger_params(
-                {"volume": {"enabled": True}},
+                {"volume_ratio_below": {"enabled": True}},
                 None,
             )
             is True
@@ -49,7 +49,7 @@ class TestStrategyFactoryHelpers:
         assert (
             StrategyFactory._has_configured_exit_trigger_params(
                 None,
-                _FakeSignalParams({"volume"}),
+                _FakeSignalParams({"volume_ratio_below"}),
             )
             is True
         )
@@ -87,7 +87,7 @@ class TestStrategyFactoryHelpers:
 
         StrategyFactory._validate_round_trip_execution_mode(
             shared_config,
-            {"volume": {"enabled": True}},
+            {"volume_ratio_above": {"enabled": True}},
             None,
         )
 
@@ -112,8 +112,8 @@ class TestStrategyFactoryHelpers:
         with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
             StrategyFactory.create_strategy(
                 shared_config=shared_config,
-                entry_filter_params={"volume": {"enabled": True}},
-                exit_trigger_params={"volume": {"enabled": True}},
+                entry_filter_params={"volume_ratio_above": {"enabled": True}},
+                exit_trigger_params={"volume_ratio_below": {"enabled": True}},
             )
 
     def test_create_strategy_accepts_empty_exit_trigger_for_next_session_round_trip(
@@ -137,7 +137,7 @@ class TestStrategyFactoryHelpers:
                 "stock_codes": ["1111"],
                 "next_session_round_trip": True,
             },
-            entry_filter_params={"volume": {"enabled": True}},
+            entry_filter_params={"volume_ratio_above": {"enabled": True}},
             exit_trigger_params={},
         )
 
@@ -166,8 +166,8 @@ class TestStrategyFactoryHelpers:
         with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
             StrategyFactory.create_strategy(
                 shared_config=shared_config,
-                entry_filter_params={"volume": {"enabled": True}},
-                exit_trigger_params={"volume": {"enabled": True}},
+                entry_filter_params={"volume_ratio_above": {"enabled": True}},
+                exit_trigger_params={"volume_ratio_below": {"enabled": True}},
             )
 
     def test_create_strategy_accepts_empty_exit_trigger_for_current_session_round_trip_oracle(
@@ -191,7 +191,7 @@ class TestStrategyFactoryHelpers:
                 "stock_codes": ["1111"],
                 "current_session_round_trip_oracle": True,
             },
-            entry_filter_params={"volume": {"enabled": True}},
+            entry_filter_params={"volume_ratio_above": {"enabled": True}},
             exit_trigger_params={},
         )
 
@@ -248,7 +248,7 @@ class TestStrategyFactoryExecution:
                 "stock_codes": ["1111", "2222"],
                 "printlog": False,
             },
-            entry_filter_params={"volume": {"enabled": True}},
+            entry_filter_params={"volume_ratio_above": {"enabled": True}},
             exit_trigger_params={},
         )
 
@@ -279,5 +279,5 @@ class TestStrategyFactoryExecution:
                     "dataset": "sample",
                     "stock_codes": ["1111"],
                 },
-                entry_filter_params={"volume": {"enabled": True}},
+                entry_filter_params={"volume_ratio_above": {"enabled": True}},
             )

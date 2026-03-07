@@ -190,7 +190,7 @@ class TestGenerateImprovementSuggestions:
             max_drawdown=0.05,
             performance_by_market_condition={"bear_market_avg": -0.001},
         )
-        config = {"entry_filter_params": {"volume": {}, "rsi_threshold": {}}, "exit_trigger_params": {}}
+        config = {"entry_filter_params": {"volume_ratio_above": {}, "rsi_threshold": {}}, "exit_trigger_params": {}}
         suggestions = improver._generate_improvement_suggestions(report, config)
         assert not any("ドローダウン" in s for s in suggestions)
 
@@ -220,7 +220,7 @@ class TestSuggestImprovements:
         report = WeaknessReport(strategy_name="test", max_drawdown=0.4)
         config = {"entry_filter_params": {}, "exit_trigger_params": {}}
         improvements = improver.suggest_improvements(report, config)
-        atr_imps = [i for i in improvements if i.signal_name == "atr_support_break"]
+        atr_imps = [i for i in improvements if i.signal_name == "atr_support_position"]
         assert len(atr_imps) == 1
         assert atr_imps[0].target == "exit"
 
@@ -229,16 +229,16 @@ class TestSuggestImprovements:
         report = WeaknessReport(strategy_name="test")
         config = {"entry_filter_params": {}, "exit_trigger_params": {}}
         improvements = improver.suggest_improvements(report, config)
-        vol_imps = [i for i in improvements if i.signal_name == "volume"]
+        vol_imps = [i for i in improvements if i.signal_name == "volume_ratio_above"]
         assert len(vol_imps) == 1
         assert vol_imps[0].target == "entry"
 
     def test_no_volume_if_already_present(self):
         improver = StrategyImprover()
         report = WeaknessReport(strategy_name="test")
-        config = {"entry_filter_params": {"volume": {"enabled": True}}, "exit_trigger_params": {}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}, "exit_trigger_params": {}}
         improvements = improver.suggest_improvements(report, config)
-        vol_imps = [i for i in improvements if i.signal_name == "volume"]
+        vol_imps = [i for i in improvements if i.signal_name == "volume_ratio_above"]
         assert len(vol_imps) == 0
 
     def test_bear_market_adds_index_signal(self):
@@ -271,7 +271,7 @@ class TestSuggestImprovements:
             entry_filter_only=True,
         )
         assert all(imp.target == "entry" for imp in improvements)
-        assert all(imp.signal_name != "atr_support_break" for imp in improvements)
+        assert all(imp.signal_name != "atr_support_position" for imp in improvements)
 
     def test_fundamental_only_constraints(self):
         improver = StrategyImprover()
@@ -304,15 +304,18 @@ class TestApplyImprovements:
             Improvement(
                 improvement_type="add_signal",
                 target="entry",
-                signal_name="volume",
-                changes={"enabled": True, "threshold": 1.5},
+                signal_name="volume_ratio_above",
+                changes={"enabled": True, "ratio_threshold": 1.5},
                 reason="test",
                 expected_impact="test",
             )
         ]
         result = improver.apply_improvements(config, improvements)
-        assert "volume" in result["entry_filter_params"]
-        assert result["entry_filter_params"]["volume"]["threshold"] == 1.5
+        assert "volume_ratio_above" in result["entry_filter_params"]
+        assert (
+            result["entry_filter_params"]["volume_ratio_above"]["ratio_threshold"]
+            == 1.5
+        )
 
     def test_add_signal_to_exit(self):
         improver = StrategyImprover()
@@ -333,56 +336,61 @@ class TestApplyImprovements:
     def test_remove_signal(self):
         improver = StrategyImprover()
         config = {
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {},
         }
         improvements = [
             Improvement(
                 improvement_type="remove_signal",
                 target="entry",
-                signal_name="volume",
+                signal_name="volume_ratio_above",
                 reason="test",
                 expected_impact="test",
             )
         ]
         result = improver.apply_improvements(config, improvements)
-        assert "volume" not in result["entry_filter_params"]
+        assert "volume_ratio_above" not in result["entry_filter_params"]
 
     def test_adjust_param(self):
         improver = StrategyImprover()
         config = {
-            "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.0}},
+            "entry_filter_params": {
+                "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.0}
+            },
             "exit_trigger_params": {},
         }
         improvements = [
             Improvement(
                 improvement_type="adjust_param",
                 target="entry",
-                signal_name="volume",
-                changes={"threshold": 2.0},
+                signal_name="volume_ratio_above",
+                changes={"ratio_threshold": 2.0},
                 reason="test",
                 expected_impact="test",
             )
         ]
         result = improver.apply_improvements(config, improvements)
-        assert result["entry_filter_params"]["volume"]["threshold"] == 2.0
-        assert result["entry_filter_params"]["volume"]["enabled"] is True
+        assert (
+            result["entry_filter_params"]["volume_ratio_above"]["ratio_threshold"]
+            == 2.0
+        )
+        assert result["entry_filter_params"]["volume_ratio_above"]["enabled"] is True
 
     def test_does_not_modify_original(self):
         improver = StrategyImprover()
-        config = {"entry_filter_params": {"volume": {"enabled": True}}, "exit_trigger_params": {}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}, "exit_trigger_params": {}}
         improvements = [
             Improvement(
                 improvement_type="remove_signal",
                 target="entry",
-                signal_name="volume",
+                signal_name="volume_ratio_above",
                 reason="test",
                 expected_impact="test",
             )
         ]
         result = improver.apply_improvements(config, improvements)
-        assert "volume" not in result["entry_filter_params"]
-        assert "volume" in config["entry_filter_params"]  # original unchanged
+        assert "volume_ratio_above" not in result["entry_filter_params"]
+        assert "volume_ratio_above" in config["entry_filter_params"]  # original unchanged
 
     def test_add_signal_creates_missing_key(self):
         improver = StrategyImprover()
@@ -391,7 +399,7 @@ class TestApplyImprovements:
             Improvement(
                 improvement_type="add_signal",
                 target="entry",
-                signal_name="volume",
+                signal_name="volume_ratio_above",
                 changes={"enabled": True},
                 reason="test",
                 expected_impact="test",
@@ -399,7 +407,7 @@ class TestApplyImprovements:
         ]
         result = improver.apply_improvements(config, improvements)
         assert "entry_filter_params" in result
-        assert "volume" in result["entry_filter_params"]
+        assert "volume_ratio_above" in result["entry_filter_params"]
 
     def test_remove_nonexistent_signal_noop(self):
         improver = StrategyImprover()
@@ -424,7 +432,7 @@ class TestApplyImprovements:
                 improvement_type="adjust_param",
                 target="entry",
                 signal_name="nonexistent",
-                changes={"threshold": 2.0},
+                changes={"ratio_threshold": 2.0},
                 reason="test",
                 expected_impact="test",
             )

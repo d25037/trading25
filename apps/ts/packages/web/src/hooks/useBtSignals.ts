@@ -38,17 +38,25 @@ export const PHASE1_SIGNAL_TYPES = [
   'rsi_threshold',
   'rsi_spread',
   // breakout
-  'period_breakout',
-  'ma_breakout',
-  'atr_support_break',
-  'retracement',
-  'mean_reversion',
-  'crossover',
+  'baseline_deviation',
+  'period_extrema_break',
+  'period_extrema_position',
+  'atr_support_position',
+  'atr_support_cross',
   'buy_and_hold',
+  // trend
+  'baseline_cross',
+  'baseline_position',
+  'retracement_position',
+  'retracement_cross',
+  'crossover',
   // volatility
-  'bollinger_bands',
+  'volatility_percentile',
+  'bollinger_position',
+  'bollinger_cross',
   // volume
-  'volume',
+  'volume_ratio_above',
+  'volume_ratio_below',
   'trading_value',
   'trading_value_range',
 ] as const;
@@ -63,15 +71,26 @@ export const SIGNAL_CATEGORIES = {
   },
   breakout: {
     label: 'Breakout',
-    signals: ['period_breakout', 'ma_breakout', 'atr_support_break', 'retracement', 'mean_reversion', 'crossover'],
+    signals: [
+      'baseline_deviation',
+      'period_extrema_break',
+      'period_extrema_position',
+      'atr_support_position',
+      'atr_support_cross',
+      'buy_and_hold',
+    ],
+  },
+  trend: {
+    label: 'Trend',
+    signals: ['baseline_cross', 'baseline_position', 'retracement_position', 'retracement_cross', 'crossover'],
   },
   volatility: {
     label: 'Volatility',
-    signals: ['bollinger_bands'],
+    signals: ['volatility_percentile', 'bollinger_position', 'bollinger_cross'],
   },
   volume: {
     label: 'Volume',
-    signals: ['volume', 'trading_value', 'trading_value_range'],
+    signals: ['volume_ratio_above', 'volume_ratio_below', 'trading_value', 'trading_value_range'],
   },
 } as const;
 
@@ -79,15 +98,28 @@ export const SIGNAL_CATEGORIES = {
 export const SIGNAL_DEFAULTS: Record<Phase1SignalType, Record<string, number | string | boolean>> = {
   rsi_threshold: { period: 14, threshold: 30, condition: 'below' },
   rsi_spread: { fast_period: 5, slow_period: 14, threshold: 10, condition: 'above' },
-  period_breakout: { period: 20, direction: 'high', condition: 'above' },
-  ma_breakout: { period: 20, ma_type: 'sma', direction: 'golden' },
-  atr_support_break: { lookback_period: 20, atr_multiplier: 2.0, direction: 'below' },
-  retracement: { lookback_period: 20, retracement_level: 0.382, direction: 'below' },
-  mean_reversion: { baseline_type: 'sma', baseline_period: 20, deviation_threshold: 5.0, deviation_direction: 'below' },
-  crossover: { type: 'sma', fast_period: 5, slow_period: 20, direction: 'golden' },
+  baseline_deviation: { baseline_type: 'sma', baseline_period: 20, deviation_threshold: 0.05, direction: 'below' },
+  period_extrema_break: { period: 20, direction: 'high', lookback_days: 1 },
+  period_extrema_position: { period: 20, direction: 'high', state: 'at_extrema', lookback_days: 1 },
+  atr_support_position: { lookback_period: 20, atr_multiplier: 2.0, direction: 'below', price_column: 'close' },
+  atr_support_cross: { lookback_period: 20, atr_multiplier: 2.0, direction: 'below', lookback_days: 1, price_column: 'close' },
   buy_and_hold: {},
-  bollinger_bands: { window: 20, alpha: 2.0, position: 'below_lower' },
-  volume: { direction: 'above', threshold: 2.0, short_period: 5, long_period: 20 },
+  baseline_cross: { baseline_type: 'sma', baseline_period: 200, direction: 'above', lookback_days: 1, price_column: 'close' },
+  baseline_position: { baseline_type: 'sma', baseline_period: 20, price_column: 'close', direction: 'above' },
+  retracement_position: { lookback_period: 20, retracement_level: 0.382, direction: 'below', price_column: 'close' },
+  retracement_cross: {
+    lookback_period: 20,
+    retracement_level: 0.382,
+    direction: 'below',
+    lookback_days: 1,
+    price_column: 'close',
+  },
+  crossover: { type: 'sma', fast_period: 5, slow_period: 20, direction: 'golden' },
+  volatility_percentile: { window: 20, lookback: 252, percentile: 50.0 },
+  bollinger_position: { window: 20, alpha: 2.0, level: 'lower', direction: 'below' },
+  bollinger_cross: { window: 20, alpha: 2.0, level: 'lower', direction: 'below', lookback_days: 1 },
+  volume_ratio_above: { ratio_threshold: 1.5, short_period: 20, long_period: 100, ma_type: 'sma' },
+  volume_ratio_below: { ratio_threshold: 0.7, short_period: 20, long_period: 100, ma_type: 'sma' },
   trading_value: { period: 15, threshold_value: 100000000, direction: 'above' },
   trading_value_range: { period: 15, min_threshold: 50000000, max_threshold: 500000000 },
 };
@@ -96,18 +128,32 @@ export const SIGNAL_DEFAULTS: Record<Phase1SignalType, Record<string, number | s
 export const SIGNAL_LABELS: Record<Phase1SignalType, string> = {
   rsi_threshold: 'RSI Threshold',
   rsi_spread: 'RSI Spread',
-  period_breakout: 'Period Breakout',
-  ma_breakout: 'MA Breakout',
-  atr_support_break: 'ATR Support Break',
-  retracement: 'Retracement',
-  mean_reversion: 'Mean Reversion',
-  crossover: 'Crossover',
+  baseline_deviation: 'Baseline Deviation',
+  period_extrema_break: 'Period Extrema Break',
+  period_extrema_position: 'Period Extrema Position',
+  atr_support_position: 'ATR Support Position',
+  atr_support_cross: 'ATR Support Cross',
   buy_and_hold: 'Buy & Hold',
-  bollinger_bands: 'Bollinger Bands',
-  volume: 'Volume',
+  baseline_cross: 'Baseline Cross',
+  baseline_position: 'Baseline Position',
+  retracement_position: 'Retracement Position',
+  retracement_cross: 'Retracement Cross',
+  crossover: 'Crossover',
+  volatility_percentile: 'Volatility Percentile',
+  bollinger_position: 'Bollinger Position',
+  bollinger_cross: 'Bollinger Cross',
+  volume_ratio_above: 'Volume Ratio Above',
+  volume_ratio_below: 'Volume Ratio Below',
   trading_value: 'Trading Value',
   trading_value_range: 'Trading Value Range',
 };
+
+const RELATIVE_MODE_DISABLED_SIGNAL_TYPES = new Set<Phase1SignalType>([
+  'volume_ratio_above',
+  'volume_ratio_below',
+  'trading_value',
+  'trading_value_range',
+]);
 
 // ===== Query Key Factory =====
 
@@ -223,9 +269,10 @@ export function useBtSignals(
   // relativeModeでは売買代金シグナルを除外
   const filteredSpecs = useMemo(() => {
     if (!relativeMode) return specs;
-    // relativeMode時は実価格が必要なシグナルを除外
-    const realPriceSignals = new Set(['trading_value', 'trading_value_range', 'volume']);
-    return specs.filter((s) => !realPriceSignals.has(s.type));
+    return specs.filter(
+      (s): s is BtSignalSpec =>
+        !RELATIVE_MODE_DISABLED_SIGNAL_TYPES.has(s.type as Phase1SignalType)
+    );
   }, [specs, relativeMode]);
 
   const query = useQuery({

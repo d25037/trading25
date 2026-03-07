@@ -9,34 +9,7 @@ from typing import Any, TypeAlias
 from loguru import logger
 from pydantic import BaseModel
 
-from src.shared.models.signals import (
-    ATRSupportBreakParams,
-    BetaSignalParams,
-    BollingerBandsSignalParams,
-    BuyAndHoldSignalParams,
-    CrossoverSignalParams,
-    FundamentalSignalParams,
-    IndexDailyChangeSignalParams,
-    IndexMACDHistogramSignalParams,
-    MABreakoutParams,
-    MarginSignalParams,
-    MeanReversionSignalParams,
-    OracleIndexOpenGapRegimeSignalParams,
-    PeriodBreakoutParams,
-    RetracementSignalParams,
-    RiskAdjustedReturnSignalParams,
-    RSISpreadSignalParams,
-    RSIThresholdSignalParams,
-    SectorRotationPhaseParams,
-    SectorStrengthRankingParams,
-    SectorVolatilityRegimeParams,
-    SignalParams,
-    TradingValueRangeSignalParams,
-    TradingValueSignalParams,
-    TrendSignalParams,
-    VolatilitySignalParams,
-    VolumeSignalParams,
-)
+from src.shared.models.signals import SignalParams
 
 # シグナルパラメータの値型（int, float, str, bool, または None）
 SignalParamValue: TypeAlias = int | float | str | bool | None
@@ -44,10 +17,10 @@ SignalParamValue: TypeAlias = int | float | str | bool | None
 # シグナル単位のパラメータ辞書（例: {"lookback_days": 10, "period": 100}）
 SignalParamDict: TypeAlias = dict[str, SignalParamValue]
 
-# グリッドパラメータ辞書（例: {"period_breakout": {"lookback_days": 10}}）
+# グリッドパラメータ辞書（例: {"period_extrema_break": {"lookback_days": 10}}）
 GridParamsDict: TypeAlias = dict[str, SignalParamDict]
 
-# フラットなパラメータ辞書（例: {"entry_filter_params.period_breakout.lookback_days": 10}）
+# フラットなパラメータ辞書（例: {"entry_filter_params.period_extrema_break.lookback_days": 10}）
 FlatParamsDict: TypeAlias = dict[str, SignalParamValue]
 
 # マージ済みパラメータ辞書（シグナル名 → パラメータ辞書またはプリミティブ値）
@@ -106,34 +79,16 @@ def _deep_merge(base: dict[str, Any], updates: dict[str, Any]) -> dict[str, Any]
     return result
 
 
-# シグナル名からパラメータクラスへのマッピング
-SIGNAL_PARAM_CLASSES: dict[str, type[BaseModel]] = {
-    "period_breakout": PeriodBreakoutParams,
-    "ma_breakout": MABreakoutParams,
-    "bollinger_bands": BollingerBandsSignalParams,
-    "volume": VolumeSignalParams,
-    "trading_value": TradingValueSignalParams,
-    "trading_value_range": TradingValueRangeSignalParams,
-    "crossover": CrossoverSignalParams,
-    "mean_reversion": MeanReversionSignalParams,
-    "rsi_threshold": RSIThresholdSignalParams,
-    "rsi_spread": RSISpreadSignalParams,
-    "atr_support_break": ATRSupportBreakParams,
-    "fundamental": FundamentalSignalParams,
-    "beta": BetaSignalParams,
-    "margin": MarginSignalParams,
-    "volatility": VolatilitySignalParams,
-    "trend": TrendSignalParams,
-    "buy_and_hold": BuyAndHoldSignalParams,
-    "index_daily_change": IndexDailyChangeSignalParams,
-    "index_macd_histogram": IndexMACDHistogramSignalParams,
-    "oracle_index_open_gap_regime": OracleIndexOpenGapRegimeSignalParams,
-    "retracement": RetracementSignalParams,
-    "risk_adjusted_return": RiskAdjustedReturnSignalParams,
-    "sector_strength_ranking": SectorStrengthRankingParams,
-    "sector_rotation_phase": SectorRotationPhaseParams,
-    "sector_volatility_regime": SectorVolatilityRegimeParams,
-}
+def _build_signal_param_classes() -> dict[str, type[BaseModel]]:
+    mapping: dict[str, type[BaseModel]] = {}
+    for field_name, field_info in SignalParams.model_fields.items():
+        default_value = field_info.get_default(call_default_factory=True)
+        if isinstance(default_value, BaseModel):
+            mapping[field_name] = type(default_value)
+    return mapping
+
+
+SIGNAL_PARAM_CLASSES: dict[str, type[BaseModel]] = _build_signal_param_classes()
 
 
 def _validate_signal_names(
@@ -193,7 +148,7 @@ def build_signal_params(
         - その他の設定は全てベース戦略YAMLから引き継ぐ
 
     Args:
-        params: {"entry_filter_params.period_breakout.lookback_days": 10, ...}
+        params: {"entry_filter_params.period_extrema_break.lookback_days": 10, ...}
         section: "entry_filter_params" or "exit_trigger_params"
         base_signal_params: ベース戦略YAMLから読み込んだSignalParams
 
@@ -203,21 +158,20 @@ def build_signal_params(
     Example:
         # ベース戦略YAML (range_break_v6.yaml)
         entry_filter_params:
-          period_breakout:
+          period_extrema_break:
             enabled: true           # ← ベース設定から継承
             direction: "high"       # ← ベース設定から継承
-            condition: "break"      # ← ベース設定から継承
             lookback_days: 10       # ← グリッドで上書き
             period: 100             # ← グリッドで上書き
 
         # グリッドYAML (range_break_v6_grid.yaml)
         parameter_ranges:
           entry_filter_params:
-            period_breakout:
+            period_extrema_break:
               lookback_days: [5, 10, 15, 20]  # 最適化対象
               period: [30, 50, 100, 200]      # 最適化対象
 
-        # 結果: enabled=True, direction="high", condition="break"は継承
+        # 結果: enabled=True, direction="high"は継承
         #       lookback_days=10, period=100はグリッドから設定
     """
     # 1. ベース設定をdictに変換（継承用）
@@ -231,8 +185,8 @@ def build_signal_params(
     }
 
     # 3. シグナル別にグルーピング
-    # {"period_breakout.lookback_days": 10}
-    # → {"period_breakout": {"lookback_days": 10}}
+    # {"period_extrema_break.lookback_days": 10}
+    # → {"period_extrema_break": {"lookback_days": 10}}
     # {"fundamental.per.threshold": 15.0}
     # → {"fundamental": {"per": {"threshold": 15.0}}}
     grid_params_dict: dict[str, Any] = {}

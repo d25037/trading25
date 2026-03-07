@@ -41,8 +41,8 @@ def test_run_backtest_success(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -
                 "shared_config": {"dataset": "sample", "stock_codes": ["all"]},
                 "display_name": "test",
                 "description": "desc",
-                "entry_filter_params": {"volume": {"enabled": True}},
-                "exit_trigger_params": {"volume": {"enabled": False}},
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+                "exit_trigger_params": {"volume_ratio_below": {"enabled": False}},
             }
 
         def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:

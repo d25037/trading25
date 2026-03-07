@@ -114,11 +114,10 @@ entry_filter_params:
 ```yaml
 entry_filter_params:
   # レンジブレイク（主要シグナル）
-  period_breakout:
+  period_extrema_break:
     enabled: true
     period: 200
     direction: "high"
-    condition: "break"
     lookback_days: 5
 
   # 市場環境フィルター
@@ -128,10 +127,9 @@ entry_filter_params:
     direction: "below"
 
   # 出来高フィルター
-  volume:
+  volume_ratio_above:
     enabled: true
-    direction: "surge"
-    threshold: 1.5
+    ratio_threshold: 1.5
     short_period: 20
     long_period: 100
 ```

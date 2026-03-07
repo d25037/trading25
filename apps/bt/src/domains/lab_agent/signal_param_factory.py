@@ -37,7 +37,7 @@ def build_signal_params(
     Build enabled + randomized params for a signal.
 
     Args:
-        signal_name: signal key (e.g. "period_breakout")
+        signal_name: signal key (e.g. "period_extrema_break")
         usage_type: "entry" or "exit"
         rng: random generator-like object
 
@@ -57,17 +57,29 @@ def get_default_params(
 ) -> dict[str, Any]:
     """Get reasonable default params for a signal."""
     signal_defaults: dict[str, dict[str, Any]] = {
-        "period_breakout": {
+        "period_extrema_break": {
             "direction": "high" if usage_type == "entry" else "low",
-            "condition": "break",
             "period": 200,
             "lookback_days": 10 if usage_type == "entry" else 1,
         },
-        "ma_breakout": {
+        "period_extrema_position": {
+            "direction": "high" if usage_type == "entry" else "low",
+            "state": "away_from_extrema" if usage_type == "entry" else "at_extrema",
             "period": 200,
-            "ma_type": "sma",
+            "lookback_days": 10 if usage_type == "entry" else 1,
+        },
+        "baseline_cross": {
+            "baseline_type": "sma",
+            "baseline_period": 200,
             "direction": "above" if usage_type == "entry" else "below",
             "lookback_days": 1,
+            "price_column": "close",
+        },
+        "baseline_position": {
+            "baseline_type": "sma",
+            "baseline_period": 25,
+            "direction": "above" if usage_type == "entry" else "below",
+            "price_column": "close",
         },
         "crossover": {
             "type": "sma",
@@ -77,21 +89,47 @@ def get_default_params(
             "signal_period": 9,
             "lookback_days": 1,
         },
-        "mean_reversion": {
+        "baseline_deviation": {
             "baseline_type": "sma",
             "baseline_period": 25,
-            "deviation_threshold": 0.2 if usage_type == "entry" else 0.0,
-            "deviation_direction": "below" if usage_type == "entry" else "above",
-            "recovery_price": "none" if usage_type == "entry" else "high",
-            "recovery_direction": "above",
+            "deviation_threshold": 0.2,
+            "direction": "below" if usage_type == "entry" else "above",
         },
-        "bollinger_bands": {
+        "retracement_cross": {
+            "lookback_period": 20,
+            "retracement_level": 0.382,
+            "direction": "below" if usage_type == "entry" else "above",
+            "lookback_days": 1,
+            "price_column": "close",
+        },
+        "retracement_position": {
+            "lookback_period": 20,
+            "retracement_level": 0.382,
+            "direction": "below" if usage_type == "entry" else "above",
+            "price_column": "close",
+        },
+        "bollinger_cross": {
             "window": 50,
             "alpha": 2.0,
-            "position": "below_upper" if usage_type == "entry" else "above_upper",
+            "level": "middle",
+            "direction": "above" if usage_type == "entry" else "below",
+            "lookback_days": 1,
         },
-        "atr_support_break": {
-            "direction": "recovery" if usage_type == "entry" else "break",
+        "bollinger_position": {
+            "window": 50,
+            "alpha": 2.0,
+            "level": "upper",
+            "direction": "below" if usage_type == "entry" else "above",
+        },
+        "atr_support_cross": {
+            "direction": "above" if usage_type == "entry" else "below",
+            "lookback_period": 20,
+            "atr_multiplier": 3.0,
+            "lookback_days": 1,
+            "price_column": "close",
+        },
+        "atr_support_position": {
+            "direction": "above" if usage_type == "entry" else "below",
             "lookback_period": 20,
             "atr_multiplier": 3.0,
             "price_column": "close",
@@ -107,9 +145,14 @@ def get_default_params(
             "threshold": 10.0,
             "condition": "above" if usage_type == "entry" else "below",
         },
-        "volume": {
-            "direction": "surge" if usage_type == "entry" else "drop",
-            "threshold": 1.5 if usage_type == "entry" else 0.5,
+        "volume_ratio_above": {
+            "ratio_threshold": 1.5,
+            "short_period": 50,
+            "long_period": 150,
+            "ma_type": "sma",
+        },
+        "volume_ratio_below": {
+            "ratio_threshold": 0.7,
             "short_period": 50,
             "long_period": 150,
             "ma_type": "sma",

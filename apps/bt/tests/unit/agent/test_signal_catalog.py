@@ -21,8 +21,17 @@ def test_registry_top_level_signals_are_covered_by_catalog() -> None:
 
 def test_new_registry_signals_are_available_in_lab_catalog() -> None:
     expected = {
+        "atr_support_cross",
+        "atr_support_position",
+        "bollinger_cross",
+        "bollinger_position",
+        "period_extrema_break",
+        "period_extrema_position",
         "risk_adjusted_return",
-        "retracement",
+        "retracement_position",
+        "retracement_cross",
+        "volume_ratio_above",
+        "volume_ratio_below",
         "buy_and_hold",
         "sector_strength_ranking",
         "sector_rotation_phase",
@@ -31,16 +40,22 @@ def test_new_registry_signals_are_available_in_lab_catalog() -> None:
     assert expected.issubset(set(SIGNAL_CONSTRAINTS_MAP.keys()))
 
 
-def test_usage_and_category_overrides_are_applied() -> None:
+def test_usage_and_category_mapping_are_applied() -> None:
     assert SIGNAL_CONSTRAINTS_MAP["fundamental"].usage == "entry"
     assert SIGNAL_CONSTRAINTS_MAP["buy_and_hold"].usage == "entry"
-    assert SIGNAL_CATEGORY_MAP["ma_breakout"] == "trend"
+    assert SIGNAL_CATEGORY_MAP["baseline_cross"] == "trend"
+    assert SIGNAL_CATEGORY_MAP["baseline_position"] == "trend"
     assert SIGNAL_CATEGORY_MAP["crossover"] == "trend"
+    assert SIGNAL_CATEGORY_MAP["retracement_position"] == "trend"
+    assert SIGNAL_CATEGORY_MAP["bollinger_cross"] == "volatility"
+    assert SIGNAL_CATEGORY_MAP["atr_support_position"] == "breakout"
 
 
 def test_param_ranges_generated_for_new_signals() -> None:
     assert "lookback_period" in PARAM_RANGES["risk_adjusted_return"]
-    assert "retracement_level" in PARAM_RANGES["retracement"]
+    assert "retracement_level" in PARAM_RANGES["retracement_position"]
+    assert "ratio_threshold" in PARAM_RANGES["volume_ratio_above"]
+    assert "period" in PARAM_RANGES["period_extrema_break"]
     assert "momentum_period" in PARAM_RANGES["sector_strength_ranking"]
 
 

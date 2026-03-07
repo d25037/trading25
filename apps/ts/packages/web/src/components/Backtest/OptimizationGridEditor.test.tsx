@@ -9,7 +9,7 @@ const mockDeleteMutate = vi.fn();
 
 const DEFAULT_GRID_CONTENT = `parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       period: [10, 20]
   exit_trigger_params:
     atr_stop:
@@ -196,7 +196,7 @@ describe('OptimizationGridEditor', () => {
       target: {
         value: `parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       period: [5, 10]
 `,
       },
@@ -247,7 +247,7 @@ describe('OptimizationGridEditor', () => {
 
     await user.click(screen.getByRole('button', { name: 'Reset' }));
     expect((screen.getByLabelText('Optimization YAML Editor') as HTMLTextAreaElement).value).toContain(
-      'period_breakout'
+      'period_extrema_break'
     );
 
     await user.click(screen.getByRole('button', { name: 'Delete' }));

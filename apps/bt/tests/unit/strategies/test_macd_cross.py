@@ -116,11 +116,10 @@ class TestMACDStrategy:
     def test_generate_signals_with_filters(self):
         """フィルター統合シグナル生成テスト"""
         # 出来高フィルター追加
-        self.entry_filter_params.volume.enabled = True
-        self.entry_filter_params.volume.direction = "surge"
-        self.entry_filter_params.volume.threshold = 1.5
-        self.entry_filter_params.volume.short_period = 20
-        self.entry_filter_params.volume.long_period = 100
+        self.entry_filter_params.volume_ratio_above.enabled = True
+        self.entry_filter_params.volume_ratio_above.ratio_threshold = 1.5
+        self.entry_filter_params.volume_ratio_above.short_period = 20
+        self.entry_filter_params.volume_ratio_above.long_period = 100
 
         strategy_with_filters = YamlConfigurableStrategy(
             shared_config=self.shared_config,

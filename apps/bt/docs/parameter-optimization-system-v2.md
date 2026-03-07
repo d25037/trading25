@@ -13,10 +13,10 @@
 ```yaml
 parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       period: [50, 100, 200]  # 最適化対象パラメータ
-    volume:
-      threshold: [1.5, 2.0, 2.5]
+    volume_ratio_above:
+      ratio_threshold: [1.5, 2.0, 2.5]
 ```
 
 ### 2. 最適化実行

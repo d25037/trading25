@@ -9,11 +9,11 @@ import pandas as pd
 import numpy as np
 
 from src.domains.strategy.signals.volatility import (
+    bollinger_position_signal,
     volatility_relative_signal,
     rolling_volatility_signal,
     volatility_percentile_signal,
     low_volatility_stock_screen_signal,
-    bollinger_bands_signal,
 )
 
 
@@ -209,8 +209,8 @@ class TestLowVolatilityStockScreenSignal:
         assert signal_loose.sum() >= signal_strict.sum()
 
 
-class TestBollingerBandsSignal:
-    """bollinger_bands_signal()の基本テスト"""
+class TestBollingerPositionSignal:
+    """bollinger_position_signal()の基本テスト"""
 
     def setup_method(self):
         """テストデータ作成"""
@@ -235,8 +235,8 @@ class TestBollingerBandsSignal:
 
     def test_bollinger_below_upper(self):
         """BB上限以下シグナルテスト"""
-        signal = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=2.0, position="below_upper"
+        signal = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=2.0, level="upper", direction="below"
         )
 
         assert isinstance(signal, pd.Series)
@@ -247,8 +247,8 @@ class TestBollingerBandsSignal:
 
     def test_bollinger_above_lower(self):
         """BB下限以上シグナルテスト"""
-        signal = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=2.0, position="above_lower"
+        signal = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=2.0, level="lower", direction="above"
         )
 
         assert isinstance(signal, pd.Series)
@@ -258,8 +258,8 @@ class TestBollingerBandsSignal:
 
     def test_bollinger_above_middle(self):
         """BB中央線以上シグナルテスト"""
-        signal = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=2.0, position="above_middle"
+        signal = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=2.0, level="middle", direction="above"
         )
 
         assert isinstance(signal, pd.Series)
@@ -267,8 +267,8 @@ class TestBollingerBandsSignal:
 
     def test_bollinger_below_middle(self):
         """BB中央線以下シグナルテスト"""
-        signal = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=2.0, position="below_middle"
+        signal = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=2.0, level="middle", direction="below"
         )
 
         assert isinstance(signal, pd.Series)
@@ -276,8 +276,8 @@ class TestBollingerBandsSignal:
 
     def test_bollinger_above_upper(self):
         """BB上限以上シグナルテスト（過熱）"""
-        signal = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=2.0, position="above_upper"
+        signal = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=2.0, level="upper", direction="above"
         )
 
         assert isinstance(signal, pd.Series)
@@ -287,8 +287,8 @@ class TestBollingerBandsSignal:
 
     def test_bollinger_below_lower(self):
         """BB下限以下シグナルテスト（売られすぎ）"""
-        signal = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=2.0, position="below_lower"
+        signal = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=2.0, level="lower", direction="below"
         )
 
         assert isinstance(signal, pd.Series)
@@ -296,20 +296,20 @@ class TestBollingerBandsSignal:
         # 下限以下はまれ
         assert signal.sum() >= 0
 
-    def test_invalid_position(self):
-        """不正なpositionでエラー"""
-        with pytest.raises(ValueError, match="不正なposition"):
-            bollinger_bands_signal(
-                self.ohlc_data, window=20, alpha=2.0, position="invalid"
+    def test_invalid_level(self):
+        """不正なlevelでエラー"""
+        with pytest.raises(ValueError, match="不正なlevel"):
+            bollinger_position_signal(
+                self.ohlc_data, window=20, alpha=2.0, level="invalid"
             )
 
     def test_alpha_effect(self):
         """α値の効果テスト"""
-        signal_narrow = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=1.0, position="below_upper"
+        signal_narrow = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=1.0, level="upper", direction="below"
         )
-        signal_wide = bollinger_bands_signal(
-            self.ohlc_data, window=20, alpha=3.0, position="below_upper"
+        signal_wide = bollinger_position_signal(
+            self.ohlc_data, window=20, alpha=3.0, level="upper", direction="below"
         )
 
         assert isinstance(signal_narrow, pd.Series)
@@ -320,6 +320,44 @@ class TestBollingerBandsSignal:
 
 class TestVolatilitySignalIntegration:
     """SignalProcessorとの統合テスト"""
+
+    def test_volatility_percentile_with_signal_processor(self):
+        """SignalProcessorでボラティリティパーセンタイルシグナルを使用"""
+        from src.domains.strategy.signals.processor import SignalProcessor
+        from src.shared.models.signals import SignalParams
+
+        dates = pd.date_range("2023-01-01", periods=320)
+        close = pd.Series(np.random.randn(320).cumsum() + 100, index=dates)
+        ohlc_data = pd.DataFrame(
+            {
+                "Open": close - 0.5,
+                "High": close + 1.5,
+                "Low": close - 1.5,
+                "Close": close,
+                "Volume": np.random.randint(1000, 10000, 320),
+            },
+            index=dates,
+        )
+
+        base_signal = pd.Series([True] * len(dates), index=dates)
+
+        params = SignalParams()
+        params.volatility_percentile.enabled = True
+        params.volatility_percentile.window = 20
+        params.volatility_percentile.lookback = 252
+        params.volatility_percentile.percentile = 80.0
+
+        processor = SignalProcessor()
+        result = processor.apply_signals(
+            base_signal=base_signal,
+            signal_type="entry",
+            ohlc_data=ohlc_data,
+            signal_params=params,
+        )
+
+        assert isinstance(result, pd.Series)
+        assert result.dtype == bool
+        assert len(result) == len(base_signal)
 
     def test_bollinger_signal_with_signal_processor(self):
         """SignalProcessorでボリンジャーバンドシグナルを使用"""
@@ -342,10 +380,11 @@ class TestVolatilitySignalIntegration:
 
         # ボリンジャーバンドシグナルを有効化
         params = SignalParams()
-        params.bollinger_bands.enabled = True
-        params.bollinger_bands.window = 20
-        params.bollinger_bands.alpha = 2.0
-        params.bollinger_bands.position = "below_upper"
+        params.bollinger_position.enabled = True
+        params.bollinger_position.window = 20
+        params.bollinger_position.alpha = 2.0
+        params.bollinger_position.level = "upper"
+        params.bollinger_position.direction = "below"
 
         processor = SignalProcessor()
         result = processor.apply_signals(

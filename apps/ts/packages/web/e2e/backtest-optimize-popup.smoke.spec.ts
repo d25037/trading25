@@ -54,7 +54,7 @@ test.describe('backtest optimize popup smoke', () => {
               description: 'Smoke strategy for optimize popup flow',
               config: {
                 entry_filter_params: {
-                  period_breakout: {
+                  period_extrema_break: {
                     period: 20,
                   },
                 },
@@ -80,7 +80,7 @@ test.describe('backtest optimize popup smoke', () => {
             strategy_name: STRATEGY_BASENAME,
             content: `parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       period: [10, 20]
   exit_trigger_params:
     atr_stop:
@@ -112,8 +112,8 @@ test.describe('backtest optimize popup smoke', () => {
             ],
             signals: [
               {
-                key: 'period_breakout',
-                name: 'Period Breakout',
+                key: 'period_extrema_break',
+                name: 'Period Extrema Break',
                 category: 'breakout',
                 description: 'Breakout signal for smoke flow',
                 usage_hint: 'Use for trend following entries.',
@@ -130,7 +130,7 @@ test.describe('backtest optimize popup smoke', () => {
                   },
                 ],
                 yaml_snippet: `entry_filter_params:
-  period_breakout:
+  period_extrema_break:
     period: 20`,
                 exit_disabled: false,
                 data_requirements: ['stock_data'],

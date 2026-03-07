@@ -14,7 +14,7 @@ const mockBacktestHooks = {
   strategyData: {
     config: {
       entry_filter_params: {
-        volume: {
+        volume_ratio_above: {
           enabled: true,
         },
       },
@@ -111,7 +111,7 @@ describe('StrategyEditor', () => {
     mockBacktestHooks.strategyData = {
       config: {
         entry_filter_params: {
-          volume: {
+          volume_ratio_above: {
             enabled: true,
           },
         },

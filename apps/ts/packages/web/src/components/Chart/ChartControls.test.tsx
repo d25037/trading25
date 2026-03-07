@@ -363,13 +363,15 @@ describe('ChartControls', () => {
 
   it('shows signal metadata in sub-chart indicators when reference API is available', async () => {
     const user = userEvent.setup();
-    mockChartStore.settings.signalOverlay.signals = [{ type: 'volume', enabled: true, mode: 'entry', params: {} }];
+    mockChartStore.settings.signalOverlay.signals = [
+      { type: 'volume_ratio_above', enabled: true, mode: 'entry', params: {} },
+    ];
     mockUseSignalReference.mockReturnValue({
       data: {
         signals: [
           {
-            key: 'volume',
-            name: 'volume',
+            key: 'volume_ratio_above',
+            name: 'volume_ratio_above',
             category: 'volume',
             description: '',
             usage_hint: '',
@@ -388,12 +390,14 @@ describe('ChartControls', () => {
     render(<ChartControls />, { wrapper: TestWrapper });
 
     await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
-    expect(screen.getAllByText('Signal req: volume | Signals: volume').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Signal req: volume | Signals: volume_ratio_above').length).toBeGreaterThan(0);
   });
 
   it('suppresses signal metadata when reference API fails', async () => {
     const user = userEvent.setup();
-    mockChartStore.settings.signalOverlay.signals = [{ type: 'volume', enabled: true, mode: 'entry', params: {} }];
+    mockChartStore.settings.signalOverlay.signals = [
+      { type: 'volume_ratio_above', enabled: true, mode: 'entry', params: {} },
+    ];
     mockUseSignalReference.mockReturnValue({
       data: undefined,
       error: new Error('failed to load'),

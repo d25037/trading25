@@ -161,14 +161,16 @@ def sector_rotation_phase_signal(
     RS_Ratio（相対強度比）とRS_Momentum（モメンタム）の2軸で
     セクターの位相を判定する。
 
-    - direction="leading": RS > MA AND Momentum > 0（先行局面 → Entry用）
-    - direction="weakening": RS > MA AND Momentum < 0（衰退局面 → Exit用）
+    - direction="leading": RS > MA AND Momentum > 0
+    - direction="weakening": RS > MA AND Momentum < 0
+    - direction="lagging": RS < MA AND Momentum < 0
+    - direction="improving": RS < MA AND Momentum > 0
 
     Args:
         sector_close: セクターインデックス終値 pd.Series[float]
         benchmark_close: ベンチマーク終値 pd.Series[float]
         rs_period: 相対強度移動平均期間（日数）
-        direction: 判定方向 "leading" or "weakening"
+        direction: 判定方向（leading/weakening/lagging/improving）
 
     Returns:
         pd.Series[bool]: 条件を満たす日にTrue
@@ -177,8 +179,11 @@ def sector_rotation_phase_signal(
         f"セクターローテーション位相: rs_period={rs_period}, direction={direction}"
     )
 
-    if direction not in ("leading", "weakening"):
-        raise ValueError(f"Invalid direction: {direction}. Must be 'leading' or 'weakening'")
+    valid_directions = ("leading", "weakening", "lagging", "improving")
+    if direction not in valid_directions:
+        raise ValueError(
+            f"Invalid direction: {direction}. Must be one of {valid_directions}"
+        )
 
     # インデックスを揃える
     common_index = sector_close.index.intersection(benchmark_close.index)
@@ -203,12 +208,16 @@ def sector_rotation_phase_signal(
     # 位相判定
     rs_above_ma: pd.Series[bool] = rs_ratio > rs_ma
 
+    rs_below_ma: pd.Series[bool] = rs_ratio < rs_ma
+
     if direction == "leading":
-        # 先行局面: RS > MA AND Momentum > 0
         signal = rs_above_ma & (rs_momentum > 0)
-    else:  # direction == "weakening"
-        # 衰退局面: RS > MA AND Momentum < 0
+    elif direction == "weakening":
         signal = rs_above_ma & (rs_momentum < 0)
+    elif direction == "lagging":
+        signal = rs_below_ma & (rs_momentum < 0)
+    else:  # direction == "improving"
+        signal = rs_below_ma & (rs_momentum > 0)
 
     # 元のインデックスに合わせて返却
     result = signal.reindex(sector_close.index).fillna(False)

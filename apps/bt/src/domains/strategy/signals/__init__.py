@@ -6,7 +6,7 @@
 """
 
 # Volume signals
-from .volume import volume_signal
+from .volume import volume_ratio_above_signal, volume_ratio_below_signal
 
 
 # Fundamental signals
@@ -35,7 +35,7 @@ from .performance import (
     multi_timeframe_relative_performance_signal,
 )
 
-# Price action signals: period_breakout_signalに統合済み（horizontal_price_action.py削除）
+# Price action signals: baseline/breakout family に統合済み（horizontal_price_action.py削除）
 
 # Margin signals
 from .margin import margin_balance_percentile_signal
@@ -47,10 +47,26 @@ from .beta import beta_range_signal
 from .buy_and_hold import generate_buy_and_hold_signals
 
 # Generic signals (新アーキテクチャ: YAML制御用)
+from .baseline import (
+    baseline_cross_signal,
+    baseline_deviation_signal,
+    baseline_position_signal,
+    cross_signal,
+    deviation_signal,
+    position_signal,
+)
 from .crossover import crossover_signal
-from .breakout import period_breakout_signal, ma_breakout_signal
-from .mean_reversion import deviation_signal, price_recovery_signal
+from .breakout import (
+    atr_support_cross_signal,
+    atr_support_position_signal,
+    period_breakout_signal,
+    period_extrema_break_signal,
+    period_extrema_position_signal,
+    retracement_cross_signal,
+    retracement_position_signal,
+)
 from .risk_adjusted import risk_adjusted_return_signal
+from .volatility import bollinger_cross_signal, bollinger_position_signal
 
 # Sector signals
 from .sector import (
@@ -74,7 +90,8 @@ from .processor import SignalProcessor
 
 __all__ = [
     # Volume
-    "volume_signal",
+    "volume_ratio_above_signal",
+    "volume_ratio_below_signal",
     # Fundamental
     "is_undervalued_by_per",
     "is_undervalued_by_pbr",
@@ -92,7 +109,7 @@ __all__ = [
     "relative_performance_signal",
     "create_relative_performance_signal_from_db",
     "multi_timeframe_relative_performance_signal",
-    # Price action: period_breakout_signalに統合済み
+    # Price action
     # Margin
     "margin_balance_percentile_signal",
     # Beta
@@ -100,11 +117,22 @@ __all__ = [
     # Buy and Hold
     "generate_buy_and_hold_signals",
     # Generic signals (YAML制御用)
+    "baseline_cross_signal",
+    "baseline_deviation_signal",
+    "baseline_position_signal",
     "crossover_signal",
-    "period_breakout_signal",
-    "ma_breakout_signal",
+    "cross_signal",
     "deviation_signal",
-    "price_recovery_signal",
+    "atr_support_cross_signal",
+    "atr_support_position_signal",
+    "bollinger_cross_signal",
+    "bollinger_position_signal",
+    "period_breakout_signal",
+    "period_extrema_break_signal",
+    "period_extrema_position_signal",
+    "position_signal",
+    "retracement_cross_signal",
+    "retracement_position_signal",
     "risk_adjusted_return_signal",
     # Sector
     "get_sector_index_code",

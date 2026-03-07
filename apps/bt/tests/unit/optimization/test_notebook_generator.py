@@ -20,8 +20,8 @@ def sample_optimization_results():
     return [
         {
             "params": {
-                "entry_filter_params.period_breakout.period": 50,
-                "entry_filter_params.volume.threshold": 2.0,
+                "entry_filter_params.period_extrema_break.period": 50,
+                "entry_filter_params.volume_ratio_above.ratio_threshold": 2.0,
             },
             "score": 0.85,
             "metric_values": {
@@ -38,8 +38,8 @@ def sample_optimization_results():
         },
         {
             "params": {
-                "entry_filter_params.period_breakout.period": 100,
-                "entry_filter_params.volume.threshold": 1.5,
+                "entry_filter_params.period_extrema_break.period": 100,
+                "entry_filter_params.volume_ratio_above.ratio_threshold": 1.5,
             },
             "score": 0.75,
             "metric_values": {
@@ -56,8 +56,8 @@ def sample_optimization_results():
         },
         {
             "params": {
-                "entry_filter_params.period_breakout.period": 200,
-                "entry_filter_params.volume.threshold": 2.5,
+                "entry_filter_params.period_extrema_break.period": 200,
+                "entry_filter_params.volume_ratio_above.ratio_threshold": 2.5,
             },
             "score": 0.65,
             "metric_values": {
@@ -80,8 +80,8 @@ def sample_parameter_ranges():
     """サンプルパラメータ範囲"""
     return {
         "entry_filter_params": {
-            "period_breakout": {"period": [50, 100, 200]},
-            "volume": {"threshold": [1.5, 2.0, 2.5]},
+            "period_extrema_break": {"period": [50, 100, 200]},
+            "volume_ratio_above": {"ratio_threshold": [1.5, 2.0, 2.5]},
         }
     }
 
@@ -112,7 +112,8 @@ class TestSaveResultsAsJson:
         assert len(loaded_data) == 3
         assert loaded_data[0]["score"] == 0.85
         assert (
-            loaded_data[0]["params"]["entry_filter_params.period_breakout.period"] == 50
+            loaded_data[0]["params"]["entry_filter_params.period_extrema_break.period"]
+            == 50
         )
         assert loaded_data[0]["metric_values"]["trade_count"] == 42
 
@@ -145,7 +146,7 @@ class TestSaveResultsAsJson:
         """trade_countがない旧データ形式も保存できることを確認"""
         old_format_results = [
             {
-                "params": {"entry_filter_params.period_breakout.period": 50},
+                "params": {"entry_filter_params.period_extrema_break.period": 50},
                 "score": 0.5,
                 "metric_values": {
                     "sharpe_ratio": 1.0,
