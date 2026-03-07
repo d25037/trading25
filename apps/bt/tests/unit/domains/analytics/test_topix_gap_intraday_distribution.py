@@ -66,9 +66,9 @@ def _build_market_db(db_path: Path) -> str:
     )
 
     stocks = [
-        ("72030", "Topix500 Prime", "TOPIX500 PRIME", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
+        ("72030", "Topix100 Prime", "TOPIX100 PRIME", "0111", "プライム", "1", "A", "1", "A", "TOPIX Large70", "2000-01-01", None, None),
         ("11110", "Prime Ex", "PRIME EX", "0111", "プライム", "1", "A", "1", "A", "-", "2000-01-01", None, None),
-        ("22220", "Standard", "STANDARD", "0112", "スタンダード", "1", "A", "1", "A", "-", "2000-01-01", None, None),
+        ("22220", "Topix500 Mid400", "TOPIX500 MID400", "0111", "プライム", "1", "A", "1", "A", "TOPIX Mid400", "2000-01-01", None, None),
         ("33330", "Growth", "GROWTH", "0113", "グロース", "1", "A", "1", "A", "-", "2000-01-01", None, None),
     ]
     conn.executemany(
@@ -128,9 +128,11 @@ def test_gap_boundaries_and_missing_prev_close_are_handled(analytics_db_path: st
         zip(result.day_counts_df["gap_bucket_key"], result.day_counts_df["day_count"], strict=True)
     )
     assert day_counts == {
-        "gap_lt_threshold_1": 1,
+        "gap_le_negative_threshold_2": 1,
+        "gap_negative_threshold_2_to_1": 0,
+        "gap_negative_threshold_1_to_threshold_1": 1,
         "gap_threshold_1_to_2": 1,
-        "gap_ge_threshold_2": 1,
+        "gap_ge_threshold_2": 0,
     }
     assert result.excluded_topix_days_without_prev_close == 1
     assert result.available_start_date == "2024-01-01"
@@ -146,29 +148,37 @@ def test_group_classification_and_4digit_preference(analytics_db_path: str) -> N
     )
 
     prime_mid = _summary_row(result, "PRIME", "gap_threshold_1_to_2")
-    standard_mid = _summary_row(result, "STANDARD", "gap_threshold_1_to_2")
-    growth_mid = _summary_row(result, "GROWTH", "gap_threshold_1_to_2")
+    prime_down_large = _summary_row(result, "PRIME", "gap_le_negative_threshold_2")
+    prime_small = _summary_row(result, "PRIME", "gap_negative_threshold_1_to_threshold_1")
+    topix100_mid = _summary_row(result, "TOPIX100", "gap_threshold_1_to_2")
     topix500_mid = _summary_row(result, "TOPIX500", "gap_threshold_1_to_2")
     prime_ex_mid = _summary_row(result, "PRIME ex TOPIX500", "gap_threshold_1_to_2")
 
-    assert prime_mid["sample_count"] == 2
+    assert prime_mid["sample_count"] == 3
     assert prime_mid["up_count"] == 1
     assert prime_mid["down_count"] == 1
-    assert prime_mid["flat_count"] == 0
+    assert prime_mid["flat_count"] == 1
     assert prime_mid["mean_intraday_diff"] == pytest.approx(0.0)
     assert prime_mid["median_intraday_diff"] == pytest.approx(0.0)
     assert prime_mid["p50_intraday_diff"] == pytest.approx(0.0)
 
-    assert standard_mid["sample_count"] == 1
-    assert standard_mid["flat_count"] == 1
-    assert standard_mid["flat_ratio"] == pytest.approx(1.0)
+    assert prime_down_large["sample_count"] == 3
+    assert prime_down_large["up_count"] == 2
+    assert prime_down_large["down_count"] == 1
+    assert prime_down_large["mean_intraday_diff"] == pytest.approx(4.0 / 3.0)
 
-    assert growth_mid["sample_count"] == 1
-    assert growth_mid["down_ratio"] == pytest.approx(1.0)
+    assert prime_small["sample_count"] == 3
+    assert prime_small["up_count"] == 1
+    assert prime_small["down_count"] == 2
 
-    assert topix500_mid["sample_count"] == 1
+    assert topix100_mid["sample_count"] == 1
+    assert topix100_mid["up_count"] == 1
+    assert topix100_mid["mean_intraday_diff"] == pytest.approx(2.0)
+
+    assert topix500_mid["sample_count"] == 2
     assert topix500_mid["up_count"] == 1
-    assert topix500_mid["mean_intraday_diff"] == pytest.approx(2.0)
+    assert topix500_mid["flat_count"] == 1
+    assert topix500_mid["mean_intraday_diff"] == pytest.approx(1.0)
 
     assert prime_ex_mid["sample_count"] == 1
     assert prime_ex_mid["down_count"] == 1
@@ -180,7 +190,7 @@ def test_selected_date_range_filters_results(analytics_db_path: str) -> None:
         analytics_db_path,
         start_date="2024-01-03",
         end_date="2024-01-04",
-        selected_groups=["PRIME", "TOPIX500"],
+        selected_groups=["PRIME", "TOPIX100"],
         sample_size=10,
     )
 
@@ -188,13 +198,15 @@ def test_selected_date_range_filters_results(analytics_db_path: str) -> None:
         zip(result.day_counts_df["gap_bucket_key"], result.day_counts_df["day_count"], strict=True)
     )
     assert day_counts == {
-        "gap_lt_threshold_1": 1,
+        "gap_le_negative_threshold_2": 1,
+        "gap_negative_threshold_2_to_1": 0,
+        "gap_negative_threshold_1_to_threshold_1": 1,
         "gap_threshold_1_to_2": 0,
-        "gap_ge_threshold_2": 1,
+        "gap_ge_threshold_2": 0,
     }
     assert result.analysis_start_date == "2024-01-03"
     assert result.analysis_end_date == "2024-01-04"
-    assert tuple(result.summary_df["stock_group"].unique()) == ("PRIME", "TOPIX500")
+    assert tuple(result.summary_df["stock_group"].unique()) == ("PRIME", "TOPIX100")
 
 
 def test_null_topix_open_is_excluded_from_gap_buckets(analytics_db_path: str) -> None:
@@ -212,9 +224,11 @@ def test_null_topix_open_is_excluded_from_gap_buckets(analytics_db_path: str) ->
         zip(result.day_counts_df["gap_bucket_key"], result.day_counts_df["day_count"], strict=True)
     )
     assert day_counts == {
-        "gap_lt_threshold_1": 1,
+        "gap_le_negative_threshold_2": 1,
+        "gap_negative_threshold_2_to_1": 0,
+        "gap_negative_threshold_1_to_threshold_1": 1,
         "gap_threshold_1_to_2": 0,
-        "gap_ge_threshold_2": 1,
+        "gap_ge_threshold_2": 0,
     }
     assert result.excluded_topix_days_without_prev_close == 2
     assert result.analysis_start_date == "2024-01-03"
@@ -326,11 +340,11 @@ def test_sample_size_zero_returns_empty_samples(analytics_db_path: str) -> None:
 def test_selected_groups_are_deduplicated(analytics_db_path: str) -> None:
     result = run_topix_gap_intraday_distribution(
         analytics_db_path,
-        selected_groups=["PRIME", "PRIME", "TOPIX500"],
+        selected_groups=["PRIME", "PRIME", "TOPIX100"],
         sample_size=1,
     )
 
-    assert result.selected_groups == ("PRIME", "TOPIX500")
+    assert result.selected_groups == ("PRIME", "TOPIX100")
 
 
 @pytest.mark.parametrize(
@@ -366,5 +380,13 @@ def test_gap_bucket_labels_support_fractional_thresholds() -> None:
             gap_threshold_1=0.015,
             gap_threshold_2=0.0275,
         )
-        == "1.5% <= |gap| < 2.75%"
+        == "1.5% <= gap < 2.75%"
+    )
+    assert (
+        format_gap_bucket_label(
+            "gap_negative_threshold_2_to_1",
+            gap_threshold_1=0.015,
+            gap_threshold_2=0.0275,
+        )
+        == "-2.75% < gap <= -1.5%"
     )

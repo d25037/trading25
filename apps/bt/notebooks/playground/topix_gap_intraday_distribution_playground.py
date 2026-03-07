@@ -7,41 +7,34 @@
 # ]
 # ///
 
-"""
-TOPIX Gap / Intraday Distribution Playground (Marimo)
-
-UI playground for DuckDB-backed analytics.
-Computation logic must stay in src/domains, this notebook provides UI only.
-"""
-
-from __future__ import annotations
-
 import marimo
 
-app = marimo.App(width="full", app_title="TOPIX Gap / Intraday Distribution Playground")
+__generated_with = "0.19.0"
+app = marimo.App(
+    width="full",
+    app_title="TOPIX Gap / Intraday Distribution Playground",
+)
 
 
 @app.cell
-def imports():
+def _():
     import marimo as mo
+    import matplotlib.pyplot as plt
     import sys
     from pathlib import Path
-    import matplotlib.pyplot as plt
-    import pandas as pd
-
-    return mo, sys, Path, plt, pd
+    return Path, mo, plt, sys
 
 
 @app.cell
-def bootstrap_project_root(sys, Path):
-    project_root = Path.cwd()
-    if project_root.name == "playground":
-        project_root = project_root.parent.parent
-    elif project_root.name == "notebooks":
-        project_root = project_root.parent
+def _(Path, sys):
+    _project_root = Path.cwd()
+    if _project_root.name == "playground":
+        _project_root = _project_root.parent.parent
+    elif _project_root.name == "notebooks":
+        _project_root = _project_root.parent
 
-    if str(project_root) not in sys.path:
-        sys.path.insert(0, str(project_root))
+    if str(_project_root) not in sys.path:
+        sys.path.insert(0, str(_project_root))
 
     from src.shared.config.settings import get_settings
     from src.domains.analytics.topix_gap_intraday_distribution import (
@@ -50,8 +43,7 @@ def bootstrap_project_root(sys, Path):
         run_topix_gap_intraday_distribution,
     )
 
-    settings = get_settings()
-    default_db_path = settings.market_db_path
+    default_db_path = get_settings().market_db_path
     return (
         STOCK_GROUP_ORDER,
         default_db_path,
@@ -61,24 +53,25 @@ def bootstrap_project_root(sys, Path):
 
 
 @app.cell
-def initial_range(default_db_path, get_topix_available_date_range):
+def _(default_db_path, get_topix_available_date_range):
     try:
-        available_start_date, available_end_date = get_topix_available_date_range(default_db_path)
+        initial_range = get_topix_available_date_range(default_db_path)
     except Exception:
-        available_start_date, available_end_date = None, None
-    return available_start_date, available_end_date
+        initial_range = (None, None)
+    return (initial_range,)
 
 
 @app.cell
-def controls(mo, STOCK_GROUP_ORDER, default_db_path, initial_range):
-    available_start_date, available_end_date = initial_range
+def _(STOCK_GROUP_ORDER, default_db_path, initial_range, mo):
+    _available_start_date, _available_end_date = initial_range
+
     db_path = mo.ui.text(value=default_db_path, label="DuckDB Path")
     start_date = mo.ui.text(
-        value=available_start_date or "",
+        value=_available_start_date or "",
         label="Start Date (YYYY-MM-DD)",
     )
     end_date = mo.ui.text(
-        value=available_end_date or "",
+        value=_available_end_date or "",
         label="End Date (YYYY-MM-DD)",
     )
     selected_groups = mo.ui.text(
@@ -143,7 +136,7 @@ def controls(mo, STOCK_GROUP_ORDER, default_db_path, initial_range):
 
 
 @app.cell
-def parsed_inputs(
+def _(
     STOCK_GROUP_ORDER,
     clip_lower,
     clip_upper,
@@ -155,59 +148,42 @@ def parsed_inputs(
     selected_groups,
     start_date,
 ):
-    requested_groups = [
+    _requested_groups = [
         value.strip()
         for value in selected_groups.value.split(",")
         if value.strip()
     ]
-    if not requested_groups:
-        requested_groups = list(STOCK_GROUP_ORDER)
+    if not _requested_groups:
+        _requested_groups = list(STOCK_GROUP_ORDER)
 
-    selected_start = start_date.value.strip() or None
-    selected_end = end_date.value.strip() or None
-    selected_db_path = db_path.value.strip()
-    selected_sample_size = int(sample_size.value)
-    selected_clip = (float(clip_lower.value), float(clip_upper.value))
-    thresholds = (
-        float(gap_threshold_1.value) / 100.0,
-        float(gap_threshold_2.value) / 100.0,
-    )
-    return (
-        requested_groups,
-        selected_clip,
-        selected_db_path,
-        selected_end,
-        selected_sample_size,
-        selected_start,
-        thresholds,
-    )
+    parsed_inputs = {
+        "requested_groups": _requested_groups,
+        "selected_clip": (float(clip_lower.value), float(clip_upper.value)),
+        "selected_db_path": db_path.value.strip(),
+        "selected_end": end_date.value.strip() or None,
+        "selected_sample_size": int(sample_size.value),
+        "selected_start": start_date.value.strip() or None,
+        "thresholds": (
+            float(gap_threshold_1.value) / 100.0,
+            float(gap_threshold_2.value) / 100.0,
+        ),
+    }
+    return (parsed_inputs,)
 
 
 @app.cell
-def analysis_result(
-    mo,
-    parsed_inputs,
-    run_topix_gap_intraday_distribution,
-):
-    (
-        requested_groups,
-        selected_clip,
-        selected_db_path,
-        selected_end,
-        selected_sample_size,
-        selected_start,
-        thresholds,
-    ) = parsed_inputs
+def _(parsed_inputs, run_topix_gap_intraday_distribution):
     try:
+        _threshold_1, _threshold_2 = parsed_inputs["thresholds"]
         result = run_topix_gap_intraday_distribution(
-            selected_db_path,
-            start_date=selected_start,
-            end_date=selected_end,
-            gap_threshold_1=thresholds[0],
-            gap_threshold_2=thresholds[1],
-            selected_groups=requested_groups,
-            sample_size=selected_sample_size,
-            clip_percentiles=selected_clip,
+            parsed_inputs["selected_db_path"],
+            start_date=parsed_inputs["selected_start"],
+            end_date=parsed_inputs["selected_end"],
+            gap_threshold_1=_threshold_1,
+            gap_threshold_2=_threshold_2,
+            selected_groups=parsed_inputs["requested_groups"],
+            sample_size=parsed_inputs["selected_sample_size"],
+            clip_percentiles=parsed_inputs["selected_clip"],
         )
         error_message = None
     except Exception as exc:
@@ -217,164 +193,213 @@ def analysis_result(
 
 
 @app.cell
-def render_error(mo, error_message):
-    if not error_message:
-        return
-    mo.md(f"## Input Error\n\n`{error_message}`")
+def _(error_message, mo):
+    _error_view = mo.md("")
+    if error_message:
+        _error_view = mo.md(f"## Input Error\n\n`{error_message}`")
+    _error_view
+    return
 
 
 @app.cell
-def render_summary(mo, error_message, parsed_inputs, result):
-    if error_message or result is None:
-        return
+def _(error_message, mo, parsed_inputs, result):
+    _summary_view = mo.md("")
+    if not error_message and result is not None:
+        _threshold_1, _threshold_2 = parsed_inputs["thresholds"]
+        _selected_clip = parsed_inputs["selected_clip"]
+        _summary_view = mo.md(
+            f"""
+    ## TOPIX Gap / Intraday Distribution Playground
 
-    requested_groups, selected_clip, _, _, selected_sample_size, _, thresholds = parsed_inputs
-    mo.md(
-        f"""
-## TOPIX Gap / Intraday Distribution Playground
-
-- Source mode: **{result.source_mode}**
-- Source detail: **{result.source_detail}**
-- Available range: **{result.available_start_date} → {result.available_end_date}**
-- Analysis range: **{result.analysis_start_date} → {result.analysis_end_date}**
-- Selected groups: **{", ".join(requested_groups)}**
-- Thresholds: **{thresholds[0] * 100:.1f}% / {thresholds[1] * 100:.1f}%**
-- Sample size per group/bucket: **{selected_sample_size}**
-- Plot clip: **{selected_clip[0]:.1f}% → {selected_clip[1]:.1f}%**
-- Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**
-"""
-    )
-
-
-@app.cell
-def render_day_counts_chart(plt, error_message, result):
-    if error_message or result is None:
-        return
-
-    fig, ax = plt.subplots(figsize=(9, 4))
-    day_counts = result.day_counts_df
-    ax.bar(day_counts["gap_bucket_label"], day_counts["day_count"], color=["#8fb996", "#f4a259", "#bc4b51"])
-    ax.set_title("TOPIX Gap Day Counts")
-    ax.set_ylabel("Days")
-    ax.grid(axis="y", alpha=0.2)
-    plt.xticks(rotation=15, ha="right")
-    fig.tight_layout()
-    fig
+    - Source mode: **{result.source_mode}**
+    - Source detail: **{result.source_detail}**
+    - Available range: **{result.available_start_date} → {result.available_end_date}**
+    - Analysis range: **{result.analysis_start_date} → {result.analysis_end_date}**
+    - Selected groups: **{", ".join(parsed_inputs["requested_groups"])}**
+    - Thresholds: **{_threshold_1 * 100:.1f}% / {_threshold_2 * 100:.1f}%**
+    - Sample size per group/bucket: **{parsed_inputs["selected_sample_size"]}**
+    - Plot clip: **{_selected_clip[0]:.1f}% → {_selected_clip[1]:.1f}%**
+    - Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**
+    """
+        )
+    _summary_view
+    return
 
 
 @app.cell
-def render_direction_chart(plt, error_message, result):
-    if error_message or result is None:
-        return
-
-    summary_df = result.summary_df.copy()
-    summary_df["label"] = summary_df["stock_group"] + "\n" + summary_df["gap_bucket_label"]
-
-    fig, ax = plt.subplots(figsize=(14, 7))
-    x = range(len(summary_df))
-    up = summary_df["up_ratio"]
-    down = summary_df["down_ratio"]
-    flat = summary_df["flat_ratio"]
-
-    ax.bar(x, up, label="Up", color="#2a9d8f")
-    ax.bar(x, down, bottom=up, label="Down", color="#e76f51")
-    ax.bar(x, flat, bottom=up + down, label="Flat", color="#7a7a7a")
-    ax.set_ylim(0.0, 1.0)
-    ax.set_ylabel("Ratio")
-    ax.set_title("Up / Down / Flat Ratios by Group and Gap Bucket")
-    ax.set_xticks(list(x))
-    ax.set_xticklabels(summary_df["label"], rotation=35, ha="right")
-    ax.legend()
-    ax.grid(axis="y", alpha=0.2)
-    fig.tight_layout()
-    fig
+def _(error_message, mo, plt, result):
+    _day_counts_chart = mo.md("")
+    if not error_message and result is not None:
+        _fig, _ax = plt.subplots(figsize=(9, 4))
+        _day_counts = result.day_counts_df
+        _bar_colors = {
+            "gap_le_negative_threshold_2": "#bc4b51",
+            "gap_negative_threshold_2_to_1": "#e07a5f",
+            "gap_negative_threshold_1_to_threshold_1": "#9aa5b1",
+            "gap_threshold_1_to_2": "#81b29a",
+            "gap_ge_threshold_2": "#2a9d8f",
+        }
+        _ax.bar(
+            _day_counts["gap_bucket_label"],
+            _day_counts["day_count"],
+            color=[
+                _bar_colors.get(bucket_key, "#7a7a7a")
+                for bucket_key in _day_counts["gap_bucket_key"]
+            ],
+        )
+        _ax.set_title("TOPIX Gap Day Counts")
+        _ax.set_ylabel("Days")
+        _ax.grid(axis="y", alpha=0.2)
+        plt.xticks(rotation=15, ha="right")
+        _fig.tight_layout()
+        _day_counts_chart = _fig
+    _day_counts_chart
+    return
 
 
 @app.cell
-def render_distribution_chart(plt, error_message, result):
-    if error_message or result is None:
-        return
+def _(error_message, mo, plt, result):
+    _direction_chart = mo.md("")
+    if not error_message and result is not None:
+        _summary_df = result.summary_df.copy()
+        _summary_df["label"] = (
+            _summary_df["stock_group"] + "\n" + _summary_df["gap_bucket_label"]
+        )
 
-    plot_df = result.clipped_samples_df
-    bucket_order = list(result.day_counts_df["gap_bucket_key"])
-    bucket_labels = {
-        row["gap_bucket_key"]: row["gap_bucket_label"]
-        for _, row in result.day_counts_df.iterrows()
-    }
+        _fig, _ax = plt.subplots(figsize=(14, 7))
+        _x = range(len(_summary_df))
+        _up = _summary_df["up_ratio"]
+        _down = _summary_df["down_ratio"]
+        _flat = _summary_df["flat_ratio"]
 
-    fig, axes = plt.subplots(len(bucket_order), 1, figsize=(12, 4 * len(bucket_order)), sharex=False)
-    if len(bucket_order) == 1:
-        axes = [axes]
+        _ax.bar(_x, _up, label="Up", color="#2a9d8f")
+        _ax.bar(_x, _down, bottom=_up, label="Down", color="#e76f51")
+        _ax.bar(_x, _flat, bottom=_up + _down, label="Flat", color="#7a7a7a")
+        _ax.set_ylim(0.0, 1.0)
+        _ax.set_ylabel("Ratio")
+        _ax.set_title("Up / Down / Flat Ratios by Group and Gap Bucket")
+        _ax.set_xticks(list(_x))
+        _ax.set_xticklabels(_summary_df["label"], rotation=35, ha="right")
+        _ax.legend()
+        _ax.grid(axis="y", alpha=0.2)
+        _fig.tight_layout()
+        _direction_chart = _fig
+    _direction_chart
+    return
 
-    for ax, bucket_key in zip(axes, bucket_order, strict=True):
-        bucket_df = plot_df[plot_df["gap_bucket_key"] == bucket_key]
-        group_order = [
-            group
-            for group in result.selected_groups
-            if not bucket_df[bucket_df["stock_group"] == group].empty
+
+@app.cell
+def _(error_message, mo, plt, result):
+    _distribution_chart = mo.md("")
+    if not error_message and result is not None:
+        _plot_df = result.clipped_samples_df
+        _bucket_order = list(result.day_counts_df["gap_bucket_key"])
+        _bucket_labels = {
+            row["gap_bucket_key"]: row["gap_bucket_label"]
+            for _, row in result.day_counts_df.iterrows()
+        }
+
+        _fig, _axes = plt.subplots(
+            len(_bucket_order),
+            1,
+            figsize=(12, 4 * len(_bucket_order)),
+            sharex=False,
+        )
+        if len(_bucket_order) == 1:
+            _axes = [_axes]
+
+        for _ax, _bucket_key in zip(_axes, _bucket_order, strict=True):
+            _bucket_df = _plot_df[_plot_df["gap_bucket_key"] == _bucket_key]
+            _group_order = [
+                group
+                for group in result.selected_groups
+                if not _bucket_df[_bucket_df["stock_group"] == group].empty
+            ]
+            _boxplot_data = [
+                _bucket_df.loc[
+                    _bucket_df["stock_group"] == group, "intraday_diff"
+                ].tolist()
+                for group in _group_order
+            ]
+
+            if any(_boxplot_data):
+                _ax.boxplot(_boxplot_data, labels=_group_order, patch_artist=True)
+            else:
+                _ax.text(
+                    0.5,
+                    0.5,
+                    "No sampled rows in this bucket",
+                    ha="center",
+                    va="center",
+                )
+                _ax.set_xticks([])
+
+            _ax.set_title(_bucket_labels[_bucket_key])
+            _ax.set_ylabel("close - open")
+            _ax.grid(axis="y", alpha=0.2)
+
+        _fig.suptitle(
+            "Sampled Distribution of close - open (Clipped for Plotting)",
+            y=1.02,
+        )
+        _fig.tight_layout()
+        _distribution_chart = _fig
+    _distribution_chart
+    return
+
+
+@app.cell
+def _(error_message, mo, result):
+    _table_view = mo.md("")
+    if not error_message and result is not None:
+        _summary_columns = [
+            "stock_group",
+            "gap_bucket_label",
+            "sample_count",
+            "up_count",
+            "down_count",
+            "flat_count",
+            "up_ratio",
+            "down_ratio",
+            "flat_ratio",
+            "mean_intraday_diff",
+            "median_intraday_diff",
+            "p05_intraday_diff",
+            "p25_intraday_diff",
+            "p50_intraday_diff",
+            "p75_intraday_diff",
+            "p95_intraday_diff",
         ]
-        boxplot_data = [
-            bucket_df.loc[bucket_df["stock_group"] == group, "intraday_diff"].tolist()
-            for group in group_order
+        _sample_columns = [
+            "stock_group",
+            "gap_bucket_label",
+            "date",
+            "code",
+            "intraday_diff",
+            "direction",
+            "sample_rank",
         ]
-
-        if any(boxplot_data):
-            ax.boxplot(boxplot_data, labels=group_order, patch_artist=True)
-        else:
-            ax.text(0.5, 0.5, "No sampled rows in this bucket", ha="center", va="center")
-            ax.set_xticks([])
-
-        ax.set_title(bucket_labels[bucket_key])
-        ax.set_ylabel("close - open")
-        ax.grid(axis="y", alpha=0.2)
-
-    fig.suptitle("Sampled Distribution of close - open (Clipped for Plotting)", y=1.02)
-    fig.tight_layout()
-    fig
-
-
-@app.cell
-def render_tables(mo, error_message, result):
-    if error_message or result is None:
-        return
-
-    summary_columns = [
-        "stock_group",
-        "gap_bucket_label",
-        "sample_count",
-        "up_count",
-        "down_count",
-        "flat_count",
-        "up_ratio",
-        "down_ratio",
-        "flat_ratio",
-        "mean_intraday_diff",
-        "median_intraday_diff",
-        "p05_intraday_diff",
-        "p25_intraday_diff",
-        "p50_intraday_diff",
-        "p75_intraday_diff",
-        "p95_intraday_diff",
-    ]
-    sample_columns = [
-        "stock_group",
-        "gap_bucket_label",
-        "date",
-        "code",
-        "intraday_diff",
-        "direction",
-        "sample_rank",
-    ]
-    mo.vstack(
-        [
-            mo.md("### Bucket Day Counts"),
-            mo.Html(result.day_counts_df.to_html(index=False)),
-            mo.md("### Exact Summary"),
-            mo.Html(result.summary_df[summary_columns].to_html(index=False, float_format=lambda x: f"{x:.4f}")),
-            mo.md("### Sampled Rows (first 100)"),
-            mo.Html(result.samples_df[sample_columns].head(100).to_html(index=False, float_format=lambda x: f"{x:.4f}")),
-        ]
-    )
+        _table_view = mo.vstack(
+            [
+                mo.md("### Bucket Day Counts"),
+                mo.Html(result.day_counts_df.to_html(index=False)),
+                mo.md("### Exact Summary"),
+                mo.Html(
+                    result.summary_df[_summary_columns].to_html(
+                        index=False,
+                        float_format=lambda value: f"{value:.4f}",
+                    )
+                ),
+                mo.md("### Sampled Rows (first 100)"),
+                mo.Html(
+                    result.samples_df[_sample_columns].head(100).to_html(
+                        index=False,
+                        float_format=lambda value: f"{value:.4f}",
+                    )
+                ),
+            ]
+        )
+    _table_view
 
 
 if __name__ == "__main__":

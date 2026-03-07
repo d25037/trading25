@@ -20,30 +20,36 @@ from typing import Any, Literal, cast
 import pandas as pd
 
 GapBucketKey = Literal[
-    "gap_lt_threshold_1",
+    "gap_le_negative_threshold_2",
+    "gap_negative_threshold_2_to_1",
+    "gap_negative_threshold_1_to_threshold_1",
     "gap_threshold_1_to_2",
     "gap_ge_threshold_2",
 ]
 StockGroup = Literal[
     "PRIME",
-    "STANDARD",
-    "GROWTH",
+    "TOPIX100",
     "TOPIX500",
     "PRIME ex TOPIX500",
 ]
 SourceMode = Literal["live", "snapshot"]
 
 GAP_BUCKET_ORDER: tuple[GapBucketKey, ...] = (
-    "gap_lt_threshold_1",
+    "gap_le_negative_threshold_2",
+    "gap_negative_threshold_2_to_1",
+    "gap_negative_threshold_1_to_threshold_1",
     "gap_threshold_1_to_2",
     "gap_ge_threshold_2",
 )
 STOCK_GROUP_ORDER: tuple[StockGroup, ...] = (
     "PRIME",
-    "STANDARD",
-    "GROWTH",
+    "TOPIX100",
     "TOPIX500",
     "PRIME ex TOPIX500",
+)
+TOPIX100_SCALE_CATEGORIES: tuple[str, ...] = (
+    "TOPIX Core30",
+    "TOPIX Large70",
 )
 TOPIX500_SCALE_CATEGORIES: tuple[str, ...] = (
     "TOPIX Core30",
@@ -159,6 +165,24 @@ def _format_threshold(value: float) -> str:
     return f"{formatted}%"
 
 
+def _gap_return_sql() -> str:
+    return "(open - prev_close) / prev_close"
+
+
+def _gap_bucket_case_sql() -> str:
+    gap_return_sql = _gap_return_sql()
+    return (
+        "CASE "
+        "WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL "
+        f"WHEN {gap_return_sql} <= -? THEN 'gap_le_negative_threshold_2' "
+        f"WHEN {gap_return_sql} <= -? THEN 'gap_negative_threshold_2_to_1' "
+        f"WHEN {gap_return_sql} < ? THEN 'gap_negative_threshold_1_to_threshold_1' "
+        f"WHEN {gap_return_sql} < ? THEN 'gap_threshold_1_to_2' "
+        "ELSE 'gap_ge_threshold_2' "
+        "END"
+    )
+
+
 def _normalize_code_sql(column_name: str) -> str:
     return (
         "CASE "
@@ -194,11 +218,15 @@ def format_gap_bucket_label(
 ) -> str:
     threshold_1 = _format_threshold(gap_threshold_1)
     threshold_2 = _format_threshold(gap_threshold_2)
-    if bucket_key == "gap_lt_threshold_1":
-        return f"|gap| < {threshold_1}"
+    if bucket_key == "gap_le_negative_threshold_2":
+        return f"gap <= -{threshold_2}"
+    if bucket_key == "gap_negative_threshold_2_to_1":
+        return f"-{threshold_2} < gap <= -{threshold_1}"
+    if bucket_key == "gap_negative_threshold_1_to_threshold_1":
+        return f"-{threshold_1} < gap < {threshold_1}"
     if bucket_key == "gap_threshold_1_to_2":
-        return f"{threshold_1} <= |gap| < {threshold_2}"
-    return f"|gap| >= {threshold_2}"
+        return f"{threshold_1} <= gap < {threshold_2}"
+    return f"gap >= {threshold_2}"
 
 
 def _grouped_stock_days_cte(
@@ -227,15 +255,10 @@ def _grouped_stock_days_cte(
             FROM stock_days_joined
             WHERE is_prime
         """,
-        "STANDARD": """
-            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'STANDARD' AS stock_group
+        "TOPIX100": """
+            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'TOPIX100' AS stock_group
             FROM stock_days_joined
-            WHERE is_standard
-        """,
-        "GROWTH": """
-            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'GROWTH' AS stock_group
-            FROM stock_days_joined
-            WHERE is_growth
+            WHERE is_topix100
         """,
         "TOPIX500": """
             SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'TOPIX500' AS stock_group
@@ -249,6 +272,8 @@ def _grouped_stock_days_cte(
         """,
     }
     union_sql = "\nUNION ALL\n".join(group_selects[group] for group in selected_groups)
+    gap_return_sql = _gap_return_sql()
+    gap_bucket_case_sql = _gap_bucket_case_sql()
 
     sql = f"""
         WITH topix_with_gap AS (
@@ -257,15 +282,10 @@ def _grouped_stock_days_cte(
                 open,
                 close,
                 prev_close,
+                {gap_bucket_case_sql} AS gap_bucket_key,
                 CASE
                     WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
-                    WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_ge_threshold_2'
-                    WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_threshold_1_to_2'
-                    ELSE 'gap_lt_threshold_1'
-                END AS gap_bucket_key,
-                CASE
-                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
-                    ELSE (open - prev_close) / prev_close
+                    ELSE {gap_return_sql}
                 END AS gap_return
                 FROM (
                     SELECT
@@ -292,8 +312,7 @@ def _grouped_stock_days_cte(
             SELECT
                 normalized_code,
                 market_code_norm IN ('prime', '0111') AS is_prime,
-                market_code_norm IN ('standard', '0112') AS is_standard,
-                market_code_norm IN ('growth', '0113') AS is_growth,
+                scale_category IN ('TOPIX Core30', 'TOPIX Large70') AS is_topix100,
                 scale_category IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_topix500,
                 market_code_norm IN ('prime', '0111')
                     AND scale_category NOT IN ('TOPIX Core30', 'TOPIX Large70', 'TOPIX Mid400') AS is_prime_ex_topix500
@@ -335,8 +354,7 @@ def _grouped_stock_days_cte(
                 t.gap_bucket_key,
                 t.gap_return,
                 m.is_prime,
-                m.is_standard,
-                m.is_growth,
+                m.is_topix100,
                 m.is_topix500,
                 m.is_prime_ex_topix500
             FROM stock_data_dedup s
@@ -348,7 +366,14 @@ def _grouped_stock_days_cte(
             {union_sql}
         )
     """
-    return sql, [gap_threshold_2, gap_threshold_1, *gap_params, *stock_params]
+    return sql, [
+        gap_threshold_2,
+        gap_threshold_1,
+        gap_threshold_1,
+        gap_threshold_2,
+        *gap_params,
+        *stock_params,
+    ]
 
 
 def _query_day_counts(
@@ -360,6 +385,7 @@ def _query_day_counts(
     gap_threshold_2: float,
 ) -> tuple[pd.DataFrame, int]:
     gap_where_sql, gap_params = _date_where_clause("date", start_date, end_date)
+    gap_bucket_case_sql = _gap_bucket_case_sql()
     excluded_conditions: list[str] = [
         "open IS NULL OR prev_close IS NULL OR prev_close = 0"
     ]
@@ -374,12 +400,7 @@ def _query_day_counts(
     sql = f"""
         WITH topix_with_gap AS (
             SELECT
-                CASE
-                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
-                    WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_ge_threshold_2'
-                    WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_threshold_1_to_2'
-                    ELSE 'gap_lt_threshold_1'
-                END AS gap_bucket_key
+                {gap_bucket_case_sql} AS gap_bucket_key
             FROM (
                 SELECT
                     date,
@@ -395,7 +416,13 @@ def _query_day_counts(
         WHERE gap_bucket_key IS NOT NULL
         GROUP BY gap_bucket_key
     """
-    params = [gap_threshold_2, gap_threshold_1, *gap_params]
+    params = [
+        gap_threshold_2,
+        gap_threshold_1,
+        gap_threshold_1,
+        gap_threshold_2,
+        *gap_params,
+    ]
     df = cast(pd.DataFrame, conn.execute(sql, params).fetchdf())
 
     excluded_row = conn.execute(
