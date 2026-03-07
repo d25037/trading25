@@ -6,13 +6,17 @@ YamlConfigurableStrategy用のバックテスト実行・結果生成機能を�
 
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple, cast
 
+import numpy as np
 import pandas as pd
 import vectorbt as vbt
+from numba import njit
+from vectorbt.portfolio import nb as portfolio_nb
+from vectorbt.portfolio.enums import Direction, SizeType
 
 from src.shared.models.allocation import AllocationInfo
 
 CostParams = Tuple[float, float]
-GroupedPortfolioInputs = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]
+GroupedPortfolioInputs = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
 
 if TYPE_CHECKING:
     from .protocols import StrategyProtocol
@@ -25,6 +29,65 @@ _BENCHMARK_SIGNALS = (
     "beta", "index_daily_change", "index_macd_histogram",
     "sector_strength_ranking", "sector_rotation_phase",
 )
+
+_DIRECTION_MAP = {
+    "longonly": Direction.LongOnly,
+    "shortonly": Direction.ShortOnly,
+    "both": Direction.Both,
+}
+
+
+@njit
+def _next_session_round_trip_order_func_nb(
+    c,
+    entry_mask: np.ndarray,
+    open_prices: np.ndarray,
+    close_prices: np.ndarray,
+    entry_size: float,
+    entry_size_type: int,
+    entry_direction: int,
+    fees: float,
+    slippage: float,
+    max_size: float,
+):
+    group_len = c.to_col - c.from_col
+
+    if c.call_idx < group_len:
+        col = c.from_col + c.call_idx
+        if not entry_mask[c.i, col]:
+            return col, portfolio_nb.order_nothing_nb()
+        return col, portfolio_nb.order_nb(
+            size=entry_size,
+            price=float(open_prices[c.i, col]),
+            size_type=entry_size_type,
+            direction=entry_direction,
+            fees=fees,
+            slippage=slippage,
+            max_size=max_size,
+        )
+
+    if c.call_idx < group_len * 2:
+        col = c.from_col + (c.call_idx - group_len)
+        if not entry_mask[c.i, col]:
+            return col, portfolio_nb.order_nothing_nb()
+        position_now = c.last_position[col]
+        if position_now == 0:
+            return col, portfolio_nb.order_nothing_nb()
+        exit_size = -position_now
+        exit_direction = entry_direction
+        if position_now < 0:
+            exit_size = abs(position_now)
+            exit_direction = Direction.Both
+        return col, portfolio_nb.order_nb(
+            size=exit_size,
+            price=float(close_prices[c.i, col]),
+            size_type=SizeType.Amount,
+            direction=exit_direction,
+            fees=fees,
+            slippage=slippage,
+        )
+
+    return -1, portfolio_nb.order_nothing_nb()
 
 
 def _is_signal_enabled(params: Any, signal_name: str) -> bool:
@@ -133,6 +196,7 @@ class BacktestExecutorMixin:
 
     def _set_grouped_portfolio_inputs_cache(
         self: "StrategyProtocol",
+        open_data: pd.DataFrame,
         close_data: pd.DataFrame,
         all_entries: pd.DataFrame,
         all_exits: pd.DataFrame,
@@ -141,7 +205,7 @@ class BacktestExecutorMixin:
         setattr(
             self,
             "_grouped_portfolio_inputs_cache",
-            (close_data, all_entries, all_exits),
+            (open_data, close_data, all_entries, all_exits),
         )
 
     def _clear_grouped_portfolio_inputs_cache(self: "StrategyProtocol") -> None:
@@ -156,12 +220,13 @@ class BacktestExecutorMixin:
         if cached is None:
             return None
 
-        if not isinstance(cached, tuple) or len(cached) != 3:
+        if not isinstance(cached, tuple) or len(cached) != 4:
             return None
 
-        close_data, all_entries, all_exits = cached
+        open_data, close_data, all_entries, all_exits = cached
         if not (
-            isinstance(close_data, pd.DataFrame)
+            isinstance(open_data, pd.DataFrame)
+            and isinstance(close_data, pd.DataFrame)
             and isinstance(all_entries, pd.DataFrame)
             and isinstance(all_exits, pd.DataFrame)
         ):
@@ -169,16 +234,101 @@ class BacktestExecutorMixin:
 
         return cast(GroupedPortfolioInputs, cached)
 
+    @staticmethod
+    def _normalize_signal_frame(frame: pd.DataFrame) -> pd.DataFrame:
+        return frame.fillna(False).infer_objects(copy=False).astype(bool)
+
+    def _get_round_trip_direction(self: "StrategyProtocol") -> int:
+        direction = getattr(self, "direction", "longonly")
+        return int(_DIRECTION_MAP.get(direction, Direction.LongOnly))
+
+    def _prepare_next_session_round_trip_signals(
+        self: "StrategyProtocol",
+        stock_code: str,
+        entries: pd.Series,
+        execution_data: pd.DataFrame,
+    ) -> tuple[pd.Series, pd.Series]:
+        required_columns = {"Open", "Close"}
+        missing_columns = required_columns - set(execution_data.columns)
+        if missing_columns:
+            raise ValueError(
+                f"{stock_code}: next_session_round_trip requires columns {sorted(required_columns)}"
+            )
+
+        normalized_entries = entries.fillna(False).infer_objects(copy=False).astype(bool)
+        if normalized_entries.empty:
+            empty = normalized_entries.copy()
+            return empty, empty
+        scheduled_entries = normalized_entries.shift(1, fill_value=False)
+        executable_days = execution_data["Open"].notna() & execution_data["Close"].notna()
+        execution_entries = (scheduled_entries & executable_days).astype(bool)
+        execution_exits = pd.Series(False, index=execution_entries.index, dtype=bool)
+
+        skipped_missing = int((scheduled_entries & ~executable_days).sum())
+        if skipped_missing > 0:
+            self._log(
+                f"{stock_code}: next_session_round_trip skipped {skipped_missing} signals "
+                "because execution-day Open/Close was missing",
+                "warning",
+            )
+
+        if bool(normalized_entries.iloc[-1]):
+            self._log(
+                f"{stock_code}: next_session_round_trip dropped the last-bar signal "
+                "because the next session is unavailable",
+                "debug",
+            )
+
+        return execution_entries, execution_exits
+
+    def _create_next_session_round_trip_portfolio(
+        self: "StrategyProtocol",
+        open_data: pd.DataFrame,
+        close_data: pd.DataFrame,
+        entries_data: pd.DataFrame,
+        *,
+        entry_size: float,
+        entry_size_type: int,
+        cash_sharing: bool,
+        group_by: bool | None,
+    ) -> vbt.Portfolio:
+        effective_fees, effective_slippage = self._calculate_cost_params()
+        normalized_entries = self._normalize_signal_frame(entries_data)
+        max_orders = max(
+            1,
+            int(normalized_entries.to_numpy(dtype=np.bool_).sum()) * 2
+            + normalized_entries.shape[1],
+        )
+
+        return vbt.Portfolio.from_order_func(
+            close_data.astype(float),
+            cast(Any, _next_session_round_trip_order_func_nb),
+            normalized_entries.to_numpy(dtype=np.bool_),
+            open_data.astype(float).to_numpy(dtype=np.float64),
+            close_data.astype(float).to_numpy(dtype=np.float64),
+            float(entry_size),
+            int(entry_size_type),
+            self._get_round_trip_direction(),
+            float(effective_fees),
+            float(effective_slippage),
+            float(self.max_exposure) if self.max_exposure is not None else np.inf,
+            flexible=True,
+            init_cash=self.initial_cash,
+            cash_sharing=cash_sharing,
+            group_by=group_by,
+            freq="D",
+            max_orders=max_orders,
+        )
+
     def _create_grouped_portfolio(
         self: "StrategyProtocol",
+        open_data: pd.DataFrame,
         close_data: pd.DataFrame,
         all_entries: pd.DataFrame,
         all_exits: pd.DataFrame,
         allocation_pct: Optional[float] = None,
     ) -> vbt.Portfolio:
         """統合ポートフォリオを作成する。"""
-        effective_fees, effective_slippage = self._calculate_cost_params()
-
         # ピラミッディング機能（現在未実装、常にFalse）
         pyramid_enabled = False
 
@@ -201,6 +351,7 @@ class BacktestExecutorMixin:
                 "info",
             )
 
+            effective_fees, effective_slippage = self._calculate_cost_params()
             portfolio_kwargs = dict(
                 close=close_data,
                 entries=all_entries,
@@ -222,9 +373,21 @@ class BacktestExecutorMixin:
             if self.max_exposure is not None:
                 portfolio_kwargs["max_size"] = self.max_exposure
 
+            if getattr(self, "next_session_round_trip", False):
+                return self._create_next_session_round_trip_portfolio(
+                    open_data=open_data,
+                    close_data=close_data,
+                    entries_data=all_entries,
+                    entry_size=allocation_per_asset,
+                    entry_size_type=int(SizeType.Percent),
+                    cash_sharing=True,
+                    group_by=True,
+                )
+
             return vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
 
         # シングル銘柄戦略: 従来通り
+        effective_fees, effective_slippage = self._calculate_cost_params()
         portfolio_kwargs = dict(
             close=close_data,
             entries=all_entries,
@@ -243,6 +406,17 @@ class BacktestExecutorMixin:
         if self.max_exposure is not None:
             portfolio_kwargs["max_size"] = self.max_exposure
 
+        if getattr(self, "next_session_round_trip", False):
+            return self._create_next_session_round_trip_portfolio(
+                open_data=open_data,
+                close_data=close_data,
+                entries_data=all_entries,
+                entry_size=1.0,
+                entry_size_type=int(SizeType.Percent),
+                cash_sharing=self.cash_sharing,
+                group_by=True if self.cash_sharing else None,
+            )
+
         return vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
 
     def run_multi_backtest_from_cached_signals(
@@ -254,9 +428,10 @@ class BacktestExecutorMixin:
         if cached is None:
             raise ValueError("統合ポートフォリオ入力キャッシュが存在しません")
 
-        close_data, all_entries, all_exits = cached
+        open_data, close_data, all_entries, all_exits = cached
         self._log("⚡ キャッシュ済みシグナルを再利用して第2段階を実行", "info")
         portfolio = self._create_grouped_portfolio(
+            open_data=open_data,
             close_data=close_data,
             all_entries=all_entries,
             all_exits=all_exits,
@@ -506,6 +681,13 @@ class BacktestExecutorMixin:
             else:
                 raise ValueError("Data loading failed - no valid data source available")
 
+            if getattr(self, "next_session_round_trip", False):
+                entries, exits = self._prepare_next_session_round_trip_signals(
+                    stock_code=stock_code,
+                    entries=entries,
+                    execution_data=stock_data,
+                )
+
             data_dict[stock_code] = stock_data
             entries_dict[stock_code] = entries
             exits_dict[stock_code] = exits
@@ -533,7 +715,12 @@ class BacktestExecutorMixin:
             # 統合ポートフォリオの場合
             # VectorBTネイティブ統合ポートフォリオ作成
             try:
-                # データ統合（VectorBT対応のため終値のみ使用）
+                open_data = pd.DataFrame(
+                    {
+                        stock_code: data["Open"]
+                        for stock_code, data in data_dict.items()
+                    }
+                )
                 close_data = pd.DataFrame(
                     {
                         stock_code: data["Close"]
@@ -586,14 +773,23 @@ class BacktestExecutorMixin:
                     all_entries = self._limit_entries_per_day(
                         all_entries, self.max_concurrent_positions
                     )
+                    if getattr(self, "next_session_round_trip", False):
+                        all_exits = pd.DataFrame(
+                            False,
+                            index=all_entries.index,
+                            columns=all_entries.columns,
+                            dtype=bool,
+                        )
 
                 self._set_grouped_portfolio_inputs_cache(
+                    open_data=open_data,
                     close_data=close_data,
                     all_entries=all_entries,
                     all_exits=all_exits,
                 )
 
                 portfolio = self._create_grouped_portfolio(
+                    open_data=open_data,
                     close_data=close_data,
                     all_entries=all_entries,
                     all_exits=all_exits,
@@ -641,32 +837,49 @@ class BacktestExecutorMixin:
         exits_data = pd.DataFrame(exits_dict)
 
         # DataFrameの型を適切に設定
-        entries_data = entries_data.fillna(False).infer_objects(copy=False).astype(bool)
-        exits_data = exits_data.fillna(False).infer_objects(copy=False).astype(bool)
+        entries_data = self._normalize_signal_frame(entries_data)
+        exits_data = self._normalize_signal_frame(exits_data)
 
         if self.max_concurrent_positions:
             entries_data = self._limit_entries_per_day(
                 entries_data, self.max_concurrent_positions
             )
+            if getattr(self, "next_session_round_trip", False):
+                exits_data = pd.DataFrame(
+                    False,
+                    index=entries_data.index,
+                    columns=entries_data.columns,
+                    dtype=bool,
+                )
 
-        effective_fees, effective_slippage = self._calculate_cost_params()
-
-        portfolio_kwargs = dict(
-            close=close_data,
-            entries=entries_data,
-            exits=exits_data,
-            direction=getattr(self, "direction", "longonly"),  # 🆕 追加: 取引方向設定
-            init_cash=self.initial_cash,
-            fees=effective_fees,
-            slippage=effective_slippage,  # 約定価格シフト（ネイティブ対応）
-            group_by=None,  # 個別ポートフォリオ
-            accumulate=pyramid_enabled,  # 🆕 追加: ピラミッディング対応
-            freq="D",
-        )
-        if self.max_exposure is not None:
-            portfolio_kwargs["max_size"] = self.max_exposure
-
-        portfolio = vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
+        if getattr(self, "next_session_round_trip", False):
+            open_data = pd.DataFrame({k: v["Open"] for k, v in data_dict.items()})
+            portfolio = self._create_next_session_round_trip_portfolio(
+                open_data=open_data,
+                close_data=close_data,
+                entries_data=entries_data,
+                entry_size=1.0,
+                entry_size_type=int(SizeType.Percent),
+                cash_sharing=False,
+                group_by=None,
+            )
+        else:
+            effective_fees, effective_slippage = self._calculate_cost_params()
+            portfolio_kwargs = dict(
+                close=close_data,
+                entries=entries_data,
+                exits=exits_data,
+                direction=getattr(self, "direction", "longonly"),  # 🆕 追加: 取引方向設定
+                init_cash=self.initial_cash,
+                fees=effective_fees,
+                slippage=effective_slippage,  # 約定価格シフト（ネイティブ対応）
+                group_by=None,  # 個別ポートフォリオ
+                accumulate=pyramid_enabled,  # 🆕 追加: ピラミッディング対応
+                freq="D",
+            )
+            if self.max_exposure is not None:
+                portfolio_kwargs["max_size"] = self.max_exposure
+            portfolio = vbt.Portfolio.from_signals(**cast(dict[str, Any], portfolio_kwargs))
 
         self.portfolio = portfolio
         self._log("個別ポートフォリオ作成完了", "info")

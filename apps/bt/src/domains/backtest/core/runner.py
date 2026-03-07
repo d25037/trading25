@@ -401,6 +401,27 @@ class BacktestRunner:
                             f"Invalid {signal_key} after config_override merge: {e}"
                         ) from e
 
+        from src.shared.models.config import SharedConfig
+
+        try:
+            SharedConfig.model_validate(
+                parameters.get("shared_config", {}),
+                context={"resolve_stock_codes": False},
+            )
+        except Exception as e:
+            raise ValueError(f"Invalid shared_config after config merge: {e}") from e
+
+        shared_config = parameters.get("shared_config", {})
+        if (
+            isinstance(shared_config, dict)
+            and shared_config.get("next_session_round_trip") is True
+            and parameters.get("exit_trigger_params") not in (None, {})
+        ):
+            raise ValueError(
+                "exit_trigger_params must be empty when "
+                "shared_config.next_session_round_trip is true"
+            )
+
         return parameters
 
     def get_execution_info(self, strategy: str) -> dict[str, Any]:

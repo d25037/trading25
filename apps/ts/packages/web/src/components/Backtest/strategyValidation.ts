@@ -33,6 +33,7 @@ const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'parameter_optimization',
   'walk_forward',
   'timeframe',
+  'next_session_round_trip',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -318,6 +319,34 @@ function validateSharedConfig(sharedConfig: unknown, errors: string[]): void {
   }
 }
 
+function hasConfiguredExitTriggerParams(exitTrigger: unknown): boolean {
+  if (exitTrigger === undefined) {
+    return false;
+  }
+  if (!isPlainObject(exitTrigger)) {
+    return true;
+  }
+  return Object.keys(exitTrigger).length > 0;
+}
+
+function validateNextSessionRoundTripRules(
+  config: Record<string, unknown>,
+  errors: string[]
+): void {
+  const sharedConfig = config.shared_config;
+  if (!isPlainObject(sharedConfig) || sharedConfig.next_session_round_trip !== true) {
+    return;
+  }
+
+  if (sharedConfig.timeframe !== undefined && sharedConfig.timeframe !== 'daily') {
+    errors.push("next_session_round_trip requires timeframe='daily'");
+  }
+
+  if (hasConfiguredExitTriggerParams(config.exit_trigger_params)) {
+    errors.push('exit_trigger_params must be empty when shared_config.next_session_round_trip is true');
+  }
+}
+
 /**
  * @deprecated Backend strict validation (`/api/strategies/{name}/validate`) is the source of truth.
  * Keep this only for temporary compatibility and tests.
@@ -347,6 +376,8 @@ export function validateStrategyConfigLocally(
   if (config.shared_config !== undefined) {
     validateSharedConfig(config.shared_config, errors);
   }
+
+  validateNextSessionRoundTripRules(config, errors);
 
   if (signalDefinitions.length === 0) {
     warnings.push('Signal reference is unavailable, so parameter-name validation may be incomplete');

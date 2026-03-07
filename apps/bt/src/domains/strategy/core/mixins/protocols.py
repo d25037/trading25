@@ -36,6 +36,7 @@ class StrategyProtocol(Protocol):
     start_date: str | None
     end_date: str | None
     timeframe: Literal["daily", "weekly"]
+    next_session_round_trip: bool
 
     # Strategy name
     strategy_name: str
@@ -53,7 +54,7 @@ class StrategyProtocol(Protocol):
     execution_data_dict: dict[str, dict[str, pd.DataFrame]] | None
     multi_data_dict: dict[str, dict[str, pd.DataFrame]] | None
     _grouped_portfolio_inputs_cache: (
-        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None
+        tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame] | None
     )
 
     # Logger method

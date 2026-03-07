@@ -91,6 +91,10 @@ class SharedConfig(BaseModel):
         default="longonly",
         description="VectorBT取引方向設定 ('longonly', 'shortonly', 'both')",
     )
+    next_session_round_trip: bool = Field(
+        default=False,
+        description="翌営業日Openで建てて同日Closeで閉じるセッション往復モード",
+    )
 
     # Portfolio Optimization Settings (Kelly Criterion Only)
     kelly_fraction: float = Field(
@@ -190,3 +194,9 @@ class SharedConfig(BaseModel):
                 f"directionは{valid_directions}のいずれかである必要があります"
             )
         return v
+
+    @model_validator(mode="after")
+    def validate_next_session_round_trip(self):
+        if self.next_session_round_trip and self.timeframe != "daily":
+            raise ValueError("next_session_round_trip requires timeframe='daily'")
+        return self

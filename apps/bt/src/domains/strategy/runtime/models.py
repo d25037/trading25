@@ -122,6 +122,23 @@ def _dedupe(messages: list[str]) -> list[str]:
     return deduped
 
 
+def _validate_next_session_round_trip_rules(
+    config: dict[str, Any],
+    validated: StrategyConfig | None,
+) -> list[str]:
+    if validated is None or validated.shared_config is None:
+        return []
+    if not validated.shared_config.next_session_round_trip:
+        return []
+
+    exit_trigger_params = config.get("exit_trigger_params")
+    if exit_trigger_params not in (None, {}):
+        return [
+            "exit_trigger_params must be empty when shared_config.next_session_round_trip is true"
+        ]
+    return []
+
+
 def _build_strict_validation_errors(config: dict[str, Any]) -> tuple[StrategyConfig | None, list[str]]:
     """型検証と未知キー検出をまとめて実行"""
     validated: StrategyConfig | None = None
@@ -131,6 +148,8 @@ def _build_strict_validation_errors(config: dict[str, Any]) -> tuple[StrategyCon
         validated = validate_strategy_config_dict(config)
     except ValidationError as e:
         errors.extend(_format_pydantic_error(e))
+
+    errors.extend(_validate_next_session_round_trip_rules(config, validated))
 
     unknown_paths = _collect_unknown_paths(config, StrategyConfig)
     errors.extend(f"{path} is not a valid parameter name" for path in unknown_paths)
