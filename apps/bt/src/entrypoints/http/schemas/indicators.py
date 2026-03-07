@@ -25,6 +25,12 @@ class EMAParams(BaseModel):
     period: int = Field(ge=1, le=500, description="移動平均期間")
 
 
+class VWEMAParams(BaseModel):
+    """VWEMAパラメータ"""
+
+    period: int = Field(ge=1, le=500, description="出来高加重EMA期間")
+
+
 class RSIParams(BaseModel):
     """RSIパラメータ"""
 
@@ -104,6 +110,7 @@ class RiskAdjustedReturnParams(BaseModel):
 INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
     "sma": SMAParams,
     "ema": EMAParams,
+    "vwema": VWEMAParams,
     "rsi": RSIParams,
     "macd": MACDParams,
     "ppo": PPOParams,
@@ -119,6 +126,7 @@ INDICATOR_PARAMS_MAP: dict[str, type[BaseModel]] = {
 INDICATOR_TYPES = Literal[
     "sma",
     "ema",
+    "vwema",
     "rsi",
     "macd",
     "ppo",

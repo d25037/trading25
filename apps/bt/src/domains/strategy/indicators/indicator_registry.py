@@ -14,6 +14,7 @@ from src.domains.strategy.indicators import (
     compute_risk_adjusted_return,
     compute_trading_value_ma,
     compute_volume_mas,
+    compute_volume_weighted_ema,
 )
 
 
@@ -99,6 +100,19 @@ def _compute_ema(
     ma: pd.Series[float] = vbt.MA.run(ohlcv["Close"], period, ewm=True).ma
     key = _make_key("ema", period=period)
     return key, _series_to_records(ma, nan_handling)
+
+
+def _compute_vwema(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    if "Volume" not in ohlcv.columns:
+        raise ValueError("vwema の計算には ohlcv に 'Volume' カラムが必要です")
+
+    period = params["period"]
+    volume = ohlcv["Volume"]
+    vwema = compute_volume_weighted_ema(ohlcv["Close"], volume, period)
+    key = _make_key("vwema", period=period)
+    return key, _series_to_records(vwema, nan_handling)
 
 
 def _compute_rsi(
@@ -256,6 +270,7 @@ def _compute_risk_adjusted_return(
 INDICATOR_REGISTRY: dict[str, ComputeFn] = {
     "sma": _compute_sma,
     "ema": _compute_ema,
+    "vwema": _compute_vwema,
     "rsi": _compute_rsi,
     "macd": _compute_macd,
     "ppo": _compute_ppo,

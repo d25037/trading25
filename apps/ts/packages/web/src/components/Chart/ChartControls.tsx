@@ -609,6 +609,19 @@ export function ChartControls() {
             </IndicatorToggle>
 
             <IndicatorToggle
+              label="VWEMA"
+              enabled={settings.indicators.vwema.enabled}
+              onToggle={(enabled) => updateIndicatorSettings('vwema', { enabled })}
+            >
+              <NumberInput
+                label="Period"
+                value={settings.indicators.vwema.period}
+                onChange={(period) => updateIndicatorSettings('vwema', { period })}
+                defaultValue={20}
+              />
+            </IndicatorToggle>
+
+            <IndicatorToggle
               label="Bollinger Bands"
               enabled={settings.indicators.bollinger.enabled}
               onToggle={(enabled) => updateIndicatorSettings('bollinger', { enabled })}

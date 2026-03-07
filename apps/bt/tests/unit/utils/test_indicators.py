@@ -10,6 +10,7 @@ from src.domains.strategy.indicators.calculations import (
     compute_nbar_support,
     compute_trading_value_ma,
     compute_volume_mas,
+    compute_volume_weighted_ema,
 )
 
 
@@ -161,3 +162,29 @@ class TestComputeNBarSupport:
         empty = pd.Series(dtype=float)
         result = compute_nbar_support(empty, 10)
         assert len(result) == 0
+
+
+class TestComputeVolumeWeightedEMA:
+    """compute_volume_weighted_ema() テスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2024-01-01", periods=50)
+        self.close = pd.Series(np.linspace(100, 120, 50), index=self.dates)
+        self.volume = pd.Series(np.linspace(1000, 5000, 50), index=self.dates)
+
+    def test_returns_series(self):
+        result = compute_volume_weighted_ema(self.close, self.volume, 10)
+        assert isinstance(result, pd.Series)
+        assert len(result) == 50
+
+    def test_constant_price_returns_constant(self):
+        close = pd.Series(np.ones(50) * 100, index=self.dates)
+        result = compute_volume_weighted_ema(close, self.volume, 10)
+        valid = ~pd.isna(result)
+        assert np.allclose(result[valid], 100.0, rtol=1e-6)
+
+    def test_zero_volume_safe(self):
+        volume = self.volume.copy()
+        volume.iloc[0] = 0
+        result = compute_volume_weighted_ema(self.close, volume, 10)
+        assert len(result) == 50

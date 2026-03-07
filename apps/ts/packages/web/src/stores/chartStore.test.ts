@@ -69,6 +69,10 @@ describe('chartStore', () => {
     expect(useChartStore.getState().settings.indicators.sma.period).toBe(50);
     expect(useChartStore.getState().settings.indicators.sma.enabled).toBe(false);
 
+    updateIndicatorSettings('vwema', { enabled: true, period: 34 });
+    expect(useChartStore.getState().settings.indicators.vwema.enabled).toBe(true);
+    expect(useChartStore.getState().settings.indicators.vwema.period).toBe(34);
+
     updateIndicatorSettings('macd', { fast: 8, slow: 21 });
     expect(useChartStore.getState().settings.indicators.macd.fast).toBe(8);
     expect(useChartStore.getState().settings.indicators.macd.slow).toBe(21);
@@ -93,6 +97,35 @@ describe('chartStore', () => {
     updateTradingValueMA({ period: 25 });
 
     expect(useChartStore.getState().settings.tradingValueMA.period).toBe(25);
+  });
+
+  it('manages signal overlay settings and signals', () => {
+    const { toggleSignalOverlay, addSignal, updateSignal, toggleSignal, removeSignal } = useChartStore.getState();
+
+    toggleSignalOverlay();
+    expect(useChartStore.getState().settings.signalOverlay.enabled).toBe(true);
+
+    addSignal({ type: 'volume', mode: 'entry', params: { threshold: 1.5 } });
+    expect(useChartStore.getState().settings.signalOverlay.signals).toEqual([
+      { type: 'volume', mode: 'entry', params: { threshold: 1.5 }, enabled: true },
+    ]);
+
+    addSignal({ type: 'volume', mode: 'exit', params: { threshold: 2.0 } });
+    expect(useChartStore.getState().settings.signalOverlay.signals).toHaveLength(1);
+
+    updateSignal('volume', { mode: 'exit', params: { threshold: 2.0 } });
+    expect(useChartStore.getState().settings.signalOverlay.signals[0]).toMatchObject({
+      type: 'volume',
+      mode: 'exit',
+      params: { threshold: 2.0 },
+      enabled: true,
+    });
+
+    toggleSignal('volume');
+    expect(useChartStore.getState().settings.signalOverlay.signals[0]?.enabled).toBe(false);
+
+    removeSignal('volume');
+    expect(useChartStore.getState().settings.signalOverlay.signals).toEqual([]);
   });
 
   it('creates, updates, duplicates, and deletes presets', () => {
@@ -242,6 +275,7 @@ describe('chartStore', () => {
     expect(state.settings.indicators.sma.enabled).toBe(true);
     expect(state.settings.indicators.sma.period).toBe(50);
     expect(state.settings.indicators.ema.period).toBe(defaultSettings.indicators.ema.period);
+    expect(state.settings.indicators.vwema.period).toBe(defaultSettings.indicators.vwema.period);
     expect(state.settings.tradingValueMA.period).toBe(defaultSettings.tradingValueMA.period);
     expect(state.settings.showFundamentalsPanel).toBe(defaultSettings.showFundamentalsPanel);
     expect(state.settings.showFundamentalsHistoryPanel).toBe(defaultSettings.showFundamentalsHistoryPanel);
@@ -307,6 +341,32 @@ describe('chartStore', () => {
     expect(state.settings.signalOverlay.enabled).toBe(defaultSettings.signalOverlay.enabled);
     expect(state.settings.signalOverlay.signals).toHaveLength(1);
     expect(state.settings.signalOverlay.signals[0]?.enabled).toBe(true);
+  });
+
+  it('rehydrates persisted vwema settings safely', async () => {
+    localStorage.setItem(
+      'trading25-chart-store',
+      JSON.stringify({
+        state: {
+          settings: {
+            indicators: {
+              vwema: {
+                enabled: true,
+                period: 34,
+              },
+            },
+          },
+        },
+        version: 0,
+      })
+    );
+
+    await useChartStore.persist?.rehydrate();
+
+    const settings = useChartStore.getState().settings;
+    expect(settings.indicators.vwema.enabled).toBe(true);
+    expect(settings.indicators.vwema.period).toBe(34);
+    expect(settings.indicators.sma.period).toBe(defaultSettings.indicators.sma.period);
   });
 
   it('defaults panel visibility flags to true', () => {

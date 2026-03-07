@@ -48,6 +48,7 @@ interface StockChartProps {
   atrSupport?: IndicatorValue[];
   nBarSupport?: IndicatorValue[];
   bollingerBands?: BollingerBandsData[];
+  vwema?: IndicatorValue[];
   signalMarkers?: SignalMarkerData[];
 }
 
@@ -158,7 +159,7 @@ function buildCrosshairOHLC(
   };
 }
 
-export function StockChart({ data = [], atrSupport, nBarSupport, bollingerBands, signalMarkers = [] }: StockChartProps) {
+export function StockChart({ data = [], atrSupport, nBarSupport, bollingerBands, vwema, signalMarkers = [] }: StockChartProps) {
   const chartContainerRef = useRef<HTMLDivElement>(null);
   const chartRef = useRef<IChartApi | null>(null);
   const candlestickSeriesRef = useRef<ISeriesApi<'Candlestick'> | null>(null);
@@ -167,6 +168,7 @@ export function StockChart({ data = [], atrSupport, nBarSupport, bollingerBands,
   const atrSupportSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const nBarSupportSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   const bollingerUpperSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
+  const vwemaSeriesRef = useRef<ISeriesApi<'Line'> | null>(null);
   // Signal markers ref (v5 API)
   const signalMarkersRef = useRef<ISeriesMarkersPluginApi<Time> | null>(null);
 
@@ -237,6 +239,7 @@ export function StockChart({ data = [], atrSupport, nBarSupport, bollingerBands,
       atrSupportSeriesRef.current = null;
       nBarSupportSeriesRef.current = null;
       bollingerUpperSeriesRef.current = null;
+      vwemaSeriesRef.current = null;
       signalMarkersRef.current = null;
     };
   }, []); // Remove showVolume dependency
@@ -307,6 +310,24 @@ export function StockChart({ data = [], atrSupport, nBarSupport, bollingerBands,
       }
     }
   }, [settings.indicators.nBarSupport.enabled, nBarSupport]);
+
+  // Handle VWEMA indicator
+  useEffect(() => {
+    if (!chartRef.current) return;
+
+    if (settings.indicators.vwema.enabled && vwema && vwema.length > 0) {
+      if (!vwemaSeriesRef.current) {
+        vwemaSeriesRef.current = chartRef.current.addSeries(LineSeries, {
+          color: CHART_COLORS.VWEMA,
+          lineWidth: CHART_LINE_WIDTHS.STANDARD,
+        });
+      }
+      vwemaSeriesRef.current.setData(vwema.map((item) => ({ time: item.time, value: item.value })));
+    } else if (vwemaSeriesRef.current) {
+      chartRef.current.removeSeries(vwemaSeriesRef.current);
+      vwemaSeriesRef.current = null;
+    }
+  }, [settings.indicators.vwema.enabled, vwema]);
 
   // Handle Bollinger Bands indicator (Upper line only)
   useEffect(() => {

@@ -43,6 +43,7 @@ const mockSettings = {
   indicators: {
     sma: { enabled: false, period: 20 },
     ema: { enabled: false, period: 12 },
+    vwema: { enabled: false, period: 20 },
     macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
     ppo: { enabled: true, fast: 12, slow: 26, signal: 9 },
     atrSupport: { enabled: false, period: 20, multiplier: 3.0 },

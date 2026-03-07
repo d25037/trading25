@@ -64,6 +64,9 @@ export function buildIndicatorSpecs(settings: ChartSettings): BtIndicatorSpec[] 
   if (indicators.ema.enabled) {
     specs.push({ type: 'ema', params: { period: indicators.ema.period } });
   }
+  if (indicators.vwema.enabled) {
+    specs.push({ type: 'vwema', params: { period: indicators.vwema.period } });
+  }
   if (indicators.macd.enabled) {
     specs.push({
       type: 'macd',
@@ -217,6 +220,7 @@ const INDICATOR_KEY_TRANSFORMS: Array<{
 }> = [
   { prefix: 'sma_', transform: (r) => ({ target: 'indicator', name: 'sma', data: transformSingleValueRecords(r) }) },
   { prefix: 'ema_', transform: (r) => ({ target: 'indicator', name: 'ema', data: transformSingleValueRecords(r) }) },
+  { prefix: 'vwema_', transform: (r) => ({ target: 'indicator', name: 'vwema', data: transformSingleValueRecords(r) }) },
   { prefix: 'macd_', transform: (r) => ({ target: 'indicator', name: 'macd', data: transformMACDRecords(r) }) },
   { prefix: 'ppo_', transform: (r) => ({ target: 'indicator', name: 'ppo', data: transformPPORecords(r) }) },
   { prefix: 'bollinger_', transform: (r) => ({ target: 'bollinger', data: transformBollingerRecords(r) }) },

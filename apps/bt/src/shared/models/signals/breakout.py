@@ -80,7 +80,7 @@ class BreakoutSignalParams(BaseSignalParams):
 
 class MeanReversionSignalParams(BaseSignalParams):
     """平均回帰シグナルパラメータ（汎用・シンプル設計）"""
-    baseline_type: str = Field(default="sma", description="基準線タイプ（sma/ema）")
+    baseline_type: str = Field(default="sma", description="基準線タイプ（sma/ema/vwema）")
     baseline_period: int = Field(default=25, gt=0, le=500, description="基準線期間")
     deviation_threshold: float = Field(
         default=0.2,

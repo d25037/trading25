@@ -225,6 +225,32 @@ class TestMeanReversionEntrySignal:
         assert signal.dtype == bool
         assert len(signal) == len(self.ohlc_data)
 
+    def test_vwema_baseline(self):
+        """VWEMA基準線でのテスト"""
+        signal = mean_reversion_entry_signal(
+            self.ohlc_data,
+            baseline_type="vwema",
+            baseline_period=25,
+            deviation_threshold=0.2,
+            deviation_direction="below",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == len(self.ohlc_data)
+
+    def test_vwema_requires_volume(self):
+        ohlc_without_volume = self.ohlc_data.drop(columns=["Volume"])
+
+        with pytest.raises(ValueError, match="Volume"):
+            mean_reversion_entry_signal(
+                ohlc_without_volume,
+                baseline_type="vwema",
+                baseline_period=25,
+                deviation_threshold=0.2,
+                deviation_direction="below",
+            )
+
     def test_invalid_baseline_type(self):
         """未対応のベースラインタイプでエラー"""
         with pytest.raises(ValueError, match="未対応のベースラインタイプ"):
@@ -320,6 +346,32 @@ class TestMeanReversionExitSignal:
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
         assert len(signal) == len(self.ohlc_data)
+
+    def test_vwema_baseline(self):
+        """VWEMA基準線でのテスト"""
+        signal = mean_reversion_exit_signal(
+            self.ohlc_data,
+            baseline_type="vwema",
+            baseline_period=25,
+            recovery_price="close",
+            recovery_direction="above",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == len(self.ohlc_data)
+
+    def test_vwema_requires_volume(self):
+        ohlc_without_volume = self.ohlc_data.drop(columns=["Volume"])
+
+        with pytest.raises(ValueError, match="Volume"):
+            mean_reversion_exit_signal(
+                ohlc_without_volume,
+                baseline_type="vwema",
+                baseline_period=25,
+                recovery_price="close",
+                recovery_direction="above",
+            )
 
     def test_invalid_baseline_type(self):
         """未対応のベースラインタイプでエラー"""
@@ -424,6 +476,35 @@ class TestMeanReversionCombinedSignal:
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
         assert signal.any()
+
+    def test_vwema_baseline(self):
+        """VWEMA基準線でのテスト"""
+        signal = mean_reversion_combined_signal(
+            self.ohlc_data,
+            baseline_type="vwema",
+            baseline_period=25,
+            deviation_threshold=0.2,
+            deviation_direction="below",
+            recovery_price="close",
+            recovery_direction="above",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+
+    def test_vwema_requires_volume(self):
+        ohlc_without_volume = self.ohlc_data.drop(columns=["Volume"])
+
+        with pytest.raises(ValueError, match="Volume"):
+            mean_reversion_combined_signal(
+                ohlc_without_volume,
+                baseline_type="vwema",
+                baseline_period=25,
+                deviation_threshold=0.2,
+                deviation_direction="below",
+                recovery_price="close",
+                recovery_direction="above",
+            )
 
     def test_invalid_baseline_type(self):
         """不正なベースラインタイプでエラー"""

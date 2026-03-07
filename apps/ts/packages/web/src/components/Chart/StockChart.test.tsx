@@ -1,5 +1,5 @@
 import { act, render, screen } from '@testing-library/react';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   DEFAULT_FUNDAMENTAL_METRIC_ORDER,
   DEFAULT_FUNDAMENTAL_METRIC_VISIBILITY,
@@ -8,6 +8,7 @@ import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
 } from '@/constants/fundamentalsHistoryMetrics';
+import { CHART_COLORS } from '@/lib/constants';
 import type { StockDataPoint } from '@/types/chart';
 import { calculateChangePct, formatPrice, StockChart, timeToDateString } from './StockChart';
 
@@ -36,6 +37,7 @@ const mockChartStore = {
     indicators: {
       sma: { enabled: false, period: 20 },
       ema: { enabled: false, period: 12 },
+      vwema: { enabled: false, period: 20 },
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 3.0 },
@@ -77,24 +79,38 @@ vi.mock('@/stores/chartStore', () => ({
 // Capture crosshairMove callback for OHLCOverlay tests
 let crosshairCallback: ((param: unknown) => void) | null = null;
 let mockCandlestickSeries: Record<string, unknown>;
+let mockAddSeries: ReturnType<typeof vi.fn>;
+let mockRemoveSeries: ReturnType<typeof vi.fn>;
+let mockApplyOptions: ReturnType<typeof vi.fn>;
+let mockSeriesInstances: Array<{ setData: ReturnType<typeof vi.fn>; priceScale: ReturnType<typeof vi.fn> }>;
 
 vi.mock('lightweight-charts', () => ({
   createChart: vi.fn(() => {
-    mockCandlestickSeries = {
-      setData: vi.fn(),
-      priceScale: vi.fn(() => ({
-        applyOptions: vi.fn(),
-      })),
-    };
+    mockSeriesInstances = [];
+    mockAddSeries = vi.fn(() => {
+      const series = {
+        setData: vi.fn(),
+        priceScale: vi.fn(() => ({
+          applyOptions: vi.fn(),
+        })),
+      };
+      mockSeriesInstances.push(series);
+      if (mockSeriesInstances.length === 1) {
+        mockCandlestickSeries = series;
+      }
+      return series;
+    });
+    mockRemoveSeries = vi.fn();
+    mockApplyOptions = vi.fn();
     return {
-      addSeries: vi.fn(() => mockCandlestickSeries),
+      addSeries: mockAddSeries,
       timeScale: vi.fn(() => ({
         setVisibleRange: vi.fn(),
         setVisibleLogicalRange: vi.fn(),
       })),
-      applyOptions: vi.fn(),
+      applyOptions: mockApplyOptions,
       remove: vi.fn(),
-      removeSeries: vi.fn(),
+      removeSeries: mockRemoveSeries,
       subscribeCrosshairMove: vi.fn((cb: (param: unknown) => void) => {
         crosshairCallback = cb;
       }),
@@ -127,9 +143,33 @@ const mockStockData: StockDataPoint[] = [
   },
 ];
 
+function stubResizeObserver(): { trigger: () => void } {
+  let resizeCallback: (() => void) | null = null;
+
+  class ResizeObserverMock {
+    observe = vi.fn();
+    disconnect = vi.fn();
+
+    constructor(callback: () => void) {
+      resizeCallback = callback;
+    }
+  }
+
+  vi.stubGlobal('ResizeObserver', ResizeObserverMock);
+  return {
+    trigger: () => resizeCallback?.(),
+  };
+}
+
 describe('StockChart', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mockChartStore.settings.showVolume = true;
+    mockChartStore.settings.indicators.vwema.enabled = false;
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
   });
 
   it('renders chart container', () => {
@@ -204,6 +244,61 @@ describe('StockChart', () => {
 
     // After unmount, container should be empty
     expect(container.children.length).toBe(0);
+  });
+
+  it('renders and removes VWEMA overlay when toggled', () => {
+    mockChartStore.settings.indicators.vwema.enabled = true;
+    const vwemaData = mockStockData.map((item, index) => ({
+      time: item.time,
+      value: 102 + index,
+    }));
+
+    const { rerender } = render(<StockChart data={mockStockData} vwema={vwemaData} />);
+
+    const vwemaCallIndex = mockAddSeries.mock.calls.findIndex(
+      ([seriesType, options]) =>
+        seriesType === 'LineSeries' &&
+        typeof options === 'object' &&
+        options !== null &&
+        'color' in options &&
+        options.color === CHART_COLORS.VWEMA
+    );
+    expect(vwemaCallIndex).toBeGreaterThanOrEqual(0);
+    const vwemaSeries = mockSeriesInstances[vwemaCallIndex];
+    expect(vwemaSeries?.setData).toHaveBeenCalledWith(vwemaData);
+
+    mockChartStore.settings.indicators.vwema.enabled = false;
+    rerender(<StockChart data={mockStockData} vwema={vwemaData} />);
+
+    expect(mockRemoveSeries).toHaveBeenCalledWith(vwemaSeries);
+  });
+
+  it('resizes chart when observer reports valid dimensions', () => {
+    const resizeObserver = stubResizeObserver();
+    const { container } = render(<StockChart data={mockStockData} />);
+    const chartContainer = container.querySelector('.absolute.inset-0') as HTMLDivElement;
+    Object.defineProperty(chartContainer, 'clientWidth', { configurable: true, value: 900 });
+    Object.defineProperty(chartContainer, 'clientHeight', { configurable: true, value: 420 });
+
+    act(() => {
+      resizeObserver.trigger();
+    });
+
+    expect(mockApplyOptions).toHaveBeenCalledWith({ width: 900, height: 420 });
+  });
+
+  it('skips resize when observer reports too-small dimensions', () => {
+    const resizeObserver = stubResizeObserver();
+    const { container } = render(<StockChart data={mockStockData} />);
+    const chartContainer = container.querySelector('.absolute.inset-0') as HTMLDivElement;
+    Object.defineProperty(chartContainer, 'clientWidth', { configurable: true, value: 0 });
+    Object.defineProperty(chartContainer, 'clientHeight', { configurable: true, value: 120 });
+
+    act(() => {
+      resizeObserver.trigger();
+    });
+
+    expect(mockApplyOptions).not.toHaveBeenCalled();
   });
 });
 

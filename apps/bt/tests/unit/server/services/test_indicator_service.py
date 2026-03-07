@@ -142,18 +142,18 @@ class TestMakeKey:
         assert _make_key("bollinger", period=20, std=2.0) == "bollinger_20_2.0"
 
 
-# ===== 12 Indicator Compute Function Tests =====
+# ===== 13 Indicator Compute Function Tests =====
 
 
 class TestIndicatorRegistry:
-    """全12インジケーターのレジストリテスト"""
+    """全13インジケーターのレジストリテスト"""
 
-    def test_registry_has_12_entries(self):
-        assert len(INDICATOR_REGISTRY) == 12
+    def test_registry_has_13_entries(self):
+        assert len(INDICATOR_REGISTRY) == 13
 
     def test_all_types_registered(self):
         expected = {
-            "sma", "ema", "rsi", "macd", "ppo", "bollinger",
+            "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
             "trading_value_ma", "risk_adjusted_return",
         }
@@ -176,6 +176,20 @@ class TestComputeEMA:
         key, records = INDICATOR_REGISTRY["ema"](ohlcv, {"period": 12}, "include")
         assert key == "ema_12"
         assert len(records) == 200
+
+
+class TestComputeVWEMA:
+    def test_basic(self):
+        ohlcv = _make_ohlcv()
+        key, records = INDICATOR_REGISTRY["vwema"](ohlcv, {"period": 20}, "include")
+        assert key == "vwema_20"
+        assert len(records) == 200
+
+    def test_requires_volume_column(self):
+        ohlcv = _make_ohlcv().drop(columns=["Volume"])
+
+        with pytest.raises(ValueError, match="Volume"):
+            INDICATOR_REGISTRY["vwema"](ohlcv, {"period": 20}, "include")
 
 
 class TestComputeRSI:

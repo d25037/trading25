@@ -60,6 +60,7 @@ const mockChartStore = {
     indicators: {
       sma: { enabled: false, period: 20 },
       ema: { enabled: false, period: 12 },
+      vwema: { enabled: false, period: 20 },
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 3.0 },
@@ -346,6 +347,18 @@ describe('ChartControls', () => {
     await user.click(screen.getByRole('switch', { name: /risk adjusted return/i }));
 
     expect(mockChartStore.updateSettings).toHaveBeenCalledWith({ showRiskAdjustedReturnChart: true });
+  });
+
+  it('opens overlay indicators dialog and toggles VWEMA', async () => {
+    const user = userEvent.setup();
+    mockChartStore.updateIndicatorSettings = vi.fn();
+
+    render(<ChartControls />, { wrapper: TestWrapper });
+
+    await user.click(screen.getByRole('button', { name: 'Overlay Indicators' }));
+    await user.click(screen.getByRole('switch', { name: /vwema/i }));
+
+    expect(mockChartStore.updateIndicatorSettings).toHaveBeenCalledWith('vwema', { enabled: true });
   });
 
   it('shows signal metadata in sub-chart indicators when reference API is available', async () => {

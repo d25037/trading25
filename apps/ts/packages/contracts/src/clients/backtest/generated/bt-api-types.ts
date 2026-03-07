@@ -4603,7 +4603,7 @@ export interface components {
              * @description インジケータータイプ
              * @enum {string}
              */
-            type: "sma" | "ema" | "rsi" | "macd" | "ppo" | "bollinger" | "atr" | "atr_support" | "nbar_support" | "volume_comparison" | "trading_value_ma" | "risk_adjusted_return";
+            type: "sma" | "ema" | "vwema" | "rsi" | "macd" | "ppo" | "bollinger" | "atr" | "atr_support" | "nbar_support" | "volume_comparison" | "trading_value_ma" | "risk_adjusted_return";
         };
         /**
          * IndicesListResponse

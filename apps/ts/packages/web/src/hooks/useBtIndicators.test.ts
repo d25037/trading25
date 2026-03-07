@@ -32,6 +32,7 @@ describe('buildIndicatorSpecs', () => {
     indicators: {
       sma: { enabled: false, period: 20 },
       ema: { enabled: false, period: 12 },
+      vwema: { enabled: false, period: 20 },
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 2.0 },
@@ -92,6 +93,15 @@ describe('buildIndicatorSpecs', () => {
     };
     const specs = buildIndicatorSpecs(settings);
     expect(specs).toContainEqual({ type: 'ema', params: { period: 50 } });
+  });
+
+  it('should include VWEMA when enabled', () => {
+    const settings = {
+      ...baseSettings,
+      indicators: { ...baseSettings.indicators, vwema: { enabled: true, period: 34 } },
+    };
+    const specs = buildIndicatorSpecs(settings);
+    expect(specs).toContainEqual({ type: 'vwema', params: { period: 34 } });
   });
 
   it('should map MACD params correctly', () => {
@@ -228,6 +238,19 @@ describe('mapBtResponseToChartData', () => {
     expect(macdData[0]).toEqual({ time: '2024-01-01', macd: 1.5, signal: 1.0, histogram: 0.5 });
   });
 
+  it('should transform VWEMA records', () => {
+    const response = {
+      stock_code: '7203',
+      timeframe: 'daily',
+      meta: { bars: 100 },
+      indicators: {
+        vwema_20: [{ date: '2024-01-01', value: 101.25 }],
+      },
+    };
+    const result = mapBtResponseToChartData(response);
+    expect(result.indicators.vwema).toEqual([{ time: '2024-01-01', value: 101.25 }]);
+  });
+
   it('should transform PPO records', () => {
     const response = {
       stock_code: '7203',
@@ -337,6 +360,7 @@ describe('useBtIndicators', () => {
     indicators: {
       sma: { enabled: true, period: 20 },
       ema: { enabled: false, period: 12 },
+      vwema: { enabled: false, period: 20 },
       macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
       ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
       atrSupport: { enabled: false, period: 20, multiplier: 2.0 },
@@ -452,6 +476,7 @@ describe('useBtIndicators', () => {
       indicators: {
         sma: { enabled: false, period: 20 },
         ema: { enabled: false, period: 12 },
+        vwema: { enabled: false, period: 20 },
         macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
         ppo: { enabled: false, fast: 12, slow: 26, signal: 9 },
         atrSupport: { enabled: false, period: 20, multiplier: 2.0 },

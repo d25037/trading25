@@ -44,6 +44,12 @@ class TestParamsModels:
         p = EMAParams(period=12)
         assert p.period == 12
 
+    def test_vwema_params_valid(self):
+        from src.entrypoints.http.schemas.indicators import VWEMAParams
+
+        p = VWEMAParams(period=20)
+        assert p.period == 20
+
     def test_rsi_params_default(self):
         p = RSIParams()
         assert p.period == 14
@@ -138,14 +144,14 @@ class TestIndicatorSpec:
         with pytest.raises(ValidationError):
             IndicatorSpec(type="unknown", params={})
 
-    def test_all_12_types(self):
+    def test_all_13_types(self):
         types = [
-            "sma", "ema", "rsi", "macd", "ppo", "bollinger",
+            "sma", "ema", "vwema", "rsi", "macd", "ppo", "bollinger",
             "atr", "atr_support", "nbar_support", "volume_comparison",
             "trading_value_ma", "risk_adjusted_return",
         ]
         for t in types:
-            spec = IndicatorSpec(type=t, params={} if t not in ("sma", "ema") else {"period": 20})
+            spec = IndicatorSpec(type=t, params={} if t not in ("sma", "ema", "vwema") else {"period": 20})
             assert spec.type == t
 
 
