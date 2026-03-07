@@ -29,8 +29,18 @@ class DummyMarketDb:
     def get_stock_count_by_market(self) -> dict[str, int]:
         return {"プライム": 2}
 
-    def get_fundamentals_target_codes(self) -> set[str]:
-        return set(self._fundamentals_target_codes)
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]:
+        return [
+            {
+                "code": code,
+                "company_name": "",
+                "market_code": "0111",
+            }
+            for code in sorted(self._fundamentals_target_codes)
+        ]
+
+    def get_index_master_category_counts(self) -> dict[str, int]:
+        return {"sector33": 1}
 
 
 class DummyStore:
@@ -99,10 +109,13 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
 
     assert result.timeSeriesSource == "duckdb-parquet"
     assert result.databaseSize == 0
+    assert result.storage.totalBytes == 0
     assert result.topix.dateRange is None
     assert result.stockData.dateRange is None
     assert result.stockData.averageStocksPerDay == 0
     assert result.indices.dateRange is None
+    assert result.indices.byCategory == {"sector33": 1}
     assert result.margin.count == 0
     assert result.margin.dateRange is None
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
+    assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0

@@ -5158,6 +5158,16 @@ export interface components {
              */
             coveredStocks: number;
             /**
+             * Emptyskippedcount
+             * @default 0
+             */
+            emptySkippedCount: number;
+            /**
+             * Issueraliascoveredcount
+             * @default 0
+             */
+            issuerAliasCoveredCount: number;
+            /**
              * Listedmarketstocks
              * @default 0
              */
@@ -5524,6 +5534,7 @@ export interface components {
             margin: components["schemas"]["MarginStats"];
             stockData: components["schemas"]["StockDataStats"];
             stocks: components["schemas"]["StockStats"];
+            storage: components["schemas"]["StorageStats"];
             /**
              * Timeseriessource
              * @default duckdb-parquet
@@ -5587,6 +5598,7 @@ export interface components {
             margin: components["schemas"]["MarginValidation"];
             /** Recommendations */
             recommendations?: string[];
+            sampleWindows: components["schemas"]["ValidationSampleWindows"];
             /**
              * Status
              * @enum {string}
@@ -7673,6 +7685,24 @@ export interface components {
             /** Weight */
             weight: number;
         };
+        /** StorageStats */
+        StorageStats: {
+            /**
+             * Duckdbbytes
+             * @default 0
+             */
+            duckdbBytes: number;
+            /**
+             * Parquetbytes
+             * @default 0
+             */
+            parquetBytes: number;
+            /**
+             * Totalbytes
+             * @default 0
+             */
+            totalBytes: number;
+        };
         /**
          * StrategyDeleteResponse
          * @description 戦略削除レスポンス
@@ -8184,6 +8214,39 @@ export interface components {
             msg: string;
             /** Error Type */
             type: string;
+        };
+        /** ValidationSampleWindow */
+        ValidationSampleWindow: {
+            /**
+             * Limit
+             * @default 0
+             */
+            limit: number;
+            /**
+             * Returnedcount
+             * @default 0
+             */
+            returnedCount: number;
+            /**
+             * Totalcount
+             * @default 0
+             */
+            totalCount: number;
+            /**
+             * Truncated
+             * @default false
+             */
+            truncated: boolean;
+        };
+        /** ValidationSampleWindows */
+        ValidationSampleWindows: {
+            adjustmentEvents: components["schemas"]["ValidationSampleWindow"];
+            failedDates: components["schemas"]["ValidationSampleWindow"];
+            fundamentalsEmptySkippedCodes: components["schemas"]["ValidationSampleWindow"];
+            marginEmptySkippedCodes: components["schemas"]["ValidationSampleWindow"];
+            missingListedMarketStocks: components["schemas"]["ValidationSampleWindow"];
+            stockDataMissingDates: components["schemas"]["ValidationSampleWindow"];
+            stocksNeedingRefresh: components["schemas"]["ValidationSampleWindow"];
         };
         /** WatchlistCreateRequest */
         WatchlistCreateRequest: {

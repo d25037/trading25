@@ -93,15 +93,53 @@ beforeEach(() => {
       initialized: true,
       lastSync: '2026-02-28T02:29:45.768793+00:00',
       timeSeriesSource: 'duckdb-parquet',
-      stockData: { dateRange: { min: '2024-01-01', max: '2026-02-27' } },
-      topix: { dateRange: { min: '2016-02-29', max: '2026-02-27' } },
-      indices: { dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+      databaseSize: 4096,
+      storage: {
+        duckdbBytes: 4096,
+        parquetBytes: 8192,
+        totalBytes: 12288,
+      },
+      topix: {
+        count: 2450,
+        dateRange: { min: '2016-02-29', max: '2026-02-27' },
+      },
+      stocks: {
+        total: 3800,
+        byMarket: { Prime: 1800, Standard: 1200, Growth: 800 },
+      },
+      stockData: {
+        count: 1200000,
+        dateCount: 520,
+        dateRange: { min: '2024-01-01', max: '2026-02-27' },
+        averageStocksPerDay: 2307.69,
+      },
+      indices: {
+        masterCount: 75,
+        dataCount: 56000,
+        dateCount: 520,
+        dateRange: { min: '2016-02-29', max: '2026-02-27' },
+        byCategory: { sector33: 33, sector17: 17, style: 5 },
+      },
       margin: {
         count: 2400,
         uniqueStockCount: 1200,
         dateCount: 120,
         dateRange: { min: '2024-01-05', max: '2026-02-27' },
       },
+      fundamentals: {
+        count: 9800,
+        uniqueStockCount: 2500,
+        latestDisclosedDate: '2026-02-26',
+        listedMarketCoverage: {
+          listedMarketStocks: 2500,
+          coveredStocks: 2493,
+          missingStocks: 7,
+          coverageRatio: 0.9972,
+          issuerAliasCoveredCount: 6,
+          emptySkippedCount: 4,
+        },
+      },
+      lastUpdated: '2026-03-01T12:00:00Z',
     },
     isLoading: false,
     error: null,
@@ -110,7 +148,18 @@ beforeEach(() => {
   mockUseDbValidation.mockReturnValue({
     data: {
       status: 'warning',
-      stockData: { missingDatesCount: 12 },
+      initialized: true,
+      lastSync: '2026-02-28T02:29:45.768793+00:00',
+      lastStocksRefresh: '2026-03-01T03:00:00Z',
+      timeSeriesSource: 'duckdb-parquet',
+      topix: { count: 2450, dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+      stocks: { total: 3800, byMarket: { Prime: 1800 } },
+      stockData: {
+        count: 1200000,
+        dateRange: { min: '2024-01-01', max: '2026-02-27' },
+        missingDatesCount: 12,
+        missingDates: ['2026-02-27', '2026-02-20'],
+      },
       margin: {
         count: 2400,
         uniqueStockCount: 1200,
@@ -121,6 +170,9 @@ beforeEach(() => {
         emptySkippedCodes: ['4957'],
       },
       fundamentals: {
+        count: 9800,
+        uniqueStockCount: 2500,
+        latestDisclosedDate: '2026-02-26',
         missingListedMarketStocksCount: 7,
         missingListedMarketStocks: ['1301', '9999'],
         issuerAliasCoveredCount: 6,
@@ -129,13 +181,30 @@ beforeEach(() => {
         failedDatesCount: 0,
         failedCodesCount: 0,
       },
+      failedDates: ['2026-02-27', '2026-02-20'],
       failedDatesCount: 3,
+      adjustmentEvents: [
+        { code: '7203', date: '2026-02-14', adjustmentFactor: 0.5, close: 1000, eventType: 'stock_split' },
+      ],
+      adjustmentEventsCount: 8,
+      stocksNeedingRefresh: ['7203', '6758'],
       stocksNeedingRefreshCount: 100,
-      integrityIssuesCount: 0,
+      integrityIssues: [{ code: 'chart.stock_data.missing_dates', count: 12 }],
+      integrityIssuesCount: 1,
+      sampleWindows: {
+        stockDataMissingDates: { returnedCount: 2, totalCount: 12, limit: 20, truncated: false },
+        failedDates: { returnedCount: 2, totalCount: 3, limit: 10, truncated: false },
+        adjustmentEvents: { returnedCount: 1, totalCount: 8, limit: 20, truncated: false },
+        stocksNeedingRefresh: { returnedCount: 2, totalCount: 100, limit: 20, truncated: true },
+        missingListedMarketStocks: { returnedCount: 2, totalCount: 7, limit: 20, truncated: false },
+        fundamentalsEmptySkippedCodes: { returnedCount: 2, totalCount: 4, limit: 20, truncated: false },
+        marginEmptySkippedCodes: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
+      },
       recommendations: [
         'Run repair sync to refresh 100 stocks with pending adjustment backfill',
         'Run repair sync to backfill fundamentals for 7 listed-market stocks',
       ],
+      lastUpdated: '2026-03-01T12:00:01Z',
     },
     isLoading: false,
     error: null,
@@ -326,19 +395,25 @@ describe('SettingsPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Market DB' })).toBeInTheDocument();
     expect(screen.getByText('DuckDB Snapshot')).toBeInTheDocument();
-    expect(screen.getByText('Stock Data Latest')).toBeInTheDocument();
-    expect(screen.getAllByText('2026-02-27').length).toBeGreaterThan(0);
-    expect(screen.getByText('Margin Latest')).toBeInTheDocument();
-    expect(screen.getByText('Margin Stocks')).toBeInTheDocument();
+    expect(screen.getByText('Snapshot Summary')).toBeInTheDocument();
+    expect(screen.getByText('Data Coverage')).toBeInTheDocument();
+    expect(screen.getByText('Validation Diagnostics')).toBeInTheDocument();
+    expect(screen.getByText('Local Storage')).toBeInTheDocument();
+    expect(screen.getAllByText('12 KB').length).toBeGreaterThan(0);
+    expect(screen.getByText('Stock Data')).toBeInTheDocument();
+    expect(screen.getByText('Fundamentals')).toBeInTheDocument();
     expect(screen.getByText('Margin Orphans')).toBeInTheDocument();
     expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
+    expect(screen.getAllByText('Sample dates: 2026-02-27, 2026-02-20').length).toBeGreaterThan(0);
+    expect(screen.getByText('Failed Sync Dates')).toBeInTheDocument();
+    expect(screen.getByText('Adjustment Events')).toBeInTheDocument();
     expect(screen.getByText('Stocks Needing Refresh')).toBeInTheDocument();
+    expect(screen.getByText('Showing 2 of 100.')).toBeInTheDocument();
+    expect(screen.getByText('Readiness Issues')).toBeInTheDocument();
     expect(screen.getAllByText('Missing Listed-Market Fundamentals').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Unsupported/Empty Fundamentals').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('Preferred Alias Covered').length).toBeGreaterThan(0);
     expect(screen.getAllByText('Unsupported/Empty Margin Codes').length).toBeGreaterThan(0);
-    expect(screen.getByText('Coverage Diagnostics')).toBeInTheDocument();
     expect(screen.getByText('Sample codes: 1301, 9999')).toBeInTheDocument();
     expect(screen.getByText('Sample codes: 464A, 500A')).toBeInTheDocument();
     expect(screen.getByText('Sample codes: 4957')).toBeInTheDocument();
@@ -471,6 +546,7 @@ describe('SettingsPage', () => {
         },
         failedDatesCount: 0,
         stocksNeedingRefreshCount: 0,
+        integrityIssues: [{ code: 'chart.topix_data.missing', count: 1 }],
         integrityIssuesCount: 1,
         recommendations: ['Run initial sync to populate the database'],
       },
@@ -637,6 +713,21 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     expect(screen.getByText('Failed to load db stats')).toBeInTheDocument();
+  });
+
+  it('keeps validation diagnostics visible when stats request fails', () => {
+    mockUseDbStats.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: new Error('Failed to load db stats'),
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('Failed to load db stats')).toBeInTheDocument();
+    expect(screen.getByText('Validation Diagnostics')).toBeInTheDocument();
+    expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
   });
 
   it('shows refresh pending state and refresh error', () => {

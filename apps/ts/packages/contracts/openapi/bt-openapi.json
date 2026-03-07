@@ -5086,6 +5086,16 @@
             "title": "Coveredstocks",
             "type": "integer"
           },
+          "emptySkippedCount": {
+            "default": 0,
+            "title": "Emptyskippedcount",
+            "type": "integer"
+          },
+          "issuerAliasCoveredCount": {
+            "default": 0,
+            "title": "Issueraliascoveredcount",
+            "type": "integer"
+          },
           "listedMarketStocks": {
             "default": 0,
             "title": "Listedmarketstocks",
@@ -5876,6 +5886,9 @@
           "stocks": {
             "$ref": "#/components/schemas/StockStats"
           },
+          "storage": {
+            "$ref": "#/components/schemas/StorageStats"
+          },
           "timeSeriesSource": {
             "default": "duckdb-parquet",
             "title": "Timeseriessource",
@@ -5888,6 +5901,7 @@
         "required": [
           "initialized",
           "databaseSize",
+          "storage",
           "topix",
           "stocks",
           "stockData",
@@ -6010,6 +6024,9 @@
             "title": "Recommendations",
             "type": "array"
           },
+          "sampleWindows": {
+            "$ref": "#/components/schemas/ValidationSampleWindows"
+          },
           "status": {
             "enum": [
               "healthy",
@@ -6054,6 +6071,7 @@
           "stockData",
           "margin",
           "fundamentals",
+          "sampleWindows",
           "lastUpdated"
         ],
         "title": "MarketValidationResponse",
@@ -10909,6 +10927,27 @@
         "title": "StockWeight",
         "type": "object"
       },
+      "StorageStats": {
+        "properties": {
+          "duckdbBytes": {
+            "default": 0,
+            "title": "Duckdbbytes",
+            "type": "integer"
+          },
+          "parquetBytes": {
+            "default": 0,
+            "title": "Parquetbytes",
+            "type": "integer"
+          },
+          "totalBytes": {
+            "default": 0,
+            "title": "Totalbytes",
+            "type": "integer"
+          }
+        },
+        "title": "StorageStats",
+        "type": "object"
+      },
       "StrategyDeleteResponse": {
         "description": "戦略削除レスポンス",
         "properties": {
@@ -11906,6 +11945,68 @@
           "type"
         ],
         "title": "ValidationError",
+        "type": "object"
+      },
+      "ValidationSampleWindow": {
+        "properties": {
+          "limit": {
+            "default": 0,
+            "title": "Limit",
+            "type": "integer"
+          },
+          "returnedCount": {
+            "default": 0,
+            "title": "Returnedcount",
+            "type": "integer"
+          },
+          "totalCount": {
+            "default": 0,
+            "title": "Totalcount",
+            "type": "integer"
+          },
+          "truncated": {
+            "default": false,
+            "title": "Truncated",
+            "type": "boolean"
+          }
+        },
+        "title": "ValidationSampleWindow",
+        "type": "object"
+      },
+      "ValidationSampleWindows": {
+        "properties": {
+          "adjustmentEvents": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "failedDates": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "fundamentalsEmptySkippedCodes": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "marginEmptySkippedCodes": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "missingListedMarketStocks": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "stockDataMissingDates": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "stocksNeedingRefresh": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          }
+        },
+        "required": [
+          "stockDataMissingDates",
+          "failedDates",
+          "adjustmentEvents",
+          "stocksNeedingRefresh",
+          "missingListedMarketStocks",
+          "fundamentalsEmptySkippedCodes",
+          "marginEmptySkippedCodes"
+        ],
+        "title": "ValidationSampleWindows",
         "type": "object"
       },
       "WatchlistCreateRequest": {

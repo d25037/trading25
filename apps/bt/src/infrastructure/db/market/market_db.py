@@ -848,7 +848,7 @@ class MarketDb:
         """indices_data 統計。"""
         master_count = self._count_rows("index_master")
         if not self._table_exists("indices_data"):
-            by_category = self._load_index_master_category_counts()
+            by_category = self.get_index_master_category_counts()
             return {
                 "masterCount": master_count,
                 "dataCount": 0,
@@ -867,7 +867,7 @@ class MarketDb:
             FROM indices_data
             """
         )
-        by_category = self._load_index_master_category_counts()
+        by_category = self.get_index_master_category_counts()
         if row is None or row[2] is None:
             return {
                 "masterCount": master_count,
@@ -883,6 +883,9 @@ class MarketDb:
             "dateRange": {"min": str(row[2]), "max": str(row[3])},
             "byCategory": by_category,
         }
+
+    def get_index_master_category_counts(self) -> dict[str, int]:
+        return self._load_index_master_category_counts()
 
     def _load_index_master_category_counts(self) -> dict[str, int]:
         if not self._table_exists("index_master"):
@@ -987,6 +990,19 @@ class MarketDb:
             for row in rows
             if row and row[0] and row[1] and row[2] is not None
         ]
+
+    def get_adjustment_events_count(self) -> int:
+        if not self._table_exists("stock_data"):
+            return 0
+        row = self._fetchone(
+            """
+            SELECT COUNT(*)
+            FROM stock_data
+            WHERE adjustment_factor IS NOT NULL
+              AND adjustment_factor != 1.0
+            """
+        )
+        return int(row[0] or 0) if row else 0
 
     def _latest_adjustment_rows(self, codes: list[str] | None = None) -> list[tuple[str, str]]:
         if not self._table_exists("stock_data"):

@@ -10,6 +10,12 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Protocol
 
+from src.application.services.listed_market_targets import (
+    build_fundamentals_coverage,
+    build_fundamentals_target_map,
+    normalize_frontier_date,
+    resolve_frontier_cache_codes,
+)
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.entrypoints.http.schemas.db import (
@@ -20,6 +26,7 @@ from src.entrypoints.http.schemas.db import (
     MarginStats,
     MarketStatsResponse,
     StockDataStats,
+    StorageStats,
     StockStats,
     TopixStats,
 )
@@ -30,19 +37,51 @@ class MarketDbStatsLike(Protocol):
     def get_sync_metadata(self, key: str) -> str | None: ...
     def get_stats(self) -> dict[str, int]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
-    def get_fundamentals_target_codes(self) -> set[str]: ...
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
+    def get_index_master_category_counts(self) -> dict[str, int]: ...
 
 
 class TimeSeriesStoreStatsLike(Protocol):
     def inspect(self) -> TimeSeriesInspection: ...
+    def get_storage_stats(self) -> object: ...
 
 
 def _resolve_duckdb_size_bytes(time_series_store: object) -> int:
+    storage_stats = getattr(time_series_store, "get_storage_stats", None)
+    if callable(storage_stats):
+        stats = storage_stats()
+        duckdb_bytes = getattr(stats, "duckdb_bytes", None)
+        if isinstance(duckdb_bytes, int):
+            return duckdb_bytes
     duckdb_path = getattr(time_series_store, "_duckdb_path", None)
     if not isinstance(duckdb_path, Path):
         return 0
     try:
         return int(duckdb_path.stat().st_size) if duckdb_path.exists() else 0
+    except OSError:
+        return 0
+
+
+def _resolve_parquet_size_bytes(time_series_store: object) -> int:
+    storage_stats = getattr(time_series_store, "get_storage_stats", None)
+    if callable(storage_stats):
+        stats = storage_stats()
+        parquet_bytes = getattr(stats, "parquet_bytes", None)
+        if isinstance(parquet_bytes, int):
+            return parquet_bytes
+
+    parquet_dir = getattr(time_series_store, "_parquet_dir", None)
+    if not isinstance(parquet_dir, Path):
+        return 0
+    try:
+        if not parquet_dir.exists():
+            return 0
+        total = 0
+        for file_path in parquet_dir.rglob("*.parquet"):
+            if not file_path.is_file():
+                continue
+            total += int(file_path.stat().st_size)
+        return total
     except OSError:
         return 0
 
@@ -60,13 +99,34 @@ def get_market_stats(
     # Metadata / reference data (DuckDB metadata tables)
     basic = market_db.get_stats()
     by_market = market_db.get_stock_count_by_market()
+    index_master_by_category = market_db.get_index_master_category_counts()
     statement_codes = set(inspection.statement_codes)
     latest_disclosed_date = inspection.latest_statement_disclosed_date
-    target_codes = market_db.get_fundamentals_target_codes()
-    target_count = len(target_codes)
-    covered_count = len(target_codes & statement_codes)
-    missing_count = len(target_codes - statement_codes)
-    coverage_ratio = round(covered_count / target_count, 4) if target_count > 0 else 0.0
+    fundamentals_target_map = build_fundamentals_target_map(
+        market_db.get_fundamentals_target_stock_rows()
+    )
+    fundamentals_frontier = normalize_frontier_date(
+        market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
+        or latest_disclosed_date
+    )
+    fundamentals_empty_skipped_codes = resolve_frontier_cache_codes(
+        market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]),
+        fundamentals_frontier,
+    )
+    fundamentals_coverage = build_fundamentals_coverage(
+        fundamentals_target_map,
+        statement_codes,
+        empty_skipped_codes=fundamentals_empty_skipped_codes,
+        limit_missing=0,
+        limit_empty=0,
+    )
+    duckdb_bytes = _resolve_duckdb_size_bytes(time_series_store)
+    parquet_bytes = _resolve_parquet_size_bytes(time_series_store)
+    storage = StorageStats(
+        duckdbBytes=duckdb_bytes,
+        parquetBytes=parquet_bytes,
+        totalBytes=duckdb_bytes + parquet_bytes,
+    )
 
     # Topix
     topix = TopixStats(
@@ -104,7 +164,7 @@ def get_market_stats(
         dateRange=DateRange(min=inspection.indices_min, max=inspection.indices_max)
         if inspection.indices_min and inspection.indices_max
         else None,
-        byCategory={},
+        byCategory=index_master_by_category,
     )
 
     margin = MarginStats(
@@ -121,10 +181,16 @@ def get_market_stats(
         uniqueStockCount=len(statement_codes),
         latestDisclosedDate=latest_disclosed_date,
         listedMarketCoverage=ListedMarketCoverage(
-            listedMarketStocks=target_count,
-            coveredStocks=covered_count,
-            missingStocks=missing_count,
-            coverageRatio=coverage_ratio,
+            listedMarketStocks=int(fundamentals_coverage.get("targetCount", 0) or 0),
+            coveredStocks=int(fundamentals_coverage.get("coveredCount", 0) or 0),
+            missingStocks=int(fundamentals_coverage.get("missingCount", 0) or 0),
+            coverageRatio=float(fundamentals_coverage.get("coverageRatio", 0.0) or 0.0),
+            issuerAliasCoveredCount=int(
+                fundamentals_coverage.get("issuerAliasCoveredCount", 0) or 0
+            ),
+            emptySkippedCount=int(
+                fundamentals_coverage.get("emptySkippedCount", 0) or 0
+            ),
         ),
     )
 
@@ -132,7 +198,8 @@ def get_market_stats(
         initialized=initialized,
         lastSync=last_sync,
         timeSeriesSource=inspection.source,
-        databaseSize=_resolve_duckdb_size_bytes(time_series_store),
+        databaseSize=duckdb_bytes,
+        storage=storage,
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data,

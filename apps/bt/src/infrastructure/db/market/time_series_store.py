@@ -32,6 +32,7 @@ class MarketTimeSeriesStore(Protocol):
         statement_non_null_columns: list[str] | None = None,
     ) -> "TimeSeriesInspection": ...
 
+    def get_storage_stats(self) -> "TimeSeriesStorageStats": ...
     def close(self) -> None: ...
 
 
@@ -71,6 +72,16 @@ class TimeSeriesInspection:
     latest_statement_disclosed_date: str | None = None
     statement_codes: set[str] = field(default_factory=set)
     statement_non_null_counts: dict[str, int] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class TimeSeriesStorageStats:
+    duckdb_bytes: int = 0
+    parquet_bytes: int = 0
+
+    @property
+    def total_bytes(self) -> int:
+        return self.duckdb_bytes + self.parquet_bytes
 
 
 class DuckDbParquetTimeSeriesStore:
@@ -671,6 +682,32 @@ class DuckDbParquetTimeSeriesStore:
                 source_sql = spec.table_name
             self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
             self._dirty_tables.discard(table_name)
+
+    def get_storage_stats(self) -> TimeSeriesStorageStats:
+        return TimeSeriesStorageStats(
+            duckdb_bytes=self._resolve_path_size(self._duckdb_path),
+            parquet_bytes=self._resolve_parquet_dir_size(),
+        )
+
+    @staticmethod
+    def _resolve_path_size(path: Path) -> int:
+        try:
+            return int(path.stat().st_size) if path.exists() else 0
+        except OSError:
+            return 0
+
+    def _resolve_parquet_dir_size(self) -> int:
+        try:
+            if not self._parquet_dir.exists():
+                return 0
+            total = 0
+            for file_path in self._parquet_dir.rglob("*.parquet"):
+                if not file_path.is_file():
+                    continue
+                total += int(file_path.stat().st_size)
+            return total
+        except OSError:
+            return 0
 
     def close(self) -> None:
         with self._lock:
