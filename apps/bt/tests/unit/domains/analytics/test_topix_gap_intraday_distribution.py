@@ -135,7 +135,7 @@ def test_gap_boundaries_and_missing_prev_close_are_handled(analytics_db_path: st
     assert result.excluded_topix_days_without_prev_close == 1
     assert result.available_start_date == "2024-01-01"
     assert result.available_end_date == "2024-01-04"
-    assert result.analysis_start_date == "2024-01-01"
+    assert result.analysis_start_date == "2024-01-02"
     assert result.analysis_end_date == "2024-01-04"
 
 
@@ -195,6 +195,45 @@ def test_selected_date_range_filters_results(analytics_db_path: str) -> None:
     assert result.analysis_start_date == "2024-01-03"
     assert result.analysis_end_date == "2024-01-04"
     assert tuple(result.summary_df["stock_group"].unique()) == ("PRIME", "TOPIX500")
+
+
+def test_null_topix_open_is_excluded_from_gap_buckets(analytics_db_path: str) -> None:
+    conn = duckdb.connect(analytics_db_path)
+    conn.execute("UPDATE topix_data SET open = NULL WHERE date = ?", ["2024-01-02"])
+    conn.close()
+
+    result = run_topix_gap_intraday_distribution(
+        analytics_db_path,
+        selected_groups=["PRIME"],
+        sample_size=10,
+    )
+
+    day_counts = dict(
+        zip(result.day_counts_df["gap_bucket_key"], result.day_counts_df["day_count"], strict=True)
+    )
+    assert day_counts == {
+        "gap_lt_threshold_1": 1,
+        "gap_threshold_1_to_2": 0,
+        "gap_ge_threshold_2": 1,
+    }
+    assert result.excluded_topix_days_without_prev_close == 2
+    assert result.analysis_start_date == "2024-01-03"
+    assert result.analysis_end_date == "2024-01-04"
+
+
+def test_analysis_range_is_empty_when_no_rows_are_analyzable(analytics_db_path: str) -> None:
+    result = run_topix_gap_intraday_distribution(
+        analytics_db_path,
+        start_date="2024-01-01",
+        end_date="2024-01-01",
+        selected_groups=["PRIME"],
+        sample_size=10,
+    )
+
+    assert result.analysis_start_date is None
+    assert result.analysis_end_date is None
+    assert result.samples_df.empty
+    assert result.summary_df["sample_count"].sum() == 0
 
 
 def test_sampling_is_deterministic(analytics_db_path: str) -> None:

@@ -258,13 +258,13 @@ def _grouped_stock_days_cte(
                 close,
                 prev_close,
                 CASE
-                    WHEN prev_close IS NULL OR prev_close = 0 THEN NULL
+                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
                     WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_ge_threshold_2'
                     WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_threshold_1_to_2'
                     ELSE 'gap_lt_threshold_1'
                 END AS gap_bucket_key,
                 CASE
-                    WHEN prev_close IS NULL OR prev_close = 0 THEN NULL
+                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
                     ELSE (open - prev_close) / prev_close
                 END AS gap_return
                 FROM (
@@ -360,7 +360,9 @@ def _query_day_counts(
     gap_threshold_2: float,
 ) -> tuple[pd.DataFrame, int]:
     gap_where_sql, gap_params = _date_where_clause("date", start_date, end_date)
-    excluded_conditions: list[str] = ["prev_close IS NULL OR prev_close = 0"]
+    excluded_conditions: list[str] = [
+        "open IS NULL OR prev_close IS NULL OR prev_close = 0"
+    ]
     excluded_params: list[str] = []
     if start_date:
         excluded_conditions.insert(0, "date >= ?")
@@ -373,7 +375,7 @@ def _query_day_counts(
         WITH topix_with_gap AS (
             SELECT
                 CASE
-                    WHEN prev_close IS NULL OR prev_close = 0 THEN NULL
+                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
                     WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_ge_threshold_2'
                     WHEN abs((open - prev_close) / prev_close) >= ? THEN 'gap_threshold_1_to_2'
                     ELSE 'gap_lt_threshold_1'
@@ -401,6 +403,7 @@ def _query_day_counts(
         SELECT COUNT(*) AS excluded_count
         FROM (
             SELECT
+                open,
                 LAG(close) OVER (ORDER BY date) AS prev_close,
                 date
             FROM topix_data
@@ -452,6 +455,35 @@ def _query_summary(
         GROUP BY stock_group, gap_bucket_key
     """
     return cast(pd.DataFrame, conn.execute(sql, params).fetchdf())
+
+
+def _query_analysis_date_range(
+    conn: Any,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    gap_threshold_1: float,
+    gap_threshold_2: float,
+    selected_groups: Sequence[StockGroup],
+) -> tuple[str | None, str | None]:
+    cte_sql, params = _grouped_stock_days_cte(
+        start_date=start_date,
+        end_date=end_date,
+        gap_threshold_1=gap_threshold_1,
+        gap_threshold_2=gap_threshold_2,
+        selected_groups=selected_groups,
+    )
+    row = conn.execute(
+        f"""
+        {cte_sql}
+        SELECT MIN(date) AS min_date, MAX(date) AS max_date
+        FROM grouped_stock_days
+        """,
+        params,
+    ).fetchone()
+    min_date = str(row[0]) if row and row[0] else None
+    max_date = str(row[1]) if row and row[1] else None
+    return min_date, max_date
 
 
 def _query_samples(
@@ -668,11 +700,13 @@ def run_topix_gap_intraday_distribution(
     with _open_analysis_connection(db_path) as ctx:
         conn = ctx.connection
         available_start, available_end = _fetch_date_range(conn, table_name="topix_data")
-        analysis_start, analysis_end = _fetch_date_range(
+        analysis_start, analysis_end = _query_analysis_date_range(
             conn,
-            table_name="topix_data",
             start_date=start_date,
             end_date=end_date,
+            gap_threshold_1=gap_threshold_1,
+            gap_threshold_2=gap_threshold_2,
+            selected_groups=validated_groups,
         )
 
         day_counts_df, excluded_count = _query_day_counts(
