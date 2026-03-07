@@ -4051,6 +4051,13 @@ export interface components {
              * @default 0
              */
             count: number;
+            /** Emptyskippedcodes */
+            emptySkippedCodes?: string[];
+            /**
+             * Emptyskippedcount
+             * @default 0
+             */
+            emptySkippedCount: number;
             /**
              * Failedcodescount
              * @default 0
@@ -4061,10 +4068,15 @@ export interface components {
              * @default 0
              */
             failedDatesCount: number;
+            /**
+             * Issueraliascoveredcount
+             * @default 0
+             */
+            issuerAliasCoveredCount: number;
             /** Latestdiscloseddate */
             latestDisclosedDate?: string | null;
             /** Missinglistedmarketstocks */
-            missingListedMarketStocks: string[];
+            missingListedMarketStocks?: string[];
             /**
              * Missinglistedmarketstockscount
              * @default 0
@@ -5352,6 +5364,13 @@ export interface components {
              */
             dateCount: number;
             dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Emptyskippedcodes */
+            emptySkippedCodes?: string[];
+            /**
+             * Emptyskippedcount
+             * @default 0
+             */
+            emptySkippedCount: number;
             /**
              * Orphancount
              * @default 0

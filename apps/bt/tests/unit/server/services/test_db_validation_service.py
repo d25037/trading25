@@ -37,11 +37,13 @@ class DummyMarketDb:
         stocks_needing_refresh: list[str] | None = None,
         adjustment_events: list[dict[str, Any]] | None = None,
         fundamentals_target_codes: set[str] | None = None,
+        fundamentals_target_rows: list[dict[str, str]] | None = None,
     ) -> None:
         self._initialized = initialized
         self._stocks_needing_refresh = stocks_needing_refresh or []
         self._adjustment_events = adjustment_events or []
         self._fundamentals_target_codes = fundamentals_target_codes or {"1301", "7203"}
+        self._fundamentals_target_rows = fundamentals_target_rows
         self._metadata = {
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
@@ -74,6 +76,18 @@ class DummyMarketDb:
 
     def get_fundamentals_target_codes(self) -> set[str]:
         return set(self._fundamentals_target_codes)
+
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]:
+        if self._fundamentals_target_rows is not None:
+            return list(self._fundamentals_target_rows)
+        return [
+            {
+                "code": code,
+                "company_name": "",
+                "market_code": "0111",
+            }
+            for code in sorted(self._fundamentals_target_codes)
+        ]
 
 
 def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> None:
@@ -205,6 +219,52 @@ def test_validate_market_db_limits_refresh_samples_but_uses_total_count() -> Non
     assert result.stocksNeedingRefreshCount == 25
     assert len(result.stocksNeedingRefresh) == 20
     assert any("refresh 25 stocks" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -> None:
+    market_db = DummyMarketDb(
+        fundamentals_target_codes={"25935", "464A", "94345"},
+        fundamentals_target_rows=[
+            {"code": "25935", "company_name": "伊藤園（優先株式）", "market_code": "0111"},
+            {"code": "464A", "company_name": "ＱＰＳホールディングス", "market_code": "0113"},
+            {"code": "94345", "company_name": "ソフトバンク（優先株式）", "market_code": "0111"},
+        ],
+    )
+    market_db._metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-06"
+    market_db._metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]] = (
+        '{"frontier":"2026-03-06","codes":["464A"]}'
+    )
+    market_db._metadata[METADATA_KEYS["MARGIN_EMPTY_CODES"]] = (
+        '{"frontier":"2026-03-06","codes":["4957"]}'
+    )
+
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-03-06",
+            stock_count=10,
+            stock_date_count=3,
+            stock_max="2026-03-06",
+            indices_count=10,
+            statements_count=2,
+            latest_statement_disclosed_date="2026-03-06",
+            statement_codes={"2593", "9434"},
+            statement_non_null_counts={"earnings_per_share": 2},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.fundamentals.missingListedMarketStocksCount == 0
+    assert result.fundamentals.issuerAliasCoveredCount == 2
+    assert result.fundamentals.emptySkippedCount == 1
+    assert result.fundamentals.emptySkippedCodes == ["464A"]
+    assert result.margin.emptySkippedCount == 1
+    assert result.margin.emptySkippedCodes == ["4957"]
+    assert any("Fundamentals backfill skipped for 1 listed-market stocks" in rec for rec in result.recommendations)
+    assert any("Margin backfill skipped for 1 stocks" in rec for rec in result.recommendations)
 
 
 def test_build_readiness_issues_marks_all_missing_branches() -> None:

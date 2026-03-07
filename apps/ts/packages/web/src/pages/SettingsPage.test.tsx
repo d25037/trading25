@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
@@ -117,10 +117,15 @@ beforeEach(() => {
         dateCount: 120,
         dateRange: { min: '2024-01-05', max: '2026-02-27' },
         orphanCount: 3,
+        emptySkippedCount: 1,
+        emptySkippedCodes: ['4957'],
       },
       fundamentals: {
         missingListedMarketStocksCount: 7,
         missingListedMarketStocks: ['1301', '9999'],
+        issuerAliasCoveredCount: 6,
+        emptySkippedCount: 4,
+        emptySkippedCodes: ['464A', '500A'],
         failedDatesCount: 0,
         failedCodesCount: 0,
       },
@@ -329,7 +334,14 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
     expect(screen.getByText('Stocks Needing Refresh')).toBeInTheDocument();
-    expect(screen.getByText('Missing Listed-Market Fundamentals')).toBeInTheDocument();
+    expect(screen.getAllByText('Missing Listed-Market Fundamentals').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Unsupported/Empty Fundamentals').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Preferred Alias Covered').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Unsupported/Empty Margin Codes').length).toBeGreaterThan(0);
+    expect(screen.getByText('Coverage Diagnostics')).toBeInTheDocument();
+    expect(screen.getByText('Sample codes: 1301, 9999')).toBeInTheDocument();
+    expect(screen.getByText('Sample codes: 464A, 500A')).toBeInTheDocument();
+    expect(screen.getByText('Sample codes: 4957')).toBeInTheDocument();
     expect(screen.getByText('Warning Details')).toBeInTheDocument();
     expect(
       screen.getAllByText('Run repair sync to refresh 100 stocks with pending adjustment backfill').length
@@ -365,10 +377,15 @@ describe('SettingsPage', () => {
           dateCount: 0,
           dateRange: null,
           orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
         },
         fundamentals: {
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -401,10 +418,15 @@ describe('SettingsPage', () => {
           dateCount: 0,
           dateRange: null,
           orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
         },
         fundamentals: {
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -435,10 +457,15 @@ describe('SettingsPage', () => {
           dateCount: 0,
           dateRange: null,
           orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
         },
         fundamentals: {
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -469,10 +496,15 @@ describe('SettingsPage', () => {
           dateCount: 0,
           dateRange: null,
           orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
         },
         fundamentals: {
           missingListedMarketStocksCount: 0,
           missingListedMarketStocks: [],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
           failedDatesCount: 0,
           failedCodesCount: 0,
         },
@@ -562,7 +594,7 @@ describe('SettingsPage', () => {
     render(<SettingsPage />);
 
     const codes = Array.from({ length: 51 }, (_, index) => `${(1000 + index).toString().padStart(4, '0')}`).join(',');
-    await user.type(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), codes);
+    fireEvent.change(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), { target: { value: codes } });
     await user.click(screen.getByRole('button', { name: /Refresh Stocks/i }));
 
     expect(screen.getByText(/Maximum 50 stock codes are allowed/i)).toBeInTheDocument();
@@ -642,11 +674,11 @@ describe('SettingsPage', () => {
 
     render(<SettingsPage />);
 
-    await user.type(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), '7203');
+    fireEvent.change(screen.getByPlaceholderText('e.g. 7203, 6758, 9984'), { target: { value: '7203' } });
     await user.click(screen.getByRole('button', { name: /Refresh Stocks/i }));
 
-    expect(await screen.findByText('failed')).toBeInTheDocument();
-    expect(screen.getByText('api error')).toBeInTheDocument();
+    expect(await screen.findByRole('cell', { name: 'failed' })).toBeInTheDocument();
+    expect(await screen.findByText('api error')).toBeInTheDocument();
     expect(screen.getByText('not-a-date')).toBeInTheDocument();
   });
 });

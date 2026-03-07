@@ -53,7 +53,7 @@ bun run workspace:dev
 ### 2.1) Market Sync Data Plane 実行オプション
 
 - Web: `Market DB` ページで DuckDB SoT 同期を実行し、`DuckDB Snapshot`（`/api/db/stats`, `/api/db/validate`）を確認可能
-- `repair` sync mode と `Warning Recovery` カードから、adjustment event 起因の stock refresh と listed-market fundamentals backfill を一括実行可能
+- `repair` sync mode と `Warning Recovery` カードから、adjustment event 起因の stock refresh と listed-market fundamentals backfill を一括実行可能。validation では missing と unsupported/empty を分離表示し、preferred-share issuer alias coverage と negative-cache sample を確認可能
 - Sync中にページ再読み込み/再訪しても、`/api/db/sync/jobs/active` + localStorage により実行中ジョブ追跡を自動復元
 
 ### 3) Signal Attribution（LOO + Shapley top-N）

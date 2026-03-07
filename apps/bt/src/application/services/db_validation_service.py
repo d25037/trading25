@@ -10,6 +10,12 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Literal, Protocol
 
+from src.application.services.listed_market_targets import (
+    build_fundamentals_coverage,
+    build_fundamentals_target_map,
+    normalize_frontier_date,
+    resolve_frontier_cache_codes,
+)
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
@@ -83,6 +89,7 @@ class ValidationMarketDbLike(Protocol):
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]: ...
     def get_stocks_needing_refresh_count(self) -> int: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
+    def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -109,17 +116,44 @@ def validate_market_db(
     by_market = market_db.get_stock_count_by_market()
     statement_codes = set(inspection.statement_codes)
     latest_disclosed = inspection.latest_statement_disclosed_date
+    fundamentals_frontier = normalize_frontier_date(
+        market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"])
+        or latest_disclosed
+    )
+    fundamentals_empty_skipped_codes = sorted(
+        resolve_frontier_cache_codes(
+            market_db.get_sync_metadata(METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]),
+            fundamentals_frontier,
+        )
+    )
     fundamentals_coverage = _build_statement_coverage(
-        market_db.get_fundamentals_target_codes(),
+        build_fundamentals_target_map(market_db.get_fundamentals_target_stock_rows()),
         statement_codes,
+        empty_skipped_codes=set(fundamentals_empty_skipped_codes),
         limit_missing=20,
     )
     missing_fundamentals_count = int(fundamentals_coverage.get("missingCount", 0) or 0)
     missing_fundamentals_codes = [
         str(code) for code in fundamentals_coverage.get("missingCodes", [])
     ]
+    fundamentals_empty_skipped_count = int(
+        fundamentals_coverage.get("emptySkippedCount", 0) or 0
+    )
+    fundamentals_alias_covered_count = int(
+        fundamentals_coverage.get("issuerAliasCoveredCount", 0) or 0
+    )
     missing_dates = list(inspection.missing_stock_dates)
     missing_dates_count = _resolve_missing_dates_count(inspection)
+    margin_frontier = normalize_frontier_date(
+        inspection.topix_max or inspection.stock_max or inspection.margin_max
+    )
+    margin_empty_skipped_codes = sorted(
+        resolve_frontier_cache_codes(
+            market_db.get_sync_metadata(METADATA_KEYS["MARGIN_EMPTY_CODES"]),
+            margin_frontier,
+        )
+    )
+    margin_empty_skipped_count = len(margin_empty_skipped_codes)
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=20)
@@ -161,6 +195,10 @@ def validate_market_db(
         recommendations.append(
             f"Run repair sync to backfill fundamentals for {missing_fundamentals_count} listed-market stocks"
         )
+    if fundamentals_empty_skipped_count > 0:
+        recommendations.append(
+            f"Fundamentals backfill skipped for {fundamentals_empty_skipped_count} listed-market stocks after empty responses at disclosed frontier {fundamentals_frontier or 'n/a'}"
+        )
     if fundamentals_failed_dates:
         recommendations.append(
             f"Retry {len(fundamentals_failed_dates)} failed fundamentals dates"
@@ -168,6 +206,10 @@ def validate_market_db(
     if fundamentals_failed_codes:
         recommendations.append(
             f"Retry {len(fundamentals_failed_codes)} failed fundamentals codes"
+        )
+    if margin_empty_skipped_count > 0:
+        recommendations.append(
+            f"Margin backfill skipped for {margin_empty_skipped_count} stocks after empty responses at trading frontier {margin_frontier or 'n/a'}"
         )
     recommendations.extend(readiness_recommendations)
 
@@ -180,8 +222,10 @@ def validate_market_db(
         or failed_dates
         or all_needing_count > 0
         or missing_fundamentals_count > 0
+        or fundamentals_empty_skipped_count > 0
         or fundamentals_failed_dates
         or fundamentals_failed_codes
+        or margin_empty_skipped_count > 0
         or integrity_issues
     ):
         status = "warning"
@@ -224,6 +268,8 @@ def validate_market_db(
         if inspection.margin_min and inspection.margin_max
         else None,
         orphanCount=inspection.margin_orphan_count,
+        emptySkippedCount=margin_empty_skipped_count,
+        emptySkippedCodes=margin_empty_skipped_codes[:20],
     )
 
     fundamentals_val = FundamentalsValidation(
@@ -232,6 +278,9 @@ def validate_market_db(
         latestDisclosedDate=latest_disclosed,
         missingListedMarketStocksCount=missing_fundamentals_count,
         missingListedMarketStocks=missing_fundamentals_codes,
+        issuerAliasCoveredCount=fundamentals_alias_covered_count,
+        emptySkippedCount=fundamentals_empty_skipped_count,
+        emptySkippedCodes=fundamentals_empty_skipped_codes[:20],
         failedDatesCount=len(fundamentals_failed_dates),
         failedCodesCount=len(fundamentals_failed_codes),
     )
@@ -272,24 +321,19 @@ def _resolve_time_series_inspection(
 
 
 def _build_statement_coverage(
-    target_codes: set[str],
+    target_map: dict[str, str],
     statement_codes: set[str],
     *,
+    empty_skipped_codes: set[str] | None = None,
     limit_missing: int = 20,
 ) -> dict[str, Any]:
-    covered_codes = sorted(target_codes & statement_codes)
-    missing_codes = sorted(target_codes - statement_codes)
-    target_count = len(target_codes)
-    covered_count = len(covered_codes)
-
-    coverage_ratio = round((covered_count / target_count), 4) if target_count > 0 else 0.0
-    return {
-        "targetCount": target_count,
-        "coveredCount": covered_count,
-        "missingCount": len(missing_codes),
-        "coverageRatio": coverage_ratio,
-        "missingCodes": missing_codes[: max(limit_missing, 0)],
-    }
+    return build_fundamentals_coverage(
+        target_map,
+        statement_codes,
+        empty_skipped_codes=empty_skipped_codes,
+        limit_missing=limit_missing,
+        limit_empty=20,
+    )
 
 
 def _build_readiness_issues(
