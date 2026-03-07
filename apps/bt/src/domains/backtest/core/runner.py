@@ -412,14 +412,16 @@ class BacktestRunner:
             raise ValueError(f"Invalid shared_config after config merge: {e}") from e
 
         shared_config = parameters.get("shared_config", {})
-        if (
-            isinstance(shared_config, dict)
-            and shared_config.get("next_session_round_trip") is True
-            and parameters.get("exit_trigger_params") not in (None, {})
-        ):
+        mode_name = None
+        if isinstance(shared_config, dict):
+            if shared_config.get("next_session_round_trip") is True:
+                mode_name = "next_session_round_trip"
+            elif shared_config.get("current_session_round_trip_oracle") is True:
+                mode_name = "current_session_round_trip_oracle"
+        if mode_name is not None and parameters.get("exit_trigger_params") not in (None, {}):
             raise ValueError(
                 "exit_trigger_params must be empty when "
-                "shared_config.next_session_round_trip is true"
+                f"shared_config.{mode_name} is true"
             )
 
         return parameters

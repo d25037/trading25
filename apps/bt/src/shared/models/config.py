@@ -95,6 +95,13 @@ class SharedConfig(BaseModel):
         default=False,
         description="翌営業日Openで建てて同日Closeで閉じるセッション往復モード",
     )
+    current_session_round_trip_oracle: bool = Field(
+        default=False,
+        description=(
+            "Research-only: 当日TOPIX寄り付き情報を利用した same-session "
+            "Open->Close 往復モード（future leak を含む）"
+        ),
+    )
 
     # Portfolio Optimization Settings (Kelly Criterion Only)
     kelly_fraction: float = Field(
@@ -196,7 +203,16 @@ class SharedConfig(BaseModel):
         return v
 
     @model_validator(mode="after")
-    def validate_next_session_round_trip(self):
+    def validate_round_trip_modes(self):
+        if self.next_session_round_trip and self.current_session_round_trip_oracle:
+            raise ValueError(
+                "next_session_round_trip and current_session_round_trip_oracle "
+                "cannot both be true"
+            )
         if self.next_session_round_trip and self.timeframe != "daily":
             raise ValueError("next_session_round_trip requires timeframe='daily'")
+        if self.current_session_round_trip_oracle and self.timeframe != "daily":
+            raise ValueError(
+                "current_session_round_trip_oracle requires timeframe='daily'"
+            )
         return self

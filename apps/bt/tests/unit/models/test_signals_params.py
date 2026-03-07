@@ -17,6 +17,7 @@ from src.shared.models.signals.macro import (
     IndexDailyChangeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
+    OracleIndexOpenGapRegimeSignalParams,
 )
 from src.shared.models.signals.oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from src.shared.models.signals.sector import (
@@ -252,6 +253,21 @@ class TestIndexMACDHistogramSignalParams:
     def test_invalid_period_order(self):
         with pytest.raises(ValidationError, match="slow_period"):
             IndexMACDHistogramSignalParams(fast_period=30, slow_period=10)
+
+
+class TestOracleIndexOpenGapRegimeSignalParams:
+    def test_defaults(self):
+        p = OracleIndexOpenGapRegimeSignalParams()
+        assert p.gap_threshold_1_pct == 1.0
+        assert p.gap_threshold_2_pct == 2.0
+        assert p.regime == "down_medium"
+
+    def test_invalid_threshold_order(self):
+        with pytest.raises(ValidationError, match="gap_threshold_2_pct"):
+            OracleIndexOpenGapRegimeSignalParams(
+                gap_threshold_1_pct=2.0,
+                gap_threshold_2_pct=1.0,
+            )
 
 
 # ---- RSI ----

@@ -111,6 +111,24 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         assert bool(result.exits.iloc[-1]) is False
 
+    def test_generate_signals_skips_forced_exit_in_current_session_round_trip_oracle(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(current_session_round_trip_oracle=True)
+        )
+        data = _ohlcv()
+        monkeypatch.setattr(
+            strategy.signal_processor,
+            "generate_signals",
+            lambda **kwargs: _signals(cast(pd.DatetimeIndex, data.index)),
+        )
+
+        result = strategy.generate_signals(data)
+
+        assert bool(result.exits.iloc[-1]) is False
+
     def test_generate_signals_handles_missing_last_valid_close_without_forced_exit(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -180,4 +198,12 @@ class TestYamlConfigurableStrategyRoundTrip:
         )
 
         assert strategy.next_session_round_trip is True
+        assert strategy.exit_trigger_params is None
+
+    def test_initialization_copies_current_session_round_trip_oracle_flag(self) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(current_session_round_trip_oracle=True)
+        )
+
+        assert strategy.current_session_round_trip_oracle is True
         assert strategy.exit_trigger_params is None

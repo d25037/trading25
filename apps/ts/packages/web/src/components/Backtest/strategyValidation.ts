@@ -7,6 +7,8 @@ export interface StrategyValidationResult {
   warnings: string[];
 }
 
+type RoundTripModeName = 'next_session_round_trip' | 'current_session_round_trip_oracle';
+
 const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'initial_cash',
   'fees',
@@ -34,6 +36,7 @@ const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'walk_forward',
   'timeframe',
   'next_session_round_trip',
+  'current_session_round_trip_oracle',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -329,21 +332,46 @@ function hasConfiguredExitTriggerParams(exitTrigger: unknown): boolean {
   return Object.keys(exitTrigger).length > 0;
 }
 
-function validateNextSessionRoundTripRules(
+function getActiveRoundTripModes(sharedConfig: Record<string, unknown>): RoundTripModeName[] {
+  const activeModes: RoundTripModeName[] = [];
+
+  if (sharedConfig.next_session_round_trip === true) {
+    activeModes.push('next_session_round_trip');
+  }
+  if (sharedConfig.current_session_round_trip_oracle === true) {
+    activeModes.push('current_session_round_trip_oracle');
+  }
+
+  return activeModes;
+}
+
+function validateRoundTripRules(
   config: Record<string, unknown>,
   errors: string[]
 ): void {
   const sharedConfig = config.shared_config;
-  if (!isPlainObject(sharedConfig) || sharedConfig.next_session_round_trip !== true) {
+  if (!isPlainObject(sharedConfig)) {
     return;
   }
 
-  if (sharedConfig.timeframe !== undefined && sharedConfig.timeframe !== 'daily') {
-    errors.push("next_session_round_trip requires timeframe='daily'");
+  const activeModes = getActiveRoundTripModes(sharedConfig);
+
+  if (activeModes.length === 0) {
+    return;
   }
 
-  if (hasConfiguredExitTriggerParams(config.exit_trigger_params)) {
-    errors.push('exit_trigger_params must be empty when shared_config.next_session_round_trip is true');
+  if (activeModes.length > 1) {
+    errors.push('next_session_round_trip and current_session_round_trip_oracle cannot both be true');
+  }
+
+  for (const modeName of activeModes) {
+    if (sharedConfig.timeframe !== undefined && sharedConfig.timeframe !== 'daily') {
+      errors.push(`${modeName} requires timeframe='daily'`);
+    }
+
+    if (hasConfiguredExitTriggerParams(config.exit_trigger_params)) {
+      errors.push(`exit_trigger_params must be empty when shared_config.${modeName} is true`);
+    }
   }
 }
 
@@ -377,7 +405,7 @@ export function validateStrategyConfigLocally(
     validateSharedConfig(config.shared_config, errors);
   }
 
-  validateNextSessionRoundTripRules(config, errors);
+  validateRoundTripRules(config, errors);
 
   if (signalDefinitions.length === 0) {
     warnings.push('Signal reference is unavailable, so parameter-name validation may be incomplete');

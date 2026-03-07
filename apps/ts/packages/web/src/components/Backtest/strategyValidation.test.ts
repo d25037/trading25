@@ -129,6 +129,68 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain("next_session_round_trip requires timeframe='daily'");
   });
 
+  it('accepts current_session_round_trip_oracle when companion constraints are satisfied', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        exit_trigger_params: {},
+        shared_config: { current_session_round_trip_oracle: true, timeframe: 'daily' },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('rejects non-empty exit_trigger_params for current_session_round_trip_oracle', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        exit_trigger_params: { volume: { enabled: true, direction: 'surge', threshold: 1.2 } },
+        shared_config: { current_session_round_trip_oracle: true },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      'exit_trigger_params must be empty when shared_config.current_session_round_trip_oracle is true'
+    );
+  });
+
+  it('rejects non-daily timeframe for current_session_round_trip_oracle', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        shared_config: { current_session_round_trip_oracle: true, timeframe: 'weekly' },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("current_session_round_trip_oracle requires timeframe='daily'");
+  });
+
+  it('rejects enabling both round trip execution modes at once', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        shared_config: {
+          next_session_round_trip: true,
+          current_session_round_trip_oracle: true,
+          timeframe: 'daily',
+        },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      'next_session_round_trip and current_session_round_trip_oracle cannot both be true'
+    );
+  });
+
   it('ignores null numeric constraints from signal reference payload', () => {
     const withNullConstraint: SignalDefinition[] = [
       {

@@ -54,6 +54,16 @@ class TestStrictValidation:
         assert result.shared_config is not None
         assert result.shared_config.next_session_round_trip is True
 
+    def test_strict_valid_current_session_round_trip_oracle_config(self) -> None:
+        config = {
+            "shared_config": {"current_session_round_trip_oracle": True},
+            "entry_filter_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {},
+        }
+        result = validate_strategy_config_dict_strict(config)
+        assert result.shared_config is not None
+        assert result.shared_config.current_session_round_trip_oracle is True
+
     def test_strict_valid_shared_config_without_round_trip_allows_exit_params(self) -> None:
         config = {
             "shared_config": {"next_session_round_trip": False},
@@ -97,6 +107,18 @@ class TestStrictValidation:
     def test_strict_next_session_round_trip_rejects_non_empty_exit_params(self) -> None:
         config = {
             "shared_config": {"next_session_round_trip": True},
+            "entry_filter_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+        }
+
+        with pytest.raises(StrategyConfigStrictValidationError, match="exit_trigger_params"):
+            validate_strategy_config_dict_strict(config)
+
+    def test_strict_current_session_round_trip_oracle_rejects_non_empty_exit_params(
+        self,
+    ) -> None:
+        config = {
+            "shared_config": {"current_session_round_trip_oracle": True},
             "entry_filter_params": {"volume": {"enabled": True}},
             "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
         }

@@ -59,7 +59,7 @@ class StrategyFactory:
         entry_filter_params_obj, exit_trigger_params_obj = (
             cls._convert_to_signal_params(entry_filter_params, exit_trigger_params)
         )
-        cls._validate_next_session_round_trip(
+        cls._validate_round_trip_execution_mode(
             shared_config_obj,
             exit_trigger_params,
             exit_trigger_params_obj,
@@ -95,13 +95,17 @@ class StrategyFactory:
         return True
 
     @classmethod
-    def _validate_next_session_round_trip(
+    def _validate_round_trip_execution_mode(
         cls,
         shared_config: SharedConfig,
         raw_exit_trigger_params: Union[Dict[str, Any], Any, None],
         exit_trigger_params_obj: Any,
     ) -> None:
-        if not shared_config.next_session_round_trip:
+        if shared_config.next_session_round_trip:
+            mode_name = "next_session_round_trip"
+        elif shared_config.current_session_round_trip_oracle:
+            mode_name = "current_session_round_trip_oracle"
+        else:
             return
         if cls._has_configured_exit_trigger_params(
             raw_exit_trigger_params,
@@ -109,7 +113,7 @@ class StrategyFactory:
         ):
             raise ValueError(
                 "exit_trigger_params must be empty when "
-                "shared_config.next_session_round_trip is true"
+                f"shared_config.{mode_name} is true"
             )
 
     @classmethod

@@ -122,19 +122,29 @@ def _dedupe(messages: list[str]) -> list[str]:
     return deduped
 
 
-def _validate_next_session_round_trip_rules(
+def _round_trip_mode_name(shared_config: SharedConfig) -> str | None:
+    if shared_config.next_session_round_trip:
+        return "next_session_round_trip"
+    if shared_config.current_session_round_trip_oracle:
+        return "current_session_round_trip_oracle"
+    return None
+
+
+def _validate_round_trip_rules(
     config: dict[str, Any],
     validated: StrategyConfig | None,
 ) -> list[str]:
     if validated is None or validated.shared_config is None:
         return []
-    if not validated.shared_config.next_session_round_trip:
+    mode_name = _round_trip_mode_name(validated.shared_config)
+    if mode_name is None:
         return []
 
     exit_trigger_params = config.get("exit_trigger_params")
     if exit_trigger_params not in (None, {}):
         return [
-            "exit_trigger_params must be empty when shared_config.next_session_round_trip is true"
+            "exit_trigger_params must be empty when "
+            f"shared_config.{mode_name} is true"
         ]
     return []
 
@@ -149,7 +159,7 @@ def _build_strict_validation_errors(config: dict[str, Any]) -> tuple[StrategyCon
     except ValidationError as e:
         errors.extend(_format_pydantic_error(e))
 
-    errors.extend(_validate_next_session_round_trip_rules(config, validated))
+    errors.extend(_validate_round_trip_rules(config, validated))
 
     unknown_paths = _collect_unknown_paths(config, StrategyConfig)
     errors.extend(f"{path} is not a valid parameter name" for path in unknown_paths)

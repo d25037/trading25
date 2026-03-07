@@ -2,6 +2,8 @@
 マクロ・市場環境シグナルパラメータ（β値、信用残高、指数関連）
 """
 
+from typing import Literal
+
 from pydantic import Field, ValidationInfo, field_validator
 
 from .base import BaseSignalParams, _validate_period_order
@@ -68,3 +70,40 @@ class IndexMACDHistogramSignalParams(BaseSignalParams):
         return _validate_period_order(
             v, info, "fast_period", "slow_periodはfast_periodより大きい必要があります"
         )
+
+
+class OracleIndexOpenGapRegimeSignalParams(BaseSignalParams):
+    """指数寄り付きギャップを same-session oracle 前提で判定するシグナル."""
+
+    gap_threshold_1_pct: float = Field(
+        default=1.0,
+        gt=0.0,
+        le=10.0,
+        description="第1閾値（%単位、例: 1.0 = 1%）",
+    )
+    gap_threshold_2_pct: float = Field(
+        default=2.0,
+        gt=0.0,
+        le=20.0,
+        description="第2閾値（%単位、例: 2.0 = 2%）",
+    )
+    regime: Literal[
+        "down_large",
+        "down_medium",
+        "flat",
+        "up_medium",
+        "up_large",
+    ] = Field(
+        default="down_medium",
+        description="指数寄り付きギャップの判定レジーム",
+    )
+
+    @field_validator("gap_threshold_2_pct")
+    @classmethod
+    def validate_gap_threshold_order(cls, v: float, info: ValidationInfo) -> float:
+        if hasattr(info, "data") and "gap_threshold_1_pct" in info.data:
+            if v <= info.data["gap_threshold_1_pct"]:
+                raise ValueError(
+                    "gap_threshold_2_pctはgap_threshold_1_pctより大きい必要があります"
+                )
+        return v

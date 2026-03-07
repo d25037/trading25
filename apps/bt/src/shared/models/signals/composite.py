@@ -18,6 +18,7 @@ from .macro import (
     IndexDailyChangeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
+    OracleIndexOpenGapRegimeSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from .trend import RetracementSignalParams, TrendSignalParams
@@ -116,6 +117,10 @@ class SignalParams(BaseModel):
     index_macd_histogram: IndexMACDHistogramSignalParams = Field(
         default_factory=IndexMACDHistogramSignalParams,
         description="INDEXヒストグラムシグナル（市場モメンタム強弱判定）",
+    )
+    oracle_index_open_gap_regime: OracleIndexOpenGapRegimeSignalParams = Field(
+        default_factory=OracleIndexOpenGapRegimeSignalParams,
+        description="Future leak 前提の指数寄り付きギャップレジームシグナル",
     )
     risk_adjusted_return: RiskAdjustedReturnSignalParams = Field(
         default_factory=RiskAdjustedReturnSignalParams,

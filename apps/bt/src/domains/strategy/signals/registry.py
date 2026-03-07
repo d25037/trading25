@@ -49,6 +49,7 @@ from .fundamental import (
 )
 from .index_daily_change import index_daily_change_signal
 from .index_macd_histogram import index_macd_histogram_signal
+from .oracle_index_open_gap_regime import oracle_index_open_gap_regime_signal
 from .margin import margin_balance_percentile_signal
 from .mean_reversion import mean_reversion_combined_signal
 from .rsi_spread import rsi_spread_signal
@@ -121,6 +122,19 @@ def _has_benchmark_data(d: dict[str, Any]) -> bool:
         and d["benchmark_data"] is not None
         and not d["benchmark_data"].empty
         and "Close" in d["benchmark_data"].columns
+        and d["benchmark_data"]["Close"].notna().any()
+    )
+
+
+def _has_benchmark_open_and_close_data(d: dict[str, Any]) -> bool:
+    """ベンチマークのOpen/Close両方が存在し、有効な値があるかチェック"""
+    return (
+        "benchmark_data" in d
+        and d["benchmark_data"] is not None
+        and not d["benchmark_data"].empty
+        and "Open" in d["benchmark_data"].columns
+        and "Close" in d["benchmark_data"].columns
+        and d["benchmark_data"]["Open"].notna().any()
         and d["benchmark_data"]["Close"].notna().any()
     )
 
@@ -717,7 +731,27 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         data_checker=_has_benchmark_data,
         data_requirements=["benchmark"],
     ),
-    # 20. リスク調整リターンシグナル（シャープ/ソルティノレシオベース）
+    # 20. Same-session oracle 指数寄り付きギャップレジームシグナル
+    SignalDefinition(
+        name="Oracle指数寄り付きギャップレジーム",
+        signal_func=oracle_index_open_gap_regime_signal,
+        enabled_checker=lambda p: hasattr(p, "oracle_index_open_gap_regime")
+        and p.oracle_index_open_gap_regime.enabled,
+        param_builder=lambda p, d: {
+            "index_data": d["benchmark_data"],
+            "gap_threshold_1_pct": p.oracle_index_open_gap_regime.gap_threshold_1_pct,
+            "gap_threshold_2_pct": p.oracle_index_open_gap_regime.gap_threshold_2_pct,
+            "regime": p.oracle_index_open_gap_regime.regime,
+        },
+        entry_purpose="Future leak前提の指数寄り付きギャップレジーム判定",
+        exit_purpose="Future leak前提の指数寄り付きギャップレジーム判定",
+        category="macro",
+        description="ベンチマーク指数の当日寄り付き gap を oracle 前提で判定",
+        param_key="oracle_index_open_gap_regime",
+        data_checker=_has_benchmark_open_and_close_data,
+        data_requirements=["benchmark"],
+    ),
+    # 21. リスク調整リターンシグナル（シャープ/ソルティノレシオベース）
     SignalDefinition(
         name="リスク調整リターン",
         signal_func=risk_adjusted_return_signal,

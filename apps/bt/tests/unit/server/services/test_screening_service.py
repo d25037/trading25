@@ -225,6 +225,42 @@ class TestStrategyResolution:
         with pytest.raises(ValueError, match="next_session_round_trip"):
             service._resolve_strategies(None)
 
+    def test_rejects_current_session_round_trip_oracle_strategy(
+        self,
+        service,
+        monkeypatch,
+        tmp_path,
+    ):
+        production = StrategyMetadata(
+            name="production/current_session_demo",
+            category="production",
+            path=Path(tmp_path / "production/current_session_demo.yaml"),
+            mtime=datetime.now(),
+        )
+
+        monkeypatch.setattr(
+            service._config_loader,
+            "get_strategy_metadata",
+            lambda: [production],
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "load_strategy_config",
+            lambda _name: {
+                "shared_config": {"current_session_round_trip_oracle": True},
+                "entry_filter_params": {"volume": {"enabled": True}},
+                "exit_trigger_params": {},
+            },
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "merge_shared_config",
+            lambda config: config.get("shared_config", {}),
+        )
+
+        with pytest.raises(ValueError, match="current_session_round_trip_oracle"):
+            service._resolve_strategies(None)
+
     def test_resolves_production_only_and_supports_basename_and_fullname(
         self,
         service,

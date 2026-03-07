@@ -31,6 +31,7 @@ class TestSignalParams:
             "crossover", "bollinger_bands", "buy_and_hold",
             "mean_reversion", "rsi_threshold", "rsi_spread",
             "ma_breakout", "index_daily_change", "index_macd_histogram",
+            "oracle_index_open_gap_regime",
             "risk_adjusted_return",
             "sector_strength_ranking", "sector_rotation_phase", "sector_volatility_regime",
         ]

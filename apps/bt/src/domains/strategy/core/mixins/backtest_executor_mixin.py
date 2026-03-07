@@ -26,8 +26,12 @@ _SECTOR_SIGNALS = ("sector_strength_ranking", "sector_rotation_phase", "sector_v
 
 # ベンチマークデータに依存するシグナル名（セクター強度・ローテーションはTOPIX対比計算で必要）
 _BENCHMARK_SIGNALS = (
-    "beta", "index_daily_change", "index_macd_histogram",
-    "sector_strength_ranking", "sector_rotation_phase",
+    "beta",
+    "index_daily_change",
+    "index_macd_histogram",
+    "oracle_index_open_gap_regime",
+    "sector_strength_ranking",
+    "sector_rotation_phase",
 )
 
 _DIRECTION_MAP = {
@@ -38,7 +42,7 @@ _DIRECTION_MAP = {
 
 
 @njit
-def _next_session_round_trip_order_func_nb(
+def _round_trip_order_func_nb(
     c,
     entry_mask: np.ndarray,
     open_prices: np.ndarray,
@@ -238,28 +242,56 @@ class BacktestExecutorMixin:
     def _normalize_signal_frame(frame: pd.DataFrame) -> pd.DataFrame:
         return frame.fillna(False).infer_objects(copy=False).astype(bool)
 
+    @staticmethod
+    def _build_empty_exit_frame(entries_data: pd.DataFrame) -> pd.DataFrame:
+        return pd.DataFrame(
+            False,
+            index=entries_data.index,
+            columns=entries_data.columns,
+            dtype=bool,
+        )
+
     def _get_round_trip_direction(self: "StrategyProtocol") -> int:
         direction = getattr(self, "direction", "longonly")
         return int(_DIRECTION_MAP.get(direction, Direction.LongOnly))
 
-    def _prepare_next_session_round_trip_signals(
+    def _get_round_trip_mode_name(self: "StrategyProtocol") -> str | None:
+        if getattr(self, "next_session_round_trip", False):
+            return "next_session_round_trip"
+        if getattr(self, "current_session_round_trip_oracle", False):
+            return "current_session_round_trip_oracle"
+        return None
+
+    def _uses_round_trip_execution(self: "StrategyProtocol") -> bool:
+        return self._get_round_trip_mode_name() is not None
+
+    def _prepare_round_trip_signals(
         self: "StrategyProtocol",
         stock_code: str,
         entries: pd.Series,
         execution_data: pd.DataFrame,
     ) -> tuple[pd.Series, pd.Series]:
+        mode_name = self._get_round_trip_mode_name()
+        if mode_name is None:
+            return entries, pd.Series(False, index=entries.index, dtype=bool)
+
         required_columns = {"Open", "Close"}
         missing_columns = required_columns - set(execution_data.columns)
         if missing_columns:
             raise ValueError(
-                f"{stock_code}: next_session_round_trip requires columns {sorted(required_columns)}"
+                f"{stock_code}: {mode_name} requires columns {sorted(required_columns)}"
             )
 
         normalized_entries = entries.fillna(False).infer_objects(copy=False).astype(bool)
         if normalized_entries.empty:
             empty = normalized_entries.copy()
             return empty, empty
-        scheduled_entries = normalized_entries.shift(1, fill_value=False)
+
+        if mode_name == "next_session_round_trip":
+            scheduled_entries = normalized_entries.shift(1, fill_value=False)
+        else:
+            scheduled_entries = normalized_entries
+
         executable_days = execution_data["Open"].notna() & execution_data["Close"].notna()
         execution_entries = (scheduled_entries & executable_days).astype(bool)
         execution_exits = pd.Series(False, index=execution_entries.index, dtype=bool)
@@ -267,21 +299,21 @@ class BacktestExecutorMixin:
         skipped_missing = int((scheduled_entries & ~executable_days).sum())
         if skipped_missing > 0:
             self._log(
-                f"{stock_code}: next_session_round_trip skipped {skipped_missing} signals "
-                "because execution-day Open/Close was missing",
+                f"{stock_code}: {mode_name} skipped {skipped_missing} signals because "
+                "Open/Close was missing on the execution session",
                 "warning",
             )
 
-        if bool(normalized_entries.iloc[-1]):
+        if mode_name == "next_session_round_trip" and bool(normalized_entries.iloc[-1]):
             self._log(
-                f"{stock_code}: next_session_round_trip dropped the last-bar signal "
+                f"{stock_code}: {mode_name} dropped the last-bar signal "
                 "because the next session is unavailable",
                 "debug",
             )
 
         return execution_entries, execution_exits
 
-    def _create_next_session_round_trip_portfolio(
+    def _create_round_trip_portfolio(
         self: "StrategyProtocol",
         open_data: pd.DataFrame,
         close_data: pd.DataFrame,
@@ -302,7 +334,7 @@ class BacktestExecutorMixin:
 
         return vbt.Portfolio.from_order_func(
             close_data.astype(float),
-            cast(Any, _next_session_round_trip_order_func_nb),
+            cast(Any, _round_trip_order_func_nb),
             normalized_entries.to_numpy(dtype=np.bool_),
             open_data.astype(float).to_numpy(dtype=np.float64),
             close_data.astype(float).to_numpy(dtype=np.float64),
@@ -373,8 +405,8 @@ class BacktestExecutorMixin:
             if self.max_exposure is not None:
                 portfolio_kwargs["max_size"] = self.max_exposure
 
-            if getattr(self, "next_session_round_trip", False):
-                return self._create_next_session_round_trip_portfolio(
+            if self._uses_round_trip_execution():
+                return self._create_round_trip_portfolio(
                     open_data=open_data,
                     close_data=close_data,
                     entries_data=all_entries,
@@ -406,8 +438,8 @@ class BacktestExecutorMixin:
         if self.max_exposure is not None:
             portfolio_kwargs["max_size"] = self.max_exposure
 
-        if getattr(self, "next_session_round_trip", False):
-            return self._create_next_session_round_trip_portfolio(
+        if self._uses_round_trip_execution():
+            return self._create_round_trip_portfolio(
                 open_data=open_data,
                 close_data=close_data,
                 entries_data=all_entries,
@@ -681,8 +713,8 @@ class BacktestExecutorMixin:
             else:
                 raise ValueError("Data loading failed - no valid data source available")
 
-            if getattr(self, "next_session_round_trip", False):
-                entries, exits = self._prepare_next_session_round_trip_signals(
+            if self._uses_round_trip_execution():
+                entries, exits = self._prepare_round_trip_signals(
                     stock_code=stock_code,
                     entries=entries,
                     execution_data=stock_data,
@@ -773,13 +805,8 @@ class BacktestExecutorMixin:
                     all_entries = self._limit_entries_per_day(
                         all_entries, self.max_concurrent_positions
                     )
-                    if getattr(self, "next_session_round_trip", False):
-                        all_exits = pd.DataFrame(
-                            False,
-                            index=all_entries.index,
-                            columns=all_entries.columns,
-                            dtype=bool,
-                        )
+                    if self._uses_round_trip_execution():
+                        all_exits = self._build_empty_exit_frame(all_entries)
 
                 self._set_grouped_portfolio_inputs_cache(
                     open_data=open_data,
@@ -844,17 +871,12 @@ class BacktestExecutorMixin:
             entries_data = self._limit_entries_per_day(
                 entries_data, self.max_concurrent_positions
             )
-            if getattr(self, "next_session_round_trip", False):
-                exits_data = pd.DataFrame(
-                    False,
-                    index=entries_data.index,
-                    columns=entries_data.columns,
-                    dtype=bool,
-                )
+            if self._uses_round_trip_execution():
+                exits_data = self._build_empty_exit_frame(entries_data)
 
-        if getattr(self, "next_session_round_trip", False):
+        if self._uses_round_trip_execution():
             open_data = pd.DataFrame({k: v["Open"] for k, v in data_dict.items()})
-            portfolio = self._create_next_session_round_trip_portfolio(
+            portfolio = self._create_round_trip_portfolio(
                 open_data=open_data,
                 close_data=close_data,
                 entries_data=entries_data,

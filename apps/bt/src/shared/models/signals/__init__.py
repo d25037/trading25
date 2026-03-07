@@ -26,6 +26,7 @@ from .macro import (
     IndexDailyChangeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
+    OracleIndexOpenGapRegimeSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from .trend import RetracementSignalParams, TrendSignalParams
@@ -64,6 +65,7 @@ __all__ = [
     "BetaSignalParams",
     "IndexDailyChangeSignalParams",
     "IndexMACDHistogramSignalParams",
+    "OracleIndexOpenGapRegimeSignalParams",
     "MarginSignalParams",
     # fundamental
     "FundamentalSignalParams",

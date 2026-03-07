@@ -75,7 +75,7 @@ class TestStrategyFactoryHelpers:
             is True
         )
 
-    def test_validate_next_session_round_trip_noops_when_disabled(self) -> None:
+    def test_validate_round_trip_execution_mode_noops_when_disabled(self) -> None:
         shared_config = SharedConfig.model_validate(
             {
                 "dataset": "sample",
@@ -85,7 +85,7 @@ class TestStrategyFactoryHelpers:
             context={"resolve_stock_codes": False},
         )
 
-        StrategyFactory._validate_next_session_round_trip(
+        StrategyFactory._validate_round_trip_execution_mode(
             shared_config,
             {"volume": {"enabled": True}},
             None,
@@ -143,6 +143,60 @@ class TestStrategyFactoryHelpers:
 
         assert strategy is not None
         assert created["shared_config"].next_session_round_trip is True
+        assert created["exit_trigger_params"] is None
+
+    def test_create_strategy_rejects_exit_trigger_for_current_session_round_trip_oracle(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        monkeypatch.setattr(
+            "src.domains.strategy.core.yaml_configurable_strategy.YamlConfigurableStrategy",
+            lambda **kwargs: SimpleNamespace(**kwargs),
+        )
+
+        shared_config = SharedConfig.model_validate(
+            {
+                "dataset": "sample",
+                "stock_codes": ["1111"],
+                "current_session_round_trip_oracle": True,
+            },
+            context={"resolve_stock_codes": False},
+        )
+
+        with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
+            StrategyFactory.create_strategy(
+                shared_config=shared_config,
+                entry_filter_params={"volume": {"enabled": True}},
+                exit_trigger_params={"volume": {"enabled": True}},
+            )
+
+    def test_create_strategy_accepts_empty_exit_trigger_for_current_session_round_trip_oracle(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        created: dict[str, object] = {}
+
+        def _fake_yaml_strategy(**kwargs):
+            created.update(kwargs)
+            return SimpleNamespace(**kwargs)
+
+        monkeypatch.setattr(
+            "src.domains.strategy.core.yaml_configurable_strategy.YamlConfigurableStrategy",
+            _fake_yaml_strategy,
+        )
+
+        strategy = StrategyFactory.create_strategy(
+            shared_config={
+                "dataset": "sample",
+                "stock_codes": ["1111"],
+                "current_session_round_trip_oracle": True,
+            },
+            entry_filter_params={"volume": {"enabled": True}},
+            exit_trigger_params={},
+        )
+
+        assert strategy is not None
+        assert created["shared_config"].current_session_round_trip_oracle is True
         assert created["exit_trigger_params"] is None
 
 

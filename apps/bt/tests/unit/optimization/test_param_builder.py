@@ -10,6 +10,7 @@ from src.shared.models.signals import (
     VolumeSignalParams,
     CrossoverSignalParams,
     FundamentalSignalParams,
+    OracleIndexOpenGapRegimeSignalParams,
 )
 from src.domains.optimization.param_builder import (
     build_signal_params,
@@ -110,6 +111,30 @@ class TestParamBuilder:
         assert result.volume is not None
         assert result.volume.threshold == 2.5
         assert result.volume.direction == "surge"  # ベースから継承
+
+    def test_build_signal_params_preserves_oracle_index_open_gap_regime(self):
+        """新規 macro signal が最適化パラメータ再構築で落ちないことを確認"""
+        base_params = SignalParams(
+            oracle_index_open_gap_regime=OracleIndexOpenGapRegimeSignalParams(
+                enabled=True,
+                gap_threshold_1_pct=1.0,
+                gap_threshold_2_pct=2.0,
+                regime="down_medium",
+            )
+        )
+
+        grid_params = {
+            "entry_filter_params.oracle_index_open_gap_regime.gap_threshold_1_pct": 0.8,
+            "entry_filter_params.oracle_index_open_gap_regime.regime": "down_large",
+        }
+
+        result = build_signal_params(grid_params, "entry_filter_params", base_params)
+
+        assert result.oracle_index_open_gap_regime is not None
+        assert result.oracle_index_open_gap_regime.enabled is True
+        assert result.oracle_index_open_gap_regime.gap_threshold_1_pct == 0.8
+        assert result.oracle_index_open_gap_regime.gap_threshold_2_pct == 2.0
+        assert result.oracle_index_open_gap_regime.regime == "down_large"
 
     def test_build_signal_params_empty_grid(self):
         """グリッドパラメータが空の場合のテスト"""

@@ -9,6 +9,7 @@ from src.domains.strategy.signals.registry import (
     SIGNAL_REGISTRY,
     _has_any_statements_column,
     _has_benchmark_data,
+    _has_benchmark_open_and_close_data,
     _has_margin_data,
     _has_sector_data,
     _has_sector_data_and_benchmark,
@@ -87,6 +88,20 @@ class TestHasBenchmarkData:
     def test_no_close(self) -> None:
         df = pd.DataFrame({"Open": [100.0]})
         assert not _has_benchmark_data({"benchmark_data": df})
+
+
+class TestHasBenchmarkOpenAndCloseData:
+    def test_valid(self) -> None:
+        df = pd.DataFrame({"Open": [100.0, 101.0], "Close": [100.5, 101.5]})
+        assert _has_benchmark_open_and_close_data({"benchmark_data": df})
+
+    def test_missing_open(self) -> None:
+        df = pd.DataFrame({"Close": [100.0]})
+        assert not _has_benchmark_open_and_close_data({"benchmark_data": df})
+
+    def test_missing_close(self) -> None:
+        df = pd.DataFrame({"Open": [100.0]})
+        assert not _has_benchmark_open_and_close_data({"benchmark_data": df})
 
 
 class TestHasMarginData:
@@ -208,6 +223,16 @@ class TestSignalRegistry:
         assert sig.name == "EPS成長率"
         assert "statements:EPS" in sig.data_requirements
         assert "statements:NextYearForecastEPS" not in sig.data_requirements
+
+    def test_oracle_index_open_gap_regime_registered(self) -> None:
+        matches = [
+            s for s in SIGNAL_REGISTRY if s.param_key == "oracle_index_open_gap_regime"
+        ]
+        assert len(matches) == 1
+        sig = matches[0]
+        assert sig.name == "Oracle指数寄り付きギャップレジーム"
+        assert sig.category == "macro"
+        assert sig.data_requirements == ["benchmark"]
 
     def test_forward_dividend_growth_registered(self) -> None:
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.forward_dividend_growth"]

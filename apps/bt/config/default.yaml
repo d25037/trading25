@@ -30,6 +30,7 @@ default:
       direction: "longonly" # VectorBT取引方向設定 ('longonly', 'shortonly', 'both')
       timeframe: "daily" # データの時間軸 ('daily'=日足, 'weekly'=週足)
       next_session_round_trip: false # 翌営業日Openで建てて同日Closeで閉じるセッション往復モード
+      current_session_round_trip_oracle: false # Research-only: 当日TOPIX寄り値を使う same-session Open->Close（future leak）
       printlog: false # ログ出力設定
 
       # Portfolio Optimization Settings (Kelly Criterion Only)

@@ -18,7 +18,7 @@ from src.shared.models.signals.macro import MarginSignalParams
 from src.shared.models.signals.sector import SectorStrengthRankingParams
 from src.domains.strategy.core.mixins.backtest_executor_mixin import (
     BacktestExecutorMixin,
-    _next_session_round_trip_order_func_nb,
+    _round_trip_order_func_nb,
     _any_signal_enabled,
     _is_signal_enabled,
 )
@@ -67,6 +67,7 @@ class _RuntimeStrategy(BacktestExecutorMixin):
         self.group_by = True
         self.direction = "longonly"
         self.next_session_round_trip = False
+        self.current_session_round_trip_oracle = False
         self.printlog = False
         self.relative_mode = False
         self.dataset = "primeExTopix500"
@@ -118,8 +119,8 @@ class _RuntimeStrategy(BacktestExecutorMixin):
 
 
 class TestBacktestExecutorMixinPaths:
-    def test_next_session_round_trip_order_func_nb_python_paths(self) -> None:
-        order_func = cast(Any, _next_session_round_trip_order_func_nb).py_func
+    def test_round_trip_order_func_nb_python_paths(self) -> None:
+        order_func = cast(Any, _round_trip_order_func_nb).py_func
         entry_mask = np.array([[False, True]], dtype=np.bool_)
         open_prices = np.array([[10.0, 11.0]])
         close_prices = np.array([[10.5, 11.5]])
@@ -593,6 +594,77 @@ class TestBacktestExecutorMixinPaths:
         strategy.next_session_round_trip = True
         stock_data = _ohlcv_df()
         stock_data.loc[stock_data.index[1], "Open"] = float("nan")
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, _ = strategy.run_multi_backtest()
+        assert len(portfolio.trades.records_readable) == 0
+        assert any("Open/Close was missing" in message for _level, message in strategy.logs)
+
+    def test_run_multi_backtest_current_session_round_trip_oracle_executes_same_bar(
+        self,
+    ) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.current_session_round_trip_oracle = True
+        stock_data = _ohlcv_df()
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, all_entries = strategy.run_multi_backtest()
+        trades = portfolio.trades.records_readable
+
+        assert all_entries is None
+        assert len(trades) == 1
+        assert str(trades.iloc[0]["Entry Timestamp"]).startswith("2020-01-01")
+        assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-01")
+        assert trades.iloc[0]["Avg Entry Price"] == pytest.approx(10.0)
+        assert trades.iloc[0]["Avg Exit Price"] == pytest.approx(10.5)
+
+    def test_run_multi_backtest_current_session_round_trip_oracle_keeps_last_bar_signal(
+        self,
+    ) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.current_session_round_trip_oracle = True
+        stock_data = _ohlcv_df()
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([False, False, False, True], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, _ = strategy.run_multi_backtest()
+        trades = portfolio.trades.records_readable
+
+        assert len(trades) == 1
+        assert str(trades.iloc[0]["Entry Timestamp"]).startswith("2020-01-04")
+        assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-04")
+        assert not any("next session is unavailable" in message for _level, message in strategy.logs)
+
+    def test_run_multi_backtest_current_session_round_trip_oracle_missing_execution_prices_logs_warning(
+        self,
+    ) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.current_session_round_trip_oracle = True
+        stock_data = _ohlcv_df()
+        stock_data.loc[stock_data.index[0], "Open"] = float("nan")
         strategy._mock_multi_data = {"1111": {"daily": stock_data}}
         strategy._next_signals = {
             "1111": Signals(

@@ -21,6 +21,7 @@ from src.shared.models.signals import (
     MABreakoutParams,
     MarginSignalParams,
     MeanReversionSignalParams,
+    OracleIndexOpenGapRegimeSignalParams,
     PeriodBreakoutParams,
     RetracementSignalParams,
     RiskAdjustedReturnSignalParams,
@@ -51,6 +52,7 @@ FlatParamsDict: TypeAlias = dict[str, SignalParamValue]
 
 # マージ済みパラメータ辞書（シグナル名 → パラメータ辞書またはプリミティブ値）
 MergedParamsDict: TypeAlias = dict[str, SignalParamDict | SignalParamValue]
+
 
 def _unflatten_params(flat_params: dict[str, SignalParamValue]) -> dict[str, Any]:
     """
@@ -125,6 +127,7 @@ SIGNAL_PARAM_CLASSES: dict[str, type[BaseModel]] = {
     "buy_and_hold": BuyAndHoldSignalParams,
     "index_daily_change": IndexDailyChangeSignalParams,
     "index_macd_histogram": IndexMACDHistogramSignalParams,
+    "oracle_index_open_gap_regime": OracleIndexOpenGapRegimeSignalParams,
     "retracement": RetracementSignalParams,
     "risk_adjusted_return": RiskAdjustedReturnSignalParams,
     "sector_strength_ranking": SectorStrengthRankingParams,

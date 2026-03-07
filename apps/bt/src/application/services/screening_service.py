@@ -496,6 +496,12 @@ class ScreeningService:
                     "screening does not support shared_config.next_session_round_trip: "
                     f"{m.name}"
                 )
+            if runtime.shared_config.current_session_round_trip_oracle:
+                raise ValueError(
+                    "screening does not support "
+                    "shared_config.current_session_round_trip_oracle: "
+                    f"{m.name}"
+                )
 
         return runtimes
 

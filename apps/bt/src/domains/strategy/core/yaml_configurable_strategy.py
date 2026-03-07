@@ -83,6 +83,9 @@ class YamlConfigurableStrategy(
         self.cash_sharing = shared_config.cash_sharing
         self.direction = shared_config.direction
         self.next_session_round_trip = shared_config.next_session_round_trip
+        self.current_session_round_trip_oracle = (
+            shared_config.current_session_round_trip_oracle
+        )
 
         # Timeframe設定
         self.timeframe = shared_config.timeframe
@@ -194,7 +197,9 @@ class YamlConfigurableStrategy(
 
         # 通常モードのみ最終日に強制エグジットする。
         # next_session_round_trip は execution policy が同日クローズを担う。
-        if not self.next_session_round_trip:
+        if not (
+            self.next_session_round_trip or self.current_session_round_trip_oracle
+        ):
             last_valid_idx = data["Close"].last_valid_index()
             if last_valid_idx is not None:
                 exits = exits.copy()
