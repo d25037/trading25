@@ -86,17 +86,47 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain('shared_config.kelly_fraction must be between 0 and 2');
   });
 
-  it('passes valid config', () => {
+  it('accepts next_session_round_trip when companion constraints are satisfied', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
-        shared_config: { kelly_fraction: 2 },
+        exit_trigger_params: {},
+        shared_config: { kelly_fraction: 2, next_session_round_trip: true, timeframe: 'daily' },
       },
       signalDefs
     );
 
     expect(result.valid).toBe(true);
     expect(result.errors).toHaveLength(0);
+  });
+
+  it('rejects non-empty exit_trigger_params for next_session_round_trip', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        exit_trigger_params: { volume: { enabled: true, direction: 'surge', threshold: 1.2 } },
+        shared_config: { next_session_round_trip: true },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      'exit_trigger_params must be empty when shared_config.next_session_round_trip is true'
+    );
+  });
+
+  it('rejects non-daily timeframe for next_session_round_trip', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },
+        shared_config: { next_session_round_trip: true, timeframe: 'weekly' },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("next_session_round_trip requires timeframe='daily'");
   });
 
   it('ignores null numeric constraints from signal reference payload', () => {
@@ -336,7 +366,7 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain('entry_filter_params.constraint_signal.le_only must be <= 10');
   });
 
-  it('validates shared_config object shape and kelly type', () => {
+  it('validates shared_config object shape, unknown keys, and kelly type', () => {
     const nonObject = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume: { enabled: true, direction: 'drop', threshold: 1.1 } },

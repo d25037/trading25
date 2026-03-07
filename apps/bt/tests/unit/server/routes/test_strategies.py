@@ -117,6 +117,26 @@ class TestValidateStrategy:
             for e in data["errors"]
         )
 
+    def test_next_session_round_trip_rejects_exit_triggers(self, client, mock_config_loader):
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
+            mock_runner = MagicMock()
+            mock_runner.get_execution_info.return_value = {}
+            mock_runner_cls.return_value = mock_runner
+            resp = client.post(
+                "/api/strategies/test/validate",
+                json={
+                    "config": {
+                        "shared_config": {"next_session_round_trip": True},
+                        "entry_filter_params": {"volume": {"enabled": True}},
+                        "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+                    }
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is False
+        assert any("exit_trigger_params" in e for e in data["errors"])
+
 
 class TestUpdateStrategy:
     def test_success(self, client, mock_config_loader):

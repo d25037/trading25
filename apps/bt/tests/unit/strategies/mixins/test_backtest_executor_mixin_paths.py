@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from typing import Any, cast
+from types import SimpleNamespace
 from unittest.mock import MagicMock, patch
 
+import numpy as np
 import pandas as pd
 import pytest
 import vectorbt as vbt
@@ -15,6 +18,7 @@ from src.shared.models.signals.macro import MarginSignalParams
 from src.shared.models.signals.sector import SectorStrengthRankingParams
 from src.domains.strategy.core.mixins.backtest_executor_mixin import (
     BacktestExecutorMixin,
+    _next_session_round_trip_order_func_nb,
     _any_signal_enabled,
     _is_signal_enabled,
 )
@@ -62,6 +66,7 @@ class _RuntimeStrategy(BacktestExecutorMixin):
         self.cash_sharing = True
         self.group_by = True
         self.direction = "longonly"
+        self.next_session_round_trip = False
         self.printlog = False
         self.relative_mode = False
         self.dataset = "primeExTopix500"
@@ -109,10 +114,156 @@ class _RuntimeStrategy(BacktestExecutorMixin):
     def generate_multi_signals(self, stock_code: str, data: pd.DataFrame, **kwargs) -> Signals:
         if stock_code in self._next_signals:
             return self._next_signals[stock_code]
-        return _signals(data.index)
+        return _signals(cast(pd.DatetimeIndex, data.index))
 
 
 class TestBacktestExecutorMixinPaths:
+    def test_next_session_round_trip_order_func_nb_python_paths(self) -> None:
+        order_func = cast(Any, _next_session_round_trip_order_func_nb).py_func
+        entry_mask = np.array([[False, True]], dtype=np.bool_)
+        open_prices = np.array([[10.0, 11.0]])
+        close_prices = np.array([[10.5, 11.5]])
+
+        entry_ctx = SimpleNamespace(
+            from_col=0,
+            to_col=2,
+            call_idx=0,
+            i=0,
+            last_position=np.array([0.0, 0.0]),
+        )
+        col, order = order_func(
+            entry_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            0,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 0
+        assert np.isnan(order.size)
+
+        entry_ctx.call_idx = 1
+        col, order = order_func(
+            entry_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            0,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 1
+        assert order.size == pytest.approx(0.5)
+        assert order.price == pytest.approx(11.0)
+
+        exit_ctx = SimpleNamespace(
+            from_col=0,
+            to_col=2,
+            call_idx=2,
+            i=0,
+            last_position=np.array([0.0, 1.5]),
+        )
+        col, order = order_func(
+            exit_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            0,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 0
+        assert np.isnan(order.size)
+
+        exit_ctx.call_idx = 3
+        col, order = order_func(
+            exit_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            0,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 1
+        assert order.size == pytest.approx(-1.5)
+        assert order.price == pytest.approx(11.5)
+
+        exit_ctx.last_position = np.array([0.0, 0.0])
+        col, order = order_func(
+            exit_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            0,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 1
+        assert np.isnan(order.size)
+
+        short_exit_ctx = SimpleNamespace(
+            from_col=0,
+            to_col=2,
+            call_idx=3,
+            i=0,
+            last_position=np.array([0.0, -1.5]),
+        )
+        col, order = order_func(
+            short_exit_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            1,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 1
+        assert order.size == pytest.approx(1.5)
+        assert order.direction == 2
+        assert order.price == pytest.approx(11.5)
+
+        overflow_ctx = SimpleNamespace(
+            from_col=0,
+            to_col=2,
+            call_idx=4,
+            i=0,
+            last_position=np.array([0.0, 0.0]),
+        )
+        col, order = order_func(
+            overflow_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            0,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == -1
+        assert np.isnan(order.size)
+
     def test_signal_helpers(self) -> None:
         params = SignalParams(margin=MarginSignalParams(enabled=True))
         assert _is_signal_enabled(params, "margin") is True
@@ -129,7 +280,11 @@ class TestBacktestExecutorMixinPaths:
         strategy.entry_filter_params = SignalParams(
             fundamental=FundamentalSignalParams(
                 enabled=True,
-                per={"enabled": True, "threshold": 15.0, "condition": "below"},
+                per=FundamentalSignalParams.PERParams(
+                    enabled=True,
+                    threshold=15.0,
+                    condition="below",
+                ),
             )
         )
         strategy.exit_trigger_params = SignalParams(
@@ -150,27 +305,30 @@ class TestBacktestExecutorMixinPaths:
 
     def test_cache_helpers(self) -> None:
         strategy = _RuntimeStrategy()
+        open_ = pd.DataFrame({"1111": [0.5]})
         close = pd.DataFrame({"1111": [1.0]})
         entries = pd.DataFrame({"1111": [True]})
         exits = pd.DataFrame({"1111": [False]})
-        strategy._set_grouped_portfolio_inputs_cache(close, entries, exits)
+        strategy._set_grouped_portfolio_inputs_cache(open_, close, entries, exits)
         cached = strategy._get_grouped_portfolio_inputs_cache()
         assert cached is not None
-        assert cached[0].equals(close)
-        strategy._grouped_portfolio_inputs_cache = ("bad", "bad", "bad")
+        assert cached[0].equals(open_)
+        assert cached[1].equals(close)
+        strategy._grouped_portfolio_inputs_cache = ("bad", "bad", "bad", "bad")
         assert strategy._get_grouped_portfolio_inputs_cache() is None
         strategy._clear_grouped_portfolio_inputs_cache()
         assert strategy._get_grouped_portfolio_inputs_cache() is None
 
     def test_create_grouped_portfolio_multi_and_single(self) -> None:
         strategy = _RuntimeStrategy()
+        open_ = pd.DataFrame({"1111": [0.8, 1.8], "2222": [2.8, 3.8]})
         close = pd.DataFrame({"1111": [1.0, 2.0], "2222": [3.0, 4.0]})
         entries = pd.DataFrame({"1111": [True, False], "2222": [True, False]})
         exits = pd.DataFrame({"1111": [False, True], "2222": [False, True]})
         strategy.max_exposure = 0.2
 
         with patch.object(vbt.Portfolio, "from_signals", return_value="pf-multi") as mocked:
-            out = strategy._create_grouped_portfolio(close, entries, exits, allocation_pct=0.3)
+            out = strategy._create_grouped_portfolio(open_, close, entries, exits, allocation_pct=0.3)
             assert out == "pf-multi"
             kwargs = mocked.call_args.kwargs
             assert kwargs["size"] == pytest.approx(0.3)
@@ -179,7 +337,12 @@ class TestBacktestExecutorMixinPaths:
         strategy.stock_codes = ["1111"]
         strategy.cash_sharing = False
         with patch.object(vbt.Portfolio, "from_signals", return_value="pf-single") as mocked:
-            out = strategy._create_grouped_portfolio(close[["1111"]], entries[["1111"]], exits[["1111"]])
+            out = strategy._create_grouped_portfolio(
+                open_[["1111"]],
+                close[["1111"]],
+                entries[["1111"]],
+                exits[["1111"]],
+            )
             assert out == "pf-single"
             kwargs = mocked.call_args.kwargs
             assert kwargs["group_by"] is None
@@ -189,10 +352,11 @@ class TestBacktestExecutorMixinPaths:
         with pytest.raises(ValueError):
             strategy.run_multi_backtest_from_cached_signals(0.2)
 
+        open_ = pd.DataFrame({"1111": [0.8], "2222": [1.8]})
         close = pd.DataFrame({"1111": [1.0], "2222": [2.0]})
         entries = pd.DataFrame({"1111": [True], "2222": [False]})
         exits = pd.DataFrame({"1111": [False], "2222": [True]})
-        strategy._set_grouped_portfolio_inputs_cache(close, entries, exits)
+        strategy._set_grouped_portfolio_inputs_cache(open_, close, entries, exits)
         with patch.object(strategy, "_create_grouped_portfolio", return_value="cached-pf") as mocked:
             out = strategy.run_multi_backtest_from_cached_signals(0.15)
             assert out == "cached-pf"
@@ -214,6 +378,34 @@ class TestBacktestExecutorMixinPaths:
         assert all_entries is not None
         assert isinstance(all_entries, pd.DataFrame)
         assert strategy._grouped_portfolio_inputs_cache is not None
+
+    def test_run_multi_backtest_grouped_round_trip_uses_from_order_func(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.next_session_round_trip = True
+        strategy.max_concurrent_positions = 1
+        base_index = _ohlcv_df().index
+        raw_signals = Signals(
+            entries=pd.Series([True, False, False, False], index=base_index, dtype=bool),
+            exits=pd.Series([False, False, False, False], index=base_index, dtype=bool),
+        )
+        strategy._mock_multi_data = {
+            "1111": {"daily": _ohlcv_df()},
+            "2222": {"daily": _ohlcv_df()},
+        }
+        strategy._next_signals = {"1111": raw_signals, "2222": raw_signals}
+
+        with (
+            patch.object(vbt.Portfolio, "from_order_func", return_value="pf-rt") as from_order,
+            patch.object(vbt.Portfolio, "from_signals", return_value="pf-signal") as from_signals,
+        ):
+            portfolio, all_entries = strategy.run_multi_backtest()
+
+        assert portfolio == "pf-rt"
+        assert all_entries is not None
+        assert bool(all_entries.iloc[0].any()) is False
+        assert all_entries.iloc[1].sum() == 1
+        from_order.assert_called_once()
+        from_signals.assert_not_called()
 
     def test_run_multi_backtest_grouped_with_sector_and_benchmark(self, monkeypatch) -> None:
         strategy = _RuntimeStrategy()
@@ -252,18 +444,49 @@ class TestBacktestExecutorMixinPaths:
             {
                 "1111": {
                     "daily": execution_df,
-                    "margin_daily": _margin_df(execution_df.index),
-                    "statements_daily": _statements_df(execution_df.index),
+                    "margin_daily": _margin_df(cast(pd.DatetimeIndex, execution_df.index)),
+                    "statements_daily": _statements_df(
+                        cast(pd.DatetimeIndex, execution_df.index)
+                    ),
                 }
             },
         )
-        strategy._next_signals = {"1111": _signals(relative_df.index)}
+        strategy._next_signals = {"1111": _signals(cast(pd.DatetimeIndex, relative_df.index))}
 
         with patch.object(vbt.Portfolio, "from_signals", return_value="pf-relative"):
             portfolio, all_entries = strategy.run_multi_backtest()
 
         assert portfolio == "pf-relative"
         assert all_entries is not None
+
+    def test_run_multi_backtest_relative_round_trip_uses_execution_prices(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.stock_codes = ["1111"]
+        strategy.relative_mode = True
+        strategy.next_session_round_trip = True
+        relative_df = _ohlcv_df()
+        execution_df = _ohlcv_df()
+        execution_df["Open"] = [100.0, 110.0, 120.0, 130.0]
+        strategy._mock_relative_data = (
+            {"1111": {"daily": relative_df}},
+            {"1111": {"daily": execution_df}},
+        )
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=relative_df.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=relative_df.index, dtype=bool),
+            )
+        }
+
+        with (
+            patch.object(vbt.Portfolio, "from_order_func", return_value="pf-relative-rt") as from_order,
+            patch.object(vbt.Portfolio, "from_signals", return_value="pf-signal") as from_signals,
+        ):
+            portfolio, _ = strategy.run_multi_backtest()
+
+        assert portfolio == "pf-relative-rt"
+        assert from_order.call_args.args[3][1, 0] == pytest.approx(110.0)
+        from_signals.assert_not_called()
 
     def test_run_multi_backtest_missing_codes_and_empty_data(self) -> None:
         strategy = _RuntimeStrategy()
@@ -293,6 +516,94 @@ class TestBacktestExecutorMixinPaths:
             portfolio, all_entries = strategy.run_multi_backtest()
         assert portfolio == "pf-individual"
         assert all_entries is None
+
+    def test_run_multi_backtest_individual_round_trip_executes_open_to_close(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.next_session_round_trip = True
+        stock_data = _ohlcv_df()
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, all_entries = strategy.run_multi_backtest()
+        trades = portfolio.trades.records_readable
+
+        assert all_entries is None
+        assert len(trades) == 1
+        assert str(trades.iloc[0]["Entry Timestamp"]).startswith("2020-01-02")
+        assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-02")
+        assert trades.iloc[0]["Avg Entry Price"] == pytest.approx(11.0)
+        assert trades.iloc[0]["Avg Exit Price"] == pytest.approx(11.5)
+
+    def test_run_multi_backtest_individual_round_trip_shortonly_executes_open_to_close(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.direction = "shortonly"
+        strategy.next_session_round_trip = True
+        stock_data = _ohlcv_df()
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, all_entries = strategy.run_multi_backtest()
+        trades = portfolio.trades.records_readable
+
+        assert all_entries is None
+        assert len(trades) == 1
+        assert str(trades.iloc[0]["Entry Timestamp"]).startswith("2020-01-02")
+        assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-02")
+        assert trades.iloc[0]["Direction"] == "Short"
+        assert trades.iloc[0]["Status"] == "Closed"
+        assert trades.iloc[0]["Avg Entry Price"] == pytest.approx(11.0)
+        assert trades.iloc[0]["Avg Exit Price"] == pytest.approx(11.5)
+
+    def test_run_multi_backtest_round_trip_skips_last_bar_signal(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.next_session_round_trip = True
+        stock_data = _ohlcv_df()
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([False, False, False, True], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, _ = strategy.run_multi_backtest()
+        assert len(portfolio.trades.records_readable) == 0
+        assert any("next session is unavailable" in message for _level, message in strategy.logs)
+
+    def test_run_multi_backtest_round_trip_missing_execution_prices_logs_warning(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.next_session_round_trip = True
+        stock_data = _ohlcv_df()
+        stock_data.loc[stock_data.index[1], "Open"] = float("nan")
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, _ = strategy.run_multi_backtest()
+        assert len(portfolio.trades.records_readable) == 0
+        assert any("Open/Close was missing" in message for _level, message in strategy.logs)
 
     def test_limit_entries_per_day(self) -> None:
         entries = pd.DataFrame(

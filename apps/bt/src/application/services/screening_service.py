@@ -478,19 +478,24 @@ class ScreeningService:
             if basename_counts[response_name] > 1:
                 response_name = m.name
 
-            runtimes.append(
-                StrategyRuntime(
-                    name=m.name,
-                    response_name=response_name,
-                    basename=m.path.stem,
-                    entry_params=SignalParams(**config.get("entry_filter_params", {})),
-                    exit_params=SignalParams(**config.get("exit_trigger_params", {})),
-                    shared_config=SharedConfig.model_validate(
-                        shared_config_dict,
-                        context={"resolve_stock_codes": False},
-                    ),
-                )
+            runtime = StrategyRuntime(
+                name=m.name,
+                response_name=response_name,
+                basename=m.path.stem,
+                entry_params=SignalParams(**config.get("entry_filter_params", {})),
+                exit_params=SignalParams(**config.get("exit_trigger_params", {})),
+                shared_config=SharedConfig.model_validate(
+                    shared_config_dict,
+                    context={"resolve_stock_codes": False},
+                ),
             )
+            runtimes.append(runtime)
+
+            if runtime.shared_config.next_session_round_trip:
+                raise ValueError(
+                    "screening does not support shared_config.next_session_round_trip: "
+                    f"{m.name}"
+                )
 
         return runtimes
 

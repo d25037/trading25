@@ -44,6 +44,26 @@ class TestStrictValidation:
         result = validate_strategy_config_dict_strict(config)
         assert result.entry_filter_params is not None
 
+    def test_strict_valid_next_session_round_trip_config(self) -> None:
+        config = {
+            "shared_config": {"next_session_round_trip": True},
+            "entry_filter_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {},
+        }
+        result = validate_strategy_config_dict_strict(config)
+        assert result.shared_config is not None
+        assert result.shared_config.next_session_round_trip is True
+
+    def test_strict_valid_shared_config_without_round_trip_allows_exit_params(self) -> None:
+        config = {
+            "shared_config": {"next_session_round_trip": False},
+            "entry_filter_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {"volume": {"enabled": True}},
+        }
+
+        result = validate_strategy_config_dict_strict(config)
+        assert result.exit_trigger_params is not None
+
     def test_strict_nested_typo_rejected(self) -> None:
         config = {
             "entry_filter_params": {
@@ -73,3 +93,13 @@ class TestStrictValidation:
         is_valid, errors = try_validate_strategy_config_dict_strict(config)
         assert is_valid is False
         assert any("entry_filter_params.fundamental.foward_eps_growth" in e for e in errors)
+
+    def test_strict_next_session_round_trip_rejects_non_empty_exit_params(self) -> None:
+        config = {
+            "shared_config": {"next_session_round_trip": True},
+            "entry_filter_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+        }
+
+        with pytest.raises(StrategyConfigStrictValidationError, match="exit_trigger_params"):
+            validate_strategy_config_dict_strict(config)
