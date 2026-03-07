@@ -218,6 +218,30 @@ class TestBacktestExecutorMixinPaths:
         assert col == 1
         assert np.isnan(order.size)
 
+        short_exit_ctx = SimpleNamespace(
+            from_col=0,
+            to_col=2,
+            call_idx=3,
+            i=0,
+            last_position=np.array([0.0, -1.5]),
+        )
+        col, order = order_func(
+            short_exit_ctx,
+            entry_mask,
+            open_prices,
+            close_prices,
+            0.5,
+            2,
+            1,
+            0.001,
+            0.0,
+            1.0,
+        )
+        assert col == 1
+        assert order.size == pytest.approx(1.5)
+        assert order.direction == 2
+        assert order.price == pytest.approx(11.5)
+
         overflow_ctx = SimpleNamespace(
             from_col=0,
             to_col=2,
@@ -514,6 +538,33 @@ class TestBacktestExecutorMixinPaths:
         assert len(trades) == 1
         assert str(trades.iloc[0]["Entry Timestamp"]).startswith("2020-01-02")
         assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-02")
+        assert trades.iloc[0]["Avg Entry Price"] == pytest.approx(11.0)
+        assert trades.iloc[0]["Avg Exit Price"] == pytest.approx(11.5)
+
+    def test_run_multi_backtest_individual_round_trip_shortonly_executes_open_to_close(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.group_by = False
+        strategy.stock_codes = ["1111"]
+        strategy.direction = "shortonly"
+        strategy.next_session_round_trip = True
+        stock_data = _ohlcv_df()
+        strategy._mock_multi_data = {"1111": {"daily": stock_data}}
+        strategy._next_signals = {
+            "1111": Signals(
+                entries=pd.Series([True, False, False, False], index=stock_data.index, dtype=bool),
+                exits=pd.Series([False, False, False, False], index=stock_data.index, dtype=bool),
+            )
+        }
+
+        portfolio, all_entries = strategy.run_multi_backtest()
+        trades = portfolio.trades.records_readable
+
+        assert all_entries is None
+        assert len(trades) == 1
+        assert str(trades.iloc[0]["Entry Timestamp"]).startswith("2020-01-02")
+        assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-02")
+        assert trades.iloc[0]["Direction"] == "Short"
+        assert trades.iloc[0]["Status"] == "Closed"
         assert trades.iloc[0]["Avg Entry Price"] == pytest.approx(11.0)
         assert trades.iloc[0]["Avg Exit Price"] == pytest.approx(11.5)
 

@@ -73,11 +73,16 @@ def _next_session_round_trip_order_func_nb(
         position_now = c.last_position[col]
         if position_now == 0:
             return col, portfolio_nb.order_nothing_nb()
+        exit_size = -position_now
+        exit_direction = entry_direction
+        if position_now < 0:
+            exit_size = abs(position_now)
+            exit_direction = Direction.Both
         return col, portfolio_nb.order_nb(
-            size=-position_now,
+            size=exit_size,
             price=float(close_prices[c.i, col]),
             size_type=SizeType.Amount,
-            direction=entry_direction,
+            direction=exit_direction,
             fees=fees,
             slippage=slippage,
         )
