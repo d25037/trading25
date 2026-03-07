@@ -46,6 +46,7 @@ export interface ChartSettings {
   indicators: {
     sma: { enabled: boolean; period: number };
     ema: { enabled: boolean; period: number };
+    vwema: { enabled: boolean; period: number };
     macd: { enabled: boolean; fast: number; slow: number; signal: number };
     ppo: { enabled: boolean; fast: number; slow: number; signal: number };
     atrSupport: { enabled: boolean; period: number; multiplier: number };
@@ -146,6 +147,7 @@ export const defaultSettings: ChartSettings = {
   indicators: {
     sma: { enabled: false, period: 20 },
     ema: { enabled: false, period: 12 },
+    vwema: { enabled: false, period: 20 },
     macd: { enabled: false, fast: 12, slow: 26, signal: 9 },
     ppo: { enabled: true, fast: 12, slow: 26, signal: 9 },
     atrSupport: { enabled: false, period: 20, multiplier: 3.0 },
@@ -305,6 +307,7 @@ function normalizeSettings(settings: unknown): ChartSettings {
   const partialSignalOverlay = toPartialRecord<ChartSettings['signalOverlay']>(partial.signalOverlay);
   const partialSma = toPartialRecord<ChartSettings['indicators']['sma']>(partialIndicators.sma);
   const partialEma = toPartialRecord<ChartSettings['indicators']['ema']>(partialIndicators.ema);
+  const partialVwema = toPartialRecord<ChartSettings['indicators']['vwema']>(partialIndicators.vwema);
   const partialMacd = toPartialRecord<ChartSettings['indicators']['macd']>(partialIndicators.macd);
   const partialPpo = toPartialRecord<ChartSettings['indicators']['ppo']>(partialIndicators.ppo);
   const partialAtrSupport = toPartialRecord<ChartSettings['indicators']['atrSupport']>(partialIndicators.atrSupport);
@@ -325,6 +328,10 @@ function normalizeSettings(settings: unknown): ChartSettings {
       ema: {
         enabled: normalizeBoolean(partialEma.enabled, defaultSettings.indicators.ema.enabled),
         period: normalizePositiveInt(partialEma.period, defaultSettings.indicators.ema.period),
+      },
+      vwema: {
+        enabled: normalizeBoolean(partialVwema.enabled, defaultSettings.indicators.vwema.enabled),
+        period: normalizePositiveInt(partialVwema.period, defaultSettings.indicators.vwema.period),
       },
       macd: {
         enabled: normalizeBoolean(partialMacd.enabled, defaultSettings.indicators.macd.enabled),

@@ -6,6 +6,7 @@ from src.domains.strategy.indicators.calculations import (
     compute_risk_adjusted_return,
     compute_trading_value_ma,
     compute_volume_mas,
+    compute_volume_weighted_ema,
 )
 
 __all__ = [
@@ -14,4 +15,5 @@ __all__ = [
     "compute_risk_adjusted_return",
     "compute_trading_value_ma",
     "compute_volume_mas",
+    "compute_volume_weighted_ema",
 ]

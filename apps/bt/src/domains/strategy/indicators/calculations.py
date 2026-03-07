@@ -61,6 +61,21 @@ def compute_trading_value_ma(
     return ma
 
 
+def compute_volume_weighted_ema(
+    close: pd.Series[float],
+    volume: pd.Series[float],
+    period: int,
+) -> pd.Series[float]:
+    """出来高加重EMA (VWEMA)。
+
+    定義: EMA(close * volume, period) / EMA(volume, period)
+    """
+    weighted_price = close * volume
+    weighted_price_ema: pd.Series[float] = vbt.MA.run(weighted_price, period, ewm=True).ma
+    volume_ema: pd.Series[float] = vbt.MA.run(volume, period, ewm=True).ma
+    return weighted_price_ema / volume_ema.replace(0, np.nan)
+
+
 def compute_nbar_support(
     low: pd.Series[float],
     period: int,

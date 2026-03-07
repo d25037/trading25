@@ -481,6 +481,7 @@ function ChartsPanelsContent({
                   atrSupport={chartData[settings.displayTimeframe]?.indicators.atrSupport as IndicatorValue[] | undefined}
                   nBarSupport={chartData[settings.displayTimeframe]?.indicators.nBarSupport as IndicatorValue[] | undefined}
                   bollingerBands={chartData[settings.displayTimeframe]?.bollingerBands as BollingerBandsData[] | undefined}
+                  vwema={chartData[settings.displayTimeframe]?.indicators.vwema as IndicatorValue[] | undefined}
                   signalMarkers={signalMarkers?.[settings.displayTimeframe]}
                 />
               </ErrorBoundary>

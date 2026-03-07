@@ -14,6 +14,7 @@ from src.domains.strategy.indicators import (
     compute_risk_adjusted_return,
     compute_trading_value_ma,
     compute_volume_mas,
+    compute_volume_weighted_ema,
 )
 
 
@@ -100,6 +101,16 @@ def _compute_ema(
     key = _make_key("ema", period=period)
     return key, _series_to_records(ma, nan_handling)
 
+
+
+
+def _compute_vwema(
+    ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
+) -> tuple[str, list[dict[str, Any]]]:
+    period = params["period"]
+    vwema = compute_volume_weighted_ema(ohlcv["Close"], ohlcv["Volume"], period)
+    key = _make_key("vwema", period=period)
+    return key, _series_to_records(vwema, nan_handling)
 
 def _compute_rsi(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
@@ -256,6 +267,7 @@ def _compute_risk_adjusted_return(
 INDICATOR_REGISTRY: dict[str, ComputeFn] = {
     "sma": _compute_sma,
     "ema": _compute_ema,
+    "vwema": _compute_vwema,
     "rsi": _compute_rsi,
     "macd": _compute_macd,
     "ppo": _compute_ppo,

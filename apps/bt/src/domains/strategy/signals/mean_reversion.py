@@ -8,6 +8,20 @@ import pandas as pd
 import vectorbt as vbt
 from loguru import logger
 
+from src.domains.strategy.indicators import compute_volume_weighted_ema
+
+
+
+
+def _compute_baseline(ohlc_data: pd.DataFrame, baseline_type: str, baseline_period: int) -> pd.Series:
+    close = ohlc_data["Close"]
+    if baseline_type == "sma":
+        return vbt.MA.run(close, baseline_period).ma
+    if baseline_type == "ema":
+        return vbt.MA.run(close, baseline_period, ewm=True).ma
+    if baseline_type == "vwema":
+        return compute_volume_weighted_ema(close, ohlc_data["Volume"], baseline_period)
+    raise ValueError(f"未対応のベースラインタイプ: {baseline_type} (sma/ema/vwemaのみ)")
 
 def deviation_signal(
     price: pd.Series,
@@ -122,7 +136,7 @@ def mean_reversion_entry_signal(
 
     Args:
         ohlc_data: OHLCVデータ（Close含む）
-        baseline_type: ベースラインタイプ（"sma" or "ema"）
+        baseline_type: ベースラインタイプ（"sma" or "ema" or "vwema"）
         baseline_period: ベースライン期間
         deviation_threshold: 乖離率閾値（例: 0.2 = 20%乖離）
         deviation_direction: 乖離方向（"below" or "above"）
@@ -141,14 +155,7 @@ def mean_reversion_entry_signal(
     )
 
     close = ohlc_data["Close"]
-
-    # ベースライン計算（VectorBT使用）
-    if baseline_type == "sma":
-        baseline = vbt.MA.run(close, baseline_period).ma
-    elif baseline_type == "ema":
-        baseline = vbt.MA.run(close, baseline_period, ewm=True).ma
-    else:
-        raise ValueError(f"未対応のベースラインタイプ: {baseline_type} (sma/emaのみ)")
+    baseline = _compute_baseline(ohlc_data, baseline_type, baseline_period)
 
     # 乖離シグナル生成
     return deviation_signal(close, baseline, deviation_threshold, deviation_direction)
@@ -169,7 +176,7 @@ def mean_reversion_exit_signal(
 
     Args:
         ohlc_data: OHLCVデータ（High、Low、Close含む）
-        baseline_type: ベースラインタイプ（"sma" or "ema"）
+        baseline_type: ベースラインタイプ（"sma" or "ema" or "vwema"）
         baseline_period: ベースライン期間
         recovery_direction: 回復方向（"above" or "below"）
         recovery_price: 回復価格（"high"、"low"、"close"）
@@ -188,14 +195,7 @@ def mean_reversion_exit_signal(
     )
 
     close = ohlc_data["Close"]
-
-    # ベースライン計算（VectorBT使用）
-    if baseline_type == "sma":
-        baseline = vbt.MA.run(close, baseline_period).ma
-    elif baseline_type == "ema":
-        baseline = vbt.MA.run(close, baseline_period, ewm=True).ma
-    else:
-        raise ValueError(f"未対応のベースラインタイプ: {baseline_type} (sma/emaのみ)")
+    baseline = _compute_baseline(ohlc_data, baseline_type, baseline_period)
 
     # 回復価格選択
     if recovery_price == "high":
@@ -235,7 +235,7 @@ def mean_reversion_combined_signal(
 
     Args:
         ohlc_data: OHLCVデータ（High、Low、Close含む）
-        baseline_type: ベースラインタイプ（"sma" or "ema"）
+        baseline_type: ベースラインタイプ（"sma" or "ema" or "vwema"）
         baseline_period: ベースライン期間
         deviation_threshold: 乖離率閾値（0.0で無効化、例: 0.2 = 20%乖離）
         deviation_direction: 乖離方向（"below" or "above"）
@@ -266,13 +266,7 @@ def mean_reversion_combined_signal(
     if close.empty:
         return pd.Series([], dtype=bool)
 
-    # ベースライン計算（VectorBT使用）
-    if baseline_type == "sma":
-        baseline = vbt.MA.run(close, baseline_period).ma
-    elif baseline_type == "ema":
-        baseline = vbt.MA.run(close, baseline_period, ewm=True).ma
-    else:
-        raise ValueError(f"未対応のベースラインタイプ: {baseline_type} (sma/emaのみ)")
+    baseline = _compute_baseline(ohlc_data, baseline_type, baseline_period)
 
     # 乖離シグナル（deviation_threshold=0.0で無効化）
     if deviation_threshold > 0.0:

@@ -4099,6 +4099,7 @@
             "enum": [
               "sma",
               "ema",
+              "vwema",
               "rsi",
               "macd",
               "ppo",

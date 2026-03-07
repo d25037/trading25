@@ -92,7 +92,7 @@ DIRECTION_CHOICES = {
 
 INDICATOR_CHOICES = {
     "ma_type": ["sma", "ema"],
-    "baseline_type": ["sma", "ema"],
+    "baseline_type": ["sma", "ema", "vwema"],
     "price_column": ["high", "low", "close"],
     "ratio_type": ["sharpe", "sortino"],
     "crossover_type": ["sma", "rsi", "macd", "ema"],
