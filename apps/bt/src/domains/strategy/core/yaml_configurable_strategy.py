@@ -192,6 +192,7 @@ class YamlConfigurableStrategy(
             relative_mode=self.relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            current_session_round_trip_oracle=self.current_session_round_trip_oracle,
         )
         entries, exits = enhanced_signals.entries, enhanced_signals.exits
 

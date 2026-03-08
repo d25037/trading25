@@ -28,6 +28,11 @@ class SignalProcessor:
     - base_strategy: Signals オブジェクト生成・戦略全体制御
     """
 
+    _REQUIRES_EXECUTION_DATA = {"β値", "売買代金", "売買代金範囲"}
+    _CURRENT_SESSION_ORACLE_SAME_DAY_ENTRY_ALLOWLIST = {
+        "oracle_index_open_gap_regime"
+    }
+
     def __init__(self):
         """
         統合シグナルプロセッサーの初期化
@@ -50,6 +55,7 @@ class SignalProcessor:
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         screening_recent_days: int | None = None,
+        current_session_round_trip_oracle: bool = False,
     ) -> pd.Series:
         """
         エントリーシグナル適用（統一シグナル処理システム使用）
@@ -83,6 +89,7 @@ class SignalProcessor:
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
             entry_recent_days_for_early_stop=screening_recent_days,
+            current_session_round_trip_oracle=current_session_round_trip_oracle,
         )
 
     def apply_exit_signals(
@@ -135,6 +142,7 @@ class SignalProcessor:
         stock_sector_name: Optional[str] = None,
         screening_recent_days: int | None = None,
         skip_exit_when_no_recent_entry: bool = False,
+        current_session_round_trip_oracle: bool = False,
         **optional_data,
     ) -> Signals:
         """
@@ -168,6 +176,7 @@ class SignalProcessor:
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
             screening_recent_days=screening_recent_days,
+            current_session_round_trip_oracle=current_session_round_trip_oracle,
             **optional_data,
         )
 
@@ -258,6 +267,7 @@ class SignalProcessor:
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         entry_recent_days_for_early_stop: int | None = None,
+        current_session_round_trip_oracle: bool = False,
     ) -> pd.Series:
         """
         統一シグナル処理システム
@@ -336,6 +346,7 @@ class SignalProcessor:
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
             entry_recent_days_for_early_stop=entry_recent_days_for_early_stop,
+            current_session_round_trip_oracle=current_session_round_trip_oracle,
         )
         if early_stopped:
             logger.debug(
@@ -394,6 +405,7 @@ class SignalProcessor:
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         entry_recent_days_for_early_stop: int | None = None,
+        current_session_round_trip_oracle: bool = False,
     ) -> bool:
         """
         データ駆動型シグナル適用処理（統一レジストリベース）
@@ -438,6 +450,7 @@ class SignalProcessor:
                 signal_params=signal_params,
                 base_signal=base_signal,
                 data_sources=data_sources,
+                current_session_round_trip_oracle=current_session_round_trip_oracle,
             )
             if (
                 running_entry_signal is None
@@ -459,12 +472,23 @@ class SignalProcessor:
 
         return False
 
-    # 相対価格モードで使用不可のシグナル（実価格が必須）
-    _REQUIRES_EXECUTION_DATA = {"β値", "売買代金", "売買代金範囲"}
-
     @staticmethod
     def _has_non_empty_dataframe(value: object) -> bool:
         return isinstance(value, pd.DataFrame) and (not value.empty)
+
+    @classmethod
+    def _should_lag_entry_signal_for_current_session_oracle(
+        cls,
+        signal_type: Literal["entry", "exit"],
+        signal_def: SignalDefinition,
+        current_session_round_trip_oracle: bool,
+    ) -> bool:
+        return (
+            current_session_round_trip_oracle
+            and signal_type == "entry"
+            and signal_def.param_key
+            not in cls._CURRENT_SESSION_ORACLE_SAME_DAY_ENTRY_ALLOWLIST
+        )
 
     def _is_requirement_satisfied(self, requirement: str, data_sources: dict) -> bool:
         base, _, detail = requirement.partition(":")
@@ -537,6 +561,7 @@ class SignalProcessor:
         signal_params: SignalParams,
         base_signal: pd.Series,
         data_sources: dict,
+        current_session_round_trip_oracle: bool = False,
     ):
         """統一シグナル適用（Entry/Exit両用）"""
         try:
@@ -603,6 +628,17 @@ class SignalProcessor:
                 # - Entry (AND): NaNはFalse扱い（判定不能期間は取引禁止 = 安全側）
                 # - Exit (OR): NaNはFalse扱い（発火しない）
                 result = result.reindex(base_signal.index)  # fill_value省略でNaN
+
+            if self._should_lag_entry_signal_for_current_session_oracle(
+                signal_type=signal_type,
+                signal_def=signal_def,
+                current_session_round_trip_oracle=current_session_round_trip_oracle,
+            ):
+                result = result.shift(1, fill_value=False)
+                logger.debug(
+                    f"{signal_def.name}シグナル: current_session_round_trip_oracle "
+                    "では前営業日までの情報に固定するため 1 日ラグを適用"
+                )
 
             # 7. ロギング＋条件追加
             self._log_signal_effect(

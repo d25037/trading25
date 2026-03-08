@@ -129,6 +129,30 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         assert bool(result.exits.iloc[-1]) is False
 
+    def test_generate_signals_passes_current_session_round_trip_oracle_to_processor(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(current_session_round_trip_oracle=True)
+        )
+        data = _ohlcv()
+        captured: dict[str, Any] = {}
+
+        def _fake_generate_signals(**kwargs: Any) -> Signals:
+            captured.update(kwargs)
+            return _signals(cast(pd.DatetimeIndex, data.index))
+
+        monkeypatch.setattr(
+            strategy.signal_processor,
+            "generate_signals",
+            _fake_generate_signals,
+        )
+
+        strategy.generate_signals(data)
+
+        assert captured["current_session_round_trip_oracle"] is True
+
     def test_generate_signals_handles_missing_last_valid_close_without_forced_exit(
         self,
         monkeypatch: pytest.MonkeyPatch,

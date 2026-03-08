@@ -404,6 +404,103 @@ class TestSignalProcessor:
         assert aligned.isna().sum() == 2
         assert any("日付不一致" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
 
+    def test_apply_unified_signal_lags_non_oracle_entry_in_current_session_oracle(self):
+        dummy_signal = SimpleNamespace(
+            name="RSI",
+            signal_func=lambda **_kwargs: pd.Series(
+                [True, True, False, True, False],
+                index=self.base_signal.index,
+            ),
+            enabled_checker=lambda _params: True,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="rsi_threshold",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        signal_conditions = [self.base_signal]
+        self.processor._apply_unified_signal(  # noqa: SLF001
+            signal_def=dummy_signal,
+            signal_conditions=signal_conditions,
+            signal_type="entry",
+            signal_params=self.signal_params,
+            base_signal=self.base_signal,
+            data_sources={"is_relative_mode": False},
+            current_session_round_trip_oracle=True,
+        )
+
+        assert len(signal_conditions) == 2
+        expected = pd.Series(
+            [False, True, True, False, True],
+            index=self.base_signal.index,
+        )
+        pd.testing.assert_series_equal(signal_conditions[-1], expected)
+
+    def test_apply_signals_current_session_oracle_preserves_only_gap_signal_same_day(self):
+        base_signal = pd.Series([True, True, True, True, True], index=self.test_data.index)
+        params = SignalParams()
+        params.oracle_index_open_gap_regime.enabled = True
+        params.rsi_threshold.enabled = True
+
+        oracle_signal = SimpleNamespace(
+            name="TOPIX Gap Oracle",
+            signal_func=lambda **_kwargs: pd.Series(
+                [False, True, True, False, True],
+                index=self.test_data.index,
+            ),
+            enabled_checker=lambda signal_params: signal_params.oracle_index_open_gap_regime.enabled,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="oracle_index_open_gap_regime",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+        technical_signal = SimpleNamespace(
+            name="RSI",
+            signal_func=lambda **_kwargs: pd.Series(
+                [True, False, True, True, False],
+                index=self.test_data.index,
+            ),
+            enabled_checker=lambda signal_params: signal_params.rsi_threshold.enabled,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="rsi_threshold",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        with patch(
+            "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
+            [oracle_signal, technical_signal],
+        ):
+            result = self.processor.apply_signals(
+                base_signal=base_signal,
+                signal_type="entry",
+                ohlc_data=self.test_data,
+                signal_params=params,
+                current_session_round_trip_oracle=True,
+            )
+
+        expected = pd.Series(
+            [False, True, False, False, True],
+            index=self.test_data.index,
+            dtype=bool,
+        )
+        pd.testing.assert_series_equal(result, expected)
+
     def test_apply_unified_signal_keyerror_is_reraised(self):
         dummy_signal = SimpleNamespace(
             name="KeyErrorSignal",
