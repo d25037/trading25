@@ -329,14 +329,14 @@ def test_persist_attribution_artifact_writes_xdg_json(monkeypatch, tmp_path: Pat
     monkeypatch.setattr(
         service._runner.config_loader,
         "load_strategy_config",
-        lambda _name: {"entry_filter_params": {"volume": {"enabled": True}}},
+        lambda _name: {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}},
     )
     monkeypatch.setattr(
         service._runner,
         "build_parameters_for_strategy",
         lambda strategy, config_override: {
             "shared_config": {"dataset": "prime_202601"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {},
         },
     )

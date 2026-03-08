@@ -78,29 +78,27 @@ config/
 ```yaml
 # config/strategies/experimental/range_break_v6.yaml（ベース戦略）
 entry_filter_params:
-  period_breakout:
+  period_extrema_break:
     enabled: true        # ← 戦略YAMLで管理
     direction: "high"    # ← 戦略YAMLで管理
-    condition: "break"   # ← 戦略YAMLで管理
     lookback_days: 10    # ← グリッドYAMLで最適化
     period: 100          # ← グリッドYAMLで最適化
 
-  volume:
+  volume_ratio_above:
     enabled: true        # ← 戦略YAMLで管理
-    direction: "surge"   # ← 戦略YAMLで管理
-    threshold: 2.0       # ← グリッドYAMLで最適化
+    ratio_threshold: 2.0  # ← グリッドYAMLで最適化
 ```
 
 ```yaml
 # config/optimization/range_break_v6_grid.yaml（最適化パラメータのみ）
 parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       lookback_days: [5, 10, 15, 20]  # 最適化対象
       period: [30, 50, 100, 200]      # 最適化対象
 
-    volume:
-      threshold: [1.5, 2.0, 2.5, 3.0]  # 最適化対象
+    volume_ratio_above:
+      ratio_threshold: [1.5, 2.0, 2.5, 3.0]  # 最適化対象
 ```
 
 ```yaml
@@ -113,27 +111,27 @@ parameter_ranges:
   # entry_filter_params配下のパラメータ
   entry_filter_params:
 
-    # Period Breakoutシグナル
-    period_breakout:
+    # Period Extrema Breakシグナル
+    period_extrema_break:
       lookback_days: [5, 10, 15, 20]  # 短期最高値期間
       period: [30, 50, 100, 200]      # 長期最高値期間
 
-    # Bollinger Bandsシグナル
-    bollinger_bands:
+    # Bollinger Positionシグナル
+    bollinger_position:
       window: [10, 20, 30]  # BB期間
       alpha: [1.0, 1.5, 2.0]  # 標準偏差倍率
 
-    # Volumeシグナル
-    volume:
-      threshold: [1.5, 2.0, 2.5, 3.0]  # 出来高倍率
+    # Volume Ratio Aboveシグナル
+    volume_ratio_above:
+      ratio_threshold: [1.5, 2.0, 2.5, 3.0]  # 出来高倍率
       short_period: [10, 20]  # 短期平均期間
       long_period: [50, 100]  # 長期平均期間
 
   # exit_trigger_params配下のパラメータ
   exit_trigger_params:
 
-    # ATR Support Breakシグナル
-    atr_support_break:
+    # ATR Support Positionシグナル
+    atr_support_position:
       lookback_period: [10, 20, 30]  # サポートライン期間
       atr_multiplier: [2.0, 2.5, 3.0]  # ATR倍率
 ```
@@ -204,24 +202,24 @@ uv run bt optimize range_break_v6 \
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 🥇 Rank 1 - 複合スコア: 1.65
-  entry_filter_params.period_breakout.lookback_days: 10
-  entry_filter_params.period_breakout.period: 100
-  entry_filter_params.bollinger_bands.window: 20
-  entry_filter_params.volume.threshold: 2.0
+  entry_filter_params.period_extrema_break.lookback_days: 10
+  entry_filter_params.period_extrema_break.period: 100
+  entry_filter_params.bollinger_position.window: 20
+  entry_filter_params.volume_ratio_above.ratio_threshold: 2.0
   → Sharpe: 1.87, Calmar: 1.35, Return: 68.5%
 
 🥈 Rank 2 - 複合スコア: 1.58
-  entry_filter_params.period_breakout.lookback_days: 10
-  entry_filter_params.period_breakout.period: 100
-  entry_filter_params.bollinger_bands.window: 30
-  entry_filter_params.volume.threshold: 2.0
+  entry_filter_params.period_extrema_break.lookback_days: 10
+  entry_filter_params.period_extrema_break.period: 100
+  entry_filter_params.bollinger_position.window: 30
+  entry_filter_params.volume_ratio_above.ratio_threshold: 2.0
   → Sharpe: 1.79, Calmar: 1.28, Return: 65.3%
 
 🥉 Rank 3 - 複合スコア: 1.52
-  entry_filter_params.period_breakout.lookback_days: 15
-  entry_filter_params.period_breakout.period: 100
-  entry_filter_params.bollinger_bands.window: 20
-  entry_filter_params.volume.threshold: 2.5
+  entry_filter_params.period_extrema_break.lookback_days: 15
+  entry_filter_params.period_extrema_break.period: 100
+  entry_filter_params.bollinger_position.window: 20
+  entry_filter_params.volume_ratio_above.ratio_threshold: 2.5
   → Sharpe: 1.72, Calmar: 1.22, Return: 62.1%
 
 ...
@@ -555,12 +553,12 @@ def build_signal_params(
     パラメータ辞書からSignalParamsを動的構築（ベース設定マージ）
 
     設計思想:
-        - ベース戦略YAML（enabled, direction, condition等）を継承
+        - ベース戦略YAML（enabled, direction等）を継承
         - グリッドYAMLで指定されたパラメータのみ上書き
         - その他の設定は全てベース戦略YAMLから引き継ぐ
 
     Args:
-        params: {"entry_filter_params.period_breakout.lookback_days": 10, ...}
+        params: {"entry_filter_params.period_extrema_break.lookback_days": 10, ...}
         section: "entry_filter_params" or "exit_trigger_params"
         base_signal_params: ベース戦略YAMLから読み込んだSignalParams
 
@@ -570,21 +568,20 @@ def build_signal_params(
     Example:
         # ベース戦略YAML (range_break_v6.yaml)
         entry_filter_params:
-          period_breakout:
+          period_extrema_break:
             enabled: true           # ← ベース設定から継承
             direction: "high"       # ← ベース設定から継承
-            condition: "break"      # ← ベース設定から継承
             lookback_days: 10       # ← グリッドで上書き
             period: 100             # ← グリッドで上書き
 
         # グリッドYAML (range_break_v6_grid.yaml)
         parameter_ranges:
           entry_filter_params:
-            period_breakout:
+            period_extrema_break:
               lookback_days: [5, 10, 15, 20]  # 最適化対象
               period: [30, 50, 100, 200]      # 最適化対象
 
-        # 結果: enabled=True, direction="high", condition="break"は継承
+        # 結果: enabled=True, direction="high"は継承
         #       lookback_days=10, period=100はグリッドから設定
     """
     # 1. ベース設定をdictに変換（継承用）
@@ -598,8 +595,8 @@ def build_signal_params(
     }
 
     # 3. シグナル別にグルーピング
-    # {"period_breakout.lookback_days": 10}
-    # → {"period_breakout": {"lookback_days": 10}}
+    # {"period_extrema_break.lookback_days": 10}
+    # → {"period_extrema_break": {"lookback_days": 10}}
     grid_params_dict = {}
     for key, value in section_params.items():
         signal_name, param_name = key.split(".", 1)
@@ -628,22 +625,22 @@ def build_signal_params(
     # 5. SignalParams構築（マージ結果から）
     kwargs = {}
 
-    # Period Breakout
-    if "period_breakout" in merged_params:
-        kwargs["period_breakout"] = PeriodBreakoutParams(
-            **merged_params["period_breakout"]
+    # Period Extrema Break
+    if "period_extrema_break" in merged_params:
+        kwargs["period_extrema_break"] = PeriodExtremaBreakSignalParams(
+            **merged_params["period_extrema_break"]
         )
 
-    # Bollinger Bands
-    if "bollinger_bands" in merged_params:
-        kwargs["bollinger_bands"] = BollingerBandsSignalParams(
-            **merged_params["bollinger_bands"]
+    # Bollinger Position
+    if "bollinger_position" in merged_params:
+        kwargs["bollinger_position"] = BollingerPositionSignalParams(
+            **merged_params["bollinger_position"]
         )
 
-    # Volume
-    if "volume" in merged_params:
-        kwargs["volume"] = VolumeSignalParams(
-            **merged_params["volume"]
+    # Volume Ratio Above
+    if "volume_ratio_above" in merged_params:
+        kwargs["volume_ratio_above"] = VolumeRatioAboveSignalParams(
+            **merged_params["volume_ratio_above"]
         )
 
     # ... 他のシグナルも同様（ベース設定 + グリッド設定をマージ）
@@ -700,10 +697,10 @@ uv run bt optimize sma_cross
 # config/optimization/bnf_mean_reversion_grid.yaml
 parameter_ranges:
   entry_filter_params:
-    mean_reversion:
-      ma_type: ["sma", "ema"]
-      ma_period: [10, 20, 30, 50]
-      deviation_threshold: [1.5, 2.0, 2.5]
+    baseline_deviation:
+      baseline_type: ["sma", "ema"]
+      baseline_period: [10, 20, 30, 50]
+      deviation_threshold: [0.15, 0.2, 0.25]
 
     rsi_threshold:
       period: [7, 14, 21]
@@ -724,14 +721,14 @@ uv run bt optimize bnf_mean_reversion
 # ❌ 悪い例: 極端すぎる範囲
 parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       lookback_days: [1, 2, 3, 500]  # 極端
       period: [5, 10, 1000]  # 極端
 
 # ✅ 良い例: 常識的な範囲
 parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       lookback_days: [5, 10, 15, 20]  # 妥当
       period: [30, 50, 100, 200]  # 妥当
 ```

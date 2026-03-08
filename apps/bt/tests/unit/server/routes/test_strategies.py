@@ -33,7 +33,7 @@ def client():
 class TestGetStrategyDetail:
     def test_success(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "shared_config": {"dataset": "test"},
         }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
@@ -54,7 +54,7 @@ class TestGetStrategyDetail:
 class TestValidateStrategy:
     def test_valid_config(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
@@ -127,7 +127,7 @@ class TestValidateStrategy:
                 json={
                     "config": {
                         "shared_config": {"next_session_round_trip": True},
-                        "entry_filter_params": {"volume": {"enabled": True}},
+                        "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                         "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
                     }
                 },

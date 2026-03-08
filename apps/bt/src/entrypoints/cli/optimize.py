@@ -239,7 +239,7 @@ def _format_params_table(params: dict) -> str:
     """
     formatted = []
     for key, value in params.items():
-        # ネストを簡略化（entry_filter_params.period_breakout.period → period=100）
+        # ネストを簡略化（entry_filter_params.period_extrema_break.period → period=100）
         short_key = key.split(".")[-1]
         formatted.append(f"{short_key}={value}")
 

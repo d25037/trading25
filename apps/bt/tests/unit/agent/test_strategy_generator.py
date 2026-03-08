@@ -105,31 +105,31 @@ class TestStrategyGenerator:
         """除外シグナルが生成から除外されることを確認"""
         config = GeneratorConfig(
             n_strategies=10,
-            exclude_signals=["volume", "beta"],
+            exclude_signals=["volume_ratio_above", "beta"],
             seed=42,
         )
         generator = StrategyGenerator(config=config)
         candidates = generator.generate()
 
         for candidate in candidates:
-            assert "volume" not in candidate.entry_filter_params
+            assert "volume_ratio_above" not in candidate.entry_filter_params
             assert "beta" not in candidate.entry_filter_params
 
     def test_generate_from_template(self):
         """テンプレートからバリエーションを生成できることを確認"""
         generator = StrategyGenerator()
         template = {
-            "entry": ["period_breakout", "volume"],
-            "exit": ["atr_support_break"],
+            "entry": ["period_extrema_break", "volume_ratio_above"],
+            "exit": ["atr_support_position"],
         }
 
         variations = generator.generate_from_template(template, n_variations=5)
 
         assert len(variations) == 5
         for v in variations:
-            assert "period_breakout" in v.entry_filter_params
-            assert "volume" in v.entry_filter_params
-            assert "atr_support_break" in v.exit_trigger_params
+            assert "period_extrema_break" in v.entry_filter_params
+            assert "volume_ratio_above" in v.entry_filter_params
+            assert "atr_support_position" in v.exit_trigger_params
 
     def test_candidate_has_metadata(self):
         """生成された候補がメタデータを持つことを確認"""

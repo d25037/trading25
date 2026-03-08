@@ -62,10 +62,12 @@ async def compute_signals(
 
     Phase 1: OHLCV系シグナルのみ対応
     - oscillator: rsi_threshold, rsi_spread
-    - breakout: period_breakout, ma_breakout, atr_support_break, retracement,
-                mean_reversion, crossover, buy_and_hold
-    - volatility: bollinger_bands
-    - volume: volume, trading_value, trading_value_range
+    - breakout: baseline_deviation, period_extrema_break, period_extrema_position,
+                atr_support_position, atr_support_cross, buy_and_hold
+    - trend: baseline_cross, baseline_position, retracement_position,
+             retracement_cross, crossover
+    - volatility: volatility_percentile, bollinger_position, bollinger_cross
+    - volume: volume_ratio_above, volume_ratio_below, trading_value, trading_value_range
 
     Example request:
     ```json
@@ -75,7 +77,7 @@ async def compute_signals(
         "timeframe": "daily",
         "signals": [
             {"type": "rsi_threshold", "params": {"threshold": 30}, "mode": "entry"},
-            {"type": "period_breakout", "params": {"period": 20}, "mode": "entry"}
+            {"type": "period_extrema_break", "params": {"period": 20}, "mode": "entry"}
         ]
     }
     ```
@@ -87,7 +89,7 @@ async def compute_signals(
         "timeframe": "daily",
         "signals": {
             "rsi_threshold": {"trigger_dates": ["2025-01-15"], "count": 1},
-            "period_breakout": {"trigger_dates": ["2025-02-01"], "count": 1}
+            "period_extrema_break": {"trigger_dates": ["2025-02-01"], "count": 1}
         }
     }
     ```

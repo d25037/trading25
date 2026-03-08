@@ -16,7 +16,12 @@ def _make_candidate(sid: str = "test_strat"):
     return StrategyCandidate(
         strategy_id=sid,
         entry_filter_params={
-            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+            },
         },
         exit_trigger_params={},
     )
@@ -54,7 +59,7 @@ class TestOptunaOptimizerInit:
 
     def test_param_ranges(self):
         optimizer = _make_optimizer()
-        assert "volume" in optimizer.PARAM_RANGES
+        assert "volume_ratio_above" in optimizer.PARAM_RANGES
 
     def test_default_config(self):
         optimizer = OptunaOptimizer()
@@ -77,7 +82,7 @@ class TestOptunaOptimizerInit:
         optimizer.shared_config_dict = None
         with patch("src.domains.lab_agent.optuna_optimizer.ConfigLoader") as MockLoader:
             MockLoader.return_value.load_strategy_config.return_value = {
-                "entry_filter_params": {"volume": {"enabled": True}},
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
                 "shared_config": {"dataset": "demo"},
             }
@@ -151,7 +156,7 @@ class TestOptimizeFlow:
         study.trials = [trial]
         study.best_trial = MagicMock()
         study.best_value = 1.23
-        study.best_params = {"entry_volume_threshold": 1.8}
+        study.best_params = {"entry_volume_ratio_above_ratio_threshold": 1.8}
 
         def fake_optimize(_objective, n_trials, n_jobs, show_progress_bar, callbacks):
             assert n_trials == 10
@@ -184,7 +189,9 @@ class TestOptimizeFlow:
         assert best_candidate.strategy_id == "best"
         assert result_study is study
         assert progress_calls == [(1, 10, 1.23)]
-        mock_build.assert_called_once_with({"entry_volume_threshold": 1.8})
+        mock_build.assert_called_once_with(
+            {"entry_volume_ratio_above_ratio_threshold": 1.8}
+        )
 
     def test_optimize_without_progress_callback(self):
         optimizer = _make_optimizer(n_trials=10)
@@ -257,7 +264,7 @@ class TestOptimizeFlow:
                 optimizer,
                 "_build_stage2_local_search_space",
                 return_value=(
-                    {"entry_volume_short_period": (10.0, 40.0, "int")},
+                    {"entry_volume_ratio_above_short_period": (10.0, 40.0, "int")},
                     [MagicMock()],
                 ),
             ),
@@ -303,8 +310,8 @@ class TestOptimizeFlow:
     def test_build_stage2_local_search_space_builds_overrides_for_int_and_float(self):
         optimizer = _make_optimizer()
         optimizer._param_specs = {
-            "entry_volume_short_period": (5.0, 100.0, "int"),
-            "entry_volume_threshold": (0.5, 3.0, "float"),
+            "entry_volume_ratio_above_short_period": (10.0, 100.0, "int"),
+            "entry_volume_ratio_above_ratio_threshold": (1.05, 3.0, "float"),
             "entry_missing_signal_param": (1.0, 2.0, "float"),
         }
         state_complete = optuna_optimizer_module.optuna_runtime.trial.TrialState.COMPLETE
@@ -313,24 +320,24 @@ class TestOptimizeFlow:
                 state=state_complete,
                 value=1.20,
                 params={
-                    "entry_volume_short_period": 28,
-                    "entry_volume_threshold": 1.05,
+                    "entry_volume_ratio_above_short_period": 28,
+                    "entry_volume_ratio_above_ratio_threshold": 1.05,
                 },
             ),
             SimpleNamespace(
                 state=state_complete,
                 value=1.10,
                 params={
-                    "entry_volume_short_period": 32,
-                    "entry_volume_threshold": 1.15,
+                    "entry_volume_ratio_above_short_period": 32,
+                    "entry_volume_ratio_above_ratio_threshold": 1.15,
                 },
             ),
             SimpleNamespace(
                 state=state_complete,
                 value=1.00,
                 params={
-                    "entry_volume_short_period": 36,
-                    "entry_volume_threshold": 1.25,
+                    "entry_volume_ratio_above_short_period": 36,
+                    "entry_volume_ratio_above_ratio_threshold": 1.25,
                 },
             ),
         ]
@@ -339,12 +346,14 @@ class TestOptimizeFlow:
         overrides, top_trials = optimizer._build_stage2_local_search_space(cast(Any, study))
 
         assert len(top_trials) == 3
-        assert "entry_volume_short_period" in overrides
-        assert "entry_volume_threshold" in overrides
-        int_min, int_max, int_type = overrides["entry_volume_short_period"]
+        assert "entry_volume_ratio_above_short_period" in overrides
+        assert "entry_volume_ratio_above_ratio_threshold" in overrides
+        int_min, int_max, int_type = overrides["entry_volume_ratio_above_short_period"]
         assert int_type == "int"
         assert int_min <= int_max
-        float_min, float_max, float_type = overrides["entry_volume_threshold"]
+        float_min, float_max, float_type = overrides[
+            "entry_volume_ratio_above_ratio_threshold"
+        ]
         assert float_type == "float"
         assert float_min < float_max
         assert "entry_missing_signal_param" not in overrides
@@ -355,23 +364,23 @@ class TestOptimizeFlow:
         top_trials = [
             SimpleNamespace(
                 params={
-                    "entry_volume_short_period": 90,
-                    "entry_volume_threshold": 3.5,
+                    "entry_volume_ratio_above_short_period": 90,
+                    "entry_volume_ratio_above_ratio_threshold": 3.5,
                     "ignored": 1,
                 }
             )
         ]
         overrides = {
-            "entry_volume_short_period": (20.0, 40.0, "int"),
-            "entry_volume_threshold": (1.0, 2.0, "float"),
+            "entry_volume_ratio_above_short_period": (20.0, 40.0, "int"),
+            "entry_volume_ratio_above_ratio_threshold": (1.1, 2.0, "float"),
         }
 
         optimizer._enqueue_stage2_seed_trials(cast(Any, study), cast(Any, top_trials), overrides)
 
         study.enqueue_trial.assert_called_once()
         seeded = study.enqueue_trial.call_args.args[0]
-        assert seeded["entry_volume_short_period"] == 40
-        assert seeded["entry_volume_threshold"] == 2.0
+        assert seeded["entry_volume_ratio_above_short_period"] == 40
+        assert seeded["entry_volume_ratio_above_ratio_threshold"] == 2.0
         assert "ignored" not in seeded
 
     def test_estimate_trial_recommendation_uses_loaded_strategy_dimensions(self):
@@ -400,7 +409,7 @@ class TestOptimizeFlow:
 
         base = _make_candidate("base")
         augmented = _make_candidate("base_augmented")
-        augmented.entry_filter_params["period_breakout"] = {"enabled": True, "period": 20}
+        augmented.entry_filter_params["period_extrema_break"] = {"enabled": True, "period": 20}
 
         with (
             patch.object(optimizer, "_load_base_strategy", return_value=base),
@@ -409,7 +418,7 @@ class TestOptimizeFlow:
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
             patch(
                 "src.domains.lab_agent.optuna_optimizer.apply_random_add_structure",
-                return_value=(augmented, {"entry": ["period_breakout"], "exit": []}),
+                return_value=(augmented, {"entry": ["period_extrema_break"], "exit": []}),
             ) as mock_random_add,
             patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
@@ -417,7 +426,7 @@ class TestOptimizeFlow:
 
         mock_random_add.assert_called_once()
         assert mock_random_add.call_args.kwargs["allowed_categories"] == {"fundamental"}
-        assert "period_breakout" in optimizer.base_entry_params
+        assert "period_extrema_break" in optimizer.base_entry_params
 
     def test_optimize_passes_pruner_to_study(self):
         optimizer = _make_optimizer(n_trials=10, pruning=True)
@@ -448,7 +457,7 @@ class TestOptimizeFlow:
         study.best_trial.value = 0.4
         study.best_trial.user_attrs = {"total_return": 0.25}
         study.best_value = 0.4
-        study.best_params = {"entry_volume_threshold": 2.0}
+        study.best_params = {"entry_volume_ratio_above_ratio_threshold": 2.0}
         study.trials = []
 
         base_candidate = _make_candidate("base")
@@ -475,7 +484,7 @@ class TestOptimizeFlow:
         study.best_trial.value = 1.2
         study.best_trial.user_attrs = {"total_return": 0.05}
         study.best_value = 1.2
-        study.best_params = {"entry_volume_threshold": 2.0}
+        study.best_params = {"entry_volume_ratio_above_ratio_threshold": 2.0}
         study.trials = []
 
         base_candidate = _make_candidate("base")
@@ -502,7 +511,7 @@ class TestOptimizeFlow:
         study.best_trial.value = 1.0
         study.best_trial.user_attrs = {"total_return": 0.2}
         study.best_value = 1.0
-        study.best_params = {"entry_volume_threshold": 2.0}
+        study.best_params = {"entry_volume_ratio_above_ratio_threshold": 2.0}
         study.trials = []
 
         with (
@@ -510,64 +519,86 @@ class TestOptimizeFlow:
             patch.object(optimizer, "_create_sampler", return_value=MagicMock()),
             patch.object(optimizer, "_prepare_prefetched_data", return_value=None),
             patch.object(optimizer, "_evaluate_baseline_candidate", return_value=None),
-            patch.object(optimizer, "_build_optuna_param_dict", return_value={"entry_volume_threshold": 1.5}),
+            patch.object(
+                optimizer,
+                "_build_optuna_param_dict",
+                return_value={"entry_volume_ratio_above_ratio_threshold": 1.5},
+            ),
             patch.object(optimizer, "_build_candidate_from_params", return_value=_make_candidate("best")),
             patch("src.domains.lab_agent.optuna_optimizer.optuna_runtime.create_study", return_value=study),
         ):
             optimizer.optimize("demo_strategy", progress_callback=None)
 
-        study.enqueue_trial.assert_called_once_with({"entry_volume_threshold": 1.5})
+        study.enqueue_trial.assert_called_once_with(
+            {"entry_volume_ratio_above_ratio_threshold": 1.5}
+        )
 
 
 class TestSampleParams:
     def test_samples_numeric_params(self):
         optimizer = _make_optimizer()
         optimizer.base_entry_params = {
-            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100, "direction": "surge"},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+                "ma_type": "ema",
+            },
         }
         mock_trial = MagicMock()
         mock_trial.suggest_float.return_value = 2.0
         mock_trial.suggest_int.return_value = 50
         result = optimizer._sample_params(mock_trial, optimizer.base_entry_params, "entry")
-        assert "volume" in result
+        assert "volume_ratio_above" in result
         # categorical params should be preserved
-        assert result["volume"]["enabled"] is True
-        assert result["volume"]["direction"] == "surge"
+        assert result["volume_ratio_above"]["enabled"] is True
+        assert result["volume_ratio_above"]["ma_type"] == "ema"
 
     def test_skips_non_dict_params(self):
         optimizer = _make_optimizer()
-        result = optimizer._sample_params(MagicMock(), {"volume": "not_a_dict"}, "entry")
+        result = optimizer._sample_params(MagicMock(), {"volume_ratio_above": "not_a_dict"}, "entry")
         assert result == {}
 
     def test_preserves_unknown_params(self):
         optimizer = _make_optimizer()
         optimizer.base_entry_params = {
-            "volume": {"enabled": True, "custom_param": 42},
+            "volume_ratio_above": {"enabled": True, "custom_param": 42},
         }
         mock_trial = MagicMock()
         result = optimizer._sample_params(mock_trial, optimizer.base_entry_params, "entry")
         # custom_param is not in PARAM_RANGES, should be preserved as-is
-        assert result["volume"]["custom_param"] == 42
+        assert result["volume_ratio_above"]["custom_param"] == 42
 
     def test_entry_filter_only_skips_exit_sampling(self):
         optimizer = _make_optimizer(entry_filter_only=True)
         base_exit = {
-            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+            },
         }
         mock_trial = MagicMock()
         result = optimizer._sample_params(mock_trial, base_exit, "exit")
-        assert result["volume"]["threshold"] == 1.5
+        assert result["volume_ratio_above"]["ratio_threshold"] == 1.5
         mock_trial.suggest_float.assert_not_called()
         mock_trial.suggest_int.assert_not_called()
 
     def test_exit_trigger_only_skips_entry_sampling(self):
         optimizer = _make_optimizer(target_scope="exit_trigger_only")
         base_entry = {
-            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+            },
         }
         mock_trial = MagicMock()
         result = optimizer._sample_params(mock_trial, base_entry, "entry")
-        assert result["volume"]["threshold"] == 1.5
+        assert result["volume_ratio_above"]["ratio_threshold"] == 1.5
         mock_trial.suggest_float.assert_not_called()
         mock_trial.suggest_int.assert_not_called()
 
@@ -589,11 +620,16 @@ class TestSampleParams:
     def test_allowed_categories_skip_disallowed_signals(self):
         optimizer = _make_optimizer(allowed_categories=["fundamental"])
         base_entry = {
-            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+            },
         }
         mock_trial = MagicMock()
         result = optimizer._sample_params(mock_trial, base_entry, "entry")
-        assert result["volume"]["threshold"] == 1.5
+        assert result["volume_ratio_above"]["ratio_threshold"] == 1.5
         mock_trial.suggest_float.assert_not_called()
         mock_trial.suggest_int.assert_not_called()
 
@@ -618,7 +654,7 @@ class TestSampleParams:
     def test_enforces_period_order_constraints_during_sampling(self):
         optimizer = _make_optimizer()
         base_entry = {
-            "volume": {"enabled": True, "short_period": 20, "long_period": 100},
+            "volume_ratio_above": {"enabled": True, "short_period": 20, "long_period": 100},
         }
         mock_trial = MagicMock()
 
@@ -632,13 +668,13 @@ class TestSampleParams:
         mock_trial.suggest_int.side_effect = suggest_int
 
         result = optimizer._sample_params(mock_trial, base_entry, "entry")
-        assert result["volume"]["short_period"] == 95
-        assert result["volume"]["long_period"] >= 96
+        assert result["volume_ratio_above"]["short_period"] == 95
+        assert result["volume_ratio_above"]["long_period"] >= 96
 
     def test_enforces_constraints_even_when_dependent_keys_are_declared_first(self):
         optimizer = _make_optimizer()
         base_entry = {
-            "volume": {
+            "volume_ratio_above": {
                 "enabled": True,
                 "long_period": 100,
                 "short_period": 20,
@@ -666,30 +702,39 @@ class TestSampleParams:
         mock_trial.suggest_float.side_effect = suggest_float
 
         result = optimizer._sample_params(mock_trial, base_entry, "entry")
-        assert result["volume"]["short_period"] < result["volume"]["long_period"]
-        assert result["volume"]["min_threshold"] < result["volume"]["max_threshold"]
+        assert result["volume_ratio_above"]["short_period"] < result["volume_ratio_above"]["long_period"]
+        assert result["volume_ratio_above"]["min_threshold"] < result["volume_ratio_above"]["max_threshold"]
 
 
 class TestBuildCandidateFromParams:
     def test_builds_candidate(self):
         optimizer = _make_optimizer()
         params = {
-            "entry_volume_threshold": 2.0,
-            "entry_volume_short_period": 15,
-            "entry_volume_long_period": 80,
+            "entry_volume_ratio_above_ratio_threshold": 2.0,
+            "entry_volume_ratio_above_short_period": 15,
+            "entry_volume_ratio_above_long_period": 80,
         }
-        optimizer.base_entry_params = {"volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100}}
+        optimizer.base_entry_params = {
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+            }
+        }
         optimizer.base_exit_params = {}
         candidate = optimizer._build_candidate_from_params(params)
         assert isinstance(candidate, StrategyCandidate)
-        assert candidate.entry_filter_params["volume"]["threshold"] == 2.0
+        assert candidate.entry_filter_params["volume_ratio_above"]["ratio_threshold"] == 2.0
 
     def test_preserves_base_params(self):
         optimizer = _make_optimizer()
-        optimizer.base_entry_params = {"volume": {"enabled": True, "threshold": 1.5}}
+        optimizer.base_entry_params = {
+            "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+        }
         optimizer.base_exit_params = {"rsi_threshold": {"enabled": True, "period": 14}}
         candidate = optimizer._build_candidate_from_params({})
-        assert candidate.entry_filter_params["volume"]["enabled"] is True
+        assert candidate.entry_filter_params["volume_ratio_above"]["enabled"] is True
         assert candidate.exit_trigger_params["rsi_threshold"]["period"] == 14
 
     def test_metadata_set(self):
@@ -741,7 +786,7 @@ class TestBuildCandidateFromParams:
 class TestObjective:
     def test_objective_success(self):
         optimizer = _make_optimizer()
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {"rsi_threshold": {"enabled": True}}
 
         trial = MagicMock()
@@ -766,7 +811,7 @@ class TestObjective:
                 optimizer,
                 "_sample_params",
                 side_effect=[
-                    {"volume": {"enabled": True}},
+                    {"volume_ratio_above": {"enabled": True}},
                     {"rsi_threshold": {"enabled": True}},
                 ],
             ),
@@ -793,7 +838,7 @@ class TestObjective:
     def test_objective_uses_only_configured_scoring_weights(self):
         optimizer = _make_optimizer()
         optimizer.scoring_weights = {"sharpe_ratio": 1.0}
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {}
 
         trial = MagicMock()
@@ -817,7 +862,7 @@ class TestObjective:
             patch.object(
                 optimizer,
                 "_sample_params",
-                side_effect=[{"volume": {"enabled": True}}, {}],
+                side_effect=[{"volume_ratio_above": {"enabled": True}}, {}],
             ),
             patch(
                 "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
@@ -830,7 +875,7 @@ class TestObjective:
 
     def test_objective_applies_prefetched_data_to_strategy(self):
         optimizer = _make_optimizer()
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {}
         optimizer._shared_config = SimpleNamespace(
             kelly_fraction=1.0,
@@ -861,7 +906,7 @@ class TestObjective:
             patch.object(
                 optimizer,
                 "_sample_params",
-                side_effect=[{"volume": {"enabled": True}}, {}],
+                side_effect=[{"volume_ratio_above": {"enabled": True}}, {}],
             ),
             patch(
                 "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
@@ -878,7 +923,7 @@ class TestObjective:
         import optuna
 
         optimizer = _make_optimizer(pruning=True)
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {}
 
         trial = MagicMock()
@@ -898,7 +943,7 @@ class TestObjective:
             patch.object(
                 optimizer,
                 "_sample_params",
-                side_effect=[{"volume": {"enabled": True}}, {}],
+                side_effect=[{"volume_ratio_above": {"enabled": True}}, {}],
             ),
             patch(
                 "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
@@ -913,7 +958,7 @@ class TestObjective:
 
     def test_objective_runs_stage2_when_not_pruned(self):
         optimizer = _make_optimizer(pruning=True)
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {}
 
         trial = MagicMock()
@@ -942,7 +987,7 @@ class TestObjective:
             patch.object(
                 optimizer,
                 "_sample_params",
-                side_effect=[{"volume": {"enabled": True}}, {}],
+                side_effect=[{"volume_ratio_above": {"enabled": True}}, {}],
             ),
             patch(
                 "src.domains.lab_agent.optuna_optimizer.YamlConfigurableStrategy",
@@ -961,7 +1006,7 @@ class TestObjective:
 class TestPrefetchAndBacktestHelpers:
     def test_prepare_prefetched_data_success(self):
         optimizer = _make_optimizer()
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {}
 
         shared_config = SimpleNamespace(
@@ -1006,7 +1051,7 @@ class TestPrefetchAndBacktestHelpers:
 
     def test_prepare_prefetched_data_handles_error(self):
         optimizer = _make_optimizer()
-        optimizer.base_entry_params = {"volume": {"enabled": True}}
+        optimizer.base_entry_params = {"volume_ratio_above": {"enabled": True}}
         optimizer.base_exit_params = {}
         optimizer._prefetched_multi_data = {"cached": {"daily": pd.DataFrame()}}
         optimizer._prefetched_benchmark_data = pd.DataFrame({"Close": [1.0]})
@@ -1068,7 +1113,7 @@ class TestGetOptimizationHistory:
         mock_trial.number = 0
         mock_trial.value = 0.85
         mock_trial.state = optuna.trial.TrialState.COMPLETE
-        mock_trial.params = {"entry_volume_threshold": 1.5}
+        mock_trial.params = {"entry_volume_ratio_above_ratio_threshold": 1.5}
         mock_trial.user_attrs = {
             "sharpe_ratio": 1.5,
             "calmar_ratio": 0.8,
@@ -1104,10 +1149,10 @@ class TestGetOptimizationHistory:
 def test_extract_enabled_signal_names_handles_non_dict_and_disabled() -> None:
     params = {
         "buy_and_hold": True,
-        "volume": {"enabled": True},
+        "volume_ratio_above": {"enabled": True},
         "fundamental": {"enabled": False},
     }
 
     enabled = _extract_enabled_signal_names(params)
 
-    assert enabled == {"buy_and_hold", "volume"}
+    assert enabled == {"buy_and_hold", "volume_ratio_above"}

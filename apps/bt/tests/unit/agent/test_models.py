@@ -135,11 +135,11 @@ class TestStrategyCandidate:
         """最小限の情報で作成できることを確認"""
         candidate = StrategyCandidate(
             strategy_id="test_strategy",
-            entry_filter_params={"volume": {"enabled": True}},
-            exit_trigger_params={"atr_support_break": {"enabled": True}},
+            entry_filter_params={"volume_ratio_above": {"enabled": True}},
+            exit_trigger_params={"atr_support_position": {"enabled": True}},
         )
         assert candidate.strategy_id == "test_strategy"
-        assert "volume" in candidate.entry_filter_params
+        assert "volume_ratio_above" in candidate.entry_filter_params
 
     def test_with_metadata(self):
         """メタデータ付きで作成できることを確認"""
@@ -222,20 +222,20 @@ class TestImprovement:
         improvement = Improvement(
             improvement_type="add_signal",
             target="entry",
-            signal_name="volume",
-            changes={"enabled": True, "threshold": 1.5},
+            signal_name="volume_ratio_above",
+            changes={"enabled": True, "ratio_threshold": 1.5},
             reason="エントリー精度向上",
             expected_impact="勝率向上",
         )
         assert improvement.improvement_type == "add_signal"
-        assert improvement.signal_name == "volume"
+        assert improvement.signal_name == "volume_ratio_above"
 
     def test_adjust_param_improvement(self):
         """パラメータ調整改善を作成できることを確認"""
         improvement = Improvement(
             improvement_type="adjust_param",
             target="exit",
-            signal_name="atr_support_break",
+            signal_name="atr_support_position",
             changes={"atr_multiplier": 4.0},
             reason="早期損切り",
             expected_impact="ドローダウン軽減",
@@ -249,10 +249,10 @@ class TestSignalConstraints:
     def test_basic_signal(self):
         """基本的なシグナル制約を作成できることを確認"""
         constraint = SignalConstraints(
-            name="volume",
+            name="volume_ratio_above",
             usage="both",
         )
-        assert constraint.name == "volume"
+        assert constraint.name == "volume_ratio_above"
         assert constraint.usage == "both"
         assert constraint.required_data == []
 
@@ -262,7 +262,7 @@ class TestSignalConstraints:
             name="beta",
             usage="entry",
             required_data=["benchmark_data"],
-            recommended_with=["volume"],
+            recommended_with=["volume_ratio_above"],
         )
         assert "benchmark_data" in constraint.required_data
-        assert "volume" in constraint.recommended_with
+        assert "volume_ratio_above" in constraint.recommended_with

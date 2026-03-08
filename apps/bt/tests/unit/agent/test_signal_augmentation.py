@@ -55,30 +55,30 @@ def _make_candidate(entry: dict, exit: dict | None = None) -> StrategyCandidate:
 
 def test_random_add_adds_expected_entry_signal() -> None:
     rng = DeterministicRng()
-    base = _make_candidate(entry={"volume": {"enabled": True}})
+    base = _make_candidate(entry={"volume_ratio_above": {"enabled": True}})
 
     updated, added = apply_random_add_structure(
         base,
         rng=rng,
         add_entry_signals=1,
         add_exit_signals=0,
-        base_entry_signals={"volume"},
+        base_entry_signals={"volume_ratio_above"},
         base_exit_signals=set(),
     )
 
-    assert "volume" in updated.entry_filter_params
+    assert "volume_ratio_above" in updated.entry_filter_params
     assert len(updated.entry_filter_params) == 2
-    assert added["entry"] == ["period_breakout"]  # AVAILABLE_SIGNALS の先頭
+    assert added["entry"] == ["period_extrema_break"]  # AVAILABLE_SIGNALS の先頭
     assert updated.metadata["structure_mode"] == "random_add"
-    assert updated.metadata["random_added_entry"] == ["period_breakout"]
+    assert updated.metadata["random_added_entry"] == ["period_extrema_break"]
 
 
 def test_random_add_trims_extras_when_add_zero() -> None:
     rng = DeterministicRng()
     base = _make_candidate(
         entry={
-            "volume": {"enabled": True},
-            "period_breakout": {"enabled": True},
+            "volume_ratio_above": {"enabled": True},
+            "period_extrema_break": {"enabled": True},
         }
     )
 
@@ -87,11 +87,11 @@ def test_random_add_trims_extras_when_add_zero() -> None:
         rng=rng,
         add_entry_signals=0,
         add_exit_signals=0,
-        base_entry_signals={"volume"},
+        base_entry_signals={"volume_ratio_above"},
         base_exit_signals=set(),
     )
 
-    assert set(updated.entry_filter_params.keys()) == {"volume"}
+    assert set(updated.entry_filter_params.keys()) == {"volume_ratio_above"}
 
 
 def test_random_add_respects_mutual_exclusion() -> None:
@@ -124,12 +124,12 @@ def test_random_add_injects_missing_base_signal() -> None:
         rng=rng,
         add_entry_signals=0,
         add_exit_signals=0,
-        base_entry_signals={"volume"},
+        base_entry_signals={"volume_ratio_above"},
         base_exit_signals=set(),
     )
 
-    assert "volume" in updated.entry_filter_params
-    assert updated.entry_filter_params["volume"]["enabled"] is True
+    assert "volume_ratio_above" in updated.entry_filter_params
+    assert updated.entry_filter_params["volume_ratio_above"]["enabled"] is True
 
 
 def test_random_add_fundamental_only_enables_nested_children() -> None:
@@ -202,7 +202,7 @@ def test_is_fundamental_only_scope() -> None:
 
 def test_is_mutually_exclusive_handles_symmetric_constraints() -> None:
     assert _is_mutually_exclusive("rsi_threshold", {"rsi_spread"}) is True
-    assert _is_mutually_exclusive("volume", {"period_breakout"}) is False
+    assert _is_mutually_exclusive("volume_ratio_above", {"period_extrema_break"}) is False
 
 
 def test_list_enabled_fundamental_children_skips_non_toggle_items() -> None:
@@ -242,22 +242,22 @@ def test_enable_fundamental_children_merges_missing_defaults() -> None:
 
 def test_apply_random_add_side_enables_existing_and_injects_missing_base() -> None:
     updated, _ = _apply_random_add_side(
-        params_dict={"volume": {"enabled": False}},
+        params_dict={"volume_ratio_above": {"enabled": False}},
         usage_type="entry",
         rng=DeterministicRng(),
-        base_signals={"volume", "period_breakout"},
+        base_signals={"volume_ratio_above", "period_extrema_break"},
         add_signals=0,
         allowed_categories=set(),
     )
-    assert updated["volume"]["enabled"] is True
-    assert "period_breakout" in updated
+    assert updated["volume_ratio_above"]["enabled"] is True
+    assert "period_extrema_break" in updated
 
 
 def test_apply_random_add_side_fundamental_only_adds_nested_child() -> None:
     updated, added = _apply_random_add_side(
         params_dict={
             "fundamental": {"enabled": True, "per": {"enabled": True}},
-            "volume": {"enabled": True},
+            "volume_ratio_above": {"enabled": True},
         },
         usage_type="entry",
         rng=DeterministicRng(),
@@ -266,7 +266,7 @@ def test_apply_random_add_side_fundamental_only_adds_nested_child() -> None:
         allowed_categories={"fundamental"},
     )
 
-    assert "volume" in updated
+    assert "volume_ratio_above" in updated
     assert "fundamental" not in added
     assert any(item.startswith("fundamental.") for item in added)
 
@@ -290,7 +290,7 @@ def test_list_addable_signals_filters_usage_and_constraints() -> None:
 
 
 def test_is_usage_allowed_rules() -> None:
-    both_signal = SIGNAL_CONSTRAINTS_MAP["volume"]
+    both_signal = SIGNAL_CONSTRAINTS_MAP["volume_ratio_above"]
     entry_only_signal = SIGNAL_CONSTRAINTS_MAP["fundamental"]
 
     assert _is_usage_allowed(both_signal, "entry") is True
@@ -300,12 +300,12 @@ def test_is_usage_allowed_rules() -> None:
 
 def test_build_signal_params_within_ranges() -> None:
     rng = random.Random(0)
-    params = build_signal_params("period_breakout", "entry", rng)
+    params = build_signal_params("period_extrema_break", "entry", rng)
 
     assert params["enabled"] is True
     assert "period" in params
     assert "lookback_days" in params
-    min_period, max_period, _ = PARAM_RANGES["period_breakout"]["period"]
+    min_period, max_period, _ = PARAM_RANGES["period_extrema_break"]["period"]
     assert min_period <= params["period"] <= max_period
 
 

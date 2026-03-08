@@ -64,7 +64,12 @@ class TestComputeSignals:
                 "/api/signals/compute",
                 json={
                     "stock_code": "7203",
-                    "signals": [{"type": "volume", "params": {"threshold": 1.5}}],
+                    "signals": [
+                        {
+                            "type": "volume_ratio_above",
+                            "params": {"ratio_threshold": 1.5},
+                        }
+                    ],
                 },
             )
             assert resp.status_code == 400
@@ -78,7 +83,12 @@ class TestComputeSignals:
                 "/api/signals/compute",
                 json={
                     "stock_code": "7203",
-                    "signals": [{"type": "volume", "params": {"threshold": 1.5}}],
+                    "signals": [
+                        {
+                            "type": "volume_ratio_above",
+                            "params": {"ratio_threshold": 1.5},
+                        }
+                    ],
                 },
             )
             assert resp.status_code == 500

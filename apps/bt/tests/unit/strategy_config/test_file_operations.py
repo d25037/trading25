@@ -62,7 +62,9 @@ class TestDeleteStrategyFile:
 class TestDuplicateToExperimental:
     def test_duplicate_success(self, tmp_path: Path) -> None:
         source = tmp_path / "source.yaml"
-        source.write_text("entry_filter_params:\n  volume:\n    enabled: true\n")
+        source.write_text(
+            "entry_filter_params:\n  volume_ratio_above:\n    enabled: true\n"
+        )
         target = tmp_path / "target.yaml"
         result = duplicate_to_experimental(source, target, "new_strat")
         assert result == target

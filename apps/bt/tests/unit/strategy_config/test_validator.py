@@ -93,11 +93,9 @@ class TestValidateStrategyConfig:
         )
         config: dict = {
             "entry_filter_params": {
-                "volume": {},
-                "trend": {},
+                "volume_ratio_above": {},
                 "fundamental": {},
-                "volatility": {},
-                "relative_performance": {},
+                "volatility_percentile": {},
                 "margin": {},
             }
         }
@@ -111,8 +109,8 @@ class TestValidateStrategyConfig:
         )
         assert validate_strategy_config({}) is False
 
-    def test_missing_filter_types_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """フィルター欠落時も警告のみでTrueを返す"""
+    def test_missing_filter_types_no_longer_warns(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """strict validation成功後は旧group名ベースの警告を出さない"""
         monkeypatch.setattr(
             "src.domains.strategy.runtime.validator.try_validate_strategy_config_dict_strict",
             lambda c: (True, None),
@@ -170,11 +168,9 @@ class TestRuntimeValidator:
         )
         config = {
             "entry_filter_params": {
-                "volume": {},
-                "trend": {},
+                "volume_ratio_above": {},
                 "fundamental": {},
-                "volatility": {},
-                "relative_performance": {},
+                "volatility_percentile": {},
                 "margin": {},
             }
         }

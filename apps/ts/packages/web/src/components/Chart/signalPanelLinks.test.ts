@@ -31,7 +31,7 @@ describe('buildSignalPanelLinks', () => {
     const result = buildSignalPanelLinks({
       signals: [
         makeSignal('rsi_threshold'),
-        makeSignal('volume'),
+        makeSignal('volume_ratio_above'),
         makeSignal('per'),
         makeSignal('margin'),
         makeSignal('sector_strength_ranking'),
@@ -39,7 +39,7 @@ describe('buildSignalPanelLinks', () => {
       ],
       definitions: [
         makeDefinition('rsi_threshold', ['ohlc']),
-        makeDefinition('volume', ['volume']),
+        makeDefinition('volume_ratio_above', ['volume']),
         makeDefinition('fundamental_per', ['statements:EPS']),
         makeDefinition('margin', ['margin']),
         makeDefinition('sector_strength_ranking', ['sector']),
@@ -52,10 +52,10 @@ describe('buildSignalPanelLinks', () => {
     expect(result.riskAdjustedReturn.signalTypes).toEqual(['rsi_threshold']);
     expect(result.riskAdjustedReturn.requirements).toEqual(['ohlc']);
 
-    expect(result.volumeComparison.signalTypes).toEqual(['volume']);
+    expect(result.volumeComparison.signalTypes).toEqual(['volume_ratio_above']);
     expect(result.volumeComparison.requirements).toEqual(['volume']);
 
-    expect(result.tradingValueMA.signalTypes).toEqual(['volume']);
+    expect(result.tradingValueMA.signalTypes).toEqual(['volume_ratio_above']);
     expect(result.tradingValueMA.requirements).toEqual(['volume']);
 
     expect(result.fundamentals.signalTypes).toEqual(['per']);
@@ -73,8 +73,8 @@ describe('buildSignalPanelLinks', () => {
 
   it('ignores unknown and disabled signals', () => {
     const result = buildSignalPanelLinks({
-      signals: [makeSignal('unknown_signal'), makeSignal('volume', false)],
-      definitions: [makeDefinition('volume', ['volume'])],
+      signals: [makeSignal('unknown_signal'), makeSignal('volume_ratio_above', false)],
+      definitions: [makeDefinition('volume_ratio_above', ['volume'])],
     });
 
     expect(result.ppo.signalTypes).toEqual([]);

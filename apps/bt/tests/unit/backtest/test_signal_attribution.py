@@ -74,12 +74,12 @@ def _evaluate_from_weights(
 def test_iter_enabled_signals_entry_exit_and_nested() -> None:
     parameters = _make_parameters(
         entry={
-            "volume": {"enabled": True},
+            "volume_ratio_above": {"enabled": True},
             "fundamental": {"enabled": True, "per": {"enabled": True}},
             "buy_and_hold": {"enabled": True},
         },
         exit_={
-            "volume": {"enabled": True},
+            "volume_ratio_below": {"enabled": True},
             "fundamental": {"enabled": True, "per": {"enabled": True}},
             "buy_and_hold": {"enabled": True},
         },
@@ -87,8 +87,8 @@ def test_iter_enabled_signals_entry_exit_and_nested() -> None:
 
     signal_ids = _enabled_signal_ids(parameters)
 
-    assert "entry.volume" in signal_ids
-    assert "exit.volume" in signal_ids
+    assert "entry.volume_ratio_above" in signal_ids
+    assert "exit.volume_ratio_below" in signal_ids
     assert "entry.fundamental.per" in signal_ids
     assert "exit.fundamental.per" in signal_ids
     assert "entry.buy_and_hold" in signal_ids
@@ -104,12 +104,12 @@ def test_nested_signal_requires_top_level_enabled_flag() -> None:
 
 def test_loo_delta_sign_is_baseline_minus_variant() -> None:
     parameters = _make_parameters(
-        entry={"volume": {"enabled": True}},
-        exit_={"volume": {"enabled": True}},
+        entry={"volume_ratio_above": {"enabled": True}},
+        exit_={"volume_ratio_below": {"enabled": True}},
     )
     weights = {
-        "entry.volume": (10.0, 1.0),
-        "exit.volume": (-3.0, -0.3),
+        "entry.volume_ratio_above": (10.0, 1.0),
+        "exit.volume_ratio_below": (-3.0, -0.3),
     }
     analyzer = SignalAttributionAnalyzer(
         strategy_name="dummy",
@@ -121,24 +121,24 @@ def test_loo_delta_sign_is_baseline_minus_variant() -> None:
     result = analyzer.run()
     by_signal = {s["signal_id"]: s for s in result["signals"]}
 
-    assert by_signal["entry.volume"]["loo"]["delta_total_return"] == pytest.approx(10.0)
-    assert by_signal["entry.volume"]["loo"]["delta_sharpe_ratio"] == pytest.approx(1.0)
-    assert by_signal["exit.volume"]["loo"]["delta_total_return"] == pytest.approx(-3.0)
-    assert by_signal["exit.volume"]["loo"]["delta_sharpe_ratio"] == pytest.approx(-0.3)
+    assert by_signal["entry.volume_ratio_above"]["loo"]["delta_total_return"] == pytest.approx(10.0)
+    assert by_signal["entry.volume_ratio_above"]["loo"]["delta_sharpe_ratio"] == pytest.approx(1.0)
+    assert by_signal["exit.volume_ratio_below"]["loo"]["delta_total_return"] == pytest.approx(-3.0)
+    assert by_signal["exit.volume_ratio_below"]["loo"]["delta_sharpe_ratio"] == pytest.approx(-0.3)
 
 
 def test_top_n_selection_uses_normalized_abs_loo_score() -> None:
     parameters = _make_parameters(
         entry={
-            "volume": {"enabled": True},
+            "volume_ratio_above": {"enabled": True},
             "fundamental": {"enabled": True, "per": {"enabled": True}},
         },
-        exit_={"volume": {"enabled": True}},
+        exit_={"volume_ratio_below": {"enabled": True}},
     )
     weights = {
-        "entry.volume": (10.0, 0.5),
+        "entry.volume_ratio_above": (10.0, 0.5),
         "entry.fundamental.per": (5.0, 2.0),
-        "exit.volume": (1.0, 0.1),
+        "exit.volume_ratio_below": (1.0, 0.1),
     }
     analyzer = SignalAttributionAnalyzer(
         strategy_name="dummy",
@@ -152,19 +152,19 @@ def test_top_n_selection_uses_normalized_abs_loo_score() -> None:
     assert top_n["top_n_effective"] == 2
     assert top_n["selected_signal_ids"] == [
         "entry.fundamental.per",
-        "entry.volume",
+        "entry.volume_ratio_above",
     ]
 
 
 def test_shapley_exact_matches_additive_weights() -> None:
     parameters = _make_parameters(
         entry={
-            "volume": {"enabled": True},
+            "volume_ratio_above": {"enabled": True},
             "fundamental": {"enabled": True, "per": {"enabled": True}},
         },
     )
     weights = {
-        "entry.volume": (7.0, 0.7),
+        "entry.volume_ratio_above": (7.0, 0.7),
         "entry.fundamental.per": (2.0, 0.2),
     }
     analyzer = SignalAttributionAnalyzer(
@@ -179,20 +179,20 @@ def test_shapley_exact_matches_additive_weights() -> None:
 
     assert result["shapley"]["method"] == "exact"
     assert result["shapley"]["sample_size"] == 4
-    assert by_signal["entry.volume"]["shapley"]["total_return"] == pytest.approx(7.0)
-    assert by_signal["entry.volume"]["shapley"]["sharpe_ratio"] == pytest.approx(0.7)
+    assert by_signal["entry.volume_ratio_above"]["shapley"]["total_return"] == pytest.approx(7.0)
+    assert by_signal["entry.volume_ratio_above"]["shapley"]["sharpe_ratio"] == pytest.approx(0.7)
     assert by_signal["entry.fundamental.per"]["shapley"]["total_return"] == pytest.approx(2.0)
     assert by_signal["entry.fundamental.per"]["shapley"]["sharpe_ratio"] == pytest.approx(0.2)
 
 
 def test_loo_failure_is_isolated_per_signal() -> None:
     parameters = _make_parameters(
-        entry={"volume": {"enabled": True}},
-        exit_={"volume": {"enabled": True}},
+        entry={"volume_ratio_above": {"enabled": True}},
+        exit_={"volume_ratio_below": {"enabled": True}},
     )
     weights = {
-        "entry.volume": (3.0, 0.3),
-        "exit.volume": (1.0, 0.1),
+        "entry.volume_ratio_above": (3.0, 0.3),
+        "exit.volume_ratio_below": (1.0, 0.1),
     }
     analyzer = SignalAttributionAnalyzer(
         strategy_name="dummy",
@@ -200,16 +200,16 @@ def test_loo_failure_is_isolated_per_signal() -> None:
         parameters_hook=lambda: parameters,
         evaluate_hook=_evaluate_from_weights(
             weights,
-            fail_when_disabled="entry.volume",
+            fail_when_disabled="entry.volume_ratio_above",
         ),
     )
 
     result = analyzer.run()
     by_signal = {s["signal_id"]: s for s in result["signals"]}
 
-    assert by_signal["entry.volume"]["loo"]["status"] == "error"
-    assert by_signal["exit.volume"]["loo"]["status"] == "ok"
-    assert result["top_n_selection"]["selected_signal_ids"] == ["exit.volume"]
+    assert by_signal["entry.volume_ratio_above"]["loo"]["status"] == "error"
+    assert by_signal["exit.volume_ratio_below"]["loo"]["status"] == "ok"
+    assert result["top_n_selection"]["selected_signal_ids"] == ["exit.volume_ratio_below"]
 
 
 def test_safe_metric_and_disable_signal_helpers() -> None:
@@ -222,8 +222,8 @@ def test_safe_metric_and_disable_signal_helpers() -> None:
     assert _safe_metric("not-a-number") == 0.0
 
     params: dict[str, Any] = {"entry_filter_params": "invalid"}
-    _disable_signal_in_parameters(params, scope="entry", param_key="volume")
-    assert params["entry_filter_params"]["volume"]["enabled"] is False
+    _disable_signal_in_parameters(params, scope="entry", param_key="volume_ratio_above")
+    assert params["entry_filter_params"]["volume_ratio_above"]["enabled"] is False
 
     nested_params: dict[str, Any] = {"entry_filter_params": {"fundamental": "invalid"}}
     _disable_signal_in_parameters(
@@ -255,12 +255,12 @@ def test_run_with_no_enabled_signals() -> None:
 
 def test_run_raises_when_cancelled_after_baseline() -> None:
     parameters = _make_parameters(
-        entry={"volume": {"enabled": True}},
-        exit_={"volume": {"enabled": True}},
+        entry={"volume_ratio_above": {"enabled": True}},
+        exit_={"volume_ratio_below": {"enabled": True}},
     )
     weights = {
-        "entry.volume": (1.0, 0.1),
-        "exit.volume": (1.0, 0.1),
+        "entry.volume_ratio_above": (1.0, 0.1),
+        "exit.volume_ratio_below": (1.0, 0.1),
     }
     cancel_state = {"cancel": False}
 
@@ -310,12 +310,12 @@ def test_compute_shapley_raises_when_cancelled() -> None:
 
 def test_shapley_failure_is_reported_without_stopping_job() -> None:
     parameters = _make_parameters(
-        entry={"volume": {"enabled": True}},
-        exit_={"volume": {"enabled": True}},
+        entry={"volume_ratio_above": {"enabled": True}},
+        exit_={"volume_ratio_below": {"enabled": True}},
     )
     weights = {
-        "entry.volume": (3.0, 0.3),
-        "exit.volume": (2.0, 0.2),
+        "entry.volume_ratio_above": (3.0, 0.3),
+        "exit.volume_ratio_below": (2.0, 0.2),
     }
 
     def _hook(
@@ -323,7 +323,7 @@ def test_shapley_failure_is_reported_without_stopping_job() -> None:
         runtime_cache: StrategyRuntimeCache | None,
     ) -> tuple[AttributionMetrics, StrategyRuntimeCache]:
         enabled = _enabled_signal_ids(payload)
-        if "entry.volume" not in enabled and "exit.volume" not in enabled:
+        if "entry.volume_ratio_above" not in enabled and "exit.volume_ratio_below" not in enabled:
             raise RuntimeError("forced shapley subset failure")
         total_return = sum(weights[sid][0] for sid in enabled if sid in weights)
         sharpe_ratio = sum(weights[sid][1] for sid in enabled if sid in weights)
@@ -342,10 +342,10 @@ def test_shapley_failure_is_reported_without_stopping_job() -> None:
     by_signal = {s["signal_id"]: s for s in result["signals"]}
 
     assert result["shapley"]["method"] == "error"
-    assert by_signal["entry.volume"]["loo"]["status"] == "ok"
-    assert by_signal["exit.volume"]["loo"]["status"] == "ok"
-    assert by_signal["entry.volume"]["shapley"]["status"] == "error"
-    assert by_signal["exit.volume"]["shapley"]["status"] == "error"
+    assert by_signal["entry.volume_ratio_above"]["loo"]["status"] == "ok"
+    assert by_signal["exit.volume_ratio_below"]["loo"]["status"] == "ok"
+    assert by_signal["entry.volume_ratio_above"]["shapley"]["status"] == "error"
+    assert by_signal["exit.volume_ratio_below"]["shapley"]["status"] == "error"
 
 
 def test_compute_shapley_permutation_path() -> None:

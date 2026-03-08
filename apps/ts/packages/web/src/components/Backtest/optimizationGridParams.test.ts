@@ -6,7 +6,7 @@ describe('optimizationGridParams', () => {
     const yamlContent = `
 parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       period: [10, 20, 30]
   exit_trigger_params:
     atr_stop:
@@ -15,7 +15,7 @@ parameter_ranges:
 
     expect(extractGridParameterEntries(yamlContent)).toEqual([
       {
-        path: 'entry_filter_params.period_breakout.period',
+        path: 'entry_filter_params.period_extrema_break.period',
         values: [10, 20, 30],
       },
       {

@@ -13,6 +13,13 @@ import {
 import { useChartStore, type SignalConfig } from '@/stores/chartStore';
 import { IndicatorToggle, NumberInput } from './IndicatorToggle';
 
+const RELATIVE_MODE_DISABLED_SIGNAL_TYPES = new Set<Phase1SignalType>([
+  'volume_ratio_above',
+  'volume_ratio_below',
+  'trading_value',
+  'trading_value_range',
+]);
+
 interface SignalOverlayControlsProps {
   disabled?: boolean;
 }
@@ -40,7 +47,7 @@ export function SignalOverlayControls({ disabled }: SignalOverlayControlsProps) 
 
   // relativeMode時に無効化されるシグナル
   const isSignalDisabledInRelativeMode = (type: string) => {
-    return relativeMode && ['trading_value', 'trading_value_range', 'volume'].includes(type);
+    return relativeMode && RELATIVE_MODE_DISABLED_SIGNAL_TYPES.has(type as Phase1SignalType);
   };
 
   // 追加可能なシグナル（まだ追加されていないもの）
@@ -250,7 +257,7 @@ function SignalParamsEditor({ type, params, onUpdate, disabled }: SignalParamsEd
         </div>
       );
 
-    case 'period_breakout':
+    case 'period_extrema_break':
       return (
         <div className="grid grid-cols-2 gap-1.5">
           <NumberInput
@@ -276,10 +283,17 @@ function SignalParamsEditor({ type, params, onUpdate, disabled }: SignalParamsEd
               </SelectContent>
             </Select>
           </div>
+          <NumberInput
+            label="Lookback"
+            value={params.lookback_days as number}
+            onChange={(v) => updateParam('lookback_days', v)}
+            defaultValue={1}
+            disabled={disabled}
+          />
         </div>
       );
 
-    case 'ma_breakout':
+    case 'period_extrema_position':
       return (
         <div className="grid grid-cols-2 gap-1.5">
           <NumberInput
@@ -290,10 +304,125 @@ function SignalParamsEditor({ type, params, onUpdate, disabled }: SignalParamsEd
             disabled={disabled}
           />
           <div className="space-y-1">
-            <Label className="text-[10px] text-muted-foreground">MA Type</Label>
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
             <Select
-              value={params.ma_type as string}
-              onValueChange={(v) => updateParam('ma_type', v)}
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="high" className="text-xs">High</SelectItem>
+                <SelectItem value="low" className="text-xs">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">State</Label>
+            <Select
+              value={params.state as string}
+              onValueChange={(v) => updateParam('state', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="at_extrema" className="text-xs">At Extrema</SelectItem>
+                <SelectItem value="away_from_extrema" className="text-xs">Away From Extrema</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <NumberInput
+            label="Lookback"
+            value={params.lookback_days as number}
+            onChange={(v) => updateParam('lookback_days', v)}
+            defaultValue={1}
+            disabled={disabled}
+          />
+        </div>
+      );
+
+    case 'atr_support_position':
+    case 'atr_support_cross':
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberInput
+            label="Period"
+            value={params.lookback_period as number}
+            onChange={(v) => updateParam('lookback_period', v)}
+            defaultValue={20}
+            disabled={disabled}
+          />
+          <NumberInput
+            label="ATR x"
+            value={params.atr_multiplier as number}
+            onChange={(v) => updateParam('atr_multiplier', v)}
+            step="0.1"
+            defaultValue={2.0}
+            disabled={disabled}
+          />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="below" className="text-xs">Below</SelectItem>
+                <SelectItem value="above" className="text-xs">Above</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Price</Label>
+            <Select
+              value={params.price_column as string}
+              onValueChange={(v) => updateParam('price_column', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="close" className="text-xs">Close</SelectItem>
+                <SelectItem value="low" className="text-xs">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {type === 'atr_support_cross' && (
+            <NumberInput
+              label="Lookback"
+              value={params.lookback_days as number}
+              onChange={(v) => updateParam('lookback_days', v)}
+              defaultValue={1}
+              disabled={disabled}
+            />
+          )}
+        </div>
+      );
+
+    case 'baseline_cross':
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberInput
+            label="Period"
+            value={params.baseline_period as number}
+            onChange={(v) => updateParam('baseline_period', v)}
+            defaultValue={200}
+            disabled={disabled}
+          />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Baseline</Label>
+            <Select
+              value={params.baseline_type as string}
+              onValueChange={(v) => updateParam('baseline_type', v)}
               disabled={disabled}
             >
               <SelectTrigger className="h-7 text-xs">
@@ -302,13 +431,235 @@ function SignalParamsEditor({ type, params, onUpdate, disabled }: SignalParamsEd
               <SelectContent>
                 <SelectItem value="sma" className="text-xs">SMA</SelectItem>
                 <SelectItem value="ema" className="text-xs">EMA</SelectItem>
+                <SelectItem value="vwema" className="text-xs">VWEMA</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="above" className="text-xs">Above</SelectItem>
+                <SelectItem value="below" className="text-xs">Below</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Price</Label>
+            <Select
+              value={params.price_column as string}
+              onValueChange={(v) => updateParam('price_column', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="close" className="text-xs">Close</SelectItem>
+                <SelectItem value="high" className="text-xs">High</SelectItem>
+                <SelectItem value="low" className="text-xs">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <NumberInput
+            label="Lookback"
+            value={params.lookback_days as number}
+            onChange={(v) => updateParam('lookback_days', v)}
+            defaultValue={1}
+            disabled={disabled}
+          />
+        </div>
+      );
+
+    case 'baseline_deviation':
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberInput
+            label="Period"
+            value={params.baseline_period as number}
+            onChange={(v) => updateParam('baseline_period', v)}
+            defaultValue={20}
+            disabled={disabled}
+          />
+          <NumberInput
+            label="Threshold"
+            value={params.deviation_threshold as number}
+            onChange={(v) => updateParam('deviation_threshold', v)}
+            step="0.01"
+            defaultValue={0.05}
+            disabled={disabled}
+          />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Baseline</Label>
+            <Select
+              value={params.baseline_type as string}
+              onValueChange={(v) => updateParam('baseline_type', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sma" className="text-xs">SMA</SelectItem>
+                <SelectItem value="ema" className="text-xs">EMA</SelectItem>
+                <SelectItem value="vwema" className="text-xs">VWEMA</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="above" className="text-xs">Above</SelectItem>
+                <SelectItem value="below" className="text-xs">Below</SelectItem>
               </SelectContent>
             </Select>
           </div>
         </div>
       );
 
-    case 'bollinger_bands':
+    case 'baseline_position':
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberInput
+            label="Period"
+            value={params.baseline_period as number}
+            onChange={(v) => updateParam('baseline_period', v)}
+            defaultValue={20}
+            disabled={disabled}
+          />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Baseline</Label>
+            <Select
+              value={params.baseline_type as string}
+              onValueChange={(v) => updateParam('baseline_type', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sma" className="text-xs">SMA</SelectItem>
+                <SelectItem value="ema" className="text-xs">EMA</SelectItem>
+                <SelectItem value="vwema" className="text-xs">VWEMA</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Price</Label>
+            <Select
+              value={params.price_column as string}
+              onValueChange={(v) => updateParam('price_column', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="close" className="text-xs">Close</SelectItem>
+                <SelectItem value="high" className="text-xs">High</SelectItem>
+                <SelectItem value="low" className="text-xs">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="above" className="text-xs">Above</SelectItem>
+                <SelectItem value="below" className="text-xs">Below</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+        </div>
+      );
+
+    case 'retracement_position':
+    case 'retracement_cross':
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberInput
+            label="Period"
+            value={params.lookback_period as number}
+            onChange={(v) => updateParam('lookback_period', v)}
+            defaultValue={20}
+            disabled={disabled}
+          />
+          <NumberInput
+            label="Level"
+            value={params.retracement_level as number}
+            onChange={(v) => updateParam('retracement_level', v)}
+            step="0.001"
+            defaultValue={0.382}
+            disabled={disabled}
+          />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="below" className="text-xs">Below</SelectItem>
+                <SelectItem value="above" className="text-xs">Above</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Price</Label>
+            <Select
+              value={params.price_column as string}
+              onValueChange={(v) => updateParam('price_column', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="close" className="text-xs">Close</SelectItem>
+                <SelectItem value="low" className="text-xs">Low</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {type === 'retracement_cross' && (
+            <NumberInput
+              label="Lookback"
+              value={params.lookback_days as number}
+              onChange={(v) => updateParam('lookback_days', v)}
+              defaultValue={1}
+              disabled={disabled}
+            />
+          )}
+        </div>
+      );
+
+    case 'bollinger_position':
+    case 'bollinger_cross':
       return (
         <div className="grid grid-cols-2 gap-1.5">
           <NumberInput
@@ -326,36 +677,126 @@ function SignalParamsEditor({ type, params, onUpdate, disabled }: SignalParamsEd
             defaultValue={2.0}
             disabled={disabled}
           />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Level</Label>
+            <Select
+              value={params.level as string}
+              onValueChange={(v) => updateParam('level', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="upper" className="text-xs">Upper</SelectItem>
+                <SelectItem value="middle" className="text-xs">Middle</SelectItem>
+                <SelectItem value="lower" className="text-xs">Lower</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">Direction</Label>
+            <Select
+              value={params.direction as string}
+              onValueChange={(v) => updateParam('direction', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="below" className="text-xs">Below</SelectItem>
+                <SelectItem value="above" className="text-xs">Above</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
+          {type === 'bollinger_cross' && (
+            <NumberInput
+              label="Lookback"
+              value={params.lookback_days as number}
+              onChange={(v) => updateParam('lookback_days', v)}
+              defaultValue={1}
+              disabled={disabled}
+            />
+          )}
         </div>
       );
 
-    case 'volume':
+    case 'volatility_percentile':
+      return (
+        <div className="grid grid-cols-2 gap-1.5">
+          <NumberInput
+            label="Window"
+            value={params.window as number}
+            onChange={(v) => updateParam('window', v)}
+            defaultValue={20}
+            disabled={disabled}
+          />
+          <NumberInput
+            label="Lookback"
+            value={params.lookback as number}
+            onChange={(v) => updateParam('lookback', v)}
+            defaultValue={252}
+            disabled={disabled}
+          />
+          <NumberInput
+            label="Percentile"
+            value={params.percentile as number}
+            onChange={(v) => updateParam('percentile', v)}
+            step="1"
+            defaultValue={50}
+            disabled={disabled}
+          />
+        </div>
+      );
+
+    case 'volume_ratio_above':
+    case 'volume_ratio_below':
       return (
         <div className="grid grid-cols-2 gap-1.5">
           <NumberInput
             label="Threshold"
-            value={params.threshold as number}
-            onChange={(v) => updateParam('threshold', v)}
+            value={params.ratio_threshold as number}
+            onChange={(v) => updateParam('ratio_threshold', v)}
             step="0.1"
-            defaultValue={2.0}
+            defaultValue={type === 'volume_ratio_above' ? 1.5 : 0.7}
             disabled={disabled}
           />
           <NumberInput
             label="Short Period"
             value={params.short_period as number}
             onChange={(v) => updateParam('short_period', v)}
-            defaultValue={5}
+            defaultValue={20}
             disabled={disabled}
           />
           <NumberInput
             label="Long Period"
             value={params.long_period as number}
             onChange={(v) => updateParam('long_period', v)}
-            defaultValue={20}
+            defaultValue={100}
             disabled={disabled}
           />
+          <div className="space-y-1">
+            <Label className="text-[10px] text-muted-foreground">MA</Label>
+            <Select
+              value={params.ma_type as string}
+              onValueChange={(v) => updateParam('ma_type', v)}
+              disabled={disabled}
+            >
+              <SelectTrigger className="h-7 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="sma" className="text-xs">SMA</SelectItem>
+                <SelectItem value="ema" className="text-xs">EMA</SelectItem>
+              </SelectContent>
+            </Select>
+          </div>
         </div>
       );
+
+    case 'buy_and_hold':
+      return <div className="text-xs text-muted-foreground">No parameters</div>;
 
     case 'trading_value':
       return (
@@ -376,9 +817,6 @@ function SignalParamsEditor({ type, params, onUpdate, disabled }: SignalParamsEd
           />
         </div>
       );
-
-    case 'buy_and_hold':
-      return <div className="text-xs text-muted-foreground">No parameters</div>;
 
     default:
       return (

@@ -32,7 +32,7 @@ class TestSignalComputeRequestSchema:
         """デフォルト値が設定される"""
         req = SignalComputeRequest(
             stock_code="7203",
-            signals=[SignalSpec(type="volume")],
+            signals=[SignalSpec(type="volume_ratio_above")],
         )
         assert req.stock_code == "7203"
         assert req.source == "market"
@@ -45,7 +45,7 @@ class TestSignalComputeRequestSchema:
         # 5個以内は有効
         req = SignalComputeRequest(
             stock_code="7203",
-            signals=[SignalSpec(type="volume") for _ in range(5)],
+            signals=[SignalSpec(type="volume_ratio_above") for _ in range(5)],
         )
         assert len(req.signals) == 5
 
@@ -65,11 +65,14 @@ class TestSignalComputeResponseSchema:
             stock_code="7203",
             timeframe="daily",
             signals={
-                "volume": SignalResult(trigger_dates=["2025-01-15"], count=1),
+                "volume_ratio_above": SignalResult(
+                    trigger_dates=["2025-01-15"],
+                    count=1,
+                ),
             },
         )
         assert response.stock_code == "7203"
-        assert response.signals["volume"].count == 1
+        assert response.signals["volume_ratio_above"].count == 1
 
     def test_signal_result_with_error(self) -> None:
         """エラーを含むSignalResult"""
@@ -135,24 +138,32 @@ class TestSignalComputeEndpoint:
                 json={
                     "stock_code": "7203",
                     "timeframe": "daily",
-                    # volume threshold は 0-10 の範囲なので、適切な値を指定
-                    "signals": [{"type": "volume", "params": {"threshold": 1.5}}],
+                    # volume_ratio threshold は 0-10 の範囲なので、適切な値を指定
+                    "signals": [
+                        {
+                            "type": "volume_ratio_above",
+                            "params": {"ratio_threshold": 1.5},
+                        }
+                    ],
                 },
             )
             assert response.status_code == 200
             data = response.json()
             assert data["stock_code"] == "7203"
             assert data["timeframe"] == "daily"
-            assert "volume" in data["signals"]
+            assert "volume_ratio_above" in data["signals"]
             # エラーがないことを確認
-            assert "error" not in data["signals"]["volume"] or data["signals"]["volume"]["error"] is None
+            assert (
+                "error" not in data["signals"]["volume_ratio_above"]
+                or data["signals"]["volume_ratio_above"]["error"] is None
+            )
 
     def test_compute_missing_stock_code(self, client: TestClient) -> None:
         """stock_codeなしでリクエストするとバリデーションエラー"""
         response = client.post(
             "/api/signals/compute",
             json={
-                "signals": [{"type": "volume"}],
+                "signals": [{"type": "volume_ratio_above"}],
             },
         )
         assert response.status_code == 422
@@ -164,7 +175,7 @@ class TestSignalComputeEndpoint:
             json={
                 "stock_code": "7203",
                 "timeframe": "invalid",
-                "signals": [{"type": "volume"}],
+                "signals": [{"type": "volume_ratio_above"}],
             },
         )
         assert response.status_code == 422
@@ -181,6 +192,16 @@ class TestSignalReferenceEndpoint:
         assert "signals" in data
         assert len(data["signals"]) > 0
 
+    def test_get_reference_handles_internal_error(self, client: TestClient) -> None:
+        """リファレンス構築失敗時は500"""
+        with patch(
+            "src.entrypoints.http.routes.signal_reference.build_signal_reference",
+            side_effect=RuntimeError("boom"),
+        ):
+            response = client.get("/api/signals/reference")
+
+        assert response.status_code == 500
+
 
 class TestSignalSchemaEndpoint:
     """GET /api/signals/schema エンドポイントのテスト"""
@@ -191,3 +212,39 @@ class TestSignalSchemaEndpoint:
         assert response.status_code == 200
         data = response.json()
         assert "type" in data or "properties" in data
+
+    def test_get_schema_handles_internal_error(self, client: TestClient) -> None:
+        """schema生成失敗時は500"""
+        with patch(
+            "src.entrypoints.http.routes.signal_reference.SignalParams.model_json_schema",
+            side_effect=RuntimeError("boom"),
+        ):
+            response = client.get("/api/signals/schema")
+
+        assert response.status_code == 500
+
+
+class TestSignalComputeEndpointErrors:
+    def test_compute_value_error_returns_400(self, client: TestClient) -> None:
+        with patch(
+            "src.application.services.signal_service.SignalService.compute_signals",
+            side_effect=ValueError("bad params"),
+        ):
+            response = client.post(
+                "/api/signals/compute",
+                json={"stock_code": "7203", "signals": [{"type": "volume_ratio_above"}]},
+            )
+
+        assert response.status_code == 400
+
+    def test_compute_internal_error_returns_500(self, client: TestClient) -> None:
+        with patch(
+            "src.application.services.signal_service.SignalService.compute_signals",
+            side_effect=RuntimeError("boom"),
+        ):
+            response = client.post(
+                "/api/signals/compute",
+                json={"stock_code": "7203", "signals": [{"type": "volume_ratio_above"}]},
+            )
+
+        assert response.status_code == 500

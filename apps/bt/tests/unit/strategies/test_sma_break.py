@@ -30,17 +30,15 @@ class TestSMABreakStrategy:
 
         # エントリーフィルターパラメータ（統一SignalParams）
         self.entry_filter_params = SignalParams()
-        self.entry_filter_params.period_breakout.enabled = True
-        self.entry_filter_params.period_breakout.direction = "high"
-        self.entry_filter_params.period_breakout.condition = "break"
-        self.entry_filter_params.period_breakout.period = 20
+        self.entry_filter_params.period_extrema_break.enabled = True
+        self.entry_filter_params.period_extrema_break.direction = "high"
+        self.entry_filter_params.period_extrema_break.period = 20
 
         # エグジットトリガーパラメータ（統一SignalParams）
         self.exit_trigger_params = SignalParams()
-        self.exit_trigger_params.period_breakout.enabled = True
-        self.exit_trigger_params.period_breakout.direction = "low"
-        self.exit_trigger_params.period_breakout.condition = "break"
-        self.exit_trigger_params.period_breakout.period = 20
+        self.exit_trigger_params.period_extrema_break.enabled = True
+        self.exit_trigger_params.period_extrema_break.direction = "low"
+        self.exit_trigger_params.period_extrema_break.period = 20
 
         self.strategy = YamlConfigurableStrategy(
             shared_config=self.shared_config,
@@ -120,16 +118,16 @@ class TestSMABreakStrategy:
     def test_generate_signals_with_filters(self):
         """フィルター統合シグナル生成テスト"""
         # 出来高フィルター追加
-        self.entry_filter_params.volume.enabled = True
-        self.entry_filter_params.volume.direction = "surge"
-        self.entry_filter_params.volume.threshold = 1.5
-        self.entry_filter_params.volume.short_period = 10
-        self.entry_filter_params.volume.long_period = 50
+        self.entry_filter_params.volume_ratio_above.enabled = True
+        self.entry_filter_params.volume_ratio_above.ratio_threshold = 1.5
+        self.entry_filter_params.volume_ratio_above.short_period = 10
+        self.entry_filter_params.volume_ratio_above.long_period = 50
 
         # ボラティリティフィルター追加
-        self.entry_filter_params.volatility.enabled = True
-        self.entry_filter_params.volatility.lookback_period = 100
-        self.entry_filter_params.volatility.threshold_multiplier = 1.0
+        self.entry_filter_params.volatility_percentile.enabled = True
+        self.entry_filter_params.volatility_percentile.window = 20
+        self.entry_filter_params.volatility_percentile.lookback = 100
+        self.entry_filter_params.volatility_percentile.percentile = 80.0
 
         strategy_with_filters = YamlConfigurableStrategy(
             shared_config=self.shared_config,
@@ -148,17 +146,17 @@ class TestSMABreakStrategy:
         """SignalParamsバリデーションテスト"""
         # 正常なパラメータ
         valid_params = SignalParams()
-        valid_params.period_breakout.enabled = True
-        valid_params.period_breakout.period = 20
+        valid_params.period_extrema_break.enabled = True
+        valid_params.period_extrema_break.period = 20
 
-        assert valid_params.period_breakout.enabled is True
-        assert valid_params.period_breakout.period == 20
+        assert valid_params.period_extrema_break.enabled is True
+        assert valid_params.period_extrema_break.period == 20
 
         # 異常なパラメータ（Pydanticバリデーション）
         with pytest.raises(ValueError):
-            from src.shared.models.signals import VolumeSignalParams
+            from src.shared.models.signals import VolumeRatioAboveSignalParams
 
-            VolumeSignalParams(threshold=0.0)  # <=0.1は無効
+            VolumeRatioAboveSignalParams(ratio_threshold=0.0)  # <=0.0は無効
 
     def test_boundary_conditions(self):
         """境界値テスト"""
@@ -166,8 +164,8 @@ class TestSMABreakStrategy:
 
         # 極端なパラメータでもエラーが発生しないことを確認
         extreme_filter_params = SignalParams()
-        extreme_filter_params.period_breakout.enabled = True
-        extreme_filter_params.period_breakout.period = 5  # 短期間
+        extreme_filter_params.period_extrema_break.enabled = True
+        extreme_filter_params.period_extrema_break.period = 5  # 短期間
 
         extreme_strategy = YamlConfigurableStrategy(
             shared_config=self.shared_config,

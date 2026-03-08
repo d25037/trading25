@@ -10,10 +10,9 @@ entry_filter_params:
     slow_period: 250 # 長期SMA期間
     lookback_days: 5 # クロス検出期間
 
-  volume:
+  volume_ratio_above:
     enabled: true # 出来高フィルター
-    direction: "surge" # "surge"（急増）/"drop"（減少）
-    threshold: 1.5 # 出来高倍率閾値
+    ratio_threshold: 1.5 # 出来高倍率閾値（短期MA / 長期MA）
     short_period: 20
     long_period: 100
 
@@ -49,9 +48,8 @@ exit_trigger_params:
     lookback_days: 1 # クロス検出期間
 
   # 追加トリガー（任意で有効化可能）
-  volume:
+  volume_ratio_below:
     enabled: false # 出来高トリガー
-    direction: "drop" # "surge"（急増）/"drop"（減少）
-    threshold: 0.5 # 出来高倍率閾値
+    ratio_threshold: 0.5 # 出来高倍率閾値（短期MA / 長期MA）
     short_period: 5
     long_period: 20

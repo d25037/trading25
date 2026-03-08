@@ -1,5 +1,5 @@
 """
-BNF平均回帰戦略のユニットテスト（最新アーキテクチャ対応版）
+BNF逆張り戦略のユニットテスト（最新アーキテクチャ対応版）
 
 YamlConfigurableStrategy + YAML設定 + SignalParams（統一Signalsシステム）対応
 """
@@ -12,8 +12,8 @@ from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 
 
-class TestBnfMeanReversionStrategy:
-    """BNF平均回帰戦略テストクラス（YamlConfigurableStrategy + YAML設定ベース）"""
+class TestBnfBaselineDeviationStrategy:
+    """BNF逆張り戦略テストクラス（YamlConfigurableStrategy + YAML設定ベース）"""
 
     def setup_method(self):
         """各テスト前のセットアップ"""
@@ -29,13 +29,11 @@ class TestBnfMeanReversionStrategy:
 
         # エントリーフィルターパラメータ（統一SignalParams）
         self.entry_filter_params = SignalParams()
-        self.entry_filter_params.mean_reversion.enabled = True
-        self.entry_filter_params.mean_reversion.baseline_type = "sma"
-        self.entry_filter_params.mean_reversion.baseline_period = 25
-        self.entry_filter_params.mean_reversion.deviation_threshold = 0.2
-        self.entry_filter_params.mean_reversion.deviation_direction = "below"
-        self.entry_filter_params.mean_reversion.recovery_price = "high"
-        self.entry_filter_params.mean_reversion.recovery_direction = "above"
+        self.entry_filter_params.baseline_deviation.enabled = True
+        self.entry_filter_params.baseline_deviation.baseline_type = "sma"
+        self.entry_filter_params.baseline_deviation.baseline_period = 25
+        self.entry_filter_params.baseline_deviation.deviation_threshold = 0.2
+        self.entry_filter_params.baseline_deviation.direction = "below"
 
         # エグジットトリガーパラメータ（統一SignalParams）
         self.exit_trigger_params = SignalParams()
@@ -54,7 +52,7 @@ class TestBnfMeanReversionStrategy:
         # SMA25 = 100となるような価格データを作成
         base_prices = [100] * 50
 
-        # 平均回帰シナリオをテスト
+        # 逆張りシナリオをテスト
         # Day 30で大幅下落（20%以上の乖離）
         # Day 35で回復
         for i in range(30, 35):
@@ -95,24 +93,23 @@ class TestBnfMeanReversionStrategy:
         assert signals.entries.dtype == bool
         assert signals.exits.dtype == bool
 
-    def test_mean_reversion_entry_signal(self):
-        """平均回帰エントリーシグナルテスト"""
+    def test_baseline_deviation_entry_signal(self):
+        """基準線乖離エントリーシグナルテスト"""
         data = self.create_test_data()
         signals = self.strategy.generate_signals(data)
 
-        # 平均回帰シグナル（下落時）が発生していることを確認
+        # 基準線乖離シグナル（下落時）が発生していることを確認
         # 注: SignalProcessorによる絞り込み処理のため、
-        # 全Trueから開始→mean_reversionフィルターでAND結合
+        # 全Trueから開始→baseline_deviationフィルターでAND結合
         assert signals.entries.any(), "エントリーシグナルが全くない"
 
     def test_generate_signals_with_filters(self):
         """フィルター統合シグナル生成テスト"""
         # 出来高フィルター追加
-        self.entry_filter_params.volume.enabled = True
-        self.entry_filter_params.volume.direction = "surge"
-        self.entry_filter_params.volume.threshold = 1.5
-        self.entry_filter_params.volume.short_period = 10
-        self.entry_filter_params.volume.long_period = 50
+        self.entry_filter_params.volume_ratio_above.enabled = True
+        self.entry_filter_params.volume_ratio_above.ratio_threshold = 1.5
+        self.entry_filter_params.volume_ratio_above.short_period = 10
+        self.entry_filter_params.volume_ratio_above.long_period = 50
 
         strategy_with_filters = YamlConfigurableStrategy(
             shared_config=self.shared_config,
@@ -131,18 +128,18 @@ class TestBnfMeanReversionStrategy:
         """SignalParamsバリデーションテスト"""
         # 正常なパラメータ
         valid_params = SignalParams()
-        valid_params.mean_reversion.enabled = True
-        valid_params.mean_reversion.baseline_period = 25
-        valid_params.mean_reversion.deviation_threshold = 0.2
+        valid_params.baseline_deviation.enabled = True
+        valid_params.baseline_deviation.baseline_period = 25
+        valid_params.baseline_deviation.deviation_threshold = 0.2
 
-        assert valid_params.mean_reversion.enabled is True
-        assert valid_params.mean_reversion.baseline_period == 25
+        assert valid_params.baseline_deviation.enabled is True
+        assert valid_params.baseline_deviation.baseline_period == 25
 
         # 異常なパラメータ（Pydanticバリデーション）
         with pytest.raises(ValueError):
-            from src.shared.models.signals import MeanReversionSignalParams
+            from src.shared.models.signals import BaselineDeviationSignalParams
 
-            MeanReversionSignalParams(deviation_threshold=1.5)  # >1.0は無効
+            BaselineDeviationSignalParams(deviation_threshold=1.5)  # >1.0は無効
 
     def test_boundary_conditions(self):
         """境界値テスト"""
@@ -150,9 +147,9 @@ class TestBnfMeanReversionStrategy:
 
         # 極端なパラメータでもエラーが発生しないことを確認
         extreme_filter_params = SignalParams()
-        extreme_filter_params.mean_reversion.enabled = True
-        extreme_filter_params.mean_reversion.baseline_period = 5
-        extreme_filter_params.mean_reversion.deviation_threshold = 0.01  # 最小値
+        extreme_filter_params.baseline_deviation.enabled = True
+        extreme_filter_params.baseline_deviation.baseline_period = 5
+        extreme_filter_params.baseline_deviation.deviation_threshold = 0.01  # 最小値
 
         extreme_strategy = YamlConfigurableStrategy(
             shared_config=self.shared_config,

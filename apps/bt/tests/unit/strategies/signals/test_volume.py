@@ -264,11 +264,10 @@ class TestVolumeSignalIntegration:
 
         # 出来高急増シグナルを有効化
         params = SignalParams()
-        params.volume.enabled = True
-        params.volume.direction = "surge"
-        params.volume.threshold = 1.5
-        params.volume.short_period = 20
-        params.volume.long_period = 100
+        params.volume_ratio_above.enabled = True
+        params.volume_ratio_above.ratio_threshold = 1.5
+        params.volume_ratio_above.short_period = 20
+        params.volume_ratio_above.long_period = 100
 
         processor = SignalProcessor()
         result = processor.apply_signals(
@@ -305,11 +304,10 @@ class TestVolumeSignalIntegration:
 
         # 出来高減少シグナルを有効化（エグジット用）
         params = SignalParams()
-        params.volume.enabled = True
-        params.volume.direction = "drop"
-        params.volume.threshold = 0.7
-        params.volume.short_period = 20
-        params.volume.long_period = 100
+        params.volume_ratio_below.enabled = True
+        params.volume_ratio_below.ratio_threshold = 0.7
+        params.volume_ratio_below.short_period = 20
+        params.volume_ratio_below.long_period = 100
 
         processor = SignalProcessor()
         result = processor.apply_signals(
@@ -346,12 +344,11 @@ class TestVolumeSignalIntegration:
 
         # 出来高急増シグナル（EMA使用）
         params = SignalParams()
-        params.volume.enabled = True
-        params.volume.direction = "surge"
-        params.volume.threshold = 1.5
-        params.volume.short_period = 20
-        params.volume.long_period = 100
-        params.volume.ma_type = "ema"
+        params.volume_ratio_above.enabled = True
+        params.volume_ratio_above.ratio_threshold = 1.5
+        params.volume_ratio_above.short_period = 20
+        params.volume_ratio_above.long_period = 100
+        params.volume_ratio_above.ma_type = "ema"
 
         processor = SignalProcessor()
         result = processor.apply_signals(

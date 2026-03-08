@@ -107,8 +107,10 @@ class TestGetOutputDirectory:
 
 class TestExtractEntryFilterParams:
     def test_extracts_params(self) -> None:
-        config = {"entry_filter_params": {"volume": {"enabled": True}}}
-        assert extract_entry_filter_params(config) == {"volume": {"enabled": True}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
+        assert extract_entry_filter_params(config) == {
+            "volume_ratio_above": {"enabled": True}
+        }
 
     def test_missing_key(self) -> None:
         assert extract_entry_filter_params({}) == {}

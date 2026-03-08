@@ -5,11 +5,13 @@
 from pydantic import BaseModel, Field
 
 from .breakout import (
+    BaselineCrossSignalParams,
+    BaselineDeviationSignalParams,
+    BaselinePositionSignalParams,
     BuyAndHoldSignalParams,
     CrossoverSignalParams,
-    MABreakoutParams,
-    MeanReversionSignalParams,
-    PeriodBreakoutParams,
+    PeriodExtremaBreakSignalParams,
+    PeriodExtremaPositionSignalParams,
     RiskAdjustedReturnSignalParams,
 )
 from .fundamental import FundamentalSignalParams
@@ -21,11 +23,17 @@ from .macro import (
     OracleIndexOpenGapRegimeSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
-from .trend import RetracementSignalParams, TrendSignalParams
+from .trend import (
+    RetracementCrossSignalParams,
+    RetracementPositionSignalParams,
+    TrendSignalParams,
+)
 from .volatility import (
-    ATRSupportBreakParams,
-    BollingerBandsSignalParams,
-    VolatilitySignalParams,
+    ATRSupportCrossParams,
+    ATRSupportPositionParams,
+    BollingerCrossSignalParams,
+    BollingerPositionSignalParams,
+    VolatilityPercentileSignalParams,
 )
 from .sector import (
     SectorRotationPhaseParams,
@@ -35,7 +43,8 @@ from .sector import (
 from .volume import (
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
-    VolumeSignalParams,
+    VolumeRatioAboveSignalParams,
+    VolumeRatioBelowSignalParams,
 )
 
 
@@ -46,8 +55,13 @@ class SignalParams(BaseModel):
     エントリー・エグジット両方のシグナルパラメータを統一管理
     """
 
-    volume: VolumeSignalParams = Field(
-        default_factory=VolumeSignalParams, description="出来高シグナル"
+    volume_ratio_above: VolumeRatioAboveSignalParams = Field(
+        default_factory=VolumeRatioAboveSignalParams,
+        description="出来高比率上抜けシグナル",
+    )
+    volume_ratio_below: VolumeRatioBelowSignalParams = Field(
+        default_factory=VolumeRatioBelowSignalParams,
+        description="出来高比率下抜けシグナル",
     )
     trading_value: TradingValueSignalParams = Field(
         default_factory=TradingValueSignalParams, description="売買代金シグナル"
@@ -61,8 +75,9 @@ class SignalParams(BaseModel):
     fundamental: FundamentalSignalParams = Field(
         default_factory=FundamentalSignalParams, description="財務指標シグナル"
     )
-    volatility: VolatilitySignalParams = Field(
-        default_factory=VolatilitySignalParams, description="ボラティリティシグナル"
+    volatility_percentile: VolatilityPercentileSignalParams = Field(
+        default_factory=VolatilityPercentileSignalParams,
+        description="ボラティリティパーセンタイルシグナル",
     )
     beta: BetaSignalParams = Field(
         default_factory=BetaSignalParams, description="β値シグナル"
@@ -70,33 +85,53 @@ class SignalParams(BaseModel):
     margin: MarginSignalParams = Field(
         default_factory=MarginSignalParams, description="信用残高シグナル"
     )
-    atr_support_break: ATRSupportBreakParams = Field(
-        default_factory=ATRSupportBreakParams,
-        description="ATRサポートラインブレイクシグナル",
+    atr_support_position: ATRSupportPositionParams = Field(
+        default_factory=ATRSupportPositionParams,
+        description="ATRサポートライン位置シグナル",
     )
-    retracement: RetracementSignalParams = Field(
-        default_factory=RetracementSignalParams,
-        description="リトレースメントシグナル（フィボナッチ下落率ベース）",
+    atr_support_cross: ATRSupportCrossParams = Field(
+        default_factory=ATRSupportCrossParams,
+        description="ATRサポートラインクロスシグナル",
     )
-    period_breakout: PeriodBreakoutParams = Field(
-        default_factory=PeriodBreakoutParams,
-        description="期間ブレイクアウトシグナル（direction統一設計）",
+    retracement_position: RetracementPositionSignalParams = Field(
+        default_factory=RetracementPositionSignalParams,
+        description="リトレースメント位置シグナル（フィボナッチ下落率ベース）",
+    )
+    retracement_cross: RetracementCrossSignalParams = Field(
+        default_factory=RetracementCrossSignalParams,
+        description="リトレースメントクロスシグナル（フィボナッチ下落率ベース）",
+    )
+    period_extrema_break: PeriodExtremaBreakSignalParams = Field(
+        default_factory=PeriodExtremaBreakSignalParams,
+        description="期間高値・安値ブレイクイベントシグナル",
+    )
+    period_extrema_position: PeriodExtremaPositionSignalParams = Field(
+        default_factory=PeriodExtremaPositionSignalParams,
+        description="期間高値・安値位置シグナル",
     )
     crossover: CrossoverSignalParams = Field(
         default_factory=CrossoverSignalParams,
         description="クロスオーバーシグナル（SMA/RSI/MACD/EMA）",
     )
-    bollinger_bands: BollingerBandsSignalParams = Field(
-        default_factory=BollingerBandsSignalParams,
-        description="ボリンジャーバンドシグナル（エントリー・エグジット両用）",
+    bollinger_position: BollingerPositionSignalParams = Field(
+        default_factory=BollingerPositionSignalParams,
+        description="ボリンジャーバンド位置シグナル",
+    )
+    bollinger_cross: BollingerCrossSignalParams = Field(
+        default_factory=BollingerCrossSignalParams,
+        description="ボリンジャーバンドクロスシグナル",
     )
     buy_and_hold: BuyAndHoldSignalParams = Field(
         default_factory=BuyAndHoldSignalParams,
         description="Buy&Holdシグナル（全日程エントリー可能）",
     )
-    mean_reversion: MeanReversionSignalParams = Field(
-        default_factory=MeanReversionSignalParams,
-        description="平均回帰シグナル（SMA/EMA基準線・乖離・回復統合）",
+    baseline_deviation: BaselineDeviationSignalParams = Field(
+        default_factory=BaselineDeviationSignalParams,
+        description="基準線からの乖離率シグナル",
+    )
+    baseline_position: BaselinePositionSignalParams = Field(
+        default_factory=BaselinePositionSignalParams,
+        description="価格と基準線の位置関係シグナル",
     )
     rsi_threshold: RSIThresholdSignalParams = Field(
         default_factory=RSIThresholdSignalParams,
@@ -106,9 +141,9 @@ class SignalParams(BaseModel):
         default_factory=RSISpreadSignalParams,
         description="RSIスプレッドシグナル（短期RSIと長期RSIの差分判定）",
     )
-    ma_breakout: MABreakoutParams = Field(
-        default_factory=MABreakoutParams,
-        description="移動平均線ブレイクアウトシグナル（クロス検出）",
+    baseline_cross: BaselineCrossSignalParams = Field(
+        default_factory=BaselineCrossSignalParams,
+        description="価格と基準線のクロスシグナル",
     )
     index_daily_change: IndexDailyChangeSignalParams = Field(
         default_factory=IndexDailyChangeSignalParams,

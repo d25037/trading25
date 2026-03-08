@@ -7,16 +7,14 @@ from pydantic import Field, ValidationInfo, field_validator
 from .base import BaseSignalParams, _validate_period_order
 
 
-class VolumeSignalParams(BaseSignalParams):
-    """出来高シグナルパラメータ（direction統一設計）"""
-    direction: str = Field(
-        default="surge", description="出来高方向（surge=急増、drop=減少）"
-    )
-    threshold: float = Field(
+class _BaseVolumeRatioSignalParams(BaseSignalParams):
+    """出来高比率シグナル共通パラメータ"""
+
+    ratio_threshold: float = Field(
         default=1.5,
-        gt=0.1,
+        gt=0.0,
         le=10.0,
-        description="出来高倍率閾値（surge時: >1.0、drop時: <1.0推奨）",
+        description="出来高比率閾値（短期MA / 長期MA）",
     )
     short_period: int = Field(
         default=20, gt=0, le=300, description="出来高短期移動平均期間"
@@ -33,19 +31,34 @@ class VolumeSignalParams(BaseSignalParams):
             v, info, "short_period", "出来高長期期間は出来高短期期間より大きい必要があります"
         )
 
-    @field_validator("direction")
-    @classmethod
-    def validate_direction(cls, v):
-        if v not in ["surge", "drop"]:
-            raise ValueError("directionは'surge'または'drop'のみ指定可能です")
-        return v
-
     @field_validator("ma_type")
     @classmethod
-    def validate_ma_type(cls, v):
+    def validate_ma_type(cls, v: str) -> str:
         if v not in ["sma", "ema"]:
             raise ValueError("ma_typeは'sma'または'ema'のみ指定可能です")
         return v
+
+
+class VolumeRatioAboveSignalParams(_BaseVolumeRatioSignalParams):
+    """出来高比率上抜けシグナルパラメータ"""
+
+    ratio_threshold: float = Field(
+        default=1.5,
+        gt=0.0,
+        le=10.0,
+        description="短期出来高MAが長期出来高MAの何倍を上回るとTrueにするか",
+    )
+
+
+class VolumeRatioBelowSignalParams(_BaseVolumeRatioSignalParams):
+    """出来高比率下抜けシグナルパラメータ"""
+
+    ratio_threshold: float = Field(
+        default=0.7,
+        gt=0.0,
+        le=10.0,
+        description="短期出来高MAが長期出来高MAの何倍を下回るとTrueにするか",
+    )
 
 
 class TradingValueSignalParams(BaseSignalParams):

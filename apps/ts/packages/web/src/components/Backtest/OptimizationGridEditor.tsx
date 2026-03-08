@@ -19,7 +19,7 @@ const TEMPLATE_YAML = `# Parameter ranges for optimization grid search
 # Each parameter should be a list of values to try
 parameter_ranges:
   entry_filter_params:
-    period_breakout:
+    period_extrema_break:
       period: [10, 15, 20, 25, 30]
   exit_trigger_params:
     atr_stop:

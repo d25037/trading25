@@ -13,7 +13,11 @@ def _make_candidate():
     return StrategyCandidate(
         strategy_id="test_strat",
         entry_filter_params={
-            "volume": {"enabled": True, "direction": "surge", "threshold": 1.5},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ma_type": "ema",
+                "ratio_threshold": 1.5,
+            },
         },
         exit_trigger_params={
             "rsi_threshold": {"enabled": True, "period": 14, "threshold": 70.0},
@@ -81,7 +85,7 @@ class TestBuildYamlContent:
         updater = YamlUpdater()
         candidate = StrategyCandidate(
             strategy_id="no_shared",
-            entry_filter_params={"volume": {"enabled": True}},
+            entry_filter_params={"volume_ratio_above": {"enabled": True}},
             exit_trigger_params={},
         )
         content = updater._build_yaml_content(candidate)
@@ -132,15 +136,15 @@ class TestSaveCandidate:
 class TestFormatSignalParams:
     def test_numeric_rounding(self):
         updater = YamlUpdater()
-        params = {"volume": {"threshold": 1.555555, "enabled": True}}
+        params = {"volume_ratio_above": {"ratio_threshold": 1.555555, "enabled": True}}
         formatted = updater._format_signal_params(params)
-        assert "volume" in formatted
+        assert "volume_ratio_above" in formatted
 
     def test_disabled_signal_excluded(self):
         updater = YamlUpdater()
-        params = {"volume": {"enabled": False, "threshold": 1.0}}
+        params = {"volume_ratio_above": {"enabled": False, "ratio_threshold": 1.0}}
         formatted = updater._format_signal_params(params)
-        assert "volume" not in formatted
+        assert "volume_ratio_above" not in formatted
 
     def test_non_dict_signal_kept(self):
         updater = YamlUpdater()
@@ -152,12 +156,12 @@ class TestFormatSignalParams:
 class TestBuildImprovedYaml:
     def test_header_contains_original_name(self):
         updater = YamlUpdater()
-        config = {"entry_filter_params": {"volume": {"enabled": True}}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
         improvements = [
             Improvement(
                 improvement_type="add_signal",
                 target="entry",
-                signal_name="volume",
+                signal_name="volume_ratio_above",
                 reason="test reason",
                 expected_impact="test",
             )
@@ -169,7 +173,7 @@ class TestBuildImprovedYaml:
 
     def test_yaml_body_present(self):
         updater = YamlUpdater()
-        config = {"entry_filter_params": {"volume": {"enabled": True}}}
+        config = {"entry_filter_params": {"volume_ratio_above": {"enabled": True}}}
         improvements = []
         result = updater._build_improved_yaml(config, "test", improvements)
         assert "entry_filter_params" in result
@@ -331,8 +335,8 @@ class TestApplyImprovements:
             Improvement(
                 improvement_type="add_signal",
                 target="entry",
-                signal_name="volume",
-                changes={"enabled": True, "threshold": 1.5},
+                signal_name="volume_ratio_above",
+                changes={"enabled": True, "ratio_threshold": 1.5},
                 reason="test",
                 expected_impact="test",
             )
@@ -350,7 +354,9 @@ class TestApplyImprovements:
 
             mock_improver = MagicMock()
             improved_config = {
-                "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
+                "entry_filter_params": {
+                    "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+                },
                 "exit_trigger_params": {},
             }
             mock_improver.apply_improvements.return_value = improved_config
@@ -361,7 +367,7 @@ class TestApplyImprovements:
             )
         assert os.path.exists(result_path)
         content = open(result_path).read()
-        assert "volume" in content
+        assert "volume_ratio_above" in content
 
     def test_apply_improvements_default_path_non_external(self, tmp_path):
         updater = YamlUpdater(base_dir=str(tmp_path), use_external=False)
@@ -369,8 +375,8 @@ class TestApplyImprovements:
             Improvement(
                 improvement_type="add_signal",
                 target="entry",
-                signal_name="volume",
-                changes={"enabled": True, "threshold": 1.5},
+                signal_name="volume_ratio_above",
+                changes={"enabled": True, "ratio_threshold": 1.5},
                 reason="test",
                 expected_impact="test",
             )
@@ -387,7 +393,9 @@ class TestApplyImprovements:
 
             mock_improver = MagicMock()
             improved_config = {
-                "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
+                "entry_filter_params": {
+                    "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+                },
                 "exit_trigger_params": {},
             }
             mock_improver.apply_improvements.return_value = improved_config
@@ -406,8 +414,8 @@ class TestApplyImprovements:
             Improvement(
                 improvement_type="add_signal",
                 target="entry",
-                signal_name="volume",
-                changes={"enabled": True, "threshold": 1.5},
+                signal_name="volume_ratio_above",
+                changes={"enabled": True, "ratio_threshold": 1.5},
                 reason="test",
                 expected_impact="test",
             )
@@ -425,7 +433,9 @@ class TestApplyImprovements:
 
             mock_improver = MagicMock()
             improved_config = {
-                "entry_filter_params": {"volume": {"enabled": True, "threshold": 1.5}},
+                "entry_filter_params": {
+                    "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5}
+                },
                 "exit_trigger_params": {},
             }
             mock_improver.apply_improvements.return_value = improved_config

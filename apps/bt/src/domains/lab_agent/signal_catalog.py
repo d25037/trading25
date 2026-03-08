@@ -28,15 +28,22 @@ ParamRange = tuple[float, float, ParamType]
 
 # Keep the historical order for stable random-add behavior in tests/CLI output.
 LEGACY_SIGNAL_ORDER: list[str] = [
-    "period_breakout",
-    "ma_breakout",
+    "period_extrema_break",
+    "period_extrema_position",
+    "baseline_cross",
+    "baseline_position",
     "crossover",
-    "mean_reversion",
-    "bollinger_bands",
-    "atr_support_break",
+    "baseline_deviation",
+    "retracement_cross",
+    "retracement_position",
+    "bollinger_cross",
+    "bollinger_position",
+    "atr_support_cross",
+    "atr_support_position",
     "rsi_threshold",
     "rsi_spread",
-    "volume",
+    "volume_ratio_above",
+    "volume_ratio_below",
     "trading_value",
     "trading_value_range",
     "beta",
@@ -52,39 +59,45 @@ SIGNAL_USAGE_OVERRIDES: dict[str, Literal["entry", "exit", "both"]] = {
     "beta": "entry",
     "margin": "entry",
     "fundamental": "entry",
-}
-
-
-# Registry has no "trend" category. Keep legacy mapping compatibility.
-SIGNAL_CATEGORY_OVERRIDES: dict[str, SignalCategory] = {
-    "ma_breakout": "trend",
-    "crossover": "trend",
-    "retracement": "trend",
+    "volume_ratio_above": "entry",
+    "volume_ratio_below": "exit",
 }
 
 
 # Lab heuristics (not represented by runtime registry).
 SIGNAL_RELATION_OVERRIDES: dict[str, dict[str, list[str]]] = {
-    "period_breakout": {
-        "recommended_with": ["volume", "bollinger_bands"],
+    "period_extrema_break": {
+        "recommended_with": ["volume_ratio_above", "bollinger_position"],
     },
-    "ma_breakout": {
-        "recommended_with": ["volume", "rsi_threshold"],
+    "period_extrema_position": {
+        "recommended_with": ["bollinger_position"],
+    },
+    "baseline_cross": {
+        "recommended_with": ["volume_ratio_above", "rsi_threshold"],
     },
     "crossover": {
-        "recommended_with": ["volume"],
+        "recommended_with": ["volume_ratio_above"],
     },
-    "mean_reversion": {
-        "mutually_exclusive": ["period_breakout"],
+    "baseline_deviation": {
+        "mutually_exclusive": ["period_extrema_break"],
     },
-    "bollinger_bands": {
+    "retracement_position": {
+        "recommended_with": ["volume_ratio_above"],
+    },
+    "bollinger_position": {
         "recommended_with": ["rsi_threshold"],
     },
     "rsi_threshold": {
-        "recommended_with": ["volume"],
+        "recommended_with": ["volume_ratio_above"],
     },
     "rsi_spread": {
         "mutually_exclusive": ["rsi_threshold"],
+    },
+    "volume_ratio_above": {
+        "mutually_exclusive": ["volume_ratio_below"],
+    },
+    "volume_ratio_below": {
+        "mutually_exclusive": ["volume_ratio_above"],
     },
     "trading_value": {
         "mutually_exclusive": ["trading_value_range"],
@@ -93,7 +106,7 @@ SIGNAL_RELATION_OVERRIDES: dict[str, dict[str, list[str]]] = {
         "mutually_exclusive": ["trading_value"],
     },
     "beta": {
-        "recommended_with": ["volume"],
+        "recommended_with": ["volume_ratio_above"],
     },
 }
 
@@ -101,13 +114,20 @@ SIGNAL_RELATION_OVERRIDES: dict[str, dict[str, list[str]]] = {
 # Keep established search space for already-supported signals.
 # New signals are generated from SignalParams constraints.
 LEGACY_PARAM_RANGE_OVERRIDES: dict[str, dict[str, ParamRange]] = {
-    "period_breakout": {
+    "period_extrema_break": {
         "period": (20, 500, "int"),
         "lookback_days": (1, 30, "int"),
     },
-    "ma_breakout": {
+    "period_extrema_position": {
         "period": (20, 500, "int"),
         "lookback_days": (1, 30, "int"),
+    },
+    "baseline_cross": {
+        "baseline_period": (20, 500, "int"),
+        "lookback_days": (1, 30, "int"),
+    },
+    "baseline_position": {
+        "baseline_period": (10, 100, "int"),
     },
     "crossover": {
         "fast_period": (5, 50, "int"),
@@ -115,15 +135,34 @@ LEGACY_PARAM_RANGE_OVERRIDES: dict[str, dict[str, ParamRange]] = {
         "signal_period": (5, 20, "int"),
         "lookback_days": (1, 10, "int"),
     },
-    "mean_reversion": {
+    "baseline_deviation": {
         "baseline_period": (10, 100, "int"),
         "deviation_threshold": (0.05, 0.5, "float"),
     },
-    "bollinger_bands": {
+    "retracement_cross": {
+        "lookback_period": (10, 100, "int"),
+        "retracement_level": (0.1, 0.8, "float"),
+        "lookback_days": (1, 10, "int"),
+    },
+    "retracement_position": {
+        "lookback_period": (10, 100, "int"),
+        "retracement_level": (0.1, 0.8, "float"),
+    },
+    "bollinger_cross": {
+        "window": (10, 100, "int"),
+        "alpha": (1.0, 4.0, "float"),
+        "lookback_days": (1, 10, "int"),
+    },
+    "bollinger_position": {
         "window": (10, 100, "int"),
         "alpha": (1.0, 4.0, "float"),
     },
-    "atr_support_break": {
+    "atr_support_cross": {
+        "lookback_period": (10, 100, "int"),
+        "atr_multiplier": (1.0, 10.0, "float"),
+        "lookback_days": (1, 10, "int"),
+    },
+    "atr_support_position": {
         "lookback_period": (10, 100, "int"),
         "atr_multiplier": (1.0, 10.0, "float"),
     },
@@ -136,8 +175,13 @@ LEGACY_PARAM_RANGE_OVERRIDES: dict[str, dict[str, ParamRange]] = {
         "slow_period": (10, 50, "int"),
         "threshold": (5.0, 30.0, "float"),
     },
-    "volume": {
-        "threshold": (0.3, 3.0, "float"),
+    "volume_ratio_above": {
+        "ratio_threshold": (1.05, 3.0, "float"),
+        "short_period": (10, 100, "int"),
+        "long_period": (50, 300, "int"),
+    },
+    "volume_ratio_below": {
+        "ratio_threshold": (0.2, 0.95, "float"),
         "short_period": (10, 100, "int"),
         "long_period": (50, 300, "int"),
     },
@@ -210,11 +254,7 @@ def _normalize_category_name(category: str) -> SignalCategory | None:
     return None
 
 
-def _resolve_category(signal_name: str, categories: set[str]) -> SignalCategory:
-    override = SIGNAL_CATEGORY_OVERRIDES.get(signal_name)
-    if override is not None:
-        return override
-
+def _resolve_category(categories: set[str]) -> SignalCategory:
     for category in sorted(categories):
         normalized = _normalize_category_name(category)
         if normalized is not None:
@@ -244,7 +284,7 @@ def _build_available_signals() -> list[SignalConstraints]:
                 mutually_exclusive=relation.get("mutually_exclusive", []),
                 recommended_with=relation.get("recommended_with", []),
                 usage=_resolve_usage(signal_name, agg.exit_enabled),
-                category=_resolve_category(signal_name, agg.categories),
+                category=_resolve_category(agg.categories),
             )
         )
 

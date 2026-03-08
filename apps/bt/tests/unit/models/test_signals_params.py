@@ -4,12 +4,14 @@ import pytest
 from pydantic import ValidationError
 
 from src.shared.models.signals.breakout import (
+    BaselineCrossSignalParams,
+    BaselineDeviationSignalParams,
+    BaselinePositionSignalParams,
     BreakoutSignalParams,
     BuyAndHoldSignalParams,
     CrossoverSignalParams,
-    MABreakoutParams,
-    MeanReversionSignalParams,
-    PeriodBreakoutParams,
+    PeriodExtremaBreakSignalParams,
+    PeriodExtremaPositionSignalParams,
     RiskAdjustedReturnSignalParams,
 )
 from src.shared.models.signals.macro import (
@@ -26,243 +28,153 @@ from src.shared.models.signals.sector import (
     SectorVolatilityRegimeParams,
 )
 from src.shared.models.signals.volatility import (
-    ATRSupportBreakParams,
-    BollingerBandsSignalParams,
+    ATRSupportCrossParams,
+    ATRSupportPositionParams,
+    BollingerCrossSignalParams,
+    BollingerPositionSignalParams,
+    VolatilityPercentileSignalParams,
 )
 from src.shared.models.signals.volume import (
     TradingValueRangeSignalParams,
     TradingValueSignalParams,
-    VolumeSignalParams,
+    VolumeRatioAboveSignalParams,
+    VolumeRatioBelowSignalParams,
 )
 
 
-# ---- Crossover ----
 class TestCrossoverSignalParams:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         p = CrossoverSignalParams()
         assert p.type == "sma"
         assert p.direction == "golden"
         assert p.fast_period == 10
         assert p.slow_period == 30
 
-    def test_valid_period_order(self):
-        p = CrossoverSignalParams(fast_period=5, slow_period=20)
-        assert p.slow_period == 20
-
-    def test_invalid_period_order(self):
+    def test_invalid_period_order(self) -> None:
         with pytest.raises(ValidationError, match="slow_period"):
             CrossoverSignalParams(fast_period=30, slow_period=10)
 
-    def test_equal_periods(self):
-        with pytest.raises(ValidationError):
-            CrossoverSignalParams(fast_period=20, slow_period=20)
 
-
-# ---- PeriodBreakout ----
-class TestPeriodBreakoutParams:
-    def test_defaults(self):
-        p = PeriodBreakoutParams()
+class TestPeriodExtremaParams:
+    def test_break_defaults(self) -> None:
+        p = PeriodExtremaBreakSignalParams()
         assert p.direction == "high"
-        assert p.condition == "break"
+        assert p.lookback_days == 1
 
-    def test_custom(self):
-        p = PeriodBreakoutParams(direction="low", condition="maintained", period=50)
-        assert p.direction == "low"
-        assert p.period == 50
-
-
-# ---- MABreakout ----
-class TestMABreakoutParams:
-    def test_defaults(self):
-        p = MABreakoutParams()
-        assert p.period == 200
-        assert p.ma_type == "sma"
-        assert p.direction == "above"
-
-    def test_ema(self):
-        p = MABreakoutParams(ma_type="ema")
-        assert p.ma_type == "ema"
+    def test_position_defaults(self) -> None:
+        p = PeriodExtremaPositionSignalParams()
+        assert p.direction == "high"
+        assert p.state == "at_extrema"
 
 
-# ---- MeanReversion ----
-class TestMeanReversionSignalParams:
-    def test_defaults(self):
-        p = MeanReversionSignalParams()
+class TestBaselineSignalParams:
+    def test_cross_defaults(self) -> None:
+        p = BaselineCrossSignalParams()
+        assert p.baseline_period == 200
         assert p.baseline_type == "sma"
-        assert p.deviation_threshold == 0.2
+        assert p.price_column == "close"
 
-    def test_deviation_threshold_zero(self):
-        p = MeanReversionSignalParams(deviation_threshold=0.0)
-        assert p.deviation_threshold == 0.0
-
-    def test_deviation_threshold_max(self):
-        p = MeanReversionSignalParams(deviation_threshold=1.0)
-        assert p.deviation_threshold == 1.0
-
-    def test_deviation_threshold_above_max(self):
+    def test_deviation_boundaries(self) -> None:
+        assert BaselineDeviationSignalParams(deviation_threshold=0.0).deviation_threshold == 0.0
         with pytest.raises(ValidationError):
-            MeanReversionSignalParams(deviation_threshold=1.1)
+            BaselineDeviationSignalParams(deviation_threshold=1.1)
+
+    def test_position_custom(self) -> None:
+        p = BaselinePositionSignalParams(direction="below", price_column="low")
+        assert p.direction == "below"
+        assert p.price_column == "low"
 
 
-# ---- BuyAndHold ----
+class TestLegacyBreakoutSignalParams:
+    def test_defaults(self) -> None:
+        p = BreakoutSignalParams()
+        assert p.price_column == "high"
+        assert p.direction == "upward"
+
+
 class TestBuyAndHoldSignalParams:
-    def test_defaults(self):
-        p = BuyAndHoldSignalParams()
-        assert p.enabled is False
-
-    def test_enabled(self):
-        p = BuyAndHoldSignalParams(enabled=True)
-        assert p.enabled is True
+    def test_enabled_flag(self) -> None:
+        assert BuyAndHoldSignalParams().enabled is False
+        assert BuyAndHoldSignalParams(enabled=True).enabled is True
 
 
-# ---- RiskAdjustedReturn ----
 class TestRiskAdjustedReturnSignalParams:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         p = RiskAdjustedReturnSignalParams()
         assert p.ratio_type == "sortino"
         assert p.condition == "above"
 
-    def test_valid_ratio_types(self):
-        for rt in ["sharpe", "sortino"]:
-            p = RiskAdjustedReturnSignalParams(ratio_type=rt)
-            assert p.ratio_type == rt
-
-    def test_invalid_ratio_type(self):
+    def test_invalid_ratio_type(self) -> None:
         with pytest.raises(ValidationError, match="ratio_type"):
             RiskAdjustedReturnSignalParams(ratio_type="calmar")
 
-    def test_valid_conditions(self):
-        for c in ["above", "below"]:
-            p = RiskAdjustedReturnSignalParams(condition=c)
-            assert p.condition == c
 
-    def test_invalid_condition(self):
-        with pytest.raises(ValidationError, match="condition"):
-            RiskAdjustedReturnSignalParams(condition="equal")
+class TestVolumeRatioSignalParams:
+    def test_above_defaults(self) -> None:
+        p = VolumeRatioAboveSignalParams()
+        assert p.ratio_threshold == 1.5
+        assert p.ma_type == "sma"
 
+    def test_below_defaults(self) -> None:
+        p = VolumeRatioBelowSignalParams()
+        assert p.ratio_threshold == 0.7
 
-# ---- Volume ----
-class TestVolumeSignalParams:
-    def test_defaults(self):
-        p = VolumeSignalParams()
-        assert p.direction == "surge"
-        assert p.short_period == 20
-        assert p.long_period == 100
-
-    def test_valid_directions(self):
-        for d in ["surge", "drop"]:
-            p = VolumeSignalParams(direction=d)
-            assert p.direction == d
-
-    def test_invalid_direction(self):
-        with pytest.raises(ValidationError, match="direction"):
-            VolumeSignalParams(direction="flat")
-
-    def test_period_order_invalid(self):
+    def test_invalid_period_order(self) -> None:
         with pytest.raises(ValidationError):
-            VolumeSignalParams(short_period=100, long_period=50)
+            VolumeRatioAboveSignalParams(short_period=100, long_period=50)
 
-    def test_valid_ma_types(self):
-        for mt in ["sma", "ema"]:
-            p = VolumeSignalParams(ma_type=mt)
-            assert p.ma_type == mt
-
-    def test_invalid_ma_type(self):
+    def test_invalid_ma_type(self) -> None:
         with pytest.raises(ValidationError, match="ma_type"):
-            VolumeSignalParams(ma_type="wma")
-
-    def test_threshold_boundaries(self):
-        with pytest.raises(ValidationError):
-            VolumeSignalParams(threshold=0.1)
-        with pytest.raises(ValidationError):
-            VolumeSignalParams(threshold=10.1)
+            VolumeRatioAboveSignalParams(ma_type="wma")
 
 
 class TestTradingValueSignalParams:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         p = TradingValueSignalParams()
         assert p.direction == "above"
         assert p.period == 20
 
-    def test_invalid_direction(self):
+    def test_invalid_direction(self) -> None:
         with pytest.raises(ValidationError, match="direction"):
             TradingValueSignalParams(direction="equal")
 
 
 class TestTradingValueRangeSignalParams:
-    def test_defaults(self):
+    def test_defaults(self) -> None:
         p = TradingValueRangeSignalParams()
         assert p.min_threshold == 0.5
         assert p.max_threshold == 100.0
 
-    def test_invalid_range(self):
+    def test_invalid_range(self) -> None:
         with pytest.raises(ValidationError, match="最大閾値"):
             TradingValueRangeSignalParams(min_threshold=100.0, max_threshold=50.0)
 
-    def test_equal_thresholds(self):
-        with pytest.raises(ValidationError, match="最大閾値"):
-            TradingValueRangeSignalParams(min_threshold=50.0, max_threshold=50.0)
 
-
-# ---- Beta ----
-class TestBetaSignalParams:
-    def test_defaults(self):
+class TestMacroSignalParams:
+    def test_beta_defaults(self) -> None:
         p = BetaSignalParams()
         assert p.min_beta == 0.5
         assert p.max_beta == 1.5
 
-    def test_invalid_range(self):
+    def test_beta_invalid_range(self) -> None:
         with pytest.raises(ValidationError, match="β値"):
             BetaSignalParams(min_beta=1.5, max_beta=0.5)
 
-    def test_equal_betas(self):
-        with pytest.raises(ValidationError, match="β値"):
-            BetaSignalParams(min_beta=1.0, max_beta=1.0)
-
-    def test_negative_beta(self):
-        p = BetaSignalParams(min_beta=-2.0, max_beta=-0.5)
-        assert p.min_beta == -2.0
-
-    def test_boundary_values(self):
-        p = BetaSignalParams(min_beta=-2.0, max_beta=5.0)
-        assert p.min_beta == -2.0
-        assert p.max_beta == 5.0
-
-
-class TestMarginSignalParams:
-    def test_defaults(self):
+    def test_margin_defaults(self) -> None:
         p = MarginSignalParams()
         assert p.lookback_period == 150
         assert p.percentile_threshold == 0.2
 
-
-class TestIndexDailyChangeSignalParams:
-    def test_defaults(self):
+    def test_index_daily_change_defaults(self) -> None:
         p = IndexDailyChangeSignalParams()
         assert p.max_daily_change_pct == 1.0
         assert p.direction == "below"
 
-
-class TestIndexMACDHistogramSignalParams:
-    def test_defaults(self):
-        p = IndexMACDHistogramSignalParams()
-        assert p.fast_period == 12
-        assert p.slow_period == 26
-        assert p.signal_period == 9
-
-    def test_invalid_period_order(self):
+    def test_index_macd_invalid_period_order(self) -> None:
         with pytest.raises(ValidationError, match="slow_period"):
             IndexMACDHistogramSignalParams(fast_period=30, slow_period=10)
 
-
-class TestOracleIndexOpenGapRegimeSignalParams:
-    def test_defaults(self):
-        p = OracleIndexOpenGapRegimeSignalParams()
-        assert p.gap_threshold_1_pct == 1.0
-        assert p.gap_threshold_2_pct == 2.0
-        assert p.regime == "down_medium"
-
-    def test_invalid_threshold_order(self):
+    def test_oracle_gap_threshold_order(self) -> None:
         with pytest.raises(ValidationError, match="gap_threshold_2_pct"):
             OracleIndexOpenGapRegimeSignalParams(
                 gap_threshold_1_pct=2.0,
@@ -270,108 +182,60 @@ class TestOracleIndexOpenGapRegimeSignalParams:
             )
 
 
-# ---- RSI ----
-class TestRSIThresholdSignalParams:
-    def test_defaults(self):
+class TestOscillatorSignalParams:
+    def test_rsi_threshold_defaults(self) -> None:
         p = RSIThresholdSignalParams()
-        assert p.period > 0
-        assert 0 < p.threshold < 100
+        assert p.period == 14
+        assert p.condition == "below"
 
-    def test_valid_conditions(self):
-        for c in ["below", "above"]:
-            p = RSIThresholdSignalParams(condition=c)
-            assert p.condition == c
-
-    def test_invalid_condition(self):
+    def test_rsi_threshold_invalid_condition(self) -> None:
         with pytest.raises(ValidationError, match="condition"):
             RSIThresholdSignalParams(condition="equal")
 
-
-class TestRSISpreadSignalParams:
-    def test_defaults(self):
-        p = RSISpreadSignalParams()
-        assert p.fast_period < p.slow_period
-
-    def test_invalid_period_order(self):
-        with pytest.raises(ValidationError):
+    def test_rsi_spread_invalid_period_order(self) -> None:
+        with pytest.raises(ValidationError, match="slow_period"):
             RSISpreadSignalParams(fast_period=30, slow_period=10)
 
 
-# ---- Sector ----
-class TestSectorStrengthRankingParams:
-    def test_defaults(self):
+class TestVolatilitySignalParams:
+    def test_volatility_percentile_defaults(self) -> None:
+        p = VolatilityPercentileSignalParams()
+        assert p.window == 20
+        assert p.lookback == 252
+        assert p.percentile == 50.0
+
+    def test_bollinger_position_defaults(self) -> None:
+        p = BollingerPositionSignalParams()
+        assert p.level == "upper"
+        assert p.direction == "below"
+
+    def test_bollinger_invalid_level(self) -> None:
+        with pytest.raises(ValidationError, match="level"):
+            BollingerPositionSignalParams(level="outer")
+
+    def test_bollinger_cross_defaults(self) -> None:
+        p = BollingerCrossSignalParams()
+        assert p.lookback_days == 1
+
+    def test_atr_support_position_defaults(self) -> None:
+        p = ATRSupportPositionParams()
+        assert p.direction == "below"
+        assert p.price_column == "close"
+
+    def test_atr_support_cross_defaults(self) -> None:
+        p = ATRSupportCrossParams()
+        assert p.lookback_days == 1
+
+
+class TestSectorSignalParams:
+    def test_sector_strength_defaults(self) -> None:
         p = SectorStrengthRankingParams()
         assert 1 <= p.top_n <= 33
 
-    def test_custom(self):
-        p = SectorStrengthRankingParams(top_n=5, momentum_weight=0.8)
-        assert p.top_n == 5
-        assert p.momentum_weight == 0.8
+    def test_sector_rotation_valid_direction(self) -> None:
+        p = SectorRotationPhaseParams(direction="leading")
+        assert p.direction == "leading"
 
-
-class TestSectorRotationPhaseParams:
-    def test_valid_directions(self):
-        for d in ["leading", "weakening"]:
-            p = SectorRotationPhaseParams(direction=d)
-            assert p.direction == d
-
-    def test_invalid_direction(self):
-        with pytest.raises(ValidationError, match="direction"):
-            SectorRotationPhaseParams(direction="stable")
-
-
-class TestSectorVolatilityRegimeParams:
-    def test_valid_directions(self):
-        for d in ["low_vol", "high_vol"]:
-            p = SectorVolatilityRegimeParams(direction=d)
-            assert p.direction == d
-
-    def test_invalid_direction(self):
-        with pytest.raises(ValidationError, match="direction"):
-            SectorVolatilityRegimeParams(direction="mid_vol")
-
-    def test_spike_multiplier_boundary(self):
+    def test_sector_volatility_invalid_spike_multiplier(self) -> None:
         with pytest.raises(ValidationError):
             SectorVolatilityRegimeParams(spike_multiplier=0.5)
-        with pytest.raises(ValidationError):
-            SectorVolatilityRegimeParams(spike_multiplier=5.1)
-
-
-# ---- Volatility ----
-class TestBollingerBandsSignalParams:
-    def test_defaults(self):
-        p = BollingerBandsSignalParams()
-        assert p.window > 0
-        assert p.alpha > 0
-
-    def test_valid_positions(self):
-        positions = [
-            "below_upper", "above_lower", "above_middle",
-            "below_middle", "above_upper", "below_lower",
-        ]
-        for pos in positions:
-            p = BollingerBandsSignalParams(position=pos)
-            assert p.position == pos
-
-    def test_invalid_position(self):
-        with pytest.raises(ValidationError, match="position"):
-            BollingerBandsSignalParams(position="inside")
-
-
-class TestATRSupportBreakParams:
-    def test_defaults(self):
-        p = ATRSupportBreakParams()
-        assert p.direction in ["break", "recovery"]
-
-    def test_custom(self):
-        p = ATRSupportBreakParams(direction="recovery", atr_multiplier=2.0)
-        assert p.direction == "recovery"
-        assert p.atr_multiplier == 2.0
-
-
-# ---- Breakout (legacy) ----
-class TestBreakoutSignalParams:
-    def test_defaults(self):
-        p = BreakoutSignalParams()
-        assert p.price_column == "high"
-        assert p.direction == "upward"

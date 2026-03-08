@@ -277,10 +277,10 @@ class TestSignalAttributionEndpoints:
             "baseline_metrics": {"total_return": 12.0, "sharpe_ratio": 1.2},
             "signals": [
                 {
-                    "signal_id": "entry.volume",
+                    "signal_id": "entry.volume_ratio_above",
                     "scope": "entry",
-                    "param_key": "volume",
-                    "signal_name": "出来高",
+                    "param_key": "volume_ratio_above",
+                    "signal_name": "出来高比率上抜け",
                     "loo": {
                         "status": "ok",
                         "variant_metrics": {"total_return": 10.0, "sharpe_ratio": 1.0},
@@ -301,8 +301,8 @@ class TestSignalAttributionEndpoints:
             "top_n_selection": {
                 "top_n_requested": 5,
                 "top_n_effective": 1,
-                "selected_signal_ids": ["entry.volume"],
-                "scores": [{"signal_id": "entry.volume", "score": 1.0}],
+                "selected_signal_ids": ["entry.volume_ratio_above"],
+                "scores": [{"signal_id": "entry.volume_ratio_above", "score": 1.0}],
             },
             "timing": {
                 "total_seconds": 1.0,
@@ -421,7 +421,7 @@ class TestSignalAttributionEndpoints:
             assert resp.status_code == 200
             data = resp.json()
             assert data["job_id"] == "attr-1"
-            assert data["result"]["signals"][0]["signal_id"] == "entry.volume"
+            assert data["result"]["signals"][0]["signal_id"] == "entry.volume_ratio_above"
 
     def test_result_not_completed(self, client):
         with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:

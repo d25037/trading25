@@ -22,6 +22,7 @@ from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 # カテゴリ表示名マッピング
 CATEGORY_LABELS: dict[str, str] = {
     "breakout": "ブレイクアウト",
+    "trend": "トレンド",
     "volume": "出来高",
     "oscillator": "オシレーター",
     "volatility": "ボラティリティ",

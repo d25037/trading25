@@ -212,7 +212,7 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda _name: {
                 "shared_config": {"next_session_round_trip": True},
-                "entry_filter_params": {"volume": {"enabled": True}},
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {},
             },
         )
@@ -248,7 +248,7 @@ class TestStrategyResolution:
             "load_strategy_config",
             lambda _name: {
                 "shared_config": {"current_session_round_trip_oracle": True},
-                "entry_filter_params": {"volume": {"enabled": True}},
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {},
             },
         )

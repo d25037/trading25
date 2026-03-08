@@ -61,6 +61,12 @@ class TestBuildSignalReference:
         category_keys = [c["key"] for c in result["categories"]]
         assert "sector" in category_keys
 
+    def test_trend_category_included(self):
+        """trendカテゴリが含まれること"""
+        result = build_signal_reference()
+        category_keys = [c["key"] for c in result["categories"]]
+        assert "trend" in category_keys
+
     def test_sector_signals_count(self):
         """セクターシグナルが3つ含まれること"""
         result = build_signal_reference()
@@ -75,6 +81,16 @@ class TestBuildSignalReference:
         parsed = yaml.safe_load(signal["yaml_snippet"])
         assert "risk_adjusted_return" in parsed
         assert "fundamental" not in parsed
+
+    def test_trend_signals_are_classified_consistently(self):
+        """trend系シグナルが runtime/lab で共有するカテゴリに揃っていること"""
+        result = build_signal_reference()
+        category_by_key = {signal["key"]: signal["category"] for signal in result["signals"]}
+        assert category_by_key["baseline_cross"] == "trend"
+        assert category_by_key["baseline_position"] == "trend"
+        assert category_by_key["crossover"] == "trend"
+        assert category_by_key["retracement_position"] == "trend"
+        assert category_by_key["retracement_cross"] == "trend"
 
     def test_new_fundamental_growth_signals_are_included(self):
         result = build_signal_reference()
@@ -191,7 +207,7 @@ class TestGetParamModel:
 
     def test_simple_param_key(self):
         """単純なparam_keyでモデルが取得できること"""
-        model = _get_param_model("volume")
+        model = _get_param_model("volume_ratio_above")
         assert model is not None
         assert "enabled" in model.model_fields
 

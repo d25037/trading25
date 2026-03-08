@@ -4,7 +4,19 @@
 
 import pandas as pd
 
-from src.domains.strategy.signals.breakout import ma_breakout_signal, period_breakout_signal
+from src.domains.strategy.signals.baseline import baseline_cross_signal
+from src.domains.strategy.signals.breakout import period_breakout_signal
+
+
+def _make_ohlc(close_values: list[float]) -> pd.DataFrame:
+    close = pd.Series(close_values)
+    return pd.DataFrame({
+        "Open": close,
+        "High": close + 3,
+        "Low": close - 3,
+        "Close": close,
+        "Volume": pd.Series([1000] * len(close_values)),
+    })
 
 
 class TestPeriodBreakoutSignal:
@@ -103,46 +115,65 @@ class TestPeriodBreakoutSignal:
         assert signal.sum() >= 1  # 少なくとも1つはTrueがあるはず
 
 
-class TestMABreakoutSignal:
-    """ma_breakout_signal関数のテスト"""
+class TestBaselineCrossSignal:
+    """baseline_cross_signal関数のテスト"""
 
     def test_sma_above(self):
         """SMA上抜け"""
-        close = pd.Series([100, 105, 110, 115, 120, 125, 130, 135, 140, 145])
-        signal = ma_breakout_signal(
-            close, period=3, ma_type="sma", direction="above", lookback_days=1
+        ohlc = _make_ohlc([100, 100, 100, 95, 94, 93, 110, 111, 112, 113])
+        signal = baseline_cross_signal(
+            ohlc,
+            baseline_type="sma",
+            baseline_period=3,
+            direction="above",
+            lookback_days=1,
         )
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
-        assert len(signal) == len(close)
+        assert len(signal) == len(ohlc)
+        assert signal.any()
 
     def test_sma_below(self):
         """SMA下抜け"""
-        close = pd.Series([145, 140, 135, 130, 125, 120, 115, 110, 105, 100])
-        signal = ma_breakout_signal(
-            close, period=3, ma_type="sma", direction="below", lookback_days=1
+        ohlc = _make_ohlc([110, 110, 110, 115, 116, 117, 95, 94, 93, 92])
+        signal = baseline_cross_signal(
+            ohlc,
+            baseline_type="sma",
+            baseline_period=3,
+            direction="below",
+            lookback_days=1,
         )
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
+        assert signal.any()
 
     def test_ema_above(self):
         """EMA上抜け"""
-        close = pd.Series([100, 105, 110, 115, 120, 125, 130, 135, 140, 145])
-        signal = ma_breakout_signal(
-            close, period=3, ma_type="ema", direction="above", lookback_days=1
+        ohlc = _make_ohlc([100, 100, 100, 95, 94, 93, 110, 111, 112, 113])
+        signal = baseline_cross_signal(
+            ohlc,
+            baseline_type="ema",
+            baseline_period=3,
+            direction="above",
+            lookback_days=1,
         )
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
 
     def test_lookback_days_3(self):
         """lookback_days=3（直近3日以内にイベント発生）"""
-        close = pd.Series([100, 105, 110, 115, 105, 105, 105, 105, 105, 105])
-        signal = ma_breakout_signal(
-            close, period=3, ma_type="sma", direction="above", lookback_days=3
+        ohlc = _make_ohlc([100, 100, 100, 95, 94, 93, 110, 108, 107, 106])
+        signal = baseline_cross_signal(
+            ohlc,
+            baseline_type="sma",
+            baseline_period=3,
+            direction="above",
+            lookback_days=3,
         )
         # 直近3日以内に上抜けがあればTrue
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
+        assert signal.sum() >= 3
 
 
 class TestHorizontalPriceActionReplacement:

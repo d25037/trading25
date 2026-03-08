@@ -491,11 +491,11 @@ class TestBuildParametersConfigOverride:
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         params = runner._build_parameters(strategy_config, config_override=None)
         assert params["shared_config"]["dataset"] == "sample"
-        assert params["entry_filter_params"]["volume"]["enabled"] is True
+        assert params["entry_filter_params"]["volume_ratio_above"]["enabled"] is True
 
     def test_partial_override_shared_config(self, monkeypatch: Any):
         """shared_config の部分上書きで既存設定が保持されること"""
@@ -516,18 +516,18 @@ class TestBuildParametersConfigOverride:
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
             "entry_filter_params": {
-                "volume": {"enabled": True, "threshold": 1.5},
+                "volume_ratio_above": {"enabled": True, "ratio_threshold": 1.5},
                 "fundamental": {"enabled": True},
             },
         }
         config_override: dict[str, Any] = {
             "entry_filter_params": {
-                "volume": {"threshold": 2.0},
+                "volume_ratio_above": {"ratio_threshold": 2.0},
             },
         }
         params = runner._build_parameters(strategy_config, config_override)
-        assert params["entry_filter_params"]["volume"]["enabled"] is True  # 保持
-        assert params["entry_filter_params"]["volume"]["threshold"] == 2.0  # 上書き
+        assert params["entry_filter_params"]["volume_ratio_above"]["enabled"] is True  # 保持
+        assert params["entry_filter_params"]["volume_ratio_above"]["ratio_threshold"] == 2.0  # 上書き
         assert params["entry_filter_params"]["fundamental"]["enabled"] is True  # 保持
 
     def test_override_adds_new_key(self, monkeypatch: Any):
@@ -537,10 +537,10 @@ class TestBuildParametersConfigOverride:
             "shared_config": {"dataset": "sample"},
         }
         config_override: dict[str, Any] = {
-            "exit_trigger_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
         }
         params = runner._build_parameters(strategy_config, config_override)
-        assert params["exit_trigger_params"]["volume"]["enabled"] is True
+        assert params["exit_trigger_params"]["volume_ratio_below"]["enabled"] is True
 
     def test_override_non_dict_value_raises(self, monkeypatch: Any):
         """config_override に dict 以外の値を渡すと ValueError"""
@@ -563,7 +563,7 @@ class TestBuildParametersConfigOverride:
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         # fundamental.period_type に無効な値
         config_override: dict[str, Any] = {
@@ -583,11 +583,11 @@ class TestBuildParametersConfigOverride:
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
             "shared_config": {"next_session_round_trip": True},
-            "exit_trigger_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
         }
 
         with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
@@ -602,7 +602,7 @@ class TestBuildParametersConfigOverride:
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
             "shared_config": {
@@ -623,11 +623,11 @@ class TestBuildParametersConfigOverride:
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
             "shared_config": {"current_session_round_trip_oracle": True},
-            "exit_trigger_params": {"volume": {"enabled": True}},
+            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
         }
 
         with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
@@ -642,7 +642,7 @@ class TestBuildParametersConfigOverride:
         runner = self._make_runner_with_defaults(monkeypatch)
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume": {"enabled": True}},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
             "shared_config": {

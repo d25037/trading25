@@ -18,7 +18,12 @@ from src.domains.lab_agent.parameter_evolver import ParameterEvolver
 def _make_candidate(sid="test", entry_params=None, exit_params=None):
     if entry_params is None:
         entry_params = {
-            "volume": {"enabled": True, "threshold": 1.5, "short_period": 20, "long_period": 100},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 1.5,
+                "short_period": 20,
+                "long_period": 100,
+            },
         }
     if exit_params is None:
         exit_params = {}
@@ -79,7 +84,7 @@ class TestParameterEvolverInit:
 
     def test_param_ranges_populated(self):
         evolver = _make_evolver()
-        assert "volume" in evolver.PARAM_RANGES
+        assert "volume_ratio_above" in evolver.PARAM_RANGES
         assert "crossover" in evolver.PARAM_RANGES
 
 
@@ -103,13 +108,13 @@ class TestMutation:
         random.seed(42)
         candidate = _make_candidate()
         mutated = evolver._mutate(candidate, mutation_strength=0.5)
-        assert "volume" in mutated.entry_filter_params
+        assert "volume_ratio_above" in mutated.entry_filter_params
 
     def test_mutate_skips_non_dict_params(self):
         evolver = _make_evolver()
-        candidate = _make_candidate(entry_params={"volume": "invalid"})
+        candidate = _make_candidate(entry_params={"volume_ratio_above": "invalid"})
         mutated = evolver._mutate(candidate, mutation_strength=0.5)
-        assert mutated.entry_filter_params["volume"] == "invalid"
+        assert mutated.entry_filter_params["volume_ratio_above"] == "invalid"
 
     def test_mutate_includes_exit_params(self):
         evolver = _make_evolver()
@@ -117,16 +122,16 @@ class TestMutation:
         candidate = _make_candidate(
             entry_params={},
             exit_params={
-                "volume": {
+                "volume_ratio_below": {
                     "enabled": True,
-                    "threshold": 1.5,
+                    "ratio_threshold": 0.7,
                     "short_period": 20,
                     "long_period": 100,
                 },
             },
         )
         mutated = evolver._mutate(candidate, mutation_strength=1.0)
-        assert "volume" in mutated.exit_trigger_params
+        assert "volume_ratio_below" in mutated.exit_trigger_params
         assert mutated.metadata.get("mutated") is True
 
     def test_is_signal_mutation_allowed_entry_filter_only(self):
@@ -135,8 +140,8 @@ class TestMutation:
             config=config,
             shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
         )
-        assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is True
-        assert evolver._is_signal_mutation_allowed("volume", usage_type="exit") is False
+        assert evolver._is_signal_mutation_allowed("volume_ratio_above", usage_type="entry") is True
+        assert evolver._is_signal_mutation_allowed("volume_ratio_above", usage_type="exit") is False
 
     def test_is_signal_mutation_allowed_exit_trigger_only(self):
         config = EvolutionConfig(target_scope="exit_trigger_only")
@@ -144,8 +149,8 @@ class TestMutation:
             config=config,
             shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
         )
-        assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is False
-        assert evolver._is_signal_mutation_allowed("volume", usage_type="exit") is True
+        assert evolver._is_signal_mutation_allowed("volume_ratio_above", usage_type="entry") is False
+        assert evolver._is_signal_mutation_allowed("volume_ratio_below", usage_type="exit") is True
 
     def test_is_signal_mutation_allowed_allowed_categories(self):
         config = EvolutionConfig(allowed_categories=["fundamental"])
@@ -153,7 +158,7 @@ class TestMutation:
             config=config,
             shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
         )
-        assert evolver._is_signal_mutation_allowed("volume", usage_type="entry") is False
+        assert evolver._is_signal_mutation_allowed("volume_ratio_above", usage_type="entry") is False
         assert evolver._is_signal_mutation_allowed(
             "fundamental", usage_type="entry"
         ) is True
@@ -169,7 +174,7 @@ class TestMutation:
             config=config,
             shared_config_dict={"initial_cash": 10000000, "stock_codes": ["7203"]},
         )
-        evolver._base_entry_signals = {"volume"}
+        evolver._base_entry_signals = {"volume_ratio_above"}
         evolver._base_exit_signals = set()
         candidate = _make_candidate()
 
@@ -209,8 +214,15 @@ class TestMutateSignalParams:
     def test_known_signal_mutates(self):
         evolver = _make_evolver()
         random.seed(42)
-        params = {"enabled": True, "threshold": 1.5, "short_period": 50, "long_period": 150}
-        result = evolver._mutate_signal_params("volume", params, mutation_strength=1.0)
+        params = {
+            "enabled": True,
+            "ratio_threshold": 1.5,
+            "short_period": 50,
+            "long_period": 150,
+        }
+        result = evolver._mutate_signal_params(
+            "volume_ratio_above", params, mutation_strength=1.0
+        )
         # With mutation_strength=1.0, all numeric params should be mutated
         assert "enabled" in result  # categorical preserved
         assert result["enabled"] is True
@@ -225,17 +237,21 @@ class TestMutateSignalParams:
     def test_categorical_params_preserved(self):
         evolver = _make_evolver()
         random.seed(42)
-        params = {"enabled": True, "direction": "surge", "threshold": 1.5}
-        result = evolver._mutate_signal_params("volume", params, mutation_strength=1.0)
-        assert result["direction"] == "surge"
+        params = {"enabled": True, "ma_type": "ema", "ratio_threshold": 1.5}
+        result = evolver._mutate_signal_params(
+            "volume_ratio_above", params, mutation_strength=1.0
+        )
+        assert result["ma_type"] == "ema"
 
     def test_values_within_range(self):
         evolver = _make_evolver()
         random.seed(42)
-        params = {"threshold": 1.5, "short_period": 50, "long_period": 150}
+        params = {"ratio_threshold": 1.5, "short_period": 50, "long_period": 150}
         for _ in range(50):
-            result = evolver._mutate_signal_params("volume", params, mutation_strength=1.0)
-            assert 0.3 <= result["threshold"] <= 3.0
+            result = evolver._mutate_signal_params(
+                "volume_ratio_above", params, mutation_strength=1.0
+            )
+            assert 1.05 <= result["ratio_threshold"] <= 3.0
             assert 10 <= result["short_period"] <= 100
             assert 50 <= result["long_period"] <= 300
 
@@ -247,7 +263,7 @@ class TestMutateSignalParams:
             patch("src.domains.lab_agent.parameter_evolver.random.gauss", return_value=10.0),
         ):
             result = evolver._mutate_signal_params(
-                "volume",
+                "volume_ratio_above",
                 params,
                 mutation_strength=1.0,
             )
@@ -260,7 +276,12 @@ class TestCrossover:
         random.seed(42)
         parent1 = _make_candidate("p1")
         parent2 = _make_candidate("p2", entry_params={
-            "volume": {"enabled": True, "threshold": 2.0, "short_period": 10, "long_period": 50},
+            "volume_ratio_above": {
+                "enabled": True,
+                "ratio_threshold": 2.0,
+                "short_period": 10,
+                "long_period": 50,
+            },
         })
         child = evolver._crossover(parent1, parent2)
         assert isinstance(child, StrategyCandidate)
@@ -275,7 +296,7 @@ class TestCrossover:
 
     def test_crossover_handles_missing_entry_signal_in_selected_parent(self):
         evolver = _make_evolver()
-        parent1 = _make_candidate("p1", entry_params={"volume": {"enabled": True}})
+        parent1 = _make_candidate("p1", entry_params={"volume_ratio_above": {"enabled": True}})
         parent2 = _make_candidate("p2", entry_params={})
         with patch("src.domains.lab_agent.parameter_evolver.random.random", return_value=0.8):
             child = evolver._crossover(parent1, parent2)
@@ -365,7 +386,7 @@ class TestEvolveFlow:
         evolver = ParameterEvolver(config=EvolutionConfig(), shared_config_dict=None)
         with patch("src.domains.lab_agent.parameter_evolver.ConfigLoader") as MockLoader:
             MockLoader.return_value.load_strategy_config.return_value = {
-                "entry_filter_params": {"volume": {"enabled": True}},
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
                 "shared_config": {"dataset": "demo"},
             }
@@ -385,7 +406,7 @@ class TestEvolveFlow:
         )
         with patch("src.domains.lab_agent.parameter_evolver.ConfigLoader") as MockLoader:
             MockLoader.return_value.load_strategy_config.return_value = {
-                "entry_filter_params": {"volume": {"enabled": True}},
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
                 "shared_config": {"dataset": "demo"},
             }

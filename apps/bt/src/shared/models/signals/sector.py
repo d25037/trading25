@@ -51,9 +51,9 @@ class SectorRotationPhaseParams(BaseSignalParams):
     rs_period: int = Field(
         default=20, gt=0, le=300, description="相対強度移動平均期間（日数）"
     )
-    direction: Literal["leading", "weakening"] = Field(
+    direction: Literal["leading", "weakening", "lagging", "improving"] = Field(
         default="leading",
-        description="判定方向（leading=先行局面、weakening=衰退局面）",
+        description="判定方向（leading=先行、weakening=減速、lagging=遅行、improving=改善）",
     )
 
 

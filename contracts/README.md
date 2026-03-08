@@ -21,7 +21,7 @@
 - `dataset-db-schema-v2.json`
 - `market-db-schema-v1.json`
 - `portfolio-db-schema-v1.json`
-- `strategy-config-v1.schema.json`
+- `strategy-config-v3.schema.json`
 
 ## Change Process
 
@@ -56,7 +56,9 @@ bun run --filter @trading25/contracts bt:sync
 | `dataset-db-schema-v2.json` | **Active** | Dataset DB schema contract aligned with `apps/ts` Drizzle tables (395 lines). Use this for all new development. |
 | `market-db-schema-v2.json` | **Active** | Market DB schema contract with `statements` and `margin_data` tables for DuckDB sync/screening (v2 minor update). |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
-| `strategy-config-v1.schema.json` | **Active** | Strategy YAML schema validated by `apps/bt`. |
+| `strategy-config-v1.schema.json` | **Deprecated** | Legacy strategy YAML schema before `baseline_*` signal split. |
+| `strategy-config-v2.schema.json` | **Deprecated** | Strategy YAML schema after `baseline_*` split and before the 2026-03 signal taxonomy cleanup. |
+| `strategy-config-v3.schema.json` | **Active** | Current strategy YAML schema aligned with `period_extrema_*`, `atr_support_*`, `retracement_*`, `bollinger_*`, and `volume_ratio_*`. |
 | `fundamentals-metrics-v1.schema.json` | **Deprecated** | Legacy fundamentals API response contract（`bookToMarket` を含む旧版）。 |
 | `fundamentals-metrics-v2.schema.json` | **Active** | Fundamentals API response contract (`/api/analytics/fundamentals/{symbol}`), including `cfoToNetProfitRatio`, `tradingValueToMarketCapRatio`, and `tradingValuePeriod`. |
 | `portfolio-db-schema-v1.json` | **Deprecated** | Legacy portfolio DB schema contract (without jobs table). |

@@ -77,10 +77,9 @@ describe('AttributionArtifactBrowser', () => {
               yaml_path: '/tmp/strategies/experimental/range_break_v18.yaml',
               effective_parameters: {
                 entry_filter_params: {
-                  volume: {
+                  volume_ratio_above: {
                     enabled: true,
-                    direction: 'surge',
-                    threshold: 1.7,
+                    ratio_threshold: 1.7,
                   },
                 },
                 exit_trigger_params: {},
@@ -98,13 +97,13 @@ describe('AttributionArtifactBrowser', () => {
             },
             result: {
               top_n_selection: {
-                scores: [{ signal_id: 'entry.volume', score: 0.8924636742 }],
+                scores: [{ signal_id: 'entry.volume_ratio_above', score: 0.8924636742 }],
               },
               signals: [
                 {
-                  signal_id: 'entry.volume',
+                  signal_id: 'entry.volume_ratio_above',
                   scope: 'entry',
-                  signal_name: '出来高',
+                  signal_name: '出来高比率上抜け',
                 },
               ],
             },
@@ -123,7 +122,7 @@ describe('AttributionArtifactBrowser', () => {
     expect(screen.getByText('prime_202601')).toBeInTheDocument();
     expect(screen.getByText('portfolio.db')).toBeInTheDocument();
     expect(screen.getByText('Best Signal Parameters')).toBeInTheDocument();
-    expect(screen.getByText('entry.volume')).toBeInTheDocument();
+    expect(screen.getByText('entry.volume_ratio_above')).toBeInTheDocument();
     expect(screen.getByText('Top-N Score')).toBeInTheDocument();
     expect(screen.getByText((content) => content.includes('saved_at'))).toBeInTheDocument();
     expect(screen.getByText((content) => /2\.0\s*KB/.test(content))).toBeInTheDocument();
@@ -229,7 +228,7 @@ describe('AttributionArtifactBrowser', () => {
               top_n_selection: {
                 scores: [
                   { signal_id: 'entry.unknown_param', score: 0.9 },
-                  { signal_id: 'entry.volume', score: 0.1 },
+                  { signal_id: 'entry.volume_ratio_above', score: 0.1 },
                 ],
               },
               signals: [],
