@@ -6,12 +6,9 @@
 
 import random
 import uuid
-import copy
-from typing import Any, cast
+from typing import Any
 
 from loguru import logger
-
-from src.shared.models.signals import SignalParams
 
 from .models import (
     GeneratorConfig,
@@ -19,7 +16,7 @@ from .models import (
     StrategyCandidate,
 )
 from .signal_catalog import AVAILABLE_SIGNALS, SIGNAL_CONSTRAINTS_MAP
-from .signal_search_space import PARAM_RANGES, ParamType
+from .signal_param_factory import UsageType, build_signal_params
 
 
 class StrategyGenerator:
@@ -55,7 +52,7 @@ class StrategyGenerator:
             f"allowed_categories={categories}"
         )
 
-    def _filter_signals(self, usage_type: str) -> list[SignalConstraints]:
+    def _filter_signals(self, usage_type: UsageType) -> list[SignalConstraints]:
         """
         使用タイプでシグナルをフィルタリング
 
@@ -165,7 +162,7 @@ class StrategyGenerator:
         self,
         available: list[SignalConstraints],
         n: int,
-        usage_type: str,
+        usage_type: UsageType,
     ) -> list[SignalConstraints]:
         """
         制約を考慮してシグナルを選択
@@ -211,7 +208,7 @@ class StrategyGenerator:
         return bool(set(signal.mutually_exclusive) & selected_names)
 
     def _build_signal_params(
-        self, signals: list[SignalConstraints], usage_type: str
+        self, signals: list[SignalConstraints], usage_type: UsageType
     ) -> dict[str, Any]:
         """
         シグナルパラメータ辞書を構築
@@ -226,227 +223,9 @@ class StrategyGenerator:
         params: dict[str, Any] = {}
 
         for signal in signals:
-            # デフォルトパラメータを取得
-            default_params = self._get_default_params(signal.name, usage_type)
-            default_params["enabled"] = True
-            # パラメータをランダム化
-            randomized_params = self._randomize_params(signal.name, default_params)
-            params[signal.name] = randomized_params
+            params[signal.name] = build_signal_params(signal.name, usage_type, random)
 
         return params
-
-    def _randomize_params(
-        self, signal_name: str, params: dict[str, Any]
-    ) -> dict[str, Any]:
-        """
-        パラメータをPARAM_RANGES内でランダム化
-
-        Args:
-            signal_name: シグナル名
-            params: デフォルトパラメータ
-
-        Returns:
-            ランダム化されたパラメータ
-        """
-        if signal_name == "fundamental":
-            return self._randomize_fundamental_params(params)
-
-        randomized = copy.deepcopy(params)
-        ranges = PARAM_RANGES.get(signal_name, {})
-        if not ranges:
-            return randomized
-
-        self._randomize_nested_params(randomized, ranges)
-        return randomized
-
-    def _randomize_fundamental_params(self, params: dict[str, Any]) -> dict[str, Any]:
-        """fundamental ネスト構造のしきい値をランダム化"""
-        randomized = copy.deepcopy(params)
-        ranges = PARAM_RANGES.get("fundamental", {})
-        self._randomize_nested_params(randomized, ranges, enabled_gated=True)
-        return randomized
-
-    def _randomize_nested_params(
-        self,
-        params: dict[str, Any],
-        ranges: dict[str, tuple[float, float, ParamType]],
-        prefix: str = "",
-        enabled_gated: bool = False,
-    ) -> None:
-        for key, value in params.items():
-            if key == "enabled":
-                continue
-
-            param_name = f"{prefix}.{key}" if prefix else key
-            if isinstance(value, dict):
-                if enabled_gated and "enabled" in value and not bool(value["enabled"]):
-                    continue
-                self._randomize_nested_params(
-                    value,
-                    ranges,
-                    prefix=param_name,
-                    enabled_gated=enabled_gated,
-                )
-                continue
-
-            if param_name not in ranges:
-                continue
-
-            min_val, max_val, param_type = ranges[param_name]
-            if param_type == "int":
-                params[key] = random.randint(int(min_val), int(max_val))
-            else:
-                params[key] = random.uniform(min_val, max_val)
-
-    def _get_default_params(self, signal_name: str, usage_type: str) -> dict[str, Any]:
-        """
-        シグナルのデフォルトパラメータを取得
-
-        Args:
-            signal_name: シグナル名
-            usage_type: "entry" or "exit"
-
-        Returns:
-            デフォルトパラメータ辞書
-        """
-        # シグナル固有のデフォルト値を抽出
-        signal_defaults: dict[str, dict[str, Any]] = {
-            "period_breakout": {
-                "direction": "high" if usage_type == "entry" else "low",
-                "condition": "break",
-                "period": 200,
-                "lookback_days": 10 if usage_type == "entry" else 1,
-            },
-            "ma_breakout": {
-                "period": 200,
-                "ma_type": "sma",
-                "direction": "above" if usage_type == "entry" else "below",
-                "lookback_days": 1,
-            },
-            "crossover": {
-                "type": "sma",
-                "direction": "golden" if usage_type == "entry" else "dead",
-                "fast_period": 10,
-                "slow_period": 30,
-                "signal_period": 9,
-                "lookback_days": 1,
-            },
-            "mean_reversion": {
-                "baseline_type": "sma",
-                "baseline_period": 25,
-                "deviation_threshold": 0.2 if usage_type == "entry" else 0.0,
-                "deviation_direction": "below" if usage_type == "entry" else "above",
-                "recovery_price": "none" if usage_type == "entry" else "high",
-                "recovery_direction": "above",
-            },
-            "bollinger_bands": {
-                "window": 50,
-                "alpha": 2.0,
-                "position": "below_upper" if usage_type == "entry" else "above_upper",
-            },
-            "atr_support_break": {
-                "direction": "recovery" if usage_type == "entry" else "break",
-                "lookback_period": 20,
-                "atr_multiplier": 3.0,
-                "price_column": "close",
-            },
-            "rsi_threshold": {
-                "period": 14,
-                "threshold": 40.0 if usage_type == "entry" else 70.0,
-                "condition": "above" if usage_type == "entry" else "below",
-            },
-            "rsi_spread": {
-                "fast_period": 9,
-                "slow_period": 14,
-                "threshold": 10.0,
-                "condition": "above" if usage_type == "entry" else "below",
-            },
-            "volume": {
-                "direction": "surge" if usage_type == "entry" else "drop",
-                "threshold": 1.5 if usage_type == "entry" else 0.5,
-                "short_period": 50,
-                "long_period": 150,
-                "ma_type": "sma",
-            },
-            "trading_value": {
-                "direction": "above",
-                "period": 15,
-                "threshold_value": 1.0,
-            },
-            "trading_value_range": {
-                "period": 15,
-                "min_threshold": 1.0,
-                "max_threshold": 75.0,
-            },
-            "beta": {
-                "lookback_period": 50,
-                "min_beta": 0.2,
-                "max_beta": 3.0,
-            },
-            "margin": {
-                "lookback_period": 150,
-                "percentile_threshold": 0.2,
-            },
-            "index_daily_change": {
-                "max_daily_change_pct": 1.0,
-                "direction": "below" if usage_type == "entry" else "above",
-            },
-            "index_macd_histogram": {
-                "fast_period": 12,
-                "slow_period": 26,
-                "signal_period": 9,
-                "direction": "positive" if usage_type == "entry" else "negative",
-            },
-            "fundamental": self._get_default_fundamental_params(usage_type),
-        }
-
-        if signal_name in signal_defaults:
-            return signal_defaults[signal_name]
-
-        # 新規シグナルは SignalParams のデフォルト定義から自動取得
-        return self._get_signal_model_defaults(signal_name)
-
-    def _get_default_fundamental_params(self, usage_type: str) -> dict[str, Any]:
-        """fundamental 用のネストパラメータを生成"""
-        defaults = self._get_signal_model_defaults("fundamental")
-        if not defaults:
-            return {}
-
-        child_keys = self._list_enable_children(defaults)
-        for key in child_keys:
-            child = defaults.get(key)
-            if isinstance(child, dict):
-                child["enabled"] = False
-
-        if usage_type == "entry" and child_keys:
-            selected_key = random.choice(child_keys)
-            selected = defaults.get(selected_key)
-            if isinstance(selected, dict):
-                selected["enabled"] = True
-
-        return defaults
-
-    def _get_signal_model_defaults(self, signal_name: str) -> dict[str, Any]:
-        """SignalParams からシグナルのデフォルト辞書を取得する。"""
-        field_info = SignalParams.model_fields.get(signal_name)
-        if field_info is None:
-            return {}
-
-        default_value = field_info.get_default(call_default_factory=True)
-        if default_value is None:
-            return {}
-        if isinstance(default_value, dict):
-            return copy.deepcopy(default_value)
-        if hasattr(default_value, "model_dump"):
-            return cast(dict[str, Any], default_value.model_dump())
-        return {}
-
-    def _list_enable_children(self, params: dict[str, Any]) -> list[str]:
-        keys: list[str] = []
-        for key, value in params.items():
-            if isinstance(value, dict) and "enabled" in value:
-                keys.append(key)
-        return keys
 
     def generate_from_template(
         self, template_signals: dict[str, list[str]], n_variations: int = 10
@@ -469,17 +248,14 @@ class StrategyGenerator:
             exit_params = {}
 
             for signal_name in template_signals.get("entry", []):
-                params = self._get_default_params(signal_name, "entry")
-                params["enabled"] = True
-                # パラメータに若干の変動を加える
-                params = self._add_parameter_variation(params)
-                entry_params[signal_name] = params
+                entry_params[signal_name] = build_signal_params(
+                    signal_name, "entry", random
+                )
 
             for signal_name in template_signals.get("exit", []):
-                params = self._get_default_params(signal_name, "exit")
-                params["enabled"] = True
-                params = self._add_parameter_variation(params)
-                exit_params[signal_name] = params
+                exit_params[signal_name] = build_signal_params(
+                    signal_name, "exit", random
+                )
 
             strategy_id = f"template_{uuid.uuid4().hex[:8]}"
 
@@ -497,33 +273,3 @@ class StrategyGenerator:
             )
 
         return candidates
-
-    def _add_parameter_variation(self, params: dict[str, Any]) -> dict[str, Any]:
-        """
-        パラメータに変動を追加
-
-        Args:
-            params: 元パラメータ
-
-        Returns:
-            変動を加えたパラメータ
-        """
-        varied = params.copy()
-
-        for key, value in params.items():
-            if key == "enabled":
-                continue
-
-            if isinstance(value, int):
-                # ±20%の変動（整数）
-                delta = max(1, int(value * 0.2))
-                varied[key] = value + random.randint(-delta, delta)
-                varied[key] = max(1, varied[key])  # 最小1
-
-            elif isinstance(value, float):
-                # ±20%の変動（小数）
-                delta = value * 0.2
-                varied[key] = value + random.uniform(-delta, delta)
-                varied[key] = max(0.01, varied[key])  # 最小0.01
-
-        return varied

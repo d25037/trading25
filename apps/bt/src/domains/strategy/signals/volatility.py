@@ -4,9 +4,17 @@
 ボラティリティに基づく銘柄シグナル生成機能を提供します。
 """
 
+from typing import Protocol, cast
+
 import pandas as pd
 import vectorbt as vbt
 from loguru import logger
+
+
+class _BollingerBandsLike(Protocol):
+    upper: pd.Series
+    middle: pd.Series
+    lower: pd.Series
 
 
 def volatility_relative_signal(
@@ -144,75 +152,156 @@ def low_volatility_stock_screen_signal(
     return ((price >= min_price) & (rolling_vol <= max_volatility)).fillna(False)
 
 
+def _resolve_bollinger_band(
+    bbands: _BollingerBandsLike,
+    level: str,
+) -> pd.Series:
+    if level == "upper":
+        return bbands.upper
+    if level == "middle":
+        return bbands.middle
+    if level == "lower":
+        return bbands.lower
+    raise ValueError(f"不正なlevel: {level} (upper/middle/lowerのみ)")
+
+
+def _level_position_signal(
+    price: pd.Series,
+    level_series: pd.Series,
+    direction: str,
+) -> pd.Series:
+    if direction == "below":
+        return (price <= level_series).fillna(False)
+    if direction == "above":
+        return (price >= level_series).fillna(False)
+    raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
+
+
+def _level_cross_signal(
+    price: pd.Series,
+    level_series: pd.Series,
+    direction: str,
+    lookback_days: int,
+) -> pd.Series:
+    if direction == "below":
+        raw = (price < level_series) & (price.shift(1) >= level_series.shift(1))
+    elif direction == "above":
+        raw = (price > level_series) & (price.shift(1) <= level_series.shift(1))
+    else:
+        raise ValueError(f"不正なdirection: {direction} (above/belowのみ)")
+
+    result = raw.fillna(False)
+    if lookback_days > 1:
+        result = (result.astype(int).rolling(lookback_days).max() >= 1).fillna(False)
+    return result
+
+
+def bollinger_position_signal(
+    ohlc_data: pd.DataFrame,
+    window: int = 20,
+    alpha: float = 2.0,
+    level: str = "upper",
+    direction: str = "below",
+) -> pd.Series:
+    """
+    ボリンジャーバンド位置シグナル
+
+    終値が指定したボリンジャーバンド水準の上側/下側にいるかを判定する。
+
+    Args:
+        ohlc_data: OHLCVデータ（Close含む）
+        window: ボリンジャーバンド期間（デフォルト: 20日）
+        alpha: 標準偏差倍率（デフォルト: 2.0σ）
+        level: 判定対象バンド（upper/middle/lower）
+        direction: 判定方向（above/below）
+
+    Returns:
+        pd.Series[bool]: 条件を満たす場合にTrue
+    """
+    logger.debug(
+        "ボリンジャーバンド位置シグナル: 処理開始 (期間={}, α={}, level={}, direction={})",
+        window,
+        alpha,
+        level,
+        direction,
+    )
+
+    close = ohlc_data["Close"]
+
+    # ボリンジャーバンド計算（VectorBT実装）
+    bbands = cast(_BollingerBandsLike, vbt.BBANDS.run(close, window=window, alpha=alpha))
+    band = _resolve_bollinger_band(bbands, level)
+    result = _level_position_signal(close, band, direction)
+
+    logger.debug(
+        "ボリンジャーバンド位置シグナル: 処理完了 (True: {}/{})",
+        result.sum(),
+        len(result),
+    )
+    return result
+
+
+def bollinger_cross_signal(
+    ohlc_data: pd.DataFrame,
+    window: int = 20,
+    alpha: float = 2.0,
+    level: str = "upper",
+    direction: str = "below",
+    lookback_days: int = 1,
+) -> pd.Series:
+    """終値が指定したボリンジャーバンド水準をクロスしたイベントを判定する。"""
+
+    logger.debug(
+        "ボリンジャーバンドクロスシグナル: 処理開始 (期間={}, α={}, level={}, direction={}, lookback={})",
+        window,
+        alpha,
+        level,
+        direction,
+        lookback_days,
+    )
+
+    close = ohlc_data["Close"]
+    bbands = cast(_BollingerBandsLike, vbt.BBANDS.run(close, window=window, alpha=alpha))
+    band = _resolve_bollinger_band(bbands, level)
+    result = _level_cross_signal(close, band, direction, lookback_days)
+
+    logger.debug(
+        "ボリンジャーバンドクロスシグナル: 処理完了 (True: {}/{})",
+        result.sum(),
+        len(result),
+    )
+    return result
+
+
 def bollinger_bands_signal(
     ohlc_data: pd.DataFrame,
     window: int = 20,
     alpha: float = 2.0,
     position: str = "below_upper",
 ) -> pd.Series:
-    """
-    ボリンジャーバンドシグナル（汎用・エントリー/エグジット両用）
+    """Backward-compatible alias for the legacy Bollinger position signal API."""
 
-    終値がボリンジャーバンドのどの位置にあるかを判定する。
-    既存シグナル（volume_surge_signal等）と同じく、条件判定のみを行う。
+    position_map = {
+        "below_upper": ("upper", "below"),
+        "above_lower": ("lower", "above"),
+        "above_middle": ("middle", "above"),
+        "below_middle": ("middle", "below"),
+        "above_upper": ("upper", "above"),
+        "below_lower": ("lower", "below"),
+    }
 
-    Args:
-        ohlc_data: OHLCVデータ（Close含む）
-        window: ボリンジャーバンド期間（デフォルト: 20日）
-        alpha: 標準偏差倍率（デフォルト: 2.0σ）
-        position: 判定位置
-            - "below_upper": 終値が上限以下（エントリー用: 過熱判定回避）
-            - "above_lower": 終値が下限以上（エントリー用: 売られすぎ回避）
-            - "above_middle": 終値が中央線以上（エントリー用: トレンド確認）
-            - "below_middle": 終値が中央線以下（エントリー用: 平均回帰）
-            - "above_upper": 終値が上限以上（エグジット用: 過熱利確）
-            - "below_lower": 終値が下限以下（エグジット用: 売られすぎ損切り）
-
-    Returns:
-        pd.Series[bool]: 条件を満たす場合にTrue
-
-    Examples:
-        >>> # エントリー: 過熱していない（BB上限以下）
-        >>> entry_signal = bollinger_bands_signal(
-        ...     ohlc_data, window=20, alpha=2.0, position="below_upper"
-        ... )
-        >>>
-        >>> # エグジット: 過熱利確（BB上限以上）
-        >>> exit_signal = bollinger_bands_signal(
-        ...     ohlc_data, window=20, alpha=2.0, position="above_upper"
-        ... )
-    """
-    logger.debug(
-        f"ボリンジャーバンドシグナル: 処理開始 (期間={window}, α={alpha}, 位置={position})"
-    )
-
-    close = ohlc_data["Close"]
-
-    # ボリンジャーバンド計算（VectorBT実装）
-    bbands = vbt.BBANDS.run(close, window=window, alpha=alpha)
-
-    # 位置判定
-    if position == "below_upper":
-        signal = close <= bbands.upper
-    elif position == "above_lower":
-        signal = close >= bbands.lower
-    elif position == "above_middle":
-        signal = close >= bbands.middle
-    elif position == "below_middle":
-        signal = close <= bbands.middle
-    elif position == "above_upper":
-        signal = close >= bbands.upper
-    elif position == "below_lower":
-        signal = close <= bbands.lower
-    else:
+    resolved = position_map.get(position)
+    if resolved is None:
         raise ValueError(
             f"不正なposition: {position} "
             "(below_upper/above_lower/above_middle/below_middle/above_upper/below_lowerのみ)"
         )
 
-    result = signal.fillna(False)
-
-    logger.debug(
-        f"ボリンジャーバンドシグナル: 処理完了 (位置={position}, True: {result.sum()}/{len(result)})"
+    level, direction = resolved
+    return bollinger_position_signal(
+        ohlc_data=ohlc_data,
+        window=window,
+        alpha=alpha,
+        level=level,
+        direction=direction,
     )
-    return result
