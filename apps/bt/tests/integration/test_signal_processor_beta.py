@@ -15,6 +15,33 @@ from src.shared.models.signals import SignalParams, BetaSignalParams
 class TestSignalProcessorBeta(unittest.TestCase):
     """SignalProcessor経由のβ値シグナル統合テスト"""
 
+    @staticmethod
+    def _build_volume_signal_kwargs() -> dict[str, object]:
+        # Support both the legacy `volume` field and the current split ratio fields.
+        if "volume_ratio_above" in SignalParams.model_fields:
+            from src.shared.models.signals import VolumeRatioAboveSignalParams
+
+            return {
+                "volume_ratio_above": VolumeRatioAboveSignalParams(
+                    enabled=True,
+                    ratio_threshold=1.5,
+                    short_period=20,
+                    long_period=100,
+                )
+            }
+
+        from src.shared.models.signals import VolumeSignalParams
+
+        return {
+            "volume": VolumeSignalParams(
+                enabled=True,
+                direction="surge",
+                threshold=1.5,
+                short_period=20,
+                long_period=100,
+            )
+        }
+
     def setUp(self):
         """テストケース共通の設定"""
         # SignalProcessorインスタンス化
@@ -166,8 +193,6 @@ class TestSignalProcessorBeta(unittest.TestCase):
 
     def test_beta_signal_integration_with_other_signals(self):
         """β値シグナルと他のシグナルの組み合わせテスト"""
-        from src.shared.models.signals import VolumeSignalParams
-
         # SignalParams作成（β値 + 出来高シグナル）
         signal_params = SignalParams(
             beta=BetaSignalParams(
@@ -176,13 +201,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
                 max_beta=1.5,
                 lookback_period=30,
             ),
-            volume=VolumeSignalParams(
-                enabled=True,
-                direction="surge",
-                threshold=1.5,
-                short_period=20,
-                long_period=100,
-            ),
+            **self._build_volume_signal_kwargs(),
         )
 
         # SignalProcessor経由でエントリーシグナル適用

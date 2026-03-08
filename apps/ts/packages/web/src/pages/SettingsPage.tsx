@@ -388,108 +388,100 @@ function buildSampleHint(sampleWindow: {
   return `Showing ${formatCount(sampleWindow.returnedCount)}.`;
 }
 
+function appendValidationDiagnostic(
+  diagnostics: ValidationDiagnostic[],
+  value: number | null | undefined,
+  diagnostic: Omit<ValidationDiagnostic, 'value'>
+): void {
+  const normalizedValue = value ?? 0;
+
+  if (normalizedValue <= 0) {
+    return;
+  }
+
+  diagnostics.push({
+    value: normalizedValue,
+    ...diagnostic,
+  });
+}
+
 function buildValidationDiagnostics(dbValidation: MarketValidationResponse): ValidationDiagnostic[] {
   const diagnostics: ValidationDiagnostic[] = [];
   const fundamentals = dbValidation.fundamentals;
   const margin = dbValidation.margin;
   const sampleWindows = dbValidation.sampleWindows;
 
-  if ((dbValidation.stockData.missingDatesCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Missing Stock Dates',
-      value: dbValidation.stockData.missingDatesCount,
-      helpText: 'Trading dates present in TOPIX but missing from stock_data.',
-      sampleItems: dbValidation.stockData.missingDates,
-      sampleLabel: 'Sample dates',
-      sampleHint: buildSampleHint(sampleWindows?.stockDataMissingDates),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.stockData.missingDatesCount, {
+    label: 'Missing Stock Dates',
+    helpText: 'Trading dates present in TOPIX but missing from stock_data.',
+    sampleItems: dbValidation.stockData.missingDates,
+    sampleLabel: 'Sample dates',
+    sampleHint: buildSampleHint(sampleWindows?.stockDataMissingDates),
+  });
 
-  if ((dbValidation.failedDatesCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Failed Sync Dates',
-      value: dbValidation.failedDatesCount,
-      helpText: 'These dates failed during sync and still need a retry.',
-      sampleItems: dbValidation.failedDates,
-      sampleLabel: 'Sample dates',
-      sampleHint: buildSampleHint(sampleWindows?.failedDates),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.failedDatesCount, {
+    label: 'Failed Sync Dates',
+    helpText: 'These dates failed during sync and still need a retry.',
+    sampleItems: dbValidation.failedDates,
+    sampleLabel: 'Sample dates',
+    sampleHint: buildSampleHint(sampleWindows?.failedDates),
+  });
 
-  if ((dbValidation.stocksNeedingRefreshCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Stocks Needing Refresh',
-      value: dbValidation.stocksNeedingRefreshCount,
-      helpText: 'Adjustment-aware repair will refresh these stock series.',
-      sampleItems: dbValidation.stocksNeedingRefresh,
-      sampleLabel: 'Sample codes',
-      sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.stocksNeedingRefreshCount, {
+    label: 'Stocks Needing Refresh',
+    helpText: 'Adjustment-aware repair will refresh these stock series.',
+    sampleItems: dbValidation.stocksNeedingRefresh,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
+  });
 
-  if ((dbValidation.adjustmentEventsCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Adjustment Events',
-      value: dbValidation.adjustmentEventsCount,
-      helpText: 'Recent split or reverse-split events tracked from stock_data.',
-      sampleItems: dbValidation.adjustmentEvents.map(
-        (event) => `${event.code} ${event.date} (${event.eventType})`
-      ),
-      sampleLabel: 'Sample events',
-      sampleHint: buildSampleHint(sampleWindows?.adjustmentEvents),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.adjustmentEventsCount, {
+    label: 'Adjustment Events',
+    helpText: 'Recent split or reverse-split events tracked from stock_data.',
+    sampleItems: (dbValidation.adjustmentEvents ?? []).map(
+      (event) => `${event.code} ${event.date} (${event.eventType})`
+    ),
+    sampleLabel: 'Sample events',
+    sampleHint: buildSampleHint(sampleWindows?.adjustmentEvents),
+  });
 
-  if ((margin.orphanCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Margin Orphans',
-      value: margin.orphanCount,
-      helpText: 'margin_data contains codes that are missing from stocks metadata.',
-    });
-  }
+  appendValidationDiagnostic(diagnostics, margin.orphanCount, {
+    label: 'Margin Orphans',
+    helpText: 'margin_data contains codes that are missing from stocks metadata.',
+  });
 
-  if ((dbValidation.integrityIssuesCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Readiness Issues',
-      value: dbValidation.integrityIssuesCount,
-      helpText: 'Chart or backtest readiness checks are currently failing.',
-      sampleItems: dbValidation.integrityIssues.map((issue) => `${issue.code} (${formatCount(issue.count)})`),
-      sampleLabel: 'Issue codes',
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.integrityIssuesCount, {
+    label: 'Readiness Issues',
+    helpText: 'Chart or backtest readiness checks are currently failing.',
+    sampleItems: (dbValidation.integrityIssues ?? []).map(
+      (issue) => `${issue.code} (${formatCount(issue.count)})`
+    ),
+    sampleLabel: 'Issue codes',
+  });
 
-  if ((fundamentals.missingListedMarketStocksCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Missing Listed-Market Fundamentals',
-      value: fundamentals.missingListedMarketStocksCount,
-      helpText: 'Repair sync will retry these listed-market issuers.',
-      sampleItems: fundamentals.missingListedMarketStocks,
-      sampleLabel: 'Sample codes',
-      sampleHint: buildSampleHint(sampleWindows?.missingListedMarketStocks),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, fundamentals.missingListedMarketStocksCount, {
+    label: 'Missing Listed-Market Fundamentals',
+    helpText: 'Repair sync will retry these listed-market issuers.',
+    sampleItems: fundamentals.missingListedMarketStocks,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.missingListedMarketStocks),
+  });
 
-  if ((fundamentals.emptySkippedCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Unsupported/Empty Fundamentals',
-      value: fundamentals.emptySkippedCount,
-      helpText: 'Suppressed until a newer disclosure frontier is available.',
-      sampleItems: fundamentals.emptySkippedCodes,
-      sampleLabel: 'Sample codes',
-      sampleHint: buildSampleHint(sampleWindows?.fundamentalsEmptySkippedCodes),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, fundamentals.emptySkippedCount, {
+    label: 'Unsupported/Empty Fundamentals',
+    helpText: 'Suppressed until a newer disclosure frontier is available.',
+    sampleItems: fundamentals.emptySkippedCodes,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.fundamentalsEmptySkippedCodes),
+  });
 
-  if ((margin.emptySkippedCount ?? 0) > 0) {
-    diagnostics.push({
-      label: 'Unsupported/Empty Margin Codes',
-      value: margin.emptySkippedCount,
-      helpText: 'Suppressed until a newer margin frontier is available.',
-      sampleItems: margin.emptySkippedCodes,
-      sampleLabel: 'Sample codes',
-      sampleHint: buildSampleHint(sampleWindows?.marginEmptySkippedCodes),
-    });
-  }
+  appendValidationDiagnostic(diagnostics, margin.emptySkippedCount, {
+    label: 'Unsupported/Empty Margin Codes',
+    helpText: 'Suppressed until a newer margin frontier is available.',
+    sampleItems: margin.emptySkippedCodes,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.marginEmptySkippedCodes),
+  });
 
   return diagnostics;
 }
