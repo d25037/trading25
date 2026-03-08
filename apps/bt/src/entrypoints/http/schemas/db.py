@@ -19,6 +19,12 @@ class DateRange(BaseModel):
     max: str
 
 
+class StorageStats(BaseModel):
+    duckdbBytes: int = 0
+    parquetBytes: int = 0
+    totalBytes: int = 0
+
+
 # --- Stats ---
 
 
@@ -59,6 +65,8 @@ class ListedMarketCoverage(BaseModel):
     coveredStocks: int = 0
     missingStocks: int = 0
     coverageRatio: float = 0
+    issuerAliasCoveredCount: int = 0
+    emptySkippedCount: int = 0
 
 
 class FundamentalsStats(BaseModel):
@@ -73,6 +81,7 @@ class MarketStatsResponse(BaseModel):
     lastSync: str | None = None
     timeSeriesSource: str = "duckdb-parquet"
     databaseSize: int
+    storage: StorageStats
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataStats
@@ -128,6 +137,23 @@ class FundamentalsValidation(BaseModel):
     failedCodesCount: int = 0
 
 
+class ValidationSampleWindow(BaseModel):
+    returnedCount: int = 0
+    totalCount: int = 0
+    limit: int = 0
+    truncated: bool = False
+
+
+class ValidationSampleWindows(BaseModel):
+    stockDataMissingDates: ValidationSampleWindow
+    failedDates: ValidationSampleWindow
+    adjustmentEvents: ValidationSampleWindow
+    stocksNeedingRefresh: ValidationSampleWindow
+    missingListedMarketStocks: ValidationSampleWindow
+    fundamentalsEmptySkippedCodes: ValidationSampleWindow
+    marginEmptySkippedCodes: ValidationSampleWindow
+
+
 class MarketValidationResponse(BaseModel):
     status: Literal["healthy", "warning", "error"]
     initialized: bool
@@ -147,6 +173,7 @@ class MarketValidationResponse(BaseModel):
     stocksNeedingRefreshCount: int = 0
     integrityIssues: list[IntegrityIssue] = Field(default_factory=list)
     integrityIssuesCount: int = 0
+    sampleWindows: ValidationSampleWindows
     recommendations: list[str] = Field(default_factory=list)
     lastUpdated: str
 

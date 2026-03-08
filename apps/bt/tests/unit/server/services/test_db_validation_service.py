@@ -63,8 +63,10 @@ class DummyMarketDb:
         return {"プライム": 2}
 
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]:
-        del limit
-        return list(self._adjustment_events)
+        return list(self._adjustment_events[:limit])
+
+    def get_adjustment_events_count(self) -> int:
+        return len(self._adjustment_events)
 
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]:
         if limit is None:
@@ -119,6 +121,7 @@ def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> 
 
     assert result.margin.count == 0
     assert result.stockData.missingDatesCount == 2438
+    assert result.sampleWindows.stockDataMissingDates.truncated is True
     issue = next(
         (item for item in result.integrityIssues if item.code == "chart.stock_data.missing_dates"),
         None,
@@ -169,6 +172,7 @@ def test_validate_market_db_returns_error_and_recommendations_for_uninitialized_
     assert any("repair sync to backfill fundamentals" in rec for rec in result.recommendations)
     assert any("failed fundamentals dates" in rec for rec in result.recommendations)
     assert any("failed fundamentals codes" in rec for rec in result.recommendations)
+    assert result.adjustmentEventsCount == 1
     assert result.failedDatesCount == 0
     assert result.fundamentals.missingListedMarketStocksCount == 2
 
@@ -218,7 +222,40 @@ def test_validate_market_db_limits_refresh_samples_but_uses_total_count() -> Non
     assert result.status == "warning"
     assert result.stocksNeedingRefreshCount == 25
     assert len(result.stocksNeedingRefresh) == 20
+    assert result.sampleWindows.stocksNeedingRefresh.truncated is True
     assert any("refresh 25 stocks" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_limits_adjustment_event_samples_but_uses_total_count() -> None:
+    adjustment_events = [
+        {
+            "code": f"{1000 + idx}",
+            "date": f"2026-02-{(idx % 28) + 1:02d}",
+            "adjustmentFactor": 0.5,
+            "close": 1000.0 + idx,
+            "eventType": "split",
+        }
+        for idx in range(25)
+    ]
+    market_db = DummyMarketDb(adjustment_events=adjustment_events)
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            statements_count=10,
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.adjustmentEventsCount == 25
+    assert len(result.adjustmentEvents) == 20
+    assert result.sampleWindows.adjustmentEvents.truncated is True
 
 
 def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -> None:
@@ -261,6 +298,7 @@ def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -
     assert result.fundamentals.issuerAliasCoveredCount == 2
     assert result.fundamentals.emptySkippedCount == 1
     assert result.fundamentals.emptySkippedCodes == ["464A"]
+    assert result.sampleWindows.fundamentalsEmptySkippedCodes.truncated is False
     assert result.margin.emptySkippedCount == 1
     assert result.margin.emptySkippedCodes == ["4957"]
     assert any("Fundamentals backfill skipped for 1 listed-market stocks" in rec for rec in result.recommendations)

@@ -161,16 +161,26 @@ interface SnapshotStatusProps {
   dbValidation: MarketValidationResponse | undefined;
 }
 
-interface SnapshotItem {
+interface SnapshotSummaryItem {
   label: string;
-  value: string | number;
+  value: string;
+  helpText: string;
+  tone?: StatusTone;
+}
+
+interface SnapshotCoverageItem {
+  label: string;
+  value: string;
+  meta: string[];
 }
 
 interface ValidationDiagnostic {
   label: string;
   value: number;
   helpText: string;
-  sampleCodes?: string[];
+  sampleItems?: string[];
+  sampleLabel?: string;
+  sampleHint?: string;
 }
 
 interface RepairTargets {
@@ -205,78 +215,278 @@ function getValidationDetailsClassName(status: MarketValidationResponse['status'
   return 'rounded-xl border border-yellow-500/30 bg-yellow-500/10 p-4';
 }
 
-function buildSnapshotItems(dbStats: MarketStatsResponse, dbValidation: MarketValidationResponse): SnapshotItem[] {
-  const fundamentals = dbValidation.fundamentals;
-  const marginEmptySkippedCount = dbValidation.margin.emptySkippedCount ?? 0;
-  const fundamentalsEmptySkippedCount = fundamentals.emptySkippedCount ?? 0;
-  const issuerAliasCoveredCount = fundamentals.issuerAliasCoveredCount ?? 0;
+const INTEGER_FORMATTER = new Intl.NumberFormat();
+
+function formatCount(value: number | null | undefined): string {
+  return INTEGER_FORMATTER.format(value ?? 0);
+}
+
+function formatPercentage(value: number | null | undefined): string {
+  return `${(((value ?? 0) * 100) as number).toFixed(1)}%`;
+}
+
+function formatBytes(value: number | null | undefined): string {
+  const bytes = value ?? 0;
+  if (!Number.isFinite(bytes) || bytes <= 0) {
+    return '0 B';
+  }
+
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let amount = bytes;
+  let unitIndex = 0;
+  while (amount >= 1024 && unitIndex < units.length - 1) {
+    amount /= 1024;
+    unitIndex += 1;
+  }
+
+  const digits = amount >= 10 || unitIndex === 0 ? 0 : 1;
+  return `${amount.toFixed(digits)} ${units[unitIndex]}`;
+}
+
+function formatDateRange(range: { min: string; max: string } | null | undefined): string {
+  if (!range) {
+    return 'n/a';
+  }
+  return `${range.min} -> ${range.max}`;
+}
+
+function formatCategoryBreakdown(byCategory: Record<string, number>): string {
+  const entries = Object.entries(byCategory).sort((left, right) => right[1] - left[1]);
+  if (entries.length === 0) {
+    return 'n/a';
+  }
+  const preview = entries
+    .slice(0, 3)
+    .map(([category, count]) => `${category} ${formatCount(count)}`)
+    .join(', ');
+  return entries.length > 3 ? `${preview}, ...` : preview;
+}
+
+function resolveSnapshotObservedAt(
+  dbStats: MarketStatsResponse | undefined,
+  dbValidation: MarketValidationResponse | undefined
+): string {
+  const candidates = [dbStats?.lastUpdated, dbValidation?.lastUpdated].filter(
+    (value): value is string => typeof value === 'string' && value.length > 0
+  );
+  if (candidates.length === 0) {
+    return 'n/a';
+  }
+
+  const sorted = [...candidates].sort((left, right) => {
+    const leftTime = new Date(left).getTime();
+    const rightTime = new Date(right).getTime();
+    if (Number.isNaN(leftTime) || Number.isNaN(rightTime)) {
+      return left.localeCompare(right);
+    }
+    return rightTime - leftTime;
+  });
+  return formatTimestamp(sorted[0]);
+}
+
+function buildSnapshotSummaryItems(
+  dbStats: MarketStatsResponse | undefined,
+  dbValidation: MarketValidationResponse | undefined
+): SnapshotSummaryItem[] {
+  const items: SnapshotSummaryItem[] = [];
+
+  if (dbValidation) {
+    items.push({
+      label: 'Validation',
+      value: dbValidation.status.toUpperCase(),
+      helpText: dbValidation.recommendations?.[0] ?? 'Health state from /api/db/validate',
+      tone: getValidationTone(dbValidation.status),
+    });
+    items.push({
+      label: 'Last Stock Refresh',
+      value: formatTimestamp(dbValidation.lastStocksRefresh),
+      helpText: `Status checked: ${resolveSnapshotObservedAt(dbStats, dbValidation)}`,
+    });
+  }
+
+  if (dbStats) {
+    items.push({
+      label: 'Last Sync',
+      value: formatTimestamp(dbStats.lastSync),
+      helpText: `Initialized: ${dbStats.initialized ? 'Yes' : 'No'}`,
+    });
+    items.push({
+      label: 'Local Storage',
+      value: formatBytes(dbStats.storage?.totalBytes ?? dbStats.databaseSize),
+      helpText: `DuckDB ${formatBytes(dbStats.storage?.duckdbBytes ?? dbStats.databaseSize)} / Parquet ${formatBytes(dbStats.storage?.parquetBytes ?? 0)}`,
+    });
+  }
+
+  return items;
+}
+
+function buildCoverageItems(dbStats: MarketStatsResponse): SnapshotCoverageItem[] {
+  const fundamentalsCoverage = dbStats.fundamentals.listedMarketCoverage;
   return [
-    { label: 'Validation Status', value: dbValidation.status.toUpperCase() },
-    { label: 'Time-Series Source', value: dbStats.timeSeriesSource },
-    { label: 'Initialized', value: dbStats.initialized ? 'Yes' : 'No' },
-    { label: 'Last Sync', value: formatTimestamp(dbStats.lastSync) },
-    { label: 'Stock Data Latest', value: dbStats.stockData.dateRange?.max ?? 'n/a' },
-    { label: 'TOPIX Latest', value: dbStats.topix.dateRange?.max ?? 'n/a' },
-    { label: 'Indices Latest', value: dbStats.indices.dateRange?.max ?? 'n/a' },
-    { label: 'Margin Latest', value: dbStats.margin.dateRange?.max ?? 'n/a' },
-    { label: 'Margin Stocks', value: dbStats.margin.uniqueStockCount },
-    { label: 'Margin Orphans', value: dbValidation.margin.orphanCount },
-    { label: 'Missing Stock Dates', value: dbValidation.stockData.missingDatesCount },
-    { label: 'Failed Sync Dates', value: dbValidation.failedDatesCount },
-    { label: 'Stocks Needing Refresh', value: dbValidation.stocksNeedingRefreshCount ?? 0 },
-    { label: 'Missing Listed-Market Fundamentals', value: fundamentals.missingListedMarketStocksCount },
-    { label: 'Unsupported/Empty Fundamentals', value: fundamentalsEmptySkippedCount },
-    { label: 'Preferred Alias Covered', value: issuerAliasCoveredCount },
-    { label: 'Unsupported/Empty Margin Codes', value: marginEmptySkippedCount },
-    { label: 'Readiness Issues', value: dbValidation.integrityIssuesCount ?? 0 },
+    {
+      label: 'Stock Data',
+      value: dbStats.stockData.dateRange?.max ?? 'n/a',
+      meta: [
+        `Range: ${formatDateRange(dbStats.stockData.dateRange)}`,
+        `Rows: ${formatCount(dbStats.stockData.count)}`,
+        `Trading dates: ${formatCount(dbStats.stockData.dateCount)}`,
+        `Average stocks/day: ${formatCount(Math.round(dbStats.stockData.averageStocksPerDay ?? 0))}`,
+      ],
+    },
+    {
+      label: 'TOPIX',
+      value: dbStats.topix.dateRange?.max ?? 'n/a',
+      meta: [
+        `Range: ${formatDateRange(dbStats.topix.dateRange)}`,
+        `Rows: ${formatCount(dbStats.topix.count)}`,
+      ],
+    },
+    {
+      label: 'Indices',
+      value: dbStats.indices.dateRange?.max ?? 'n/a',
+      meta: [
+        `Range: ${formatDateRange(dbStats.indices.dateRange)}`,
+        `Rows: ${formatCount(dbStats.indices.dataCount)}`,
+        `Master entries: ${formatCount(dbStats.indices.masterCount)}`,
+        `Categories: ${formatCategoryBreakdown(dbStats.indices.byCategory)}`,
+      ],
+    },
+    {
+      label: 'Margin',
+      value: dbStats.margin.dateRange?.max ?? 'n/a',
+      meta: [
+        `Range: ${formatDateRange(dbStats.margin.dateRange)}`,
+        `Rows: ${formatCount(dbStats.margin.count)}`,
+        `Stocks: ${formatCount(dbStats.margin.uniqueStockCount)}`,
+        `Dates: ${formatCount(dbStats.margin.dateCount)}`,
+      ],
+    },
+    {
+      label: 'Fundamentals',
+      value: dbStats.fundamentals.latestDisclosedDate ?? 'n/a',
+      meta: [
+        `Statements: ${formatCount(dbStats.fundamentals.count)}`,
+        `Covered stocks: ${formatCount(fundamentalsCoverage.coveredStocks)} / ${formatCount(fundamentalsCoverage.listedMarketStocks)} (${formatPercentage(fundamentalsCoverage.coverageRatio)})`,
+        `Alias covered: ${formatCount(fundamentalsCoverage.issuerAliasCoveredCount)}`,
+        `Deferred/empty: ${formatCount(fundamentalsCoverage.emptySkippedCount)}`,
+      ],
+    },
   ];
+}
+
+function buildSampleHint(sampleWindow: {
+  returnedCount: number;
+  totalCount: number;
+  truncated: boolean;
+} | null | undefined): string | undefined {
+  if (!sampleWindow || sampleWindow.returnedCount <= 0) {
+    return undefined;
+  }
+  if (sampleWindow.truncated) {
+    return `Showing ${formatCount(sampleWindow.returnedCount)} of ${formatCount(sampleWindow.totalCount)}.`;
+  }
+  return `Showing ${formatCount(sampleWindow.returnedCount)}.`;
+}
+
+function appendValidationDiagnostic(
+  diagnostics: ValidationDiagnostic[],
+  value: number | null | undefined,
+  diagnostic: Omit<ValidationDiagnostic, 'value'>
+): void {
+  const normalizedValue = value ?? 0;
+
+  if (normalizedValue <= 0) {
+    return;
+  }
+
+  diagnostics.push({
+    value: normalizedValue,
+    ...diagnostic,
+  });
 }
 
 function buildValidationDiagnostics(dbValidation: MarketValidationResponse): ValidationDiagnostic[] {
   const diagnostics: ValidationDiagnostic[] = [];
   const fundamentals = dbValidation.fundamentals;
   const margin = dbValidation.margin;
-  const missingListedMarketStocks = fundamentals.missingListedMarketStocks ?? [];
-  const fundamentalsEmptySkippedCount = fundamentals.emptySkippedCount ?? 0;
-  const fundamentalsEmptySkippedCodes = fundamentals.emptySkippedCodes ?? [];
-  const marginEmptySkippedCount = margin.emptySkippedCount ?? 0;
-  const marginEmptySkippedCodes = margin.emptySkippedCodes ?? [];
-  const issuerAliasCoveredCount = fundamentals.issuerAliasCoveredCount ?? 0;
+  const sampleWindows = dbValidation.sampleWindows;
 
-  if (missingListedMarketStocks.length > 0) {
-    diagnostics.push({
-      label: 'Missing Listed-Market Fundamentals',
-      value: fundamentals.missingListedMarketStocksCount,
-      helpText: 'Repair sync will retry these listed-market issuers.',
-      sampleCodes: missingListedMarketStocks,
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.stockData.missingDatesCount, {
+    label: 'Missing Stock Dates',
+    helpText: 'Trading dates present in TOPIX but missing from stock_data.',
+    sampleItems: dbValidation.stockData.missingDates,
+    sampleLabel: 'Sample dates',
+    sampleHint: buildSampleHint(sampleWindows?.stockDataMissingDates),
+  });
 
-  if (fundamentalsEmptySkippedCount > 0) {
-    diagnostics.push({
-      label: 'Unsupported/Empty Fundamentals',
-      value: fundamentalsEmptySkippedCount,
-      helpText: 'Suppressed until a newer disclosure frontier is available.',
-      sampleCodes: fundamentalsEmptySkippedCodes,
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.failedDatesCount, {
+    label: 'Failed Sync Dates',
+    helpText: 'These dates failed during sync and still need a retry.',
+    sampleItems: dbValidation.failedDates,
+    sampleLabel: 'Sample dates',
+    sampleHint: buildSampleHint(sampleWindows?.failedDates),
+  });
 
-  if (marginEmptySkippedCount > 0) {
-    diagnostics.push({
-      label: 'Unsupported/Empty Margin Codes',
-      value: marginEmptySkippedCount,
-      helpText: 'Suppressed until a newer margin frontier is available.',
-      sampleCodes: marginEmptySkippedCodes,
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.stocksNeedingRefreshCount, {
+    label: 'Stocks Needing Refresh',
+    helpText: 'Adjustment-aware repair will refresh these stock series.',
+    sampleItems: dbValidation.stocksNeedingRefresh,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
+  });
 
-  if (issuerAliasCoveredCount > 0) {
-    diagnostics.push({
-      label: 'Preferred Alias Covered',
-      value: issuerAliasCoveredCount,
-      helpText: 'Preferred-share listed codes already covered by parent issuer statements.',
-    });
-  }
+  appendValidationDiagnostic(diagnostics, dbValidation.adjustmentEventsCount, {
+    label: 'Adjustment Events',
+    helpText: 'Recent split or reverse-split events tracked from stock_data.',
+    sampleItems: (dbValidation.adjustmentEvents ?? []).map(
+      (event) => `${event.code} ${event.date} (${event.eventType})`
+    ),
+    sampleLabel: 'Sample events',
+    sampleHint: buildSampleHint(sampleWindows?.adjustmentEvents),
+  });
+
+  appendValidationDiagnostic(diagnostics, margin.orphanCount, {
+    label: 'Margin Orphans',
+    helpText: 'margin_data contains codes that are missing from stocks metadata.',
+  });
+
+  appendValidationDiagnostic(diagnostics, dbValidation.integrityIssuesCount, {
+    label: 'Readiness Issues',
+    helpText: 'Chart or backtest readiness checks are currently failing.',
+    sampleItems: (dbValidation.integrityIssues ?? []).map(
+      (issue) => `${issue.code} (${formatCount(issue.count)})`
+    ),
+    sampleLabel: 'Issue codes',
+  });
+
+  appendValidationDiagnostic(diagnostics, fundamentals.missingListedMarketStocksCount, {
+    label: 'Missing Listed-Market Fundamentals',
+    helpText: 'Repair sync will retry these listed-market issuers.',
+    sampleItems: fundamentals.missingListedMarketStocks,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.missingListedMarketStocks),
+  });
+
+  appendValidationDiagnostic(diagnostics, fundamentals.emptySkippedCount, {
+    label: 'Unsupported/Empty Fundamentals',
+    helpText: 'Suppressed until a newer disclosure frontier is available.',
+    sampleItems: fundamentals.emptySkippedCodes,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.fundamentalsEmptySkippedCodes),
+  });
+
+  appendValidationDiagnostic(diagnostics, fundamentals.issuerAliasCoveredCount, {
+    label: 'Preferred Alias Covered',
+    helpText: 'Preferred-share listed codes already covered by parent issuer statements.',
+  });
+
+  appendValidationDiagnostic(diagnostics, margin.emptySkippedCount, {
+    label: 'Unsupported/Empty Margin Codes',
+    helpText: 'Suppressed until a newer margin frontier is available.',
+    sampleItems: margin.emptySkippedCodes,
+    sampleLabel: 'Sample codes',
+    sampleHint: buildSampleHint(sampleWindows?.marginEmptySkippedCodes),
+  });
 
   return diagnostics;
 }
@@ -318,45 +528,84 @@ function SnapshotDetails({
   dbStats,
   dbValidation,
 }: {
-  dbStats: MarketStatsResponse;
-  dbValidation: MarketValidationResponse;
+  dbStats: MarketStatsResponse | undefined;
+  dbValidation: MarketValidationResponse | undefined;
 }) {
-  const recommendations = dbValidation.recommendations ?? [];
-  const snapshotItems = buildSnapshotItems(dbStats, dbValidation);
-  const validationDiagnostics = buildValidationDiagnostics(dbValidation);
+  const recommendations = dbValidation?.recommendations ?? [];
+  const summaryItems = buildSnapshotSummaryItems(dbStats, dbValidation);
+  const coverageItems = dbStats ? buildCoverageItems(dbStats) : [];
+  const validationDiagnostics = dbValidation ? buildValidationDiagnostics(dbValidation) : [];
 
   return (
     <div className="space-y-4">
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {snapshotItems.map((item) => (
-          <div key={item.label} className="rounded-xl border border-border/70 bg-background/60 p-3">
-            <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.label}</p>
-            <p className="mt-2 text-sm font-semibold text-foreground">{item.value}</p>
+      {summaryItems.length > 0 ? (
+        <div className="space-y-3 rounded-xl border border-border/70 bg-background/60 p-4">
+          <div className="space-y-1">
+            <p className="font-medium">Snapshot Summary</p>
+            <p className="text-xs text-muted-foreground">FastAPI response summary for the current DuckDB data plane.</p>
           </div>
-        ))}
-      </div>
-
-      {validationDiagnostics.length > 0 ? (
-        <div className="rounded-xl border border-border/70 bg-background/60 p-4">
-          <p className="font-medium">Coverage Diagnostics</p>
-          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {validationDiagnostics.map((diagnostic) => (
-              <div key={diagnostic.label} className="rounded-xl border border-border/70 bg-card/80 p-3">
-                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{diagnostic.label}</p>
-                <p className="mt-2 text-lg font-semibold text-foreground">{diagnostic.value}</p>
-                <p className="mt-2 text-xs text-muted-foreground">{diagnostic.helpText}</p>
-                {diagnostic.sampleCodes && diagnostic.sampleCodes.length > 0 ? (
-                  <p className="mt-2 text-xs text-muted-foreground">
-                    Sample codes: {diagnostic.sampleCodes.join(', ')}
-                  </p>
-                ) : null}
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+            {summaryItems.map((item) => (
+              <div
+                key={item.label}
+                className={cn('rounded-xl border p-3', item.tone ? getToneClasses(item.tone) : 'border-border/70 bg-card/80')}
+              >
+                <p className="text-[11px] uppercase tracking-[0.18em] opacity-80">{item.label}</p>
+                <p className="mt-2 text-sm font-semibold">{item.value}</p>
+                <p className="mt-2 text-xs opacity-80">{item.helpText}</p>
               </div>
             ))}
           </div>
         </div>
       ) : null}
 
-      {recommendations.length > 0 ? (
+      {coverageItems.length > 0 ? (
+        <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+          <p className="font-medium">Data Coverage</p>
+          <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3">
+            {coverageItems.map((item) => (
+              <div key={item.label} className="rounded-xl border border-border/70 bg-card/80 p-3">
+                <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{item.label}</p>
+                <p className="mt-2 text-lg font-semibold text-foreground">{item.value}</p>
+                <div className="mt-3 space-y-1 text-xs text-muted-foreground">
+                  {item.meta.map((metaItem) => (
+                    <p key={metaItem}>{metaItem}</p>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {dbValidation ? (
+        <div className="rounded-xl border border-border/70 bg-background/60 p-4">
+          <p className="font-medium">Validation Diagnostics</p>
+          {validationDiagnostics.length > 0 ? (
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              {validationDiagnostics.map((diagnostic) => (
+                <div key={diagnostic.label} className="rounded-xl border border-border/70 bg-card/80 p-3">
+                  <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{diagnostic.label}</p>
+                  <p className="mt-2 text-lg font-semibold text-foreground">{formatCount(diagnostic.value)}</p>
+                  <p className="mt-2 text-xs text-muted-foreground">{diagnostic.helpText}</p>
+                  {diagnostic.sampleItems && diagnostic.sampleItems.length > 0 ? (
+                    <p className="mt-2 text-xs text-muted-foreground">
+                      {diagnostic.sampleLabel ?? 'Sample'}: {diagnostic.sampleItems.join(', ')}
+                    </p>
+                  ) : null}
+                  {diagnostic.sampleHint ? (
+                    <p className="mt-2 text-xs text-muted-foreground">{diagnostic.sampleHint}</p>
+                  ) : null}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-3 text-sm text-muted-foreground">No outstanding validation diagnostics.</p>
+          )}
+        </div>
+      ) : null}
+
+      {dbValidation && recommendations.length > 0 ? (
         <div className={getValidationDetailsClassName(dbValidation.status)}>
           <p className="font-medium">{getValidationDetailsTitle(dbValidation.status)}</p>
           <ul className="mt-2 list-disc space-y-1 pl-5 text-sm text-muted-foreground">
@@ -387,17 +636,19 @@ function SnapshotStatus({
     );
   }
 
-  const errorMessage = statsError?.message ?? validationError?.message ?? null;
+  const errorMessages = [statsError?.message, validationError?.message].filter(
+    (message): message is string => typeof message === 'string' && message.length > 0
+  );
 
   return (
     <>
-      {errorMessage ? (
-        <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">
-          {errorMessage ?? 'Failed to load market DB status'}
+      {errorMessages.map((message) => (
+        <div key={message} className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">
+          {message}
         </div>
-      ) : null}
+      ))}
 
-      {dbStats && dbValidation ? <SnapshotDetails dbStats={dbStats} dbValidation={dbValidation} /> : null}
+      {dbStats || dbValidation ? <SnapshotDetails dbStats={dbStats} dbValidation={dbValidation} /> : null}
     </>
   );
 }
@@ -772,6 +1023,7 @@ function MarketDbHero({
   currentJob,
   repairSignalCount,
 }: MarketDbHeroProps) {
+  const storageTotalBytes = dbStats?.storage?.totalBytes ?? dbStats?.databaseSize ?? 0;
   return (
     <section className="overflow-hidden rounded-3xl border border-border/70 bg-gradient-to-br from-primary/10 via-background to-amber-500/10 p-6 shadow-sm">
       <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
@@ -791,7 +1043,10 @@ function MarketDbHero({
               Source: {dbStats?.timeSeriesSource ?? 'duckdb-parquet'}
             </span>
             <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
-              Margin orphans: {dbValidation?.margin.orphanCount ?? 'n/a'}
+              Storage: {formatBytes(storageTotalBytes)}
+            </span>
+            <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
+              Status checked: {resolveSnapshotObservedAt(dbStats, dbValidation)}
             </span>
             <span className="rounded-full border border-border/70 bg-background/60 px-3 py-1 text-muted-foreground">
               Repair signals: {repairSignalCount}
@@ -813,10 +1068,10 @@ function MarketDbHero({
             description={`Initialized: ${dbStats?.initialized ? 'Yes' : 'No'}`}
           />
           <OverviewMetricCard
-            label="Stock Latest"
-            value={dbStats?.stockData.dateRange?.max ?? 'n/a'}
+            label="Storage"
+            value={formatBytes(storageTotalBytes)}
             tone="neutral"
-            description={`TOPIX latest: ${dbStats?.topix.dateRange?.max ?? 'n/a'}`}
+            description={`DuckDB ${formatBytes(dbStats?.storage?.duckdbBytes ?? dbStats?.databaseSize ?? 0)} / Parquet ${formatBytes(dbStats?.storage?.parquetBytes ?? 0)}`}
           />
           <OverviewMetricCard
             label="Active Job"

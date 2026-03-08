@@ -4,9 +4,17 @@
 ボラティリティに基づく銘柄シグナル生成機能を提供します。
 """
 
+from typing import Protocol, cast
+
 import pandas as pd
 import vectorbt as vbt
 from loguru import logger
+
+
+class _BollingerBandsLike(Protocol):
+    upper: pd.Series
+    middle: pd.Series
+    lower: pd.Series
 
 
 def volatility_relative_signal(
@@ -145,7 +153,7 @@ def low_volatility_stock_screen_signal(
 
 
 def _resolve_bollinger_band(
-    bbands: vbt.BBANDS,
+    bbands: _BollingerBandsLike,
     level: str,
 ) -> pd.Series:
     if level == "upper":
@@ -221,7 +229,7 @@ def bollinger_position_signal(
     close = ohlc_data["Close"]
 
     # ボリンジャーバンド計算（VectorBT実装）
-    bbands = vbt.BBANDS.run(close, window=window, alpha=alpha)
+    bbands = cast(_BollingerBandsLike, vbt.BBANDS.run(close, window=window, alpha=alpha))
     band = _resolve_bollinger_band(bbands, level)
     result = _level_position_signal(close, band, direction)
 
@@ -253,7 +261,7 @@ def bollinger_cross_signal(
     )
 
     close = ohlc_data["Close"]
-    bbands = vbt.BBANDS.run(close, window=window, alpha=alpha)
+    bbands = cast(_BollingerBandsLike, vbt.BBANDS.run(close, window=window, alpha=alpha))
     band = _resolve_bollinger_band(bbands, level)
     result = _level_cross_signal(close, band, direction, lookback_days)
 
@@ -263,3 +271,37 @@ def bollinger_cross_signal(
         len(result),
     )
     return result
+
+
+def bollinger_bands_signal(
+    ohlc_data: pd.DataFrame,
+    window: int = 20,
+    alpha: float = 2.0,
+    position: str = "below_upper",
+) -> pd.Series:
+    """Backward-compatible alias for the legacy Bollinger position signal API."""
+
+    position_map = {
+        "below_upper": ("upper", "below"),
+        "above_lower": ("lower", "above"),
+        "above_middle": ("middle", "above"),
+        "below_middle": ("middle", "below"),
+        "above_upper": ("upper", "above"),
+        "below_lower": ("lower", "below"),
+    }
+
+    resolved = position_map.get(position)
+    if resolved is None:
+        raise ValueError(
+            f"不正なposition: {position} "
+            "(below_upper/above_lower/above_middle/below_middle/above_upper/below_lowerのみ)"
+        )
+
+    level, direction = resolved
+    return bollinger_position_signal(
+        ohlc_data=ohlc_data,
+        window=window,
+        alpha=alpha,
+        level=level,
+        direction=direction,
+    )

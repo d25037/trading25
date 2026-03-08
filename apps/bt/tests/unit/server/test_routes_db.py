@@ -135,10 +135,13 @@ class TestDbStatsRoute:
         assert data["stockData"]["dateCount"] == 2
         assert data["indices"]["masterCount"] == 1
         assert data["indices"]["dataCount"] == 1
+        assert data["indices"]["byCategory"] == {"sector33": 1}
         assert data["margin"]["count"] == 1
         assert data["margin"]["uniqueStockCount"] == 1
         assert data["fundamentals"]["count"] == 0
         assert data["fundamentals"]["listedMarketCoverage"]["listedMarketStocks"] >= 1
+        assert data["storage"]["duckdbBytes"] >= 0
+        assert data["storage"]["totalBytes"] >= data["storage"]["duckdbBytes"]
         assert data["databaseSize"] >= 0
 
     def test_stats_no_db(self) -> None:
@@ -168,6 +171,7 @@ class TestDbValidateRoute:
         assert data["adjustmentEvents"][0]["adjustmentFactor"] == 0.5
         assert data["stocksNeedingRefreshCount"] == 0
         assert data["failedDatesCount"] == 1
+        assert data["sampleWindows"]["failedDates"]["totalCount"] == 1
         assert data["margin"]["count"] == 1
         assert "fundamentals" in data
         assert len(data["recommendations"]) > 0

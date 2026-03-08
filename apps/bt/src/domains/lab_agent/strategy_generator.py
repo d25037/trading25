@@ -16,7 +16,7 @@ from .models import (
     StrategyCandidate,
 )
 from .signal_catalog import AVAILABLE_SIGNALS, SIGNAL_CONSTRAINTS_MAP
-from .signal_param_factory import build_signal_params
+from .signal_param_factory import UsageType, build_signal_params
 
 
 class StrategyGenerator:
@@ -52,7 +52,7 @@ class StrategyGenerator:
             f"allowed_categories={categories}"
         )
 
-    def _filter_signals(self, usage_type: str) -> list[SignalConstraints]:
+    def _filter_signals(self, usage_type: UsageType) -> list[SignalConstraints]:
         """
         使用タイプでシグナルをフィルタリング
 
@@ -162,7 +162,7 @@ class StrategyGenerator:
         self,
         available: list[SignalConstraints],
         n: int,
-        usage_type: str,
+        usage_type: UsageType,
     ) -> list[SignalConstraints]:
         """
         制約を考慮してシグナルを選択
@@ -208,7 +208,7 @@ class StrategyGenerator:
         return bool(set(signal.mutually_exclusive) & selected_names)
 
     def _build_signal_params(
-        self, signals: list[SignalConstraints], usage_type: str
+        self, signals: list[SignalConstraints], usage_type: UsageType
     ) -> dict[str, Any]:
         """
         シグナルパラメータ辞書を構築

@@ -28,10 +28,20 @@ from src.entrypoints.http.schemas.db import (
     IntegrityIssue,
     MarginValidation,
     MarketValidationResponse,
+    ValidationSampleWindow,
+    ValidationSampleWindows,
     StockDataValidation,
     StockStats,
     TopixStats,
 )
+
+_INSPECT_MISSING_DATES_LIMIT = 100
+_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT = 20
+_FAILED_DATES_SAMPLE_LIMIT = 10
+_ADJUSTMENT_EVENTS_SAMPLE_LIMIT = 20
+_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT = 20
+_MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT = 20
+_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT = 20
 
 _SIGNAL_REQUIREMENTS = sorted(
     {
@@ -86,6 +96,7 @@ class ValidationMarketDbLike(Protocol):
     def get_stats(self) -> dict[str, int]: ...
     def get_stock_count_by_market(self) -> dict[str, int]: ...
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]: ...
+    def get_adjustment_events_count(self) -> int: ...
     def get_stocks_needing_refresh(self, limit: int | None = 20) -> list[str]: ...
     def get_stocks_needing_refresh_count(self) -> int: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
@@ -130,7 +141,7 @@ def validate_market_db(
         build_fundamentals_target_map(market_db.get_fundamentals_target_stock_rows()),
         statement_codes,
         empty_skipped_codes=set(fundamentals_empty_skipped_codes),
-        limit_missing=20,
+        limit_missing=_MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT,
     )
     missing_fundamentals_count = int(fundamentals_coverage.get("missingCount", 0) or 0)
     missing_fundamentals_codes = [
@@ -156,8 +167,11 @@ def validate_market_db(
     margin_empty_skipped_count = len(margin_empty_skipped_codes)
 
     # Adjustment events
-    adjustment_events = market_db.get_adjustment_events(limit=20)
-    sample_needing = market_db.get_stocks_needing_refresh(limit=20)
+    adjustment_events = market_db.get_adjustment_events(limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT)
+    adjustment_events_count = market_db.get_adjustment_events_count()
+    sample_needing = market_db.get_stocks_needing_refresh(
+        limit=_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT
+    )
     all_needing_count = market_db.get_stocks_needing_refresh_count()
 
     # Failed dates from metadata
@@ -253,7 +267,7 @@ def validate_market_db(
         )
         if inspection.stock_min and inspection.stock_max
         else None,
-        missingDates=missing_dates[:20],
+        missingDates=missing_dates[:_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT],
         missingDatesCount=missing_dates_count,
     )
 
@@ -269,7 +283,7 @@ def validate_market_db(
         else None,
         orphanCount=inspection.margin_orphan_count,
         emptySkippedCount=margin_empty_skipped_count,
-        emptySkippedCodes=margin_empty_skipped_codes[:20],
+        emptySkippedCodes=margin_empty_skipped_codes[:_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT],
     )
 
     fundamentals_val = FundamentalsValidation(
@@ -280,7 +294,7 @@ def validate_market_db(
         missingListedMarketStocks=missing_fundamentals_codes,
         issuerAliasCoveredCount=fundamentals_alias_covered_count,
         emptySkippedCount=fundamentals_empty_skipped_count,
-        emptySkippedCodes=fundamentals_empty_skipped_codes[:20],
+        emptySkippedCodes=fundamentals_empty_skipped_codes[:_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT],
         failedDatesCount=len(fundamentals_failed_dates),
         failedCodesCount=len(fundamentals_failed_codes),
     )
@@ -296,16 +310,53 @@ def validate_market_db(
         stockData=stock_data_val,
         margin=margin_val,
         fundamentals=fundamentals_val,
-        failedDates=failed_dates[:10],
+        failedDates=failed_dates[:_FAILED_DATES_SAMPLE_LIMIT],
         failedDatesCount=len(failed_dates),
         adjustmentEvents=[
             AdjustmentEvent(**e) for e in adjustment_events
         ],
-        adjustmentEventsCount=len(adjustment_events),
+        adjustmentEventsCount=adjustment_events_count,
         stocksNeedingRefresh=sample_needing,
         stocksNeedingRefreshCount=all_needing_count,
         integrityIssues=integrity_issues,
         integrityIssuesCount=len(integrity_issues),
+        sampleWindows=ValidationSampleWindows(
+            stockDataMissingDates=_build_sample_window(
+                total_count=missing_dates_count,
+                returned_count=len(stock_data_val.missingDates),
+                limit=_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT,
+            ),
+            failedDates=_build_sample_window(
+                total_count=len(failed_dates),
+                returned_count=min(len(failed_dates), _FAILED_DATES_SAMPLE_LIMIT),
+                limit=_FAILED_DATES_SAMPLE_LIMIT,
+            ),
+            adjustmentEvents=_build_sample_window(
+                total_count=adjustment_events_count,
+                returned_count=len(adjustment_events),
+                limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT,
+            ),
+            stocksNeedingRefresh=_build_sample_window(
+                total_count=all_needing_count,
+                returned_count=len(sample_needing),
+                limit=_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT,
+            ),
+            missingListedMarketStocks=_build_sample_window(
+                total_count=missing_fundamentals_count,
+                returned_count=len(fundamentals_val.missingListedMarketStocks),
+                limit=_MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT,
+            ),
+            fundamentalsEmptySkippedCodes=_build_sample_window(
+                total_count=fundamentals_empty_skipped_count,
+                returned_count=len(fundamentals_val.emptySkippedCodes),
+                limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
+            ),
+            marginEmptySkippedCodes=_build_sample_window(
+                total_count=margin_empty_skipped_count,
+                returned_count=len(margin_val.emptySkippedCodes),
+                limit=_EMPTY_SKIPPED_CODES_SAMPLE_LIMIT,
+            ),
+        ),
         recommendations=recommendations,
         lastUpdated=datetime.now(UTC).isoformat(),
     )
@@ -315,8 +366,25 @@ def _resolve_time_series_inspection(
     time_series_store: ValidationTimeSeriesStoreLike,
 ) -> TimeSeriesInspection:
     return time_series_store.inspect(
-        missing_stock_dates_limit=100,
+        missing_stock_dates_limit=_INSPECT_MISSING_DATES_LIMIT,
         statement_non_null_columns=_SIGNAL_STATEMENT_COLUMNS,
+    )
+
+
+def _build_sample_window(
+    *,
+    total_count: int,
+    returned_count: int,
+    limit: int,
+) -> ValidationSampleWindow:
+    safe_total = max(total_count, 0)
+    safe_returned = max(returned_count, 0)
+    safe_limit = max(limit, 0)
+    return ValidationSampleWindow(
+        returnedCount=safe_returned,
+        totalCount=safe_total,
+        limit=safe_limit,
+        truncated=safe_total > safe_returned and safe_total > safe_limit,
     )
 
 

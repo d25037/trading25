@@ -537,6 +537,11 @@ export interface MarketStatsResponse {
   lastSync: string | null;
   timeSeriesSource: string;
   databaseSize: number;
+  storage: {
+    duckdbBytes: number;
+    parquetBytes: number;
+    totalBytes: number;
+  };
   topix: {
     count: number;
     dateRange: { min: string; max: string } | null;
@@ -573,6 +578,8 @@ export interface MarketStatsResponse {
       coveredStocks: number;
       missingStocks: number;
       coverageRatio: number;
+      issuerAliasCoveredCount: number;
+      emptySkippedCount: number;
     };
   };
   lastUpdated: string;
@@ -627,8 +634,24 @@ export interface MarketValidationResponse {
   stocksNeedingRefreshCount: number;
   integrityIssues: IntegrityIssue[];
   integrityIssuesCount: number;
+  sampleWindows: {
+    stockDataMissingDates: ValidationSampleWindow;
+    failedDates: ValidationSampleWindow;
+    adjustmentEvents: ValidationSampleWindow;
+    stocksNeedingRefresh: ValidationSampleWindow;
+    missingListedMarketStocks: ValidationSampleWindow;
+    fundamentalsEmptySkippedCodes: ValidationSampleWindow;
+    marginEmptySkippedCodes: ValidationSampleWindow;
+  };
   recommendations: string[];
   lastUpdated: string;
+}
+
+export interface ValidationSampleWindow {
+  returnedCount: number;
+  totalCount: number;
+  limit: number;
+  truncated: boolean;
 }
 
 export interface RefreshStockResult {
