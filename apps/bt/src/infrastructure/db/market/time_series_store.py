@@ -684,10 +684,11 @@ class DuckDbParquetTimeSeriesStore:
             self._dirty_tables.discard(table_name)
 
     def get_storage_stats(self) -> TimeSeriesStorageStats:
-        return TimeSeriesStorageStats(
-            duckdb_bytes=self._resolve_path_size(self._duckdb_path),
-            parquet_bytes=self._resolve_parquet_dir_size(),
-        )
+        with self._lock:
+            return TimeSeriesStorageStats(
+                duckdb_bytes=self._resolve_path_size(self._duckdb_path),
+                parquet_bytes=self._resolve_parquet_dir_size(),
+            )
 
     @staticmethod
     def _resolve_path_size(path: Path) -> int:

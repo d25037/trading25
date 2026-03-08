@@ -475,6 +475,11 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.fundamentalsEmptySkippedCodes),
   });
 
+  appendValidationDiagnostic(diagnostics, fundamentals.issuerAliasCoveredCount, {
+    label: 'Preferred Alias Covered',
+    helpText: 'Preferred-share listed codes already covered by parent issuer statements.',
+  });
+
   appendValidationDiagnostic(diagnostics, margin.emptySkippedCount, {
     label: 'Unsupported/Empty Margin Codes',
     helpText: 'Suppressed until a newer margin frontier is available.',

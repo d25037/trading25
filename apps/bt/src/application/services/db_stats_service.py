@@ -47,12 +47,6 @@ class TimeSeriesStoreStatsLike(Protocol):
 
 
 def _resolve_duckdb_size_bytes(time_series_store: object) -> int:
-    storage_stats = getattr(time_series_store, "get_storage_stats", None)
-    if callable(storage_stats):
-        stats = storage_stats()
-        duckdb_bytes = getattr(stats, "duckdb_bytes", None)
-        if isinstance(duckdb_bytes, int):
-            return duckdb_bytes
     duckdb_path = getattr(time_series_store, "_duckdb_path", None)
     if not isinstance(duckdb_path, Path):
         return 0
@@ -63,13 +57,6 @@ def _resolve_duckdb_size_bytes(time_series_store: object) -> int:
 
 
 def _resolve_parquet_size_bytes(time_series_store: object) -> int:
-    storage_stats = getattr(time_series_store, "get_storage_stats", None)
-    if callable(storage_stats):
-        stats = storage_stats()
-        parquet_bytes = getattr(stats, "parquet_bytes", None)
-        if isinstance(parquet_bytes, int):
-            return parquet_bytes
-
     parquet_dir = getattr(time_series_store, "_parquet_dir", None)
     if not isinstance(parquet_dir, Path):
         return 0
@@ -84,6 +71,28 @@ def _resolve_parquet_size_bytes(time_series_store: object) -> int:
         return total
     except OSError:
         return 0
+
+
+def _resolve_storage_stats(time_series_store: object) -> StorageStats:
+    get_storage_stats = getattr(time_series_store, "get_storage_stats", None)
+    if callable(get_storage_stats):
+        stats = get_storage_stats()
+        duckdb_bytes = getattr(stats, "duckdb_bytes", None)
+        parquet_bytes = getattr(stats, "parquet_bytes", None)
+        if isinstance(duckdb_bytes, int) and isinstance(parquet_bytes, int):
+            return StorageStats(
+                duckdbBytes=duckdb_bytes,
+                parquetBytes=parquet_bytes,
+                totalBytes=duckdb_bytes + parquet_bytes,
+            )
+
+    duckdb_bytes = _resolve_duckdb_size_bytes(time_series_store)
+    parquet_bytes = _resolve_parquet_size_bytes(time_series_store)
+    return StorageStats(
+        duckdbBytes=duckdb_bytes,
+        parquetBytes=parquet_bytes,
+        totalBytes=duckdb_bytes + parquet_bytes,
+    )
 
 
 def get_market_stats(
@@ -120,13 +129,7 @@ def get_market_stats(
         limit_missing=0,
         limit_empty=0,
     )
-    duckdb_bytes = _resolve_duckdb_size_bytes(time_series_store)
-    parquet_bytes = _resolve_parquet_size_bytes(time_series_store)
-    storage = StorageStats(
-        duckdbBytes=duckdb_bytes,
-        parquetBytes=parquet_bytes,
-        totalBytes=duckdb_bytes + parquet_bytes,
-    )
+    storage = _resolve_storage_stats(time_series_store)
 
     # Topix
     topix = TopixStats(
@@ -198,7 +201,7 @@ def get_market_stats(
         initialized=initialized,
         lastSync=last_sync,
         timeSeriesSource=inspection.source,
-        databaseSize=duckdb_bytes,
+        databaseSize=storage.duckdbBytes,
         storage=storage,
         topix=topix,
         stocks=stocks_stats,

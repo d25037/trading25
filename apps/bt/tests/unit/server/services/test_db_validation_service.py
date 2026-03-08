@@ -63,8 +63,7 @@ class DummyMarketDb:
         return {"プライム": 2}
 
     def get_adjustment_events(self, limit: int = 20) -> list[dict[str, Any]]:
-        del limit
-        return list(self._adjustment_events)
+        return list(self._adjustment_events[:limit])
 
     def get_adjustment_events_count(self) -> int:
         return len(self._adjustment_events)
@@ -225,6 +224,38 @@ def test_validate_market_db_limits_refresh_samples_but_uses_total_count() -> Non
     assert len(result.stocksNeedingRefresh) == 20
     assert result.sampleWindows.stocksNeedingRefresh.truncated is True
     assert any("refresh 25 stocks" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_limits_adjustment_event_samples_but_uses_total_count() -> None:
+    adjustment_events = [
+        {
+            "code": f"{1000 + idx}",
+            "date": f"2026-02-{(idx % 28) + 1:02d}",
+            "adjustmentFactor": 0.5,
+            "close": 1000.0 + idx,
+            "eventType": "split",
+        }
+        for idx in range(25)
+    ]
+    market_db = DummyMarketDb(adjustment_events=adjustment_events)
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            statements_count=10,
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.adjustmentEventsCount == 25
+    assert len(result.adjustmentEvents) == 20
+    assert result.sampleWindows.adjustmentEvents.truncated is True
 
 
 def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -> None:

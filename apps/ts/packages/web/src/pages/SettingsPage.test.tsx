@@ -402,6 +402,7 @@ describe('SettingsPage', () => {
     expect(screen.getAllByText('12 KB').length).toBeGreaterThan(0);
     expect(screen.getByText('Stock Data')).toBeInTheDocument();
     expect(screen.getByText('Fundamentals')).toBeInTheDocument();
+    expect(screen.getByText('Alias covered: 6')).toBeInTheDocument();
     expect(screen.getByText('Margin Orphans')).toBeInTheDocument();
     expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
@@ -728,6 +729,7 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Failed to load db stats')).toBeInTheDocument();
     expect(screen.getByText('Validation Diagnostics')).toBeInTheDocument();
     expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
+    expect(screen.getByText('Preferred Alias Covered')).toBeInTheDocument();
   });
 
   it('shows refresh pending state and refresh error', () => {
