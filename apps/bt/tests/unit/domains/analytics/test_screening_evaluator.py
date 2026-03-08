@@ -26,6 +26,8 @@ class _Strategy:
     response_name: str
     entry_params: SignalParams
     exit_params: SignalParams
+    screening_mode: str = "standard"
+    current_session_round_trip_oracle: bool = False
 
 
 @dataclass
@@ -94,6 +96,67 @@ def test_evaluate_stock_reuses_per_stock_signal_cache() -> None:
     assert calls["count"] == 1
     assert outcome.processed_strategy_names == {"s1", "s2"}
     assert outcome.matched_dates_by_strategy == {"s1": "2026-01-02", "s2": "2026-01-02"}
+
+
+def test_evaluate_stock_passes_oracle_mode_to_signal_generation() -> None:
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
+    strategy = _Strategy(
+        "oracle",
+        SignalParams(),
+        SignalParams(),
+        screening_mode="oracle",
+        current_session_round_trip_oracle=True,
+    )
+    stock = _Stock("1001")
+    bundle = _DataBundle(
+        multi_data={"1001": {"daily": daily, "margin_daily": None, "statements_daily": None}}
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _generate_signals(**kwargs: Any) -> Signals:
+        captured.update(kwargs)
+        return _signals(index)
+
+    outcome = evaluate_stock(
+        stock=stock,
+        strategy_inputs=[_StrategyInput(strategy=strategy, data_bundle=bundle, load_warnings=[])],
+        recent_days=2,
+        strategy_cache_tokens={},
+        generate_signals=_generate_signals,
+        find_recent_match_date=lambda _signals, _recent_days: "2026-01-02",
+    )
+
+    assert outcome.matched_dates_by_strategy == {"oracle": "2026-01-02"}
+    assert captured["current_session_round_trip_oracle"] is True
+
+
+def test_evaluate_stock_does_not_infer_oracle_from_screening_label_alone() -> None:
+    index = pd.to_datetime(["2026-01-01", "2026-01-02"])
+    daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
+    strategy = _Strategy("oracle-ish", SignalParams(), SignalParams(), screening_mode="oracle")
+    stock = _Stock("1001")
+    bundle = _DataBundle(
+        multi_data={"1001": {"daily": daily, "margin_daily": None, "statements_daily": None}}
+    )
+
+    captured: dict[str, Any] = {}
+
+    def _generate_signals(**kwargs: Any) -> Signals:
+        captured.update(kwargs)
+        return _signals(index)
+
+    evaluate_stock(
+        stock=stock,
+        strategy_inputs=[_StrategyInput(strategy=strategy, data_bundle=bundle, load_warnings=[])],
+        recent_days=2,
+        strategy_cache_tokens={},
+        generate_signals=_generate_signals,
+        find_recent_match_date=lambda _signals, _recent_days: "2026-01-02",
+    )
+
+    assert captured["current_session_round_trip_oracle"] is False
 
 
 def test_evaluate_stock_converts_unexpected_matcher_error_to_warning() -> None:

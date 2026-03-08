@@ -75,17 +75,30 @@ def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) ->
     shared_payload: dict[str, object] = {"dataset": "primeExTopix500"}
     if shared_overrides:
         shared_payload.update(shared_overrides)
+    shared_config = SharedConfig.model_validate(
+        shared_payload,
+        context={"resolve_stock_codes": False},
+    )
+    entry_params = SignalParams()
+    current_session_round_trip_oracle = (
+        shared_config.current_session_round_trip_oracle
+        or entry_params.oracle_index_open_gap_regime.enabled
+    )
+    screening_mode = (
+        "oracle"
+        if current_session_round_trip_oracle
+        else "standard"
+    )
 
     return StrategyRuntime(
         name=f"production/{name}",
         response_name=name,
         basename=name,
-        entry_params=SignalParams(),
+        entry_params=entry_params,
         exit_params=SignalParams(),
-        shared_config=SharedConfig.model_validate(
-            shared_payload,
-            context={"resolve_stock_codes": False},
-        ),
+        shared_config=shared_config,
+        screening_mode=screening_mode,
+        current_session_round_trip_oracle=current_session_round_trip_oracle,
     )
 
 
@@ -93,7 +106,7 @@ class TestMarketCodeCompatibility:
     def test_prime_and_numeric_prime_screen_same_universe(self, service, monkeypatch):
         runtime = _runtime("range_break_v15")
 
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _: [runtime])
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [runtime])
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",
@@ -145,7 +158,7 @@ class TestMarketCodeCompatibility:
         captured: dict[str, str | None] = {}
 
         monkeypatch.setattr(service, "_get_latest_market_date", lambda: "2026-02-17")
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _: [runtime])
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [runtime])
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",
@@ -222,8 +235,8 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        with pytest.raises(ValueError, match="next_session_round_trip"):
-            service._resolve_strategies(None)
+        with pytest.raises(ValueError, match="No production strategies found for standard screening"):
+            service._resolve_strategies(None, mode="standard")
 
     def test_rejects_current_session_round_trip_oracle_strategy(
         self,
@@ -258,8 +271,77 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        with pytest.raises(ValueError, match="current_session_round_trip_oracle"):
-            service._resolve_strategies(None)
+        oracle = service._resolve_strategies(None, mode="oracle")
+        assert [s.name for s in oracle] == ["production/current_session_demo"]
+        assert oracle[0].current_session_round_trip_oracle is True
+
+    def test_exit_only_oracle_filter_remains_standard_screening(
+        self,
+        service,
+        monkeypatch,
+        tmp_path,
+    ):
+        production = StrategyMetadata(
+            name="production/exit_only_oracle",
+            category="production",
+            path=Path(tmp_path / "production/exit_only_oracle.yaml"),
+            mtime=datetime.now(),
+        )
+
+        monkeypatch.setattr(
+            service._config_loader,
+            "get_strategy_metadata",
+            lambda: [production],
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "load_strategy_config",
+            lambda _name: {
+                "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+                "exit_trigger_params": {
+                    "oracle_index_open_gap_regime": {"enabled": True},
+                },
+            },
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "merge_shared_config",
+            lambda _config: {"dataset": "primeExTopix500"},
+        )
+
+        resolved = service._resolve_strategies(None, mode="standard")
+        assert [s.name for s in resolved] == ["production/exit_only_oracle"]
+        assert resolved[0].current_session_round_trip_oracle is False
+
+    def test_broken_production_strategy_config_fails_loudly(
+        self,
+        service,
+        monkeypatch,
+        tmp_path,
+    ):
+        production = StrategyMetadata(
+            name="production/broken_strategy",
+            category="production",
+            path=Path(tmp_path / "production/broken_strategy.yaml"),
+            mtime=datetime.now(),
+        )
+
+        monkeypatch.setattr(
+            service._config_loader,
+            "get_strategy_metadata",
+            lambda: [production],
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "load_strategy_config",
+            lambda _name: (_ for _ in ()).throw(RuntimeError("bad yaml")),
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="Invalid production strategy config for screening: production/broken_strategy \\(bad yaml\\)",
+        ):
+            service._resolve_strategies(None, mode="standard")
 
     def test_resolves_production_only_and_supports_basename_and_fullname(
         self,
@@ -305,14 +387,15 @@ class TestStrategyResolution:
             lambda _config: {"dataset": "primeExTopix500"},
         )
 
-        auto_resolved = service._resolve_strategies(None)
+        auto_resolved = service._resolve_strategies(None, mode="standard")
         assert [s.name for s in auto_resolved] == [
             "production/forward_eps_driven",
             "production/range_break_v15",
         ]
 
         specified = service._resolve_strategies(
-            "range_break_v15,production/forward_eps_driven"
+            "range_break_v15,production/forward_eps_driven",
+            mode="standard",
         )
         assert [s.name for s in specified] == [
             "production/range_break_v15",
@@ -320,7 +403,55 @@ class TestStrategyResolution:
         ]
 
         with pytest.raises(ValueError, match="Invalid strategies"):
-            service._resolve_strategies("experimental/test_strategy")
+            service._resolve_strategies("experimental/test_strategy", mode="standard")
+
+    def test_resolves_oracle_only_for_oracle_mode(
+        self,
+        service,
+        monkeypatch,
+        tmp_path,
+    ):
+        oracle = StrategyMetadata(
+            name="production/topix_gap_down_intraday_oracle",
+            category="production",
+            path=Path(tmp_path / "production/topix_gap_down_intraday_oracle.yaml"),
+            mtime=datetime.now(),
+        )
+        standard = StrategyMetadata(
+            name="production/range_break_v15",
+            category="production",
+            path=Path(tmp_path / "production/range_break_v15.yaml"),
+            mtime=datetime.now(),
+        )
+
+        monkeypatch.setattr(
+            service._config_loader,
+            "get_strategy_metadata",
+            lambda: [oracle, standard],
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "load_strategy_config",
+            lambda name: {
+                "shared_config": {
+                    "current_session_round_trip_oracle": name == "production/topix_gap_down_intraday_oracle"
+                },
+                "entry_filter_params": {
+                    "oracle_index_open_gap_regime": {
+                        "enabled": name == "production/topix_gap_down_intraday_oracle"
+                    }
+                },
+                "exit_trigger_params": {},
+            },
+        )
+        monkeypatch.setattr(
+            service._config_loader,
+            "merge_shared_config",
+            lambda config: config.get("shared_config", {}),
+        )
+
+        resolved = service._resolve_strategies(None, mode="oracle")
+        assert [s.name for s in resolved] == ["production/topix_gap_down_intraday_oracle"]
 
 
 class TestAggregationAndSorting:
@@ -328,7 +459,7 @@ class TestAggregationAndSorting:
         s1 = _runtime("range_break_v15")
         s2 = _runtime("forward_eps_driven")
 
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _: [s1, s2])
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [s1, s2])
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",
@@ -392,7 +523,7 @@ class TestAggregationAndSorting:
         s1 = _runtime("range_break_v15")
         s2 = _runtime("forward_eps_driven")
 
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _: [s1, s2])
+        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [s1, s2])
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",

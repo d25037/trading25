@@ -25,9 +25,17 @@ const mockRunScreeningJob = vi.fn().mockResolvedValue({
 const mockUseScreeningJobStatus = vi.fn();
 const mockUseScreeningResult = vi.fn();
 const mockCancelScreeningJob = vi.fn();
+let mockStrategiesQueryResult: {
+  data: {
+    strategies: Array<{ name: string; category: string; screening_mode: 'standard' | 'oracle' | 'unsupported' }>;
+  } | null;
+  isLoading: boolean;
+  error: Error | null;
+};
 
 function createCachedScreeningResult(): MarketScreeningResponse {
   return {
+    mode: 'standard',
     summary: {
       totalStocksScreened: 1,
       matchCount: 1,
@@ -68,6 +76,7 @@ function createScreeningJob(overrides: Partial<ScreeningJobResponse> = {}): Scre
     job_id: 'job-1',
     status: 'pending',
     created_at: '2026-02-18T00:00:00Z',
+    mode: 'standard',
     markets: 'prime',
     recentDays: 10,
     sortBy: 'matchedDate',
@@ -116,16 +125,7 @@ vi.mock('@/hooks/useFundamentalRanking', () => ({
 }));
 
 vi.mock('@/hooks/useBacktest', () => ({
-  useStrategies: () => ({
-    data: {
-      strategies: [
-        { name: 'production/range_break_v15', category: 'production' },
-        { name: 'production/forward_eps_driven', category: 'production' },
-      ],
-    },
-    isLoading: false,
-    error: null,
-  }),
+  useStrategies: () => mockStrategiesQueryResult,
 }));
 
 vi.mock('@/components/Screening/ScreeningFilters', () => ({
@@ -167,6 +167,21 @@ vi.mock('@/components/FundamentalRanking', () => ({
 
 describe('AnalysisPage', () => {
   beforeEach(() => {
+    mockStrategiesQueryResult = {
+      data: {
+        strategies: [
+          { name: 'production/range_break_v15', category: 'production', screening_mode: 'standard' },
+          { name: 'production/forward_eps_driven', category: 'production', screening_mode: 'standard' },
+          {
+            name: 'production/topix_gap_down_intraday_oracle',
+            category: 'production',
+            screening_mode: 'oracle',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    };
     useAnalysisStore.persist?.clearStorage?.();
     useAnalysisStore.setState(createInitialAnalysisState());
     mockNavigate.mockReset();
@@ -188,17 +203,82 @@ describe('AnalysisPage', () => {
     mockCancelScreeningJob.mockReset();
   });
 
-  it('passes full production strategy names to screening filters', () => {
+  it('passes only standard production strategy names to screening filters', () => {
     render(<AnalysisPage />);
 
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
+        mode: 'standard',
         strategyOptions: ['production/forward_eps_driven', 'production/range_break_v15'],
       })
     );
   });
 
-  it('uses matchedDate descending as default screening sort when running', async () => {
+  it('shows oracle-only strategies in oracle screening', async () => {
+    const user = userEvent.setup();
+    render(<AnalysisPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+
+    expect(mockScreeningFilters).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        mode: 'oracle',
+        strategyOptions: ['production/topix_gap_down_intraday_oracle'],
+      })
+    );
+  });
+
+  it('preserves saved strategy selections until the strategy catalog is loaded, then sanitizes invalid names', async () => {
+    useAnalysisStore.setState({
+      screeningParams: {
+        ...useAnalysisStore.getState().screeningParams,
+        strategies: 'production/range_break_v15,production/missing_standard',
+      },
+      oracleScreeningParams: {
+        ...useAnalysisStore.getState().oracleScreeningParams,
+        strategies: 'production/topix_gap_down_intraday_oracle,production/missing_oracle',
+      },
+    });
+    mockStrategiesQueryResult = {
+      data: null,
+      isLoading: true,
+      error: null,
+    };
+
+    const { rerender } = render(<AnalysisPage />);
+
+    expect(useAnalysisStore.getState().screeningParams.strategies).toBe(
+      'production/range_break_v15,production/missing_standard'
+    );
+    expect(useAnalysisStore.getState().oracleScreeningParams.strategies).toBe(
+      'production/topix_gap_down_intraday_oracle,production/missing_oracle'
+    );
+
+    mockStrategiesQueryResult = {
+      data: {
+        strategies: [
+          { name: 'production/range_break_v15', category: 'production', screening_mode: 'standard' },
+          {
+            name: 'production/topix_gap_down_intraday_oracle',
+            category: 'production',
+            screening_mode: 'oracle',
+          },
+        ],
+      },
+      isLoading: false,
+      error: null,
+    };
+    rerender(<AnalysisPage />);
+
+    await waitFor(() => {
+      expect(useAnalysisStore.getState().screeningParams.strategies).toBe('production/range_break_v15');
+      expect(useAnalysisStore.getState().oracleScreeningParams.strategies).toBe(
+        'production/topix_gap_down_intraday_oracle'
+      );
+    });
+  });
+
+  it('uses matchedDate descending as default standard screening sort when running', async () => {
     const user = userEvent.setup();
     render(<AnalysisPage />);
 
@@ -206,8 +286,23 @@ describe('AnalysisPage', () => {
 
     expect(mockRunScreeningJob).toHaveBeenCalledWith(
       expect.objectContaining({
+        mode: 'standard',
         sortBy: 'matchedDate',
         order: 'desc',
+      })
+    );
+  });
+
+  it('runs oracle screening with oracle mode', async () => {
+    const user = userEvent.setup();
+    render(<AnalysisPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Run Oracle Screening' }));
+
+    expect(mockRunScreeningJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'oracle',
       })
     );
   });
@@ -228,6 +323,14 @@ describe('AnalysisPage', () => {
 
     await user.click(screen.getByRole('button', { name: 'Fundamental Ranking' }));
     expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
+  });
+
+  it('switches to oracle screening tab', async () => {
+    const user = userEvent.setup();
+    render(<AnalysisPage />);
+
+    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    expect(screen.getByRole('button', { name: 'Run Oracle Screening' })).toBeInTheDocument();
   });
 
   it('navigates to chart when a stock is selected', async () => {
@@ -295,5 +398,32 @@ describe('AnalysisPage', () => {
 
     expect(screen.getByText('Screening Job: completed')).toBeInTheDocument();
     expect(screen.queryByText('Screening Job Progress')).not.toBeInTheDocument();
+  });
+
+  it('keeps screening history visibility separate for standard and oracle tabs', async () => {
+    const user = userEvent.setup();
+    useAnalysisStore.setState({
+      screeningJobHistory: [createScreeningJob({ job_id: 'standard-job' })],
+      oracleScreeningJobHistory: [createScreeningJob({ job_id: 'oracle-job', mode: 'oracle' })],
+    });
+
+    render(<AnalysisPage />);
+
+    const standardToggle = screen.getByRole('switch', { name: 'Show History' });
+    expect(standardToggle).toBeChecked();
+    await user.click(standardToggle);
+    expect(standardToggle).not.toBeChecked();
+
+    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+
+    const oracleToggle = screen.getByRole('switch', { name: 'Show History' });
+    expect(oracleToggle).toBeChecked();
+    expect(screen.getByText('oracle-j...')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Screening' }));
+
+    const restoredStandardToggle = screen.getByRole('switch', { name: 'Show History' });
+    expect(restoredStandardToggle).not.toBeChecked();
+    expect(screen.queryByText('standard...')).not.toBeInTheDocument();
   });
 });

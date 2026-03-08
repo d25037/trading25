@@ -108,6 +108,7 @@ class ScreeningJobService:
             response = await loop.run_in_executor(
                 self._executor,
                 lambda: service.run_screening(
+                    mode=request.mode,
                     markets=request.markets,
                     strategies=request.strategies,
                     recent_days=request.recentDays,

@@ -230,6 +230,7 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        mode=params.mode,
         markets=params.markets,
         strategies=params.strategies,
         recentDays=params.recentDays,

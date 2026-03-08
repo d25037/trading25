@@ -5504,6 +5504,12 @@ export interface components {
             /** Markets */
             markets: string[];
             /**
+             * Mode
+             * @default standard
+             * @enum {string}
+             */
+            mode: "standard" | "oracle";
+            /**
              * Order
              * @enum {string}
              */
@@ -6521,6 +6527,12 @@ export interface components {
              */
             markets: string;
             /**
+             * Mode
+             * @default standard
+             * @enum {string}
+             */
+            mode: "standard" | "oracle";
+            /**
              * Order
              * @default desc
              * @enum {string}
@@ -6581,6 +6593,13 @@ export interface components {
              * @description ステータスメッセージ
              */
             message?: string | null;
+            /**
+             * Mode
+             * @description screening mode
+             * @default standard
+             * @enum {string}
+             */
+            mode: "standard" | "oracle";
             /**
              * Order
              * @description 並び順
@@ -7839,6 +7858,18 @@ export interface components {
              * @description 戦略名（カテゴリ/名前）
              */
             name: string;
+            /**
+             * Screening Error
+             * @description validation error when screening availability cannot be resolved
+             */
+            screening_error?: string | null;
+            /**
+             * Screening Mode
+             * @description screening availability for analysis UI
+             * @default unsupported
+             * @enum {string}
+             */
+            screening_mode: "standard" | "oracle" | "unsupported";
         };
         /**
          * StrategyMoveRequest

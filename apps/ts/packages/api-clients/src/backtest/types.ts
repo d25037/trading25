@@ -155,12 +155,16 @@ export interface AttributionArtifactContentResponse {
   artifact: Record<string, unknown>;
 }
 
+export type StrategyScreeningMode = 'standard' | 'oracle' | 'unsupported';
+
 export interface StrategyMetadata {
   name: string;
   category: string;
   display_name: string | null;
   description: string | null;
   last_modified: string | null;
+  screening_mode?: StrategyScreeningMode;
+  screening_error?: string | null;
 }
 
 export interface StrategyListResponse {

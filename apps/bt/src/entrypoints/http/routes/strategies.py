@@ -5,6 +5,7 @@ Strategy Management Endpoints
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
+from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
 from src.entrypoints.http.schemas.strategy import (
     DefaultConfigResponse,
     DefaultConfigUpdateRequest,
@@ -19,6 +20,7 @@ from src.entrypoints.http.schemas.strategy import (
     StrategyMoveResponse,
     StrategyRenameRequest,
     StrategyRenameResponse,
+    StrategyScreeningMode,
     StrategyUpdateRequest,
     StrategyUpdateResponse,
     StrategyValidationRequest,
@@ -33,6 +35,17 @@ router = APIRouter(tags=["Strategies"])
 _config_loader = ConfigLoader()
 
 
+def _resolve_screening_metadata(
+    strategy_name: str,
+) -> tuple[StrategyScreeningMode, str | None]:
+    try:
+        loaded = load_strategy_screening_config(_config_loader, strategy_name)
+        return loaded.screening_mode, None
+    except Exception as exc:
+        logger.warning(f"failed to resolve screening mode for {strategy_name}: {exc}")
+        return "unsupported", str(exc)
+
+
 @router.get("/api/strategies", response_model=StrategyListResponse)
 async def list_strategies() -> StrategyListResponse:
     """
@@ -43,16 +56,20 @@ async def list_strategies() -> StrategyListResponse:
     try:
         metadata_list = _config_loader.get_strategy_metadata()
 
-        strategies = [
-            StrategyMetadataResponse(
-                name=m.name,
-                category=m.category,
-                display_name=None,  # メタデータには含まれない
-                description=None,
-                last_modified=m.mtime if hasattr(m, "mtime") else None,
+        strategies = []
+        for m in metadata_list:
+            screening_mode, screening_error = _resolve_screening_metadata(m.name)
+            strategies.append(
+                StrategyMetadataResponse(
+                    name=m.name,
+                    category=m.category,
+                    display_name=None,  # メタデータには含まれない
+                    description=None,
+                    last_modified=m.mtime if hasattr(m, "mtime") else None,
+                    screening_mode=screening_mode,
+                    screening_error=screening_error,
+                )
             )
-            for m in metadata_list
-        ]
 
         return StrategyListResponse(
             strategies=strategies,

@@ -1,4 +1,5 @@
 import { render, screen } from '@testing-library/react';
+import { useState } from 'react';
 import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import type { ScreeningJobResponse } from '@/types/screening';
@@ -19,7 +20,17 @@ function createJob(overrides: Partial<ScreeningJobResponse> = {}): ScreeningJobR
 
 describe('ScreeningJobHistoryTable', () => {
   it('shows empty state', () => {
-    render(<ScreeningJobHistoryTable jobs={[]} isLoading={false} selectedJobId={null} onSelectJob={vi.fn()} />);
+    render(
+      <ScreeningJobHistoryTable
+        mode="standard"
+        jobs={[]}
+        isLoading={false}
+        showHistory
+        onShowHistoryChange={vi.fn()}
+        selectedJobId={null}
+        onSelectJob={vi.fn()}
+      />
+    );
     expect(screen.getByText('No screening jobs found')).toBeInTheDocument();
   });
 
@@ -28,7 +39,17 @@ describe('ScreeningJobHistoryTable', () => {
     const onSelectJob = vi.fn();
     const job = createJob({ job_id: 'job-completed', strategies: 'production/range_break_v15' });
 
-    render(<ScreeningJobHistoryTable jobs={[job]} isLoading={false} selectedJobId={null} onSelectJob={onSelectJob} />);
+    render(
+      <ScreeningJobHistoryTable
+        mode="standard"
+        jobs={[job]}
+        isLoading={false}
+        showHistory
+        onShowHistoryChange={vi.fn()}
+        selectedJobId={null}
+        onSelectJob={onSelectJob}
+      />
+    );
 
     expect(screen.getByText('job-comp...')).toBeInTheDocument();
     expect(screen.getByText('production/range_break_v15')).toBeInTheDocument();
@@ -39,7 +60,17 @@ describe('ScreeningJobHistoryTable', () => {
 
   it('shows monitor action for pending job', () => {
     const job = createJob({ job_id: 'job-pending', status: 'pending' });
-    render(<ScreeningJobHistoryTable jobs={[job]} isLoading={false} selectedJobId={null} onSelectJob={vi.fn()} />);
+    render(
+      <ScreeningJobHistoryTable
+        mode="standard"
+        jobs={[job]}
+        isLoading={false}
+        showHistory
+        onShowHistoryChange={vi.fn()}
+        selectedJobId={null}
+        onSelectJob={vi.fn()}
+      />
+    );
     expect(screen.getByRole('button', { name: 'Monitor' })).toBeInTheDocument();
   });
 
@@ -47,7 +78,22 @@ describe('ScreeningJobHistoryTable', () => {
     const user = userEvent.setup();
     const job = createJob({ job_id: 'job-toggle' });
 
-    render(<ScreeningJobHistoryTable jobs={[job]} isLoading={false} selectedJobId={null} onSelectJob={vi.fn()} />);
+    function ControlledTable() {
+      const [showHistory, setShowHistory] = useState(true);
+      return (
+        <ScreeningJobHistoryTable
+          mode="standard"
+          jobs={[job]}
+          isLoading={false}
+          showHistory={showHistory}
+          onShowHistoryChange={setShowHistory}
+          selectedJobId={null}
+          onSelectJob={vi.fn()}
+        />
+      );
+    }
+
+    render(<ControlledTable />);
 
     const toggle = screen.getByRole('switch', { name: 'Show History' });
     expect(toggle).toBeChecked();
@@ -60,5 +106,23 @@ describe('ScreeningJobHistoryTable', () => {
     await user.click(toggle);
     expect(toggle).toBeChecked();
     expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
+  });
+
+  it('shows oracle fallback label when strategies are omitted', () => {
+    const job = createJob({ job_id: 'job-oracle', strategies: null });
+
+    render(
+      <ScreeningJobHistoryTable
+        mode="oracle"
+        jobs={[job]}
+        isLoading={false}
+        showHistory
+        onShowHistoryChange={vi.fn()}
+        selectedJobId={null}
+        onSelectJob={vi.fn()}
+      />
+    );
+
+    expect(screen.getByText('(all oracle production)')).toBeInTheDocument();
   });
 });

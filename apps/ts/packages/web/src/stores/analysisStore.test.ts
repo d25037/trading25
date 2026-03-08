@@ -2,6 +2,7 @@ import { beforeEach, describe, expect, it } from 'vitest';
 import {
   createInitialAnalysisState,
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
+  DEFAULT_ORACLE_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
   DEFAULT_SCREENING_PARAMS,
   useAnalysisStore,
@@ -65,10 +66,47 @@ describe('analysisStore', () => {
 
     const state = useAnalysisStore.getState();
     expect(state.activeSubTab).toBe('ranking');
+    expect(state.screeningParams.mode).toBe('standard');
     expect(state.screeningParams.markets).toBe('growth');
     expect(state.screeningParams.limit).toBe(100);
     expect(state.activeScreeningJobId).toBe('job-1');
     expect(state.screeningResult?.results[0]?.stockCode).toBe('7203');
+  });
+
+  it('updates oracle screening state independently', () => {
+    const { setOracleScreeningParams, setActiveOracleScreeningJobId, setOracleScreeningResult } =
+      useAnalysisStore.getState();
+
+    setOracleScreeningParams({
+      ...DEFAULT_ORACLE_SCREENING_PARAMS,
+      strategies: 'production/topix_gap_down_intraday_oracle',
+    });
+    setActiveOracleScreeningJobId('oracle-job-1');
+    setOracleScreeningResult({
+      mode: 'oracle',
+      summary: {
+        totalStocksScreened: 1,
+        matchCount: 1,
+        skippedCount: 0,
+        byStrategy: { 'production/topix_gap_down_intraday_oracle': 1 },
+        strategiesEvaluated: ['production/topix_gap_down_intraday_oracle'],
+        strategiesWithoutBacktestMetrics: [],
+        warnings: [],
+      },
+      markets: ['prime'],
+      recentDays: 10,
+      referenceDate: '2026-02-18',
+      sortBy: 'matchedDate',
+      order: 'desc',
+      lastUpdated: '2026-02-18T00:00:00Z',
+      results: [],
+    });
+
+    const state = useAnalysisStore.getState();
+    expect(state.oracleScreeningParams.mode).toBe('oracle');
+    expect(state.oracleScreeningParams.strategies).toBe('production/topix_gap_down_intraday_oracle');
+    expect(state.activeOracleScreeningJobId).toBe('oracle-job-1');
+    expect(state.oracleScreeningResult?.mode).toBe('oracle');
   });
 
   it('updates ranking params', () => {

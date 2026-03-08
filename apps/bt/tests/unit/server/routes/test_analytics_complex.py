@@ -468,6 +468,7 @@ class TestScreening:
         data = resp.json()
         assert data["job_id"] == "job-1"
         assert data["status"] == "pending"
+        assert data["mode"] == "standard"
         assert data["sortBy"] == "matchedDate"
         assert data["order"] == "desc"
 
@@ -497,6 +498,7 @@ class TestScreening:
         data = resp.json()
         assert data["job_id"] == "job-2"
         assert data["status"] == "running"
+        assert data["mode"] == "standard"
         assert data["recentDays"] == 5
         assert data["markets"] == "prime,standard"
 

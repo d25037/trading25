@@ -47,12 +47,14 @@ from src.domains.analytics.screening_results import (
     sort_results as sort_screening_results,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 from src.shared.paths import get_backtest_results_dir
 from src.entrypoints.http.schemas.screening import (
     MarketScreeningResponse,
     MatchedStrategyItem,
+    ScreeningMode,
     ScreeningResultItem,
     ScreeningSortBy,
     ScreeningSummary,
@@ -97,6 +99,8 @@ class StrategyRuntime:
     entry_params: SignalParams
     exit_params: SignalParams
     shared_config: SharedConfig
+    screening_mode: ScreeningMode
+    current_session_round_trip_oracle: bool
 
 
 @dataclass
@@ -258,6 +262,7 @@ class ScreeningService:
 
     def run_screening(
         self,
+        mode: ScreeningMode = "standard",
         markets: str = "prime",
         strategies: str | None = None,
         recent_days: int = 10,
@@ -274,7 +279,7 @@ class ScreeningService:
 
         load_stage_started = perf_counter()
         stock_universe = self._load_stock_universe(query_market_codes)
-        strategy_runtimes = self._resolve_strategies(strategies)
+        strategy_runtimes = self._resolve_strategies(strategies, mode=mode)
         strategy_scores, missing_metric_strategies, metric_warnings = self._load_strategy_scores(
             strategy_runtimes
         )
@@ -376,6 +381,7 @@ class ScreeningService:
         response = MarketScreeningResponse(
             results=sorted_results,
             summary=summary,
+            mode=mode,
             markets=requested_market_codes,
             recentDays=recent_days,
             referenceDate=effective_reference_date,
@@ -427,15 +433,43 @@ class ScreeningService:
 
         return list(deduped.values())
 
-    def _resolve_strategies(self, strategies: str | None) -> list[StrategyRuntime]:
+    def _resolve_strategies(
+        self,
+        strategies: str | None,
+        *,
+        mode: ScreeningMode,
+    ) -> list[StrategyRuntime]:
         """対象戦略をproductionカテゴリから解決する。"""
         metadata = [m for m in self._config_loader.get_strategy_metadata() if m.category == "production"]
         if not metadata:
             raise ValueError("No production strategies found")
 
-        metadata_by_name = {m.name: m for m in metadata}
-        basename_map: dict[str, list[str]] = {}
+        runtime_payloads: dict[str, tuple[SignalParams, SignalParams, SharedConfig, str, bool]] = {}
+        eligible_metadata: list[Any] = []
         for m in metadata:
+            try:
+                loaded_config = load_strategy_screening_config(self._config_loader, m.name)
+            except Exception as exc:
+                raise ValueError(
+                    f"Invalid production strategy config for screening: {m.name} ({exc})"
+                ) from exc
+
+            runtime_payloads[m.name] = (
+                loaded_config.entry_params,
+                loaded_config.exit_params,
+                loaded_config.shared_config,
+                loaded_config.screening_mode,
+                loaded_config.current_session_round_trip_oracle,
+            )
+            if loaded_config.screening_mode == mode:
+                eligible_metadata.append(m)
+
+        if not eligible_metadata:
+            raise ValueError(f"No production strategies found for {mode} screening")
+
+        metadata_by_name = {m.name: m for m in eligible_metadata}
+        basename_map: dict[str, list[str]] = {}
+        for m in eligible_metadata:
             basename_map.setdefault(m.path.stem, []).append(m.name)
 
         selected_names: list[str]
@@ -456,11 +490,12 @@ class ScreeningService:
 
             if invalid:
                 raise ValueError(
-                    "Invalid strategies (production only): " + ", ".join(sorted(set(invalid)))
+                    f"Invalid strategies ({mode} production only): "
+                    + ", ".join(sorted(set(invalid)))
                 )
 
         if not selected_names:
-            raise ValueError("No valid production strategies selected")
+            raise ValueError(f"No valid {mode} production strategies selected")
 
         selected_metadata = [metadata_by_name[name] for name in selected_names]
 
@@ -471,8 +506,13 @@ class ScreeningService:
 
         runtimes: list[StrategyRuntime] = []
         for m in selected_metadata:
-            config = self._config_loader.load_strategy_config(m.name)
-            shared_config_dict = self._config_loader.merge_shared_config(config)
+            (
+                entry_params,
+                exit_params,
+                shared_config,
+                screening_mode,
+                current_session_round_trip_oracle,
+            ) = runtime_payloads[m.name]
 
             response_name = m.path.stem
             if basename_counts[response_name] > 1:
@@ -482,26 +522,13 @@ class ScreeningService:
                 name=m.name,
                 response_name=response_name,
                 basename=m.path.stem,
-                entry_params=SignalParams(**config.get("entry_filter_params", {})),
-                exit_params=SignalParams(**config.get("exit_trigger_params", {})),
-                shared_config=SharedConfig.model_validate(
-                    shared_config_dict,
-                    context={"resolve_stock_codes": False},
-                ),
+                entry_params=entry_params,
+                exit_params=exit_params,
+                shared_config=shared_config,
+                screening_mode=cast(ScreeningMode, screening_mode),
+                current_session_round_trip_oracle=current_session_round_trip_oracle,
             )
             runtimes.append(runtime)
-
-            if runtime.shared_config.next_session_round_trip:
-                raise ValueError(
-                    "screening does not support shared_config.next_session_round_trip: "
-                    f"{m.name}"
-                )
-            if runtime.shared_config.current_session_round_trip_oracle:
-                raise ValueError(
-                    "screening does not support "
-                    "shared_config.current_session_round_trip_oracle: "
-                    f"{m.name}"
-                )
 
         return runtimes
 

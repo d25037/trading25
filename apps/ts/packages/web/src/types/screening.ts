@@ -3,13 +3,14 @@
  * Re-exports from @trading25/contracts and adds frontend-specific types
  */
 
-import type { ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
+import type { ScreeningMode, ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 
 export type {
   MatchedStrategyItem,
   MarketScreeningResponse,
   ScreeningJobRequest,
   ScreeningJobResponse,
+  ScreeningMode,
   ScreeningResultItem,
   ScreeningSortBy,
   ScreeningSummary,
@@ -18,6 +19,7 @@ export type {
 
 // Frontend-specific types
 export interface ScreeningParams {
+  mode?: ScreeningMode;
   markets?: string;
   strategies?: string;
   recentDays?: number;

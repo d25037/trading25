@@ -44,17 +44,30 @@ def _runtime(
     shared_payload = {"dataset": "primeExTopix500"}
     if shared_overrides:
         shared_payload.update(shared_overrides)
+    resolved_entry_params = entry_params or SignalParams()
+    shared_config = SharedConfig.model_validate(
+        shared_payload,
+        context={"resolve_stock_codes": False},
+    )
+    current_session_round_trip_oracle = (
+        shared_config.current_session_round_trip_oracle
+        or resolved_entry_params.oracle_index_open_gap_regime.enabled
+    )
+    screening_mode = (
+        "oracle"
+        if current_session_round_trip_oracle
+        else "standard"
+    )
 
     return StrategyRuntime(
         name=f"production/{name}",
         response_name=name,
         basename=name,
-        entry_params=entry_params or SignalParams(),
+        entry_params=resolved_entry_params,
         exit_params=exit_params or SignalParams(),
-        shared_config=SharedConfig.model_validate(
-            shared_payload,
-            context={"resolve_stock_codes": False},
-        ),
+        shared_config=shared_config,
+        screening_mode=screening_mode,
+        current_session_round_trip_oracle=current_session_round_trip_oracle,
     )
 
 
@@ -303,7 +316,7 @@ class TestStrategyResolutionHelpers:
         service = ScreeningService(DummyReader())
         monkeypatch.setattr(service._config_loader, "get_strategy_metadata", lambda: [])
         with pytest.raises(ValueError, match="No production strategies found"):
-            service._resolve_strategies(None)  # noqa: SLF001
+            service._resolve_strategies(None, mode="standard")  # noqa: SLF001
 
     def test_resolve_strategies_raises_when_requested_list_is_empty(
         self,
@@ -332,8 +345,8 @@ class TestStrategyResolutionHelpers:
             lambda _config: {"dataset": "primeExTopix500"},
         )
 
-        with pytest.raises(ValueError, match="No valid production strategies selected"):
-            service._resolve_strategies(",")  # noqa: SLF001
+        with pytest.raises(ValueError, match="No valid standard production strategies selected"):
+            service._resolve_strategies(",", mode="standard")  # noqa: SLF001
 
 
 class TestRuntimeEvaluationHelpers:

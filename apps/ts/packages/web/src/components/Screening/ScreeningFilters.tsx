@@ -3,7 +3,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
+import type { ScreeningMode, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
   { value: 5, label: '5 days' },
@@ -21,6 +21,7 @@ const LIMIT_OPTIONS = [
 ];
 
 interface ScreeningFiltersProps {
+  mode: ScreeningMode;
   params: ScreeningParams;
   onChange: (params: ScreeningParams) => void;
   strategyOptions: string[];
@@ -45,6 +46,7 @@ function stringifyStrategies(strategies: string[]): string | undefined {
 }
 
 export function ScreeningFilters({
+  mode,
   params,
   onChange,
   strategyOptions,
@@ -55,6 +57,7 @@ export function ScreeningFilters({
   };
 
   const selectedStrategies = parseSelectedStrategies(params.strategies);
+  const strategyGroupLabel = mode === 'oracle' ? 'oracle production' : 'standard production';
 
   const toggleStrategy = (strategyName: string) => {
     const selected = new Set(selectedStrategies);
@@ -88,13 +91,13 @@ export function ScreeningFilters({
               className="h-6 px-2 text-[11px]"
               onClick={() => updateParam('strategies', undefined)}
             >
-              All production
+              All {strategyGroupLabel}
             </Button>
           </div>
           {strategiesLoading ? (
-            <p className="text-xs text-muted-foreground">Loading production strategies...</p>
+            <p className="text-xs text-muted-foreground">Loading {strategyGroupLabel} strategies...</p>
           ) : strategyOptions.length === 0 ? (
-            <p className="text-xs text-muted-foreground">No production strategies available</p>
+            <p className="text-xs text-muted-foreground">No {strategyGroupLabel} strategies available</p>
           ) : (
             <div className="flex flex-wrap gap-1.5">
               {strategyOptions.map((strategyName) => {
@@ -116,7 +119,7 @@ export function ScreeningFilters({
           )}
           <p className="text-[11px] text-muted-foreground">
             {selectedStrategies.length === 0
-              ? 'No explicit selection: all production strategies are evaluated.'
+              ? `No explicit selection: all ${strategyGroupLabel} strategies are evaluated.`
               : `${selectedStrategies.length} strategies selected`}
           </p>
         </div>

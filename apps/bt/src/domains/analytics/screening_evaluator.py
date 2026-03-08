@@ -33,6 +33,14 @@ class StrategyLike(Protocol):
     def exit_params(self) -> SignalParams:
         ...
 
+    @property
+    def screening_mode(self) -> str:
+        ...
+
+    @property
+    def current_session_round_trip_oracle(self) -> bool:
+        ...
+
 
 class StrategyDataBundleLike(Protocol):
     @property
@@ -131,7 +139,7 @@ def _run_generate_signals(
     margin_data: Any,
     statements_data: Any,
     recent_days: int,
-) -> Signals:
+    ) -> Signals:
     return generate_signals(
         strategy_entries=pd.Series(True, index=daily.index),
         strategy_exits=pd.Series(False, index=daily.index),
@@ -144,6 +152,7 @@ def _run_generate_signals(
         sector_data=data_bundle.sector_data,
         stock_sector_name=data_bundle.stock_sector_mapping.get(stock_code),
         screening_recent_days=recent_days,
+        current_session_round_trip_oracle=strategy.current_session_round_trip_oracle,
         skip_exit_when_no_recent_entry=True,
     )
 
@@ -152,6 +161,8 @@ def build_strategy_signal_cache_token(strategy: StrategyLike) -> str:
     payload = {
         "entry": strategy.entry_params.model_dump(mode="json"),
         "exit": strategy.exit_params.model_dump(mode="json"),
+        "screening_mode": strategy.screening_mode,
+        "current_session_round_trip_oracle": strategy.current_session_round_trip_oracle,
     }
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 

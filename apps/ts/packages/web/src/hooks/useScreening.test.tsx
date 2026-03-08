@@ -55,6 +55,7 @@ describe('useRunScreeningJob', () => {
     });
 
     expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith({
+      mode: undefined,
       markets: 'prime',
       strategies: 'production/range_break_v15',
       recentDays: 10,
@@ -81,6 +82,36 @@ describe('useRunScreeningJob', () => {
     });
 
     expect(logger.error).toHaveBeenCalledWith('Failed to start screening job', { error: 'network' });
+  });
+
+  it('passes oracle mode through to the job request', async () => {
+    vi.mocked(analyticsClient.createScreeningJob).mockResolvedValueOnce({
+      job_id: 'job-oracle',
+      status: 'pending',
+      created_at: '2026-02-01T00:00:00Z',
+      mode: 'oracle',
+      markets: 'prime',
+      recentDays: 10,
+      sortBy: 'matchedDate',
+      order: 'desc',
+    });
+
+    const { wrapper } = createTestWrapper();
+    const { result } = renderHook(() => useRunScreeningJob(), { wrapper });
+
+    await act(async () => {
+      await result.current.mutateAsync({
+        mode: 'oracle',
+        markets: 'prime',
+        recentDays: 10,
+      });
+    });
+
+    expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith(
+      expect.objectContaining({
+        mode: 'oracle',
+      })
+    );
   });
 });
 

@@ -1,6 +1,6 @@
 import { useNavigate } from '@tanstack/react-router';
 import { BarChart3, Filter } from 'lucide-react';
-import { useCallback, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import {
   FundamentalRankingFilters,
   FundamentalRankingSummary,
@@ -27,10 +27,12 @@ import { cn } from '@/lib/utils';
 import type { AnalysisSubTab } from '@/stores/analysisStore';
 import { useAnalysisStore } from '@/stores/analysisStore';
 import { useChartStore } from '@/stores/chartStore';
+import type { StrategyMetadata } from '@/types/backtest';
 import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from '@/types/fundamentalRanking';
 import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
 import type {
   MarketScreeningResponse,
+  ScreeningMode,
   ScreeningJobResponse,
   ScreeningParams,
   ScreeningResultItem,
@@ -38,12 +40,95 @@ import type {
 
 const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
   { id: 'screening', label: 'Screening', icon: Filter },
+  { id: 'oracleScreening', label: 'Oracle Screening', icon: Filter },
   { id: 'ranking', label: 'Daily Ranking', icon: BarChart3 },
   { id: 'fundamentalRanking', label: 'Fundamental Ranking', icon: BarChart3 },
 ];
 
+function isScreeningSubTab(tab: AnalysisSubTab): tab is 'screening' | 'oracleScreening' {
+  return tab === 'screening' || tab === 'oracleScreening';
+}
+
+function sanitizeStrategies(
+  strategies: string | undefined,
+  allowedStrategies: string[] | undefined
+): string | undefined {
+  if (!strategies) return undefined;
+  if (!allowedStrategies) return strategies;
+  const allowed = new Set(allowedStrategies);
+  const sanitized = strategies
+    .split(',')
+    .map((value) => value.trim())
+    .filter((value) => value.length > 0 && allowed.has(value));
+
+  return sanitized.length > 0 ? sanitized.join(',') : undefined;
+}
+
+function sanitizeScreeningParams(
+  params: ScreeningParams,
+  allowedStrategies: string[] | undefined,
+  mode: ScreeningMode
+): ScreeningParams {
+  return {
+    ...params,
+    mode,
+    strategies: sanitizeStrategies(params.strategies, allowedStrategies),
+  };
+}
+
+function areScreeningParamsEqual(left: ScreeningParams, right: ScreeningParams): boolean {
+  return (
+    left.mode === right.mode &&
+    left.markets === right.markets &&
+    left.strategies === right.strategies &&
+    left.recentDays === right.recentDays &&
+    left.date === right.date &&
+    left.sortBy === right.sortBy &&
+    left.order === right.order &&
+    left.limit === right.limit
+  );
+}
+
+function isStandardScreeningStrategy(strategy: StrategyMetadata): boolean {
+  return strategy.category === 'production' && (strategy.screening_mode ?? 'standard') === 'standard';
+}
+
+function isOracleScreeningStrategy(strategy: StrategyMetadata): boolean {
+  return strategy.category === 'production' && strategy.screening_mode === 'oracle';
+}
+
+function selectStrategyNames(
+  strategies: StrategyMetadata[] | undefined,
+  predicate: (strategy: StrategyMetadata) => boolean
+): string[] | undefined {
+  if (!strategies) {
+    return undefined;
+  }
+
+  return strategies.filter(predicate).map((strategy) => strategy.name).sort((left, right) => left.localeCompare(right));
+}
+
+function useSanitizedScreeningParams(
+  params: ScreeningParams,
+  setParams: (params: ScreeningParams) => void,
+  allowedStrategies: string[] | undefined,
+  mode: ScreeningMode
+): void {
+  useEffect(() => {
+    if (!allowedStrategies) {
+      return;
+    }
+
+    const sanitized = sanitizeScreeningParams(params, allowedStrategies, mode);
+    if (!areScreeningParamsEqual(sanitized, params)) {
+      setParams(sanitized);
+    }
+  }, [allowedStrategies, mode, params, setParams]);
+}
+
 interface AnalysisSidebarProps {
   activeSubTab: AnalysisSubTab;
+  screeningMode: ScreeningMode;
   screeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
@@ -56,6 +141,7 @@ interface AnalysisSidebarProps {
 
 function AnalysisSidebar({
   activeSubTab,
+  screeningMode,
   screeningParams,
   rankingParams,
   fundamentalRankingParams,
@@ -65,9 +151,10 @@ function AnalysisSidebar({
   productionStrategies,
   isLoadingStrategies,
 }: AnalysisSidebarProps) {
-  if (activeSubTab === 'screening') {
+  if (isScreeningSubTab(activeSubTab)) {
     return (
       <ScreeningFilters
+        mode={screeningMode}
         params={screeningParams}
         onChange={setScreeningParams}
         strategyOptions={productionStrategies}
@@ -85,12 +172,15 @@ function AnalysisSidebar({
 
 interface AnalysisMainContentProps {
   activeSubTab: AnalysisSubTab;
+  screeningMode: ScreeningMode;
   handleRunScreening: () => Promise<void>;
   screeningIsRunning: boolean;
   screeningJob: ScreeningJobResponse | null;
   handleCancelScreening: () => void;
   cancelScreeningPending: boolean;
   screeningJobHistory: ScreeningJobResponse[];
+  showScreeningJobHistory: boolean;
+  onShowScreeningJobHistoryChange: (showHistory: boolean) => void;
   onSelectScreeningJob: (job: ScreeningJobResponse) => void;
   screeningSummary: MarketScreeningResponse['summary'] | undefined;
   screeningMarkets: string[];
@@ -111,12 +201,15 @@ interface AnalysisMainContentProps {
 
 function AnalysisMainContent({
   activeSubTab,
+  screeningMode,
   handleRunScreening,
   screeningIsRunning,
   screeningJob,
   handleCancelScreening,
   cancelScreeningPending,
   screeningJobHistory,
+  showScreeningJobHistory,
+  onShowScreeningJobHistoryChange,
   onSelectScreeningJob,
   screeningSummary,
   screeningMarkets,
@@ -134,8 +227,9 @@ function AnalysisMainContent({
   fundamentalLoading,
   fundamentalError,
 }: AnalysisMainContentProps) {
-  if (activeSubTab === 'screening') {
+  if (isScreeningSubTab(activeSubTab)) {
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
+    const runButtonLabel = screeningMode === 'oracle' ? 'Run Oracle Screening' : 'Run Screening';
 
     return (
       <>
@@ -144,7 +238,7 @@ function AnalysisMainContent({
             {completedScreeningJob ? <ScreeningJobStatusInline job={completedScreeningJob} /> : null}
           </div>
           <Button onClick={() => void handleRunScreening()} disabled={screeningIsRunning}>
-            Run Screening
+            {runButtonLabel}
           </Button>
         </div>
 
@@ -157,8 +251,11 @@ function AnalysisMainContent({
         )}
 
         <ScreeningJobHistoryTable
+          mode={screeningMode}
           jobs={screeningJobHistory}
           isLoading={false}
+          showHistory={showScreeningJobHistory}
+          onShowHistoryChange={onShowScreeningJobHistoryChange}
           selectedJobId={screeningJob?.job_id ?? null}
           onSelectJob={onSelectScreeningJob}
         />
@@ -210,32 +307,57 @@ function AnalysisMainContent({
 export function AnalysisPage() {
   const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
   const screeningParams = useAnalysisStore((state) => state.screeningParams);
+  const oracleScreeningParams = useAnalysisStore((state) => state.oracleScreeningParams);
   const rankingParams = useAnalysisStore((state) => state.rankingParams);
   const fundamentalRankingParams = useAnalysisStore((state) => state.fundamentalRankingParams);
   const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
+  const activeOracleScreeningJobId = useAnalysisStore((state) => state.activeOracleScreeningJobId);
   const screeningResult = useAnalysisStore((state) => state.screeningResult);
+  const oracleScreeningResult = useAnalysisStore((state) => state.oracleScreeningResult);
   const screeningJobHistory = useAnalysisStore((state) => state.screeningJobHistory);
+  const oracleScreeningJobHistory = useAnalysisStore((state) => state.oracleScreeningJobHistory);
   const setActiveSubTab = useAnalysisStore((state) => state.setActiveSubTab);
   const setScreeningParams = useAnalysisStore((state) => state.setScreeningParams);
+  const setOracleScreeningParams = useAnalysisStore((state) => state.setOracleScreeningParams);
   const setRankingParams = useAnalysisStore((state) => state.setRankingParams);
   const setFundamentalRankingParams = useAnalysisStore((state) => state.setFundamentalRankingParams);
   const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
+  const setActiveOracleScreeningJobId = useAnalysisStore((state) => state.setActiveOracleScreeningJobId);
   const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
+  const setOracleScreeningResult = useAnalysisStore((state) => state.setOracleScreeningResult);
   const upsertScreeningJobHistory = useAnalysisStore((state) => state.upsertScreeningJobHistory);
+  const upsertOracleScreeningJobHistory = useAnalysisStore((state) => state.upsertOracleScreeningJobHistory);
 
   const navigate = useNavigate();
   const { setSelectedSymbol } = useChartStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
+  const [screeningJobHistoryVisibility, setScreeningJobHistoryVisibility] = useState<Record<ScreeningMode, boolean>>({
+    standard: true,
+    oracle: true,
+  });
 
   const runScreeningJob = useRunScreeningJob();
+  const runOracleScreeningJob = useRunScreeningJob();
   const screeningJobStatus = useScreeningJobStatus(activeScreeningJobId);
+  const oracleScreeningJobStatus = useScreeningJobStatus(activeOracleScreeningJobId);
   const cancelScreeningJob = useCancelScreeningJob();
+  const cancelOracleScreeningJob = useCancelScreeningJob();
 
   const shouldFetchScreeningResult = screeningJobStatus.data?.status === 'completed';
+  const shouldFetchOracleScreeningResult = oracleScreeningJobStatus.data?.status === 'completed';
   const screeningResultQuery = useScreeningResult(activeScreeningJobId, shouldFetchScreeningResult);
+  const oracleScreeningResultQuery = useScreeningResult(
+    activeOracleScreeningJobId,
+    shouldFetchOracleScreeningResult
+  );
   const screeningJobStatusError = screeningJobStatus.error;
+  const oracleScreeningJobStatusError = oracleScreeningJobStatus.error;
   const isStaleScreeningJob = screeningJobStatusError instanceof ApiError && screeningJobStatusError.status === 404;
+  const isStaleOracleScreeningJob =
+    oracleScreeningJobStatusError instanceof ApiError && oracleScreeningJobStatusError.status === 404;
   const shouldResetStaleScreeningJobId = Boolean(activeScreeningJobId) && isStaleScreeningJob;
+  const shouldResetStaleOracleScreeningJobId =
+    Boolean(activeOracleScreeningJobId) && isStaleOracleScreeningJob;
 
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
   const fundamentalRankingQuery = useFundamentalRanking(
@@ -243,10 +365,24 @@ export function AnalysisPage() {
     activeSubTab === 'fundamentalRanking'
   );
 
-  const productionStrategies = (strategiesData?.strategies ?? [])
-    .filter((strategy) => strategy.category === 'production')
-    .map((strategy) => strategy.name)
-    .sort((a, b) => a.localeCompare(b));
+  const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
+  const standardProductionStrategies = selectStrategyNames(productionStrategies, isStandardScreeningStrategy);
+  const oracleProductionStrategies = selectStrategyNames(productionStrategies, isOracleScreeningStrategy);
+  const activeScreeningMode: ScreeningMode = activeSubTab === 'oracleScreening' ? 'oracle' : 'standard';
+  const activeStrategyOptions =
+    activeSubTab === 'oracleScreening' ? (oracleProductionStrategies ?? []) : (standardProductionStrategies ?? []);
+  const activeScreeningParams = activeSubTab === 'oracleScreening' ? oracleScreeningParams : screeningParams;
+  const activeScreeningResult = activeSubTab === 'oracleScreening' ? oracleScreeningResult : screeningResult;
+  const activeScreeningJobHistory = activeSubTab === 'oracleScreening' ? oracleScreeningJobHistory : screeningJobHistory;
+  const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeScreeningMode];
+
+  useSanitizedScreeningParams(screeningParams, setScreeningParams, standardProductionStrategies, 'standard');
+  useSanitizedScreeningParams(
+    oracleScreeningParams,
+    setOracleScreeningParams,
+    oracleProductionStrategies,
+    'oracle'
+  );
 
   useEffect(() => {
     if (!screeningResultQuery.data) return;
@@ -254,9 +390,19 @@ export function AnalysisPage() {
   }, [screeningResultQuery.data, setScreeningResult]);
 
   useEffect(() => {
+    if (!oracleScreeningResultQuery.data) return;
+    setOracleScreeningResult(oracleScreeningResultQuery.data);
+  }, [oracleScreeningResultQuery.data, setOracleScreeningResult]);
+
+  useEffect(() => {
     if (!runScreeningJob.data) return;
     upsertScreeningJobHistory(runScreeningJob.data);
   }, [runScreeningJob.data, upsertScreeningJobHistory]);
+
+  useEffect(() => {
+    if (!runOracleScreeningJob.data) return;
+    upsertOracleScreeningJobHistory(runOracleScreeningJob.data);
+  }, [runOracleScreeningJob.data, upsertOracleScreeningJobHistory]);
 
   useEffect(() => {
     if (!screeningJobStatus.data) return;
@@ -264,32 +410,86 @@ export function AnalysisPage() {
   }, [screeningJobStatus.data, upsertScreeningJobHistory]);
 
   useEffect(() => {
+    if (!oracleScreeningJobStatus.data) return;
+    upsertOracleScreeningJobHistory(oracleScreeningJobStatus.data);
+  }, [oracleScreeningJobStatus.data, upsertOracleScreeningJobHistory]);
+
+  useEffect(() => {
     if (!cancelScreeningJob.data) return;
     upsertScreeningJobHistory(cancelScreeningJob.data);
   }, [cancelScreeningJob.data, upsertScreeningJobHistory]);
+
+  useEffect(() => {
+    if (!cancelOracleScreeningJob.data) return;
+    upsertOracleScreeningJobHistory(cancelOracleScreeningJob.data);
+  }, [cancelOracleScreeningJob.data, upsertOracleScreeningJobHistory]);
 
   useEffect(() => {
     if (!shouldResetStaleScreeningJobId) return;
     setActiveScreeningJobId(null);
   }, [shouldResetStaleScreeningJobId, setActiveScreeningJobId]);
 
+  useEffect(() => {
+    if (!shouldResetStaleOracleScreeningJobId) return;
+    setActiveOracleScreeningJobId(null);
+  }, [shouldResetStaleOracleScreeningJobId, setActiveOracleScreeningJobId]);
+
   const handleRunScreening = useCallback(async () => {
-    const job = await runScreeningJob.mutateAsync(screeningParams);
+    if (activeScreeningMode === 'oracle') {
+      const job = await runOracleScreeningJob.mutateAsync(
+        sanitizeScreeningParams(oracleScreeningParams, oracleProductionStrategies, 'oracle')
+      );
+      setActiveOracleScreeningJobId(job.job_id);
+      upsertOracleScreeningJobHistory(job);
+      return;
+    }
+
+    const job = await runScreeningJob.mutateAsync(
+      sanitizeScreeningParams(screeningParams, standardProductionStrategies, 'standard')
+    );
     setActiveScreeningJobId(job.job_id);
     upsertScreeningJobHistory(job);
-  }, [runScreeningJob, screeningParams, setActiveScreeningJobId, upsertScreeningJobHistory]);
+  }, [
+    activeScreeningMode,
+    oracleProductionStrategies,
+    oracleScreeningParams,
+    runOracleScreeningJob,
+    runScreeningJob,
+    screeningParams,
+    setActiveOracleScreeningJobId,
+    setActiveScreeningJobId,
+    standardProductionStrategies,
+    upsertOracleScreeningJobHistory,
+    upsertScreeningJobHistory,
+  ]);
 
   const handleSelectScreeningJob = useCallback(
     (job: ScreeningJobResponse) => {
+      if (activeScreeningMode === 'oracle') {
+        setActiveOracleScreeningJobId(job.job_id);
+        return;
+      }
       setActiveScreeningJobId(job.job_id);
     },
-    [setActiveScreeningJobId]
+    [activeScreeningMode, setActiveOracleScreeningJobId, setActiveScreeningJobId]
   );
 
   const handleCancelScreening = useCallback(() => {
+    if (activeScreeningMode === 'oracle') {
+      if (!activeOracleScreeningJobId) return;
+      cancelOracleScreeningJob.mutate(activeOracleScreeningJobId);
+      return;
+    }
+
     if (!activeScreeningJobId) return;
     cancelScreeningJob.mutate(activeScreeningJobId);
-  }, [activeScreeningJobId, cancelScreeningJob]);
+  }, [
+    activeOracleScreeningJobId,
+    activeScreeningJobId,
+    activeScreeningMode,
+    cancelOracleScreeningJob,
+    cancelScreeningJob,
+  ]);
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -297,6 +497,15 @@ export function AnalysisPage() {
       void navigate({ to: '/charts' });
     },
     [setSelectedSymbol, navigate]
+  );
+  const handleScreeningHistoryVisibilityChange = useCallback(
+    (showHistory: boolean) => {
+      setScreeningJobHistoryVisibility((current) => ({
+        ...current,
+        [activeScreeningMode]: showHistory,
+      }));
+    },
+    [activeScreeningMode]
   );
 
   const screeningJob = screeningJobStatus.data ?? runScreeningJob.data ?? null;
@@ -306,6 +515,22 @@ export function AnalysisPage() {
   const screeningError = (runScreeningJob.error ??
     (isStaleScreeningJob ? null : screeningJobStatusError) ??
     screeningResultQuery.error) as Error | null;
+  const oracleScreeningJob = oracleScreeningJobStatus.data ?? runOracleScreeningJob.data ?? null;
+  const oracleScreeningStatus = oracleScreeningJob?.status ?? null;
+  const oracleScreeningIsRunning =
+    runOracleScreeningJob.isPending ||
+    oracleScreeningStatus === 'pending' ||
+    oracleScreeningStatus === 'running';
+  const oracleScreeningError = (runOracleScreeningJob.error ??
+    (isStaleOracleScreeningJob ? null : oracleScreeningJobStatusError) ??
+    oracleScreeningResultQuery.error) as Error | null;
+  const activeScreeningJob = activeSubTab === 'oracleScreening' ? oracleScreeningJob : screeningJob;
+  const activeScreeningIsRunning =
+    activeSubTab === 'oracleScreening' ? oracleScreeningIsRunning : screeningIsRunning;
+  const activeCancelPending =
+    activeSubTab === 'oracleScreening' ? cancelOracleScreeningJob.isPending : cancelScreeningJob.isPending;
+  const activeScreeningError =
+    activeSubTab === 'oracleScreening' ? oracleScreeningError : screeningError;
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -335,13 +560,14 @@ export function AnalysisPage() {
         <div className="w-64 flex-shrink-0">
           <AnalysisSidebar
             activeSubTab={activeSubTab}
-            screeningParams={screeningParams}
+            screeningMode={activeScreeningMode}
+            screeningParams={activeScreeningParams}
             rankingParams={rankingParams}
             fundamentalRankingParams={fundamentalRankingParams}
-            setScreeningParams={setScreeningParams}
+            setScreeningParams={activeSubTab === 'oracleScreening' ? setOracleScreeningParams : setScreeningParams}
             setRankingParams={setRankingParams}
             setFundamentalRankingParams={setFundamentalRankingParams}
-            productionStrategies={productionStrategies}
+            productionStrategies={activeStrategyOptions}
             isLoadingStrategies={isLoadingStrategies}
           />
         </div>
@@ -350,20 +576,23 @@ export function AnalysisPage() {
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <AnalysisMainContent
             activeSubTab={activeSubTab}
+            screeningMode={activeScreeningMode}
             handleRunScreening={handleRunScreening}
-            screeningIsRunning={screeningIsRunning}
-            screeningJob={screeningJob}
+            screeningIsRunning={activeScreeningIsRunning}
+            screeningJob={activeScreeningJob}
             handleCancelScreening={handleCancelScreening}
-            cancelScreeningPending={cancelScreeningJob.isPending}
-            screeningJobHistory={screeningJobHistory}
+            cancelScreeningPending={activeCancelPending}
+            screeningJobHistory={activeScreeningJobHistory}
+            showScreeningJobHistory={activeScreeningJobHistoryVisible}
+            onShowScreeningJobHistoryChange={handleScreeningHistoryVisibilityChange}
             onSelectScreeningJob={handleSelectScreeningJob}
-            screeningSummary={screeningResult?.summary}
-            screeningMarkets={screeningResult?.markets || []}
-            screeningRecentDays={screeningResult?.recentDays || (screeningParams.recentDays ?? 0)}
-            screeningReferenceDate={screeningResult?.referenceDate}
-            screeningResults={screeningResult?.results || []}
-            screeningTableLoading={!screeningResult && screeningIsRunning}
-            screeningError={screeningError}
+            screeningSummary={activeScreeningResult?.summary}
+            screeningMarkets={activeScreeningResult?.markets || []}
+            screeningRecentDays={activeScreeningResult?.recentDays || (activeScreeningParams.recentDays ?? 0)}
+            screeningReferenceDate={activeScreeningResult?.referenceDate}
+            screeningResults={activeScreeningResult?.results || []}
+            screeningTableLoading={!activeScreeningResult && activeScreeningIsRunning}
+            screeningError={activeScreeningError}
             onStockClick={handleStockClick}
             rankingData={rankingQuery.data}
             rankingLoading={rankingQuery.isLoading}

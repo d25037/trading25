@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+StrategyScreeningMode = Literal["standard", "oracle", "unsupported"]
+
 
 class StrategyMetadataResponse(BaseModel):
     """戦略メタデータ"""
@@ -16,6 +18,14 @@ class StrategyMetadataResponse(BaseModel):
     display_name: str | None = Field(default=None, description="表示名")
     description: str | None = Field(default=None, description="説明")
     last_modified: datetime | None = Field(default=None, description="最終更新日時")
+    screening_mode: StrategyScreeningMode = Field(
+        default="unsupported",
+        description="screening availability for analysis UI",
+    )
+    screening_error: str | None = Field(
+        default=None,
+        description="validation error when screening availability cannot be resolved",
+    )
 
 
 class StrategyListResponse(BaseModel):

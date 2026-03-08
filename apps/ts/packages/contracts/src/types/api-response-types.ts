@@ -77,6 +77,7 @@ export interface MarketFundamentalRankingResponse {
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
 export type SortOrder = 'asc' | 'desc';
 export type ScreeningDataSource = 'market' | 'dataset';
+export type ScreeningMode = 'standard' | 'oracle';
 
 export interface MatchedStrategyItem {
   strategyName: string;
@@ -109,6 +110,7 @@ export interface ScreeningSummary {
 export interface MarketScreeningResponse {
   results: ScreeningResultItem[];
   summary: ScreeningSummary;
+  mode?: ScreeningMode;
   markets: string[];
   recentDays: number;
   referenceDate?: string;
@@ -118,6 +120,7 @@ export interface MarketScreeningResponse {
 }
 
 export interface ScreeningJobRequest {
+  mode?: ScreeningMode;
   markets?: string;
   strategies?: string;
   recentDays?: number;
@@ -136,6 +139,7 @@ export interface ScreeningJobResponse {
   started_at?: string | null;
   completed_at?: string | null;
   error?: string | null;
+  mode?: ScreeningMode;
   markets: string;
   strategies?: string | null;
   recentDays: number;

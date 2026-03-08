@@ -4,9 +4,19 @@ import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { MarketScreeningResponse, ScreeningJobResponse, ScreeningParams } from '@/types/screening';
 
-export type AnalysisSubTab = 'screening' | 'ranking' | 'fundamentalRanking';
+export type AnalysisSubTab = 'screening' | 'oracleScreening' | 'ranking' | 'fundamentalRanking';
 
 export const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
+  mode: 'standard',
+  markets: 'prime',
+  recentDays: 10,
+  sortBy: 'matchedDate',
+  order: 'desc',
+  limit: 50,
+};
+
+export const DEFAULT_ORACLE_SCREENING_PARAMS: ScreeningParams = {
+  mode: 'oracle',
   markets: 'prime',
   recentDays: 10,
   sortBy: 'matchedDate',
@@ -31,39 +41,55 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 interface AnalysisState {
   activeSubTab: AnalysisSubTab;
   screeningParams: ScreeningParams;
+  oracleScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
   activeScreeningJobId: string | null;
+  activeOracleScreeningJobId: string | null;
   screeningResult: MarketScreeningResponse | null;
+  oracleScreeningResult: MarketScreeningResponse | null;
   screeningJobHistory: ScreeningJobResponse[];
+  oracleScreeningJobHistory: ScreeningJobResponse[];
   setActiveSubTab: (tab: AnalysisSubTab) => void;
   setScreeningParams: (params: ScreeningParams) => void;
+  setOracleScreeningParams: (params: ScreeningParams) => void;
   setRankingParams: (params: RankingParams) => void;
   setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
   setActiveScreeningJobId: (jobId: string | null) => void;
+  setActiveOracleScreeningJobId: (jobId: string | null) => void;
   setScreeningResult: (result: MarketScreeningResponse | null) => void;
+  setOracleScreeningResult: (result: MarketScreeningResponse | null) => void;
   upsertScreeningJobHistory: (job: ScreeningJobResponse) => void;
+  upsertOracleScreeningJobHistory: (job: ScreeningJobResponse) => void;
 }
 
 export type AnalysisPersistedState = Pick<
   AnalysisState,
   | 'activeSubTab'
   | 'screeningParams'
+  | 'oracleScreeningParams'
   | 'rankingParams'
   | 'fundamentalRankingParams'
   | 'activeScreeningJobId'
+  | 'activeOracleScreeningJobId'
   | 'screeningResult'
+  | 'oracleScreeningResult'
   | 'screeningJobHistory'
+  | 'oracleScreeningJobHistory'
 >;
 
 export const createInitialAnalysisState = (): AnalysisPersistedState => ({
   activeSubTab: 'screening',
   screeningParams: DEFAULT_SCREENING_PARAMS,
+  oracleScreeningParams: DEFAULT_ORACLE_SCREENING_PARAMS,
   rankingParams: DEFAULT_RANKING_PARAMS,
   fundamentalRankingParams: DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   activeScreeningJobId: null,
+  activeOracleScreeningJobId: null,
   screeningResult: null,
+  oracleScreeningResult: null,
   screeningJobHistory: [],
+  oracleScreeningJobHistory: [],
 });
 
 const MAX_SCREENING_JOB_HISTORY = 30;
@@ -78,16 +104,27 @@ export const useAnalysisStore = create<AnalysisState>()(
       ...createInitialAnalysisState(),
       setActiveSubTab: (tab) => set({ activeSubTab: tab }),
       setScreeningParams: (params) => set({ screeningParams: params }),
+      setOracleScreeningParams: (params) => set({ oracleScreeningParams: params }),
       setRankingParams: (params) => set({ rankingParams: params }),
       setFundamentalRankingParams: (params) => set({ fundamentalRankingParams: params }),
       setActiveScreeningJobId: (jobId) => set({ activeScreeningJobId: jobId }),
+      setActiveOracleScreeningJobId: (jobId) => set({ activeOracleScreeningJobId: jobId }),
       setScreeningResult: (result) => set({ screeningResult: result }),
+      setOracleScreeningResult: (result) => set({ oracleScreeningResult: result }),
       upsertScreeningJobHistory: (job) =>
         set((state) => {
           const withoutCurrent = state.screeningJobHistory.filter((item) => item.job_id !== job.job_id);
           const merged = [job, ...withoutCurrent].sort(sortByCreatedAtDesc);
           return {
             screeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
+          };
+        }),
+      upsertOracleScreeningJobHistory: (job) =>
+        set((state) => {
+          const withoutCurrent = state.oracleScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
+          const merged = [job, ...withoutCurrent].sort(sortByCreatedAtDesc);
+          return {
+            oracleScreeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
           };
         }),
     }),
@@ -97,11 +134,15 @@ export const useAnalysisStore = create<AnalysisState>()(
       partialize: (state) => ({
         activeSubTab: state.activeSubTab,
         screeningParams: state.screeningParams,
+        oracleScreeningParams: state.oracleScreeningParams,
         rankingParams: state.rankingParams,
         fundamentalRankingParams: state.fundamentalRankingParams,
         activeScreeningJobId: state.activeScreeningJobId,
+        activeOracleScreeningJobId: state.activeOracleScreeningJobId,
         screeningResult: state.screeningResult,
+        oracleScreeningResult: state.oracleScreeningResult,
         screeningJobHistory: state.screeningJobHistory,
+        oracleScreeningJobHistory: state.oracleScreeningJobHistory,
       }),
     }
   )

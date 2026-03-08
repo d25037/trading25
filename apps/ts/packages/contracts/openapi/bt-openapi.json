@@ -5790,6 +5790,15 @@
             "title": "Markets",
             "type": "array"
           },
+          "mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "oracle"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "order": {
             "enum": [
               "asc",
@@ -8384,6 +8393,15 @@
             "title": "Markets",
             "type": "string"
           },
+          "mode": {
+            "default": "standard",
+            "enum": [
+              "standard",
+              "oracle"
+            ],
+            "title": "Mode",
+            "type": "string"
+          },
           "order": {
             "default": "desc",
             "enum": [
@@ -8493,6 +8511,16 @@
             ],
             "description": "ステータスメッセージ",
             "title": "Message"
+          },
+          "mode": {
+            "default": "standard",
+            "description": "screening mode",
+            "enum": [
+              "standard",
+              "oracle"
+            ],
+            "title": "Mode",
+            "type": "string"
           },
           "order": {
             "description": "並び順",
@@ -11142,6 +11170,29 @@
           "name": {
             "description": "戦略名（カテゴリ/名前）",
             "title": "Name",
+            "type": "string"
+          },
+          "screening_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "validation error when screening availability cannot be resolved",
+            "title": "Screening Error"
+          },
+          "screening_mode": {
+            "default": "unsupported",
+            "description": "screening availability for analysis UI",
+            "enum": [
+              "standard",
+              "oracle",
+              "unsupported"
+            ],
+            "title": "Screening Mode",
             "type": "string"
           }
         },

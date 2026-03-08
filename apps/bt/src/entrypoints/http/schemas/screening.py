@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+ScreeningMode = Literal["standard", "oracle"]
 ScreeningSortBy = Literal[
     "bestStrategyScore",
     "matchedDate",
@@ -59,6 +60,7 @@ class MarketScreeningResponse(BaseModel):
 
     results: list[ScreeningResultItem]
     summary: ScreeningSummary
+    mode: ScreeningMode = Field(default="standard")
     markets: list[str]
     recentDays: int
     referenceDate: str | None = None

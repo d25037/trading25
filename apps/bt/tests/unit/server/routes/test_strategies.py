@@ -350,12 +350,70 @@ class TestListStrategies:
                 mtime=datetime(2026, 2, 16),
             ),
         ]
+        mock_config_loader.load_strategy_config.side_effect = [
+            {"entry_filter_params": {}, "exit_trigger_params": {}},
+            {
+                "shared_config": {"current_session_round_trip_oracle": True},
+                "entry_filter_params": {
+                    "oracle_index_open_gap_regime": {"enabled": True},
+                },
+                "exit_trigger_params": {},
+            },
+        ]
+        mock_config_loader.merge_shared_config.side_effect = [
+            {"dataset": "primeExTopix500"},
+            {"current_session_round_trip_oracle": True},
+        ]
 
         resp = client.get("/api/strategies")
         assert resp.status_code == 200
         data = resp.json()
         assert data["total"] == 2
         assert data["strategies"][0]["name"] == "production/range_break_v16"
+        assert data["strategies"][0]["screening_mode"] == "standard"
+        assert data["strategies"][0]["screening_error"] is None
+        assert data["strategies"][1]["screening_mode"] == "oracle"
+        assert data["strategies"][1]["screening_error"] is None
+
+    def test_exit_only_oracle_filter_stays_standard(self, client, mock_config_loader):
+        mock_config_loader.get_strategy_metadata.return_value = [
+            SimpleNamespace(
+                name="production/exit_only_oracle",
+                category="production",
+                mtime=datetime(2026, 2, 17),
+            ),
+        ]
+        mock_config_loader.load_strategy_config.return_value = {
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            "exit_trigger_params": {
+                "oracle_index_open_gap_regime": {"enabled": True},
+            },
+        }
+        mock_config_loader.merge_shared_config.return_value = {"dataset": "primeExTopix500"}
+
+        resp = client.get("/api/strategies")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["strategies"][0]["screening_mode"] == "standard"
+        assert data["strategies"][0]["screening_error"] is None
+
+    def test_broken_strategy_returns_screening_error(self, client, mock_config_loader):
+        mock_config_loader.get_strategy_metadata.return_value = [
+            SimpleNamespace(
+                name="production/broken",
+                category="production",
+                mtime=datetime(2026, 2, 17),
+            ),
+        ]
+        mock_config_loader.load_strategy_config.side_effect = RuntimeError("bad yaml")
+
+        resp = client.get("/api/strategies")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["strategies"][0]["screening_mode"] == "unsupported"
+        assert data["strategies"][0]["screening_error"] == "bad yaml"
 
     def test_error_500(self, client, mock_config_loader):
         mock_config_loader.get_strategy_metadata.side_effect = RuntimeError("boom")

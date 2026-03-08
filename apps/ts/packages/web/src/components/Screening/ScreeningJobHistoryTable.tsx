@@ -1,12 +1,15 @@
-import { useId, useState } from 'react';
+import { useId } from 'react';
 import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import type { ScreeningJobResponse } from '@/types/screening';
+import type { ScreeningJobResponse, ScreeningMode } from '@/types/screening';
 
 interface ScreeningJobHistoryTableProps {
+  mode: ScreeningMode;
   jobs: ScreeningJobResponse[] | undefined;
   isLoading: boolean;
+  showHistory: boolean;
+  onShowHistoryChange: (showHistory: boolean) => void;
   selectedJobId?: string | null;
   onSelectJob: (job: ScreeningJobResponse) => void;
 }
@@ -30,9 +33,17 @@ function truncateJobId(jobId: string): string {
   return jobId.length <= 8 ? jobId : `${jobId.slice(0, 8)}...`;
 }
 
-export function ScreeningJobHistoryTable({ jobs, isLoading, selectedJobId, onSelectJob }: ScreeningJobHistoryTableProps) {
-  const [showHistory, setShowHistory] = useState(true);
+export function ScreeningJobHistoryTable({
+  mode,
+  jobs,
+  isLoading,
+  showHistory,
+  onShowHistoryChange,
+  selectedJobId,
+  onSelectJob,
+}: ScreeningJobHistoryTableProps) {
   const switchId = useId();
+  const allStrategiesLabel = mode === 'oracle' ? '(all oracle production)' : '(all standard production)';
 
   const columns: JobHistoryColumn<ScreeningJobResponse>[] = [
     {
@@ -48,7 +59,7 @@ export function ScreeningJobHistoryTable({ jobs, isLoading, selectedJobId, onSel
     {
       key: 'strategies',
       header: 'Strategies',
-      render: (job) => <span className="text-xs truncate max-w-[220px]">{job.strategies ?? '(all production)'}</span>,
+      render: (job) => <span className="text-xs truncate max-w-[220px]">{job.strategies ?? allStrategiesLabel}</span>,
     },
     {
       key: 'createdAt',
@@ -65,7 +76,7 @@ export function ScreeningJobHistoryTable({ jobs, isLoading, selectedJobId, onSel
           <Label htmlFor={switchId} className="cursor-pointer text-xs text-muted-foreground">
             Show History
           </Label>
-          <Switch id={switchId} checked={showHistory} onCheckedChange={setShowHistory} />
+          <Switch id={switchId} checked={showHistory} onCheckedChange={onShowHistoryChange} />
         </div>
       </div>
 
