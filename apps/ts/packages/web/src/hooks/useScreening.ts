@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { HttpRequestError } from '@trading25/api-clients/base/http-client';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { analyticsClient } from '@/lib/analytics-client';
@@ -56,6 +56,34 @@ function toJobRequest(params: ScreeningParams): ScreeningJobRequest {
   };
 }
 
+function parseScreeningJobPayload(rawData: string, jobId: string | null): ScreeningJobResponse | null {
+  try {
+    const payload = JSON.parse(rawData) as ScreeningJobResponse;
+    if (typeof payload.job_id !== 'string' || typeof payload.status !== 'string') {
+      return null;
+    }
+    return payload;
+  } catch (error) {
+    logger.error('Failed to parse screening SSE payload', { error: String(error), jobId });
+    return null;
+  }
+}
+
+function updateScreeningJobCache(queryClient: QueryClient, payload: ScreeningJobResponse): void {
+  queryClient.setQueryData(screeningKeys.job(payload.job_id), payload);
+}
+
+function closeScreeningJobStream(
+  cleanup: () => void,
+  setIsConnected: (isConnected: boolean) => void,
+  disposed: boolean
+): void {
+  cleanup();
+  if (!disposed) {
+    setIsConnected(false);
+  }
+}
+
 export function useRunScreeningJob() {
   const queryClient = useQueryClient();
 
@@ -108,22 +136,14 @@ export function useScreeningJobSSE(jobId: string | null): ScreeningJobSSEState {
       eventSourceRef.current = es;
 
       const handleJobEvent = (rawData: string) => {
-        try {
-          const payload = JSON.parse(rawData) as ScreeningJobResponse;
-          if (typeof payload.job_id !== 'string' || typeof payload.status !== 'string') {
-            return;
-          }
+        const payload = parseScreeningJobPayload(rawData, jobId);
+        if (!payload) {
+          return;
+        }
 
-          queryClient.setQueryData(screeningKeys.job(payload.job_id), payload);
-
-          if (isTerminalScreeningStatus(payload.status)) {
-            cleanup();
-            if (!disposed) {
-              setIsConnected(false);
-            }
-          }
-        } catch (error) {
-          logger.error('Failed to parse screening SSE payload', { error: String(error), jobId });
+        updateScreeningJobCache(queryClient, payload);
+        if (isTerminalScreeningStatus(payload.status)) {
+          closeScreeningJobStream(cleanup, setIsConnected, disposed);
         }
       };
 

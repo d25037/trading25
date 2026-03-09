@@ -33,8 +33,8 @@ import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from 
 import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
 import type {
   MarketScreeningResponse,
-  ScreeningMode,
   ScreeningJobResponse,
+  ScreeningMode,
   ScreeningParams,
   ScreeningResultItem,
 } from '@/types/screening';
@@ -106,7 +106,10 @@ function selectStrategyNames(
     return undefined;
   }
 
-  return strategies.filter(predicate).map((strategy) => strategy.name).sort((left, right) => left.localeCompare(right));
+  return strategies
+    .filter(predicate)
+    .map((strategy) => strategy.name)
+    .sort((left, right) => left.localeCompare(right));
 }
 
 function useSanitizedScreeningParams(
@@ -305,6 +308,156 @@ function AnalysisMainContent({
     </>
   );
 }
+
+interface ScreeningModeControllerArgs {
+  mode: ScreeningMode;
+  params: ScreeningParams;
+  setParams: (params: ScreeningParams) => void;
+  allowedStrategies: string[] | undefined;
+  activeJobId: string | null;
+  setActiveJobId: (jobId: string | null) => void;
+  result: MarketScreeningResponse | null;
+  setResult: (result: MarketScreeningResponse) => void;
+  history: ScreeningJobResponse[];
+  upsertHistory: (job: ScreeningJobResponse) => void;
+}
+
+interface ScreeningModeController {
+  allowedStrategies: string[];
+  params: ScreeningParams;
+  setParams: (params: ScreeningParams) => void;
+  result: MarketScreeningResponse | null;
+  history: ScreeningJobResponse[];
+  job: ScreeningJobResponse | null;
+  isRunning: boolean;
+  error: Error | null;
+  cancelPending: boolean;
+  handleRun: () => Promise<void>;
+  handleSelectJob: (job: ScreeningJobResponse) => void;
+  handleCancel: () => void;
+}
+
+function isStaleScreeningJobError(error: unknown): boolean {
+  return error instanceof ApiError && error.status === 404;
+}
+
+function resolveScreeningError(
+  runError: Error | null,
+  staleJob: boolean,
+  statusError: Error | null,
+  resultError: Error | null
+): Error | null {
+  return (runError ?? (staleJob ? null : statusError) ?? resultError) as Error | null;
+}
+
+function useScreeningResultSync(
+  result: MarketScreeningResponse | undefined,
+  setResult: (result: MarketScreeningResponse) => void
+): void {
+  useEffect(() => {
+    if (!result) {
+      return;
+    }
+    setResult(result);
+  }, [result, setResult]);
+}
+
+function useScreeningHistorySync(
+  entries: Array<ScreeningJobResponse | null | undefined>,
+  upsertHistory: (job: ScreeningJobResponse) => void
+): void {
+  const [runEntry, statusEntry, cancelEntry] = entries;
+
+  useEffect(() => {
+    for (const entry of [runEntry, statusEntry, cancelEntry]) {
+      if (entry) {
+        upsertHistory(entry);
+      }
+    }
+  }, [cancelEntry, runEntry, statusEntry, upsertHistory]);
+}
+
+function useStaleScreeningJobReset(shouldReset: boolean, setActiveJobId: (jobId: string | null) => void): void {
+  useEffect(() => {
+    if (!shouldReset) {
+      return;
+    }
+    setActiveJobId(null);
+  }, [setActiveJobId, shouldReset]);
+}
+
+function useScreeningModeController({
+  mode,
+  params,
+  setParams,
+  allowedStrategies,
+  activeJobId,
+  setActiveJobId,
+  result,
+  setResult,
+  history,
+  upsertHistory,
+}: ScreeningModeControllerArgs): ScreeningModeController {
+  const runScreeningJob = useRunScreeningJob();
+  const cancelScreeningJob = useCancelScreeningJob();
+  const screeningSse = useScreeningJobSSE(activeJobId);
+  const screeningJobStatus = useScreeningJobStatus(activeJobId, screeningSse.isConnected);
+  const shouldFetchResult = screeningJobStatus.data?.status === 'completed';
+  const screeningResultQuery = useScreeningResult(activeJobId, shouldFetchResult);
+  const statusError = screeningJobStatus.error as Error | null;
+  const staleJob = isStaleScreeningJobError(statusError);
+
+  useSanitizedScreeningParams(params, setParams, allowedStrategies, mode);
+  useScreeningResultSync(screeningResultQuery.data, setResult);
+  useScreeningHistorySync([runScreeningJob.data, screeningJobStatus.data, cancelScreeningJob.data], upsertHistory);
+  useStaleScreeningJobReset(Boolean(activeJobId) && staleJob, setActiveJobId);
+
+  const job = screeningJobStatus.data ?? runScreeningJob.data ?? null;
+  const status = job?.status ?? null;
+  const isRunning = runScreeningJob.isPending || status === 'pending' || status === 'running';
+  const error = resolveScreeningError(
+    runScreeningJob.error as Error | null,
+    staleJob,
+    statusError,
+    screeningResultQuery.error as Error | null
+  );
+
+  const handleRun = useCallback(async () => {
+    const job = await runScreeningJob.mutateAsync(sanitizeScreeningParams(params, allowedStrategies, mode));
+    setActiveJobId(job.job_id);
+    upsertHistory(job);
+  }, [allowedStrategies, mode, params, runScreeningJob, setActiveJobId, upsertHistory]);
+
+  const handleSelectJob = useCallback(
+    (job: ScreeningJobResponse) => {
+      setActiveJobId(job.job_id);
+    },
+    [setActiveJobId]
+  );
+
+  const handleCancel = useCallback(() => {
+    if (!activeJobId) {
+      return;
+    }
+    cancelScreeningJob.mutate(activeJobId);
+  }, [activeJobId, cancelScreeningJob]);
+
+  return {
+    allowedStrategies: allowedStrategies ?? [],
+    params,
+    setParams,
+    result,
+    history,
+    job,
+    isRunning,
+    error,
+    cancelPending: cancelScreeningJob.isPending,
+    handleRun,
+    handleSelectJob,
+    handleCancel,
+  };
+}
+
 export function AnalysisPage() {
   const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
   const screeningParams = useAnalysisStore((state) => state.screeningParams);
@@ -337,31 +490,6 @@ export function AnalysisPage() {
     oracle: true,
   });
 
-  const runScreeningJob = useRunScreeningJob();
-  const runOracleScreeningJob = useRunScreeningJob();
-  const screeningSse = useScreeningJobSSE(activeScreeningJobId);
-  const oracleScreeningSse = useScreeningJobSSE(activeOracleScreeningJobId);
-  const screeningJobStatus = useScreeningJobStatus(activeScreeningJobId, screeningSse.isConnected);
-  const oracleScreeningJobStatus = useScreeningJobStatus(activeOracleScreeningJobId, oracleScreeningSse.isConnected);
-  const cancelScreeningJob = useCancelScreeningJob();
-  const cancelOracleScreeningJob = useCancelScreeningJob();
-
-  const shouldFetchScreeningResult = screeningJobStatus.data?.status === 'completed';
-  const shouldFetchOracleScreeningResult = oracleScreeningJobStatus.data?.status === 'completed';
-  const screeningResultQuery = useScreeningResult(activeScreeningJobId, shouldFetchScreeningResult);
-  const oracleScreeningResultQuery = useScreeningResult(
-    activeOracleScreeningJobId,
-    shouldFetchOracleScreeningResult
-  );
-  const screeningJobStatusError = screeningJobStatus.error;
-  const oracleScreeningJobStatusError = oracleScreeningJobStatus.error;
-  const isStaleScreeningJob = screeningJobStatusError instanceof ApiError && screeningJobStatusError.status === 404;
-  const isStaleOracleScreeningJob =
-    oracleScreeningJobStatusError instanceof ApiError && oracleScreeningJobStatusError.status === 404;
-  const shouldResetStaleScreeningJobId = Boolean(activeScreeningJobId) && isStaleScreeningJob;
-  const shouldResetStaleOracleScreeningJobId =
-    Boolean(activeOracleScreeningJobId) && isStaleOracleScreeningJob;
-
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
   const fundamentalRankingQuery = useFundamentalRanking(
     fundamentalRankingParams,
@@ -372,127 +500,32 @@ export function AnalysisPage() {
   const standardProductionStrategies = selectStrategyNames(productionStrategies, isStandardScreeningStrategy);
   const oracleProductionStrategies = selectStrategyNames(productionStrategies, isOracleScreeningStrategy);
   const activeScreeningMode: ScreeningMode = activeSubTab === 'oracleScreening' ? 'oracle' : 'standard';
-  const activeStrategyOptions =
-    activeSubTab === 'oracleScreening' ? (oracleProductionStrategies ?? []) : (standardProductionStrategies ?? []);
-  const activeScreeningParams = activeSubTab === 'oracleScreening' ? oracleScreeningParams : screeningParams;
-  const activeScreeningResult = activeSubTab === 'oracleScreening' ? oracleScreeningResult : screeningResult;
-  const activeScreeningJobHistory = activeSubTab === 'oracleScreening' ? oracleScreeningJobHistory : screeningJobHistory;
+  const standardScreening = useScreeningModeController({
+    mode: 'standard',
+    params: screeningParams,
+    setParams: setScreeningParams,
+    allowedStrategies: standardProductionStrategies,
+    activeJobId: activeScreeningJobId,
+    setActiveJobId: setActiveScreeningJobId,
+    result: screeningResult,
+    setResult: setScreeningResult,
+    history: screeningJobHistory,
+    upsertHistory: upsertScreeningJobHistory,
+  });
+  const oracleScreening = useScreeningModeController({
+    mode: 'oracle',
+    params: oracleScreeningParams,
+    setParams: setOracleScreeningParams,
+    allowedStrategies: oracleProductionStrategies,
+    activeJobId: activeOracleScreeningJobId,
+    setActiveJobId: setActiveOracleScreeningJobId,
+    result: oracleScreeningResult,
+    setResult: setOracleScreeningResult,
+    history: oracleScreeningJobHistory,
+    upsertHistory: upsertOracleScreeningJobHistory,
+  });
+  const activeScreening = activeScreeningMode === 'oracle' ? oracleScreening : standardScreening;
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeScreeningMode];
-
-  useSanitizedScreeningParams(screeningParams, setScreeningParams, standardProductionStrategies, 'standard');
-  useSanitizedScreeningParams(
-    oracleScreeningParams,
-    setOracleScreeningParams,
-    oracleProductionStrategies,
-    'oracle'
-  );
-
-  useEffect(() => {
-    if (!screeningResultQuery.data) return;
-    setScreeningResult(screeningResultQuery.data);
-  }, [screeningResultQuery.data, setScreeningResult]);
-
-  useEffect(() => {
-    if (!oracleScreeningResultQuery.data) return;
-    setOracleScreeningResult(oracleScreeningResultQuery.data);
-  }, [oracleScreeningResultQuery.data, setOracleScreeningResult]);
-
-  useEffect(() => {
-    if (!runScreeningJob.data) return;
-    upsertScreeningJobHistory(runScreeningJob.data);
-  }, [runScreeningJob.data, upsertScreeningJobHistory]);
-
-  useEffect(() => {
-    if (!runOracleScreeningJob.data) return;
-    upsertOracleScreeningJobHistory(runOracleScreeningJob.data);
-  }, [runOracleScreeningJob.data, upsertOracleScreeningJobHistory]);
-
-  useEffect(() => {
-    if (!screeningJobStatus.data) return;
-    upsertScreeningJobHistory(screeningJobStatus.data);
-  }, [screeningJobStatus.data, upsertScreeningJobHistory]);
-
-  useEffect(() => {
-    if (!oracleScreeningJobStatus.data) return;
-    upsertOracleScreeningJobHistory(oracleScreeningJobStatus.data);
-  }, [oracleScreeningJobStatus.data, upsertOracleScreeningJobHistory]);
-
-  useEffect(() => {
-    if (!cancelScreeningJob.data) return;
-    upsertScreeningJobHistory(cancelScreeningJob.data);
-  }, [cancelScreeningJob.data, upsertScreeningJobHistory]);
-
-  useEffect(() => {
-    if (!cancelOracleScreeningJob.data) return;
-    upsertOracleScreeningJobHistory(cancelOracleScreeningJob.data);
-  }, [cancelOracleScreeningJob.data, upsertOracleScreeningJobHistory]);
-
-  useEffect(() => {
-    if (!shouldResetStaleScreeningJobId) return;
-    setActiveScreeningJobId(null);
-  }, [shouldResetStaleScreeningJobId, setActiveScreeningJobId]);
-
-  useEffect(() => {
-    if (!shouldResetStaleOracleScreeningJobId) return;
-    setActiveOracleScreeningJobId(null);
-  }, [shouldResetStaleOracleScreeningJobId, setActiveOracleScreeningJobId]);
-
-  const handleRunScreening = useCallback(async () => {
-    if (activeScreeningMode === 'oracle') {
-      const job = await runOracleScreeningJob.mutateAsync(
-        sanitizeScreeningParams(oracleScreeningParams, oracleProductionStrategies, 'oracle')
-      );
-      setActiveOracleScreeningJobId(job.job_id);
-      upsertOracleScreeningJobHistory(job);
-      return;
-    }
-
-    const job = await runScreeningJob.mutateAsync(
-      sanitizeScreeningParams(screeningParams, standardProductionStrategies, 'standard')
-    );
-    setActiveScreeningJobId(job.job_id);
-    upsertScreeningJobHistory(job);
-  }, [
-    activeScreeningMode,
-    oracleProductionStrategies,
-    oracleScreeningParams,
-    runOracleScreeningJob,
-    runScreeningJob,
-    screeningParams,
-    setActiveOracleScreeningJobId,
-    setActiveScreeningJobId,
-    standardProductionStrategies,
-    upsertOracleScreeningJobHistory,
-    upsertScreeningJobHistory,
-  ]);
-
-  const handleSelectScreeningJob = useCallback(
-    (job: ScreeningJobResponse) => {
-      if (activeScreeningMode === 'oracle') {
-        setActiveOracleScreeningJobId(job.job_id);
-        return;
-      }
-      setActiveScreeningJobId(job.job_id);
-    },
-    [activeScreeningMode, setActiveOracleScreeningJobId, setActiveScreeningJobId]
-  );
-
-  const handleCancelScreening = useCallback(() => {
-    if (activeScreeningMode === 'oracle') {
-      if (!activeOracleScreeningJobId) return;
-      cancelOracleScreeningJob.mutate(activeOracleScreeningJobId);
-      return;
-    }
-
-    if (!activeScreeningJobId) return;
-    cancelScreeningJob.mutate(activeScreeningJobId);
-  }, [
-    activeOracleScreeningJobId,
-    activeScreeningJobId,
-    activeScreeningMode,
-    cancelOracleScreeningJob,
-    cancelScreeningJob,
-  ]);
 
   const handleStockClick = useCallback(
     (code: string) => {
@@ -510,30 +543,6 @@ export function AnalysisPage() {
     },
     [activeScreeningMode]
   );
-
-  const screeningJob = screeningJobStatus.data ?? runScreeningJob.data ?? null;
-  const screeningStatus = screeningJob?.status ?? null;
-  const screeningIsRunning =
-    runScreeningJob.isPending || screeningStatus === 'pending' || screeningStatus === 'running';
-  const screeningError = (runScreeningJob.error ??
-    (isStaleScreeningJob ? null : screeningJobStatusError) ??
-    screeningResultQuery.error) as Error | null;
-  const oracleScreeningJob = oracleScreeningJobStatus.data ?? runOracleScreeningJob.data ?? null;
-  const oracleScreeningStatus = oracleScreeningJob?.status ?? null;
-  const oracleScreeningIsRunning =
-    runOracleScreeningJob.isPending ||
-    oracleScreeningStatus === 'pending' ||
-    oracleScreeningStatus === 'running';
-  const oracleScreeningError = (runOracleScreeningJob.error ??
-    (isStaleOracleScreeningJob ? null : oracleScreeningJobStatusError) ??
-    oracleScreeningResultQuery.error) as Error | null;
-  const activeScreeningJob = activeSubTab === 'oracleScreening' ? oracleScreeningJob : screeningJob;
-  const activeScreeningIsRunning =
-    activeSubTab === 'oracleScreening' ? oracleScreeningIsRunning : screeningIsRunning;
-  const activeCancelPending =
-    activeSubTab === 'oracleScreening' ? cancelOracleScreeningJob.isPending : cancelScreeningJob.isPending;
-  const activeScreeningError =
-    activeSubTab === 'oracleScreening' ? oracleScreeningError : screeningError;
 
   return (
     <div className="flex h-full flex-col p-4">
@@ -564,13 +573,13 @@ export function AnalysisPage() {
           <AnalysisSidebar
             activeSubTab={activeSubTab}
             screeningMode={activeScreeningMode}
-            screeningParams={activeScreeningParams}
+            screeningParams={activeScreening.params}
             rankingParams={rankingParams}
             fundamentalRankingParams={fundamentalRankingParams}
-            setScreeningParams={activeSubTab === 'oracleScreening' ? setOracleScreeningParams : setScreeningParams}
+            setScreeningParams={activeScreening.setParams}
             setRankingParams={setRankingParams}
             setFundamentalRankingParams={setFundamentalRankingParams}
-            productionStrategies={activeStrategyOptions}
+            productionStrategies={activeScreening.allowedStrategies}
             isLoadingStrategies={isLoadingStrategies}
           />
         </div>
@@ -580,22 +589,22 @@ export function AnalysisPage() {
           <AnalysisMainContent
             activeSubTab={activeSubTab}
             screeningMode={activeScreeningMode}
-            handleRunScreening={handleRunScreening}
-            screeningIsRunning={activeScreeningIsRunning}
-            screeningJob={activeScreeningJob}
-            handleCancelScreening={handleCancelScreening}
-            cancelScreeningPending={activeCancelPending}
-            screeningJobHistory={activeScreeningJobHistory}
+            handleRunScreening={activeScreening.handleRun}
+            screeningIsRunning={activeScreening.isRunning}
+            screeningJob={activeScreening.job}
+            handleCancelScreening={activeScreening.handleCancel}
+            cancelScreeningPending={activeScreening.cancelPending}
+            screeningJobHistory={activeScreening.history}
             showScreeningJobHistory={activeScreeningJobHistoryVisible}
             onShowScreeningJobHistoryChange={handleScreeningHistoryVisibilityChange}
-            onSelectScreeningJob={handleSelectScreeningJob}
-            screeningSummary={activeScreeningResult?.summary}
-            screeningMarkets={activeScreeningResult?.markets || []}
-            screeningRecentDays={activeScreeningResult?.recentDays || (activeScreeningParams.recentDays ?? 0)}
-            screeningReferenceDate={activeScreeningResult?.referenceDate}
-            screeningResults={activeScreeningResult?.results || []}
-            screeningTableLoading={!activeScreeningResult && activeScreeningIsRunning}
-            screeningError={activeScreeningError}
+            onSelectScreeningJob={activeScreening.handleSelectJob}
+            screeningSummary={activeScreening.result?.summary}
+            screeningMarkets={activeScreening.result?.markets || []}
+            screeningRecentDays={activeScreening.result?.recentDays || (activeScreening.params.recentDays ?? 0)}
+            screeningReferenceDate={activeScreening.result?.referenceDate}
+            screeningResults={activeScreening.result?.results || []}
+            screeningTableLoading={!activeScreening.result && activeScreening.isRunning}
+            screeningError={activeScreening.error}
             onStockClick={handleStockClick}
             rankingData={rankingQuery.data}
             rankingLoading={rankingQuery.isLoading}
