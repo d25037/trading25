@@ -1089,6 +1089,18 @@
             "description": "Execution time in seconds",
             "title": "Execution Time"
           },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned market snapshot identifier",
+            "title": "Market Snapshot Id"
+          },
           "payload": {
             "anyOf": [
               {
@@ -4382,12 +4394,8 @@
             "description": "相対OHLCオプション"
           },
           "source": {
-            "default": "dataset",
-            "description": "データソース",
-            "enum": [
-              "market",
-              "dataset"
-            ],
+            "default": "market",
+            "description": "データソース ('market' or dataset snapshot名)",
             "title": "Source",
             "type": "string"
           },
@@ -6638,11 +6646,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース",
-            "enum": [
-              "market",
-              "dataset"
-            ],
+            "description": "データソース ('market' or dataset snapshot名)",
             "title": "Source",
             "type": "string"
           },
@@ -8825,6 +8829,18 @@
             "description": "Execution semantics/policy version",
             "title": "Execution Policy Version"
           },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned market snapshot identifier",
+            "title": "Market Snapshot Id"
+          },
           "parent_run_id": {
             "anyOf": [
               {
@@ -8920,6 +8936,18 @@
             ],
             "description": "Execution semantics/policy version",
             "title": "Execution Policy Version"
+          },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned market snapshot identifier",
+            "title": "Market Snapshot Id"
           },
           "parameters": {
             "additionalProperties": true,
@@ -10575,6 +10603,97 @@
           "type"
         ],
         "title": "SignalSpec",
+        "type": "object"
+      },
+      "SnapshotResolveResponse": {
+        "description": "Resolved snapshot metadata.",
+        "properties": {
+          "backend": {
+            "description": "resolved storage backend",
+            "title": "Backend",
+            "type": "string"
+          },
+          "compatibility_db_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "compatibility SQLite path",
+            "title": "Compatibility Db Path"
+          },
+          "duckdb_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "DuckDB path",
+            "title": "Duckdb Path"
+          },
+          "manifest_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "manifest path",
+            "title": "Manifest Path"
+          },
+          "plane": {
+            "description": "解決された plane",
+            "enum": [
+              "market",
+              "dataset"
+            ],
+            "title": "Plane",
+            "type": "string"
+          },
+          "primary_path": {
+            "description": "primary readable artifact path",
+            "title": "Primary Path",
+            "type": "string"
+          },
+          "requested_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "要求時の snapshot identifier",
+            "title": "Requested Id"
+          },
+          "root_path": {
+            "description": "snapshot root path",
+            "title": "Root Path",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "canonical snapshot identifier",
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plane",
+          "snapshot_id",
+          "backend",
+          "root_path",
+          "primary_path"
+        ],
+        "title": "SnapshotResolveResponse",
         "type": "object"
       },
       "src__server__schemas__dataset__DateRange": {
@@ -23514,6 +23633,99 @@
         "summary": "Get Signal Schema",
         "tags": [
           "Signals"
+        ]
+      }
+    },
+    "/api/snapshots/resolve": {
+      "get": {
+        "description": "Resolve one logical snapshot contract for market and dataset planes.",
+        "operationId": "resolve_snapshot_api_snapshots_resolve_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "plane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "market",
+                "dataset"
+              ],
+              "title": "Plane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snapshot_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResolveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Resolve market or dataset snapshot",
+        "tags": [
+          "Snapshots"
         ]
       }
     },

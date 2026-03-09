@@ -2269,6 +2269,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/snapshots/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve market or dataset snapshot
+         * @description Resolve one logical snapshot contract for market and dataset planes.
+         */
+        get: operations["resolve_snapshot_api_snapshots_resolve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/strategies": {
         parameters: {
             query?: never;
@@ -3088,6 +3108,11 @@ export interface components {
              * @description Execution time in seconds
              */
             execution_time?: number | null;
+            /**
+             * Market Snapshot Id
+             * @description Pinned market snapshot identifier
+             */
+            market_snapshot_id?: string | null;
             /**
              * Payload
              * @description Original engine-specific payload
@@ -4761,11 +4786,10 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース
-             * @default dataset
-             * @enum {string}
+             * @description データソース ('market' or dataset snapshot名)
+             * @default market
              */
-            source: "market" | "dataset";
+            source: string;
             /**
              * Start Date
              * @description 開始日
@@ -5929,11 +5953,10 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース
+             * @description データソース ('market' or dataset snapshot名)
              * @default market
-             * @enum {string}
              */
-            source: "market" | "dataset";
+            source: string;
             /**
              * Start Date
              * @description 開始日
@@ -6779,6 +6802,11 @@ export interface components {
              */
             execution_policy_version?: string | null;
             /**
+             * Market Snapshot Id
+             * @description Pinned market snapshot identifier
+             */
+            market_snapshot_id?: string | null;
+            /**
              * Parent Run Id
              * @description Parent run identifier for lineage
              */
@@ -6829,6 +6857,11 @@ export interface components {
              * @description Execution semantics/policy version
              */
             execution_policy_version?: string | null;
+            /**
+             * Market Snapshot Id
+             * @description Pinned market snapshot identifier
+             */
+            market_snapshot_id?: string | null;
             /**
              * Parameters
              * @description Resolved run parameters
@@ -7645,6 +7678,58 @@ export interface components {
              * @description シグナルタイプ
              */
             type: string;
+        };
+        /**
+         * SnapshotResolveResponse
+         * @description Resolved snapshot metadata.
+         */
+        SnapshotResolveResponse: {
+            /**
+             * Backend
+             * @description resolved storage backend
+             */
+            backend: string;
+            /**
+             * Compatibility Db Path
+             * @description compatibility SQLite path
+             */
+            compatibility_db_path?: string | null;
+            /**
+             * Duckdb Path
+             * @description DuckDB path
+             */
+            duckdb_path?: string | null;
+            /**
+             * Manifest Path
+             * @description manifest path
+             */
+            manifest_path?: string | null;
+            /**
+             * Plane
+             * @description 解決された plane
+             * @enum {string}
+             */
+            plane: "market" | "dataset";
+            /**
+             * Primary Path
+             * @description primary readable artifact path
+             */
+            primary_path: string;
+            /**
+             * Requested Id
+             * @description 要求時の snapshot identifier
+             */
+            requested_id?: string | null;
+            /**
+             * Root Path
+             * @description snapshot root path
+             */
+            root_path: string;
+            /**
+             * Snapshot Id
+             * @description canonical snapshot identifier
+             */
+            snapshot_id: string;
         };
         /** DateRange */
         src__server__schemas__dataset__DateRange: {
@@ -16118,6 +16203,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolve_snapshot_api_snapshots_resolve_get: {
+        parameters: {
+            query: {
+                plane: "market" | "dataset";
+                snapshot_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResolveResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description Internal Server Error */

@@ -109,7 +109,7 @@ class TestSignalService:
         with pytest.raises(ValueError, match="Phase 1では未対応"):
             service.compute_signal("per", {}, "entry", data)
 
-    @patch("src.infrastructure.external_api.market_client.MarketAPIClient")
+    @patch("src.application.services.signal_service.MarketAPIClient")
     def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
         reader = MarketDbReader(market_db_path)
         try:
@@ -121,7 +121,7 @@ class TestSignalService:
         finally:
             reader.close()
 
-    @patch("src.infrastructure.external_api.dataset.DatasetAPIClient")
+    @patch("src.application.services.signal_service.DatasetAPIClient")
     def test_load_dataset_source(self, MockDatasetClient):
         service = SignalService()
         mock_client = MagicMock()

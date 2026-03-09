@@ -25,6 +25,11 @@ from src.shared.paths import find_strategy_path, get_backtest_attribution_dir
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.run_contracts import build_strategy_run_spec, normalize_config_override
+from src.application.services.snapshot_resolver import (
+    SnapshotResolver,
+    resolve_dataset_snapshot_id,
+    resolve_market_snapshot_id,
+)
 
 _SAFE_PATH_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -108,11 +113,14 @@ class BacktestAttributionService:
         job_status = getattr(job, "status", None) if job is not None else None
         status_raw = getattr(job_status, "value", job_status)
         status_value = str(status_raw) if status_raw else ""
-        market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
-        if market_timeseries_dir:
-            market_db_path = str(Path(market_timeseries_dir) / "market.duckdb")
-        else:
-            market_db_path = str(getattr(settings, "market_db_path", "") or "")
+        market_db_path = str(getattr(settings, "market_db_path", "") or "")
+        market_snapshot_id = resolve_market_snapshot_id()
+        dataset_snapshot_id = resolve_dataset_snapshot_id(dataset_name) if dataset_name else None
+        try:
+            snapshot_resolver = SnapshotResolver.from_settings(settings)
+            market_db_path = snapshot_resolver.resolve_market().primary_path
+        except Exception as e:
+            logger.debug(f"market snapshot 解決に失敗（保存メタはfallbackで継続）: {e}")
 
         return {
             "saved_at": now.isoformat(),
@@ -133,12 +141,14 @@ class BacktestAttributionService:
                 "shapley_top_n": shapley_top_n,
                 "shapley_permutations": shapley_permutations,
                 "random_seed": random_seed,
+                "market_snapshot_id": market_snapshot_id,
             },
             "databases": {
                 "market_db": self._db_entry(market_db_path),
                 "portfolio_db": self._db_entry(settings.portfolio_db_path),
                 "dataset_base_dir": self._db_entry(settings.dataset_base_path),
                 "dataset_name": dataset_name,
+                "dataset_snapshot_id": dataset_snapshot_id,
             },
             "result": result,
         }

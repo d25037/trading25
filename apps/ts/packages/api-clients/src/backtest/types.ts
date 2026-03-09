@@ -43,6 +43,7 @@ export interface RunSpec {
   strategy_fingerprint?: string | null;
   dataset_name?: string | null;
   dataset_snapshot_id?: string | null;
+  market_snapshot_id?: string | null;
   engine_family: EngineFamily;
   execution_policy_version?: string | null;
   parent_run_id?: string | null;
@@ -57,6 +58,7 @@ export interface RunMetadata {
   strategy_name: string;
   dataset_name?: string | null;
   dataset_snapshot_id?: string | null;
+  market_snapshot_id?: string | null;
   engine_family: EngineFamily;
   execution_policy_version?: string | null;
   parent_run_id?: string | null;
@@ -94,6 +96,7 @@ export interface CanonicalExecutionResult {
   status: string;
   dataset_name?: string | null;
   dataset_snapshot_id?: string | null;
+  market_snapshot_id?: string | null;
   execution_policy_version?: string | null;
   execution_time?: number | null;
   summary_metrics?: CanonicalExecutionMetrics | null;
@@ -811,7 +814,7 @@ export interface RelativeOHLCOptions {
 
 export interface OHLCVResampleRequest {
   stock_code: string;
-  source?: 'market' | 'dataset';
+  source?: string;
   timeframe?: Timeframe;
   start_date?: string;
   end_date?: string;

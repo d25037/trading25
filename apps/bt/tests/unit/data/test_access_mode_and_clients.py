@@ -15,10 +15,14 @@ from src.infrastructure.data_access import clients, mode
 @pytest.fixture(autouse=True)
 def _reset_access_caches() -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
     clients._dataset_db_cache.clear()
-    clients._market_reader = None
+    clients._snapshot_resolver = None
+    clients._snapshot_resolver_key = None
+    clients._market_reader_cache.clear()
     yield
     clients._dataset_db_cache.clear()
-    clients._market_reader = None
+    clients._snapshot_resolver = None
+    clients._snapshot_resolver_key = None
+    clients._market_reader_cache.clear()
 
 
 def _ns(**kwargs: Any) -> SimpleNamespace:
@@ -478,6 +482,35 @@ def test_direct_market_client_get_topix(monkeypatch: pytest.MonkeyPatch) -> None
     assert list(df.columns) == ["Open", "High", "Low", "Close"]
     assert "WHERE date >= ? AND date <= ?" in captured["sql"]
     assert captured["params"] == ("2024-01-01", "2024-12-31")
+
+
+def test_direct_market_client_get_stock_ohlcv(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeMarketReader:
+        def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                {
+                    "date": "2024-01-04",
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.5,
+                    "volume": 1000,
+                }
+            ]
+
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda _snapshot_id=None: _FakeMarketReader())
+
+    market_client = clients.DirectMarketClient()
+    df = market_client.get_stock_ohlcv("7203", "2024-01-01", "2024-12-31")
+
+    assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert "FROM stock_data" in captured["sql"]
+    assert "ORDER BY date" in captured["sql"]
+    assert captured["params"] == ("7203", "72030", "2024-01-01", "2024-12-31")
 
 
 def test_direct_market_client_get_topix_empty(monkeypatch: pytest.MonkeyPatch) -> None:
