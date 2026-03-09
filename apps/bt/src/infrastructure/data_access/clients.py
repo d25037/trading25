@@ -21,11 +21,12 @@ from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.shared.config.settings import get_settings
 from src.infrastructure.db.market.dataset_db import DatasetDb
+from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
 from .mode import should_use_direct_db
 
-_dataset_db_cache: dict[str, DatasetDb] = {}
+_dataset_db_cache: dict[str, DatasetDb | DatasetSnapshotReader] = {}
 _dataset_db_lock = threading.Lock()
 
 _market_reader: MarketDbReader | None = None
@@ -45,9 +46,30 @@ def _rows_to_records(
     ]
 
 
-def _resolve_dataset_db(dataset_name: str) -> DatasetDb:
+def _resolve_dataset_db(dataset_name: str) -> DatasetDb | DatasetSnapshotReader:
     settings = get_settings()
     stem = Path(dataset_name).stem
+    snapshot_dir = Path(settings.dataset_base_path) / stem
+    duckdb_path = snapshot_dir / "dataset.duckdb"
+    compatibility_db_path = snapshot_dir / "dataset.db"
+    if duckdb_path.exists():
+        cache_key = str(snapshot_dir.resolve())
+        with _dataset_db_lock:
+            db = _dataset_db_cache.get(cache_key)
+            if db is None:
+                db = DatasetSnapshotReader(str(snapshot_dir))
+                _dataset_db_cache[cache_key] = db
+            return db
+
+    if compatibility_db_path.exists():
+        cache_key = str(compatibility_db_path.resolve())
+        with _dataset_db_lock:
+            db = _dataset_db_cache.get(cache_key)
+            if db is None:
+                db = DatasetDb(str(compatibility_db_path))
+                _dataset_db_cache[cache_key] = db
+            return db
+
     db_path = Path(settings.dataset_base_path) / f"{stem}.db"
     cache_key = str(db_path.resolve())
 

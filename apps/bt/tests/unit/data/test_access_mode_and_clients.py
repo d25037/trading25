@@ -88,6 +88,51 @@ def test_resolve_dataset_db_uses_cache(
     assert len(init_calls) == 1
 
 
+def test_resolve_dataset_db_prefers_snapshot_reader(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    snapshot_dir = tmp_path / "sample"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("duckdb", encoding="utf-8")
+
+    init_calls: list[str] = []
+
+    class _FakeSnapshotReader:
+        def __init__(self, snapshot_path: str) -> None:
+            init_calls.append(snapshot_path)
+
+    monkeypatch.setattr(clients, "DatasetSnapshotReader", _FakeSnapshotReader)
+
+    resolved = clients._resolve_dataset_db("sample")
+
+    assert isinstance(resolved, _FakeSnapshotReader)
+    assert init_calls == [str(snapshot_dir)]
+
+
+def test_resolve_dataset_db_uses_snapshot_compatibility_db_when_duckdb_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    snapshot_dir = tmp_path / "sample"
+    snapshot_dir.mkdir()
+    compatibility_db_path = snapshot_dir / "dataset.db"
+    compatibility_db_path.write_text("", encoding="utf-8")
+
+    init_calls: list[str] = []
+
+    class _FakeDatasetDb:
+        def __init__(self, db_path: str) -> None:
+            init_calls.append(db_path)
+
+    monkeypatch.setattr(clients, "DatasetDb", _FakeDatasetDb)
+
+    resolved = clients._resolve_dataset_db("sample")
+
+    assert isinstance(resolved, _FakeDatasetDb)
+    assert init_calls == [str(compatibility_db_path)]
+
+
 def test_resolve_market_reader_raises_when_missing(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:

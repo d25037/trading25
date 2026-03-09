@@ -7,9 +7,8 @@ DatasetDb の Row オブジェクトを Pydantic スキーマに変換する。
 
 from __future__ import annotations
 
+from collections.abc import Mapping, Sequence
 from typing import Any
-
-from sqlalchemy import Row
 
 from src.entrypoints.http.schemas.dataset_data import (
     IndexListItem,
@@ -23,7 +22,7 @@ from src.entrypoints.http.schemas.dataset_data import (
 )
 
 
-def rows_to_ohlcv(rows: list[Row[Any]]) -> list[OHLCVRecord]:
+def rows_to_ohlcv(rows: Sequence[Any]) -> list[OHLCVRecord]:
     """Row → OHLCVRecord 変換"""
     return [
         OHLCVRecord(
@@ -38,7 +37,7 @@ def rows_to_ohlcv(rows: list[Row[Any]]) -> list[OHLCVRecord]:
     ]
 
 
-def rows_to_ohlc(rows: list[Row[Any]]) -> list[OHLCRecord]:
+def rows_to_ohlc(rows: Sequence[Any]) -> list[OHLCRecord]:
     """Row → OHLCRecord 変換（TOPIX/Indices 用、volume なし）"""
     return [
         OHLCRecord(
@@ -52,7 +51,7 @@ def rows_to_ohlc(rows: list[Row[Any]]) -> list[OHLCRecord]:
     ]
 
 
-def rows_to_stock_list(rows: list[Row[Any]]) -> list[StockListItem]:
+def rows_to_stock_list(rows: Sequence[Any]) -> list[StockListItem]:
     """Row → StockListItem 変換"""
     return [
         StockListItem(
@@ -65,7 +64,7 @@ def rows_to_stock_list(rows: list[Row[Any]]) -> list[StockListItem]:
     ]
 
 
-def rows_to_index_list(rows: list[Row[Any]]) -> list[IndexListItem]:
+def rows_to_index_list(rows: Sequence[Any]) -> list[IndexListItem]:
     """Row → IndexListItem 変換"""
     return [
         IndexListItem(
@@ -79,7 +78,7 @@ def rows_to_index_list(rows: list[Row[Any]]) -> list[IndexListItem]:
     ]
 
 
-def rows_to_margin(rows: list[Row[Any]]) -> list[MarginRecord]:
+def rows_to_margin(rows: Sequence[Any]) -> list[MarginRecord]:
     """Row → MarginRecord 変換"""
     return [
         MarginRecord(
@@ -91,7 +90,7 @@ def rows_to_margin(rows: list[Row[Any]]) -> list[MarginRecord]:
     ]
 
 
-def rows_to_margin_list(rows: list[Row[Any]]) -> list[MarginListItem]:
+def rows_to_margin_list(rows: Sequence[Any]) -> list[MarginListItem]:
     """Row → MarginListItem 変換"""
     return [
         MarginListItem(
@@ -106,7 +105,7 @@ def rows_to_margin_list(rows: list[Row[Any]]) -> list[MarginListItem]:
     ]
 
 
-def rows_to_statements(rows: list[Row[Any]]) -> list[StatementRecord]:
+def rows_to_statements(rows: Sequence[Any]) -> list[StatementRecord]:
     """Row → StatementRecord 変換"""
     return [
         StatementRecord(
@@ -141,7 +140,7 @@ def rows_to_statements(rows: list[Row[Any]]) -> list[StatementRecord]:
     ]
 
 
-def rows_to_sector_with_count(rows: list[Row[Any]]) -> list[SectorWithCount]:
+def rows_to_sector_with_count(rows: Sequence[Any]) -> list[SectorWithCount]:
     """Row → SectorWithCount 変換"""
     return [
         SectorWithCount(sectorName=r[0], count=r[1])
@@ -149,16 +148,16 @@ def rows_to_sector_with_count(rows: list[Row[Any]]) -> list[SectorWithCount]:
     ]
 
 
-def batch_to_ohlcv(batch: dict[str, list[Row[Any]]]) -> dict[str, list[OHLCVRecord]]:
+def batch_to_ohlcv(batch: Mapping[str, Sequence[Any]]) -> dict[str, list[OHLCVRecord]]:
     """Batch → {code: [OHLCVRecord]} 変換"""
     return {code: rows_to_ohlcv(rows) for code, rows in batch.items()}
 
 
-def batch_to_margin(batch: dict[str, list[Row[Any]]]) -> dict[str, list[MarginRecord]]:
+def batch_to_margin(batch: Mapping[str, Sequence[Any]]) -> dict[str, list[MarginRecord]]:
     """Batch → {code: [MarginRecord]} 変換"""
     return {code: rows_to_margin(rows) for code, rows in batch.items()}
 
 
-def batch_to_statements(batch: dict[str, list[Row[Any]]]) -> dict[str, list[StatementRecord]]:
+def batch_to_statements(batch: Mapping[str, Sequence[Any]]) -> dict[str, list[StatementRecord]]:
     """Batch → {code: [StatementRecord]} 変換"""
     return {code: rows_to_statements(rows) for code, rows in batch.items()}
