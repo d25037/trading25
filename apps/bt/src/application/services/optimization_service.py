@@ -5,7 +5,9 @@ ParameterOptimizationEngineの非同期ラッパー（Grid Search）
 """
 
 import asyncio
+import sys
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
@@ -14,6 +16,10 @@ from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
 from src.application.services.run_contracts import build_strategy_run_spec
+from src.shared.config.settings import get_settings
+
+_WORKER_MODULE = "src.application.workers.optimization_worker"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 
 class OptimizationService:
@@ -23,10 +29,18 @@ class OptimizationService:
         self,
         manager: JobManager | None = None,
         max_workers: int = 1,
+        worker_poll_interval_seconds: float = 0.5,
+        worker_timeout_seconds: int | None = None,
     ) -> None:
         self._manager = manager or job_manager
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
         self._config_loader = ConfigLoader()
+        self._worker_poll_interval_seconds = max(worker_poll_interval_seconds, 0.1)
+        self._worker_timeout_seconds = (
+            worker_timeout_seconds
+            if worker_timeout_seconds is not None
+            else get_settings().optimization_job_timeout_seconds
+        )
 
     # ============================================
     # Grid Search Optimization
@@ -61,51 +75,57 @@ class OptimizationService:
 
     async def _run_optimization(self, job_id: str, strategy_name: str) -> None:
         """グリッドサーチ最適化を実行（バックグラウンド）"""
+        process: asyncio.subprocess.Process | None = None
         try:
             await self._manager.acquire_slot()
 
             await self._manager.update_job_status(
                 job_id,
-                JobStatus.RUNNING,
-                message="最適化を開始しています...",
+                JobStatus.PENDING,
+                message="最適化 worker を起動しています...",
                 progress=0.0,
             )
 
             logger.info(f"最適化開始: {job_id} (戦略: {strategy_name})")
 
-            loop = asyncio.get_running_loop()
-            result = await loop.run_in_executor(
-                self._executor,
-                self._execute_optimization_sync,
-                strategy_name,
-            )
-
-            # 結果をJobInfoに格納
-            job = self._manager.get_job(job_id)
-            if job is not None:
-                job.best_score = result.get("best_score")
-                job.best_params = result.get("best_params")
-                job.worst_score = result.get("worst_score")
-                job.worst_params = result.get("worst_params")
-                job.total_combinations = result.get("total_combinations")
-                job.html_path = result.get("html_path")
-
+            process = await self._start_worker_process(job_id, strategy_name)
+            exit_code = await self._wait_for_worker_completion(job_id, process)
+            job = await self._manager.reload_job_from_storage(job_id, notify=True)
+            if job is None or job.status in (
+                JobStatus.COMPLETED,
+                JobStatus.FAILED,
+                JobStatus.CANCELLED,
+            ):
+                return
+            if exit_code == 0:
+                await self._manager.update_job_status(
+                    job_id,
+                    JobStatus.FAILED,
+                    message="最適化 worker が結果を保存せず終了しました",
+                    error="worker_exited_without_terminal_state",
+                )
+                return
+            if self._manager.is_cancel_requested(job_id):
+                logger.info(f"最適化 worker を停止しました: {job_id}")
+                return
             await self._manager.update_job_status(
                 job_id,
-                JobStatus.COMPLETED,
-                message="最適化完了",
-                progress=1.0,
+                JobStatus.FAILED,
+                message="最適化 worker が異常終了しました",
+                error=f"worker_exit_code={exit_code}",
             )
-
-            logger.info(f"最適化完了: {job_id}")
 
         except asyncio.CancelledError:
             logger.info(f"最適化がキャンセルされました: {job_id}")
-            await self._manager.update_job_status(
-                job_id,
-                JobStatus.CANCELLED,
-                message="最適化がキャンセルされました",
-            )
+            if process is not None:
+                await self._terminate_worker_process(process)
+            await self._manager.reload_job_from_storage(job_id, notify=True)
+            if not self._manager.is_cancel_requested(job_id):
+                await self._manager.update_job_status(
+                    job_id,
+                    JobStatus.CANCELLED,
+                    message="最適化がキャンセルされました",
+                )
 
         except Exception as e:
             logger.exception(f"最適化エラー: {job_id}")
@@ -118,6 +138,62 @@ class OptimizationService:
 
         finally:
             self._manager.release_slot()
+
+    async def _start_worker_process(
+        self,
+        job_id: str,
+        strategy_name: str,
+    ) -> asyncio.subprocess.Process:
+        return await asyncio.create_subprocess_exec(
+            *self._build_worker_command(job_id, strategy_name),
+            cwd=str(_PROJECT_ROOT),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+    def _build_worker_command(self, job_id: str, strategy_name: str) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            _WORKER_MODULE,
+            "--job-id",
+            job_id,
+            "--strategy-name",
+            strategy_name,
+            "--timeout-seconds",
+            str(self._worker_timeout_seconds),
+        ]
+
+    async def _wait_for_worker_completion(
+        self,
+        job_id: str,
+        process: asyncio.subprocess.Process,
+    ) -> int:
+        while True:
+            try:
+                exit_code = await asyncio.wait_for(
+                    process.wait(),
+                    timeout=self._worker_poll_interval_seconds,
+                )
+                await self._manager.reload_job_from_storage(job_id, notify=True)
+                return exit_code
+            except asyncio.TimeoutError:
+                await self._manager.reload_job_from_storage(job_id, notify=True)
+
+    async def _terminate_worker_process(
+        self,
+        process: asyncio.subprocess.Process,
+        *,
+        timeout_seconds: float = 3.0,
+    ) -> None:
+        if process.returncode is not None:
+            return
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
 
     def _execute_optimization_sync(self, strategy_name: str) -> dict[str, Any]:
         """

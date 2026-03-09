@@ -38,7 +38,7 @@ class PortfolioDb(BaseDbAccess):
         """Drizzle 互換テーブル作成（IF NOT EXISTS）"""
         portfolio_meta.create_all(self.engine, checkfirst=True)
         self._ensure_job_columns()
-        self._set_metadata("schema_version", "1.3.0")
+        self._set_metadata("schema_version", "1.4.0")
 
     def _ensure_job_columns(self) -> None:
         """既存 jobs テーブルに不足カラムを追加する。"""
@@ -47,6 +47,12 @@ class PortfolioDb(BaseDbAccess):
             ("run_metadata_json", "TEXT"),
             ("canonical_result_json", "TEXT"),
             ("artifact_index_json", "TEXT"),
+            ("lease_owner", "TEXT"),
+            ("lease_expires_at", "TEXT"),
+            ("last_heartbeat_at", "TEXT"),
+            ("cancel_requested_at", "TEXT"),
+            ("cancel_reason", "TEXT"),
+            ("timeout_at", "TEXT"),
         )
         with self.engine.begin() as conn:
             existing_columns = {
@@ -116,6 +122,12 @@ class PortfolioDb(BaseDbAccess):
         worst_params_json: str | None,
         total_combinations: int | None,
         updated_at: str,
+        lease_owner: str | None = None,
+        lease_expires_at: str | None = None,
+        last_heartbeat_at: str | None = None,
+        cancel_requested_at: str | None = None,
+        cancel_reason: str | None = None,
+        timeout_at: str | None = None,
     ) -> None:
         with self.engine.begin() as conn:
             conn.execute(
@@ -131,6 +143,12 @@ class PortfolioDb(BaseDbAccess):
                     created_at=created_at,
                     started_at=started_at,
                     completed_at=completed_at,
+                    lease_owner=lease_owner,
+                    lease_expires_at=lease_expires_at,
+                    last_heartbeat_at=last_heartbeat_at,
+                    cancel_requested_at=cancel_requested_at,
+                    cancel_reason=cancel_reason,
+                    timeout_at=timeout_at,
                     run_spec_json=run_spec_json,
                     run_metadata_json=run_metadata_json,
                     result_json=result_json,

@@ -2868,6 +2868,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -4912,6 +4914,48 @@ export interface components {
             count: number;
         };
         /**
+         * JobExecutionControl
+         * @description ジョブの durable execution control 状態
+         */
+        JobExecutionControl: {
+            /**
+             * Cancel Reason
+             * @description キャンセル理由
+             */
+            cancel_reason?: string | null;
+            /**
+             * Cancel Requested
+             * @description キャンセル要求が durable に記録されているか
+             * @default false
+             */
+            cancel_requested: boolean;
+            /**
+             * Cancel Requested At
+             * @description キャンセル要求受付時刻
+             */
+            cancel_requested_at?: string | null;
+            /**
+             * Last Heartbeat At
+             * @description 最後の heartbeat 受信時刻
+             */
+            last_heartbeat_at?: string | null;
+            /**
+             * Lease Expires At
+             * @description 現在の lease の失効時刻
+             */
+            lease_expires_at?: string | null;
+            /**
+             * Lease Owner
+             * @description 現在の execution lease owner
+             */
+            lease_owner?: string | null;
+            /**
+             * Timeout At
+             * @description 実行タイムアウト時刻
+             */
+            timeout_at?: string | null;
+        };
+        /**
          * JobStatus
          * @description ジョブステータス
          * @enum {string}
@@ -5202,6 +5246,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -6205,6 +6251,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Html Path
              * @description 結果HTMLパス
@@ -6965,6 +7013,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -7179,6 +7229,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID

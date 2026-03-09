@@ -191,11 +191,7 @@ class ScreeningJobService:
                 self._manager.release_slot()
 
     async def shutdown(self) -> None:
-        """アクティブジョブを停止し executor を終了"""
-        for job in self._manager.list_jobs(limit=1000, job_types={"screening"}):
-            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
-                await self._manager.cancel_job(job.job_id)
-
+        """Executor を終了する。job state の遷移は manager/app 側で扱う。"""
         if not bool(getattr(self._executor, "_broken", False)) and not bool(
             getattr(self._executor, "_shutdown", False)
         ):
