@@ -1,5 +1,6 @@
 """OpenAPI スキーマ互換性テスト"""
 
+import pytest
 from fastapi.testclient import TestClient
 
 from src.entrypoints.http.app import create_app
@@ -104,6 +105,18 @@ class TestOpenAPISchema:
             .get("$ref")
         )
         assert path_batch_ref == "#/components/schemas/OHLCVRecord"
+
+    @pytest.mark.parametrize(
+        "path",
+        [
+            "/api/analytics/screening/jobs/{job_id}/stream",
+            "/api/db/sync/jobs/{jobId}/stream",
+        ],
+    )
+    def test_sse_endpoints_use_text_event_stream_for_200(self, path: str) -> None:
+        operation = self.schema["paths"][path]["get"]
+        content = operation["responses"]["200"]["content"]
+        assert list(content.keys()) == ["text/event-stream"]
 
 
 class TestErrorResponseSchema:

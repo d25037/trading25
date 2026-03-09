@@ -31,6 +31,7 @@ const mockCancelSyncState = {
 
 const mockUseSyncJobStatus = vi.fn();
 const mockUseSyncFetchDetails = vi.fn();
+const mockUseSyncSSE = vi.fn();
 const mockUseActiveSyncJob = vi.fn();
 const mockUseDbStats = vi.fn();
 const mockUseDbValidation = vi.fn();
@@ -40,8 +41,9 @@ vi.mock('@/hooks/useDbSync', () => ({
   useStartSync: () => mockStartSyncState,
   useCancelSync: () => mockCancelSyncState,
   useActiveSyncJob: () => mockUseActiveSyncJob(),
-  useSyncJobStatus: (jobId: string | null) => mockUseSyncJobStatus(jobId),
-  useSyncFetchDetails: (jobId: string | null) => mockUseSyncFetchDetails(jobId),
+  useSyncSSE: (jobId: string | null) => mockUseSyncSSE(jobId),
+  useSyncJobStatus: (jobId: string | null, sseConnected?: boolean) => mockUseSyncJobStatus(jobId, sseConnected),
+  useSyncFetchDetails: (jobId: string | null, sseConnected?: boolean) => mockUseSyncFetchDetails(jobId, sseConnected),
   useDbStats: (options?: unknown) => mockUseDbStats(options),
   useDbValidation: (options?: unknown) => mockUseDbValidation(options),
   useRefreshStocks: () => mockUseRefreshStocks(),
@@ -57,6 +59,9 @@ beforeEach(() => {
     data: null,
     isLoading: false,
     error: null,
+  });
+  mockUseSyncSSE.mockReturnValue({
+    isConnected: false,
   });
   mockUseSyncFetchDetails.mockReturnValue({
     data: null,
@@ -221,7 +226,7 @@ describe('SettingsPage', () => {
 
     render(<SettingsPage />);
 
-    expect(mockUseSyncJobStatus).toHaveBeenCalledWith('stored-job-1');
+    expect(mockUseSyncJobStatus).toHaveBeenCalledWith('stored-job-1', false);
   });
 
   it('restores active job id from backend active job endpoint', () => {
@@ -238,7 +243,7 @@ describe('SettingsPage', () => {
 
     render(<SettingsPage />);
 
-    expect(mockUseSyncJobStatus).toHaveBeenCalledWith('active-job-1');
+    expect(mockUseSyncJobStatus).toHaveBeenCalledWith('active-job-1', false);
   });
 
   it('clears persisted active job id when status endpoint returns 404', async () => {

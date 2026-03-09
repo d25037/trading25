@@ -22,6 +22,7 @@ const mockRunScreeningJob = vi.fn().mockResolvedValue({
   job_id: 'job-1',
   status: 'pending',
 });
+const mockUseScreeningJobSSE = vi.fn();
 const mockUseScreeningJobStatus = vi.fn();
 const mockUseScreeningResult = vi.fn();
 const mockCancelScreeningJob = vi.fn();
@@ -100,6 +101,7 @@ vi.mock('@/hooks/useScreening', () => ({
     data: null,
     error: null,
   }),
+  useScreeningJobSSE: (jobId: string | null) => mockUseScreeningJobSSE(jobId),
   useScreeningJobStatus: (...args: unknown[]) => mockUseScreeningJobStatus(...args),
   useScreeningResult: (...args: unknown[]) => mockUseScreeningResult(...args),
   useCancelScreeningJob: () => ({
@@ -188,9 +190,13 @@ describe('AnalysisPage', () => {
     mockChartStore.setSelectedSymbol.mockReset();
     mockScreeningFilters.mockClear();
     mockScreeningTable.mockClear();
+    mockUseScreeningJobSSE.mockReset();
     mockRunScreeningJob.mockResolvedValue({
       job_id: 'job-1',
       status: 'pending',
+    });
+    mockUseScreeningJobSSE.mockReturnValue({
+      isConnected: false,
     });
     mockUseScreeningJobStatus.mockReturnValue({
       data: null,

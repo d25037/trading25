@@ -6,8 +6,12 @@ Complex Analytics Routes
 
 from __future__ import annotations
 
+import asyncio
+import json
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from loguru import logger
+from sse_starlette.sse import EventSourceResponse
 
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
 from src.entrypoints.http.schemas.backtest import JobStatus
@@ -241,6 +245,51 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
     )
 
 
+async def _screening_job_event_generator(job_id: str):
+    queue = screening_job_manager.subscribe(job_id)
+    try:
+        job = screening_job_manager.get_job(job_id)
+        if job is None:
+            yield {
+                "event": "error",
+                "data": json.dumps(
+                    {"job_id": job_id, "message": "ジョブが見つかりません"},
+                    ensure_ascii=False,
+                ),
+            }
+            return
+
+        yield {
+            "event": "snapshot",
+            "data": _build_screening_job_response(job).model_dump_json(),
+        }
+        if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            return
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                yield {"event": "heartbeat", "data": "{}"}
+                continue
+
+            if event is None:
+                return
+
+            latest_job = screening_job_manager.get_job(job_id)
+            if latest_job is None:
+                return
+
+            yield {
+                "event": "job",
+                "data": _build_screening_job_response(latest_job).model_dump_json(),
+            }
+            if latest_job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                return
+    finally:
+        screening_job_manager.unsubscribe(job_id, queue)
+
+
 @router.post(
     "/api/analytics/screening/jobs",
     response_model=ScreeningJobResponse,
@@ -281,6 +330,23 @@ async def create_screening_job(
 async def get_screening_job(job_id: str) -> ScreeningJobResponse:
     """Screening ジョブ状態を取得"""
     return _build_screening_job_response(_get_screening_job_or_404(job_id))
+
+
+@router.get(
+    "/api/analytics/screening/jobs/{job_id}/stream",
+    operation_id="stream_screening_job",
+    response_class=EventSourceResponse,
+    responses={
+        200: {
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            "description": "Screening job events stream",
+        }
+    },
+    summary="Stream screening job events",
+)
+async def stream_screening_job(job_id: str) -> EventSourceResponse:
+    _get_screening_job_or_404(job_id)
+    return EventSourceResponse(_screening_job_event_generator(job_id))
 
 
 @router.post(

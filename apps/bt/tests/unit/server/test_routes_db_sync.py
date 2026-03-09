@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import os
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,7 @@ from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes import db as db_routes
 from src.entrypoints.http.schemas.db import SyncDataPlaneRequest, SyncRequest
 from src.entrypoints.http.schemas.job import JobStatus
+from src.application.services.sync_stream_manager import SyncStreamEvent
 from src.infrastructure.db.market.market_db import MarketDb
 
 
@@ -307,6 +309,64 @@ class TestSyncRoutes:
         resp = client.get("/api/db/sync/jobs/nonexistent-id/fetch-details")
         assert resp.status_code == 404
 
+    def test_stream_sync_job_success(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_job") as mock_get_job,
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.subscribe") as mock_subscribe,
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.unsubscribe") as mock_unsubscribe,
+        ):
+            job = MagicMock()
+            job.job_id = "job-1"
+            job.status = JobStatus.RUNNING
+            job.data.resolved_mode = "incremental"
+            job.data.mode.value = "incremental"
+            job.data.enforce_bulk_for_stock_data = True
+            job.data.fetch_details = [
+                {
+                    "eventType": "strategy",
+                    "stage": "stock_data",
+                    "endpoint": "/equities/bars/daily",
+                    "method": "bulk",
+                    "targetLabel": "42 dates",
+                    "reason": "bulk_estimate_lower",
+                    "reasonDetail": None,
+                    "estimatedRestCalls": 120,
+                    "estimatedBulkCalls": 6,
+                    "plannerApiCalls": 1,
+                    "fallback": False,
+                    "fallbackReason": None,
+                    "timestamp": "2026-03-05T00:00:00Z",
+                }
+            ]
+            job.progress = None
+            job.result = None
+            job.created_at = datetime.now(UTC)
+            job.started_at = None
+            job.completed_at = None
+            job.error = None
+            mock_get_job.return_value = job
+
+            queue = asyncio.Queue()
+            queue.put_nowait(
+                SyncStreamEvent(
+                    event="fetch-detail",
+                    payload=job.data.fetch_details[0],
+                )
+            )
+            queue.put_nowait(SyncStreamEvent(event="job"))
+            queue.put_nowait(None)
+            mock_subscribe.return_value = queue
+
+            resp = client.get("/api/db/sync/jobs/job-1/stream")
+
+        assert resp.status_code == 200
+        assert "event: snapshot" in resp.text
+        assert "event: fetch-detail" in resp.text
+        assert "event: job" in resp.text
+        assert '"enforceBulkForStockData": true' in resp.text
+        assert "/equities/bars/daily" in resp.text
+        mock_unsubscribe.assert_called_once()
+
     def test_cancel_sync_job_not_found(self, client: TestClient) -> None:
         resp = client.delete("/api/db/sync/jobs/nonexistent-id")
         assert resp.status_code == 404
@@ -333,6 +393,29 @@ class TestSyncRoutes:
             assert resp.status_code == 200
             assert resp.json()["success"] is True
             mock_cancel.assert_awaited_once_with("job-1")
+
+    def test_cancel_sync_job_returns_409_when_job_finishes_during_cancel(self, client: TestClient) -> None:
+        with (
+            patch("src.entrypoints.http.routes.db.sync_job_manager.get_job") as mock_get_job,
+            patch("src.entrypoints.http.routes.db.sync_job_manager.cancel_job", new_callable=AsyncMock) as mock_cancel,
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.publish") as mock_publish,
+            patch("src.entrypoints.http.routes.db.sync_stream_manager.close") as mock_close,
+        ):
+            running_job = MagicMock()
+            running_job.status = JobStatus.RUNNING
+
+            completed_job = MagicMock()
+            completed_job.status = JobStatus.COMPLETED
+
+            mock_get_job.side_effect = [running_job, completed_job]
+            mock_cancel.return_value = False
+
+            resp = client.delete("/api/db/sync/jobs/job-1")
+
+            assert resp.status_code == 409
+            assert "already finished while cancelling" in resp.json()["message"]
+            mock_publish.assert_not_called()
+            mock_close.assert_not_called()
 
 
 class TestRefreshRoute:

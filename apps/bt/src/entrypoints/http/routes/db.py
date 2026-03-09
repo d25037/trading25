@@ -6,16 +6,20 @@ GET    /api/db/validate              — DB 検証
 POST   /api/db/sync                  — Sync 開始
 GET    /api/db/sync/jobs/active      — 実行中 Sync ジョブ状態
 GET    /api/db/sync/jobs/{jobId}     — Sync ジョブ状態
+GET    /api/db/sync/jobs/{jobId}/stream — Sync SSE stream
 DELETE /api/db/sync/jobs/{jobId}     — Sync ジョブキャンセル
 POST   /api/db/stocks/refresh        — 銘柄データ再取得
 """
 
 from __future__ import annotations
 
+import asyncio
+import json
 from pathlib import Path
 
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
+from sse_starlette.sse import EventSourceResponse
 
 from src.shared.config.settings import get_settings
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
@@ -41,6 +45,7 @@ from src.entrypoints.http.schemas.job import CancelJobResponse, JobStatus
 from src.application.services import db_stats_service, db_validation_service, stock_refresh_service
 from src.application.services.generic_job_manager import JobInfo
 from src.application.services.sync_service import SyncJobData, SyncMode, sync_job_manager, start_sync
+from src.application.services.sync_stream_manager import SyncStreamEvent, sync_stream_manager
 
 router = APIRouter(tags=["Database"])
 
@@ -206,6 +211,83 @@ def _to_sync_fetch_details_response(job: JobInfo[SyncJobData, SyncProgress, Sync
     )
 
 
+def _build_sync_stream_snapshot_payload(
+    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+) -> str:
+    return json.dumps(
+        {
+            "job": _to_sync_job_response(job).model_dump(mode="json"),
+            "fetchDetails": _to_sync_fetch_details_response(job).model_dump(mode="json"),
+        },
+        ensure_ascii=False,
+    )
+
+
+def _build_sync_fetch_detail_payload(
+    job: JobInfo[SyncJobData, SyncProgress, SyncResult],
+    event: SyncStreamEvent,
+) -> str:
+    return json.dumps(
+        {
+            "jobId": job.job_id,
+            "status": job.status.value,
+            "mode": job.data.resolved_mode or job.data.mode.value,
+            "detail": SyncFetchDetail.model_validate(event.payload or {}).model_dump(mode="json"),
+        },
+        ensure_ascii=False,
+    )
+
+
+async def _sync_job_event_generator(job_id: str):
+    queue = sync_stream_manager.subscribe(job_id)
+    try:
+        job = sync_job_manager.get_job(job_id)
+        if job is None:
+            yield {
+                "event": "error",
+                "data": json.dumps({"jobId": job_id, "message": f"Job {job_id} not found"}, ensure_ascii=False),
+            }
+            return
+
+        yield {
+            "event": "snapshot",
+            "data": _build_sync_stream_snapshot_payload(job),
+        }
+        if job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            return
+
+        while True:
+            try:
+                event = await asyncio.wait_for(queue.get(), timeout=30.0)
+            except asyncio.TimeoutError:
+                yield {"event": "heartbeat", "data": "{}"}
+                continue
+
+            if event is None:
+                return
+
+            latest_job = sync_job_manager.get_job(job_id)
+            if latest_job is None:
+                return
+
+            if event.event == "job":
+                yield {
+                    "event": "job",
+                    "data": _to_sync_job_response(latest_job).model_dump_json(),
+                }
+                if latest_job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+                    return
+                continue
+
+            if event.event == "fetch-detail":
+                yield {
+                    "event": "fetch-detail",
+                    "data": _build_sync_fetch_detail_payload(latest_job, event),
+                }
+    finally:
+        sync_stream_manager.unsubscribe(job_id, queue)
+
+
 @router.get(
     "/api/db/sync/jobs/active",
     response_model=SyncJobResponse | None,
@@ -242,6 +324,25 @@ def get_sync_job_fetch_details(jobId: str) -> SyncFetchDetailsResponse:
     return _to_sync_fetch_details_response(job)
 
 
+@router.get(
+    "/api/db/sync/jobs/{jobId}/stream",
+    operation_id="stream_sync_job",
+    response_class=EventSourceResponse,
+    responses={
+        200: {
+            "content": {"text/event-stream": {"schema": {"type": "string"}}},
+            "description": "Sync job events stream",
+        }
+    },
+    summary="Stream sync job events",
+)
+async def stream_sync_job(jobId: str) -> EventSourceResponse:
+    job = sync_job_manager.get_job(jobId)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
+    return EventSourceResponse(_sync_job_event_generator(jobId))
+
+
 @router.delete(
     "/api/db/sync/jobs/{jobId}",
     response_model=CancelJobResponse,
@@ -253,7 +354,14 @@ async def cancel_sync_job(jobId: str) -> CancelJobResponse:
         raise HTTPException(status_code=404, detail=f"Job {jobId} not found")
     if job.status not in (JobStatus.PENDING, JobStatus.RUNNING):
         raise HTTPException(status_code=400, detail=f"Job {jobId} cannot be cancelled (status: {job.status.value})")
-    await sync_job_manager.cancel_job(jobId)
+    cancelled = await sync_job_manager.cancel_job(jobId)
+    if not cancelled:
+        latest_job = sync_job_manager.get_job(jobId)
+        latest_status = latest_job.status.value if latest_job is not None else "unknown"
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {jobId} was already finished while cancelling (status: {latest_status})",
+        )
     return CancelJobResponse(success=True, jobId=jobId, message="Job cancelled")
 
 

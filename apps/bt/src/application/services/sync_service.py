@@ -19,6 +19,7 @@ from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import TimeSeriesInspection
 from src.entrypoints.http.schemas.db import SyncProgress, SyncResult
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
+from src.application.services.sync_stream_manager import SyncStreamEvent, sync_stream_manager
 from src.application.services.sync_strategies import (
     SyncContext,
     SyncClientLike,
@@ -60,6 +61,12 @@ class SyncJobData:
 # Module-level manager instance
 sync_job_manager: GenericJobManager[SyncJobData, SyncProgress, SyncResult] = GenericJobManager()
 _MAX_FETCH_DETAILS = 200
+
+
+def _publish_sync_job_event(job_id: str, *, close_stream: bool = False) -> None:
+    sync_stream_manager.publish(job_id, SyncStreamEvent(event="job"))
+    if close_stream:
+        sync_stream_manager.close(job_id)
 
 
 def _inspection_has_existing_snapshot(inspection: TimeSeriesInspection) -> bool:
@@ -138,6 +145,10 @@ async def start_sync(
             job.data.fetch_details.append(entry)
             if len(job.data.fetch_details) > _MAX_FETCH_DETAILS:
                 del job.data.fetch_details[: len(job.data.fetch_details) - _MAX_FETCH_DETAILS]
+            sync_stream_manager.publish(
+                job.job_id,
+                SyncStreamEvent(event="fetch-detail", payload=entry),
+            )
 
         def on_progress(stage: str, current: int, total: int, message: str) -> None:
             pct = (current / total * 100) if total > 0 else 0
@@ -145,6 +156,7 @@ async def start_sync(
                 job.job_id,
                 SyncProgress(stage=stage, current=current, total=total, percentage=pct, message=message),
             )
+            _publish_sync_job_event(job.job_id)
 
         ctx = SyncContext(
             client=jquants_client,
@@ -158,15 +170,23 @@ async def start_sync(
         try:
             result = await asyncio.wait_for(strategy.execute(ctx), timeout=SYNC_JOB_TIMEOUT_MINUTES * 60)
             if sync_job_manager.is_cancelled(job.job_id):
+                _publish_sync_job_event(job.job_id, close_stream=True)
                 return
             sync_job_manager.complete_job(job.job_id, result)
+            _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.TimeoutError:
             sync_job_manager.fail_job(job.job_id, f"Sync timed out after {SYNC_JOB_TIMEOUT_MINUTES} minutes")
+            _publish_sync_job_event(job.job_id, close_stream=True)
         except asyncio.CancelledError:
-            pass
+            if sync_job_manager.is_cancelled(job.job_id):
+                _publish_sync_job_event(job.job_id, close_stream=True)
+            else:
+                sync_stream_manager.close(job.job_id)
+            raise
         except Exception as e:
             logger.exception(f"Sync job {job.job_id} failed: {e}")
             sync_job_manager.fail_job(job.job_id, str(e))
+            _publish_sync_job_event(job.job_id, close_stream=True)
         finally:
             if close_time_series_store and time_series_store is not None:
                 try:

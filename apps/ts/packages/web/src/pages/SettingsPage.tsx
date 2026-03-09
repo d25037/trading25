@@ -16,6 +16,7 @@ import {
   useStartSync,
   useSyncFetchDetails,
   useSyncJobStatus,
+  useSyncSSE,
 } from '@/hooks/useDbSync';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
@@ -1167,9 +1168,13 @@ export function SettingsPage() {
   const [refreshResult, setRefreshResult] = useState<MarketRefreshResponse | null>(null);
 
   const startSync = useStartSync();
-  const { data: activeSyncJob } = useActiveSyncJob();
-  const { data: jobStatus, isLoading: isPolling, error: syncJobError } = useSyncJobStatus(activeJobId);
-  const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId);
+  const { data: activeSyncJob } = useActiveSyncJob(activeJobId === null);
+  const syncSse = useSyncSSE(activeJobId);
+  const { data: jobStatus, isLoading: isPolling, error: syncJobError } = useSyncJobStatus(
+    activeJobId,
+    syncSse.isConnected
+  );
+  const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId, syncSse.isConnected);
   const cancelSync = useCancelSync();
   const refreshStocks = useRefreshStocks();
 

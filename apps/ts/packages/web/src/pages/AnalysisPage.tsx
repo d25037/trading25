@@ -19,6 +19,7 @@ import { useRanking } from '@/hooks/useRanking';
 import {
   useCancelScreeningJob,
   useRunScreeningJob,
+  useScreeningJobSSE,
   useScreeningJobStatus,
   useScreeningResult,
 } from '@/hooks/useScreening';
@@ -338,8 +339,10 @@ export function AnalysisPage() {
 
   const runScreeningJob = useRunScreeningJob();
   const runOracleScreeningJob = useRunScreeningJob();
-  const screeningJobStatus = useScreeningJobStatus(activeScreeningJobId);
-  const oracleScreeningJobStatus = useScreeningJobStatus(activeOracleScreeningJobId);
+  const screeningSse = useScreeningJobSSE(activeScreeningJobId);
+  const oracleScreeningSse = useScreeningJobSSE(activeOracleScreeningJobId);
+  const screeningJobStatus = useScreeningJobStatus(activeScreeningJobId, screeningSse.isConnected);
+  const oracleScreeningJobStatus = useScreeningJobStatus(activeOracleScreeningJobId, oracleScreeningSse.isConnected);
   const cancelScreeningJob = useCancelScreeningJob();
   const cancelOracleScreeningJob = useCancelScreeningJob();
 

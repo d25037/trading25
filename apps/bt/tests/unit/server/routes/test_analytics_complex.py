@@ -4,6 +4,7 @@ Complex Analytics Routes Unit Tests
 Ranking, Factor Regression, Screening のルートテスト。
 """
 
+import asyncio
 from datetime import datetime
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -14,6 +15,7 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.app import create_app
 from src.entrypoints.http.routes.analytics_complex import _SCREENING_DEPRECATED_MESSAGE
 from src.entrypoints.http.schemas.backtest import JobStatus
+from src.entrypoints.http.schemas.common import SSEJobEvent
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 
 
@@ -501,6 +503,41 @@ class TestScreening:
         assert data["mode"] == "standard"
         assert data["recentDays"] == 5
         assert data["markets"] == "prime,standard"
+
+    def test_stream_job_status(self, analytics_client):
+        with (
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_service") as mock_service,
+            patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager,
+        ):
+            job = self._make_job("job-stream", JobStatus.RUNNING)
+            queue: asyncio.Queue[SSEJobEvent | None] = asyncio.Queue()
+            queue.put_nowait(
+                SSEJobEvent(
+                    job_id="job-stream",
+                    status="running",
+                    progress=0.5,
+                    message="スクリーニング評価 5/10",
+                )
+            )
+            queue.put_nowait(None)
+
+            mock_service.get_job_request.return_value = ScreeningJobRequest(
+                markets="prime,standard",
+                recentDays=5,
+                sortBy="matchedDate",
+                order="asc",
+            )
+            mock_manager.get_job.return_value = job
+            mock_manager.subscribe.return_value = queue
+
+            resp = analytics_client.get("/api/analytics/screening/jobs/job-stream/stream")
+
+        assert resp.status_code == 200
+        assert "event: snapshot" in resp.text
+        assert "event: job" in resp.text
+        assert '"job_id":"job-stream"' in resp.text
+        assert '"markets":"prime,standard"' in resp.text
+        assert '"recentDays":5' in resp.text
 
     def test_cancel_job_conflict_for_completed(self, analytics_client):
         with patch("src.entrypoints.http.routes.analytics_complex.screening_job_manager") as mock_manager:

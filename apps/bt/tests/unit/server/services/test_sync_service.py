@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 from typing import Any
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -196,6 +197,8 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
 ) -> None:
     strategy = StrategyProbe()
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    stream_manager = MagicMock()
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
 
     market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
     store = DummyTimeSeriesStore()
@@ -223,6 +226,13 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     assert "timestamp" in stored.data.fetch_details[0]
     assert market_db.ensure_schema_calls == 1
     assert store.close_calls == 1
+    published_events = [call.args[1] for call in stream_manager.publish.call_args_list]
+    assert [event.event for event in published_events].count("job") >= 2
+    fetch_detail_event = next(event for event in published_events if event.event == "fetch-detail")
+    assert fetch_detail_event.payload is not None
+    assert fetch_detail_event.payload["endpoint"] == "/equities/bars/daily"
+    assert "timestamp" in fetch_detail_event.payload
+    stream_manager.close.assert_called_once_with(job.job_id)
 
 
 @pytest.mark.asyncio
@@ -248,6 +258,35 @@ async def test_start_sync_passes_requested_bulk_enforcement(
     assert strategy.captured_ctx is not None
     assert strategy.captured_ctx.enforce_bulk_for_stock_data is True
     assert stored.data.enforce_bulk_for_stock_data is True
+
+
+@pytest.mark.asyncio
+async def test_start_sync_closes_stream_when_job_is_marked_cancelled_after_execute(
+    monkeypatch: pytest.MonkeyPatch,
+    isolated_manager: GenericJobManager,
+) -> None:
+    strategy = StrategyProbe(emit_progress=False)
+    monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    stream_manager = MagicMock()
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
+    monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
+
+    job = await sync_service.start_sync(
+        SyncMode.INITIAL,
+        DummyMarketDb(),
+        DummyJQuantsClient(),
+        time_series_store=DummyTimeSeriesStore(),
+    )
+    assert job is not None and job.task is not None
+    await job.task
+
+    stored = isolated_manager.get_job(job.job_id)
+    assert stored is not None
+    assert stored.status.value == "pending"
+    stream_manager.publish.assert_called_once()
+    published_event = stream_manager.publish.call_args.args[1]
+    assert published_event.event == "job"
+    stream_manager.close.assert_called_once_with(job.job_id)
 
 
 @pytest.mark.asyncio
@@ -310,6 +349,8 @@ async def test_start_sync_skips_completion_when_job_already_cancelled(
 ) -> None:
     strategy = StrategyProbe()
     monkeypatch.setattr(sync_service, "get_strategy", lambda _mode: strategy)
+    stream_manager = MagicMock()
+    monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
     monkeypatch.setattr(isolated_manager, "is_cancelled", lambda _job_id: True)
 
     job = await sync_service.start_sync(
@@ -326,3 +367,6 @@ async def test_start_sync_skips_completion_when_job_already_cancelled(
     # on_progress updates pending -> running, but complete should be skipped.
     assert stored.status.value == "running"
     assert stored.result is None
+    published_events = [call.args[1] for call in stream_manager.publish.call_args_list]
+    assert published_events[-1].event == "job"
+    stream_manager.close.assert_called_once_with(job.job_id)
