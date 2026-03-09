@@ -25,6 +25,7 @@ class TestBuildDefaultRunSpec:
         run_spec = build_default_run_spec("backtest", "demo-strategy")
 
         assert run_spec.run_type == RunType.BACKTEST
+        assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.engine_family == EngineFamily.VECTORBT
         assert run_spec.execution_policy_version == "vectorbt-legacy-v1"
         assert run_spec.strategy_source_ref == "demo-strategy"
@@ -42,6 +43,7 @@ class TestBuildRunMetadata:
         run_spec = build_default_run_spec("lab_optimize", "strategy-a")
         run_spec.parent_run_id = "parent-1"
         run_spec.dataset_snapshot_id = "snapshot-1"
+        run_spec.market_snapshot_id = "market:latest"
 
         metadata = build_run_metadata_from_spec("run-1", run_spec)
 
@@ -49,6 +51,7 @@ class TestBuildRunMetadata:
         assert metadata.run_type == RunType.LAB_OPTIMIZE
         assert metadata.parent_run_id == "parent-1"
         assert metadata.dataset_snapshot_id == "snapshot-1"
+        assert metadata.market_snapshot_id == "market:latest"
 
 
 class TestRunSpecBuilders:
@@ -92,7 +95,19 @@ class TestRunSpecBuilders:
 
         assert run_spec.dataset_name == "primeExTopix500"
         assert run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.parameters == {"count": 10, "top": 3}
+
+    def test_build_parameterized_run_spec_normalizes_snapshot_id_separately(self) -> None:
+        run_spec = build_parameterized_run_spec(
+            "screening",
+            "analytics/screening",
+            dataset_name=" sample.db ",
+        )
+
+        assert run_spec.dataset_name == " sample.db "
+        assert run_spec.dataset_snapshot_id == "sample"
+        assert run_spec.market_snapshot_id == "market:latest"
 
     def test_build_config_override_run_spec_keeps_config_and_extra_parameters(self) -> None:
         run_spec = build_config_override_run_spec(
@@ -104,6 +119,7 @@ class TestRunSpecBuilders:
 
         assert run_spec.dataset_name == "sample"
         assert run_spec.dataset_snapshot_id == "sample"
+        assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.parameters["config_override"] == {
             "shared_config": {"dataset": "sample"},
             "entry_filter_params": {},
@@ -144,6 +160,7 @@ class TestRunSpecBuilders:
 
         assert run_spec.dataset_name == "primeExTopix500"
         assert run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.parameters["optimization_mode"] == "grid_search"
 
     def test_build_strategy_run_spec_drops_blank_dataset_override_and_falls_back_to_base_dataset(
@@ -166,6 +183,7 @@ class TestRunSpecBuilders:
 
         assert run_spec.dataset_name == "primeExTopix500"
         assert run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.parameters["config_override"] == {
             "shared_config": {"direction": "shortonly"},
         }
@@ -199,7 +217,9 @@ class TestRefreshJobExecutionContracts:
 
         assert job.run_metadata is not None
         assert job.run_metadata.dataset_snapshot_id == "snapshot-20260309"
+        assert job.run_metadata.market_snapshot_id == "market:latest"
         assert job.canonical_result is not None
+        assert job.canonical_result.market_snapshot_id == "market:latest"
         assert job.canonical_result.execution_time == 12.5
         assert job.canonical_result.summary_metrics is not None
         assert job.canonical_result.summary_metrics.trade_count == 42

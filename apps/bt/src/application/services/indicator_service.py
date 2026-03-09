@@ -14,6 +14,7 @@ import pandas as pd
 from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.data_access.clients import get_dataset_client, get_market_client
 from src.application.services.market_ohlcv_loader import load_stock_ohlcv_df, load_topix_df
 from src.domains.analytics.margin_metrics import (
     compute_margin_flow_pressure,
@@ -38,19 +39,21 @@ MARGIN_REGISTRY: dict[str, Any] = {
     "margin_volume_ratio": compute_margin_volume_ratio,
 }
 
+# Backward-compatible symbols for tests patching module-local client constructors.
+DatasetAPIClient = get_dataset_client
+MarketAPIClient = get_market_client
+
 
 class IndicatorService:
     """インジケーター計算サービス"""
 
     def __init__(self, market_reader: MarketDbReader | None = None) -> None:
         self._market_reader = market_reader
-        self._market_client = None
+        self._market_client: Any | None = None
 
     @property
-    def market_client(self):
+    def market_client(self) -> Any:
         if self._market_client is None:
-            from src.infrastructure.external_api.market_client import MarketAPIClient
-
             self._market_client = MarketAPIClient()
         return self._market_client
 
@@ -67,8 +70,6 @@ class IndicatorService:
         end_date: date | None = None,
     ) -> pd.DataFrame:
         """OHLCVデータをロード"""
-        from src.infrastructure.external_api.dataset import DatasetAPIClient
-
         sd = start_date.isoformat() if start_date else None
         ed = end_date.isoformat() if end_date else None
 
@@ -224,8 +225,6 @@ class IndicatorService:
         if self._market_reader is not None:
             ohlcv = load_stock_ohlcv_df(self._market_reader, stock_code, sd, ed)
         else:
-            from src.infrastructure.external_api.market_client import MarketAPIClient
-
             with MarketAPIClient() as market_client:
                 ohlcv = market_client.get_stock_ohlcv(stock_code, sd, ed)
 

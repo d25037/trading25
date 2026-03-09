@@ -45,6 +45,7 @@ class TestJobManager:
         assert job.run_metadata is not None
         assert job.run_metadata.run_id == job_id
         assert job.run_metadata.engine_family == "vectorbt"
+        assert job.run_metadata.market_snapshot_id == "market:latest"
 
     def test_get_nonexistent_job(self):
         mgr = JobManager()
@@ -125,7 +126,9 @@ class TestJobManager:
         assert job.execution_time == 10.5
         assert job.run_metadata is not None
         assert job.run_metadata.dataset_snapshot_id == "ds"
+        assert job.run_metadata.market_snapshot_id == "market:latest"
         assert job.canonical_result is not None
+        assert job.canonical_result.market_snapshot_id == "market:latest"
         assert job.canonical_result.summary_metrics is not None
         assert job.canonical_result.summary_metrics.trade_count == 50
         assert job.artifact_index is not None
@@ -394,9 +397,12 @@ class TestJobManager:
             assert loaded.run_spec is not None
             assert loaded.run_spec.dataset_name == "dataset-v1"
             assert loaded.run_spec.dataset_snapshot_id == "dataset-v1"
+            assert loaded.run_spec.market_snapshot_id == "market:latest"
             assert loaded.run_metadata is not None
             assert loaded.run_metadata.dataset_snapshot_id == "dataset-v1"
+            assert loaded.run_metadata.market_snapshot_id == "market:latest"
             assert loaded.canonical_result is not None
+            assert loaded.canonical_result.market_snapshot_id == "market:latest"
             assert loaded.canonical_result.summary_metrics is not None
             assert loaded.canonical_result.summary_metrics.trade_count == 14
             assert loaded.artifact_index is not None
@@ -450,8 +456,11 @@ class TestJobManager:
             assert loaded.job_id == "legacy-screening-job"
             assert loaded.run_spec is not None
             assert loaded.run_spec.dataset_snapshot_id == "screening-dataset"
+            assert loaded.run_spec.market_snapshot_id == "market:latest"
             assert loaded.run_metadata is not None
+            assert loaded.run_metadata.market_snapshot_id == "market:latest"
             assert loaded.canonical_result is not None
+            assert loaded.canonical_result.market_snapshot_id == "market:latest"
             assert loaded.artifact_index is not None
 
             persisted = db.get_job_row("legacy-screening-job")
