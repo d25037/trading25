@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
+import socket
 import uuid
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
@@ -30,6 +32,8 @@ from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStat
 from src.entrypoints.http.schemas.common import SSEJobEvent
 
 _TERMINAL_STATUSES = (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED)
+_INCOMPLETE_STATUSES = (JobStatus.PENDING, JobStatus.RUNNING)
+_DEFAULT_LEASE_SECONDS = 60
 
 if TYPE_CHECKING:
     from src.infrastructure.db.market.portfolio_db import PortfolioDb
@@ -48,6 +52,7 @@ class JobInfo:
         self.created_at: datetime = datetime.now()
         self.started_at: datetime | None = None
         self.completed_at: datetime | None = None
+        self.updated_at: datetime | None = None
         self.error: str | None = None
         self.run_spec: RunSpec | None = None
         self.run_metadata: RunMetadata | None = None
@@ -59,6 +64,12 @@ class JobInfo:
         self.dataset_name: str | None = None
         self.execution_time: float | None = None
         self.task: asyncio.Task[None] | None = None
+        self.lease_owner: str | None = None
+        self.lease_expires_at: datetime | None = None
+        self.last_heartbeat_at: datetime | None = None
+        self.cancel_requested_at: datetime | None = None
+        self.cancel_reason: str | None = None
+        self.timeout_at: datetime | None = None
         # Optimization-specific fields
         self.best_score: float | None = None
         self.best_params: dict[str, Any] | None = None
@@ -70,7 +81,13 @@ class JobInfo:
 class JobManager:
     """非同期ジョブマネージャー"""
 
-    def __init__(self, max_concurrent_jobs: int = 2) -> None:
+    def __init__(
+        self,
+        max_concurrent_jobs: int = 2,
+        *,
+        default_lease_seconds: int = _DEFAULT_LEASE_SECONDS,
+        default_timeout_seconds: int | None = None,
+    ) -> None:
         """
         初期化
 
@@ -82,6 +99,13 @@ class JobManager:
         self._lock = asyncio.Lock()
         self._subscribers: dict[str, list[asyncio.Queue[SSEJobEvent | None]]] = {}
         self._portfolio_db: PortfolioDb | None = None
+        self._default_lease_seconds = max(default_lease_seconds, 1)
+        self._default_timeout_seconds = default_timeout_seconds
+        self._default_lease_owner = f"in-process:{socket.gethostname()}:{os.getpid()}"
+
+    @property
+    def default_lease_seconds(self) -> int:
+        return self._default_lease_seconds
 
     def set_portfolio_db(self, portfolio_db: PortfolioDb | None) -> None:
         """ジョブメタデータ永続化先（portfolio.db）を設定する。"""
@@ -148,6 +172,67 @@ class JobManager:
         job, _ = self._hydrate_job_from_row(row)
         return job
 
+    def _cache_hydrated_job(
+        self,
+        row: Any,
+        *,
+        existing_job: JobInfo | None = None,
+    ) -> tuple[JobInfo, bool]:
+        loaded, contracts_backfilled = self._hydrate_job_from_row(row)
+        if existing_job is not None:
+            loaded.task = existing_job.task
+        self._jobs[loaded.job_id] = loaded
+        return loaded, contracts_backfilled
+
+    def _resolve_timeout_at(
+        self,
+        started_at: datetime,
+        timeout_seconds: int | None = None,
+    ) -> datetime | None:
+        effective_timeout = timeout_seconds
+        if effective_timeout is None:
+            effective_timeout = self._default_timeout_seconds
+        if effective_timeout is None:
+            return None
+        return started_at + timedelta(seconds=max(effective_timeout, 1))
+
+    def _claim_execution_locked(
+        self,
+        job: JobInfo,
+        *,
+        lease_owner: str | None = None,
+        lease_seconds: int | None = None,
+        timeout_seconds: int | None = None,
+        now: datetime | None = None,
+    ) -> None:
+        current_time = now or datetime.now()
+        started_at = job.started_at or current_time
+        job.started_at = started_at
+        job.lease_owner = lease_owner or job.lease_owner or self._default_lease_owner
+        job.last_heartbeat_at = current_time
+        job.lease_expires_at = current_time + timedelta(
+            seconds=max(lease_seconds or self._default_lease_seconds, 1)
+        )
+        resolved_timeout_at = self._resolve_timeout_at(started_at, timeout_seconds)
+        if resolved_timeout_at is not None:
+            job.timeout_at = resolved_timeout_at
+
+    def _clear_execution_claim_locked(self, job: JobInfo) -> None:
+        job.lease_owner = None
+        job.lease_expires_at = None
+
+    def _mark_cancel_requested_locked(
+        self,
+        job: JobInfo,
+        *,
+        reason: str | None = None,
+        now: datetime | None = None,
+    ) -> None:
+        if job.cancel_requested_at is None:
+            job.cancel_requested_at = now or datetime.now()
+        if reason is not None:
+            job.cancel_reason = reason
+
     def _hydrate_job_from_row(self, row: Any) -> tuple[JobInfo, bool]:
         status_raw = row.status
         try:
@@ -168,6 +253,7 @@ class JobManager:
         job.created_at = self._parse_datetime(getattr(row, "created_at", None)) or datetime.now()
         job.started_at = self._parse_datetime(getattr(row, "started_at", None))
         job.completed_at = self._parse_datetime(getattr(row, "completed_at", None))
+        job.updated_at = self._parse_datetime(getattr(row, "updated_at", None))
         job.run_spec = self._deserialize_model(
             getattr(row, "run_spec_json", None),
             RunSpec,
@@ -189,6 +275,12 @@ class JobManager:
         job.html_path = getattr(row, "html_path", None)
         job.dataset_name = getattr(row, "dataset_name", None)
         job.execution_time = getattr(row, "execution_time", None)
+        job.lease_owner = getattr(row, "lease_owner", None)
+        job.lease_expires_at = self._parse_datetime(getattr(row, "lease_expires_at", None))
+        job.last_heartbeat_at = self._parse_datetime(getattr(row, "last_heartbeat_at", None))
+        job.cancel_requested_at = self._parse_datetime(getattr(row, "cancel_requested_at", None))
+        job.cancel_reason = getattr(row, "cancel_reason", None)
+        job.timeout_at = self._parse_datetime(getattr(row, "timeout_at", None))
         job.best_score = getattr(row, "best_score", None)
         job.best_params = self._deserialize_json(getattr(row, "best_params_json", None))
         job.worst_score = getattr(row, "worst_score", None)
@@ -230,6 +322,7 @@ class JobManager:
 
     def _persist_job(self, job: JobInfo) -> None:
         self._refresh_execution_contracts(job)
+        job.updated_at = datetime.now()
 
         if self._portfolio_db is None:
             return
@@ -260,7 +353,19 @@ class JobManager:
                 worst_score=job.worst_score,
                 worst_params_json=self._serialize_json(job.worst_params),
                 total_combinations=job.total_combinations,
-                updated_at=datetime.now().isoformat(),
+                updated_at=job.updated_at.isoformat(),
+                lease_owner=job.lease_owner,
+                lease_expires_at=(
+                    job.lease_expires_at.isoformat() if job.lease_expires_at else None
+                ),
+                last_heartbeat_at=(
+                    job.last_heartbeat_at.isoformat() if job.last_heartbeat_at else None
+                ),
+                cancel_requested_at=(
+                    job.cancel_requested_at.isoformat() if job.cancel_requested_at else None
+                ),
+                cancel_reason=job.cancel_reason,
+                timeout_at=job.timeout_at.isoformat() if job.timeout_at else None,
             )
         except Exception as e:
             logger.warning(f"ジョブ永続化に失敗: {job.job_id}, error={e}")
@@ -311,19 +416,17 @@ class JobManager:
         Returns:
             ジョブ情報（存在しない場合はNone）
         """
-        job = self._jobs.get(job_id)
-        if job is not None:
-            return job
-
         if self._portfolio_db is None:
-            return None
+            return self._jobs.get(job_id)
 
         row = self._portfolio_db.get_job_row(job_id)
         if row is None:
-            return None
+            return self._jobs.get(job_id)
 
-        hydrated, contracts_backfilled = self._hydrate_job_from_row(row)
-        self._jobs[job_id] = hydrated
+        hydrated, contracts_backfilled = self._cache_hydrated_job(
+            row,
+            existing_job=self._jobs.get(job_id),
+        )
         if contracts_backfilled:
             self._persist_job(hydrated)
         return hydrated
@@ -346,13 +449,10 @@ class JobManager:
             hydrated_jobs: list[JobInfo] = []
             seen_ids: set[str] = set()
             for row in rows:
-                in_memory = self._jobs.get(row.job_id)
-                if in_memory is not None:
-                    hydrated_jobs.append(in_memory)
-                    seen_ids.add(in_memory.job_id)
-                    continue
-                loaded, contracts_backfilled = self._hydrate_job_from_row(row)
-                self._jobs[loaded.job_id] = loaded
+                loaded, contracts_backfilled = self._cache_hydrated_job(
+                    row,
+                    existing_job=self._jobs.get(row.job_id),
+                )
                 if contracts_backfilled:
                     self._persist_job(loaded)
                 hydrated_jobs.append(loaded)
@@ -415,10 +515,11 @@ class JobManager:
             if error is not None:
                 job.error = error
 
-            if status == JobStatus.RUNNING and job.started_at is None:
-                job.started_at = datetime.now()
+            if status == JobStatus.RUNNING:
+                self._claim_execution_locked(job)
             elif status in _TERMINAL_STATUSES:
                 job.completed_at = datetime.now()
+                self._clear_execution_claim_locked(job)
             self._persist_job(job)
 
         # ロック外でSSE通知
@@ -475,6 +576,32 @@ class JobManager:
             job.raw_result = raw_result
             self._persist_job(job)
 
+    async def set_job_optimization_result(
+        self,
+        job_id: str,
+        *,
+        raw_result: dict[str, Any],
+        best_score: float | None,
+        best_params: dict[str, Any] | None,
+        worst_score: float | None,
+        worst_params: dict[str, Any] | None,
+        total_combinations: int | None,
+        html_path: str | None,
+    ) -> None:
+        """最適化ジョブの durable result を保存する。"""
+        async with self._lock:
+            job = self._resolve_job(job_id)
+            if job is None:
+                return
+            job.raw_result = raw_result
+            job.best_score = best_score
+            job.best_params = best_params
+            job.worst_score = worst_score
+            job.worst_params = worst_params
+            job.total_combinations = total_combinations
+            job.html_path = html_path
+            self._persist_job(job)
+
     async def set_job_task(self, job_id: str, task: asyncio.Task[None]) -> None:
         """
         ジョブにasyncioタスクを関連付け
@@ -488,7 +615,199 @@ class JobManager:
             if job:
                 job.task = task
 
-    async def cancel_job(self, job_id: str) -> JobInfo | None:
+    async def claim_job_execution(
+        self,
+        job_id: str,
+        *,
+        lease_owner: str,
+        lease_seconds: int | None = None,
+        timeout_seconds: int | None = None,
+        message: str | None = None,
+        progress: float | None = None,
+    ) -> JobInfo | None:
+        """ジョブ実行 lease を取得し RUNNING へ遷移させる。"""
+        async with self._lock:
+            job = self._resolve_job(job_id)
+            if job is None or job.status in _TERMINAL_STATUSES:
+                return None
+
+            self._claim_execution_locked(
+                job,
+                lease_owner=lease_owner,
+                lease_seconds=lease_seconds,
+                timeout_seconds=timeout_seconds,
+            )
+            job.status = JobStatus.RUNNING
+            if message is not None:
+                job.message = message
+            if progress is not None:
+                job.progress = progress
+            self._persist_job(job)
+            return job
+
+    async def heartbeat_job_execution(
+        self,
+        job_id: str,
+        *,
+        lease_owner: str,
+        lease_seconds: int | None = None,
+    ) -> JobInfo | None:
+        """ジョブ実行中の heartbeat を durable に更新する。"""
+        async with self._lock:
+            job = self._resolve_job(job_id)
+            if job is None or job.status in _TERMINAL_STATUSES:
+                return None
+            self._claim_execution_locked(
+                job,
+                lease_owner=lease_owner,
+                lease_seconds=lease_seconds,
+            )
+            self._persist_job(job)
+            return job
+
+    async def reload_job_from_storage(
+        self,
+        job_id: str,
+        *,
+        notify: bool = False,
+    ) -> JobInfo | None:
+        """portfolio.db からジョブ状態を再読込し、必要に応じて SSE を通知する。"""
+        if self._portfolio_db is None:
+            return self._jobs.get(job_id)
+
+        event: SSEJobEvent | None = None
+        terminal_event = False
+        reloaded_job: JobInfo | None = None
+
+        async with self._lock:
+            row = self._portfolio_db.get_job_row(job_id)
+            if row is None:
+                return self._jobs.get(job_id)
+
+            previous = self._jobs.get(job_id)
+            reloaded_job, contracts_backfilled = self._cache_hydrated_job(
+                row,
+                existing_job=previous,
+            )
+            if contracts_backfilled:
+                self._persist_job(reloaded_job)
+
+            if (
+                notify
+                and previous is not None
+                and (
+                    previous.status != reloaded_job.status
+                    or previous.progress != reloaded_job.progress
+                    or previous.message != reloaded_job.message
+                )
+            ):
+                event = SSEJobEvent(
+                    job_id=job_id,
+                    status=reloaded_job.status.value,
+                    progress=reloaded_job.progress,
+                    message=reloaded_job.message,
+                )
+                terminal_event = reloaded_job.status in _TERMINAL_STATUSES
+
+        if event is not None:
+            await self._notify_subscribers(job_id, event)
+            if terminal_event:
+                await self._notify_subscribers(job_id, None)
+
+        return reloaded_job
+
+    async def request_job_cancel(
+        self,
+        job_id: str,
+        *,
+        reason: str = "user_requested",
+    ) -> JobInfo | None:
+        """キャンセル要求だけを durable に記録する。"""
+        task_to_cancel: asyncio.Task[None] | None = None
+        async with self._lock:
+            job = self._resolve_job(job_id)
+            if job is None:
+                return None
+            if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
+                return None
+            self._mark_cancel_requested_locked(job, reason=reason)
+            task_to_cancel = job.task
+            self._persist_job(job)
+        if task_to_cancel is not None and not task_to_cancel.done():
+            task_to_cancel.cancel()
+        return job
+
+    def is_cancel_requested(self, job_id: str) -> bool:
+        """ジョブに cancel intent があるか。"""
+        job = self._resolve_job(job_id)
+        return job is not None and job.cancel_requested_at is not None
+
+    async def reconcile_orphaned_jobs(
+        self,
+        *,
+        job_types: set[str] | None = None,
+        limit: int = 10_000,
+        reason: str = "process_restart",
+        stale_after_seconds: int = 0,
+    ) -> list[str]:
+        """再起動時に孤立した incomplete job を terminal 状態へ回収する。"""
+        now = datetime.now()
+        reconciled_job_ids: list[str] = []
+        jobs = self.list_jobs(limit=limit, job_types=job_types)
+
+        for job in jobs:
+            if job.status not in _INCOMPLETE_STATUSES:
+                continue
+            if job.task is not None and not job.task.done():
+                continue
+
+            reference_time = (
+                job.last_heartbeat_at
+                or job.updated_at
+                or job.started_at
+                or job.created_at
+            )
+            if (
+                job.cancel_requested_at is None
+                and (now - reference_time).total_seconds() < stale_after_seconds
+            ):
+                continue
+
+            if job.cancel_requested_at is not None:
+                await self.update_job_status(
+                    job.job_id,
+                    JobStatus.CANCELLED,
+                    message="キャンセル要求済みジョブを再起動時に回収しました",
+                )
+            else:
+                await self.update_job_status(
+                    job.job_id,
+                    JobStatus.FAILED,
+                    message="ジョブは再起動後に孤立状態として回収されました",
+                    error=f"orphaned_after_{reason}",
+                )
+            reconciled_job_ids.append(job.job_id)
+
+        return reconciled_job_ids
+
+    async def shutdown(
+        self,
+        *,
+        job_types: set[str] | None = None,
+        limit: int = 10_000,
+        reason: str = "process_shutdown",
+    ) -> int:
+        """アクティブジョブに durable cancel intent を残す。"""
+        requested = 0
+        for job in self.list_jobs(limit=limit, job_types=job_types):
+            if job.status not in _INCOMPLETE_STATUSES:
+                continue
+            result = await self.request_job_cancel(job.job_id, reason=reason)
+            if result is not None:
+                requested += 1
+        return requested
+
+    async def cancel_job(self, job_id: str, *, reason: str = "user_requested") -> JobInfo | None:
         """
         ジョブをキャンセル
 
@@ -511,17 +830,22 @@ class JobManager:
 
             # 既にキャンセル済みなら冪等に返却
             if job.status == JobStatus.CANCELLED:
+                if job.cancel_requested_at is None:
+                    self._mark_cancel_requested_locked(job, reason=reason)
+                    self._persist_job(job)
                 return job
 
             # terminal状態（COMPLETED/FAILED）からは遷移不可
             if job.status in (JobStatus.COMPLETED, JobStatus.FAILED):
                 return None
 
+            self._mark_cancel_requested_locked(job, reason=reason)
             # ステータスをCANCELLEDに変更
             cancel_message = "ジョブがキャンセルされました"
             job.status = JobStatus.CANCELLED
             job.completed_at = datetime.now()
             job.message = cancel_message
+            self._clear_execution_claim_locked(job)
             task_to_cancel = job.task
             self._persist_job(job)
 

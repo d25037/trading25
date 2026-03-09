@@ -1,7 +1,7 @@
 """app.py のテスト"""
 
 import asyncio
-from unittest.mock import patch
+from unittest.mock import AsyncMock, call, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -64,15 +64,36 @@ class TestLifespan:
             patch("src.entrypoints.http.app.backtest_service") as mock_bt,
             patch("src.entrypoints.http.app.optimization_service") as mock_opt,
             patch("src.entrypoints.http.app.lab_service") as mock_lab,
+            patch("src.entrypoints.http.app.job_manager") as mock_job_manager,
+            patch("src.entrypoints.http.app.screening_job_manager") as mock_screening_job_manager,
+            patch("src.entrypoints.http.app.screening_job_service") as mock_screening_job_service,
+            patch("src.application.services.sync_service.sync_job_manager") as mock_sync_job_manager,
+            patch("src.application.services.dataset_builder_service.dataset_job_manager") as mock_dataset_job_manager,
         ):
             # Mock executors に _broken / _shutdown を明示セット
             for mock_svc in (mock_bt, mock_opt, mock_lab):
                 mock_svc._executor._broken = False
                 mock_svc._executor._shutdown = False
+            mock_job_manager.reconcile_orphaned_jobs = AsyncMock(return_value=["job-1"])
+            mock_job_manager.shutdown = AsyncMock(return_value=1)
+            mock_screening_job_manager.reconcile_orphaned_jobs = AsyncMock(return_value=["job-2"])
+            mock_screening_job_manager.shutdown = AsyncMock(return_value=1)
+            mock_screening_job_service.shutdown = AsyncMock()
+            mock_sync_job_manager.shutdown = AsyncMock()
+            mock_dataset_job_manager.shutdown = AsyncMock()
 
             async with lifespan(app):
                 pass  # startup phase
 
             # shutdown phase
+            mock_job_manager.reconcile_orphaned_jobs.assert_awaited_once()
+            mock_screening_job_manager.reconcile_orphaned_jobs.assert_awaited_once()
+            mock_job_manager.shutdown.assert_awaited_once()
+            mock_screening_job_manager.shutdown.assert_awaited_once()
+            mock_screening_job_service.shutdown.assert_awaited_once()
+            mock_sync_job_manager.shutdown.assert_awaited_once()
+            mock_dataset_job_manager.shutdown.assert_awaited_once()
+            assert mock_job_manager.set_portfolio_db.call_args_list[-1] == call(None)
+            assert mock_screening_job_manager.set_portfolio_db.call_args_list[-1] == call(None)
             mock_bt._executor.shutdown.assert_called_once_with(wait=True)
             mock_opt._executor.shutdown.assert_called_once_with(wait=True)

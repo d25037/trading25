@@ -3,7 +3,10 @@ BacktestService unit tests
 """
 
 import asyncio
+import json
+import sys
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import patch
 
 import pytest
@@ -11,6 +14,7 @@ import pytest
 from src.domains.backtest.core.runner import BacktestResult
 from src.application.services.backtest_service import BacktestService
 from src.domains.backtest.contracts import RunType
+from src.entrypoints.http.schemas.backtest import JobStatus
 
 
 def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: Path):
@@ -223,14 +227,6 @@ async def test_submit_backtest_normalizes_blank_dataset_override_before_executio
 @pytest.mark.asyncio
 async def test_run_backtest_success_updates_result_and_status(monkeypatch, tmp_path: Path):
     service = BacktestService()
-    result = BacktestResult(
-        html_path=tmp_path / "result.html",
-        elapsed_time=1.5,
-        summary={"total_return": 10.0},
-        strategy_name="test",
-        dataset_name="sample",
-    )
-
     events: list[tuple[str, object]] = []
 
     async def _acquire_slot():
@@ -239,28 +235,44 @@ async def test_run_backtest_success_updates_result_and_status(monkeypatch, tmp_p
     async def _update_job_status(job_id: str, status, **kwargs):
         events.append(("status", (job_id, status, kwargs)))
 
-    async def _set_job_result(**kwargs):
-        events.append(("result", kwargs))
-
     monkeypatch.setattr(service._manager, "acquire_slot", _acquire_slot)
     monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
-    monkeypatch.setattr(service._manager, "set_job_result", _set_job_result)
     monkeypatch.setattr(service._manager, "release_slot", lambda: events.append(("release", None)))
-
-    class _FakeLoop:
-        def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
-            _ = (executor, fn, args)
-            fut = asyncio.Future()
-            fut.set_result(result)
-            return fut
-
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _FakeLoop())
-    monkeypatch.setattr(service, "_extract_result_summary", lambda _result: {"ok": True})
+    monkeypatch.setattr(
+        service,
+        "_start_worker_process",
+        lambda job_id, strategy_name, config_override=None: asyncio.sleep(
+            0,
+            result=SimpleNamespace(returncode=0, wait=lambda: asyncio.sleep(0, result=0)),
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_wait_for_worker_completion",
+        lambda job_id, process: asyncio.sleep(0, result=0),
+    )
+    monkeypatch.setattr(
+        service._manager,
+        "reload_job_from_storage",
+        lambda job_id, notify=False: asyncio.sleep(
+            0,
+            result=SimpleNamespace(
+                job_id=job_id,
+                status=JobStatus.COMPLETED,
+                progress=1.0,
+                message="バックテスト完了",
+            ),
+        ),
+    )
 
     await service._run_backtest("job-1", "strategy-1")
 
     assert ("acquire", None) in events
-    assert any(name == "result" for name, _ in events)
+    assert any(
+        name == "status"
+        and payload[1] == JobStatus.PENDING
+        for name, payload in events
+    )
     assert any(name == "release" for name, _ in events)
 
 
@@ -269,6 +281,7 @@ async def test_run_backtest_handles_cancelled_and_failure(monkeypatch):
     service = BacktestService()
     events: list[tuple[str, object]] = []
     status_values: list[str] = []
+    process = SimpleNamespace(returncode=None)
 
     async def _acquire_slot():
         events.append(("acquire", None))
@@ -280,31 +293,296 @@ async def test_run_backtest_handles_cancelled_and_failure(monkeypatch):
     monkeypatch.setattr(service._manager, "acquire_slot", _acquire_slot)
     monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
     monkeypatch.setattr(service._manager, "release_slot", lambda: events.append(("release", None)))
+    monkeypatch.setattr(
+        service._manager,
+        "reload_job_from_storage",
+        lambda job_id, notify=False: asyncio.sleep(
+            0,
+            result=SimpleNamespace(
+                job_id=job_id,
+                status=JobStatus.CANCELLED if notify else JobStatus.RUNNING,
+                progress=1.0 if notify else 0.0,
+                message="cancelled" if notify else "running",
+            ),
+        ),
+    )
+    monkeypatch.setattr(service._manager, "is_cancel_requested", lambda job_id: True)
 
-    class _CancelledLoop:
-        def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
-            _ = (executor, fn, args)
-            fut = asyncio.Future()
-            fut.set_exception(asyncio.CancelledError())
-            return fut
+    async def _cancelled_start_worker_process(job_id: str, strategy_name: str, config_override=None):
+        _ = (job_id, strategy_name, config_override)
+        return process
 
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _CancelledLoop())
+    async def _cancelled_wait_for_worker_completion(job_id: str, process_obj):
+        _ = (job_id, process_obj)
+        raise asyncio.CancelledError()
+
+    async def _terminate_worker_process(process_obj, *, timeout_seconds=3.0):
+        _ = timeout_seconds
+        process_obj.returncode = -15
+        events.append(("terminate", process_obj))
+
+    monkeypatch.setattr(service, "_start_worker_process", _cancelled_start_worker_process)
+    monkeypatch.setattr(service, "_wait_for_worker_completion", _cancelled_wait_for_worker_completion)
+    monkeypatch.setattr(service, "_terminate_worker_process", _terminate_worker_process)
+
     await service._run_backtest("job-cancel", "strategy")
-    assert "cancelled" in status_values
+    assert "cancelled" not in status_values
+    assert any(name == "terminate" for name, _ in events)
 
     events.clear()
     status_values.clear()
-
-    class _FailedLoop:
-        def run_in_executor(self, executor, fn, *args):  # noqa: ANN001
-            _ = (executor, fn, args)
-            fut = asyncio.Future()
-            fut.set_exception(RuntimeError("failed"))
-            return fut
-
-    monkeypatch.setattr(asyncio, "get_running_loop", lambda: _FailedLoop())
+    monkeypatch.setattr(
+        service,
+        "_start_worker_process",
+        lambda job_id, strategy_name, config_override=None: asyncio.sleep(
+            0,
+            result=SimpleNamespace(returncode=2, wait=lambda: asyncio.sleep(0, result=2)),
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_wait_for_worker_completion",
+        lambda job_id, process_obj: asyncio.sleep(0, result=2),
+    )
+    monkeypatch.setattr(
+        service._manager,
+        "reload_job_from_storage",
+        lambda job_id, notify=False: asyncio.sleep(
+            0,
+            result=SimpleNamespace(
+                job_id=job_id,
+                status=JobStatus.RUNNING,
+                progress=0.5,
+                message="running",
+            ),
+        ),
+    )
+    monkeypatch.setattr(service._manager, "is_cancel_requested", lambda job_id: False)
     await service._run_backtest("job-fail", "strategy")
     assert "failed" in status_values
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_marks_failed_when_worker_exits_without_terminal_state(monkeypatch):
+    service = BacktestService()
+    statuses: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(service._manager, "acquire_slot", lambda: asyncio.sleep(0))
+    monkeypatch.setattr(service._manager, "release_slot", lambda: None)
+
+    async def _update_job_status(job_id: str, status, **kwargs):
+        _ = job_id
+        statuses.append((status.value, kwargs.get("error")))
+
+    monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
+    monkeypatch.setattr(
+        service,
+        "_start_worker_process",
+        lambda job_id, strategy_name, config_override=None: asyncio.sleep(
+            0,
+            result=SimpleNamespace(returncode=0, wait=lambda: asyncio.sleep(0, result=0)),
+        ),
+    )
+    monkeypatch.setattr(
+        service,
+        "_wait_for_worker_completion",
+        lambda job_id, process_obj: asyncio.sleep(0, result=0),
+    )
+    monkeypatch.setattr(
+        service._manager,
+        "reload_job_from_storage",
+        lambda job_id, notify=False: asyncio.sleep(
+            0,
+            result=SimpleNamespace(job_id=job_id, status=JobStatus.RUNNING, progress=0.2, message="running"),
+        ),
+    )
+    monkeypatch.setattr(service._manager, "is_cancel_requested", lambda job_id: False)
+
+    await service._run_backtest("job-no-terminal", "strategy")
+
+    assert statuses == [
+        ("pending", None),
+        ("failed", "worker_exited_without_terminal_state"),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_cancelled_without_cancel_request_updates_cancelled(monkeypatch):
+    service = BacktestService()
+    statuses: list[str] = []
+    process = SimpleNamespace(returncode=None)
+
+    monkeypatch.setattr(service._manager, "acquire_slot", lambda: asyncio.sleep(0))
+    monkeypatch.setattr(service._manager, "release_slot", lambda: None)
+
+    async def _update_job_status(job_id: str, status, **kwargs):
+        _ = (job_id, kwargs)
+        statuses.append(status.value)
+
+    monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
+    monkeypatch.setattr(
+        service._manager,
+        "reload_job_from_storage",
+        lambda job_id, notify=False: asyncio.sleep(
+            0,
+            result=SimpleNamespace(job_id=job_id, status=JobStatus.RUNNING, progress=0.2, message="running"),
+        ),
+    )
+    monkeypatch.setattr(service._manager, "is_cancel_requested", lambda job_id: False)
+    monkeypatch.setattr(
+        service,
+        "_start_worker_process",
+        lambda job_id, strategy_name, config_override=None: asyncio.sleep(0, result=process),
+    )
+
+    async def _wait_for_worker_completion(job_id: str, process_obj):
+        _ = (job_id, process_obj)
+        raise asyncio.CancelledError()
+
+    async def _terminate_worker_process(process_obj, *, timeout_seconds=3.0):
+        _ = timeout_seconds
+        process_obj.returncode = -15
+
+    monkeypatch.setattr(service, "_wait_for_worker_completion", _wait_for_worker_completion)
+    monkeypatch.setattr(service, "_terminate_worker_process", _terminate_worker_process)
+
+    await service._run_backtest("job-cancelled", "strategy")
+
+    assert statuses == ["pending", "cancelled"]
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_handles_start_worker_process_exception(monkeypatch):
+    service = BacktestService()
+    statuses: list[tuple[str, str | None]] = []
+
+    monkeypatch.setattr(service._manager, "acquire_slot", lambda: asyncio.sleep(0))
+    monkeypatch.setattr(service._manager, "release_slot", lambda: None)
+
+    async def _update_job_status(job_id: str, status, **kwargs):
+        _ = job_id
+        statuses.append((status.value, kwargs.get("error")))
+
+    monkeypatch.setattr(service._manager, "update_job_status", _update_job_status)
+
+    async def _start_worker_process(job_id: str, strategy_name: str, config_override=None):
+        _ = (job_id, strategy_name, config_override)
+        raise RuntimeError("spawn failed")
+
+    monkeypatch.setattr(service, "_start_worker_process", _start_worker_process)
+
+    await service._run_backtest("job-error", "strategy")
+
+    assert statuses == [("pending", None), ("failed", "spawn failed")]
+
+
+@pytest.mark.asyncio
+async def test_wait_for_worker_completion_reloads_until_process_exits(monkeypatch):
+    service = BacktestService(worker_poll_interval_seconds=0.01)
+    reload_calls: list[tuple[str, bool]] = []
+
+    async def _reload_job_from_storage(job_id: str, notify: bool = False):
+        reload_calls.append((job_id, notify))
+        return None
+
+    monkeypatch.setattr(service._manager, "reload_job_from_storage", _reload_job_from_storage)
+
+    class _FakeProcess:
+        def __init__(self) -> None:
+            self.calls = 0
+
+        async def wait(self) -> int:
+            self.calls += 1
+            return 0
+
+    process = _FakeProcess()
+    original_wait_for = asyncio.wait_for
+    call_count = {"count": 0}
+
+    async def _wait_for(awaitable, timeout):  # noqa: ANN001
+        _ = timeout
+        call_count["count"] += 1
+        if call_count["count"] == 1:
+            raise asyncio.TimeoutError()
+        return await original_wait_for(awaitable, timeout=1.0)
+
+    monkeypatch.setattr(asyncio, "wait_for", _wait_for)
+
+    exit_code = await service._wait_for_worker_completion("job-1", process)
+
+    assert exit_code == 0
+    assert reload_calls == [("job-1", True), ("job-1", True)]
+
+
+@pytest.mark.asyncio
+async def test_terminate_worker_process_kills_when_terminate_times_out(monkeypatch):
+    service = BacktestService()
+    events: list[str] = []
+
+    class _FakeProcess:
+        returncode = None
+
+        def terminate(self) -> None:
+            events.append("terminate")
+
+        def kill(self) -> None:
+            events.append("kill")
+
+        async def wait(self) -> int:
+            events.append("wait")
+            return 0
+
+    process = _FakeProcess()
+    original_wait_for = asyncio.wait_for
+    call_count = {"count": 0}
+
+    async def _wait_for(awaitable, timeout):  # noqa: ANN001
+        call_count["count"] += 1
+        if call_count["count"] == 1:
+            raise asyncio.TimeoutError()
+        return await original_wait_for(awaitable, timeout=timeout)
+
+    monkeypatch.setattr(asyncio, "wait_for", _wait_for)
+
+    await service._terminate_worker_process(process)
+
+    assert events == ["terminate", "kill", "wait"]
+
+
+@pytest.mark.asyncio
+async def test_start_worker_process_invokes_subprocess_exec(monkeypatch):
+    service = BacktestService()
+    captured: dict[str, object] = {}
+
+    async def _create_subprocess_exec(*args, **kwargs):
+        captured["args"] = args
+        captured["kwargs"] = kwargs
+        return SimpleNamespace(returncode=0)
+
+    monkeypatch.setattr(asyncio, "create_subprocess_exec", _create_subprocess_exec)
+
+    await service._start_worker_process("job-1", "strategy-1", {"shared_config": {"dataset": "sample"}})
+
+    assert captured["args"] == tuple(
+        service._build_worker_command("job-1", "strategy-1", {"shared_config": {"dataset": "sample"}})
+    )
+
+
+def test_build_worker_command_embeds_config_override():
+    service = BacktestService(worker_timeout_seconds=900)
+
+    command = service._build_worker_command(
+        "job-1",
+        "strategy-1",
+        {"shared_config": {"dataset": "sample"}},
+    )
+
+    assert command[:3] == [sys.executable, "-m", "src.application.workers.backtest_worker"]
+    assert "--job-id" in command
+    assert "--strategy-name" in command
+    assert command[command.index("--timeout-seconds") + 1] == "900"
+    json_arg = command[command.index("--config-override-json") + 1]
+    assert json.loads(json_arg) == {"shared_config": {"dataset": "sample"}}
 
 
 def test_extract_result_summary_prefers_html_metrics(tmp_path: Path):

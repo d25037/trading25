@@ -11,6 +11,10 @@ from fastapi import APIRouter, HTTPException, Query
 from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
+from src.entrypoints.http.routes.job_response_utils import (
+    build_job_execution_control,
+    build_run_metadata,
+)
 from src.entrypoints.http.schemas.lab import (
     LabEvolveRequest,
     LabEvolveResult,
@@ -83,7 +87,8 @@ def _build_lab_job_response(job: JobInfo) -> LabJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
-        run_metadata=job.run_metadata,
+        run_metadata=build_run_metadata(job),
+        execution_control=build_job_execution_control(job),
         lab_type=lab_type,
         strategy_name=job.strategy_name,
         result_data=result_data,
