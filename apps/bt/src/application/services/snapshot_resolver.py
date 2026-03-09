@@ -9,6 +9,7 @@ from pathlib import Path
 from src.application.services.dataset_resolver import DatasetResolver
 from src.shared.config.settings import Settings, get_settings
 from src.shared.utils.snapshot_ids import (
+    canonicalize_dataset_snapshot_id,
     normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
 )
@@ -174,11 +175,7 @@ def resolve_dataset_snapshot_id(
 ) -> str | None:
     """Best-effort snapshot-id resolution for execution metadata."""
 
-    try:
-        normalized_name = normalize_dataset_snapshot_name(dataset_name)
-    except ValueError:
-        return None
-
+    normalized_name = canonicalize_dataset_snapshot_id(dataset_name)
     if normalized_name is None:
         return None
 

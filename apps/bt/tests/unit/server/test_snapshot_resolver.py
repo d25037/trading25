@@ -15,6 +15,7 @@ from src.application.services.snapshot_resolver import (
     resolve_dataset_snapshot_id,
     resolve_market_snapshot_id,
 )
+from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
 
 def test_resolve_dataset_prefers_duckdb_snapshot(tmp_path: Path) -> None:
@@ -87,6 +88,14 @@ def test_normalize_dataset_snapshot_name_rejects_path_like_input() -> None:
         normalize_dataset_snapshot_name("../sample.db")
 
 
+def test_canonicalize_dataset_snapshot_id_accepts_legacy_path_input() -> None:
+    assert canonicalize_dataset_snapshot_id("dataset/sample.db") == "sample"
+
+
+def test_canonicalize_dataset_snapshot_id_rejects_path_traversal() -> None:
+    assert canonicalize_dataset_snapshot_id("../sample.db") is None
+
+
 def test_resolve_dataset_rejects_invalid_dataset_name(tmp_path: Path) -> None:
     resolver = SnapshotResolver(str(tmp_path), str(tmp_path / "market-timeseries"))
 
@@ -96,6 +105,10 @@ def test_resolve_dataset_rejects_invalid_dataset_name(tmp_path: Path) -> None:
 
 def test_resolve_dataset_snapshot_id_falls_back_to_normalized_name_for_missing_snapshot() -> None:
     assert resolve_dataset_snapshot_id(" sample.db ") == "sample"
+
+
+def test_resolve_dataset_snapshot_id_canonicalizes_legacy_path() -> None:
+    assert resolve_dataset_snapshot_id("dataset/sample.db") == "sample"
 
 
 def test_resolve_dataset_snapshot_id_returns_none_for_invalid_name() -> None:

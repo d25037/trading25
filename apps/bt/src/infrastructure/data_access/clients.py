@@ -38,6 +38,27 @@ _market_reader_cache: dict[str, MarketDbReader] = {}
 _market_reader_lock = threading.Lock()
 
 
+def close_all_cached_data_access_clients() -> None:
+    """Close process-global direct-mode caches."""
+
+    with _dataset_db_lock:
+        dataset_dbs = list(_dataset_db_cache.values())
+        _dataset_db_cache.clear()
+
+    with _market_reader_lock:
+        market_readers = list(_market_reader_cache.values())
+        _market_reader_cache.clear()
+
+    for db in dataset_dbs:
+        close = getattr(db, "close", None)
+        if callable(close):
+            close()
+    for reader in market_readers:
+        close = getattr(reader, "close", None)
+        if callable(close):
+            close()
+
+
 def _rows_to_records(
     rows: list[Any],
     field_map: dict[str, str],
@@ -441,7 +462,7 @@ class DirectMarketClient:
         return None
 
     def close(self) -> None:
-        # Market readers are cached process-wide for reuse.
+        # Market readers are cached process-wide for reuse and closed on shutdown.
         return None
 
     def get_stock_ohlcv(

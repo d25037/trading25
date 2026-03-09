@@ -64,6 +64,7 @@ class TestLifespan:
             patch("src.entrypoints.http.app.backtest_service") as mock_bt,
             patch("src.entrypoints.http.app.optimization_service") as mock_opt,
             patch("src.entrypoints.http.app.lab_service") as mock_lab,
+            patch("src.entrypoints.http.app.close_all_cached_data_access_clients") as mock_close_clients,
         ):
             # Mock executors に _broken / _shutdown を明示セット
             for mock_svc in (mock_bt, mock_opt, mock_lab):
@@ -76,3 +77,4 @@ class TestLifespan:
             # shutdown phase
             mock_bt._executor.shutdown.assert_called_once_with(wait=True)
             mock_opt._executor.shutdown.assert_called_once_with(wait=True)
+            mock_close_clients.assert_called_once_with()

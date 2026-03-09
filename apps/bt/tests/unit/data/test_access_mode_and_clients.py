@@ -14,11 +14,9 @@ from src.infrastructure.data_access import clients, mode
 
 @pytest.fixture(autouse=True)
 def _reset_access_caches() -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
-    clients._dataset_db_cache.clear()
-    clients._market_reader_cache.clear()
+    clients.close_all_cached_data_access_clients()
     yield
-    clients._dataset_db_cache.clear()
-    clients._market_reader_cache.clear()
+    clients.close_all_cached_data_access_clients()
 
 
 def _ns(**kwargs: Any) -> SimpleNamespace:
@@ -172,6 +170,27 @@ def test_resolve_market_reader_uses_singleton(
 
     assert first is second
     assert len(init_calls) == 1
+
+
+def test_close_all_cached_data_access_clients_closes_cached_resources() -> None:
+    events: list[str] = []
+
+    class _ClosableDataset:
+        def close(self) -> None:
+            events.append("dataset")
+
+    class _ClosableMarketReader:
+        def close(self) -> None:
+            events.append("market")
+
+    clients._dataset_db_cache["dataset"] = _ClosableDataset()
+    clients._market_reader_cache["market"] = _ClosableMarketReader()
+
+    clients.close_all_cached_data_access_clients()
+
+    assert events == ["dataset", "market"]
+    assert clients._dataset_db_cache == {}
+    assert clients._market_reader_cache == {}
 
 
 def test_conversion_helpers_empty_rows() -> None:

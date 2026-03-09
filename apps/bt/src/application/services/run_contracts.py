@@ -98,7 +98,7 @@ def build_parameterized_run_spec(
     run_spec = build_default_run_spec(job_type, strategy_name)
     if dataset_name is not None:
         run_spec.dataset_name = dataset_name
-        run_spec.dataset_snapshot_id = resolve_dataset_snapshot_id(dataset_name) or dataset_name
+        run_spec.dataset_snapshot_id = resolve_dataset_snapshot_id(dataset_name)
     if parameters:
         run_spec.parameters = deepcopy(parameters)
     return run_spec
@@ -370,15 +370,11 @@ def refresh_job_execution_contracts(job: JobInfo) -> None:
         if job.run_spec.dataset_name is None:
             job.run_spec.dataset_name = job.dataset_name
         if job.run_spec.dataset_snapshot_id is None:
-            job.run_spec.dataset_snapshot_id = (
-                resolve_dataset_snapshot_id(job.dataset_name) or job.dataset_name
-            )
+            job.run_spec.dataset_snapshot_id = resolve_dataset_snapshot_id(job.dataset_name)
         if job.run_metadata.dataset_name is None:
             job.run_metadata.dataset_name = job.dataset_name
         if job.run_metadata.dataset_snapshot_id is None:
-            job.run_metadata.dataset_snapshot_id = (
-                resolve_dataset_snapshot_id(job.dataset_name) or job.dataset_name
-            )
+            job.run_metadata.dataset_snapshot_id = resolve_dataset_snapshot_id(job.dataset_name)
 
     job.artifact_index = build_artifact_index(job)
     job.canonical_result = CanonicalExecutionResult(

@@ -24,6 +24,43 @@ def normalize_dataset_snapshot_name(dataset_name: str | None) -> str | None:
     return stem
 
 
+def canonicalize_dataset_snapshot_id(dataset_name: str | None) -> str | None:
+    """Best-effort canonical snapshot ID for metadata and legacy path-like inputs."""
+
+    if not isinstance(dataset_name, str):
+        return None
+
+    normalized = dataset_name.strip()
+    if not normalized:
+        return None
+
+    try:
+        return normalize_dataset_snapshot_name(normalized)
+    except ValueError:
+        pass
+
+    candidate = normalized.replace("\\", "/")
+    if candidate.startswith("/"):
+        return None
+
+    segments = [segment for segment in candidate.split("/") if segment and segment != "."]
+    if not segments:
+        return None
+
+    if any(segment == ".." or not _DATASET_SNAPSHOT_NAME_RE.fullmatch(segment) for segment in segments[:-1]):
+        return None
+
+    leaf = segments[-1]
+    if leaf in {".", ".."}:
+        return None
+
+    stem = leaf.removesuffix(".db")
+    if not stem or not _DATASET_SNAPSHOT_NAME_RE.fullmatch(stem):
+        return None
+
+    return stem
+
+
 def normalize_market_snapshot_id(snapshot_id: str | None) -> str:
     """Canonicalize supported market snapshot identifiers."""
 

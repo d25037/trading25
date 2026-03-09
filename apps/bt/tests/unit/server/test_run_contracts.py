@@ -109,6 +109,28 @@ class TestRunSpecBuilders:
         assert run_spec.dataset_snapshot_id == "sample"
         assert run_spec.market_snapshot_id == "market:latest"
 
+    def test_build_parameterized_run_spec_canonicalizes_legacy_path_snapshot_id(self) -> None:
+        run_spec = build_parameterized_run_spec(
+            "screening",
+            "analytics/screening",
+            dataset_name="dataset/primeExTopix500.db",
+        )
+
+        assert run_spec.dataset_name == "dataset/primeExTopix500.db"
+        assert run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert run_spec.market_snapshot_id == "market:latest"
+
+    def test_build_parameterized_run_spec_does_not_fallback_to_invalid_raw_snapshot_id(self) -> None:
+        run_spec = build_parameterized_run_spec(
+            "screening",
+            "analytics/screening",
+            dataset_name="../primeExTopix500.db",
+        )
+
+        assert run_spec.dataset_name == "../primeExTopix500.db"
+        assert run_spec.dataset_snapshot_id is None
+        assert run_spec.market_snapshot_id == "market:latest"
+
     def test_build_config_override_run_spec_keeps_config_and_extra_parameters(self) -> None:
         run_spec = build_config_override_run_spec(
             "backtest_attribution",
@@ -230,6 +252,26 @@ class TestRefreshJobExecutionContracts:
         assert ArtifactKind.MANIFEST_JSON in kinds
         assert ArtifactKind.RESULT_SUMMARY in kinds
         assert ArtifactKind.RAW_RESULT_JSON in kinds
+
+    def test_refresh_job_execution_contracts_canonicalizes_legacy_dataset_snapshot_id(
+        self, tmp_path: Path
+    ) -> None:
+        html_path = tmp_path / "result.html"
+        html_path.write_text("<html>ok</html>", encoding="utf-8")
+
+        job = JobInfo("job-path", "demo-strategy", job_type="backtest")
+        job.status = JobStatus.COMPLETED
+        job.dataset_name = "dataset/primeExTopix500.db"
+        job.html_path = str(html_path)
+
+        refresh_job_execution_contracts(job)
+
+        assert job.run_spec is not None
+        assert job.run_spec.dataset_snapshot_id == "primeExTopix500"
+        assert job.run_metadata is not None
+        assert job.run_metadata.dataset_snapshot_id == "primeExTopix500"
+        assert job.canonical_result is not None
+        assert job.canonical_result.dataset_snapshot_id == "primeExTopix500"
 
     def test_attribution_job_uses_internal_artifact_path_for_index_and_strips_payload(self, tmp_path: Path) -> None:
         artifact_path = tmp_path / "attribution.json"

@@ -50,6 +50,7 @@ from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
 )
+from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -189,6 +190,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Phase 3D: DatasetResolver shutdown
     if dataset_resolver is not None:
         dataset_resolver.close_all()
+    close_all_cached_data_access_clients()
 
     # Phase 3D: Job manager shutdown
     from src.application.services.sync_service import sync_job_manager
