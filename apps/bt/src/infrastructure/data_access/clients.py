@@ -7,15 +7,14 @@ Direct mode bypasses internal HTTP and reads local DBs via DatasetDb/MarketDbRea
 from __future__ import annotations
 
 import threading
+from pathlib import Path
 from typing import Any, Literal
 
 import pandas as pd
 
-from src.application.services.snapshot_resolver import (
-    SnapshotBackend,
-    SnapshotResolver,
-    normalize_dataset_snapshot_name,
-)
+from src.infrastructure.db.market.dataset_db import DatasetDb
+from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.external_api.dataset.helpers import (
     convert_dated_response,
@@ -25,17 +24,15 @@ from src.infrastructure.external_api.dataset.helpers import (
 from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.shared.config.settings import get_settings
-from src.infrastructure.db.market.dataset_db import DatasetDb
-from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.utils.snapshot_ids import (
+    normalize_dataset_snapshot_name,
+    normalize_market_snapshot_id,
+)
 
 from .mode import should_use_direct_db
 
 _dataset_db_cache: dict[str, DatasetDb | DatasetSnapshotReader] = {}
 _dataset_db_lock = threading.Lock()
-
-_snapshot_resolver: SnapshotResolver | None = None
-_snapshot_resolver_key: tuple[str, str] | None = None
 
 _market_reader_cache: dict[str, MarketDbReader] = {}
 _market_reader_lock = threading.Lock()
@@ -54,41 +51,68 @@ def _rows_to_records(
     ]
 
 
-def _get_snapshot_resolver() -> SnapshotResolver:
-    global _snapshot_resolver, _snapshot_resolver_key
+def _resolve_dataset_artifact(
+    dataset_name: str,
+) -> tuple[Literal["duckdb-parquet", "sqlite-compatibility", "sqlite-legacy"], str, str]:
+    normalized_dataset_name = normalize_dataset_snapshot_name(dataset_name)
+    if normalized_dataset_name is None:
+        raise FileNotFoundError(f"Dataset not found: {dataset_name}")
 
     settings = get_settings()
-    resolver_key = (
-        str(getattr(settings, "dataset_base_path", "") or ""),
-        str(getattr(settings, "market_timeseries_dir", "") or ""),
-    )
-    if _snapshot_resolver is None or _snapshot_resolver_key != resolver_key:
-        _snapshot_resolver = SnapshotResolver.from_settings(settings)
-        _snapshot_resolver_key = resolver_key
-    return _snapshot_resolver
+    dataset_root = Path(str(getattr(settings, "dataset_base_path", "") or "")).resolve()
+    snapshot_root = dataset_root / normalized_dataset_name
+    duckdb_path = snapshot_root / "dataset.duckdb"
+    compatibility_db_path = snapshot_root / "dataset.db"
+    legacy_db_path = dataset_root / f"{normalized_dataset_name}.db"
+
+    if duckdb_path.exists():
+        return "duckdb-parquet", str(snapshot_root.resolve()), str(duckdb_path.resolve())
+    if compatibility_db_path.exists():
+        return (
+            "sqlite-compatibility",
+            str(snapshot_root.resolve()),
+            str(compatibility_db_path.resolve()),
+        )
+    if legacy_db_path.exists():
+        return (
+            "sqlite-legacy",
+            str(legacy_db_path.parent.resolve()),
+            str(legacy_db_path.resolve()),
+        )
+
+    raise FileNotFoundError(f"Dataset not found: {dataset_name}")
 
 
 def _resolve_dataset_db(dataset_name: str) -> DatasetDb | DatasetSnapshotReader:
-    snapshot = _get_snapshot_resolver().require_dataset(dataset_name)
-    cache_key = snapshot.primary_path
+    backend, snapshot_root, primary_path = _resolve_dataset_artifact(dataset_name)
+    cache_key = primary_path
     with _dataset_db_lock:
         db = _dataset_db_cache.get(cache_key)
         if db is None:
-            if snapshot.backend == SnapshotBackend.DUCKDB_PARQUET:
-                db = DatasetSnapshotReader(snapshot.root_path)
+            if backend == "duckdb-parquet":
+                db = DatasetSnapshotReader(snapshot_root)
             else:
-                db = DatasetDb(snapshot.primary_path)
+                db = DatasetDb(primary_path)
             _dataset_db_cache[cache_key] = db
         return db
 
 
 def _resolve_market_reader(snapshot_id: str | None = None) -> MarketDbReader:
-    snapshot = _get_snapshot_resolver().resolve_market(snapshot_id)
-    cache_key = snapshot.primary_path
+    normalized_snapshot_id = normalize_market_snapshot_id(snapshot_id)
+    settings = get_settings()
+    market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
+    if not market_timeseries_dir:
+        raise FileNotFoundError("MARKET_TIMESERIES_DIR is not configured")
+
+    market_duckdb_path = (Path(market_timeseries_dir).resolve() / "market.duckdb").resolve()
+    if not market_duckdb_path.exists():
+        raise FileNotFoundError(f"market.duckdb not found: {market_duckdb_path}")
+
+    cache_key = f"{normalized_snapshot_id}:{market_duckdb_path}"
     with _market_reader_lock:
         reader = _market_reader_cache.get(cache_key)
         if reader is None:
-            reader = MarketDbReader(snapshot.primary_path)
+            reader = MarketDbReader(str(market_duckdb_path))
             _market_reader_cache[cache_key] = reader
         return reader
 
@@ -414,6 +438,10 @@ class DirectMarketClient:
         _exc_val: BaseException | None,
         _exc_tb: Any,
     ) -> None:
+        return None
+
+    def close(self) -> None:
+        # Market readers are cached process-wide for reuse.
         return None
 
     def get_stock_ohlcv(

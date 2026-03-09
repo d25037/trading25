@@ -8,6 +8,10 @@ from pathlib import Path
 
 from src.application.services.dataset_resolver import DatasetResolver
 from src.shared.config.settings import Settings, get_settings
+from src.shared.utils.snapshot_ids import (
+    normalize_dataset_snapshot_name,
+    normalize_market_snapshot_id,
+)
 
 
 class SnapshotPlane(str, Enum):
@@ -42,38 +46,6 @@ class ResolvedSnapshot:
     @property
     def path(self) -> str:
         return self.primary_path
-
-
-def normalize_dataset_snapshot_name(dataset_name: str | None) -> str | None:
-    """Normalize dataset snapshot input while preserving current name semantics."""
-
-    if not isinstance(dataset_name, str):
-        return None
-
-    normalized = dataset_name.strip()
-    if not normalized:
-        return None
-
-    stem = Path(normalized).stem
-    return stem or None
-
-
-def normalize_market_snapshot_id(snapshot_id: str | None) -> str:
-    """Canonicalize market snapshot identifiers.
-
-    The current data plane exposes only the mutable latest pointer backed by
-    ``market.duckdb``. Future immutable market snapshots can extend this
-    normalization without changing client call sites.
-    """
-
-    if snapshot_id is None:
-        return "market:latest"
-
-    normalized = snapshot_id.strip()
-    if not normalized or normalized in {"latest", "market:latest"}:
-        return "market:latest"
-
-    raise FileNotFoundError(f"Unsupported market snapshot: {snapshot_id}")
 
 
 class SnapshotResolver:
@@ -202,7 +174,11 @@ def resolve_dataset_snapshot_id(
 ) -> str | None:
     """Best-effort snapshot-id resolution for execution metadata."""
 
-    normalized_name = normalize_dataset_snapshot_name(dataset_name)
+    try:
+        normalized_name = normalize_dataset_snapshot_name(dataset_name)
+    except ValueError:
+        return None
+
     if normalized_name is None:
         return None
 

@@ -10,6 +10,7 @@ from src.application.services.snapshot_resolver import (
     SnapshotBackend,
     SnapshotPlane,
     SnapshotResolver,
+    normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
     resolve_dataset_snapshot_id,
     resolve_market_snapshot_id,
@@ -81,8 +82,24 @@ def test_normalize_market_snapshot_id_rejects_unknown_snapshots() -> None:
         normalize_market_snapshot_id("market:20260309")
 
 
+def test_normalize_dataset_snapshot_name_rejects_path_like_input() -> None:
+    with pytest.raises(ValueError, match="Invalid dataset name"):
+        normalize_dataset_snapshot_name("../sample.db")
+
+
+def test_resolve_dataset_rejects_invalid_dataset_name(tmp_path: Path) -> None:
+    resolver = SnapshotResolver(str(tmp_path), str(tmp_path / "market-timeseries"))
+
+    with pytest.raises(ValueError, match="Invalid dataset name"):
+        resolver.resolve_dataset("../sample.db")
+
+
 def test_resolve_dataset_snapshot_id_falls_back_to_normalized_name_for_missing_snapshot() -> None:
     assert resolve_dataset_snapshot_id(" sample.db ") == "sample"
+
+
+def test_resolve_dataset_snapshot_id_returns_none_for_invalid_name() -> None:
+    assert resolve_dataset_snapshot_id("../sample.db") is None
 
 
 def test_resolve_market_snapshot_id_defaults_to_latest() -> None:

@@ -15,13 +15,9 @@ from src.infrastructure.data_access import clients, mode
 @pytest.fixture(autouse=True)
 def _reset_access_caches() -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
     clients._dataset_db_cache.clear()
-    clients._snapshot_resolver = None
-    clients._snapshot_resolver_key = None
     clients._market_reader_cache.clear()
     yield
     clients._dataset_db_cache.clear()
-    clients._snapshot_resolver = None
-    clients._snapshot_resolver_key = None
     clients._market_reader_cache.clear()
 
 
@@ -69,6 +65,15 @@ def test_resolve_dataset_db_raises_when_missing(
 
     with pytest.raises(FileNotFoundError, match="Dataset not found"):
         clients._resolve_dataset_db("missing")
+
+
+def test_resolve_dataset_db_rejects_invalid_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid dataset name"):
+        clients._resolve_dataset_db("../sample.db")
 
 
 def test_resolve_dataset_db_uses_cache(
@@ -482,6 +487,10 @@ def test_direct_market_client_get_topix(monkeypatch: pytest.MonkeyPatch) -> None
     assert list(df.columns) == ["Open", "High", "Low", "Close"]
     assert "WHERE date >= ? AND date <= ?" in captured["sql"]
     assert captured["params"] == ("2024-01-01", "2024-12-31")
+
+
+def test_direct_market_client_close_is_noop() -> None:
+    clients.DirectMarketClient().close()
 
 
 def test_direct_market_client_get_stock_ohlcv(monkeypatch: pytest.MonkeyPatch) -> None:
