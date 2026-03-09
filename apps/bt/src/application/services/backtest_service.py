@@ -14,6 +14,7 @@ from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 from src.application.services.job_manager import JobManager, job_manager
+from src.application.services.run_contracts import build_strategy_run_spec, normalize_config_override
 
 
 class BacktestService:
@@ -50,11 +51,18 @@ class BacktestService:
         Returns:
             ジョブID
         """
-        job_id = self._manager.create_job(strategy_name)
+        normalized_config_override = normalize_config_override(config_override)
+        run_spec = build_strategy_run_spec(
+            "backtest",
+            strategy_name,
+            config_override=normalized_config_override,
+            config_loader=self._runner.config_loader,
+        )
+        job_id = self._manager.create_job(strategy_name, run_spec=run_spec)
 
         # バックグラウンドタスクとして実行
         task = asyncio.create_task(
-            self._run_backtest(job_id, strategy_name, config_override)
+            self._run_backtest(job_id, strategy_name, normalized_config_override)
         )
         await self._manager.set_job_task(job_id, task)
 

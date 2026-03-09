@@ -11,7 +11,9 @@ from typing import Any
 
 from loguru import logger
 
+from src.domains.backtest.contracts import RunSpec
 from src.domains.lab_agent.models import LabStructureMode, LabTargetScope, SignalCategory
+from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.lab import (
     EvolutionHistoryItem,
@@ -20,6 +22,7 @@ from src.entrypoints.http.schemas.lab import (
     OptimizeTrialItem,
 )
 from src.application.services.job_manager import JobManager, job_manager
+from src.application.services.run_contracts import build_parameterized_run_spec, build_strategy_run_spec
 
 _INTERNAL_JOB_MESSAGE_KEY = "_job_message"
 _EVOLVE_COMPLETE_MESSAGE = "GA進化完了"
@@ -49,6 +52,7 @@ class LabService:
     ) -> None:
         self._manager = manager or job_manager
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._config_loader = ConfigLoader()
 
     # ============================================
     # Common Job Runner
@@ -118,6 +122,7 @@ class LabService:
         self,
         strategy_name: str,
         job_type: str,
+        run_spec: RunSpec | None,
         lab_type: str,
         start_message: str,
         complete_message: str,
@@ -128,7 +133,11 @@ class LabService:
         sync_args: tuple[Any, ...],
     ) -> str:
         """共通のジョブサブミット処理"""
-        job_id = self._manager.create_job(strategy_name, job_type=job_type)
+        job_id = self._manager.create_job(
+            strategy_name,
+            job_type=job_type,
+            run_spec=run_spec,
+        )
 
         task = asyncio.create_task(
             self._run_job(
@@ -165,9 +174,26 @@ class LabService:
     ) -> str:
         """戦略自動生成ジョブをサブミット"""
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        run_spec = build_parameterized_run_spec(
+            "lab_generate",
+            f"generate(n={count},top={top})",
+            dataset_name=dataset,
+            parameters={
+                "count": count,
+                "top": top,
+                "seed": seed,
+                "save": save,
+                "direction": direction,
+                "timeframe": timeframe,
+                "dataset": dataset,
+                "entry_filter_only": entry_filter_only,
+                "allowed_categories": resolved_categories,
+            },
+        )
         return await self._submit_job(
             strategy_name=f"generate(n={count},top={top})",
             job_type="lab_generate",
+            run_spec=run_spec,
             lab_type="generate",
             start_message="戦略を生成しています...",
             complete_message="戦略生成完了",
@@ -278,9 +304,27 @@ class LabService:
         resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        run_spec = build_strategy_run_spec(
+            "lab_evolve",
+            strategy_name,
+            parameters={
+                "generations": generations,
+                "population": population,
+                "structure_mode": structure_mode,
+                "random_add_entry_signals": random_add_entry_signals,
+                "random_add_exit_signals": random_add_exit_signals,
+                "seed": seed,
+                "save": save,
+                "entry_filter_only": effective_entry_filter_only,
+                "target_scope": resolved_target_scope,
+                "allowed_categories": resolved_categories,
+            },
+            config_loader=self._config_loader,
+        )
         return await self._submit_job(
             strategy_name=strategy_name,
             job_type="lab_evolve",
+            run_spec=run_spec,
             lab_type="evolve",
             start_message="GA進化を開始しています...",
             complete_message="GA進化完了",
@@ -403,11 +447,32 @@ class LabService:
         scoring_weights: dict[str, float] | None = None,
     ) -> str:
         """Optuna最適化ジョブをサブミット"""
-        job_id = self._manager.create_job(strategy_name, job_type="lab_optimize")
-
         resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        run_spec = build_strategy_run_spec(
+            "lab_optimize",
+            strategy_name,
+            parameters={
+                "trials": trials,
+                "sampler": sampler,
+                "structure_mode": structure_mode,
+                "random_add_entry_signals": random_add_entry_signals,
+                "random_add_exit_signals": random_add_exit_signals,
+                "seed": seed,
+                "save": save,
+                "entry_filter_only": effective_entry_filter_only,
+                "target_scope": resolved_target_scope,
+                "allowed_categories": resolved_categories,
+                "scoring_weights": scoring_weights,
+            },
+            config_loader=self._config_loader,
+        )
+        job_id = self._manager.create_job(
+            strategy_name,
+            job_type="lab_optimize",
+            run_spec=run_spec,
+        )
         task = asyncio.create_task(
             self._run_optimize(
                 job_id,
@@ -616,9 +681,20 @@ class LabService:
     ) -> str:
         """戦略改善ジョブをサブミット"""
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
+        run_spec = build_strategy_run_spec(
+            "lab_improve",
+            strategy_name,
+            parameters={
+                "auto_apply": auto_apply,
+                "entry_filter_only": entry_filter_only,
+                "allowed_categories": resolved_categories,
+            },
+            config_loader=self._config_loader,
+        )
         return await self._submit_job(
             strategy_name=strategy_name,
             job_type="lab_improve",
+            run_spec=run_spec,
             lab_type="improve",
             start_message="戦略を分析しています...",
             complete_message="戦略改善完了",

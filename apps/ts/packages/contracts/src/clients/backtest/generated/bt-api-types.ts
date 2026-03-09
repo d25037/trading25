@@ -2685,6 +2685,62 @@ export interface components {
             symbol: string;
         };
         /**
+         * ArtifactIndex
+         * @description List of artifacts associated with a run.
+         */
+        ArtifactIndex: {
+            /**
+             * Artifacts
+             * @description Artifact records
+             */
+            artifacts?: components["schemas"]["ArtifactRecord"][];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+        };
+        /**
+         * ArtifactKind
+         * @description Artifact role within a run.
+         * @enum {string}
+         */
+        ArtifactKind: "html" | "metrics_json" | "manifest_json" | "result_summary" | "raw_result_json" | "attribution_json" | "strategy_yaml" | "history_yaml";
+        /**
+         * ArtifactRecord
+         * @description Artifact registry entry for a run output.
+         */
+        ArtifactRecord: {
+            /** @description Artifact role */
+            kind: components["schemas"]["ArtifactKind"];
+            /**
+             * Location
+             * @description Logical storage location when not stored on disk
+             */
+            location?: string | null;
+            /**
+             * Metadata
+             * @description Additional artifact metadata
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Path
+             * @description Filesystem path when stored on disk
+             */
+            path?: string | null;
+            /** @description Storage backend */
+            storage: components["schemas"]["ArtifactStorage"];
+        };
+        /**
+         * ArtifactStorage
+         * @description Physical storage backend for an artifact record.
+         * @enum {string}
+         */
+        ArtifactStorage: "filesystem" | "portfolio_db";
+        /**
          * AttributionArtifactContentResponse
          * @description 保存済み attribution JSON ファイル内容レスポンス
          */
@@ -2809,6 +2865,8 @@ export interface components {
             progress?: number | null;
             /** @description 結果サマリー（完了時のみ） */
             result?: components["schemas"]["BacktestResultSummary"] | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -2839,6 +2897,10 @@ export interface components {
          * @description バックテスト結果レスポンス（詳細）
          */
         BacktestResultResponse: {
+            /** @description Resolved artifact index */
+            artifact_index?: components["schemas"]["ArtifactIndex"] | null;
+            /** @description Engine-neutral execution result */
+            canonical_result?: components["schemas"]["CanonicalExecutionResult"] | null;
             /**
              * Created At
              * Format: date-time
@@ -2865,6 +2927,8 @@ export interface components {
              * @description ジョブID
              */
             job_id: string;
+            /** @description Engine-neutral execution input contract */
+            run_spec?: components["schemas"]["RunSpec"] | null;
             /**
              * Strategy Name
              * @description 戦略名
@@ -2955,6 +3019,139 @@ export interface components {
             message: string;
             /** Success */
             success: boolean;
+        };
+        /**
+         * CanonicalExecutionMetrics
+         * @description Common scalar metrics available across execution engines.
+         */
+        CanonicalExecutionMetrics: {
+            /**
+             * Calmar Ratio
+             * @description Calmar ratio
+             */
+            calmar_ratio?: number | null;
+            /**
+             * Max Drawdown
+             * @description Max drawdown
+             */
+            max_drawdown?: number | null;
+            /**
+             * Sharpe Ratio
+             * @description Sharpe ratio
+             */
+            sharpe_ratio?: number | null;
+            /**
+             * Sortino Ratio
+             * @description Sortino ratio
+             */
+            sortino_ratio?: number | null;
+            /**
+             * Total Return
+             * @description Total return
+             */
+            total_return?: number | null;
+            /**
+             * Trade Count
+             * @description Closed trade count
+             */
+            trade_count?: number | null;
+            /**
+             * Win Rate
+             * @description Win rate
+             */
+            win_rate?: number | null;
+        };
+        /**
+         * CanonicalExecutionResult
+         * @description Engine-neutral result envelope for run outputs.
+         */
+        CanonicalExecutionResult: {
+            /**
+             * Dataset Name
+             * @description Legacy dataset name for compatibility
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Snapshot Id
+             * @description Pinned dataset snapshot identifier
+             */
+            dataset_snapshot_id?: string | null;
+            /** @description Execution engine family */
+            engine_family: components["schemas"]["EngineFamily"];
+            /**
+             * Execution Policy Version
+             * @description Execution semantics/policy version
+             */
+            execution_policy_version?: string | null;
+            /**
+             * Execution Time
+             * @description Execution time in seconds
+             */
+            execution_time?: number | null;
+            /**
+             * Payload
+             * @description Original engine-specific payload
+             */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Run Id
+             * @description Run identifier
+             */
+            run_id: string;
+            /** @description Canonical run category */
+            run_type: components["schemas"]["RunType"];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Status
+             * @description Run status
+             */
+            status: string;
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+            /** @description Common scalar metrics when available */
+            summary_metrics?: components["schemas"]["CanonicalExecutionMetrics"] | null;
+        };
+        /**
+         * CompiledStrategyInputRequirements
+         * @description Declared inputs required by a compiled strategy.
+         */
+        CompiledStrategyInputRequirements: {
+            /**
+             * Required Data Domains
+             * @description Required data domains such as market/statements/margin
+             */
+            required_data_domains?: string[];
+            /**
+             * Required Features
+             * @description Required feature identifiers
+             */
+            required_features?: string[];
+            /**
+             * Required Fundamental Fields
+             * @description Required fundamental fields
+             */
+            required_fundamental_fields?: string[];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Signal Ids
+             * @description Compiled signal identifiers
+             */
+            signal_ids?: string[];
         };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
@@ -3535,6 +3732,12 @@ export interface components {
              */
             success: boolean;
         };
+        /**
+         * EngineFamily
+         * @description Execution engine family.
+         * @enum {string}
+         */
+        EngineFamily: "vectorbt" | "nautilus" | "unknown";
         /**
          * ErrorDetail
          * @description バリデーションエラー詳細
@@ -5000,6 +5203,8 @@ export interface components {
              * @description Lab結果データ（完了時のみ）
              */
             result_data?: (components["schemas"]["LabGenerateResult"] | components["schemas"]["LabEvolveResult"] | components["schemas"]["LabOptimizeResult"] | components["schemas"]["LabImproveResult"]) | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -5997,6 +6202,8 @@ export interface components {
              * @description 進捗（0.0 - 1.0）
              */
             progress?: number | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -6547,6 +6754,124 @@ export interface components {
             totalCompanies: number;
         };
         /**
+         * RunMetadata
+         * @description Resolved run metadata persisted in the experiment registry.
+         */
+        RunMetadata: {
+            /**
+             * Dataset Name
+             * @description Legacy dataset name for compatibility
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Snapshot Id
+             * @description Pinned dataset snapshot identifier
+             */
+            dataset_snapshot_id?: string | null;
+            /**
+             * @description Execution engine family
+             * @default unknown
+             */
+            engine_family: components["schemas"]["EngineFamily"];
+            /**
+             * Execution Policy Version
+             * @description Execution semantics/policy version
+             */
+            execution_policy_version?: string | null;
+            /**
+             * Parent Run Id
+             * @description Parent run identifier for lineage
+             */
+            parent_run_id?: string | null;
+            /**
+             * Run Id
+             * @description Run identifier
+             */
+            run_id: string;
+            /** @description Canonical run category */
+            run_type: components["schemas"]["RunType"];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+        };
+        /**
+         * RunSpec
+         * @description Engine-neutral execution input contract.
+         */
+        RunSpec: {
+            /** @description Input requirements expected from compiled strategy IR */
+            compiled_strategy_requirements?: components["schemas"]["CompiledStrategyInputRequirements"] | null;
+            /**
+             * Dataset Name
+             * @description Legacy dataset name for compatibility
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Snapshot Id
+             * @description Pinned dataset snapshot identifier
+             */
+            dataset_snapshot_id?: string | null;
+            /**
+             * @description Execution engine family
+             * @default unknown
+             */
+            engine_family: components["schemas"]["EngineFamily"];
+            /**
+             * Execution Policy Version
+             * @description Execution semantics/policy version
+             */
+            execution_policy_version?: string | null;
+            /**
+             * Parameters
+             * @description Resolved run parameters
+             */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Parent Run Id
+             * @description Parent run identifier for lineage
+             */
+            parent_run_id?: string | null;
+            /** @description Canonical run category */
+            run_type: components["schemas"]["RunType"];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Strategy Fingerprint
+             * @description Stable strategy fingerprint when available
+             */
+            strategy_fingerprint?: string | null;
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+            /**
+             * Strategy Source Ref
+             * @description Source reference for strategy definition
+             */
+            strategy_source_ref?: string | null;
+        };
+        /**
+         * RunType
+         * @description Canonical run category.
+         * @enum {string}
+         */
+        RunType: "backtest" | "optimization" | "attribution" | "screening" | "lab_generate" | "lab_evolve" | "lab_optimize" | "lab_improve" | "unknown";
+        /**
          * ScreeningJobRequest
          * @description Screening ジョブ作成リクエスト
          */
@@ -6655,6 +6980,8 @@ export interface components {
              * @description 基準日（任意）
              */
             referenceDate?: string | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Sortby
              * @description 並び順の基準
@@ -6836,6 +7163,8 @@ export interface components {
             progress?: number | null;
             /** @description 寄与分析結果（完了時のみ） */
             result_data?: components["schemas"]["SignalAttributionResult"] | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -6945,6 +7274,10 @@ export interface components {
          * @description シグナル寄与分析結果レスポンス（詳細）
          */
         SignalAttributionResultResponse: {
+            /** @description Resolved artifact index */
+            artifact_index?: components["schemas"]["ArtifactIndex"] | null;
+            /** @description Engine-neutral execution result */
+            canonical_result?: components["schemas"]["CanonicalExecutionResult"] | null;
             /**
              * Created At
              * Format: date-time

@@ -10,6 +10,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field
 
+from src.domains.backtest.contracts import RunMetadata
+
 
 class JobStatus(str, Enum):
     """ジョブステータス"""
@@ -32,6 +34,10 @@ class BaseJobResponse(BaseModel):
     started_at: datetime | None = Field(default=None, description="開始日時")
     completed_at: datetime | None = Field(default=None, description="完了日時")
     error: str | None = Field(default=None, description="エラーメッセージ")
+    run_metadata: RunMetadata | None = Field(
+        default=None,
+        description="Engine-neutral run metadata",
+    )
 
     model_config = {"use_enum_values": True}
 

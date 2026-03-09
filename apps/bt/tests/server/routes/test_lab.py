@@ -988,6 +988,9 @@ class TestLabServiceAsync:
             assert job is not None
             assert job.job_type == "lab_generate"
             assert "generate" in job.strategy_name
+            assert job.run_spec is not None
+            assert job.run_spec.dataset_name == "primeExTopix500"
+            assert job.run_spec.parameters["count"] == 10
         service._executor.shutdown(wait=False)
 
     async def test_submit_evolve_creates_job(self) -> None:
@@ -996,13 +999,28 @@ class TestLabServiceAsync:
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
-
-        with patch.object(service, "_run_job", new_callable=AsyncMock):
+        with (
+            patch.object(
+                service._config_loader,
+                "load_strategy_config",
+                return_value={"shared_config": {"dataset": "primeExTopix500"}},
+            ),
+            patch.object(
+                service._config_loader,
+                "merge_shared_config",
+                return_value={"dataset": "primeExTopix500"},
+            ),
+            patch.object(service, "_run_job", new_callable=AsyncMock),
+        ):
             job_id = await service.submit_evolve(strategy_name="test_strat")
             job = manager.get_job(job_id)
             assert job is not None
             assert job.job_type == "lab_evolve"
             assert job.strategy_name == "test_strat"
+            assert job.run_spec is not None
+            assert job.run_spec.dataset_name == "primeExTopix500"
+            assert job.run_spec.dataset_snapshot_id == "primeExTopix500"
+            assert job.run_spec.parameters["target_scope"] == "both"
         service._executor.shutdown(wait=False)
 
     async def test_submit_optimize_creates_job(self) -> None:
@@ -1011,14 +1029,30 @@ class TestLabServiceAsync:
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
-
-        with patch.object(service, "_run_optimize", new_callable=AsyncMock):
+        with (
+            patch.object(
+                service._config_loader,
+                "load_strategy_config",
+                return_value={"shared_config": {"dataset": "primeExTopix500"}},
+            ),
+            patch.object(
+                service._config_loader,
+                "merge_shared_config",
+                return_value={"dataset": "primeExTopix500"},
+            ),
+            patch.object(service, "_run_optimize", new_callable=AsyncMock),
+        ):
             job_id = await service.submit_optimize(
                 strategy_name="test_strat", trials=50, sampler="random"
             )
             job = manager.get_job(job_id)
             assert job is not None
             assert job.job_type == "lab_optimize"
+            assert job.run_spec is not None
+            assert job.run_spec.dataset_name == "primeExTopix500"
+            assert job.run_spec.dataset_snapshot_id == "primeExTopix500"
+            assert job.run_spec.parameters["trials"] == 50
+            assert job.run_spec.parameters["sampler"] == "random"
         service._executor.shutdown(wait=False)
 
     async def test_submit_improve_creates_job(self) -> None:
@@ -1027,12 +1061,27 @@ class TestLabServiceAsync:
 
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
-
-        with patch.object(service, "_run_job", new_callable=AsyncMock):
+        with (
+            patch.object(
+                service._config_loader,
+                "load_strategy_config",
+                return_value={"shared_config": {"dataset": "primeExTopix500"}},
+            ),
+            patch.object(
+                service._config_loader,
+                "merge_shared_config",
+                return_value={"dataset": "primeExTopix500"},
+            ),
+            patch.object(service, "_run_job", new_callable=AsyncMock),
+        ):
             job_id = await service.submit_improve(strategy_name="test_strat", auto_apply=False)
             job = manager.get_job(job_id)
             assert job is not None
             assert job.job_type == "lab_improve"
+            assert job.run_spec is not None
+            assert job.run_spec.dataset_name == "primeExTopix500"
+            assert job.run_spec.dataset_snapshot_id == "primeExTopix500"
+            assert job.run_spec.parameters["auto_apply"] is False
         service._executor.shutdown(wait=False)
 
     async def _run_job_test(

@@ -9,9 +9,41 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from src.domains.backtest.contracts import RunType
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobRequest
 from src.application.services.screening_job_service import ScreeningJobService
+
+
+@pytest.mark.asyncio
+async def test_submit_screening_passes_explicit_run_spec(monkeypatch: pytest.MonkeyPatch) -> None:
+    manager = MagicMock()
+    manager.create_job.return_value = "job-1"
+    manager.set_job_task = AsyncMock()
+    service = ScreeningJobService(manager=manager, max_workers=1)
+
+    fake_task = object()
+    captured: dict[str, object] = {}
+
+    def _fake_create_task(coro: object) -> object:
+        captured["coro"] = coro
+        coro.close()
+        return fake_task
+
+    monkeypatch.setattr(asyncio, "create_task", _fake_create_task)
+
+    request = ScreeningJobRequest(markets="0111", recentDays=5, limit=20)
+    job_id = await service.submit_screening(reader=MagicMock(), request=request)
+
+    assert job_id == "job-1"
+    _, kwargs = manager.create_job.call_args
+    run_spec = kwargs["run_spec"]
+    assert run_spec.run_type == RunType.SCREENING
+    assert run_spec.parameters["markets"] == "0111"
+    assert run_spec.parameters["recentDays"] == 5
+    manager.set_job_task.assert_awaited_once_with("job-1", fake_task)
+
+    service._executor.shutdown(wait=True)  # noqa: SLF001
 
 
 @pytest.mark.asyncio

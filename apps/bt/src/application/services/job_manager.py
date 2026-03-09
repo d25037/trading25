@@ -13,7 +13,19 @@ from datetime import datetime
 from typing import TYPE_CHECKING, Any
 
 from loguru import logger
+from pydantic import BaseModel
 
+from src.domains.backtest.contracts import (
+    ArtifactIndex,
+    CanonicalExecutionResult,
+    RunMetadata,
+    RunSpec,
+)
+from src.application.services.run_contracts import (
+    build_default_run_spec,
+    build_run_metadata_from_spec,
+    refresh_job_execution_contracts,
+)
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.entrypoints.http.schemas.common import SSEJobEvent
 
@@ -37,8 +49,12 @@ class JobInfo:
         self.started_at: datetime | None = None
         self.completed_at: datetime | None = None
         self.error: str | None = None
+        self.run_spec: RunSpec | None = None
+        self.run_metadata: RunMetadata | None = None
         self.result: BacktestResultSummary | None = None
         self.raw_result: dict[str, Any] | None = None
+        self.canonical_result: CanonicalExecutionResult | None = None
+        self.artifact_index: ArtifactIndex | None = None
         self.html_path: str | None = None
         self.dataset_name: str | None = None
         self.execution_time: float | None = None
@@ -91,6 +107,11 @@ class JobManager:
             return None
         return json.dumps(value.model_dump(mode="json"), ensure_ascii=False)
 
+    def _serialize_model(self, value: BaseModel | None) -> str | None:
+        if value is None:
+            return None
+        return json.dumps(value.model_dump(mode="json"), ensure_ascii=False)
+
     def _deserialize_summary(self, value: str | None) -> BacktestResultSummary | None:
         payload = self._deserialize_json(value)
         if payload is None:
@@ -99,6 +120,20 @@ class JobManager:
             return BacktestResultSummary.model_validate(payload)
         except Exception as e:
             logger.warning(f"BacktestResultSummary の復元に失敗: {e}")
+            return None
+
+    def _deserialize_model(
+        self,
+        value: str | None,
+        model_cls: type[BaseModel],
+    ) -> BaseModel | None:
+        payload = self._deserialize_json(value)
+        if payload is None:
+            return None
+        try:
+            return model_cls.model_validate(payload)
+        except Exception as e:
+            logger.warning(f"{model_cls.__name__} の復元に失敗: {e}")
             return None
 
     def _parse_datetime(self, value: str | None) -> datetime | None:
@@ -110,6 +145,10 @@ class JobManager:
             return None
 
     def _job_from_row(self, row: Any) -> JobInfo:
+        job, _ = self._hydrate_job_from_row(row)
+        return job
+
+    def _hydrate_job_from_row(self, row: Any) -> tuple[JobInfo, bool]:
         status_raw = row.status
         try:
             status = JobStatus(status_raw)
@@ -123,25 +162,75 @@ class JobManager:
             job_type=row.job_type,
         )
         job.status = status
-        job.progress = row.progress
-        job.message = row.message
-        job.error = row.error
-        job.created_at = self._parse_datetime(row.created_at) or datetime.now()
-        job.started_at = self._parse_datetime(row.started_at)
-        job.completed_at = self._parse_datetime(row.completed_at)
-        job.result = self._deserialize_summary(row.result_json)
-        job.raw_result = self._deserialize_json(row.raw_result_json)
-        job.html_path = row.html_path
-        job.dataset_name = row.dataset_name
-        job.execution_time = row.execution_time
-        job.best_score = row.best_score
-        job.best_params = self._deserialize_json(row.best_params_json)
-        job.worst_score = row.worst_score
-        job.worst_params = self._deserialize_json(row.worst_params_json)
-        job.total_combinations = row.total_combinations
-        return job
+        job.progress = getattr(row, "progress", None)
+        job.message = getattr(row, "message", None)
+        job.error = getattr(row, "error", None)
+        job.created_at = self._parse_datetime(getattr(row, "created_at", None)) or datetime.now()
+        job.started_at = self._parse_datetime(getattr(row, "started_at", None))
+        job.completed_at = self._parse_datetime(getattr(row, "completed_at", None))
+        job.run_spec = self._deserialize_model(
+            getattr(row, "run_spec_json", None),
+            RunSpec,
+        )
+        job.run_metadata = self._deserialize_model(
+            getattr(row, "run_metadata_json", None),
+            RunMetadata,
+        )
+        job.result = self._deserialize_summary(getattr(row, "result_json", None))
+        job.raw_result = self._deserialize_json(getattr(row, "raw_result_json", None))
+        job.canonical_result = self._deserialize_model(
+            getattr(row, "canonical_result_json", None),
+            CanonicalExecutionResult,
+        )
+        job.artifact_index = self._deserialize_model(
+            getattr(row, "artifact_index_json", None),
+            ArtifactIndex,
+        )
+        job.html_path = getattr(row, "html_path", None)
+        job.dataset_name = getattr(row, "dataset_name", None)
+        job.execution_time = getattr(row, "execution_time", None)
+        job.best_score = getattr(row, "best_score", None)
+        job.best_params = self._deserialize_json(getattr(row, "best_params_json", None))
+        job.worst_score = getattr(row, "worst_score", None)
+        job.worst_params = self._deserialize_json(getattr(row, "worst_params_json", None))
+        job.total_combinations = getattr(row, "total_combinations", None)
+
+        persisted_contracts = {
+            "run_spec": self._deserialize_json(getattr(row, "run_spec_json", None)),
+            "run_metadata": self._deserialize_json(getattr(row, "run_metadata_json", None)),
+            "canonical_result": self._deserialize_json(getattr(row, "canonical_result_json", None)),
+            "artifact_index": self._deserialize_json(getattr(row, "artifact_index_json", None)),
+        }
+
+        self._refresh_execution_contracts(job)
+
+        refreshed_contracts = {
+            "run_spec": job.run_spec.model_dump(mode="json") if job.run_spec is not None else None,
+            "run_metadata": (
+                job.run_metadata.model_dump(mode="json") if job.run_metadata is not None else None
+            ),
+            "canonical_result": (
+                job.canonical_result.model_dump(mode="json")
+                if job.canonical_result is not None
+                else None
+            ),
+            "artifact_index": (
+                job.artifact_index.model_dump(mode="json") if job.artifact_index is not None else None
+            ),
+        }
+
+        return job, refreshed_contracts != persisted_contracts
+
+    def _refresh_execution_contracts(self, job: JobInfo) -> None:
+        refresh_job_execution_contracts(job)
+
+    def refresh_job_contracts(self, job: JobInfo) -> None:
+        """Refresh engine-neutral contracts for a job and persist them when possible."""
+        self._persist_job(job)
 
     def _persist_job(self, job: JobInfo) -> None:
+        self._refresh_execution_contracts(job)
+
         if self._portfolio_db is None:
             return
 
@@ -157,8 +246,12 @@ class JobManager:
                 created_at=job.created_at.isoformat(),
                 started_at=job.started_at.isoformat() if job.started_at else None,
                 completed_at=job.completed_at.isoformat() if job.completed_at else None,
+                run_spec_json=self._serialize_model(job.run_spec),
+                run_metadata_json=self._serialize_model(job.run_metadata),
                 result_json=self._serialize_summary(job.result),
                 raw_result_json=self._serialize_json(job.raw_result),
+                canonical_result_json=self._serialize_model(job.canonical_result),
+                artifact_index_json=self._serialize_model(job.artifact_index),
                 html_path=job.html_path,
                 dataset_name=job.dataset_name,
                 execution_time=job.execution_time,
@@ -172,19 +265,33 @@ class JobManager:
         except Exception as e:
             logger.warning(f"ジョブ永続化に失敗: {job.job_id}, error={e}")
 
-    def create_job(self, strategy_name: str, job_type: str = "backtest") -> str:
+    def create_job(
+        self,
+        strategy_name: str,
+        job_type: str = "backtest",
+        *,
+        run_spec: RunSpec | None = None,
+        parent_run_id: str | None = None,
+    ) -> str:
         """
         新しいジョブを作成
 
         Args:
             strategy_name: 戦略名
             job_type: ジョブタイプ（backtest or optimization）
+            run_spec: Engine-neutral run specification
+            parent_run_id: Parent run identifier for lineage
 
         Returns:
             ジョブID
         """
         job_id = str(uuid.uuid4())
         job = JobInfo(job_id=job_id, strategy_name=strategy_name, job_type=job_type)
+        effective_run_spec = run_spec or build_default_run_spec(job_type, strategy_name)
+        if parent_run_id is not None:
+            effective_run_spec.parent_run_id = parent_run_id
+        job.run_spec = effective_run_spec
+        job.run_metadata = build_run_metadata_from_spec(job_id, effective_run_spec)
         self._jobs[job_id] = job
         self._persist_job(job)
         logger.info(f"ジョブ作成: {job_id} (戦略: {strategy_name}, タイプ: {job_type})")
@@ -215,8 +322,10 @@ class JobManager:
         if row is None:
             return None
 
-        hydrated = self._job_from_row(row)
+        hydrated, contracts_backfilled = self._hydrate_job_from_row(row)
         self._jobs[job_id] = hydrated
+        if contracts_backfilled:
+            self._persist_job(hydrated)
         return hydrated
 
     def list_jobs(
@@ -242,8 +351,10 @@ class JobManager:
                     hydrated_jobs.append(in_memory)
                     seen_ids.add(in_memory.job_id)
                     continue
-                loaded = self._job_from_row(row)
+                loaded, contracts_backfilled = self._hydrate_job_from_row(row)
                 self._jobs[loaded.job_id] = loaded
+                if contracts_backfilled:
+                    self._persist_job(loaded)
                 hydrated_jobs.append(loaded)
                 seen_ids.add(loaded.job_id)
 

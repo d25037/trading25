@@ -10,8 +10,10 @@ from typing import Any
 
 from loguru import logger
 
+from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
+from src.application.services.run_contracts import build_strategy_run_spec
 
 
 class OptimizationService:
@@ -24,6 +26,7 @@ class OptimizationService:
     ) -> None:
         self._manager = manager or job_manager
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._config_loader = ConfigLoader()
 
     # ============================================
     # Grid Search Optimization
@@ -39,7 +42,17 @@ class OptimizationService:
         Returns:
             ジョブID
         """
-        job_id = self._manager.create_job(strategy_name, job_type="optimization")
+        run_spec = build_strategy_run_spec(
+            "optimization",
+            strategy_name,
+            parameters={"optimization_mode": "grid_search"},
+            config_loader=self._config_loader,
+        )
+        job_id = self._manager.create_job(
+            strategy_name,
+            job_type="optimization",
+            run_spec=run_spec,
+        )
 
         task = asyncio.create_task(self._run_optimization(job_id, strategy_name))
         await self._manager.set_job_task(job_id, task)

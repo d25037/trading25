@@ -7,6 +7,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
+from src.domains.backtest.contracts import ArtifactIndex, ArtifactKind, ArtifactRecord, ArtifactStorage
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 
 
@@ -44,6 +45,10 @@ def _make_job(
     job.strategy_name = "test_strategy"
     job.dataset_name = "test_dataset"
     job.execution_time = 5.0
+    job.run_metadata = None
+    job.run_spec = None
+    job.canonical_result = None
+    job.artifact_index = None
     return job
 
 
@@ -118,6 +123,9 @@ class TestGetResult:
         assert resp.status_code == 200
         data = resp.json()
         assert data["strategy_name"] == "test_strategy"
+        assert data["run_spec"] is None
+        assert data["canonical_result"] is None
+        assert data["artifact_index"] is None
 
     def test_not_completed(self, client, mock_services):
         _, mock_jm = mock_services
@@ -361,7 +369,7 @@ class TestSignalAttributionEndpoints:
         with (
             patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
             patch(
-                "src.entrypoints.http.routes.backtest.SignalAttributionResult.model_validate",
+                "src.application.services.run_registry.SignalAttributionResult.model_validate",
                 side_effect=ValueError("invalid result"),
             ) as mock_validate,
         ):
@@ -444,11 +452,66 @@ class TestSignalAttributionEndpoints:
             resp = client.get("/api/backtest/attribution/result/attr-1")
             assert resp.status_code == 500
 
+    def test_result_uses_artifact_file_when_raw_result_missing(self, client, tmp_path):
+        artifact_path = tmp_path / "attribution.json"
+        artifact_path.write_text(
+            """
+            {
+              "saved_at": "2026-03-09T00:00:00+00:00",
+              "result": {
+                "baseline_metrics": {"total_return": 12.0, "sharpe_ratio": 1.2},
+                "signals": [],
+                "top_n_selection": {
+                  "top_n_requested": 5,
+                  "top_n_effective": 0,
+                  "selected_signal_ids": [],
+                  "scores": []
+                },
+                "timing": {
+                  "total_seconds": 1.0,
+                  "baseline_seconds": 0.1,
+                  "loo_seconds": 0.5,
+                  "shapley_seconds": 0.4
+                },
+                "shapley": {
+                  "method": "permutation",
+                  "sample_size": 16,
+                  "error": null,
+                  "evaluations": 16
+                }
+              }
+            }
+            """,
+            encoding="utf-8",
+        )
+
+        with patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm:
+            job = _make_job(
+                "attr-1",
+                JobStatus.COMPLETED,
+                job_type="backtest_attribution",
+                raw_result=None,
+            )
+            job.artifact_index = ArtifactIndex(
+                artifacts=[
+                    ArtifactRecord(
+                        kind=ArtifactKind.ATTRIBUTION_JSON,
+                        storage=ArtifactStorage.FILESYSTEM,
+                        path=str(artifact_path),
+                    )
+                ]
+            )
+            mock_jm.get_job.return_value = job
+            resp = client.get("/api/backtest/attribution/result/attr-1")
+
+        assert resp.status_code == 200
+        assert resp.json()["result"]["baseline_metrics"]["total_return"] == 12.0
+
     def test_result_parse_error_returns_500(self, client):
         with (
             patch("src.entrypoints.http.routes.backtest.job_manager") as mock_jm,
             patch(
-                "src.entrypoints.http.routes.backtest.SignalAttributionResult.model_validate",
+                "src.application.services.run_registry.SignalAttributionResult.model_validate",
                 side_effect=ValueError("bad attribution"),
             ),
         ):
@@ -460,7 +523,7 @@ class TestSignalAttributionEndpoints:
             )
             resp = client.get("/api/backtest/attribution/result/attr-1")
             assert resp.status_code == 500
-            assert "bad attribution" in str(resp.json())
+            assert "結果の復元に失敗しました" in str(resp.json())
 
     def test_stream_success(self, client):
         async def _gen(_job_id):

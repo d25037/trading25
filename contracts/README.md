@@ -70,6 +70,22 @@ bun run --filter @trading25/contracts bt:sync
 - `apps/ts/packages/contracts/openapi/bt-openapi.json`  
   `bt:sync` で更新される FastAPI 契約スナップショット（`apps/bt` ソースからの直接生成を優先し、失敗時のみ `/openapi.json` 取得にフォールバック）。
 
+## Run Registry Compatibility
+
+- `RunSpec` / `RunMetadata` / `CanonicalExecutionResult` / `ArtifactIndex` は `schema_version=1` を current とする。
+- `schema_version=1` の間は additive 変更のみ許可する。
+- additive とみなすもの:
+  - optional field の追加
+  - enum value の追加
+  - artifact metadata key の追加
+- breaking とみなすもの:
+  - field rename / delete
+  - required 化
+  - 既存 field の意味変更
+  - artifact kind の再定義
+- breaking 変更は新しい major schema version を追加し、旧 version reader は compatibility path として残す。
+- `jobs` table の legacy row は `job_manager` が default `RunSpec` / `RunMetadata` を補完して読み出す。artifact / canonical result reader は `artifact_index -> canonical_result -> legacy columns` の順で解決する。
+
 ## Dataset Note
 
 `dataset-db-schema-v2.json` が現行の authoritative contract です。  

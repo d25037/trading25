@@ -1,6 +1,7 @@
 """job_manager.py のテスト"""
 
 import asyncio
+import json
 from datetime import datetime, timedelta
 from types import SimpleNamespace
 from unittest.mock import Mock
@@ -41,6 +42,9 @@ class TestJobManager:
         assert job is not None
         assert job.strategy_name == "test_strat"
         assert job.status == JobStatus.PENDING
+        assert job.run_metadata is not None
+        assert job.run_metadata.run_id == job_id
+        assert job.run_metadata.engine_family == "vectorbt"
 
     def test_get_nonexistent_job(self):
         mgr = JobManager()
@@ -119,6 +123,12 @@ class TestJobManager:
         assert job.result == summary
         assert job.html_path == "/path/html"
         assert job.execution_time == 10.5
+        assert job.run_metadata is not None
+        assert job.run_metadata.dataset_snapshot_id == "ds"
+        assert job.canonical_result is not None
+        assert job.canonical_result.summary_metrics is not None
+        assert job.canonical_result.summary_metrics.trade_count == 50
+        assert job.artifact_index is not None
 
     @pytest.mark.asyncio
     async def test_set_job_task(self):
@@ -233,8 +243,12 @@ class TestJobManager:
             created_at="bad-date",
             started_at=None,
             completed_at=None,
+            run_spec_json=None,
+            run_metadata_json=None,
             result_json='{"total_return": 0.1}',
             raw_result_json='{"x":1}',
+            canonical_result_json=None,
+            artifact_index_json=None,
             html_path=None,
             dataset_name=None,
             execution_time=None,
@@ -327,6 +341,125 @@ class TestJobManager:
             assert loaded.strategy_name == "persisted-strategy"
             assert loaded.job_type == "screening"
             assert loaded.status == JobStatus.PENDING
+        finally:
+            db.close()
+
+    def test_get_job_backfills_missing_execution_contracts_from_legacy_row(self, tmp_path):
+        db = PortfolioDb(str(tmp_path / "portfolio.db"))
+        try:
+            db.upsert_job(
+                job_id="legacy-job",
+                job_type="backtest",
+                strategy_name="legacy-strategy",
+                status="completed",
+                progress=1.0,
+                message="done",
+                error=None,
+                created_at="2026-03-09T00:00:00",
+                started_at="2026-03-09T00:00:01",
+                completed_at="2026-03-09T00:00:02",
+                run_spec_json=None,
+                run_metadata_json=None,
+                result_json=json.dumps(
+                    {
+                        "total_return": 12.3,
+                        "sharpe_ratio": 1.4,
+                        "sortino_ratio": 1.8,
+                        "calmar_ratio": 1.1,
+                        "max_drawdown": -5.0,
+                        "win_rate": 56.7,
+                        "trade_count": 14,
+                        "html_path": None,
+                    }
+                ),
+                raw_result_json='{"legacy":"payload"}',
+                canonical_result_json=None,
+                artifact_index_json=None,
+                html_path=None,
+                dataset_name="dataset-v1",
+                execution_time=3.2,
+                best_score=None,
+                best_params_json=None,
+                worst_score=None,
+                worst_params_json=None,
+                total_combinations=None,
+                updated_at="2026-03-09T00:00:02",
+            )
+
+            reader = JobManager()
+            reader.set_portfolio_db(db)
+            loaded = reader.get_job("legacy-job")
+
+            assert loaded is not None
+            assert loaded.run_spec is not None
+            assert loaded.run_spec.dataset_name == "dataset-v1"
+            assert loaded.run_spec.dataset_snapshot_id == "dataset-v1"
+            assert loaded.run_metadata is not None
+            assert loaded.run_metadata.dataset_snapshot_id == "dataset-v1"
+            assert loaded.canonical_result is not None
+            assert loaded.canonical_result.summary_metrics is not None
+            assert loaded.canonical_result.summary_metrics.trade_count == 14
+            assert loaded.artifact_index is not None
+
+            persisted = db.get_job_row("legacy-job")
+            assert persisted is not None
+            assert persisted.run_spec_json is not None
+            assert persisted.run_metadata_json is not None
+            assert persisted.canonical_result_json is not None
+            assert persisted.artifact_index_json is not None
+        finally:
+            db.close()
+
+    def test_list_jobs_backfills_missing_execution_contracts_from_legacy_rows(self, tmp_path):
+        db = PortfolioDb(str(tmp_path / "portfolio.db"))
+        try:
+            db.upsert_job(
+                job_id="legacy-screening-job",
+                job_type="screening",
+                strategy_name="legacy-screening",
+                status="completed",
+                progress=1.0,
+                message=None,
+                error=None,
+                created_at="2026-03-09T01:00:00",
+                started_at=None,
+                completed_at="2026-03-09T01:00:10",
+                run_spec_json=None,
+                run_metadata_json=None,
+                result_json=None,
+                raw_result_json='{"matched_count": 5}',
+                canonical_result_json=None,
+                artifact_index_json=None,
+                html_path=None,
+                dataset_name="screening-dataset",
+                execution_time=1.0,
+                best_score=None,
+                best_params_json=None,
+                worst_score=None,
+                worst_params_json=None,
+                total_combinations=None,
+                updated_at="2026-03-09T01:00:10",
+            )
+
+            reader = JobManager()
+            reader.set_portfolio_db(db)
+            jobs = reader.list_jobs(limit=10, job_types={"screening"})
+
+            assert len(jobs) == 1
+            loaded = jobs[0]
+            assert loaded.job_id == "legacy-screening-job"
+            assert loaded.run_spec is not None
+            assert loaded.run_spec.dataset_snapshot_id == "screening-dataset"
+            assert loaded.run_metadata is not None
+            assert loaded.canonical_result is not None
+            assert loaded.artifact_index is not None
+
+            persisted = db.get_job_row("legacy-screening-job")
+            assert persisted is not None
+            assert persisted.run_spec_json is not None
+            assert persisted.run_metadata_json is not None
+            assert persisted.canonical_result_json is not None
+            assert persisted.artifact_index_json is not None
         finally:
             db.close()
 

@@ -10,6 +10,7 @@ import pytest
 
 from src.domains.backtest.core.runner import BacktestResult
 from src.application.services.backtest_service import BacktestService
+from src.domains.backtest.contracts import RunType
 
 
 def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: Path):
@@ -100,7 +101,9 @@ async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
     monkeypatch.setattr(
         service._manager,
         "create_job",
-        lambda _strategy_name, job_type="backtest": "job-123",
+        lambda _strategy_name, job_type="backtest", run_spec=None: (
+            captured.update({"job_type": job_type, "run_spec": run_spec}) or "job-123"
+        ),
     )
 
     async def _set_job_task(job_id: str, task):
@@ -110,10 +113,111 @@ async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
 
     monkeypatch.setattr(service._manager, "set_job_task", _set_job_task)
 
-    job_id = await service.submit_backtest("strategy")
+    job_id = await service.submit_backtest(
+        "strategy",
+        config_override={"shared_config": {"dataset": "sample-dataset"}},
+    )
 
     assert job_id == "job-123"
     assert captured["job_id"] == "job-123"
+    run_spec = captured["run_spec"]
+    assert run_spec is not None
+    assert run_spec.run_type == RunType.BACKTEST
+    assert run_spec.dataset_name == "sample-dataset"
+
+
+@pytest.mark.asyncio
+async def test_submit_backtest_resolves_dataset_from_base_strategy_when_override_missing(monkeypatch):
+    service = BacktestService()
+    captured: dict[str, object] = {}
+
+    async def _dummy_run_backtest(*args, **kwargs):  # noqa: ANN002
+        _ = (args, kwargs)
+        return None
+
+    monkeypatch.setattr(service, "_run_backtest", _dummy_run_backtest)
+    monkeypatch.setattr(
+        service._runner.config_loader,
+        "load_strategy_config",
+        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        if strategy_name == "strategy"
+        else {},
+    )
+    monkeypatch.setattr(
+        service._runner.config_loader,
+        "merge_shared_config",
+        lambda _strategy_config: {"dataset": "primeExTopix500"},
+    )
+    monkeypatch.setattr(
+        service._manager,
+        "create_job",
+        lambda _strategy_name, job_type="backtest", run_spec=None: (
+            captured.update({"job_type": job_type, "run_spec": run_spec}) or "job-456"
+        ),
+    )
+
+    async def _set_job_task(job_id: str, task):
+        captured["job_id"] = job_id
+        await task
+
+    monkeypatch.setattr(service._manager, "set_job_task", _set_job_task)
+
+    job_id = await service.submit_backtest("strategy")
+
+    assert job_id == "job-456"
+    run_spec = captured["run_spec"]
+    assert run_spec is not None
+    assert run_spec.dataset_name == "primeExTopix500"
+    assert run_spec.dataset_snapshot_id == "primeExTopix500"
+
+
+@pytest.mark.asyncio
+async def test_submit_backtest_normalizes_blank_dataset_override_before_execution(monkeypatch):
+    service = BacktestService()
+    captured: dict[str, object] = {}
+
+    async def _dummy_run_backtest(job_id: str, strategy_name: str, config_override=None):
+        captured["run_args"] = (job_id, strategy_name, config_override)
+        return None
+
+    monkeypatch.setattr(service, "_run_backtest", _dummy_run_backtest)
+    monkeypatch.setattr(
+        service._runner.config_loader,
+        "load_strategy_config",
+        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        if strategy_name == "strategy"
+        else {},
+    )
+    monkeypatch.setattr(
+        service._runner.config_loader,
+        "merge_shared_config",
+        lambda _strategy_config: {"dataset": "primeExTopix500", "direction": "longonly"},
+    )
+    monkeypatch.setattr(
+        service._manager,
+        "create_job",
+        lambda _strategy_name, job_type="backtest", run_spec=None: (
+            captured.update({"job_type": job_type, "run_spec": run_spec}) or "job-789"
+        ),
+    )
+
+    async def _set_job_task(job_id: str, task):
+        captured["job_id"] = job_id
+        await task
+
+    monkeypatch.setattr(service._manager, "set_job_task", _set_job_task)
+
+    job_id = await service.submit_backtest(
+        "strategy",
+        config_override={"shared_config": {"dataset": "   ", "direction": "shortonly"}},
+    )
+
+    assert job_id == "job-789"
+    run_spec = captured["run_spec"]
+    assert run_spec is not None
+    assert run_spec.dataset_name == "primeExTopix500"
+    _, _, forwarded_override = captured["run_args"]
+    assert forwarded_override == {"shared_config": {"direction": "shortonly"}}
 
 
 @pytest.mark.asyncio
