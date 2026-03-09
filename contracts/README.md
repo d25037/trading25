@@ -53,6 +53,7 @@ bun run --filter @trading25/contracts bt:sync
 | File | Status | Description |
 |---|---|---|
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
+| `dataset-snapshot-manifest-v1.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v1.json`. |
 | `dataset-db-schema-v2.json` | **Active** | Dataset DB schema contract aligned with `apps/ts` Drizzle tables (395 lines). Use this for all new development. |
 | `market-db-schema-v2.json` | **Active** | Market DB schema contract with `statements` and `margin_data` tables for DuckDB sync/screening (v2 minor update). |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
@@ -90,3 +91,9 @@ bun run --filter @trading25/contracts bt:sync
 
 `dataset-db-schema-v2.json` が現行の authoritative contract です。  
 新規実装は v2 基準で整合を取ってください。
+
+dataset snapshot の artifact contract は `dataset-snapshot-manifest-v1.schema.json` が current です。  
+`dataset.db` は migration window の compatibility artifact であり、SoT ではありません。
+
+- `schemaVersion=1` の間は additive 変更のみ許可する。
+- manifest reader は `duckdbSha256` / `compatibilityDbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `counts` / `coverage` / `dateRange` / `logicalSha256` を検証する。

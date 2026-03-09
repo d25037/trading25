@@ -7,7 +7,10 @@ Dataset 管理操作（list, info, sample, search, delete）のサービス層�
 from __future__ import annotations
 
 import os
+import shutil
+from collections.abc import Sequence
 from datetime import datetime
+from typing import Protocol
 
 from src.application.services.dataset_presets import get_preset
 from src.application.services.dataset_resolver import DatasetResolver
@@ -29,10 +32,23 @@ from src.entrypoints.http.schemas.dataset import (
     DatasetValidationDetails,
     SearchResultItem,
 )
-from src.infrastructure.db.market.dataset_db import DatasetDb
+class DatasetReadable(Protocol):
+    def get_dataset_info(self) -> dict[str, str]: ...
+    def get_table_counts(self) -> dict[str, int]: ...
+    def get_date_range(self) -> dict[str, str] | None: ...
+    def get_stock_count(self) -> int: ...
+    def get_stocks_with_quotes_count(self) -> int: ...
+    def get_stocks_with_margin_count(self) -> int: ...
+    def get_stocks_with_statements_count(self) -> int: ...
+    def get_fk_orphan_counts(self) -> dict[str, int]: ...
+    def get_stocks_without_quotes_count(self) -> int: ...
+    def get_sample_codes(self, size: int = 10, seed: int | None = None) -> list[str]: ...
+    def search_stocks(
+        self, term: str, exact: bool = False, limit: int = 50
+    ) -> Sequence[object]: ...
 
 
-def _read_dataset_metadata(db: DatasetDb | None) -> tuple[str | None, str | None]:
+def _read_dataset_metadata(db: DatasetReadable | None) -> tuple[str | None, str | None]:
     if db is None:
         return None, None
     try:
@@ -47,17 +63,17 @@ def list_datasets(resolver: DatasetResolver) -> list[DatasetListItem]:
     """利用可能なデータセット一覧を取得"""
     items: list[DatasetListItem] = []
     for name in resolver.list_datasets():
-        db_path = resolver.get_db_path(name)
+        dataset_path = resolver.get_dataset_path(name)
         try:
-            stat = os.stat(db_path)
+            last_modified = _resolve_last_modified(dataset_path)
             preset, created_at = _read_dataset_metadata(resolver.resolve(name))
 
             items.append(
                 DatasetListItem(
                     name=name,
-                    path=db_path,
-                    fileSize=stat.st_size,
-                    lastModified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+                    path=dataset_path,
+                    fileSize=_resolve_path_size(dataset_path),
+                    lastModified=datetime.fromtimestamp(last_modified).isoformat(),
                     preset=preset,
                     createdAt=created_at,
                 )
@@ -82,8 +98,8 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
     if db is None:
         return None
 
-    db_path = resolver.get_db_path(name)
-    stat = os.stat(db_path)
+    dataset_path = resolver.get_dataset_path(name)
+    last_modified = _resolve_last_modified(dataset_path)
 
     info = db.get_dataset_info()
     table_counts = db.get_table_counts()
@@ -164,9 +180,9 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
 
     return DatasetInfoResponse(
         name=name,
-        path=db_path,
-        fileSize=stat.st_size,
-        lastModified=datetime.fromtimestamp(stat.st_mtime).isoformat(),
+        path=dataset_path,
+        fileSize=_resolve_path_size(dataset_path),
+        lastModified=datetime.fromtimestamp(last_modified).isoformat(),
         snapshot=DatasetSnapshot(
             preset=preset_name,
             createdAt=info.get("created_at"),
@@ -197,13 +213,13 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
     )
 
 
-def get_dataset_sample(db: DatasetDb, count: int = 10, seed: int | None = None) -> DatasetSampleResponse:
+def get_dataset_sample(db: DatasetReadable, count: int = 10, seed: int | None = None) -> DatasetSampleResponse:
     """ランダムサンプル取得"""
     codes = db.get_sample_codes(size=count, seed=seed)
     return DatasetSampleResponse(codes=codes)
 
 
-def search_dataset(db: DatasetDb, q: str, limit: int = 50) -> DatasetSearchResponse:
+def search_dataset(db: DatasetReadable, q: str, limit: int = 50) -> DatasetSearchResponse:
     """銘柄検索"""
     # 完全一致を先に試す
     exact_rows = db.search_stocks(term=q, exact=True, limit=limit)
@@ -228,9 +244,38 @@ def search_dataset(db: DatasetDb, q: str, limit: int = 50) -> DatasetSearchRespo
 
 def delete_dataset(resolver: DatasetResolver, name: str) -> bool:
     """データセット削除"""
-    db_path = resolver.get_db_path(name)
-    if not os.path.exists(db_path):
+    artifact_paths = resolver.get_artifact_paths(name)
+    if not artifact_paths:
         return False
     resolver.evict(name)
-    os.remove(db_path)
+    for path in artifact_paths:
+        if os.path.isdir(path):
+            shutil.rmtree(path)
+        elif os.path.exists(path):
+            os.remove(path)
     return True
+
+
+def _resolve_path_size(path: str) -> int:
+    if os.path.isfile(path):
+        return os.path.getsize(path)
+    total = 0
+    for root, _dirs, files in os.walk(path):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            if os.path.isfile(file_path):
+                total += os.path.getsize(file_path)
+    return total
+
+
+def _resolve_last_modified(path: str) -> float:
+    if os.path.isfile(path):
+        return os.path.getmtime(path)
+
+    latest_mtime = os.path.getmtime(path)
+    for root, _dirs, files in os.walk(path):
+        for file_name in files:
+            file_path = os.path.join(root, file_name)
+            if os.path.isfile(file_path):
+                latest_mtime = max(latest_mtime, os.path.getmtime(file_path))
+    return latest_mtime

@@ -4,6 +4,7 @@ from src.infrastructure.db.market.base import BaseDbAccess
 from src.infrastructure.db.market.dataset_db import DatasetDb
 from src.infrastructure.db.market.market_db import METADATA_KEYS, MarketDb
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
@@ -20,6 +21,7 @@ from src.infrastructure.db.market.query_helpers import (
 __all__ = [
     "BaseDbAccess",
     "DatasetDb",
+    "DatasetSnapshotReader",
     "MarketDb",
     "MarketDbReader",
     "PortfolioDb",
@@ -34,4 +36,3 @@ __all__ = [
     "stock_lookup",
     "trading_date_before",
 ]
-
