@@ -6,6 +6,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.application.services.optimization_service import OptimizationService
+from src.domains.backtest.contracts import RunType
 
 
 def _success_payload() -> dict[str, object]:
@@ -85,7 +86,9 @@ async def test_submit_optimization_creates_task_and_returns_job_id(monkeypatch):
         return None
 
     manager = SimpleNamespace(
-        create_job=lambda _strategy_name, job_type="optimization": "opt-job-1",
+        create_job=lambda _strategy_name, job_type="optimization", run_spec=None: (
+            captured.update({"job_type": job_type, "run_spec": run_spec}) or "opt-job-1"
+        ),
     )
     service = OptimizationService(manager=manager)
     monkeypatch.setattr(service, "_run_optimization", _dummy_run_optimization)
@@ -102,6 +105,54 @@ async def test_submit_optimization_creates_task_and_returns_job_id(monkeypatch):
     assert job_id == "opt-job-1"
     assert captured["job_id"] == "opt-job-1"
     assert captured["task"] is not None
+    run_spec = captured["run_spec"]
+    assert run_spec is not None
+    assert run_spec.run_type == RunType.OPTIMIZATION
+    assert run_spec.parameters == {"optimization_mode": "grid_search"}
+
+
+@pytest.mark.asyncio
+async def test_submit_optimization_resolves_dataset_from_base_strategy(monkeypatch):
+    captured: dict[str, object] = {}
+
+    async def _dummy_run_optimization(*args, **kwargs):  # noqa: ANN002
+        _ = (args, kwargs)
+        return None
+
+    manager = SimpleNamespace(
+        create_job=lambda _strategy_name, job_type="optimization", run_spec=None: (
+            captured.update({"job_type": job_type, "run_spec": run_spec}) or "opt-job-2"
+        ),
+    )
+    service = OptimizationService(manager=manager)
+    monkeypatch.setattr(service, "_run_optimization", _dummy_run_optimization)
+    monkeypatch.setattr(
+        service._config_loader,
+        "load_strategy_config",
+        lambda strategy_name: {"shared_config": {"dataset": "primeExTopix500"}}
+        if strategy_name == "strategy-y"
+        else {},
+    )
+    monkeypatch.setattr(
+        service._config_loader,
+        "merge_shared_config",
+        lambda _strategy_config: {"dataset": "primeExTopix500"},
+    )
+
+    async def _set_job_task(job_id: str, task):
+        captured["job_id"] = job_id
+        await task
+
+    manager.set_job_task = _set_job_task
+
+    job_id = await service.submit_optimization("strategy-y")
+
+    assert job_id == "opt-job-2"
+    run_spec = captured["run_spec"]
+    assert run_spec is not None
+    assert run_spec.dataset_name == "primeExTopix500"
+    assert run_spec.dataset_snapshot_id == "primeExTopix500"
+    service._executor.shutdown(wait=False)
 
 
 @pytest.mark.asyncio

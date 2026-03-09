@@ -83,6 +83,7 @@ def _build_lab_job_response(job: JobInfo) -> LabJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        run_metadata=job.run_metadata,
         lab_type=lab_type,
         strategy_name=job.strategy_name,
         result_data=result_data,

@@ -344,6 +344,17 @@ presentation artifact と canonical artifact を分ける。
 `result.html` は見るためのものに限定する。  
 canonical な結果再解決は HTML パースに寄せない。
 
+### 7.3 registry reader の優先順位
+
+移行期間の read path は次の順で解決する。
+
+1. `artifact_index`
+2. `canonical_result`
+3. legacy job columns (`result_json`, `raw_result_json`, `html_path`)
+
+つまり route は個別に `html_path` や `raw_result` を読むのではなく、artifact-first な registry reader を経由して summary / attribution result を復元する。  
+legacy columns は compatibility path であり SoT ではない。
+
 ## 8. Optimize / Lab の作り方
 
 現行では backtest, optimize, lab が job manager を共有しつつ、それぞれ少しずつ違う流れを持っている。ゼロからなら、これらは全部「compiled strategy + snapshot + engine adapter + evaluator」を共有する。

@@ -66,6 +66,7 @@ def _build_optimization_job_response_from_job(job: JobInfo) -> OptimizationJobRe
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        run_metadata=job.run_metadata,
         best_score=job.best_score,
         best_params=job.best_params,
         worst_score=job.worst_score,

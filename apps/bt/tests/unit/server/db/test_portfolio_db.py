@@ -24,7 +24,7 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
 
 class TestPortfolioDbSchema:
     def test_schema_version(self, pdb: PortfolioDb) -> None:
-        assert pdb.get_schema_version() == "1.2.0"
+        assert pdb.get_schema_version() == "1.3.0"
 
     def test_tables_created(self, pdb: PortfolioDb) -> None:
         from sqlalchemy import text
@@ -57,8 +57,12 @@ class TestJobMetadata:
             created_at="2026-02-27T00:00:00",
             started_at="2026-02-27T00:01:00",
             completed_at=None,
+            run_spec_json='{"schema_version":1}',
+            run_metadata_json='{"schema_version":1}',
             result_json=None,
             raw_result_json='{"a":1}',
+            canonical_result_json='{"schema_version":1}',
+            artifact_index_json='{"schema_version":1,"artifacts":[]}',
             html_path="/tmp/result.html",
             dataset_name="dataset-a",
             execution_time=None,
@@ -74,6 +78,8 @@ class TestJobMetadata:
         assert row.job_type == "backtest"
         assert row.strategy_name == "strat-a"
         assert row.progress == 0.3
+        assert row.run_spec_json is not None
+        assert row.run_metadata_json is not None
 
     def test_list_job_rows_filters_types(self, pdb: PortfolioDb) -> None:
         pdb.upsert_job(
@@ -87,8 +93,12 @@ class TestJobMetadata:
             created_at="2026-02-27T00:00:00",
             started_at=None,
             completed_at="2026-02-27T00:01:00",
+            run_spec_json=None,
+            run_metadata_json=None,
             result_json=None,
             raw_result_json=None,
+            canonical_result_json=None,
+            artifact_index_json=None,
             html_path=None,
             dataset_name=None,
             execution_time=None,
@@ -110,8 +120,12 @@ class TestJobMetadata:
             created_at="2026-02-27T00:02:00",
             started_at=None,
             completed_at="2026-02-27T00:03:00",
+            run_spec_json=None,
+            run_metadata_json=None,
             result_json=None,
             raw_result_json=None,
+            canonical_result_json=None,
+            artifact_index_json=None,
             html_path=None,
             dataset_name=None,
             execution_time=None,
@@ -139,8 +153,12 @@ class TestJobMetadata:
             created_at="2026-02-27T00:00:00",
             started_at=None,
             completed_at="2026-02-27T00:01:00",
+            run_spec_json=None,
+            run_metadata_json=None,
             result_json=None,
             raw_result_json=None,
+            canonical_result_json=None,
+            artifact_index_json=None,
             html_path=None,
             dataset_name=None,
             execution_time=None,

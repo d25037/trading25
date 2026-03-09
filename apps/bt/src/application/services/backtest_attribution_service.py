@@ -24,6 +24,7 @@ from src.domains.backtest.core.signal_attribution import (
 from src.shared.paths import find_strategy_path, get_backtest_attribution_dir
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
+from src.application.services.run_contracts import build_strategy_run_spec, normalize_config_override
 
 _SAFE_PATH_SEGMENT = re.compile(r"[^A-Za-z0-9._-]+")
 
@@ -185,9 +186,22 @@ class BacktestAttributionService:
         random_seed: int | None = None,
     ) -> str:
         """Submit a signal attribution job."""
+        normalized_config_override = normalize_config_override(config_override)
+        run_spec = build_strategy_run_spec(
+            "backtest_attribution",
+            strategy_name,
+            config_override=normalized_config_override,
+            parameters={
+                "shapley_top_n": shapley_top_n,
+                "shapley_permutations": shapley_permutations,
+                "random_seed": random_seed,
+            },
+            config_loader=self._runner.config_loader,
+        )
         job_id = self._manager.create_job(
             strategy_name=strategy_name,
             job_type="backtest_attribution",
+            run_spec=run_spec,
         )
         cancel_event = threading.Event()
 
@@ -195,7 +209,7 @@ class BacktestAttributionService:
             self._run_attribution(
                 job_id=job_id,
                 strategy_name=strategy_name,
-                config_override=config_override,
+                config_override=normalized_config_override,
                 shapley_top_n=shapley_top_n,
                 shapley_permutations=shapley_permutations,
                 random_seed=random_seed,
@@ -240,10 +254,7 @@ class BacktestAttributionService:
                 random_seed,
                 run_cancel_event,
             )
-
-            job = self._manager.get_job(job_id)
-            if job is not None:
-                job.raw_result = result
+            persisted_result = dict(result)
 
             try:
                 artifact_path = self._persist_attribution_artifact(
@@ -255,9 +266,14 @@ class BacktestAttributionService:
                     random_seed=random_seed,
                     result=result,
                 )
+                persisted_result["_artifact_path"] = str(artifact_path)
                 logger.info(f"シグナル寄与分析結果を保存: {artifact_path}")
             except Exception as e:
                 logger.warning(f"シグナル寄与分析結果の保存に失敗: {e}")
+
+            job = self._manager.get_job(job_id)
+            if job is not None:
+                job.raw_result = persisted_result
 
             await self._manager.update_job_status(
                 job_id,
