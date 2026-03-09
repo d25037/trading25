@@ -96,6 +96,10 @@ class RunSpec(BaseModel):
         default=None,
         description="Pinned dataset snapshot identifier",
     )
+    market_snapshot_id: str | None = Field(
+        default=None,
+        description="Pinned market snapshot identifier",
+    )
     engine_family: EngineFamily = Field(
         default=EngineFamily.UNKNOWN,
         description="Execution engine family",
@@ -132,6 +136,10 @@ class RunMetadata(BaseModel):
     dataset_snapshot_id: str | None = Field(
         default=None,
         description="Pinned dataset snapshot identifier",
+    )
+    market_snapshot_id: str | None = Field(
+        default=None,
+        description="Pinned market snapshot identifier",
     )
     engine_family: EngineFamily = Field(
         default=EngineFamily.UNKNOWN,
@@ -204,6 +212,10 @@ class CanonicalExecutionResult(BaseModel):
     dataset_snapshot_id: str | None = Field(
         default=None,
         description="Pinned dataset snapshot identifier",
+    )
+    market_snapshot_id: str | None = Field(
+        default=None,
+        description="Pinned market snapshot identifier",
     )
     execution_policy_version: str | None = Field(
         default=None,

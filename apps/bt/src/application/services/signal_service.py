@@ -13,6 +13,7 @@ import pandas as pd
 from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.data_access.clients import get_dataset_client, get_market_client
 from src.application.services.market_ohlcv_loader import load_stock_ohlcv_df
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY, SignalDefinition
 
@@ -67,6 +68,10 @@ def _build_signal_definition_map() -> dict[str, SignalDefinition]:
 # シグナル定義マッピング（モジュールロード時に構築）
 _SIGNAL_DEFINITION_MAP: dict[str, SignalDefinition] = _build_signal_definition_map()
 
+# Backward-compatible symbols for tests patching module-local client constructors.
+DatasetAPIClient = get_dataset_client
+MarketAPIClient = get_market_client
+
 
 def _get_signal_definition(signal_type: str) -> SignalDefinition | None:
     """シグナル定義を取得"""
@@ -94,17 +99,15 @@ class SignalService:
 
     def __init__(self, market_reader: MarketDbReader | None = None) -> None:
         self._market_reader = market_reader
-        self._market_client = None
+        self._market_client: Any | None = None
         self._client_lock = threading.Lock()
 
     @property
-    def market_client(self):
+    def market_client(self) -> Any:
         """MarketAPIClientをスレッドセーフに遅延初期化（ダブルチェックロッキング）"""
         if self._market_client is None:
             with self._client_lock:
                 if self._market_client is None:
-                    from src.infrastructure.external_api.market_client import MarketAPIClient
-
                     self._market_client = MarketAPIClient()
         return self._market_client
 
@@ -130,8 +133,6 @@ class SignalService:
             else:
                 df = self.market_client.get_stock_ohlcv(stock_code, start_str, end_str)
         else:
-            from src.infrastructure.external_api.dataset import DatasetAPIClient
-
             with DatasetAPIClient(source) as client:
                 df = client.get_stock_ohlcv(stock_code, start_str, end_str)
 

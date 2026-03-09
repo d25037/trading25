@@ -51,13 +51,15 @@ class Settings(BaseModel):
     # Deprecated alias (legacy name): now points to DuckDB time-series file.
     market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
 
-    # market time-series data plane (DuckDB SoT)
+    # market snapshot resolver root.
+    # The mutable latest pointer is {MARKET_TIMESERIES_DIR}/market.duckdb.
     market_timeseries_dir: str = Field(default="", alias="MARKET_TIMESERIES_DIR")
 
     # portfolio.db (Phase 3C)
     portfolio_db_path: str = Field(default="", alias="PORTFOLIO_DB_PATH")
 
-    # dataset base path (Phase 3C)
+    # dataset snapshot resolver root.
+    # Immutable snapshots live under {DATASET_BASE_PATH}/{snapshot}/.
     dataset_base_path: str = Field(default="", alias="DATASET_BASE_PATH")
 
     model_config = {"populate_by_name": True}

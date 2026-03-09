@@ -22,7 +22,7 @@ from src.entrypoints.http.middleware.correlation import CorrelationIdMiddleware
 from src.shared.observability.correlation import get_correlation_id
 from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddleware
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
-from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
+from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
 from src.entrypoints.http.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
 from src.entrypoints.http.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
@@ -50,6 +50,7 @@ from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
 )
+from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -189,6 +190,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Phase 3D: DatasetResolver shutdown
     if dataset_resolver is not None:
         dataset_resolver.close_all()
+    close_all_cached_data_access_clients()
 
     # Phase 3D: Job manager shutdown
     from src.application.services.sync_service import sync_job_manager
@@ -321,6 +323,7 @@ def create_app() -> FastAPI:
     app.include_router(lab.router)
     app.include_router(indicators.router)
     app.include_router(ohlcv.router)
+    app.include_router(snapshots.router)
     app.include_router(fundamentals.router)
     # Phase 3B-1: JQuants Proxy + Analytics
     app.include_router(jquants_proxy.router)

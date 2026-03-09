@@ -2,26 +2,27 @@
 
 Generated from `apps/bt/src/entrypoints/http/app.py`. Do not edit manually.
 
-Total include_router calls: **19**
+Total include_router calls: **20**
 
 | Order | Router | Line |
 |---|---|---|
-| 1 | `health.router` | `316` |
-| 2 | `strategies.router` | `317` |
-| 3 | `backtest.router` | `318` |
-| 4 | `optimize.router` | `319` |
-| 5 | `signal_reference.router` | `320` |
-| 6 | `lab.router` | `321` |
-| 7 | `indicators.router` | `322` |
-| 8 | `ohlcv.router` | `323` |
-| 9 | `fundamentals.router` | `324` |
-| 10 | `jquants_proxy.router` | `326` |
-| 11 | `analytics_jquants.router` | `327` |
-| 12 | `market_data.router` | `329` |
-| 13 | `chart.router` | `331` |
-| 14 | `analytics_complex.router` | `333` |
-| 15 | `db.router` | `335` |
-| 16 | `dataset_data.router` | `336` |
-| 17 | `dataset.router` | `337` |
-| 18 | `portfolio.router` | `339` |
-| 19 | `watchlist.router` | `340` |
+| 1 | `health.router` | `318` |
+| 2 | `strategies.router` | `319` |
+| 3 | `backtest.router` | `320` |
+| 4 | `optimize.router` | `321` |
+| 5 | `signal_reference.router` | `322` |
+| 6 | `lab.router` | `323` |
+| 7 | `indicators.router` | `324` |
+| 8 | `ohlcv.router` | `325` |
+| 9 | `snapshots.router` | `326` |
+| 10 | `fundamentals.router` | `327` |
+| 11 | `jquants_proxy.router` | `329` |
+| 12 | `analytics_jquants.router` | `330` |
+| 13 | `market_data.router` | `332` |
+| 14 | `chart.router` | `334` |
+| 15 | `analytics_complex.router` | `336` |
+| 16 | `db.router` | `338` |
+| 17 | `dataset_data.router` | `339` |
+| 18 | `dataset.router` | `340` |
+| 19 | `portfolio.router` | `342` |
+| 20 | `watchlist.router` | `343` |

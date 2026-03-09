@@ -10,6 +10,10 @@ from typing import TYPE_CHECKING, Any
 
 from loguru import logger
 
+from src.application.services.snapshot_resolver import (
+    resolve_dataset_snapshot_id,
+    resolve_market_snapshot_id,
+)
 from src.domains.backtest.contracts import (
     ArtifactIndex,
     ArtifactKind,
@@ -74,6 +78,7 @@ def build_default_run_spec(job_type: str, strategy_name: str) -> RunSpec:
         run_type=infer_run_type(job_type),
         strategy_name=strategy_name,
         strategy_source_ref=strategy_name,
+        market_snapshot_id=resolve_market_snapshot_id(),
         engine_family=engine_family,
         execution_policy_version=(
             _LEGACY_VECTORBT_POLICY_VERSION
@@ -93,7 +98,7 @@ def build_parameterized_run_spec(
     run_spec = build_default_run_spec(job_type, strategy_name)
     if dataset_name is not None:
         run_spec.dataset_name = dataset_name
-        run_spec.dataset_snapshot_id = dataset_name
+        run_spec.dataset_snapshot_id = resolve_dataset_snapshot_id(dataset_name)
     if parameters:
         run_spec.parameters = deepcopy(parameters)
     return run_spec
@@ -223,6 +228,7 @@ def build_run_metadata_from_spec(job_id: str, run_spec: RunSpec) -> RunMetadata:
         strategy_name=run_spec.strategy_name,
         dataset_name=run_spec.dataset_name,
         dataset_snapshot_id=run_spec.dataset_snapshot_id,
+        market_snapshot_id=run_spec.market_snapshot_id,
         engine_family=run_spec.engine_family,
         execution_policy_version=run_spec.execution_policy_version,
         parent_run_id=run_spec.parent_run_id,
@@ -355,15 +361,20 @@ def refresh_job_execution_contracts(job: JobInfo) -> None:
     if job.run_metadata is None:
         job.run_metadata = build_run_metadata_from_spec(job.job_id, job.run_spec)
 
+    if job.run_spec.market_snapshot_id is None:
+        job.run_spec.market_snapshot_id = resolve_market_snapshot_id()
+    if job.run_metadata.market_snapshot_id is None:
+        job.run_metadata.market_snapshot_id = job.run_spec.market_snapshot_id
+
     if job.dataset_name is not None:
         if job.run_spec.dataset_name is None:
             job.run_spec.dataset_name = job.dataset_name
         if job.run_spec.dataset_snapshot_id is None:
-            job.run_spec.dataset_snapshot_id = job.dataset_name
+            job.run_spec.dataset_snapshot_id = resolve_dataset_snapshot_id(job.dataset_name)
         if job.run_metadata.dataset_name is None:
             job.run_metadata.dataset_name = job.dataset_name
         if job.run_metadata.dataset_snapshot_id is None:
-            job.run_metadata.dataset_snapshot_id = job.dataset_name
+            job.run_metadata.dataset_snapshot_id = resolve_dataset_snapshot_id(job.dataset_name)
 
     job.artifact_index = build_artifact_index(job)
     job.canonical_result = CanonicalExecutionResult(
@@ -374,6 +385,7 @@ def refresh_job_execution_contracts(job: JobInfo) -> None:
         status=job.status.value if isinstance(job.status, JobStatus) else str(job.status),
         dataset_name=job.run_metadata.dataset_name,
         dataset_snapshot_id=job.run_metadata.dataset_snapshot_id,
+        market_snapshot_id=job.run_metadata.market_snapshot_id,
         execution_policy_version=job.run_metadata.execution_policy_version,
         execution_time=job.execution_time,
         summary_metrics=build_summary_metrics(job),

@@ -3,13 +3,11 @@
 from __future__ import annotations
 
 import os
-import re
 import threading
 
 from src.infrastructure.db.market.dataset_db import DatasetDb
 from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
-
-_DATASET_NAME_RE = re.compile(r"^[a-zA-Z0-9_-]+$")
+from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 
 
 class DatasetResolver:
@@ -27,8 +25,8 @@ class DatasetResolver:
 
     def _validate_name(self, name: str) -> str:
         """名前検証 + パストラバーサル防御。正規化された dataset 名を返す。"""
-        stem = name.removesuffix(".db")
-        if not _DATASET_NAME_RE.match(stem):
+        stem = normalize_dataset_snapshot_name(name)
+        if stem is None:
             raise ValueError(f"Invalid dataset name: {name}")
         real = os.path.realpath(os.path.join(self._base_path, stem))
         if not real.startswith(self._base_path + os.sep):
@@ -111,13 +109,24 @@ class DatasetResolver:
         seen: set[str] = set()
         for entry in sorted(os.listdir(self._base_path)):
             path = os.path.join(self._base_path, entry)
-            if os.path.isdir(path) and _DATASET_NAME_RE.match(entry):
+            if os.path.isdir(path):
+                try:
+                    normalized = normalize_dataset_snapshot_name(entry)
+                except ValueError:
+                    normalized = None
+                if normalized is None:
+                    continue
                 if self._snapshot_has_supported_artifacts(path):
-                    names.append(entry)
-                    seen.add(entry)
+                    names.append(normalized)
+                    seen.add(normalized)
                 continue
-            if entry.endswith(".db") and _DATASET_NAME_RE.match(entry.removesuffix(".db")):
-                stem = entry.removesuffix(".db")
+            if entry.endswith(".db"):
+                try:
+                    stem = normalize_dataset_snapshot_name(entry)
+                except ValueError:
+                    stem = None
+                if stem is None:
+                    continue
                 if stem in seen:
                     continue
                 names.append(stem)
