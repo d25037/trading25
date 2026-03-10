@@ -10,7 +10,7 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any
 
-from sqlalchemy import Row, delete, func, insert, outerjoin, select, update
+from sqlalchemy import Row, delete, func, insert, outerjoin, select, text, update
 
 from src.infrastructure.db.market.base import BaseDbAccess
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
@@ -37,7 +37,37 @@ class PortfolioDb(BaseDbAccess):
     def _ensure_schema(self) -> None:
         """Drizzle 互換テーブル作成（IF NOT EXISTS）"""
         portfolio_meta.create_all(self.engine, checkfirst=True)
-        self._set_metadata("schema_version", "1.2.0")
+        self._ensure_job_columns()
+        self._set_metadata("schema_version", "1.4.0")
+
+    def _ensure_job_columns(self) -> None:
+        """既存 jobs テーブルに不足カラムを追加する。"""
+        additional_columns: tuple[tuple[str, str], ...] = (
+            ("run_spec_json", "TEXT"),
+            ("run_metadata_json", "TEXT"),
+            ("canonical_result_json", "TEXT"),
+            ("artifact_index_json", "TEXT"),
+            ("lease_owner", "TEXT"),
+            ("lease_expires_at", "TEXT"),
+            ("last_heartbeat_at", "TEXT"),
+            ("cancel_requested_at", "TEXT"),
+            ("cancel_reason", "TEXT"),
+            ("timeout_at", "TEXT"),
+        )
+        with self.engine.begin() as conn:
+            existing_columns = {
+                row[1]
+                for row in conn.execute(text("PRAGMA table_info(jobs)")).fetchall()
+                if len(row) > 1
+            }
+            for column_name, column_type in additional_columns:
+                if column_name in existing_columns:
+                    continue
+                conn.execute(
+                    text(
+                        f"ALTER TABLE jobs ADD COLUMN {column_name} {column_type}"  # noqa: S608
+                    )
+                )
 
     def _now(self) -> str:
         return datetime.now().isoformat()  # noqa: DTZ005
@@ -77,8 +107,12 @@ class PortfolioDb(BaseDbAccess):
         created_at: str,
         started_at: str | None,
         completed_at: str | None,
+        run_spec_json: str | None,
+        run_metadata_json: str | None,
         result_json: str | None,
         raw_result_json: str | None,
+        canonical_result_json: str | None,
+        artifact_index_json: str | None,
         html_path: str | None,
         dataset_name: str | None,
         execution_time: float | None,
@@ -88,6 +122,12 @@ class PortfolioDb(BaseDbAccess):
         worst_params_json: str | None,
         total_combinations: int | None,
         updated_at: str,
+        lease_owner: str | None = None,
+        lease_expires_at: str | None = None,
+        last_heartbeat_at: str | None = None,
+        cancel_requested_at: str | None = None,
+        cancel_reason: str | None = None,
+        timeout_at: str | None = None,
     ) -> None:
         with self.engine.begin() as conn:
             conn.execute(
@@ -103,8 +143,18 @@ class PortfolioDb(BaseDbAccess):
                     created_at=created_at,
                     started_at=started_at,
                     completed_at=completed_at,
+                    lease_owner=lease_owner,
+                    lease_expires_at=lease_expires_at,
+                    last_heartbeat_at=last_heartbeat_at,
+                    cancel_requested_at=cancel_requested_at,
+                    cancel_reason=cancel_reason,
+                    timeout_at=timeout_at,
+                    run_spec_json=run_spec_json,
+                    run_metadata_json=run_metadata_json,
                     result_json=result_json,
                     raw_result_json=raw_result_json,
+                    canonical_result_json=canonical_result_json,
+                    artifact_index_json=artifact_index_json,
                     html_path=html_path,
                     dataset_name=dataset_name,
                     execution_time=execution_time,

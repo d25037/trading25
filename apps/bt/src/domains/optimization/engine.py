@@ -628,16 +628,10 @@ class ParameterOptimizationEngine:
         from datetime import datetime
 
         from .notebook_generator import generate_optimization_notebook
-
-        # データセット名を抽出
-        from pathlib import Path
+        from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
         dataset = self.shared_config_dict.get("dataset", "")
-        if dataset:
-            # "primeExTopix500" または "dataset/primeExTopix500.db" → "primeExTopix500"
-            dataset_name = Path(dataset).stem
-        else:
-            dataset_name = "unknown"
+        dataset_name = canonicalize_dataset_snapshot_id(dataset) or "unknown"
 
         # 出力パス生成（外部ディレクトリまたはプロジェクト内）
         from src.shared.paths import get_optimization_results_dir

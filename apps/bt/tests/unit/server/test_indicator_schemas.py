@@ -16,6 +16,7 @@ from src.entrypoints.http.schemas.indicators import (
     MACDParams,
     MarginIndicatorRequest,
     NBarSupportParams,
+    OHLCVResampleRequest,
     PPOParams,
     RSIParams,
     RiskAdjustedReturnParams,
@@ -168,9 +169,25 @@ class TestIndicatorComputeRequest:
         )
         assert req.stock_code == "7203"
         assert len(req.indicators) == 2
-        assert req.source == "dataset"
+        assert req.source == "market"
         assert req.timeframe == "daily"
         assert req.nan_handling == "include"
+
+    def test_source_accepts_dataset_snapshot_name(self):
+        req = IndicatorComputeRequest(
+            stock_code="7203",
+            source="primeExTopix500",
+            indicators=[IndicatorSpec(type="sma", params={"period": 20})],
+        )
+        assert req.source == "primeExTopix500"
+
+    def test_source_rejects_blank(self):
+        with pytest.raises(ValidationError):
+            IndicatorComputeRequest(
+                stock_code="7203",
+                source="   ",
+                indicators=[IndicatorSpec(type="sma", params={"period": 20})],
+            )
 
     def test_empty_indicators_rejected_for_output_indicators(self):
         """output='indicators'の場合、空indicatorsはエラー"""
@@ -202,6 +219,22 @@ class TestIndicatorComputeRequest:
             IndicatorComputeRequest(
                 stock_code="",
                 indicators=[IndicatorSpec(type="sma", params={"period": 20})],
+            )
+
+
+class TestOHLCVResampleRequest:
+    def test_source_accepts_dataset_snapshot_name(self):
+        req = OHLCVResampleRequest(
+            stock_code="7203",
+            source="primeExTopix500",
+        )
+        assert req.source == "primeExTopix500"
+
+    def test_source_rejects_blank(self):
+        with pytest.raises(ValidationError):
+            OHLCVResampleRequest(
+                stock_code="7203",
+                source="  ",
             )
 
 

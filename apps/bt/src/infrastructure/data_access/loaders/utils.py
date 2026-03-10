@@ -4,7 +4,7 @@
 各ローダーモジュールで共通して使用する関数群
 """
 
-from pathlib import Path
+from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
 
 def extract_dataset_name(dataset: str) -> str:
@@ -16,5 +16,7 @@ def extract_dataset_name(dataset: str) -> str:
     Returns:
         str: データセット名 (e.g., "sampleA")
     """
-    path = Path(dataset)
-    return path.stem
+    dataset_name = canonicalize_dataset_snapshot_id(dataset)
+    if dataset_name is None:
+        raise ValueError(f"Invalid dataset name: {dataset}")
+    return dataset_name
