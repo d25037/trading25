@@ -35,7 +35,7 @@
     "workspace:test:coverage": "bun scripts/tasks.ts workspace:test:coverage"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.1.4",
+    "@biomejs/biome": "^2.4.6",
     "bun-types": "^1.3.10",
     "tsx": "^4.19.1",
     "typescript": "^5.9.2"
