@@ -5,12 +5,15 @@
 import numpy as np
 import pandas as pd
 import pytest
+import vectorbt as vbt
 
 from src.domains.strategy.indicators.calculations import (
     compute_atr_support_line,
+    compute_macd,
     compute_moving_average,
     compute_nbar_support,
     compute_risk_adjusted_return,
+    compute_rsi,
     compute_trading_value_ma,
     compute_volume_mas,
     compute_volume_weighted_ema,
@@ -199,6 +202,36 @@ class TestComputeMovingAverage:
 
         with pytest.raises(ValueError, match="未対応のma_type"):
             compute_moving_average(series, 2, ma_type="wma")  # type: ignore[arg-type]
+
+
+class TestVectorbtCompatibility:
+    def setup_method(self):
+        rng = np.random.default_rng(123)
+        self.close = pd.Series(
+            np.cumprod(1 + rng.normal(0, 0.01, 160)) * 100,
+            index=pd.date_range("2024-01-01", periods=160),
+        )
+
+    def test_compute_rsi_matches_vectorbt_default(self):
+        actual = compute_rsi(self.close, period=14)
+        expected = vbt.RSI.run(self.close, 14).rsi
+        aligned = pd.concat([actual, expected], axis=1).dropna()
+
+        assert not aligned.empty
+        assert np.allclose(aligned.iloc[:, 0], aligned.iloc[:, 1], atol=1e-10)
+
+    def test_compute_macd_matches_vectorbt_default(self):
+        actual = compute_macd(self.close, fast_period=12, slow_period=26, signal_period=9)
+        expected = vbt.MACD.run(self.close, fast_window=12, slow_window=26, signal_window=9)
+
+        for actual_series, expected_series in (
+            (actual.macd, expected.macd),
+            (actual.signal, expected.signal),
+            (actual.histogram, expected.hist),
+        ):
+            aligned = pd.concat([actual_series, expected_series], axis=1).dropna()
+            assert not aligned.empty
+            assert np.allclose(aligned.iloc[:, 0], aligned.iloc[:, 1], atol=1e-10)
 
 
 class TestComputeRiskAdjustedReturn:

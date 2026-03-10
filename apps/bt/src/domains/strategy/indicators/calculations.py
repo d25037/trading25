@@ -47,13 +47,13 @@ def compute_rsi(
     close: pd.Series[float],
     period: int = 14,
 ) -> pd.Series[float]:
-    """Wilder smoothing ベースの RSI を計算する。"""
+    """VectorBT 既定値互換の RSI を計算する。"""
     delta = close.diff()
     gains = delta.clip(lower=0)
     losses = -delta.clip(upper=0)
 
-    avg_gain = gains.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
-    avg_loss = losses.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    avg_gain = gains.rolling(window=period, min_periods=period).mean()
+    avg_loss = losses.rolling(window=period, min_periods=period).mean()
 
     rs = avg_gain / avg_loss.replace(0, np.nan)
     rsi = 100 - (100 / (1 + rs))
@@ -71,11 +71,11 @@ def compute_macd(
     slow_period: int = 26,
     signal_period: int = 9,
 ) -> MACDResult:
-    """MACD line / signal line / histogram を計算する。"""
-    fast_ema = compute_moving_average(close, fast_period, ma_type="ema")
-    slow_ema = compute_moving_average(close, slow_period, ma_type="ema")
-    macd_line = fast_ema - slow_ema
-    signal_line = compute_moving_average(macd_line, signal_period, ma_type="ema")
+    """VectorBT 既定値互換の MACD line / signal line / histogram を計算する。"""
+    fast_ma = compute_moving_average(close, fast_period, ma_type="sma")
+    slow_ma = compute_moving_average(close, slow_period, ma_type="sma")
+    macd_line = fast_ma - slow_ma
+    signal_line = compute_moving_average(macd_line, signal_period, ma_type="sma")
     histogram = macd_line - signal_line
     return MACDResult(
         macd=macd_line,
