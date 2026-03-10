@@ -5,13 +5,18 @@ Lab Service
 """
 
 import asyncio
+import json
+import sys
 from collections.abc import Callable
 from concurrent.futures import ThreadPoolExecutor
+from pathlib import Path
 from typing import Any
 
 from loguru import logger
 
+from src.domains.backtest.contracts import RunSpec
 from src.domains.lab_agent.models import LabStructureMode, LabTargetScope, SignalCategory
+from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.lab import (
     EvolutionHistoryItem,
@@ -20,10 +25,48 @@ from src.entrypoints.http.schemas.lab import (
     OptimizeTrialItem,
 )
 from src.application.services.job_manager import JobManager, job_manager
+from src.application.services.run_contracts import build_parameterized_run_spec, build_strategy_run_spec
+from src.shared.config.settings import get_settings
 
 _INTERNAL_JOB_MESSAGE_KEY = "_job_message"
 _EVOLVE_COMPLETE_MESSAGE = "GA進化完了"
 _EVOLVE_BASE_BEST_MESSAGE = "GA進化完了（ベース戦略が最良のためパラメータ変更なし）"
+_WORKER_MODULE = "src.application.workers.lab_worker"
+_PROJECT_ROOT = Path(__file__).resolve().parents[3]
+_LAB_JOB_MESSAGES: dict[str, dict[str, str]] = {
+    "generate": {
+        "start": "戦略を生成しています...",
+        "complete": "戦略生成完了",
+        "cancel": "戦略生成がキャンセルされました",
+        "fail": "戦略生成に失敗しました",
+        "timeout": "戦略生成がタイムアウトしました",
+        "worker_start": "戦略生成 worker を起動しています...",
+    },
+    "evolve": {
+        "start": "GA進化を開始しています...",
+        "complete": _EVOLVE_COMPLETE_MESSAGE,
+        "cancel": "GA進化がキャンセルされました",
+        "fail": "GA進化に失敗しました",
+        "timeout": "GA進化がタイムアウトしました",
+        "worker_start": "GA進化 worker を起動しています...",
+    },
+    "optimize": {
+        "start": "Optuna最適化を開始しています...",
+        "complete": "Optuna最適化完了",
+        "cancel": "Optuna最適化がキャンセルされました",
+        "fail": "Optuna最適化に失敗しました",
+        "timeout": "Optuna最適化がタイムアウトしました",
+        "worker_start": "Optuna最適化 worker を起動しています...",
+    },
+    "improve": {
+        "start": "戦略を分析しています...",
+        "complete": "戦略改善完了",
+        "cancel": "戦略改善がキャンセルされました",
+        "fail": "戦略改善に失敗しました",
+        "timeout": "戦略改善がタイムアウトしました",
+        "worker_start": "戦略改善 worker を起動しています...",
+    },
+}
 
 
 def _resolve_target_scope(
@@ -46,9 +89,161 @@ class LabService:
         self,
         manager: JobManager | None = None,
         max_workers: int = 1,
+        worker_poll_interval_seconds: float = 0.5,
+        worker_timeout_seconds: int | None = None,
     ) -> None:
         self._manager = manager or job_manager
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        self._config_loader = ConfigLoader()
+        self._worker_poll_interval_seconds = max(worker_poll_interval_seconds, 0.1)
+        self._worker_timeout_seconds = (
+            worker_timeout_seconds
+            if worker_timeout_seconds is not None
+            else get_settings().lab_job_timeout_seconds
+        )
+
+    async def _run_worker_job(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> None:
+        """外部 worker を起動して durable state を監視する。"""
+        lab_type = str(payload.get("lab_type", "lab"))
+        messages = _LAB_JOB_MESSAGES.get(lab_type, {})
+        process: asyncio.subprocess.Process | None = None
+        try:
+            await self._manager.acquire_slot()
+            await self._manager.update_job_status(
+                job_id,
+                JobStatus.PENDING,
+                message=messages.get("worker_start", "Lab worker を起動しています..."),
+                progress=0.0,
+            )
+
+            logger.info(f"Lab {lab_type} worker 開始: {job_id}")
+            process = await self._start_worker_process(job_id, payload)
+            exit_code = await self._wait_for_worker_completion(job_id, process)
+            job = await self._manager.reload_job_from_storage(job_id, notify=True)
+            if job is None or job.status in (
+                JobStatus.COMPLETED,
+                JobStatus.FAILED,
+                JobStatus.CANCELLED,
+            ):
+                return
+            if exit_code == 0:
+                await self._manager.update_job_status(
+                    job_id,
+                    JobStatus.FAILED,
+                    message=messages.get("fail", "Lab worker が結果を保存せず終了しました"),
+                    error="worker_exited_without_terminal_state",
+                )
+                return
+            if self._manager.is_cancel_requested(job_id):
+                logger.info(f"Lab {lab_type} worker を停止しました: {job_id}")
+                return
+            await self._manager.update_job_status(
+                job_id,
+                JobStatus.FAILED,
+                message=messages.get("fail", "Lab worker が異常終了しました"),
+                error=f"worker_exit_code={exit_code}",
+            )
+        except asyncio.CancelledError:
+            logger.info(f"Lab {lab_type} watcher キャンセル: {job_id}")
+            if process is not None:
+                await self._terminate_worker_process(process)
+            await self._manager.reload_job_from_storage(job_id, notify=True)
+            if not self._manager.is_cancel_requested(job_id):
+                await self._manager.update_job_status(
+                    job_id,
+                    JobStatus.CANCELLED,
+                    message=messages.get("cancel", "Labジョブがキャンセルされました"),
+                )
+        except Exception as e:
+            logger.exception(f"Lab {lab_type} watcher エラー: {job_id}")
+            await self._manager.update_job_status(
+                job_id,
+                JobStatus.FAILED,
+                message=messages.get("fail", "Labジョブに失敗しました"),
+                error=str(e),
+            )
+        finally:
+            self._manager.release_slot()
+
+    async def _submit_worker_job(
+        self,
+        strategy_name: str,
+        job_type: str,
+        run_spec: RunSpec | None,
+        payload: dict[str, Any],
+    ) -> str:
+        job_id = self._manager.create_job(
+            strategy_name,
+            job_type=job_type,
+            run_spec=run_spec,
+        )
+        task = asyncio.create_task(self._run_worker_job(job_id, payload))
+        await self._manager.set_job_task(job_id, task)
+        return job_id
+
+    async def _start_worker_process(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> asyncio.subprocess.Process:
+        return await asyncio.create_subprocess_exec(
+            *self._build_worker_command(job_id, payload),
+            cwd=str(_PROJECT_ROOT),
+            stdout=asyncio.subprocess.DEVNULL,
+            stderr=asyncio.subprocess.DEVNULL,
+        )
+
+    def _build_worker_command(
+        self,
+        job_id: str,
+        payload: dict[str, Any],
+    ) -> list[str]:
+        return [
+            sys.executable,
+            "-m",
+            _WORKER_MODULE,
+            "--job-id",
+            job_id,
+            "--payload-json",
+            json.dumps(payload, ensure_ascii=False),
+            "--timeout-seconds",
+            str(self._worker_timeout_seconds),
+        ]
+
+    async def _wait_for_worker_completion(
+        self,
+        job_id: str,
+        process: asyncio.subprocess.Process,
+    ) -> int:
+        while True:
+            try:
+                exit_code = await asyncio.wait_for(
+                    process.wait(),
+                    timeout=self._worker_poll_interval_seconds,
+                )
+                await self._manager.reload_job_from_storage(job_id, notify=True)
+                return exit_code
+            except asyncio.TimeoutError:
+                await self._manager.reload_job_from_storage(job_id, notify=True)
+
+    async def _terminate_worker_process(
+        self,
+        process: asyncio.subprocess.Process,
+        *,
+        timeout_seconds: float = 3.0,
+    ) -> None:
+        if process.returncode is not None:
+            return
+        process.terminate()
+        try:
+            await asyncio.wait_for(process.wait(), timeout=timeout_seconds)
+        except asyncio.TimeoutError:
+            process.kill()
+            await process.wait()
 
     # ============================================
     # Common Job Runner
@@ -118,6 +313,7 @@ class LabService:
         self,
         strategy_name: str,
         job_type: str,
+        run_spec: RunSpec | None,
         lab_type: str,
         start_message: str,
         complete_message: str,
@@ -128,7 +324,11 @@ class LabService:
         sync_args: tuple[Any, ...],
     ) -> str:
         """共通のジョブサブミット処理"""
-        job_id = self._manager.create_job(strategy_name, job_type=job_type)
+        job_id = self._manager.create_job(
+            strategy_name,
+            job_type=job_type,
+            run_spec=run_spec,
+        )
 
         task = asyncio.create_task(
             self._run_job(
@@ -165,27 +365,38 @@ class LabService:
     ) -> str:
         """戦略自動生成ジョブをサブミット"""
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        return await self._submit_job(
+        run_spec = build_parameterized_run_spec(
+            "lab_generate",
+            f"generate(n={count},top={top})",
+            dataset_name=dataset,
+            parameters={
+                "count": count,
+                "top": top,
+                "seed": seed,
+                "save": save,
+                "direction": direction,
+                "timeframe": timeframe,
+                "dataset": dataset,
+                "entry_filter_only": entry_filter_only,
+                "allowed_categories": resolved_categories,
+            },
+        )
+        return await self._submit_worker_job(
             strategy_name=f"generate(n={count},top={top})",
             job_type="lab_generate",
-            lab_type="generate",
-            start_message="戦略を生成しています...",
-            complete_message="戦略生成完了",
-            cancel_message="戦略生成がキャンセルされました",
-            fail_message="戦略生成に失敗しました",
-            log_detail=f"count={count}, top={top}",
-            sync_fn=self._execute_generate_sync,
-            sync_args=(
-                count,
-                top,
-                seed,
-                save,
-                direction,
-                timeframe,
-                dataset,
-                entry_filter_only,
-                resolved_categories,
-            ),
+            run_spec=run_spec,
+            payload={
+                "lab_type": "generate",
+                "count": count,
+                "top": top,
+                "seed": seed,
+                "save": save,
+                "direction": direction,
+                "timeframe": timeframe,
+                "dataset": dataset,
+                "entry_filter_only": entry_filter_only,
+                "allowed_categories": resolved_categories,
+            },
         )
 
     def _execute_generate_sync(
@@ -278,32 +489,41 @@ class LabService:
         resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        return await self._submit_job(
+        run_spec = build_strategy_run_spec(
+            "lab_evolve",
+            strategy_name,
+            parameters={
+                "generations": generations,
+                "population": population,
+                "structure_mode": structure_mode,
+                "random_add_entry_signals": random_add_entry_signals,
+                "random_add_exit_signals": random_add_exit_signals,
+                "seed": seed,
+                "save": save,
+                "entry_filter_only": effective_entry_filter_only,
+                "target_scope": resolved_target_scope,
+                "allowed_categories": resolved_categories,
+            },
+            config_loader=self._config_loader,
+        )
+        return await self._submit_worker_job(
             strategy_name=strategy_name,
             job_type="lab_evolve",
-            lab_type="evolve",
-            start_message="GA進化を開始しています...",
-            complete_message="GA進化完了",
-            cancel_message="GA進化がキャンセルされました",
-            fail_message="GA進化に失敗しました",
-            log_detail=(
-                f"戦略: {strategy_name}, generations={generations}, population={population}, "
-                f"structure_mode={structure_mode}, target_scope={resolved_target_scope}"
-            ),
-            sync_fn=self._execute_evolve_sync,
-            sync_args=(
-                strategy_name,
-                generations,
-                population,
-                structure_mode,
-                random_add_entry_signals,
-                random_add_exit_signals,
-                seed,
-                save,
-                effective_entry_filter_only,
-                resolved_categories,
-                resolved_target_scope,
-            ),
+            run_spec=run_spec,
+            payload={
+                "lab_type": "evolve",
+                "strategy_name": strategy_name,
+                "generations": generations,
+                "population": population,
+                "structure_mode": structure_mode,
+                "random_add_entry_signals": random_add_entry_signals,
+                "random_add_exit_signals": random_add_exit_signals,
+                "seed": seed,
+                "save": save,
+                "entry_filter_only": effective_entry_filter_only,
+                "allowed_categories": resolved_categories,
+                "target_scope": resolved_target_scope,
+            },
         )
 
     def _execute_evolve_sync(
@@ -403,31 +623,47 @@ class LabService:
         scoring_weights: dict[str, float] | None = None,
     ) -> str:
         """Optuna最適化ジョブをサブミット"""
-        job_id = self._manager.create_job(strategy_name, job_type="lab_optimize")
-
         resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        task = asyncio.create_task(
-            self._run_optimize(
-                job_id,
-                strategy_name,
-                trials,
-                sampler,
-                structure_mode,
-                random_add_entry_signals,
-                random_add_exit_signals,
-                seed,
-                save,
-                effective_entry_filter_only,
-                resolved_target_scope,
-                resolved_categories,
-                scoring_weights,
-            )
+        run_spec = build_strategy_run_spec(
+            "lab_optimize",
+            strategy_name,
+            parameters={
+                "trials": trials,
+                "sampler": sampler,
+                "structure_mode": structure_mode,
+                "random_add_entry_signals": random_add_entry_signals,
+                "random_add_exit_signals": random_add_exit_signals,
+                "seed": seed,
+                "save": save,
+                "entry_filter_only": effective_entry_filter_only,
+                "target_scope": resolved_target_scope,
+                "allowed_categories": resolved_categories,
+                "scoring_weights": scoring_weights,
+            },
+            config_loader=self._config_loader,
         )
-        await self._manager.set_job_task(job_id, task)
-
-        return job_id
+        return await self._submit_worker_job(
+            strategy_name=strategy_name,
+            job_type="lab_optimize",
+            run_spec=run_spec,
+            payload={
+                "lab_type": "optimize",
+                "strategy_name": strategy_name,
+                "trials": trials,
+                "sampler": sampler,
+                "structure_mode": structure_mode,
+                "random_add_entry_signals": random_add_entry_signals,
+                "random_add_exit_signals": random_add_exit_signals,
+                "seed": seed,
+                "save": save,
+                "entry_filter_only": effective_entry_filter_only,
+                "target_scope": resolved_target_scope,
+                "allowed_categories": resolved_categories,
+                "scoring_weights": scoring_weights,
+            },
+        )
 
     async def _run_optimize(
         self,
@@ -616,22 +852,27 @@ class LabService:
     ) -> str:
         """戦略改善ジョブをサブミット"""
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
-        return await self._submit_job(
+        run_spec = build_strategy_run_spec(
+            "lab_improve",
+            strategy_name,
+            parameters={
+                "auto_apply": auto_apply,
+                "entry_filter_only": entry_filter_only,
+                "allowed_categories": resolved_categories,
+            },
+            config_loader=self._config_loader,
+        )
+        return await self._submit_worker_job(
             strategy_name=strategy_name,
             job_type="lab_improve",
-            lab_type="improve",
-            start_message="戦略を分析しています...",
-            complete_message="戦略改善完了",
-            cancel_message="戦略改善がキャンセルされました",
-            fail_message="戦略改善に失敗しました",
-            log_detail=f"戦略: {strategy_name}",
-            sync_fn=self._execute_improve_sync,
-            sync_args=(
-                strategy_name,
-                auto_apply,
-                entry_filter_only,
-                resolved_categories,
-            ),
+            run_spec=run_spec,
+            payload={
+                "lab_type": "improve",
+                "strategy_name": strategy_name,
+                "auto_apply": auto_apply,
+                "entry_filter_only": entry_filter_only,
+                "allowed_categories": resolved_categories,
+            },
         )
 
     def _execute_improve_sync(

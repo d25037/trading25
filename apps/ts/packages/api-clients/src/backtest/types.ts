@@ -5,6 +5,113 @@
  */
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
+export type EngineFamily = 'vectorbt' | 'nautilus' | 'unknown';
+export type RunType =
+  | 'backtest'
+  | 'optimization'
+  | 'attribution'
+  | 'screening'
+  | 'lab_generate'
+  | 'lab_evolve'
+  | 'lab_optimize'
+  | 'lab_improve'
+  | 'unknown';
+export type ArtifactKind =
+  | 'html'
+  | 'metrics_json'
+  | 'manifest_json'
+  | 'result_summary'
+  | 'raw_result_json'
+  | 'attribution_json'
+  | 'strategy_yaml'
+  | 'history_yaml';
+export type ArtifactStorage = 'filesystem' | 'portfolio_db';
+
+export interface CompiledStrategyInputRequirements {
+  schema_version: number;
+  required_data_domains?: string[];
+  required_features?: string[];
+  required_fundamental_fields?: string[];
+  signal_ids?: string[];
+}
+
+export interface RunSpec {
+  schema_version: number;
+  run_type: RunType;
+  strategy_name: string;
+  strategy_source_ref?: string | null;
+  strategy_fingerprint?: string | null;
+  dataset_name?: string | null;
+  dataset_snapshot_id?: string | null;
+  market_snapshot_id?: string | null;
+  engine_family: EngineFamily;
+  execution_policy_version?: string | null;
+  parent_run_id?: string | null;
+  parameters?: Record<string, unknown>;
+  compiled_strategy_requirements?: CompiledStrategyInputRequirements | null;
+}
+
+export interface RunMetadata {
+  schema_version: number;
+  run_id: string;
+  run_type: RunType;
+  strategy_name: string;
+  dataset_name?: string | null;
+  dataset_snapshot_id?: string | null;
+  market_snapshot_id?: string | null;
+  engine_family: EngineFamily;
+  execution_policy_version?: string | null;
+  parent_run_id?: string | null;
+}
+
+export interface ArtifactRecord {
+  kind: ArtifactKind;
+  storage: ArtifactStorage;
+  path?: string | null;
+  location?: string | null;
+  metadata?: Record<string, unknown>;
+}
+
+export interface ArtifactIndex {
+  schema_version: number;
+  artifacts?: ArtifactRecord[];
+}
+
+export interface JobExecutionControl {
+  cancel_reason?: string | null;
+  cancel_requested: boolean;
+  cancel_requested_at?: string | null;
+  last_heartbeat_at?: string | null;
+  lease_expires_at?: string | null;
+  lease_owner?: string | null;
+  timeout_at?: string | null;
+}
+
+export interface CanonicalExecutionMetrics {
+  total_return?: number | null;
+  sharpe_ratio?: number | null;
+  sortino_ratio?: number | null;
+  calmar_ratio?: number | null;
+  max_drawdown?: number | null;
+  win_rate?: number | null;
+  trade_count?: number | null;
+}
+
+export interface CanonicalExecutionResult {
+  schema_version: number;
+  run_id: string;
+  run_type: RunType;
+  strategy_name: string;
+  engine_family: EngineFamily;
+  status: string;
+  dataset_name?: string | null;
+  dataset_snapshot_id?: string | null;
+  market_snapshot_id?: string | null;
+  execution_policy_version?: string | null;
+  execution_time?: number | null;
+  summary_metrics?: CanonicalExecutionMetrics | null;
+  payload?: Record<string, unknown> | null;
+}
 
 export interface BacktestRequest {
   strategy_name: string;
@@ -31,6 +138,8 @@ export interface BacktestJobResponse {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   result: BacktestResultSummary | null;
 }
 
@@ -42,6 +151,9 @@ export interface BacktestResultResponse {
   execution_time: number;
   html_content: string | null;
   created_at: string;
+  run_spec?: RunSpec | null;
+  canonical_result?: CanonicalExecutionResult | null;
+  artifact_index?: ArtifactIndex | null;
 }
 
 export interface SignalAttributionRequest {
@@ -126,6 +238,8 @@ export interface SignalAttributionJobResponse {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   result_data: SignalAttributionResult | null;
 }
 
@@ -134,6 +248,8 @@ export interface SignalAttributionResultResponse {
   strategy_name: string;
   result: SignalAttributionResult;
   created_at: string;
+  canonical_result?: CanonicalExecutionResult | null;
+  artifact_index?: ArtifactIndex | null;
 }
 
 export interface AttributionArtifactInfo {
@@ -325,6 +441,8 @@ export interface OptimizationJobResponse {
   started_at: string | null;
   completed_at: string | null;
   error: string | null;
+  run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   best_score: number | null;
   best_params: Record<string, unknown> | null;
   worst_score: number | null;
@@ -602,6 +720,8 @@ export interface LabJobResponse {
   started_at?: string;
   completed_at?: string;
   error?: string;
+  run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   result_data?: LabResultData;
 }
 
@@ -708,7 +828,7 @@ export interface RelativeOHLCOptions {
 
 export interface OHLCVResampleRequest {
   stock_code: string;
-  source?: 'market' | 'dataset';
+  source?: string;
   timeframe?: Timeframe;
   start_date?: string;
   end_date?: string;

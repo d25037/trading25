@@ -17,6 +17,7 @@ from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.screening_job import ScreeningJobPayload, ScreeningJobRequest
 from src.application.services.job_manager import JobManager
+from src.application.services.run_contracts import build_parameterized_run_spec
 from src.application.services.screening_service import ScreeningService
 from src.shared.observability.correlation import get_correlation_id
 from src.shared.observability.metrics import metrics_recorder
@@ -55,9 +56,15 @@ class ScreeningJobService:
     ) -> str:
         """Screening ジョブをサブミット"""
         request_copy = request.model_copy(deep=True)
+        run_spec = build_parameterized_run_spec(
+            "screening",
+            "analytics/screening",
+            parameters=request_copy.model_dump(exclude_none=True),
+        )
         job_id = self._manager.create_job(
             strategy_name="analytics/screening",
             job_type="screening",
+            run_spec=run_spec,
         )
         self._job_requests[job_id] = request_copy
 
@@ -184,11 +191,7 @@ class ScreeningJobService:
                 self._manager.release_slot()
 
     async def shutdown(self) -> None:
-        """アクティブジョブを停止し executor を終了"""
-        for job in self._manager.list_jobs(limit=1000, job_types={"screening"}):
-            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
-                await self._manager.cancel_job(job.job_id)
-
+        """Executor を終了する。job state の遷移は manager/app 側で扱う。"""
         if not bool(getattr(self._executor, "_broken", False)) and not bool(
             getattr(self._executor, "_shutdown", False)
         ):

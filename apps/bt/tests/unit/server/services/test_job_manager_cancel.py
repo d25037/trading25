@@ -26,6 +26,8 @@ class TestCancelJob:
         assert result is not None
         assert result.status == JobStatus.CANCELLED
         assert result.completed_at is not None
+        assert result.cancel_requested_at is not None
+        assert result.cancel_reason == "user_requested"
 
     async def test_cancel_running_job(self, manager: JobManager):
         """RUNNINGジョブをキャンセルできる"""
@@ -34,6 +36,8 @@ class TestCancelJob:
         result = await manager.cancel_job(job_id)
         assert result is not None
         assert result.status == JobStatus.CANCELLED
+        assert result.lease_owner is None
+        assert result.cancel_requested_at is not None
 
     async def test_cancel_completed_job_returns_none(self, manager: JobManager):
         """COMPLETEDジョブのキャンセルはNoneを返す"""
@@ -56,6 +60,7 @@ class TestCancelJob:
         result = await manager.cancel_job(job_id)
         assert result is not None
         assert result.status == JobStatus.CANCELLED
+        assert result.cancel_requested_at is not None
 
     async def test_cancel_nonexistent_job_returns_none(self, manager: JobManager):
         """存在しないジョブのキャンセルはNoneを返す"""
