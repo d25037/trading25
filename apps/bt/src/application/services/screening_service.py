@@ -47,6 +47,7 @@ from src.domains.analytics.screening_results import (
     sort_results as sort_screening_results,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
+from src.domains.strategy.runtime.compiler import CompiledStrategyIR
 from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
@@ -99,8 +100,8 @@ class StrategyRuntime:
     entry_params: SignalParams
     exit_params: SignalParams
     shared_config: SharedConfig
+    compiled_strategy: CompiledStrategyIR
     screening_mode: ScreeningMode
-    current_session_round_trip_oracle: bool
 
 
 @dataclass
@@ -444,7 +445,10 @@ class ScreeningService:
         if not metadata:
             raise ValueError("No production strategies found")
 
-        runtime_payloads: dict[str, tuple[SignalParams, SignalParams, SharedConfig, str, bool]] = {}
+        runtime_payloads: dict[
+            str,
+            tuple[SignalParams, SignalParams, SharedConfig, CompiledStrategyIR, str],
+        ] = {}
         eligible_metadata: list[Any] = []
         for m in metadata:
             try:
@@ -458,8 +462,8 @@ class ScreeningService:
                 loaded_config.entry_params,
                 loaded_config.exit_params,
                 loaded_config.shared_config,
+                loaded_config.compiled_strategy,
                 loaded_config.screening_mode,
-                loaded_config.current_session_round_trip_oracle,
             )
             if loaded_config.screening_mode == mode:
                 eligible_metadata.append(m)
@@ -510,8 +514,8 @@ class ScreeningService:
                 entry_params,
                 exit_params,
                 shared_config,
+                compiled_strategy,
                 screening_mode,
-                current_session_round_trip_oracle,
             ) = runtime_payloads[m.name]
 
             response_name = m.path.stem
@@ -525,8 +529,8 @@ class ScreeningService:
                 entry_params=entry_params,
                 exit_params=exit_params,
                 shared_config=shared_config,
+                compiled_strategy=compiled_strategy,
                 screening_mode=cast(ScreeningMode, screening_mode),
-                current_session_round_trip_oracle=current_session_round_trip_oracle,
             )
             runtimes.append(runtime)
 

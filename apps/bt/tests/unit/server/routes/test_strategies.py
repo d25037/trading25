@@ -56,6 +56,11 @@ class TestValidateStrategy:
         mock_config_loader.load_strategy_config.return_value = {
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+        }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
@@ -64,9 +69,16 @@ class TestValidateStrategy:
         assert resp.status_code == 200
         data = resp.json()
         assert data["valid"] is True
+        assert data["compiled_strategy"]["signal_ids"] == ["entry.volume_ratio_above"]
+        assert data["compiled_strategy"]["required_data_domains"] == ["market"]
 
     def test_missing_params_warning(self, client, mock_config_loader):
         mock_config_loader.load_strategy_config.return_value = {}
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+        }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
@@ -79,6 +91,12 @@ class TestValidateStrategy:
         mock_config_loader.load_strategy_config.return_value = {
             "shared_config": {"kelly_fraction": 5.0},
         }
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+            "kelly_fraction": 5.0,
+        }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
@@ -89,6 +107,11 @@ class TestValidateStrategy:
         assert any("kelly_fraction" in e for e in data["errors"])
 
     def test_strict_nested_typo(self, client, mock_config_loader):
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+        }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
@@ -118,6 +141,12 @@ class TestValidateStrategy:
         )
 
     def test_next_session_round_trip_rejects_exit_triggers(self, client, mock_config_loader):
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+            "next_session_round_trip": True,
+        }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
             mock_runner.get_execution_info.return_value = {}
@@ -136,6 +165,81 @@ class TestValidateStrategy:
         data = resp.json()
         assert data["valid"] is False
         assert any("exit_trigger_params" in e for e in data["errors"])
+
+    def test_current_session_round_trip_oracle_compiles_allowlisted_signal(self, client, mock_config_loader):
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+            "current_session_round_trip_oracle": True,
+        }
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
+            mock_runner = MagicMock()
+            mock_runner.get_execution_info.return_value = {}
+            mock_runner_cls.return_value = mock_runner
+            resp = client.post(
+                "/api/strategies/test/validate",
+                json={
+                    "config": {
+                        "shared_config": {"current_session_round_trip_oracle": True},
+                        "entry_filter_params": {
+                            "oracle_index_open_gap_regime": {"enabled": True},
+                            "volume_ratio_above": {"enabled": True},
+                        },
+                    }
+                },
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is True
+        by_signal = {
+            item["signal_id"]: item
+            for item in data["compiled_strategy"]["signals"]
+        }
+        assert (
+            by_signal["entry.oracle_index_open_gap_regime"]["availability"]["observation_time"]
+            == "current_session_open"
+        )
+        assert (
+            by_signal["entry.volume_ratio_above"]["availability"]["observation_time"]
+            == "prior_session_close"
+        )
+
+    def test_validate_request_config_does_not_depend_on_saved_strategy_execution_info(
+        self,
+        client,
+        mock_config_loader,
+    ):
+        mock_config_loader.merge_shared_config.return_value = {
+            "dataset": "primeExTopix500",
+            "direction": "longonly",
+            "timeframe": "daily",
+        }
+
+        with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
+            mock_runner = MagicMock()
+            mock_runner.get_execution_info.return_value = {
+                "error": "saved strategy missing",
+            }
+            mock_runner_cls.return_value = mock_runner
+
+            resp = client.post(
+                "/api/strategies/experimental/draft/validate",
+                json={
+                    "config": {
+                        "shared_config": {"dataset": "primeExTopix500"},
+                        "entry_filter_params": {
+                            "volume_ratio_above": {"enabled": True},
+                        },
+                    }
+                },
+            )
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["valid"] is True
+        assert data["errors"] == []
+        mock_runner.get_execution_info.assert_not_called()
 
 
 class TestUpdateStrategy:

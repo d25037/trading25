@@ -32,6 +32,18 @@ const baseSignalData = {
       description: 'Close price is above moving average',
       usage_hint: 'Use this for trend confirmation',
       yaml_snippet: 'entry_filter:\n  breakout.close_gt_sma:\n    enabled: true',
+      availability_profiles: [
+        {
+          scope: 'entry',
+          execution_semantics: 'current_session_round_trip_oracle',
+          availability: {
+            observation_time: 'prior_session_close',
+            available_at: 'prior_session_close',
+            decision_cutoff: 'current_session_open',
+            execution_session: 'current_session',
+          },
+        },
+      ],
       fields: [
         {
           name: 'period',
@@ -117,6 +129,8 @@ describe('SignalReferencePanel', () => {
     fireEvent.click(signalHeaderButton as HTMLButtonElement);
     expect(screen.getByText('Use this for trend confirmation')).toBeInTheDocument();
     expect(screen.getByText('[>0, <=50]')).toBeInTheDocument();
+    expect(screen.getByText('Current Session Oracle')).toBeInTheDocument();
+    expect(screen.getByText('Observe: Prior Close')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(onCopySnippet).toHaveBeenCalledWith('entry_filter:\n  breakout.close_gt_sma:\n    enabled: true');

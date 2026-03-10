@@ -1172,6 +1172,116 @@
         "title": "CanonicalExecutionResult",
         "type": "object"
       },
+      "CompiledAvailabilityPoint": {
+        "enum": [
+          "prior_session_close",
+          "current_session_open",
+          "current_session_close",
+          "next_session_open"
+        ],
+        "title": "CompiledAvailabilityPoint",
+        "type": "string"
+      },
+      "CompiledExecutionSession": {
+        "enum": [
+          "current_session",
+          "next_session"
+        ],
+        "title": "CompiledExecutionSession",
+        "type": "string"
+      },
+      "CompiledSignalAvailability": {
+        "properties": {
+          "available_at": {
+            "$ref": "#/components/schemas/CompiledAvailabilityPoint",
+            "description": "When the computed signal can be used by the engine"
+          },
+          "decision_cutoff": {
+            "$ref": "#/components/schemas/CompiledAvailabilityPoint",
+            "description": "Latest decision point before execution"
+          },
+          "execution_session": {
+            "$ref": "#/components/schemas/CompiledExecutionSession",
+            "description": "Which trading session executes the decision"
+          },
+          "observation_time": {
+            "$ref": "#/components/schemas/CompiledAvailabilityPoint",
+            "description": "When the signal's source observation becomes observable"
+          }
+        },
+        "required": [
+          "observation_time",
+          "available_at",
+          "decision_cutoff",
+          "execution_session"
+        ],
+        "title": "CompiledSignalAvailability",
+        "type": "object"
+      },
+      "CompiledSignalIR": {
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/CompiledSignalAvailability",
+            "description": "Availability/no-lookahead metadata for this signal"
+          },
+          "category": {
+            "description": "Signal category",
+            "title": "Category",
+            "type": "string"
+          },
+          "data_requirements": {
+            "description": "Declared data requirements from the signal registry",
+            "items": {
+              "type": "string"
+            },
+            "title": "Data Requirements",
+            "type": "array"
+          },
+          "description": {
+            "description": "Signal description",
+            "title": "Description",
+            "type": "string"
+          },
+          "param_key": {
+            "description": "Signal parameter key path",
+            "title": "Param Key",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CompiledSignalScope",
+            "description": "Signal scope"
+          },
+          "signal_id": {
+            "description": "Stable scoped signal identifier",
+            "title": "Signal Id",
+            "type": "string"
+          },
+          "signal_name": {
+            "description": "Human-readable signal name",
+            "title": "Signal Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "signal_id",
+          "scope",
+          "param_key",
+          "signal_name",
+          "category",
+          "description",
+          "availability"
+        ],
+        "title": "CompiledSignalIR",
+        "type": "object"
+      },
+      "CompiledSignalScope": {
+        "enum": [
+          "entry",
+          "exit"
+        ],
+        "title": "CompiledSignalScope",
+        "type": "string"
+      },
       "CompiledStrategyInputRequirements": {
         "description": "Declared inputs required by a compiled strategy.",
         "properties": {
@@ -1215,6 +1325,90 @@
           }
         },
         "title": "CompiledStrategyInputRequirements",
+        "type": "object"
+      },
+      "CompiledStrategyIR": {
+        "properties": {
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resolved dataset name",
+            "title": "Dataset Name"
+          },
+          "execution_semantics": {
+            "description": "Compiled execution semantics label",
+            "title": "Execution Semantics",
+            "type": "string"
+          },
+          "required_data_domains": {
+            "description": "Required high-level data domains",
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Data Domains",
+            "type": "array"
+          },
+          "required_features": {
+            "description": "Required feature/data requirement identifiers",
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Features",
+            "type": "array"
+          },
+          "required_fundamental_fields": {
+            "description": "Required statements/fundamental fields",
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Fundamental Fields",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "description": "Schema version",
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "signal_ids": {
+            "description": "Stable signal identifiers in compiled order",
+            "items": {
+              "type": "string"
+            },
+            "title": "Signal Ids",
+            "type": "array"
+          },
+          "signals": {
+            "description": "Enabled signals after validation and config merge",
+            "items": {
+              "$ref": "#/components/schemas/CompiledSignalIR"
+            },
+            "title": "Signals",
+            "type": "array"
+          },
+          "strategy_name": {
+            "description": "Resolved strategy name",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "timeframe": {
+            "description": "Compiled timeframe",
+            "title": "Timeframe",
+            "type": "string"
+          }
+        },
+        "required": [
+          "strategy_name",
+          "execution_semantics",
+          "timeframe"
+        ],
+        "title": "CompiledStrategyIR",
         "type": "object"
       },
       "CreateSyncJobResponse": {
@@ -10399,6 +10593,33 @@
         "title": "SignalAttributionTopNSelection",
         "type": "object"
       },
+      "SignalAvailabilityProfile": {
+        "description": "Compiled availability profile for a signal under one execution semantic.",
+        "properties": {
+          "availability": {
+            "$ref": "#/components/schemas/CompiledSignalAvailability"
+          },
+          "execution_semantics": {
+            "enum": [
+              "standard",
+              "next_session_round_trip",
+              "current_session_round_trip_oracle"
+            ],
+            "title": "Execution Semantics",
+            "type": "string"
+          },
+          "scope": {
+            "$ref": "#/components/schemas/CompiledSignalScope"
+          }
+        },
+        "required": [
+          "scope",
+          "execution_semantics",
+          "availability"
+        ],
+        "title": "SignalAvailabilityProfile",
+        "type": "object"
+      },
       "SignalCategorySchema": {
         "description": "シグナルカテゴリ定義",
         "properties": {
@@ -10624,6 +10845,13 @@
       "SignalReferenceSchema": {
         "description": "シグナル定義",
         "properties": {
+          "availability_profiles": {
+            "items": {
+              "$ref": "#/components/schemas/SignalAvailabilityProfile"
+            },
+            "title": "Availability Profiles",
+            "type": "array"
+          },
           "category": {
             "title": "Category",
             "type": "string"
@@ -12323,6 +12551,17 @@
       "StrategyValidationResponse": {
         "description": "戦略設定検証レスポンス",
         "properties": {
+          "compiled_strategy": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompiledStrategyIR"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Shadow-compiled strategy IR when validation succeeds"
+          },
           "errors": {
             "description": "エラーメッセージ一覧",
             "items": {

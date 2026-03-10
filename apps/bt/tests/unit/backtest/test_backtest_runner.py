@@ -653,3 +653,20 @@ class TestBuildParametersConfigOverride:
 
         with pytest.raises(ValueError, match="Invalid shared_config after config merge"):
             runner._build_parameters(strategy_config, config_override)
+
+    def test_same_day_oracle_signal_keeps_exit_trigger_params_when_round_trip_flag_is_off(
+        self,
+        monkeypatch: Any,
+    ):
+        runner = self._make_runner_with_defaults(monkeypatch)
+        strategy_config: dict[str, Any] = {
+            "shared_config": {"dataset": "sample"},
+            "entry_filter_params": {
+                "oracle_index_open_gap_regime": {"enabled": True}
+            },
+            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
+        }
+
+        params = runner._build_parameters(strategy_config, config_override=None)
+
+        assert params["exit_trigger_params"]["volume_ratio_below"]["enabled"] is True

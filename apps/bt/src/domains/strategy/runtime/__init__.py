@@ -1,5 +1,17 @@
 """Strategy runtime/config boundary for Phase 4C."""
 
+from src.domains.strategy.runtime.compiler import (
+    CompiledAvailabilityPoint,
+    CompiledExecutionSession,
+    CompiledSignalAvailability,
+    CompiledSignalIR,
+    CompiledSignalScope,
+    CompiledStrategyIR,
+    compile_strategy_config,
+    compile_strategy_requirements,
+    compile_runtime_strategy,
+    resolve_signal_availability,
+)
 from src.domains.strategy.runtime.file_operations import (
     delete_strategy_file,
     duplicate_to_experimental,
@@ -11,6 +23,7 @@ from src.domains.strategy.runtime.models import (
     ExecutionConfig,
     StrategyConfig,
     StrategyConfigStrictValidationError,
+    resolve_execution_semantics,
     try_validate_strategy_config_dict,
     try_validate_strategy_config_dict_strict,
     validate_strategy_config_dict,
@@ -41,6 +54,12 @@ from src.domains.strategy.runtime.validator import (
 
 __all__ = [
     "ConfigLoader",
+    "CompiledAvailabilityPoint",
+    "CompiledExecutionSession",
+    "CompiledSignalAvailability",
+    "CompiledSignalIR",
+    "CompiledSignalScope",
+    "CompiledStrategyIR",
     "ExecutionConfig",
     "StrategyConfig",
     "StrategyMetadata",
@@ -68,4 +87,9 @@ __all__ = [
     "validate_strategy_config_dict_strict",
     "try_validate_strategy_config_dict_strict",
     "StrategyConfigStrictValidationError",
+    "compile_strategy_config",
+    "compile_strategy_requirements",
+    "compile_runtime_strategy",
+    "resolve_execution_semantics",
+    "resolve_signal_availability",
 ]

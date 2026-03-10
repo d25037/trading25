@@ -3,6 +3,11 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, Literal
 
+from src.domains.strategy.runtime.compiler import (
+    CompiledStrategyIR,
+    compile_runtime_strategy,
+    uses_current_session_oracle_execution,
+)
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
@@ -16,27 +21,22 @@ class LoadedStrategyScreeningConfig:
     shared_config: SharedConfig
     entry_params: SignalParams
     exit_params: SignalParams
+    compiled_strategy: CompiledStrategyIR
     screening_mode: StrategyScreeningMode
-    current_session_round_trip_oracle: bool
 
 
 def resolve_current_session_round_trip_oracle(
-    shared_config: SharedConfig,
-    entry_params: SignalParams,
+    compiled_strategy: CompiledStrategyIR,
 ) -> bool:
-    return (
-        shared_config.current_session_round_trip_oracle
-        or entry_params.oracle_index_open_gap_regime.enabled
-    )
+    return uses_current_session_oracle_execution(compiled_strategy)
 
 
 def resolve_strategy_screening_mode(
-    shared_config: SharedConfig,
-    entry_params: SignalParams,
+    compiled_strategy: CompiledStrategyIR,
 ) -> StrategyScreeningMode:
-    if shared_config.next_session_round_trip:
+    if compiled_strategy.execution_semantics == "next_session_round_trip":
         return "unsupported"
-    if resolve_current_session_round_trip_oracle(shared_config, entry_params):
+    if resolve_current_session_round_trip_oracle(compiled_strategy):
         return "oracle"
     return "standard"
 
@@ -53,16 +53,18 @@ def load_strategy_screening_config(
     )
     entry_params = SignalParams(**config.get("entry_filter_params", {}))
     exit_params = SignalParams(**config.get("exit_trigger_params", {}))
-    current_session_round_trip_oracle = resolve_current_session_round_trip_oracle(
-        shared_config,
-        entry_params,
+    compiled_strategy = compile_runtime_strategy(
+        strategy_name=strategy_name,
+        shared_config=shared_config,
+        entry_signal_params=entry_params,
+        exit_signal_params=exit_params,
     )
-    screening_mode = resolve_strategy_screening_mode(shared_config, entry_params)
+    screening_mode = resolve_strategy_screening_mode(compiled_strategy)
     return LoadedStrategyScreeningConfig(
         config=config,
         shared_config=shared_config,
         entry_params=entry_params,
         exit_params=exit_params,
+        compiled_strategy=compiled_strategy,
         screening_mode=screening_mode,
-        current_session_round_trip_oracle=current_session_round_trip_oracle,
     )

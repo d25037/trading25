@@ -87,6 +87,7 @@ class TestStrategyFactoryHelpers:
 
         StrategyFactory._validate_round_trip_execution_mode(
             shared_config,
+            None,
             {"volume_ratio_above": {"enabled": True}},
             None,
         )
@@ -198,6 +199,33 @@ class TestStrategyFactoryHelpers:
         assert strategy is not None
         assert created["shared_config"].current_session_round_trip_oracle is True
         assert created["exit_trigger_params"] is None
+
+    def test_create_strategy_allows_same_day_oracle_signal_with_exit_triggers_when_round_trip_flag_is_off(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        created: dict[str, object] = {}
+
+        def _fake_yaml_strategy(**kwargs):
+            created.update(kwargs)
+            return SimpleNamespace(**kwargs)
+
+        monkeypatch.setattr(
+            "src.domains.strategy.core.yaml_configurable_strategy.YamlConfigurableStrategy",
+            _fake_yaml_strategy,
+        )
+
+        strategy = StrategyFactory.create_strategy(
+            shared_config={
+                "dataset": "sample",
+                "stock_codes": ["1111"],
+            },
+            entry_filter_params={"oracle_index_open_gap_regime": {"enabled": True}},
+            exit_trigger_params={"volume_ratio_below": {"enabled": True}},
+        )
+
+        assert strategy is not None
+        assert created["exit_trigger_params"] is not None
 
 
 class TestStrategyFactoryFilesystemHelpers:

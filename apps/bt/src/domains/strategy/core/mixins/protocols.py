@@ -10,6 +10,7 @@ import pandas as pd
 import vectorbt as vbt
 
 if TYPE_CHECKING:
+    from src.domains.strategy.runtime.compiler import CompiledStrategyIR
     from src.shared.models.signals import SignalParams, Signals
 
 
@@ -41,6 +42,7 @@ class StrategyProtocol(Protocol):
 
     # Strategy name
     strategy_name: str
+    compiled_strategy: "CompiledStrategyIR | None"
 
     # Signal parameters
     filter_params: "SignalParams | None"  # entry_filter_params compatibility

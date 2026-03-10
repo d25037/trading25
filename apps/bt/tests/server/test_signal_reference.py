@@ -32,9 +32,59 @@ class TestBuildSignalReference:
     def test_signal_has_required_keys(self):
         """各シグナルが必須キーを持つこと"""
         result = build_signal_reference()
-        required_keys = {"key", "name", "category", "description", "usage_hint", "fields", "yaml_snippet", "exit_disabled", "data_requirements"}
+        required_keys = {
+            "key",
+            "name",
+            "category",
+            "description",
+            "usage_hint",
+            "fields",
+            "yaml_snippet",
+            "exit_disabled",
+            "data_requirements",
+            "availability_profiles",
+        }
         for signal in result["signals"]:
             assert required_keys.issubset(signal.keys()), f"Missing keys in signal '{signal.get('name', 'unknown')}'"
+
+    def test_signal_reference_includes_availability_profiles(self):
+        result = build_signal_reference()
+        signal = next(
+            item for item in result["signals"] if item["key"] == "volume_ratio_above"
+        )
+        assert len(signal["availability_profiles"]) == 6
+        first = signal["availability_profiles"][0]
+        assert set(first.keys()) == {"scope", "execution_semantics", "availability"}
+
+    def test_oracle_signal_reference_marks_same_session_availability(self):
+        result = build_signal_reference()
+        signal = next(
+            item
+            for item in result["signals"]
+            if item["key"] == "oracle_index_open_gap_regime"
+        )
+        oracle_entry = next(
+            profile
+            for profile in signal["availability_profiles"]
+            if profile["scope"] == "entry"
+            and profile["execution_semantics"] == "current_session_round_trip_oracle"
+        )
+        assert oracle_entry["availability"]["observation_time"] == "current_session_open"
+        assert oracle_entry["availability"]["execution_session"] == "current_session"
+
+    def test_non_oracle_signal_reference_marks_prior_close_under_oracle_mode(self):
+        result = build_signal_reference()
+        signal = next(
+            item for item in result["signals"] if item["key"] == "volume_ratio_above"
+        )
+        oracle_entry = next(
+            profile
+            for profile in signal["availability_profiles"]
+            if profile["scope"] == "entry"
+            and profile["execution_semantics"] == "current_session_round_trip_oracle"
+        )
+        assert oracle_entry["availability"]["observation_time"] == "prior_session_close"
+        assert oracle_entry["availability"]["decision_cutoff"] == "current_session_open"
 
     def test_categories_are_valid(self):
         """全カテゴリが有効なカテゴリであること"""

@@ -124,6 +124,34 @@ class TestDataRequirementsSync:
             )
 
 
+class TestAvailabilityProfilesSync:
+    """availability_profiles と runtime compiler の整合性テスト"""
+
+    def test_all_signals_have_availability_profiles(self):
+        result = build_signal_reference()
+        for signal in result["signals"]:
+            assert "availability_profiles" in signal, (
+                f"Signal '{signal['name']}' missing 'availability_profiles'"
+            )
+            assert isinstance(signal["availability_profiles"], list), (
+                f"Signal '{signal['name']}' availability_profiles is not a list"
+            )
+            assert len(signal["availability_profiles"]) >= 3, (
+                f"Signal '{signal['name']}' should expose execution availability"
+            )
+
+    def test_availability_profiles_have_unique_scope_and_semantics(self):
+        result = build_signal_reference()
+        for signal in result["signals"]:
+            keys = {
+                (profile["scope"], profile["execution_semantics"])
+                for profile in signal["availability_profiles"]
+            }
+            assert len(keys) == len(signal["availability_profiles"]), (
+                f"Signal '{signal['name']}' has duplicate availability profiles"
+            )
+
+
 class TestJsonSchemaEndpointConsistency:
     """SignalParams.model_json_schema() の整合性テスト"""
 

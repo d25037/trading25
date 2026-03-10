@@ -13,6 +13,11 @@ from typing import TYPE_CHECKING, Dict, Optional
 import pandas as pd
 import vectorbt as vbt
 
+from src.domains.strategy.runtime.compiler import (
+    CompiledStrategyIR,
+    compile_runtime_strategy,
+    resolve_round_trip_execution_mode_name,
+)
 from src.shared.models.signals import Signals
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.shared.utils.logger_config import Logger
@@ -59,6 +64,7 @@ class YamlConfigurableStrategy(
             exit_trigger_params: エグジットトリガーパラメータ（SignalParams）
         """
         # SharedConfigから基本パラメータを設定
+        self.strategy_name = "runtime"
         self.dataset = shared_config.dataset
         self.stock_codes = shared_config.stock_codes
         self.stock_code = (
@@ -116,6 +122,20 @@ class YamlConfigurableStrategy(
 
         # エグジットトリガーパラメータを設定
         self.exit_trigger_params: Optional[SignalParams] = exit_trigger_params
+
+        self.compiled_strategy: CompiledStrategyIR = compile_runtime_strategy(
+            strategy_name=self.strategy_name,
+            shared_config=shared_config,
+            entry_signal_params=self.entry_filter_params,
+            exit_signal_params=self.exit_trigger_params,
+        )
+        round_trip_mode_name = resolve_round_trip_execution_mode_name(
+            self.compiled_strategy
+        )
+        self.next_session_round_trip = round_trip_mode_name == "next_session_round_trip"
+        self.current_session_round_trip_oracle = (
+            round_trip_mode_name == "current_session_round_trip_oracle"
+        )
 
         # 統合シグナルプロセッサー（Filter + Trigger統合）
         self.signal_processor = SignalProcessor()
@@ -192,15 +212,13 @@ class YamlConfigurableStrategy(
             relative_mode=self.relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
-            current_session_round_trip_oracle=self.current_session_round_trip_oracle,
+            compiled_strategy=self.compiled_strategy,
         )
         entries, exits = enhanced_signals.entries, enhanced_signals.exits
 
         # 通常モードのみ最終日に強制エグジットする。
         # next_session_round_trip は execution policy が同日クローズを担う。
-        if not (
-            self.next_session_round_trip or self.current_session_round_trip_oracle
-        ):
+        if not self._uses_round_trip_execution():
             last_valid_idx = data["Close"].last_valid_index()
             if last_valid_idx is not None:
                 exits = exits.copy()

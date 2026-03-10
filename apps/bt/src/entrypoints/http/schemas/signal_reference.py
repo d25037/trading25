@@ -8,7 +8,17 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.domains.strategy.runtime.compiler import (
+    CompiledSignalAvailability,
+    CompiledSignalScope,
+)
+
 SignalFieldTypeValue = Literal["boolean", "number", "string", "select"]
+SignalExecutionSemantics = Literal[
+    "standard",
+    "next_session_round_trip",
+    "current_session_round_trip_oracle",
+]
 
 
 class FieldConstraints(BaseModel):
@@ -43,6 +53,15 @@ class SignalReferenceSchema(BaseModel):
     yaml_snippet: str
     exit_disabled: bool = False
     data_requirements: list[str] = Field(default_factory=list)
+    availability_profiles: list["SignalAvailabilityProfile"] = Field(default_factory=list)
+
+
+class SignalAvailabilityProfile(BaseModel):
+    """Compiled availability profile for a signal under one execution semantic."""
+
+    scope: CompiledSignalScope
+    execution_semantics: SignalExecutionSemantics
+    availability: CompiledSignalAvailability
 
 
 class SignalCategorySchema(BaseModel):

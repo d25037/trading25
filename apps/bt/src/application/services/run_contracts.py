@@ -26,6 +26,10 @@ from src.domains.backtest.contracts import (
     RunSpec,
     RunType,
 )
+from src.domains.strategy.runtime.compiler import (
+    compile_strategy_config,
+    compile_strategy_requirements,
+)
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 
@@ -187,6 +191,7 @@ def build_strategy_run_spec(
     parameters: dict[str, Any] | None = None,
     config_loader: ConfigLoader | None = None,
 ) -> RunSpec:
+    loader = config_loader or ConfigLoader()
     normalized_config_override = normalize_config_override(config_override)
     payload: dict[str, Any] = {}
     if normalized_config_override is not None:
@@ -194,16 +199,34 @@ def build_strategy_run_spec(
     if parameters:
         payload.update(deepcopy(parameters))
 
-    return build_parameterized_run_spec(
+    run_spec = build_parameterized_run_spec(
         job_type,
         strategy_name,
         dataset_name=resolve_strategy_dataset_name(
             strategy_name,
             config_override=normalized_config_override,
-            config_loader=config_loader,
+            config_loader=loader,
         ),
         parameters=payload or None,
     )
+    try:
+        strategy_config = loader.load_strategy_config(strategy_name)
+        compiled_strategy = compile_strategy_config(
+            strategy_name,
+            strategy_config,
+            config_loader=loader,
+            config_override=normalized_config_override,
+        )
+        run_spec.compiled_strategy_requirements = compile_strategy_requirements(
+            compiled_strategy
+        )
+    except Exception as exc:
+        logger.debug(
+            "run_spec compiled_strategy_requirements 解決に失敗: "
+            f"{strategy_name}: {exc}"
+        )
+
+    return run_spec
 
 
 def build_config_override_run_spec(

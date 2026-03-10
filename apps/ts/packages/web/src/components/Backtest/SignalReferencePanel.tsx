@@ -19,6 +19,25 @@ interface SignalItemProps {
   onCopy: (snippet: string) => void;
 }
 
+const executionSemanticsLabels: Record<string, string> = {
+  standard: 'Standard',
+  next_session_round_trip: 'Next Session Round Trip',
+  current_session_round_trip_oracle: 'Current Session Oracle',
+};
+
+const timingLabels: Record<string, string> = {
+  prior_session_close: 'Prior Close',
+  current_session_open: 'Current Open',
+  current_session_close: 'Current Close',
+  next_session_open: 'Next Open',
+  current_session: 'Current Session',
+  next_session: 'Next Session',
+};
+
+function formatTimingLabel(value: string) {
+  return timingLabels[value] ?? value;
+}
+
 function SignalItem({ signal, onCopy }: SignalItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -75,6 +94,33 @@ function SignalItem({ signal, onCopy }: SignalItemProps) {
               })}
             </ul>
           </div>
+
+          {signal.availability_profiles && signal.availability_profiles.length > 0 && (
+            <div>
+              <p className="text-xs font-medium text-muted-foreground mb-1">Availability</p>
+              <div className="space-y-2">
+                {signal.availability_profiles.map((profile) => (
+                  <div
+                    key={`${profile.scope}-${profile.execution_semantics}`}
+                    className="rounded border border-border/60 bg-muted/20 p-2 text-xs"
+                  >
+                    <div className="mb-1 flex flex-wrap items-center gap-2">
+                      <span className="font-medium capitalize">{profile.scope}</span>
+                      <span className="text-muted-foreground">
+                        {executionSemanticsLabels[profile.execution_semantics] ?? profile.execution_semantics}
+                      </span>
+                    </div>
+                    <div className="grid gap-1 text-muted-foreground sm:grid-cols-2">
+                      <span>Observe: {formatTimingLabel(profile.availability.observation_time)}</span>
+                      <span>Available: {formatTimingLabel(profile.availability.available_at)}</span>
+                      <span>Decision: {formatTimingLabel(profile.availability.decision_cutoff)}</span>
+                      <span>Execute: {formatTimingLabel(profile.availability.execution_session)}</span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div>
             <div className="flex items-center justify-between mb-1">
