@@ -184,6 +184,8 @@ class TestRunSpecBuilders:
         assert run_spec.dataset_snapshot_id == "primeExTopix500"
         assert run_spec.market_snapshot_id == "market:latest"
         assert run_spec.parameters["optimization_mode"] == "grid_search"
+        assert run_spec.compiled_strategy_requirements is not None
+        assert run_spec.compiled_strategy_requirements.signal_ids == []
 
     def test_build_strategy_run_spec_drops_blank_dataset_override_and_falls_back_to_base_dataset(
         self,
@@ -209,6 +211,71 @@ class TestRunSpecBuilders:
         assert run_spec.parameters["config_override"] == {
             "shared_config": {"direction": "shortonly"},
         }
+
+    def test_build_strategy_run_spec_attaches_compiled_strategy_requirements(self) -> None:
+        class _StubConfigLoader:
+            def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
+                assert strategy_name == "demo-strategy"
+                return {
+                    "shared_config": {"dataset": "primeExTopix500"},
+                    "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+                }
+
+            def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
+                shared_config = strategy_config.get("shared_config", {})
+                merged: dict[str, object] = {
+                    "dataset": "primeExTopix500",
+                    "direction": "longonly",
+                    "timeframe": "daily",
+                }
+                if isinstance(shared_config, dict):
+                    merged.update(shared_config)
+                return merged
+
+        run_spec = build_strategy_run_spec(
+            "backtest",
+            "demo-strategy",
+            config_loader=_StubConfigLoader(),
+        )
+
+        assert run_spec.compiled_strategy_requirements is not None
+        assert run_spec.compiled_strategy_requirements.required_data_domains == ["market"]
+        assert run_spec.compiled_strategy_requirements.required_features == ["volume"]
+        assert run_spec.compiled_strategy_requirements.signal_ids == [
+            "entry.volume_ratio_above"
+        ]
+
+    def test_build_strategy_run_spec_drops_compiled_requirements_for_invalid_round_trip_override(
+        self,
+    ) -> None:
+        class _StubConfigLoader:
+            def load_strategy_config(self, strategy_name: str) -> dict[str, object]:
+                assert strategy_name == "demo-strategy"
+                return {
+                    "shared_config": {"dataset": "primeExTopix500"},
+                    "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+                    "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
+                }
+
+            def merge_shared_config(self, strategy_config: dict[str, object]) -> dict[str, object]:
+                shared_config = strategy_config.get("shared_config", {})
+                merged: dict[str, object] = {
+                    "dataset": "primeExTopix500",
+                    "direction": "longonly",
+                    "timeframe": "daily",
+                }
+                if isinstance(shared_config, dict):
+                    merged.update(shared_config)
+                return merged
+
+        run_spec = build_strategy_run_spec(
+            "backtest",
+            "demo-strategy",
+            config_override={"shared_config": {"next_session_round_trip": True}},
+            config_loader=_StubConfigLoader(),
+        )
+
+        assert run_spec.compiled_strategy_requirements is None
 
 
 class TestRefreshJobExecutionContracts:

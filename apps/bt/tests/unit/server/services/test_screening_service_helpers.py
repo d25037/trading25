@@ -12,6 +12,10 @@ from typing import Any, cast
 import pandas as pd
 import pytest
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.domains.strategy.runtime.screening_mode import (
+    resolve_strategy_screening_mode,
+)
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 from src.entrypoints.http.schemas.screening import MatchedStrategyItem, ScreeningResultItem
@@ -49,25 +53,24 @@ def _runtime(
         shared_payload,
         context={"resolve_stock_codes": False},
     )
-    current_session_round_trip_oracle = (
-        shared_config.current_session_round_trip_oracle
-        or resolved_entry_params.oracle_index_open_gap_regime.enabled
+    resolved_exit_params = exit_params or SignalParams()
+    compiled_strategy = compile_runtime_strategy(
+        strategy_name=f"production/{name}",
+        shared_config=shared_config,
+        entry_signal_params=resolved_entry_params,
+        exit_signal_params=resolved_exit_params,
     )
-    screening_mode = (
-        "oracle"
-        if current_session_round_trip_oracle
-        else "standard"
-    )
+    screening_mode = resolve_strategy_screening_mode(compiled_strategy)
 
     return StrategyRuntime(
         name=f"production/{name}",
         response_name=name,
         basename=name,
         entry_params=resolved_entry_params,
-        exit_params=exit_params or SignalParams(),
+        exit_params=resolved_exit_params,
         shared_config=shared_config,
+        compiled_strategy=compiled_strategy,
         screening_mode=screening_mode,
-        current_session_round_trip_oracle=current_session_round_trip_oracle,
     )
 
 

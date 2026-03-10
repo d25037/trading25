@@ -9,6 +9,8 @@ import pandas as pd
 from types import SimpleNamespace
 from unittest.mock import patch
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.shared.models.config import SharedConfig
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.shared.models.signals import SignalParams, Signals
 
@@ -424,6 +426,20 @@ class TestSignalProcessor:
         )
 
         signal_conditions = [self.base_signal]
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name="demo",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "current_session_round_trip_oracle": True,
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=SignalParams.model_validate(
+                {"rsi_threshold": {"enabled": True}}
+            ),
+        )
         self.processor._apply_unified_signal(  # noqa: SLF001
             signal_def=dummy_signal,
             signal_conditions=signal_conditions,
@@ -431,7 +447,7 @@ class TestSignalProcessor:
             signal_params=self.signal_params,
             base_signal=self.base_signal,
             data_sources={"is_relative_mode": False},
-            current_session_round_trip_oracle=True,
+            compiled_strategy=compiled_strategy,
         )
 
         assert len(signal_conditions) == 2
@@ -482,6 +498,19 @@ class TestSignalProcessor:
             data_requirements=[],
         )
 
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name="demo",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "current_session_round_trip_oracle": True,
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=params,
+        )
+
         with patch(
             "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
             [oracle_signal, technical_signal],
@@ -491,7 +520,80 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=self.test_data,
                 signal_params=params,
-                current_session_round_trip_oracle=True,
+                compiled_strategy=compiled_strategy,
+            )
+
+        expected = pd.Series(
+            [False, True, False, False, True],
+            index=self.test_data.index,
+            dtype=bool,
+        )
+        pd.testing.assert_series_equal(result, expected)
+
+    def test_apply_signals_uses_compiled_strategy_availability_without_boolean_flag(self):
+        base_signal = pd.Series([True, True, True, True, True], index=self.test_data.index)
+        params = SignalParams()
+        params.oracle_index_open_gap_regime.enabled = True
+        params.rsi_threshold.enabled = True
+
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name="demo",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "current_session_round_trip_oracle": True,
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=params,
+        )
+
+        oracle_signal = SimpleNamespace(
+            name="TOPIX Gap Oracle",
+            signal_func=lambda **_kwargs: pd.Series(
+                [False, True, True, False, True],
+                index=self.test_data.index,
+            ),
+            enabled_checker=lambda signal_params: signal_params.oracle_index_open_gap_regime.enabled,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="oracle_index_open_gap_regime",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+        technical_signal = SimpleNamespace(
+            name="RSI",
+            signal_func=lambda **_kwargs: pd.Series(
+                [True, False, True, True, False],
+                index=self.test_data.index,
+            ),
+            enabled_checker=lambda signal_params: signal_params.rsi_threshold.enabled,
+            param_builder=lambda _params, _data: {},
+            entry_purpose="entry",
+            exit_purpose="exit",
+            category="test",
+            description="",
+            param_key="rsi_threshold",
+            data_checker=None,
+            exit_disabled=False,
+            data_requirements=[],
+        )
+
+        with patch(
+            "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
+            [oracle_signal, technical_signal],
+        ):
+            result = self.processor.apply_signals(
+                base_signal=base_signal,
+                signal_type="entry",
+                ohlc_data=self.test_data,
+                signal_params=params,
+                compiled_strategy=compiled_strategy,
             )
 
         expected = pd.Series(

@@ -13,6 +13,11 @@ from src.domains.analytics.screening_evaluator import (
     evaluate_strategy,
     evaluate_strategy_input,
 )
+from src.domains.strategy.runtime.compiler import (
+    CompiledStrategyIR,
+    compile_runtime_strategy,
+)
+from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 
 
@@ -27,7 +32,7 @@ class _Strategy:
     entry_params: SignalParams
     exit_params: SignalParams
     screening_mode: str = "standard"
-    current_session_round_trip_oracle: bool = False
+    compiled_strategy: CompiledStrategyIR | None = None
 
 
 @dataclass
@@ -56,6 +61,27 @@ def _signals(index: pd.DatetimeIndex) -> Signals:
     return Signals(
         entries=pd.Series([True] * len(index), index=index),
         exits=pd.Series([False] * len(index), index=index),
+    )
+
+
+def _compiled_strategy(
+    *,
+    entry_params: SignalParams | None = None,
+    current_session_round_trip_oracle: bool = False,
+) -> CompiledStrategyIR:
+    shared_config = SharedConfig.model_validate(
+        {
+            "dataset": "primeExTopix500",
+            "timeframe": "daily",
+            "current_session_round_trip_oracle": current_session_round_trip_oracle,
+        },
+        context={"resolve_stock_codes": False},
+    )
+    return compile_runtime_strategy(
+        strategy_name="screening-test",
+        shared_config=shared_config,
+        entry_signal_params=entry_params or SignalParams(),
+        exit_signal_params=SignalParams(),
     )
 
 
@@ -106,7 +132,9 @@ def test_evaluate_stock_passes_oracle_mode_to_signal_generation() -> None:
         SignalParams(),
         SignalParams(),
         screening_mode="oracle",
-        current_session_round_trip_oracle=True,
+        compiled_strategy=_compiled_strategy(
+            current_session_round_trip_oracle=True
+        ),
     )
     stock = _Stock("1001")
     bundle = _DataBundle(
@@ -129,13 +157,22 @@ def test_evaluate_stock_passes_oracle_mode_to_signal_generation() -> None:
     )
 
     assert outcome.matched_dates_by_strategy == {"oracle": "2026-01-02"}
-    assert captured["current_session_round_trip_oracle"] is True
+    assert captured["compiled_strategy"].execution_semantics == (
+        "current_session_round_trip_oracle"
+    )
+    assert "current_session_round_trip_oracle" not in captured
 
 
 def test_evaluate_stock_does_not_infer_oracle_from_screening_label_alone() -> None:
     index = pd.to_datetime(["2026-01-01", "2026-01-02"])
     daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
-    strategy = _Strategy("oracle-ish", SignalParams(), SignalParams(), screening_mode="oracle")
+    strategy = _Strategy(
+        "oracle-ish",
+        SignalParams(),
+        SignalParams(),
+        screening_mode="oracle",
+        compiled_strategy=_compiled_strategy(),
+    )
     stock = _Stock("1001")
     bundle = _DataBundle(
         multi_data={"1001": {"daily": daily, "margin_daily": None, "statements_daily": None}}
@@ -156,7 +193,8 @@ def test_evaluate_stock_does_not_infer_oracle_from_screening_label_alone() -> No
         find_recent_match_date=lambda _signals, _recent_days: "2026-01-02",
     )
 
-    assert captured["current_session_round_trip_oracle"] is False
+    assert captured["compiled_strategy"].execution_semantics == "standard"
+    assert "current_session_round_trip_oracle" not in captured
 
 
 def test_evaluate_stock_converts_unexpected_matcher_error_to_warning() -> None:

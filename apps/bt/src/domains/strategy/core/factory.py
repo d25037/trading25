@@ -11,6 +11,10 @@ from loguru import logger
 from rich.console import Console
 
 from src.shared.models.config import SharedConfig
+from src.domains.strategy.runtime.compiler import (
+    compile_runtime_strategy,
+    resolve_round_trip_execution_mode_name,
+)
 
 # データアクセス（SharedConfigで自動解決されるため直接使用不要）
 from src.shared.utils.logger_config import setup_logger
@@ -61,6 +65,7 @@ class StrategyFactory:
         )
         cls._validate_round_trip_execution_mode(
             shared_config_obj,
+            entry_filter_params_obj,
             exit_trigger_params,
             exit_trigger_params_obj,
         )
@@ -98,14 +103,18 @@ class StrategyFactory:
     def _validate_round_trip_execution_mode(
         cls,
         shared_config: SharedConfig,
+        entry_filter_params_obj: Any,
         raw_exit_trigger_params: Union[Dict[str, Any], Any, None],
         exit_trigger_params_obj: Any,
     ) -> None:
-        if shared_config.next_session_round_trip:
-            mode_name = "next_session_round_trip"
-        elif shared_config.current_session_round_trip_oracle:
-            mode_name = "current_session_round_trip_oracle"
-        else:
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name="runtime",
+            shared_config=shared_config,
+            entry_signal_params=entry_filter_params_obj,
+            exit_signal_params=exit_trigger_params_obj,
+        )
+        mode_name = resolve_round_trip_execution_mode_name(compiled_strategy)
+        if mode_name is None:
             return
         if cls._has_configured_exit_trigger_params(
             raw_exit_trigger_params,

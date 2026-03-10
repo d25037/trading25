@@ -7,11 +7,14 @@ from __future__ import annotations
 import json
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from typing import Any, Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 import pandas as pd
 
 from src.shared.models.signals import SignalParams, Signals
+
+if TYPE_CHECKING:
+    from src.domains.strategy.runtime.compiler import CompiledStrategyIR
 
 
 class StockLike(Protocol):
@@ -38,7 +41,7 @@ class StrategyLike(Protocol):
         ...
 
     @property
-    def current_session_round_trip_oracle(self) -> bool:
+    def compiled_strategy(self) -> "CompiledStrategyIR | None":
         ...
 
 
@@ -152,7 +155,7 @@ def _run_generate_signals(
         sector_data=data_bundle.sector_data,
         stock_sector_name=data_bundle.stock_sector_mapping.get(stock_code),
         screening_recent_days=recent_days,
-        current_session_round_trip_oracle=strategy.current_session_round_trip_oracle,
+        compiled_strategy=strategy.compiled_strategy,
         skip_exit_when_no_recent_entry=True,
     )
 
@@ -162,7 +165,16 @@ def build_strategy_signal_cache_token(strategy: StrategyLike) -> str:
         "entry": strategy.entry_params.model_dump(mode="json"),
         "exit": strategy.exit_params.model_dump(mode="json"),
         "screening_mode": strategy.screening_mode,
-        "current_session_round_trip_oracle": strategy.current_session_round_trip_oracle,
+        "compiled_execution_semantics": (
+            strategy.compiled_strategy.execution_semantics
+            if strategy.compiled_strategy is not None
+            else None
+        ),
+        "compiled_signal_ids": (
+            strategy.compiled_strategy.signal_ids
+            if strategy.compiled_strategy is not None
+            else []
+        ),
     }
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 

@@ -301,10 +301,52 @@ export interface StrategyValidationRequest {
   config: Record<string, unknown>;
 }
 
+export type CompiledAvailabilityPoint =
+  | 'prior_session_close'
+  | 'current_session_open'
+  | 'current_session_close'
+  | 'next_session_open';
+
+export type CompiledExecutionSession = 'current_session' | 'next_session';
+
+export type CompiledSignalScope = 'entry' | 'exit';
+
+export interface CompiledSignalAvailability {
+  observation_time: CompiledAvailabilityPoint;
+  available_at: CompiledAvailabilityPoint;
+  decision_cutoff: CompiledAvailabilityPoint;
+  execution_session: CompiledExecutionSession;
+}
+
+export interface CompiledSignalIR {
+  signal_id: string;
+  scope: CompiledSignalScope;
+  param_key: string;
+  signal_name: string;
+  category: string;
+  description: string;
+  data_requirements?: string[];
+  availability: CompiledSignalAvailability;
+}
+
+export interface CompiledStrategyIR {
+  schema_version: number;
+  strategy_name: string;
+  execution_semantics: string;
+  dataset_name?: string | null;
+  timeframe: string;
+  signals?: CompiledSignalIR[];
+  signal_ids?: string[];
+  required_data_domains?: string[];
+  required_features?: string[];
+  required_fundamental_fields?: string[];
+}
+
 export interface StrategyValidationResponse {
   valid: boolean;
   errors: string[];
   warnings: string[];
+  compiled_strategy?: CompiledStrategyIR | null;
 }
 
 export interface HealthResponse {
@@ -513,6 +555,17 @@ export interface SignalFieldDefinition {
   constraints?: FieldConstraints;
 }
 
+export type SignalExecutionSemantics =
+  | 'standard'
+  | 'next_session_round_trip'
+  | 'current_session_round_trip_oracle';
+
+export interface SignalAvailabilityProfile {
+  scope: CompiledSignalScope;
+  execution_semantics: SignalExecutionSemantics;
+  availability: CompiledSignalAvailability;
+}
+
 export interface SignalDefinition {
   key: string;
   name: string;
@@ -523,6 +576,7 @@ export interface SignalDefinition {
   yaml_snippet: string;
   exit_disabled: boolean;
   data_requirements: string[];
+  availability_profiles?: SignalAvailabilityProfile[];
 }
 
 export interface SignalCategory {

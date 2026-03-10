@@ -15,9 +15,14 @@ from pydantic import BaseModel
 from pydantic.fields import FieldInfo
 from pydantic_core import PydanticUndefined
 
+from src.domains.strategy.runtime.compiler import (
+    CompiledSignalScope,
+    resolve_signal_availability,
+)
 from src.shared.models.signals import SignalParams
 from src.entrypoints.http.schemas.signal_reference import SignalFieldTypeValue
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
+from src.shared.models.config import SharedConfig
 
 # カテゴリ表示名マッピング
 CATEGORY_LABELS: dict[str, str] = {
@@ -301,6 +306,52 @@ def _build_usage_hint(entry_purpose: str, exit_purpose: str) -> str:
     return f"Entry: {entry_purpose} / Exit: {exit_purpose}"
 
 
+_REFERENCE_EXECUTION_SEMANTICS = (
+    "standard",
+    "next_session_round_trip",
+    "current_session_round_trip_oracle",
+)
+
+
+def _build_shared_config_for_execution_semantics(
+    execution_semantics: str,
+) -> SharedConfig:
+    return SharedConfig.model_validate(
+        {
+            "timeframe": "daily",
+            "next_session_round_trip": execution_semantics
+            == "next_session_round_trip",
+            "current_session_round_trip_oracle": execution_semantics
+            == "current_session_round_trip_oracle",
+        },
+        context={"resolve_stock_codes": False},
+    )
+
+
+def _build_availability_profiles(signal_def: Any) -> list[dict[str, Any]]:
+    profiles: list[dict[str, Any]] = []
+    for execution_semantics in _REFERENCE_EXECUTION_SEMANTICS:
+        shared_config = _build_shared_config_for_execution_semantics(
+            execution_semantics
+        )
+        supported_scopes = [CompiledSignalScope.ENTRY]
+        if execution_semantics == "standard" and not signal_def.exit_disabled:
+            supported_scopes.append(CompiledSignalScope.EXIT)
+        for scope in supported_scopes:
+            profiles.append(
+                {
+                    "scope": scope,
+                    "execution_semantics": execution_semantics,
+                    "availability": resolve_signal_availability(
+                        scope=scope,
+                        param_key=signal_def.param_key,
+                        shared_config=shared_config,
+                    ).model_dump(mode="json"),
+                }
+            )
+    return profiles
+
+
 def build_signal_reference() -> dict[str, Any]:
     """全シグナルのリファレンスデータを構築
 
@@ -343,6 +394,7 @@ def build_signal_reference() -> dict[str, Any]:
             "yaml_snippet": yaml_snippet,
             "exit_disabled": signal_def.exit_disabled,
             "data_requirements": signal_def.data_requirements,
+            "availability_profiles": _build_availability_profiles(signal_def),
         }
         signals.append(signal_data)
 

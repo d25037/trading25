@@ -5,6 +5,7 @@ Strategy Management Endpoints
 from fastapi import APIRouter, HTTPException
 from loguru import logger
 
+from src.domains.strategy.runtime.compiler import compile_strategy_config
 from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
 from src.entrypoints.http.schemas.strategy import (
     DefaultConfigResponse,
@@ -142,9 +143,11 @@ async def validate_strategy(
     """
     errors: list[str] = []
     warnings: list[str] = []
+    compiled_strategy = None
 
     try:
         # 設定を取得
+        validating_request_config = bool(request and request.config)
         if request and request.config:
             config = request.config
         else:
@@ -154,6 +157,15 @@ async def validate_strategy(
         strict_valid, strict_errors = try_validate_strategy_config_dict_strict(config)
         if not strict_valid:
             errors.extend(strict_errors)
+        else:
+            try:
+                compiled_strategy = compile_strategy_config(
+                    strategy_name,
+                    config,
+                    config_loader=_config_loader,
+                )
+            except Exception as exc:
+                errors.append(f"CompiledStrategyIR generation failed: {exc}")
 
         # 基本的な検証
         if "entry_filter_params" not in config and "exit_trigger_params" not in config:
@@ -174,21 +186,24 @@ async def validate_strategy(
                 if not isinstance(kf, (int, float)) or kf < 0 or kf > 2:
                     errors.append("kelly_fractionは0から2の間である必要があります")
 
-        # 実行情報の取得を試みる
-        try:
-            from src.domains.backtest.core.runner import BacktestRunner
+        # 保存前プレビューの検証では、ディスク上の戦略読込に依存する execution_info
+        # を混ぜると unsaved config が誤って invalid になる。
+        if not validating_request_config:
+            try:
+                from src.domains.backtest.core.runner import BacktestRunner
 
-            runner = BacktestRunner()
-            execution_info = runner.get_execution_info(strategy_name)
-            if "error" in execution_info:
-                errors.append(f"実行情報取得エラー: {execution_info['error']}")
-        except Exception as e:
-            warnings.append(f"実行情報の取得に失敗しました: {e}")
+                runner = BacktestRunner()
+                execution_info = runner.get_execution_info(strategy_name)
+                if "error" in execution_info:
+                    errors.append(f"実行情報取得エラー: {execution_info['error']}")
+            except Exception as e:
+                warnings.append(f"実行情報の取得に失敗しました: {e}")
 
         return StrategyValidationResponse(
             valid=len(errors) == 0,
             errors=errors,
             warnings=warnings,
+            compiled_strategy=compiled_strategy if len(errors) == 0 else None,
         )
 
     except FileNotFoundError:
@@ -196,6 +211,7 @@ async def validate_strategy(
             valid=False,
             errors=[f"戦略が見つかりません: {strategy_name}"],
             warnings=[],
+            compiled_strategy=None,
         )
     except Exception as e:
         logger.exception(f"戦略検証エラー: {strategy_name}")
@@ -203,6 +219,7 @@ async def validate_strategy(
             valid=False,
             errors=[str(e)],
             warnings=[],
+            compiled_strategy=None,
         )
 
 

@@ -13,6 +13,7 @@ from numba import njit
 from vectorbt.portfolio import nb as portfolio_nb
 from vectorbt.portfolio.enums import Direction, SizeType
 
+from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
 from src.shared.models.allocation import AllocationInfo
 
 CostParams = Tuple[float, float]
@@ -256,6 +257,11 @@ class BacktestExecutorMixin:
         return int(_DIRECTION_MAP.get(direction, Direction.LongOnly))
 
     def _get_round_trip_mode_name(self: "StrategyProtocol") -> str | None:
+        compiled_strategy = getattr(self, "compiled_strategy", None)
+        if compiled_strategy is not None:
+            mode_name = resolve_round_trip_execution_mode_name(compiled_strategy)
+            if mode_name is not None:
+                return mode_name
         if getattr(self, "next_session_round_trip", False):
             return "next_session_round_trip"
         if getattr(self, "current_session_round_trip_oracle", False):

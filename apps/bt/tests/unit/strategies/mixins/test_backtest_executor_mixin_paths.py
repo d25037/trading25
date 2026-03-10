@@ -12,6 +12,8 @@ import pytest
 import vectorbt as vbt
 
 from src.shared.models.allocation import AllocationInfo
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 from src.shared.models.signals.fundamental import FundamentalSignalParams
 from src.shared.models.signals.macro import MarginSignalParams
@@ -78,6 +80,8 @@ class _RuntimeStrategy(BacktestExecutorMixin):
         self.include_statements_data = False
         self.entry_filter_params = None
         self.exit_trigger_params = None
+        self.strategy_name = "runtime"
+        self.compiled_strategy = None
         self.benchmark_table = "topix"
         self.benchmark_data = None
         self.relative_data_dict = None
@@ -676,6 +680,45 @@ class TestBacktestExecutorMixinPaths:
         portfolio, _ = strategy.run_multi_backtest()
         assert len(portfolio.trades.records_readable) == 0
         assert any("Open/Close was missing" in message for _level, message in strategy.logs)
+
+    def test_round_trip_mode_name_prefers_compiled_strategy_semantics(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.next_session_round_trip = False
+        strategy.current_session_round_trip_oracle = False
+        strategy.compiled_strategy = compile_runtime_strategy(
+            strategy_name="runtime",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "next_session_round_trip": True,
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=SignalParams(),
+        )
+
+        assert strategy._get_round_trip_mode_name() == "next_session_round_trip"
+
+    def test_round_trip_mode_name_does_not_treat_same_day_oracle_signal_as_round_trip_mode(self) -> None:
+        strategy = _RuntimeStrategy()
+        strategy.next_session_round_trip = False
+        strategy.current_session_round_trip_oracle = False
+        strategy.compiled_strategy = compile_runtime_strategy(
+            strategy_name="runtime",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=SignalParams.model_validate(
+                {"oracle_index_open_gap_regime": {"enabled": True}}
+            ),
+        )
+
+        assert strategy._get_round_trip_mode_name() is None
 
     def test_limit_entries_per_day(self) -> None:
         entries = pd.DataFrame(

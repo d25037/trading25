@@ -3149,6 +3149,69 @@ export interface components {
             summary_metrics?: components["schemas"]["CanonicalExecutionMetrics"] | null;
         };
         /**
+         * CompiledAvailabilityPoint
+         * @enum {string}
+         */
+        CompiledAvailabilityPoint: "prior_session_close" | "current_session_open" | "current_session_close" | "next_session_open";
+        /**
+         * CompiledExecutionSession
+         * @enum {string}
+         */
+        CompiledExecutionSession: "current_session" | "next_session";
+        /** CompiledSignalAvailability */
+        CompiledSignalAvailability: {
+            /** @description When the computed signal can be used by the engine */
+            available_at: components["schemas"]["CompiledAvailabilityPoint"];
+            /** @description Latest decision point before execution */
+            decision_cutoff: components["schemas"]["CompiledAvailabilityPoint"];
+            /** @description Which trading session executes the decision */
+            execution_session: components["schemas"]["CompiledExecutionSession"];
+            /** @description When the signal's source observation becomes observable */
+            observation_time: components["schemas"]["CompiledAvailabilityPoint"];
+        };
+        /** CompiledSignalIR */
+        CompiledSignalIR: {
+            /** @description Availability/no-lookahead metadata for this signal */
+            availability: components["schemas"]["CompiledSignalAvailability"];
+            /**
+             * Category
+             * @description Signal category
+             */
+            category: string;
+            /**
+             * Data Requirements
+             * @description Declared data requirements from the signal registry
+             */
+            data_requirements?: string[];
+            /**
+             * Description
+             * @description Signal description
+             */
+            description: string;
+            /**
+             * Param Key
+             * @description Signal parameter key path
+             */
+            param_key: string;
+            /** @description Signal scope */
+            scope: components["schemas"]["CompiledSignalScope"];
+            /**
+             * Signal Id
+             * @description Stable scoped signal identifier
+             */
+            signal_id: string;
+            /**
+             * Signal Name
+             * @description Human-readable signal name
+             */
+            signal_name: string;
+        };
+        /**
+         * CompiledSignalScope
+         * @enum {string}
+         */
+        CompiledSignalScope: "entry" | "exit";
+        /**
          * CompiledStrategyInputRequirements
          * @description Declared inputs required by a compiled strategy.
          */
@@ -3179,6 +3242,60 @@ export interface components {
              * @description Compiled signal identifiers
              */
             signal_ids?: string[];
+        };
+        /** CompiledStrategyIR */
+        CompiledStrategyIR: {
+            /**
+             * Dataset Name
+             * @description Resolved dataset name
+             */
+            dataset_name?: string | null;
+            /**
+             * Execution Semantics
+             * @description Compiled execution semantics label
+             */
+            execution_semantics: string;
+            /**
+             * Required Data Domains
+             * @description Required high-level data domains
+             */
+            required_data_domains?: string[];
+            /**
+             * Required Features
+             * @description Required feature/data requirement identifiers
+             */
+            required_features?: string[];
+            /**
+             * Required Fundamental Fields
+             * @description Required statements/fundamental fields
+             */
+            required_fundamental_fields?: string[];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Signal Ids
+             * @description Stable signal identifiers in compiled order
+             */
+            signal_ids?: string[];
+            /**
+             * Signals
+             * @description Enabled signals after validation and config merge
+             */
+            signals?: components["schemas"]["CompiledSignalIR"][];
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+            /**
+             * Timeframe
+             * @description Compiled timeframe
+             */
+            timeframe: string;
         };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
@@ -7545,6 +7662,19 @@ export interface components {
             top_n_requested: number;
         };
         /**
+         * SignalAvailabilityProfile
+         * @description Compiled availability profile for a signal under one execution semantic.
+         */
+        SignalAvailabilityProfile: {
+            availability: components["schemas"]["CompiledSignalAvailability"];
+            /**
+             * Execution Semantics
+             * @enum {string}
+             */
+            execution_semantics: "standard" | "next_session_round_trip" | "current_session_round_trip_oracle";
+            scope: components["schemas"]["CompiledSignalScope"];
+        };
+        /**
          * SignalCategorySchema
          * @description シグナルカテゴリ定義
          */
@@ -7653,6 +7783,8 @@ export interface components {
          * @description シグナル定義
          */
         SignalReferenceSchema: {
+            /** Availability Profiles */
+            availability_profiles?: components["schemas"]["SignalAvailabilityProfile"][];
             /** Category */
             category: string;
             /** Data Requirements */
@@ -8507,6 +8639,8 @@ export interface components {
          * @description 戦略設定検証レスポンス
          */
         StrategyValidationResponse: {
+            /** @description Shadow-compiled strategy IR when validation succeeds */
+            compiled_strategy?: components["schemas"]["CompiledStrategyIR"] | null;
             /**
              * Errors
              * @description エラーメッセージ一覧

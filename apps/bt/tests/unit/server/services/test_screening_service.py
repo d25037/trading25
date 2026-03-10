@@ -13,6 +13,10 @@ import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.domains.strategy.runtime.screening_mode import (
+    resolve_strategy_screening_mode,
+)
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 from src.shared.paths.resolver import StrategyMetadata
@@ -80,15 +84,13 @@ def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) ->
         context={"resolve_stock_codes": False},
     )
     entry_params = SignalParams()
-    current_session_round_trip_oracle = (
-        shared_config.current_session_round_trip_oracle
-        or entry_params.oracle_index_open_gap_regime.enabled
+    compiled_strategy = compile_runtime_strategy(
+        strategy_name=f"production/{name}",
+        shared_config=shared_config,
+        entry_signal_params=entry_params,
+        exit_signal_params=SignalParams(),
     )
-    screening_mode = (
-        "oracle"
-        if current_session_round_trip_oracle
-        else "standard"
-    )
+    screening_mode = resolve_strategy_screening_mode(compiled_strategy)
 
     return StrategyRuntime(
         name=f"production/{name}",
@@ -97,8 +99,8 @@ def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) ->
         entry_params=entry_params,
         exit_params=SignalParams(),
         shared_config=shared_config,
+        compiled_strategy=compiled_strategy,
         screening_mode=screening_mode,
-        current_session_round_trip_oracle=current_session_round_trip_oracle,
     )
 
 
@@ -273,7 +275,9 @@ class TestStrategyResolution:
 
         oracle = service._resolve_strategies(None, mode="oracle")
         assert [s.name for s in oracle] == ["production/current_session_demo"]
-        assert oracle[0].current_session_round_trip_oracle is True
+        assert oracle[0].compiled_strategy.execution_semantics == (
+            "current_session_round_trip_oracle"
+        )
 
     def test_exit_only_oracle_filter_remains_standard_screening(
         self,
@@ -311,7 +315,7 @@ class TestStrategyResolution:
 
         resolved = service._resolve_strategies(None, mode="standard")
         assert [s.name for s in resolved] == ["production/exit_only_oracle"]
-        assert resolved[0].current_session_round_trip_oracle is False
+        assert resolved[0].compiled_strategy.execution_semantics == "standard"
 
     def test_broken_production_strategy_config_fails_loudly(
         self,

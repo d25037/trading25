@@ -122,12 +122,12 @@ def _dedupe(messages: list[str]) -> list[str]:
     return deduped
 
 
-def _round_trip_mode_name(shared_config: SharedConfig) -> str | None:
+def resolve_execution_semantics(shared_config: SharedConfig) -> str:
     if shared_config.next_session_round_trip:
         return "next_session_round_trip"
     if shared_config.current_session_round_trip_oracle:
         return "current_session_round_trip_oracle"
-    return None
+    return "standard"
 
 
 def _validate_round_trip_rules(
@@ -136,8 +136,8 @@ def _validate_round_trip_rules(
 ) -> list[str]:
     if validated is None or validated.shared_config is None:
         return []
-    mode_name = _round_trip_mode_name(validated.shared_config)
-    if mode_name is None:
+    mode_name = resolve_execution_semantics(validated.shared_config)
+    if mode_name == "standard":
         return []
 
     exit_trigger_params = config.get("exit_trigger_params")

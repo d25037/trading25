@@ -7,6 +7,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.domains.strategy.runtime.compiler import CompiledStrategyIR
+
 StrategyScreeningMode = Literal["standard", "oracle", "unsupported"]
 
 
@@ -58,6 +60,10 @@ class StrategyValidationResponse(BaseModel):
     valid: bool = Field(description="検証結果")
     errors: list[str] = Field(default_factory=list, description="エラーメッセージ一覧")
     warnings: list[str] = Field(default_factory=list, description="警告メッセージ一覧")
+    compiled_strategy: CompiledStrategyIR | None = Field(
+        default=None,
+        description="Shadow-compiled strategy IR when validation succeeds",
+    )
 
 
 # ============================================

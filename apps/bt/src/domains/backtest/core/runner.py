@@ -401,23 +401,32 @@ class BacktestRunner:
                             f"Invalid {signal_key} after config_override merge: {e}"
                         ) from e
 
+        from src.domains.strategy.runtime.compiler import (
+            compile_runtime_strategy,
+            resolve_round_trip_execution_mode_name,
+        )
         from src.shared.models.config import SharedConfig
+        from src.shared.models.signals import SignalParams
 
         try:
-            SharedConfig.model_validate(
+            shared_config_model = SharedConfig.model_validate(
                 parameters.get("shared_config", {}),
                 context={"resolve_stock_codes": False},
             )
         except Exception as e:
             raise ValueError(f"Invalid shared_config after config merge: {e}") from e
 
-        shared_config = parameters.get("shared_config", {})
-        mode_name = None
-        if isinstance(shared_config, dict):
-            if shared_config.get("next_session_round_trip") is True:
-                mode_name = "next_session_round_trip"
-            elif shared_config.get("current_session_round_trip_oracle") is True:
-                mode_name = "current_session_round_trip_oracle"
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name=strategy_config.get("name", "runtime"),
+            shared_config=shared_config_model,
+            entry_signal_params=SignalParams.model_validate(
+                parameters.get("entry_filter_params", {})
+            ),
+            exit_signal_params=SignalParams.model_validate(
+                parameters.get("exit_trigger_params", {})
+            ),
+        )
+        mode_name = resolve_round_trip_execution_mode_name(compiled_strategy)
         if mode_name is not None and parameters.get("exit_trigger_params") not in (None, {}):
             raise ValueError(
                 "exit_trigger_params must be empty when "

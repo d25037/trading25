@@ -32,6 +32,18 @@ const baseSignalData = {
       description: 'Close price is above moving average',
       usage_hint: 'Use this for trend confirmation',
       yaml_snippet: 'entry_filter:\n  breakout.close_gt_sma:\n    enabled: true',
+      availability_profiles: [
+        {
+          scope: 'entry',
+          execution_semantics: 'current_session_round_trip_oracle',
+          availability: {
+            observation_time: 'prior_session_close',
+            available_at: 'prior_session_close',
+            decision_cutoff: 'current_session_open',
+            execution_session: 'current_session',
+          },
+        },
+      ],
       fields: [
         {
           name: 'period',
@@ -105,9 +117,7 @@ describe('SignalReferencePanel', () => {
     const onCopySnippet = vi.fn();
     render(<SignalReferencePanel onCopySnippet={onCopySnippet} />);
 
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      'Unknown signal category: not-defined (signal: trend.unknown)'
-    );
+    expect(mockLoggerWarn).toHaveBeenCalledWith('Unknown signal category: not-defined (signal: trend.unknown)');
     expect(screen.getByText('Signal Reference')).toBeInTheDocument();
     expect(screen.getByText('Breakout')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();
@@ -117,6 +127,8 @@ describe('SignalReferencePanel', () => {
     fireEvent.click(signalHeaderButton as HTMLButtonElement);
     expect(screen.getByText('Use this for trend confirmation')).toBeInTheDocument();
     expect(screen.getByText('[>0, <=50]')).toBeInTheDocument();
+    expect(screen.getByText('Current Session Oracle')).toBeInTheDocument();
+    expect(screen.getByText('Observe: Prior Close')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(onCopySnippet).toHaveBeenCalledWith('entry_filter:\n  breakout.close_gt_sma:\n    enabled: true');
@@ -127,7 +139,16 @@ describe('SignalReferencePanel', () => {
     });
     expect(screen.queryByText('Copied!')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText('Search signals...'), { target: { value: 'non-existent' } });
+    const searchInput = screen.getByPlaceholderText('Search signals...');
+    fireEvent.change(searchInput, { target: { value: 'oracle' } });
+    expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
+    expect(screen.getByText('Breakout')).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'prior close' } });
+    expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
+    expect(screen.getByText('Breakout')).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'non-existent' } });
     expect(screen.getByText('No signals found')).toBeInTheDocument();
   });
 });

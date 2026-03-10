@@ -9,8 +9,9 @@ import pandas as pd
 import pytest
 
 from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
+from src.domains.strategy.runtime.compiler import CompiledStrategyIR
 from src.shared.models.config import SharedConfig
-from src.shared.models.signals import Signals
+from src.shared.models.signals import SignalParams, Signals
 
 
 def _shared_config(**overrides: Any) -> SharedConfig:
@@ -129,7 +130,7 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         assert bool(result.exits.iloc[-1]) is False
 
-    def test_generate_signals_passes_current_session_round_trip_oracle_to_processor(
+    def test_generate_signals_passes_compiled_strategy_to_processor(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -151,7 +152,9 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         strategy.generate_signals(data)
 
-        assert captured["current_session_round_trip_oracle"] is True
+        assert isinstance(captured["compiled_strategy"], CompiledStrategyIR)
+        assert captured["compiled_strategy"].execution_semantics == "current_session_round_trip_oracle"
+        assert "current_session_round_trip_oracle" not in captured
 
     def test_generate_signals_handles_missing_last_valid_close_without_forced_exit(
         self,
@@ -231,3 +234,22 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         assert strategy.current_session_round_trip_oracle is True
         assert strategy.exit_trigger_params is None
+        assert strategy.compiled_strategy.execution_semantics == "current_session_round_trip_oracle"
+
+    def test_initialization_compiles_next_session_round_trip_semantics(self) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(next_session_round_trip=True)
+        )
+
+        assert strategy.compiled_strategy.execution_semantics == "next_session_round_trip"
+
+    def test_initialization_keeps_oracle_flag_off_when_only_same_day_oracle_signal_is_enabled(self) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(),
+            entry_filter_params=SignalParams.model_validate(
+                {"oracle_index_open_gap_regime": {"enabled": True}}
+            ),
+        )
+
+        assert strategy.current_session_round_trip_oracle is False
+        assert strategy.compiled_strategy.execution_semantics == "standard"
