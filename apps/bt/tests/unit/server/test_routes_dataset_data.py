@@ -2,8 +2,7 @@
 
 from __future__ import annotations
 
-import os
-import sqlite3
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,93 +10,257 @@ from fastapi.testclient import TestClient
 from src.entrypoints.http.routes import dataset_data as dataset_data_routes
 from src.entrypoints.http.app import create_app
 from src.application.services.dataset_resolver import DatasetResolver
+from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+
+
+def _build_snapshot(base_dir: Path, name: str) -> None:
+    writer = DatasetWriter(str(base_dir / f"{name}.db"))
+    writer.upsert_stocks([
+        {
+            "code": "7203",
+            "company_name": "トヨタ自動車",
+            "company_name_english": "TOYOTA",
+            "market_code": "0111",
+            "market_name": "プライム",
+            "sector_17_code": "7",
+            "sector_17_name": "輸送用機器",
+            "sector_33_code": "3050",
+            "sector_33_name": "輸送用機器",
+            "scale_category": "TOPIX Core30",
+            "listed_date": "1949-05-16",
+        },
+        {
+            "code": "9984",
+            "company_name": "ソフトバンク",
+            "company_name_english": "SB",
+            "market_code": "0111",
+            "market_name": "プライム",
+            "sector_17_code": "9",
+            "sector_17_name": "情報・通信業",
+            "sector_33_code": "3700",
+            "sector_33_name": "情報・通信業",
+            "scale_category": "TOPIX Core30",
+            "listed_date": "1994-07-22",
+        },
+    ])
+    writer.upsert_stock_data([
+        {
+            "code": "7203",
+            "date": "2024-01-04",
+            "open": 100,
+            "high": 110,
+            "low": 90,
+            "close": 105,
+            "volume": 1000,
+            "adjustment_factor": 1.0,
+        },
+        {
+            "code": "7203",
+            "date": "2024-01-05",
+            "open": 105,
+            "high": 115,
+            "low": 95,
+            "close": 110,
+            "volume": 1100,
+            "adjustment_factor": 1.0,
+        },
+        {
+            "code": "9984",
+            "date": "2024-01-04",
+            "open": 200,
+            "high": 210,
+            "low": 190,
+            "close": 205,
+            "volume": 500,
+            "adjustment_factor": 1.0,
+        },
+    ])
+    writer.upsert_topix_data([
+        {
+            "date": "2024-01-04",
+            "open": 2500,
+            "high": 2520,
+            "low": 2490,
+            "close": 2510,
+        }
+    ])
+    writer.upsert_indices_data([
+        {
+            "code": "0010",
+            "date": "2024-01-04",
+            "open": 100,
+            "high": 102,
+            "low": 99,
+            "close": 101,
+            "sector_name": "食料品",
+        }
+    ])
+    writer.upsert_margin_data([
+        {
+            "code": "7203",
+            "date": "2024-01-04",
+            "long_margin_volume": 50000,
+            "short_margin_volume": 30000,
+        },
+        {
+            "code": "9984",
+            "date": "2024-01-04",
+            "long_margin_volume": 40000,
+            "short_margin_volume": 20000,
+        },
+    ])
+    writer.upsert_statements([
+        {
+            "code": "7203",
+            "disclosed_date": "2024-01-30",
+            "earnings_per_share": 150.0,
+            "profit": 2000000,
+            "equity": 5000000,
+            "type_of_current_period": "FY",
+            "type_of_document": "AnnualReport",
+            "next_year_forecast_earnings_per_share": 160.0,
+            "bps": 3000,
+            "sales": 20000000,
+            "operating_profit": 1500000,
+            "ordinary_profit": 1600000,
+            "operating_cash_flow": 1800000,
+            "dividend_fy": 60.0,
+            "forecast_dividend_fy": 62.0,
+            "next_year_forecast_dividend_fy": 64.0,
+            "payout_ratio": 30.0,
+            "forecast_payout_ratio": 32.0,
+            "next_year_forecast_payout_ratio": 34.0,
+            "forecast_eps": 165.0,
+            "investing_cash_flow": -500000,
+            "financing_cash_flow": -300000,
+            "cash_and_equivalents": 4000000,
+            "total_assets": 50000000,
+            "shares_outstanding": 330000000,
+            "treasury_shares": 10000000,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-04-30",
+            "earnings_per_share": 45.0,
+            "profit": 550000,
+            "equity": 5100000,
+            "type_of_current_period": "1Q",
+            "type_of_document": "QuarterlyReport",
+            "next_year_forecast_earnings_per_share": 170.0,
+            "bps": 3050,
+            "sales": 5200000,
+            "operating_profit": 420000,
+            "ordinary_profit": 430000,
+            "operating_cash_flow": 510000,
+            "dividend_fy": 15.0,
+            "forecast_dividend_fy": 16.0,
+            "next_year_forecast_dividend_fy": 17.0,
+            "payout_ratio": 28.0,
+            "forecast_payout_ratio": 29.0,
+            "next_year_forecast_payout_ratio": 30.0,
+            "forecast_eps": 172.0,
+            "investing_cash_flow": -110000,
+            "financing_cash_flow": -90000,
+            "cash_and_equivalents": 4100000,
+            "total_assets": 50100000,
+            "shares_outstanding": 331000000,
+            "treasury_shares": 10000000,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-07-30",
+            "earnings_per_share": 48.0,
+            "profit": 600000,
+            "equity": 5200000,
+            "type_of_current_period": "Q1",
+            "type_of_document": "QuarterlyReport",
+            "next_year_forecast_earnings_per_share": 175.0,
+            "bps": 3100,
+            "sales": 5400000,
+            "operating_profit": 450000,
+            "ordinary_profit": 460000,
+            "operating_cash_flow": 530000,
+            "dividend_fy": 16.0,
+            "forecast_dividend_fy": 17.0,
+            "next_year_forecast_dividend_fy": 18.0,
+            "payout_ratio": 29.0,
+            "forecast_payout_ratio": 30.0,
+            "next_year_forecast_payout_ratio": 31.0,
+            "forecast_eps": 176.0,
+            "investing_cash_flow": -100000,
+            "financing_cash_flow": -85000,
+            "cash_and_equivalents": 4200000,
+            "total_assets": 50200000,
+            "shares_outstanding": 332000000,
+            "treasury_shares": 10000000,
+        },
+        {
+            "code": "7203",
+            "disclosed_date": "2024-10-30",
+            "type_of_current_period": "FY",
+            "type_of_document": "ForecastRevision",
+            "next_year_forecast_earnings_per_share": 180.0,
+            "forecast_eps": 180.0,
+        },
+    ])
+    writer.set_dataset_info("preset", "primeMarket")
+    writer.close()
 
 
 @pytest.fixture
 def test_dataset_dir(tmp_path):
     """テスト用のデータセットディレクトリ + .db ファイル"""
-    db_path = os.path.join(str(tmp_path), "test-market.db")
-    conn = sqlite3.connect(db_path)
-    conn.executescript("""
-        CREATE TABLE stocks (
-            code TEXT PRIMARY KEY, company_name TEXT NOT NULL,
-            company_name_english TEXT, market_code TEXT NOT NULL,
-            market_name TEXT NOT NULL, sector_17_code TEXT NOT NULL,
-            sector_17_name TEXT NOT NULL, sector_33_code TEXT NOT NULL,
-            sector_33_name TEXT NOT NULL, scale_category TEXT,
-            listed_date TEXT NOT NULL, created_at TEXT, updated_at TEXT
-        );
-        CREATE TABLE stock_data (
-            code TEXT NOT NULL, date TEXT NOT NULL,
-            open REAL NOT NULL, high REAL NOT NULL, low REAL NOT NULL,
-            close REAL NOT NULL, volume INTEGER NOT NULL,
-            adjustment_factor REAL, created_at TEXT,
-            PRIMARY KEY (code, date)
-        );
-        CREATE TABLE topix_data (
-            date TEXT PRIMARY KEY, open REAL NOT NULL, high REAL NOT NULL,
-            low REAL NOT NULL, close REAL NOT NULL, created_at TEXT
-        );
-        CREATE TABLE indices_data (
-            code TEXT NOT NULL, date TEXT NOT NULL,
-            open REAL, high REAL, low REAL, close REAL,
-            sector_name TEXT, created_at TEXT,
-            PRIMARY KEY (code, date)
-        );
-        CREATE TABLE dataset_info (
-            key TEXT PRIMARY KEY, value TEXT NOT NULL, updated_at TEXT
-        );
-        CREATE TABLE margin_data (
-            code TEXT NOT NULL, date TEXT NOT NULL,
-            long_margin_volume REAL, short_margin_volume REAL,
-            PRIMARY KEY (code, date)
-        );
-        CREATE TABLE statements (
-            code TEXT NOT NULL, disclosed_date TEXT NOT NULL,
-            earnings_per_share REAL, profit REAL, equity REAL,
-            type_of_current_period TEXT, type_of_document TEXT,
-            next_year_forecast_earnings_per_share REAL,
-            bps REAL, sales REAL, operating_profit REAL,
-            ordinary_profit REAL, operating_cash_flow REAL,
-            dividend_fy REAL, forecast_dividend_fy REAL,
-            next_year_forecast_dividend_fy REAL,
-            payout_ratio REAL, forecast_payout_ratio REAL,
-            next_year_forecast_payout_ratio REAL, forecast_eps REAL,
-            investing_cash_flow REAL, financing_cash_flow REAL,
-            cash_and_equivalents REAL, total_assets REAL,
-            shares_outstanding REAL, treasury_shares REAL,
-            PRIMARY KEY (code, disclosed_date)
-        );
-
-        INSERT INTO stocks VALUES ('7203', 'トヨタ自動車', 'TOYOTA', '0111', 'プライム', '7', '輸送用機器', '3050', '輸送用機器', 'TOPIX Core30', '1949-05-16', NULL, NULL);
-        INSERT INTO stocks VALUES ('9984', 'ソフトバンク', 'SB', '0111', 'プライム', '9', '情報・通信業', '3700', '情報・通信業', 'TOPIX Core30', '1994-07-22', NULL, NULL);
-
-        INSERT INTO stock_data VALUES ('7203', '2024-01-04', 100, 110, 90, 105, 1000, 1.0, NULL);
-        INSERT INTO stock_data VALUES ('7203', '2024-01-05', 105, 115, 95, 110, 1100, 1.0, NULL);
-        INSERT INTO stock_data VALUES ('9984', '2024-01-04', 200, 210, 190, 205, 500, 1.0, NULL);
-
-        INSERT INTO topix_data VALUES ('2024-01-04', 2500, 2520, 2490, 2510, NULL);
-
-        INSERT INTO indices_data VALUES ('0010', '2024-01-04', 100, 102, 99, 101, '食料品', NULL);
-
-        INSERT INTO margin_data VALUES ('7203', '2024-01-04', 50000, 30000);
-        INSERT INTO margin_data VALUES ('9984', '2024-01-04', 40000, 20000);
-
-        INSERT INTO statements VALUES ('7203', '2024-01-30', 150.0, 2000000, 5000000, 'FY', 'AnnualReport', 160.0, 3000, 20000000, 1500000, 1600000, 1800000, 60.0, 62.0, 64.0, 30.0, 32.0, 34.0, 165.0, -500000, -300000, 4000000, 50000000, 330000000, 10000000);
-        INSERT INTO statements VALUES ('7203', '2024-04-30', 45.0, 550000, 5100000, '1Q', 'QuarterlyReport', 170.0, 3050, 5200000, 420000, 430000, 510000, 15.0, 16.0, 17.0, 28.0, 29.0, 30.0, 172.0, -110000, -90000, 4100000, 50100000, 331000000, 10000000);
-        INSERT INTO statements VALUES ('7203', '2024-07-30', 48.0, 600000, 5200000, 'Q1', 'QuarterlyReport', 175.0, 3100, 5400000, 450000, 460000, 530000, 16.0, 17.0, 18.0, 29.0, 30.0, 31.0, 176.0, -100000, -85000, 4200000, 50200000, 332000000, 10000000);
-        -- forecast-only row (actual_only=true では除外される)
-        INSERT INTO statements VALUES ('7203', '2024-10-30', NULL, NULL, NULL, 'FY', 'ForecastRevision', 180.0, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, 180.0, NULL, NULL, NULL, NULL, NULL, NULL);
-
-        INSERT INTO dataset_info VALUES ('preset', 'primeMarket', NULL);
-    """)
-    conn.close()
+    _build_snapshot(Path(tmp_path), "test-market")
     return str(tmp_path)
 
 
 @pytest.fixture
-def client(test_dataset_dir: str):
+def client(test_dataset_dir: str, monkeypatch: pytest.MonkeyPatch):
     """テスト用 FastAPI クライアント"""
+    from src.infrastructure.db.market import dataset_snapshot_reader as reader_module
+
+    def _fake_validate(snapshot_dir: str | Path):
+        snapshot_path = Path(snapshot_dir)
+        return reader_module.DatasetSnapshotManifest.model_validate(
+            {
+                "schemaVersion": 1,
+                "generatedAt": "2026-03-09T00:00:00+00:00",
+                "dataset": {
+                    "name": snapshot_path.name,
+                    "preset": "primeMarket",
+                    "duckdbFile": "dataset.duckdb",
+                    "compatibilityDbFile": "dataset.db",
+                    "parquetDir": "parquet",
+                },
+                "source": {
+                    "backend": "duckdb-parquet",
+                    "compatibilityArtifact": "dataset.db",
+                },
+                "counts": {
+                    "stocks": 2,
+                    "stock_data": 3,
+                    "topix_data": 1,
+                    "indices_data": 1,
+                    "margin_data": 2,
+                    "statements": 2,
+                    "dataset_info": 2,
+                },
+                "coverage": {
+                    "totalStocks": 2,
+                    "stocksWithQuotes": 2,
+                    "stocksWithStatements": 2,
+                    "stocksWithMargin": 2,
+                },
+                "checksums": {
+                    "duckdbSha256": "x",
+                    "compatibilityDbSha256": "y",
+                    "logicalSha256": "z",
+                    "parquet": {},
+                },
+            }
+        )
+
+    monkeypatch.setattr(reader_module, "validate_dataset_snapshot", _fake_validate)
     app = create_app()
     app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
     return TestClient(app, raise_server_exceptions=False)

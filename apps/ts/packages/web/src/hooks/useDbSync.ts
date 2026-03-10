@@ -1,4 +1,4 @@
-import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { type QueryClient, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import type {
@@ -154,6 +154,60 @@ function syncFetchDetailsStatus(
   };
 }
 
+function parseSyncEventPayload<T>(rawData: string, eventName: string, jobId: string | null): T | null {
+  try {
+    return JSON.parse(rawData) as T;
+  } catch (error) {
+    logger.error(`Failed to parse sync SSE ${eventName}`, { error: String(error), jobId });
+    return null;
+  }
+}
+
+function closeSyncJobStream(
+  cleanup: () => void,
+  setIsConnected: (isConnected: boolean) => void,
+  disposed: boolean
+): void {
+  cleanup();
+  if (!disposed) {
+    setIsConnected(false);
+  }
+}
+
+function updateSnapshotCache(queryClient: QueryClient, payload: SyncSnapshotPayload): boolean {
+  if (payload.job?.jobId) {
+    queryClient.setQueryData(syncKeys.job(payload.job.jobId), payload.job);
+  }
+  if (payload.fetchDetails?.jobId) {
+    queryClient.setQueryData(syncKeys.fetchDetails(payload.fetchDetails.jobId), payload.fetchDetails);
+  }
+
+  return isTerminalSyncStatus(payload.job?.status);
+}
+
+function updateJobCache(queryClient: QueryClient, payload: SyncJobResponse): boolean {
+  if (typeof payload.jobId !== 'string' || typeof payload.status !== 'string') {
+    return false;
+  }
+
+  queryClient.setQueryData(syncKeys.job(payload.jobId), payload);
+  queryClient.setQueryData(syncKeys.fetchDetails(payload.jobId), (previous: SyncFetchDetailsResponse | undefined) =>
+    syncFetchDetailsStatus(previous, payload)
+  );
+
+  return isTerminalSyncStatus(payload.status);
+}
+
+function updateFetchDetailCache(queryClient: QueryClient, payload: SyncFetchDetailStreamPayload): void {
+  if (typeof payload.jobId !== 'string') {
+    return;
+  }
+
+  queryClient.setQueryData(syncKeys.fetchDetails(payload.jobId), (previous: SyncFetchDetailsResponse | undefined) =>
+    mergeFetchDetails(previous, payload)
+  );
+}
+
 // Hooks
 export function useStartSync() {
   return useMutation({
@@ -202,66 +256,36 @@ export function useSyncSSE(jobId: string | null): SyncSSEState {
 
       const es = new EventSource(`/api/db/sync/jobs/${encodeURIComponent(jobId)}/stream`);
       eventSourceRef.current = es;
+      const disconnect = () => {
+        closeSyncJobStream(cleanup, setIsConnected, disposed);
+      };
 
       const handleSnapshotEvent = (rawData: string) => {
-        try {
-          const payload = JSON.parse(rawData) as SyncSnapshotPayload;
-          if (payload.job?.jobId) {
-            queryClient.setQueryData(syncKeys.job(payload.job.jobId), payload.job);
-          }
-          if (payload.fetchDetails?.jobId) {
-            queryClient.setQueryData(syncKeys.fetchDetails(payload.fetchDetails.jobId), payload.fetchDetails);
-          }
-
-          if (isTerminalSyncStatus(payload.job?.status)) {
-            cleanup();
-            if (!disposed) {
-              setIsConnected(false);
-            }
-          }
-        } catch (error) {
-          logger.error('Failed to parse sync SSE snapshot', { error: String(error), jobId });
+        const payload = parseSyncEventPayload<SyncSnapshotPayload>(rawData, 'snapshot', jobId);
+        if (!payload) {
+          return;
+        }
+        if (updateSnapshotCache(queryClient, payload)) {
+          disconnect();
         }
       };
 
       const handleJobEvent = (rawData: string) => {
-        try {
-          const payload = JSON.parse(rawData) as SyncJobResponse;
-          if (typeof payload.jobId !== 'string' || typeof payload.status !== 'string') {
-            return;
-          }
-
-          queryClient.setQueryData(syncKeys.job(payload.jobId), payload);
-          queryClient.setQueryData(
-            syncKeys.fetchDetails(payload.jobId),
-            (previous: SyncFetchDetailsResponse | undefined) => syncFetchDetailsStatus(previous, payload)
-          );
-
-          if (isTerminalSyncStatus(payload.status)) {
-            cleanup();
-            if (!disposed) {
-              setIsConnected(false);
-            }
-          }
-        } catch (error) {
-          logger.error('Failed to parse sync SSE job event', { error: String(error), jobId });
+        const payload = parseSyncEventPayload<SyncJobResponse>(rawData, 'job event', jobId);
+        if (!payload) {
+          return;
+        }
+        if (updateJobCache(queryClient, payload)) {
+          disconnect();
         }
       };
 
       const handleFetchDetailEvent = (rawData: string) => {
-        try {
-          const payload = JSON.parse(rawData) as SyncFetchDetailStreamPayload;
-          if (typeof payload.jobId !== 'string') {
-            return;
-          }
-
-          queryClient.setQueryData(
-            syncKeys.fetchDetails(payload.jobId),
-            (previous: SyncFetchDetailsResponse | undefined) => mergeFetchDetails(previous, payload)
-          );
-        } catch (error) {
-          logger.error('Failed to parse sync SSE fetch-detail event', { error: String(error), jobId });
+        const payload = parseSyncEventPayload<SyncFetchDetailStreamPayload>(rawData, 'fetch-detail event', jobId);
+        if (!payload) {
+          return;
         }
+        updateFetchDetailCache(queryClient, payload);
       };
 
       es.onopen = () => {
@@ -282,10 +306,7 @@ export function useSyncSSE(jobId: string | null): SyncSSEState {
       });
 
       es.onerror = () => {
-        cleanup();
-        if (!disposed) {
-          setIsConnected(false);
-        }
+        disconnect();
         retryCountRef.current += 1;
 
         if (retryCountRef.current > MAX_SSE_RETRIES) {

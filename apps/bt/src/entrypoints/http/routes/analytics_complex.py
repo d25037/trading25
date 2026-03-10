@@ -14,6 +14,10 @@ from loguru import logger
 from sse_starlette.sse import EventSourceResponse
 
 from src.infrastructure.db.market.query_helpers import is_valid_stock_code
+from src.entrypoints.http.routes.job_response_utils import (
+    build_job_execution_control,
+    build_run_metadata,
+)
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.factor_regression import FactorRegressionResponse
 from src.entrypoints.http.schemas.portfolio_factor_regression import PortfolioFactorRegressionResponse
@@ -234,6 +238,8 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        run_metadata=build_run_metadata(job),
+        execution_control=build_job_execution_control(job),
         mode=params.mode,
         markets=params.markets,
         strategies=params.strategies,

@@ -100,6 +100,24 @@ class TestResampleEndpoint:
             # load_ohlcvに日付が渡されることを確認
             call_args = mock_service.load_ohlcv.call_args
             assert call_args[0][0] == "7203"
+            assert call_args[0][1] == "market"
+
+    def test_resample_with_dataset_snapshot_source(self, client, mock_ohlcv_data):
+        """dataset snapshot名が source として渡されること"""
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.return_value = mock_ohlcv_data
+            mock_service.resample_timeframe.return_value = mock_ohlcv_data
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "7203",
+                "source": "primeExTopix500",
+                "timeframe": "daily",
+            })
+
+            assert response.status_code == 200
+            call_args = mock_service.load_ohlcv.call_args
+            assert call_args[0][1] == "primeExTopix500"
 
     def test_resample_with_benchmark(self, client, mock_ohlcv_data, mock_benchmark_data):
         """ベンチマーク指定（相対OHLC）が正しく動作すること"""
