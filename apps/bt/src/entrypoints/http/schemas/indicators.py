@@ -10,6 +10,23 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 
+def _normalize_supported_benchmark_code(v: str | None) -> str | None:
+    if v is None:
+        return None
+
+    normalized = v.lower().strip()
+    if normalized not in ("topix",):
+        raise ValueError(f"未対応のベンチマーク: {normalized} (対応: topix)")
+    return normalized
+
+
+def _validate_source_name(v: str) -> str:
+    normalized = v.strip()
+    if not normalized:
+        raise ValueError("source must not be empty")
+    return normalized
+
+
 # ===== Individual Indicator Params =====
 
 
@@ -180,8 +197,9 @@ class IndicatorComputeRequest(BaseModel):
     stock_code: str = Field(
         min_length=1, max_length=10, description="銘柄コード"
     )
-    source: Literal["market", "dataset"] = Field(
-        default="dataset", description="データソース"
+    source: str = Field(
+        default="market",
+        description="データソース ('market' or dataset snapshot名)",
     )
     timeframe: Literal["daily", "weekly", "monthly"] = Field(
         default="daily", description="時間枠"
@@ -215,11 +233,12 @@ class IndicatorComputeRequest(BaseModel):
     @field_validator("benchmark_code")
     @classmethod
     def validate_benchmark_code(cls, v: str | None) -> str | None:
-        if v is not None:
-            v = v.lower().strip()
-            if v not in ("topix",):
-                raise ValueError(f"未対応のベンチマーク: {v} (対応: topix)")
-        return v
+        return _normalize_supported_benchmark_code(v)
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, v: str) -> str:
+        return _validate_source_name(v)
 
 
 class IndicatorComputeResponse(BaseModel):
@@ -301,8 +320,9 @@ class OHLCVResampleRequest(BaseModel):
     stock_code: str = Field(
         min_length=1, max_length=10, description="銘柄コード"
     )
-    source: Literal["market", "dataset"] = Field(
-        default="market", description="データソース"
+    source: str = Field(
+        default="market",
+        description="データソース ('market' or dataset snapshot名)",
     )
     timeframe: Literal["daily", "weekly", "monthly"] = Field(
         default="weekly", description="出力時間枠"
@@ -319,11 +339,12 @@ class OHLCVResampleRequest(BaseModel):
     @field_validator("benchmark_code")
     @classmethod
     def validate_benchmark_code(cls, v: str | None) -> str | None:
-        if v is not None:
-            v = v.lower().strip()
-            if v not in ("topix",):
-                raise ValueError(f"未対応のベンチマーク: {v} (対応: topix)")
-        return v
+        return _normalize_supported_benchmark_code(v)
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, v: str) -> str:
+        return _validate_source_name(v)
 
 
 class OHLCVResampleResponse(BaseModel):

@@ -14,8 +14,6 @@ DELETE /api/dataset/jobs/{jobId}       — ジョブキャンセル
 
 from __future__ import annotations
 
-import os
-
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
@@ -226,9 +224,7 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
 
     # Check existing dataset
     name_stem = body.name.removesuffix(".db")
-    db_path = resolver.get_db_path(f"{name_stem}.db")
-
-    if os.path.exists(db_path) and not body.overwrite:
+    if resolver.exists(name_stem) and not body.overwrite:
         raise HTTPException(
             status_code=409,
             detail=f'Dataset "{name_stem}" already exists. Use overwrite=true to replace.',
@@ -279,9 +275,7 @@ async def resume_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
 
     # Check dataset exists
     name_stem = body.name.removesuffix(".db")
-    db_path = resolver.get_db_path(f"{name_stem}.db")
-
-    if not os.path.exists(db_path):
+    if not resolver.exists(name_stem):
         raise HTTPException(status_code=404, detail=f'Dataset "{name_stem}" not found')
 
     data = DatasetJobData(
