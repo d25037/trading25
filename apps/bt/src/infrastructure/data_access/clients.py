@@ -12,6 +12,10 @@ from typing import Any, Literal
 
 import pandas as pd
 
+from src.infrastructure.db.market.dataset_db import DatasetDb
+from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
+from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.external_api.dataset.helpers import (
     convert_dated_response,
     convert_index_response,
@@ -20,16 +24,39 @@ from src.infrastructure.external_api.dataset.helpers import (
 from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.shared.config.settings import get_settings
-from src.infrastructure.db.market.dataset_db import DatasetDb
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.utils.snapshot_ids import (
+    normalize_dataset_snapshot_name,
+    normalize_market_snapshot_id,
+)
 
 from .mode import should_use_direct_db
 
-_dataset_db_cache: dict[str, DatasetDb] = {}
+_dataset_db_cache: dict[str, DatasetDb | DatasetSnapshotReader] = {}
 _dataset_db_lock = threading.Lock()
 
-_market_reader: MarketDbReader | None = None
+_market_reader_cache: dict[str, MarketDbReader] = {}
 _market_reader_lock = threading.Lock()
+
+
+def close_all_cached_data_access_clients() -> None:
+    """Close process-global direct-mode caches."""
+
+    with _dataset_db_lock:
+        dataset_dbs = list(_dataset_db_cache.values())
+        _dataset_db_cache.clear()
+
+    with _market_reader_lock:
+        market_readers = list(_market_reader_cache.values())
+        _market_reader_cache.clear()
+
+    for db in dataset_dbs:
+        close = getattr(db, "close", None)
+        if callable(close):
+            close()
+    for reader in market_readers:
+        close = getattr(reader, "close", None)
+        if callable(close):
+            close()
 
 
 def _rows_to_records(
@@ -45,36 +72,70 @@ def _rows_to_records(
     ]
 
 
-def _resolve_dataset_db(dataset_name: str) -> DatasetDb:
-    settings = get_settings()
-    stem = Path(dataset_name).stem
-    db_path = Path(settings.dataset_base_path) / f"{stem}.db"
-    cache_key = str(db_path.resolve())
+def _resolve_dataset_artifact(
+    dataset_name: str,
+) -> tuple[Literal["duckdb-parquet", "sqlite-compatibility", "sqlite-legacy"], str, str]:
+    normalized_dataset_name = normalize_dataset_snapshot_name(dataset_name)
+    if normalized_dataset_name is None:
+        raise FileNotFoundError(f"Dataset not found: {dataset_name}")
 
+    settings = get_settings()
+    dataset_root = Path(str(getattr(settings, "dataset_base_path", "") or "")).resolve()
+    snapshot_root = dataset_root / normalized_dataset_name
+    duckdb_path = snapshot_root / "dataset.duckdb"
+    compatibility_db_path = snapshot_root / "dataset.db"
+    legacy_db_path = dataset_root / f"{normalized_dataset_name}.db"
+
+    if duckdb_path.exists():
+        return "duckdb-parquet", str(snapshot_root.resolve()), str(duckdb_path.resolve())
+    if compatibility_db_path.exists():
+        return (
+            "sqlite-compatibility",
+            str(snapshot_root.resolve()),
+            str(compatibility_db_path.resolve()),
+        )
+    if legacy_db_path.exists():
+        return (
+            "sqlite-legacy",
+            str(legacy_db_path.parent.resolve()),
+            str(legacy_db_path.resolve()),
+        )
+
+    raise FileNotFoundError(f"Dataset not found: {dataset_name}")
+
+
+def _resolve_dataset_db(dataset_name: str) -> DatasetDb | DatasetSnapshotReader:
+    backend, snapshot_root, primary_path = _resolve_dataset_artifact(dataset_name)
+    cache_key = primary_path
     with _dataset_db_lock:
         db = _dataset_db_cache.get(cache_key)
         if db is None:
-            if not db_path.exists():
-                raise FileNotFoundError(f"Dataset not found: {db_path}")
-            db = DatasetDb(str(db_path))
+            if backend == "duckdb-parquet":
+                db = DatasetSnapshotReader(snapshot_root)
+            else:
+                db = DatasetDb(primary_path)
             _dataset_db_cache[cache_key] = db
         return db
 
 
-def _resolve_market_reader() -> MarketDbReader:
-    global _market_reader
+def _resolve_market_reader(snapshot_id: str | None = None) -> MarketDbReader:
+    normalized_snapshot_id = normalize_market_snapshot_id(snapshot_id)
     settings = get_settings()
     market_timeseries_dir = str(getattr(settings, "market_timeseries_dir", "") or "").strip()
     if not market_timeseries_dir:
         raise FileNotFoundError("MARKET_TIMESERIES_DIR is not configured")
-    reader_path = Path(market_timeseries_dir) / "market.duckdb"
-    if not reader_path.exists():
-        raise FileNotFoundError(f"market.duckdb not found: {reader_path}")
 
+    market_duckdb_path = (Path(market_timeseries_dir).resolve() / "market.duckdb").resolve()
+    if not market_duckdb_path.exists():
+        raise FileNotFoundError(f"market.duckdb not found: {market_duckdb_path}")
+
+    cache_key = f"{normalized_snapshot_id}:{market_duckdb_path}"
     with _market_reader_lock:
-        if _market_reader is None:
-            _market_reader = MarketDbReader(str(reader_path))
-        return _market_reader
+        reader = _market_reader_cache.get(cache_key)
+        if reader is None:
+            reader = MarketDbReader(str(market_duckdb_path))
+            _market_reader_cache[cache_key] = reader
+        return reader
 
 
 def _to_ohlcv_df(rows: list[Any]) -> pd.DataFrame:
@@ -157,7 +218,10 @@ class DirectDatasetClient:
     """Dataset client backed by DatasetDb (no HTTP)."""
 
     def __init__(self, dataset_name: str) -> None:
-        self.dataset_name = Path(dataset_name).stem
+        normalized_dataset_name = normalize_dataset_snapshot_name(dataset_name)
+        if normalized_dataset_name is None:
+            raise FileNotFoundError(f"Dataset not found: {dataset_name}")
+        self.dataset_name = normalized_dataset_name
         self._db = _resolve_dataset_db(self.dataset_name)
 
     def __enter__(self) -> DirectDatasetClient:
@@ -396,6 +460,68 @@ class DirectMarketClient:
         _exc_tb: Any,
     ) -> None:
         return None
+
+    def close(self) -> None:
+        # Market readers are cached process-wide for reuse and closed on shutdown.
+        return None
+
+    def get_stock_ohlcv(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        timeframe: Literal["daily", "weekly", "monthly"] = "daily",
+    ) -> pd.DataFrame:
+        _ = timeframe
+        reader = _resolve_market_reader()
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return pd.DataFrame()
+
+        placeholders = ",".join("?" for _ in candidates)
+        params: list[str] = list(candidates)
+        where_conditions = [f"code IN ({placeholders})"]
+        if start_date:
+            where_conditions.append("date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("date <= ?")
+            params.append(end_date)
+        sql = f"""
+            WITH ranked AS (
+                SELECT
+                    date,
+                    open,
+                    high,
+                    low,
+                    close,
+                    volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM stock_data
+                WHERE {" AND ".join(where_conditions)}
+            )
+            SELECT date, open, high, low, close, volume
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY date
+        """
+
+        rows = reader.query(sql, tuple(params))
+        records = [
+            {
+                "date": row["date"],
+                "open": row["open"],
+                "high": row["high"],
+                "low": row["low"],
+                "close": row["close"],
+                "volume": row["volume"],
+            }
+            for row in rows
+        ]
+        return convert_ohlcv_response(records)
 
     def get_topix(
         self,

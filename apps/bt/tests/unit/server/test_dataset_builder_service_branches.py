@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import sqlite3
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -18,6 +19,7 @@ from src.application.services.dataset_builder_service import (
 from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
 from src.entrypoints.http.schemas.job import JobStatus
+from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot
 
 
 @pytest.fixture
@@ -32,6 +34,7 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
     if request.node.name in {
         "test_build_dataset_writes_manifest_v1",
         "test_build_dataset_rerun_keeps_logical_checksum_reproducible",
+        "test_build_dataset_manifest_uses_duckdb_state_as_sot",
     }:
         return
 
@@ -55,11 +58,18 @@ async def _create_job(
     *,
     name: str = "dataset",
     preset: str = "quickTesting",
+    overwrite: bool = False,
     resume: bool = False,
     timeout_minutes: int = 35,
 ):
     job = await manager.create_job(
-        DatasetJobData(name=name, preset=preset, resume=resume, timeout_minutes=timeout_minutes)
+        DatasetJobData(
+            name=name,
+            preset=preset,
+            overwrite=overwrite,
+            resume=resume,
+            timeout_minutes=timeout_minutes,
+        )
     )
     assert job is not None
     return job
@@ -241,7 +251,7 @@ async def test_build_dataset_success_with_warnings(monkeypatch, isolated_dataset
     assert result.success is True
     assert result.totalStocks == 2
     assert result.processedStocks == 1
-    assert result.outputPath == "/tmp/full.db"
+    assert result.outputPath == "/tmp/full"
     assert result.warnings is not None
     assert any("Stock 2222" in warning for warning in result.warnings)
     assert any("TOPIX:" in warning for warning in result.warnings)
@@ -344,18 +354,26 @@ async def test_build_dataset_writes_manifest_v1(monkeypatch, isolated_dataset_ma
     result = await _build_dataset(job, resolver, client)
     assert result.success is True
 
-    manifest_path = tmp_path / "manifest.manifest.v1.json"
+    manifest_path = tmp_path / "manifest" / "manifest.v1.json"
     assert manifest_path.exists() is True
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    validated = validate_dataset_snapshot(manifest_path.parent)
 
     assert manifest["schemaVersion"] == 1
     assert manifest["dataset"]["name"] == "dataset"
-    assert manifest["dataset"]["dbFile"] == "manifest.db"
+    assert manifest["dataset"]["duckdbFile"] == "dataset.duckdb"
+    assert manifest["dataset"]["compatibilityDbFile"] == "dataset.db"
     assert manifest["counts"]["stocks"] == 1
     assert manifest["coverage"]["stocksWithQuotes"] == 1
-    assert manifest["checksums"]["datasetDbSha256"]
+    assert manifest["checksums"]["duckdbSha256"]
+    assert manifest["checksums"]["compatibilityDbSha256"]
     assert manifest["checksums"]["logicalSha256"]
-    assert manifest["checksums"]["datasetDbSha256"] == hashlib.sha256(db_path.read_bytes()).hexdigest()
+    assert manifest["checksums"]["parquet"]["stocks.parquet"]
+    assert manifest["checksums"]["parquet"]["stock_data.parquet"]
+    assert manifest["dateRange"] == {"min": "2026-01-01", "max": "2026-01-01"}
+    assert validated.dataset.name == "dataset"
+    compatibility_db = tmp_path / "manifest" / "dataset.db"
+    assert manifest["checksums"]["compatibilityDbSha256"] == hashlib.sha256(compatibility_db.read_bytes()).hexdigest()
 
 
 @pytest.mark.asyncio
@@ -391,7 +409,7 @@ async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
     first_result = await _build_dataset(job_first, resolver, client)
     assert first_result.success is True
     isolated_dataset_manager.complete_job(job_first.job_id, first_result)
-    first_manifest_path = tmp_path / "repro.manifest.v1.json"
+    first_manifest_path = tmp_path / "repro" / "manifest.v1.json"
     first_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
 
     job_second = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
@@ -403,6 +421,67 @@ async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
     assert first_manifest["checksums"]["logicalSha256"] == second_manifest["checksums"]["logicalSha256"]
     assert first_manifest["counts"] == second_manifest["counts"]
     assert first_manifest["coverage"] == second_manifest["coverage"]
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_manifest_uses_duckdb_state_as_sot(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(isolated_dataset_manager, name="duckdb-sot", preset="quick")
+    resolver = MagicMock()
+    db_path = tmp_path / "duckdb-sot.db"
+    resolver.get_db_path.return_value = str(db_path)
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    result = await _build_dataset(job, resolver, client)
+    assert result.success is True
+
+    compatibility_db = tmp_path / "duckdb-sot" / "dataset.db"
+    conn = sqlite3.connect(compatibility_db)
+    conn.execute(
+        """
+        INSERT INTO stocks (
+            code, company_name, market_code, market_name, sector_17_code, sector_17_name,
+            sector_33_code, sector_33_name, listed_date
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("9999", "Stale", "0111", "Prime", "1", "A", "1010", "A", "2026-01-01"),
+    )
+    conn.commit()
+    conn.close()
+
+    manifest_path = tmp_path / "duckdb-sot" / "manifest.v1.json"
+    dataset_builder_service._write_dataset_manifest(
+        db_path=str(db_path),
+        dataset_name="duckdb-sot",
+        preset_name="quick",
+        manifest_path=manifest_path,
+    )
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+
+    assert manifest["counts"]["stocks"] == 1
+    assert manifest["coverage"]["totalStocks"] == 1
+    assert validate_dataset_snapshot(tmp_path / "duckdb-sot").dataset.name == "duckdb-sot"
 
 
 @pytest.mark.asyncio
@@ -566,6 +645,63 @@ async def test_build_dataset_resume_skips_existing_stock_data_codes(monkeypatch,
     assert result.success is True
     assert fetched_codes == ["22220"]
     assert result.processedStocks == 1
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_overwrite_removes_legacy_db_artifact(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(isolated_dataset_manager, name="overwrite", preset="quick", overwrite=True)
+    legacy_db = tmp_path / "overwrite.db"
+    legacy_db.write_text("legacy", encoding="utf-8")
+
+    resolver = MagicMock()
+    resolver.get_db_path.return_value = str(tmp_path / "overwrite" / "dataset.db")
+    resolver.get_artifact_paths.return_value = [str(legacy_db)]
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    class DummyWriter:
+        def __init__(self, db_path: str):
+            return None
+
+        def upsert_stocks(self, rows):
+            return len(rows)
+
+        def set_dataset_info(self, key: str, value: str):
+            return None
+
+        def upsert_stock_data(self, rows):
+            return len(rows)
+
+        def close(self):
+            return None
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        return []
+
+    client = AsyncMock()
+    client.get_paginated.side_effect = fake_get_paginated
+
+    result = await _build_dataset(job, resolver, client)
+
+    assert result.success is True
+    assert legacy_db.exists() is False
 
 
 @pytest.mark.asyncio

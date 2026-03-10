@@ -2,7 +2,7 @@
 DB名抽出ロジックのテスト
 """
 
-import os
+from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
 
 def test_db_name_extraction():
@@ -13,17 +13,14 @@ def test_db_name_extraction():
         ("topix100-A", "topix100-A"),
         ("sampleA", "sampleA"),
         ("primeExTopix500.db", "primeExTopix500"),
+        ("dataset/primeExTopix500.db", "primeExTopix500"),
         ("nested/path/test", "test"),
         ("", "unknown"),  # 空文字列の場合
+        ("../test.db", "unknown"),
     ]
 
     for db_path, expected_name in test_cases:
-        # DB名抽出ロジック（engine.pyと同じ）
-        if db_path:
-            db_filename = os.path.basename(db_path)
-            db_name = os.path.splitext(db_filename)[0]
-        else:
-            db_name = "unknown"
+        db_name = canonicalize_dataset_snapshot_id(db_path) or "unknown"
 
         assert db_name == expected_name, (
             f"Failed: {db_path} -> {db_name} (expected: {expected_name})"
@@ -38,8 +35,7 @@ def test_filename_generation():
     strategy_name = "range_break_v6"
 
     # DB名抽出
-    db_filename = os.path.basename(db_path)
-    db_name = os.path.splitext(db_filename)[0]
+    db_name = canonicalize_dataset_snapshot_id(db_path) or "unknown"
 
     # タイムスタンプ生成
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -60,10 +56,6 @@ def test_fallback_to_unknown():
     """db_pathが空の場合のフォールバック動作テスト"""
     db_path = ""
 
-    if db_path:
-        db_filename = os.path.basename(db_path)
-        db_name = os.path.splitext(db_filename)[0]
-    else:
-        db_name = "unknown"
+    db_name = canonicalize_dataset_snapshot_id(db_path) or "unknown"
 
     assert db_name == "unknown"
