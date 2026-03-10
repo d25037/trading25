@@ -22,7 +22,7 @@ from src.entrypoints.http.middleware.correlation import CorrelationIdMiddleware
 from src.shared.observability.correlation import get_correlation_id
 from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddleware
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
-from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, strategies
+from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
 from src.entrypoints.http.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
 from src.entrypoints.http.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
@@ -50,6 +50,7 @@ from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
 )
+from src.infrastructure.data_access.clients import close_all_cached_data_access_clients
 
 # HTTP ステータスコード → ステータステキスト
 _STATUS_TEXT: dict[int, str] = {
@@ -60,6 +61,16 @@ _STATUS_TEXT: dict[int, str] = {
     500: "Internal Server Error",
     501: "Not Implemented",
 }
+_PRIMARY_ASYNC_JOB_TYPES = {
+    "backtest",
+    "backtest_attribution",
+    "optimization",
+    "lab_generate",
+    "lab_evolve",
+    "lab_optimize",
+    "lab_improve",
+}
+_SCREENING_JOB_TYPES = {"screening"}
 
 
 def _status_text(status_code: int) -> str:
@@ -151,6 +162,22 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     app.state.portfolio_db = portfolio_db
     job_manager.set_portfolio_db(portfolio_db)
     screening_job_manager.set_portfolio_db(portfolio_db)
+    reconciled_primary_jobs = await job_manager.reconcile_orphaned_jobs(
+        job_types=_PRIMARY_ASYNC_JOB_TYPES,
+        reason="api_restart",
+        stale_after_seconds=job_manager.default_lease_seconds,
+    )
+    reconciled_screening_jobs = await screening_job_manager.reconcile_orphaned_jobs(
+        job_types=_SCREENING_JOB_TYPES,
+        reason="api_restart",
+        stale_after_seconds=screening_job_manager.default_lease_seconds,
+    )
+    if reconciled_primary_jobs or reconciled_screening_jobs:
+        logger.warning(
+            "孤立ジョブを起動時に回収しました: primary={} screening={}",
+            len(reconciled_primary_jobs),
+            len(reconciled_screening_jobs),
+        )
 
     app.state.dataset_base_path = settings.dataset_base_path
 
@@ -167,6 +194,21 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     cleanup_task = asyncio.create_task(_periodic_cleanup())
 
     yield
+
+    # クリーンアップタスクを停止
+    cleanup_task.cancel()
+    with suppress(asyncio.CancelledError):
+        await cleanup_task
+
+    # Phase 3D: Job manager shutdown（DB close 前に durable write を済ませる）
+    from src.application.services.sync_service import sync_job_manager
+    from src.application.services.dataset_builder_service import dataset_job_manager
+
+    await job_manager.shutdown(job_types=_PRIMARY_ASYNC_JOB_TYPES)
+    await screening_job_manager.shutdown(job_types=_SCREENING_JOB_TYPES)
+    await screening_job_service.shutdown()
+    await sync_job_manager.shutdown()
+    await dataset_job_manager.shutdown()
 
     # JQuants client shutdown
     await jquants_client.close()
@@ -189,18 +231,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Phase 3D: DatasetResolver shutdown
     if dataset_resolver is not None:
         dataset_resolver.close_all()
-
-    # Phase 3D: Job manager shutdown
-    from src.application.services.sync_service import sync_job_manager
-    from src.application.services.dataset_builder_service import dataset_job_manager
-    await sync_job_manager.shutdown()
-    await dataset_job_manager.shutdown()
-    await screening_job_service.shutdown()
-
-    # クリーンアップタスクを停止
-    cleanup_task.cancel()
-    with suppress(asyncio.CancelledError):
-        await cleanup_task
+    close_all_cached_data_access_clients()
 
     # ThreadPoolExecutorをシャットダウン
     # NOTE: モジュールレベル executor は shutdown 後に再利用不可。
@@ -321,6 +352,7 @@ def create_app() -> FastAPI:
     app.include_router(lab.router)
     app.include_router(indicators.router)
     app.include_router(ohlcv.router)
+    app.include_router(snapshots.router)
     app.include_router(fundamentals.router)
     # Phase 3B-1: JQuants Proxy + Analytics
     app.include_router(jquants_proxy.router)
