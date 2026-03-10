@@ -36,6 +36,7 @@ def _extract_result_summary(result: BacktestResult) -> BacktestResultSummary:
     summary = resolve_backtest_result_summary(
         html_path=result.html_path,
         fallback=result.summary,
+        metrics_path=result.metrics_path,
     )
     if summary is not None:
         return summary
@@ -46,9 +47,9 @@ def _extract_result_summary(result: BacktestResult) -> BacktestResultSummary:
         calmar_ratio=0.0,
         max_drawdown=0.0,
         win_rate=0.0,
-        trade_count=0,
-        html_path=str(result.html_path),
-    )
+            trade_count=0,
+            html_path=str(result.html_path) if result.html_path else None,
+        )
 
 
 async def _heartbeat_loop(
@@ -203,7 +204,7 @@ async def run_backtest_worker(
             job_id=job_id,
             result_summary=summary,
             raw_result=result.summary,
-            html_path=str(result.html_path),
+            html_path=str(result.html_path) if result.html_path else None,
             dataset_name=result.dataset_name,
             execution_time=result.elapsed_time,
         )

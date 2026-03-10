@@ -9,7 +9,7 @@ import pytest
 from src.application.services.job_manager import JobManager
 from src.application.workers import backtest_worker as worker_mod
 from src.application.workers.backtest_worker import run_backtest_worker
-from src.domains.backtest.core.runner import BacktestResult
+from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
 from src.entrypoints.http.schemas.backtest import JobStatus
 
 
@@ -18,7 +18,7 @@ async def test_run_backtest_worker_completes_job(tmp_path: Path) -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy")
 
-    class _FakeRunner:
+    class _FakeRunner(BacktestRunner):
         def execute(
             self,
             strategy: str,
@@ -51,6 +51,7 @@ async def test_run_backtest_worker_completes_job(tmp_path: Path) -> None:
     assert job.status == JobStatus.COMPLETED
     assert job.result is not None
     assert job.result.total_return == 12.3
+    assert job.execution_time == 1.2
     assert job.run_metadata is not None
     assert job.run_metadata.dataset_snapshot_id == "dataset-a"
 
@@ -60,7 +61,7 @@ async def test_run_backtest_worker_marks_job_failed_on_error() -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy")
 
-    class _FailingRunner:
+    class _FailingRunner(BacktestRunner):
         def execute(
             self,
             strategy: str,
@@ -91,7 +92,7 @@ async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
     manager = JobManager()
     job_id = manager.create_job("worker-strategy")
 
-    class _SlowRunner:
+    class _SlowRunner(BacktestRunner):
         def execute(
             self,
             strategy: str,

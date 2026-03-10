@@ -66,6 +66,7 @@ def load_parameters(mo, json, sys, Path):
     exit_trigger_params = _params.get("exit_trigger_params", {})
     execution_meta = _params.get("_execution", {})
     output_html_path = execution_meta.get("html_path", "")
+    simulation_payload_path = execution_meta.get("simulation_payload_path", "")
 
     return (
         shared_config,
@@ -73,6 +74,7 @@ def load_parameters(mo, json, sys, Path):
         exit_trigger_params,
         project_root,
         output_html_path,
+        simulation_payload_path,
     )
 
 
@@ -177,15 +179,46 @@ def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_par
 
 
 @app.cell
-def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params):
+def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params, simulation_payload_path):
+    import pickle
+    from pathlib import Path
+    import vectorbt as vbt
+    from src.domains.backtest.vectorbt_adapter import ensure_execution_portfolio
     from src.domains.strategy.core.factory import StrategyFactory
 
-    if not shared_config:
+    def _restore_component(value):
+        if not isinstance(value, dict):
+            return value
+
+        if value.get("__serialization__") != "vectorbt.dumps":
+            return value
+
+        payload = value.get("payload")
+        if not isinstance(payload, bytes):
+            return None
+
+        try:
+            return ensure_execution_portfolio(vbt.Portfolio.loads(payload))
+        except Exception:
+            return None
+
+    initial_portfolio = None
+    kelly_portfolio = None
+    allocation_info = None
+    all_entries = None
+
+    if simulation_payload_path and Path(simulation_payload_path).exists():
+        with Path(simulation_payload_path).open("rb") as f:
+            payload = pickle.load(f)
+        initial_portfolio = _restore_component(payload.get("initial_portfolio"))
+        kelly_portfolio = _restore_component(payload.get("kelly_portfolio"))
+        allocation_info = _restore_component(payload.get("allocation_info"))
+        all_entries = _restore_component(payload.get("all_entries"))
+
+    if initial_portfolio is not None and kelly_portfolio is not None:
+        mo.md("Loaded precomputed simulation artifact")
+    elif not shared_config:
         mo.md("**Error**: No shared_config provided. Skipping strategy execution.")
-        initial_portfolio = None
-        kelly_portfolio = None
-        allocation_info = None
-        all_entries = None
     else:
         _result = StrategyFactory.execute_strategy_with_config(
             shared_config, entry_filter_params, exit_trigger_params
@@ -537,56 +570,8 @@ def final_stats(mo, pd, kelly_portfolio):
 
 
 @app.cell
-def export_metrics_json(json, Path, pd, kelly_portfolio, allocation_info, output_html_path):
-    import math
-
-    def _coerce_float(value):
-        """Convert value to float, returning None for non-finite or invalid values."""
-        if value is None:
-            return None
-        try:
-            f = float(value)
-        except (TypeError, ValueError):
-            return None
-        if not math.isfinite(f):
-            return None
-        return f
-
-    def _extract_stat(stats, key):
-        """Extract a single stat value from vectorbt stats (Series or DataFrame)."""
-        if stats is None:
-            return None
-        if isinstance(stats, pd.Series):
-            return _coerce_float(stats.get(key))
-        if isinstance(stats, pd.DataFrame) and key in stats.index:
-            row = stats.loc[key]
-            return _coerce_float(row.mean() if hasattr(row, "mean") else row.iloc[0])
-        return None
-
-    if output_html_path:
-        metrics = {}
-
-        if kelly_portfolio is not None:
-            stats = kelly_portfolio.stats()
-            metrics["total_return"] = _extract_stat(stats, "Total Return [%]")
-            metrics["max_drawdown"] = _extract_stat(stats, "Max Drawdown [%]")
-            metrics["sharpe_ratio"] = _extract_stat(stats, "Sharpe Ratio")
-            metrics["sortino_ratio"] = _extract_stat(stats, "Sortino Ratio")
-            metrics["calmar_ratio"] = _extract_stat(stats, "Calmar Ratio")
-            metrics["win_rate"] = _extract_stat(stats, "Win Rate [%]")
-            metrics["profit_factor"] = _extract_stat(stats, "Profit Factor")
-            total_trades = _extract_stat(stats, "Total Trades")
-            metrics["total_trades"] = int(total_trades) if total_trades is not None else None
-
-        if hasattr(allocation_info, "allocation"):
-            metrics["optimal_allocation"] = _coerce_float(allocation_info.allocation)
-        elif isinstance(allocation_info, (int, float)):
-            metrics["optimal_allocation"] = _coerce_float(allocation_info)
-
-        metrics_path = Path(output_html_path).with_suffix(".metrics.json")
-        metrics_path.write_text(
-            json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
+def export_metrics_json(output_html_path):
+    _ = output_html_path
 
 
 if __name__ == "__main__":

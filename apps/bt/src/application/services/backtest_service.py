@@ -284,6 +284,7 @@ class BacktestService:
         summary = resolve_backtest_result_summary(
             html_path=result.html_path,
             fallback=result.summary,
+            metrics_path=result.metrics_path,
         )
         if summary is not None:
             return summary
@@ -296,7 +297,7 @@ class BacktestService:
             max_drawdown=0.0,
             win_rate=0.0,
             trade_count=0,
-            html_path=str(result.html_path),
+            html_path=str(result.html_path) if result.html_path else None,
         )
 
     def get_execution_info(self, strategy_name: str) -> dict[str, Any]:

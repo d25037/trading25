@@ -4,6 +4,7 @@ Marimo Notebook Executor
 Marimoを使用したNotebook実行・HTML出力ラッパー
 """
 
+from dataclasses import dataclass
 import json
 import os
 import re
@@ -16,6 +17,16 @@ from typing import Any
 from loguru import logger
 
 from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
+
+
+@dataclass(frozen=True, slots=True)
+class BacktestReportPaths:
+    """Filesystem paths for backtest report artifacts."""
+
+    html_path: Path
+    metrics_path: Path
+    manifest_path: Path
+    simulation_payload_path: Path
 
 
 class MarimoExecutor:
@@ -140,34 +151,14 @@ class MarimoExecutor:
         logger.debug(f"パラメータJSONを保存: {json_path}")
         return str(json_path)
 
-    def execute_notebook(
+    def _resolve_html_path(
         self,
-        template_path: str,
+        *,
         parameters: dict[str, Any],
         strategy_name: str | None = None,
         output_filename: str | None = None,
-        timeout: int = 600,
-        extra_env: dict[str, str] | None = None,
     ) -> Path:
-        """
-        Marimo notebookを実行してHTML出力
-
-        Args:
-            template_path: Marimoテンプレート(.py)のパス
-            parameters: 実行パラメータ
-            strategy_name: 戦略名
-            output_filename: 出力ファイル名（拡張子なし）
-            timeout: タイムアウト秒数
-            extra_env: marimo subprocess に追加注入する環境変数
-
-        Returns:
-            html_path - 出力HTMLのパス
-        """
-        template_path_obj = Path(template_path)
-
-        if not template_path_obj.exists():
-            raise FileNotFoundError(f"テンプレートが見つかりません: {template_path}")
-
+        """Resolve the target HTML path without invoking marimo."""
         if output_filename is None:
             strategy_dir_path, base_filename = self._generate_output_filename(
                 parameters, strategy_name
@@ -198,15 +189,75 @@ class MarimoExecutor:
             logger.error(f"出力パス検証エラー: {e}")
             raise ValueError(f"不正な出力パス: {html_filename}")
 
+        return html_path
+
+    def plan_report_paths(
+        self,
+        parameters: dict[str, Any],
+        strategy_name: str | None = None,
+        output_filename: str | None = None,
+    ) -> BacktestReportPaths:
+        """Plan HTML and sibling artifact paths before simulation or rendering."""
+        html_path = self._resolve_html_path(
+            parameters=parameters,
+            strategy_name=strategy_name,
+            output_filename=output_filename,
+        )
+        return BacktestReportPaths(
+            html_path=html_path,
+            metrics_path=html_path.with_suffix(".metrics.json"),
+            manifest_path=html_path.with_suffix(".manifest.json"),
+            simulation_payload_path=html_path.with_suffix(".simulation.pkl"),
+        )
+
+    def execute_notebook(
+        self,
+        template_path: str,
+        parameters: dict[str, Any],
+        strategy_name: str | None = None,
+        output_filename: str | None = None,
+        timeout: int = 600,
+        extra_env: dict[str, str] | None = None,
+        html_path: Path | None = None,
+        execution_metadata: dict[str, str] | None = None,
+    ) -> Path:
+        """
+        Marimo notebookを実行してHTML出力
+
+        Args:
+            template_path: Marimoテンプレート(.py)のパス
+            parameters: 実行パラメータ
+            strategy_name: 戦略名
+            output_filename: 出力ファイル名（拡張子なし）
+            timeout: タイムアウト秒数
+            extra_env: marimo subprocess に追加注入する環境変数
+
+        Returns:
+            html_path - 出力HTMLのパス
+        """
+        template_path_obj = Path(template_path)
+
+        if not template_path_obj.exists():
+            raise FileNotFoundError(f"テンプレートが見つかりません: {template_path}")
+
+        resolved_html_path = html_path or self._resolve_html_path(
+            parameters=parameters,
+            strategy_name=strategy_name,
+            output_filename=output_filename,
+        )
+
         parameters_with_meta = dict(parameters)
-        parameters_with_meta["_execution"] = {"html_path": str(html_path)}
+        parameters_with_meta["_execution"] = {
+            "html_path": str(resolved_html_path),
+            **(execution_metadata or {}),
+        }
         params_json_path = self._serialize_params_to_json(parameters_with_meta)
 
         try:
             logger.info(f"Marimo notebook実行開始: {template_path_obj.name}")
-            logger.debug(f"出力先: {strategy_dir_path}/{html_filename}")
+            logger.debug(f"出力先: {resolved_html_path}")
             print(f"  Executing: {template_path_obj.name}")
-            print(f"  Output: {html_path}")
+            print(f"  Output: {resolved_html_path}")
 
             cmd = [
                 sys.executable,
@@ -217,7 +268,7 @@ class MarimoExecutor:
                 "--no-include-code",
                 str(template_path_obj),
                 "-o",
-                str(html_path),
+                str(resolved_html_path),
                 "--",
                 "--params-json",
                 params_json_path,
@@ -247,18 +298,18 @@ class MarimoExecutor:
                 print(f"  Error: {result.stderr[:500]}")
                 raise RuntimeError(f"Marimo execution failed: {result.stderr}")
 
-            if not html_path.exists():
-                logger.error(f"HTMLファイルが生成されませんでした: {html_path}")
-                print(f"  Warning: HTML file not created at {html_path}")
-                raise RuntimeError(f"HTML file was not created: {html_path}")
+            if not resolved_html_path.exists():
+                logger.error(f"HTMLファイルが生成されませんでした: {resolved_html_path}")
+                print(f"  Warning: HTML file not created at {resolved_html_path}")
+                raise RuntimeError(f"HTML file was not created: {resolved_html_path}")
 
-            file_size = html_path.stat().st_size
+            file_size = resolved_html_path.stat().st_size
             logger.info(
-                f"HTML出力完了: {strategy_dir_path}/{html_filename} ({file_size} bytes)"
+                f"HTML出力完了: {resolved_html_path} ({file_size} bytes)"
             )
-            print(f"  HTML generated: {html_path} ({file_size} bytes)")
+            print(f"  HTML generated: {resolved_html_path} ({file_size} bytes)")
 
-            return html_path
+            return resolved_html_path
 
         except subprocess.TimeoutExpired:
             logger.error(f"Marimo実行タイムアウト: {timeout}秒")
@@ -321,4 +372,4 @@ class MarimoExecutor:
             return {"error": str(e)}
 
 
-__all__ = ["MarimoExecutor"]
+__all__ = ["BacktestReportPaths", "MarimoExecutor"]
