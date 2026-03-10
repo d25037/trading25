@@ -43,6 +43,18 @@ class Settings(BaseModel):
     )
     api_timeout: float = Field(default=30.0, alias="API_TIMEOUT")
     log_level: str = Field(default="WARNING", alias="LOG_LEVEL")
+    backtest_job_timeout_seconds: int = Field(
+        default=3600,
+        alias="BT_BACKTEST_JOB_TIMEOUT_SECONDS",
+    )
+    optimization_job_timeout_seconds: int = Field(
+        default=3600,
+        alias="BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS",
+    )
+    lab_job_timeout_seconds: int = Field(
+        default=3600,
+        alias="BT_LAB_JOB_TIMEOUT_SECONDS",
+    )
 
     # JQuants API
     jquants_api_key: str = Field(default="", alias="JQUANTS_API_KEY")

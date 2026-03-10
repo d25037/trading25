@@ -585,6 +585,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -4607,6 +4618,95 @@
         "title": "IntegrityIssue",
         "type": "object"
       },
+      "JobExecutionControl": {
+        "description": "ジョブの durable execution control 状態",
+        "properties": {
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "キャンセル理由",
+            "title": "Cancel Reason"
+          },
+          "cancel_requested": {
+            "default": false,
+            "description": "キャンセル要求が durable に記録されているか",
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "キャンセル要求受付時刻",
+            "title": "Cancel Requested At"
+          },
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最後の heartbeat 受信時刻",
+            "title": "Last Heartbeat At"
+          },
+          "lease_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "現在の lease の失効時刻",
+            "title": "Lease Expires At"
+          },
+          "lease_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "現在の execution lease owner",
+            "title": "Lease Owner"
+          },
+          "timeout_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "実行タイムアウト時刻",
+            "title": "Timeout At"
+          }
+        },
+        "title": "JobExecutionControl",
+        "type": "object"
+      },
       "JobStatus": {
         "description": "ジョブステータス",
         "enum": [
@@ -5085,6 +5185,17 @@
             ],
             "description": "エラーメッセージ",
             "title": "Error"
+          },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
           },
           "job_id": {
             "description": "ジョブID",
@@ -7011,6 +7122,17 @@
             ],
             "description": "エラーメッセージ",
             "title": "Error"
+          },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
           },
           "html_path": {
             "anyOf": [
@@ -9148,6 +9270,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -9672,6 +9805,17 @@
             ],
             "description": "エラーメッセージ",
             "title": "Error"
+          },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
           },
           "job_id": {
             "description": "ジョブID",

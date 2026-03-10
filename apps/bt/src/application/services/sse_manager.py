@@ -16,8 +16,13 @@ from src.application.services.job_manager import JobManager, _TERMINAL_STATUSES,
 class SSEManager:
     """SSEイベント管理"""
 
-    def __init__(self, manager: JobManager | None = None) -> None:
+    def __init__(
+        self,
+        manager: JobManager | None = None,
+        refresh_interval_seconds: float = 1.0,
+    ) -> None:
         self._manager = manager or job_manager
+        self._refresh_interval_seconds = max(refresh_interval_seconds, 0.1)
 
     async def job_event_generator(self, job_id: str) -> AsyncGenerator[dict[str, str], None]:
         """
@@ -63,8 +68,12 @@ class SSEManager:
         try:
             while True:
                 try:
-                    event = await asyncio.wait_for(queue.get(), timeout=30.0)
+                    event = await asyncio.wait_for(
+                        queue.get(),
+                        timeout=self._refresh_interval_seconds,
+                    )
                 except asyncio.TimeoutError:
+                    await self._manager.reload_job_from_storage(job_id, notify=True)
                     # Heartbeat送信（接続維持）
                     yield {
                         "event": "heartbeat",

@@ -24,7 +24,7 @@ def pdb(tmp_path: Path) -> Generator[PortfolioDb, None, None]:
 
 class TestPortfolioDbSchema:
     def test_schema_version(self, pdb: PortfolioDb) -> None:
-        assert pdb.get_schema_version() == "1.3.0"
+        assert pdb.get_schema_version() == "1.4.0"
 
     def test_tables_created(self, pdb: PortfolioDb) -> None:
         from sqlalchemy import text
@@ -57,6 +57,12 @@ class TestJobMetadata:
             created_at="2026-02-27T00:00:00",
             started_at="2026-02-27T00:01:00",
             completed_at=None,
+            lease_owner="worker-a",
+            lease_expires_at="2026-02-27T00:02:00",
+            last_heartbeat_at="2026-02-27T00:01:30",
+            cancel_requested_at=None,
+            cancel_reason=None,
+            timeout_at="2026-02-27T00:10:00",
             run_spec_json='{"schema_version":1}',
             run_metadata_json='{"schema_version":1}',
             result_json=None,
@@ -78,6 +84,8 @@ class TestJobMetadata:
         assert row.job_type == "backtest"
         assert row.strategy_name == "strat-a"
         assert row.progress == 0.3
+        assert row.lease_owner == "worker-a"
+        assert row.timeout_at == "2026-02-27T00:10:00"
         assert row.run_spec_json is not None
         assert row.run_metadata_json is not None
 

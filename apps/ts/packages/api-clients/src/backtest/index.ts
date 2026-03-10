@@ -35,6 +35,7 @@ export type {
   HtmlFileRenameResponse,
   ImprovementItem,
   JobStatus,
+  JobExecutionControl,
   ArtifactIndex,
   ArtifactKind,
   ArtifactRecord,

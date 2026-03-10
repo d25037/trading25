@@ -47,6 +47,8 @@ class TestBuildOptimizationJobResponse:
         assert response.best_params == {"period": 20, "threshold": 0.3}
         assert response.worst_score == 0.12
         assert response.worst_params == {"period": 5, "threshold": 0.9}
+        assert response.execution_control is not None
+        assert response.execution_control.cancel_requested is False
 
     def test_not_found(self, mock_job_manager):
         mock_job_manager.get_job.return_value = None
@@ -98,6 +100,7 @@ class TestOptimizationJobEndpoints:
         data = resp.json()
         assert data["job_id"] == "opt-1"
         assert data["status"] == "cancelled"
+        assert data["execution_control"]["cancel_requested"] is False
         mock_jm.cancel_job.assert_awaited_once_with("opt-1")
 
     def test_cancel_job_conflict_when_already_terminal(self, client):

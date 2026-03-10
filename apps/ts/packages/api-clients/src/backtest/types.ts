@@ -77,6 +77,16 @@ export interface ArtifactIndex {
   artifacts?: ArtifactRecord[];
 }
 
+export interface JobExecutionControl {
+  cancel_reason?: string | null;
+  cancel_requested: boolean;
+  cancel_requested_at?: string | null;
+  last_heartbeat_at?: string | null;
+  lease_expires_at?: string | null;
+  lease_owner?: string | null;
+  timeout_at?: string | null;
+}
+
 export interface CanonicalExecutionMetrics {
   total_return?: number | null;
   sharpe_ratio?: number | null;
@@ -129,6 +139,7 @@ export interface BacktestJobResponse {
   completed_at: string | null;
   error: string | null;
   run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   result: BacktestResultSummary | null;
 }
 
@@ -228,6 +239,7 @@ export interface SignalAttributionJobResponse {
   completed_at: string | null;
   error: string | null;
   run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   result_data: SignalAttributionResult | null;
 }
 
@@ -430,6 +442,7 @@ export interface OptimizationJobResponse {
   completed_at: string | null;
   error: string | null;
   run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   best_score: number | null;
   best_params: Record<string, unknown> | null;
   worst_score: number | null;
@@ -708,6 +721,7 @@ export interface LabJobResponse {
   completed_at?: string;
   error?: string;
   run_metadata?: RunMetadata | null;
+  execution_control?: JobExecutionControl | null;
   result_data?: LabResultData;
 }
 

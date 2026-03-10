@@ -982,7 +982,7 @@ class TestLabServiceAsync:
         manager = JobManager()
         service = LabService(manager=manager, max_workers=1)
 
-        with patch.object(service, "_run_job", new_callable=AsyncMock):
+        with patch.object(service, "_run_worker_job", new_callable=AsyncMock):
             job_id = await service.submit_generate(count=10, top=3)
             job = manager.get_job(job_id)
             assert job is not None
@@ -1010,7 +1010,7 @@ class TestLabServiceAsync:
                 "merge_shared_config",
                 return_value={"dataset": "primeExTopix500"},
             ),
-            patch.object(service, "_run_job", new_callable=AsyncMock),
+            patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
             job_id = await service.submit_evolve(strategy_name="test_strat")
             job = manager.get_job(job_id)
@@ -1040,7 +1040,7 @@ class TestLabServiceAsync:
                 "merge_shared_config",
                 return_value={"dataset": "primeExTopix500"},
             ),
-            patch.object(service, "_run_optimize", new_callable=AsyncMock),
+            patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
             job_id = await service.submit_optimize(
                 strategy_name="test_strat", trials=50, sampler="random"
@@ -1072,7 +1072,7 @@ class TestLabServiceAsync:
                 "merge_shared_config",
                 return_value={"dataset": "primeExTopix500"},
             ),
-            patch.object(service, "_run_job", new_callable=AsyncMock),
+            patch.object(service, "_run_worker_job", new_callable=AsyncMock),
         ):
             job_id = await service.submit_improve(strategy_name="test_strat", auto_apply=False)
             job = manager.get_job(job_id)

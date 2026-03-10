@@ -23,6 +23,8 @@ class TestJobInfo:
         assert info.status == JobStatus.PENDING
         assert info.progress is None
         assert info.error is None
+        assert info.lease_owner is None
+        assert info.cancel_requested_at is None
 
     def test_optimization_type(self):
         info = JobInfo("id1", "test_strategy", "optimization")
@@ -86,15 +88,21 @@ class TestJobManager:
         assert job.status == JobStatus.RUNNING
         assert job.message == "running"
         assert job.started_at is not None
+        assert job.lease_owner is not None
+        assert job.lease_expires_at is not None
+        assert job.last_heartbeat_at is not None
 
     @pytest.mark.asyncio
     async def test_update_job_status_completed(self):
         mgr = JobManager()
         job_id = mgr.create_job("test")
+        await mgr.update_job_status(job_id, JobStatus.RUNNING)
         await mgr.update_job_status(job_id, JobStatus.COMPLETED)
         job = mgr.get_job(job_id)
         assert job.status == JobStatus.COMPLETED
         assert job.completed_at is not None
+        assert job.lease_owner is None
+        assert job.lease_expires_at is None
 
     @pytest.mark.asyncio
     async def test_update_job_status_failed(self):
@@ -146,6 +154,234 @@ class TestJobManager:
         job = mgr.get_job(job_id)
         assert job.task is task
         await task
+
+    @pytest.mark.asyncio
+    async def test_claim_and_heartbeat_job_execution(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        claimed = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=30,
+            timeout_seconds=120,
+        )
+        assert claimed is not None
+        assert claimed.status == JobStatus.RUNNING
+        assert claimed.lease_owner == "worker-1"
+        assert claimed.timeout_at is not None
+
+        previous_lease_expiry = claimed.lease_expires_at
+        assert previous_lease_expiry is not None
+
+        await asyncio.sleep(0)
+        heartbeated = await mgr.heartbeat_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=45,
+        )
+        assert heartbeated is not None
+        assert heartbeated.lease_expires_at is not None
+        assert heartbeated.lease_expires_at > previous_lease_expiry
+
+    @pytest.mark.asyncio
+    async def test_claim_job_execution_rejects_other_owner_until_lease_expires(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        claimed = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=30,
+        )
+        assert claimed is not None
+
+        rejected = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-2",
+            lease_seconds=30,
+        )
+        assert rejected is None
+
+        active_job = mgr.get_job(job_id)
+        assert active_job is not None
+        assert active_job.lease_owner == "worker-1"
+
+        active_job.lease_expires_at = datetime.now() - timedelta(seconds=1)
+        taken_over = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-2",
+            lease_seconds=30,
+        )
+        assert taken_over is not None
+        assert taken_over.lease_owner == "worker-2"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_job_execution_rejects_other_owner(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        claimed = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=30,
+        )
+        assert claimed is not None
+        previous_heartbeat = claimed.last_heartbeat_at
+
+        rejected = await mgr.heartbeat_job_execution(
+            job_id,
+            lease_owner="worker-2",
+            lease_seconds=45,
+        )
+        assert rejected is None
+
+        active_job = mgr.get_job(job_id)
+        assert active_job is not None
+        assert active_job.lease_owner == "worker-1"
+        assert active_job.last_heartbeat_at == previous_heartbeat
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_job_execution_requires_existing_owner(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        rejected = await mgr.heartbeat_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=45,
+        )
+
+        assert rejected is None
+        active_job = mgr.get_job(job_id)
+        assert active_job is not None
+        assert active_job.lease_owner is None
+        assert active_job.last_heartbeat_at is None
+
+    @pytest.mark.asyncio
+    async def test_request_job_cancel_records_intent(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("test")
+        job = await mgr.request_job_cancel(job_id, reason="user_requested")
+        assert job is not None
+        assert job.cancel_requested_at is not None
+        assert job.cancel_reason == "user_requested"
+        assert mgr.is_cancel_requested(job_id) is True
+
+    @pytest.mark.asyncio
+    async def test_request_job_cancel_best_effort_cancels_task(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("test")
+
+        async def _long_running() -> None:
+            await asyncio.sleep(100)
+
+        task = asyncio.create_task(_long_running())
+        await mgr.set_job_task(job_id, task)
+
+        await mgr.request_job_cancel(job_id, reason="shutdown_requested")
+
+        with pytest.raises(asyncio.CancelledError):
+            await task
+
+    @pytest.mark.asyncio
+    async def test_reconcile_orphaned_jobs_marks_failed(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("test")
+        job = mgr.get_job(job_id)
+        assert job is not None
+        job.updated_at = datetime.now() - timedelta(minutes=5)
+
+        reconciled = await mgr.reconcile_orphaned_jobs(reason="api_restart")
+
+        assert reconciled == [job_id]
+        updated = mgr.get_job(job_id)
+        assert updated is not None
+        assert updated.status == JobStatus.FAILED
+        assert updated.error == "orphaned_after_api_restart"
+
+    @pytest.mark.asyncio
+    async def test_reconcile_orphaned_jobs_respects_cancel_intent(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("test")
+        await mgr.request_job_cancel(job_id, reason="user_requested")
+        job = mgr.get_job(job_id)
+        assert job is not None
+        job.updated_at = datetime.now() - timedelta(minutes=5)
+
+        reconciled = await mgr.reconcile_orphaned_jobs(reason="api_restart")
+
+        assert reconciled == [job_id]
+        updated = mgr.get_job(job_id)
+        assert updated is not None
+        assert updated.status == JobStatus.CANCELLED
+        assert updated.cancel_reason == "user_requested"
+
+    @pytest.mark.asyncio
+    async def test_reconcile_orphaned_jobs_skips_recent_heartbeat_without_cancel_intent(self):
+        mgr = JobManager(default_lease_seconds=60)
+        job_id = mgr.create_job("test")
+        await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=60,
+        )
+
+        reconciled = await mgr.reconcile_orphaned_jobs(
+            reason="api_restart",
+            stale_after_seconds=60,
+        )
+
+        assert reconciled == []
+        updated = mgr.get_job(job_id)
+        assert updated is not None
+        assert updated.status == JobStatus.RUNNING
+
+    @pytest.mark.asyncio
+    async def test_shutdown_requests_cancel_for_incomplete_jobs(self):
+        mgr = JobManager()
+        pending_id = mgr.create_job("pending")
+        running_id = mgr.create_job("running")
+        await mgr.update_job_status(running_id, JobStatus.RUNNING)
+
+        requested_count = await mgr.shutdown()
+
+        assert requested_count == 2
+        pending_job = mgr.get_job(pending_id)
+        running_job = mgr.get_job(running_id)
+        assert pending_job is not None
+        assert running_job is not None
+        assert pending_job.status == JobStatus.PENDING
+        assert running_job.status == JobStatus.RUNNING
+        assert pending_job.cancel_requested_at is not None
+        assert running_job.cancel_requested_at is not None
+        assert pending_job.cancel_reason == "process_shutdown"
+        assert running_job.cancel_reason == "process_shutdown"
+
+    @pytest.mark.asyncio
+    async def test_shutdown_waits_for_cancelled_tasks_to_finish(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("running")
+        await mgr.update_job_status(job_id, JobStatus.RUNNING)
+        started = asyncio.Event()
+        finished = asyncio.Event()
+
+        async def _long_running() -> None:
+            started.set()
+            try:
+                await asyncio.sleep(100)
+            finally:
+                finished.set()
+
+        task = asyncio.create_task(_long_running())
+        await mgr.set_job_task(job_id, task)
+        await started.wait()
+
+        requested_count = await mgr.shutdown(task_timeout_seconds=1.0)
+
+        assert requested_count == 1
+        assert finished.is_set()
+        assert task.done()
 
     def test_subscribe_and_unsubscribe(self):
         mgr = JobManager()
@@ -277,6 +513,16 @@ class TestJobManager:
         )
         await mgr.set_job_result("missing", summary, {}, "", "", 0.0)
         await mgr.set_job_raw_result("missing", {"k": "v"})
+        await mgr.set_job_optimization_result(
+            "missing",
+            raw_result={"best_score": 0.0},
+            best_score=0.0,
+            best_params={},
+            worst_score=None,
+            worst_params=None,
+            total_combinations=0,
+            html_path=None,
+        )
         task = asyncio.create_task(asyncio.sleep(0))
         await mgr.set_job_task("missing", task)
         await task
@@ -285,6 +531,7 @@ class TestJobManager:
         mgr = JobManager()
         mock_db = Mock()
         mock_db.upsert_job.side_effect = RuntimeError("db down")
+        mock_db.get_job_row.return_value = None
         mgr.set_portfolio_db(mock_db)
         job_id = mgr.create_job("s1")
         assert mgr.get_job(job_id) is not None
@@ -322,6 +569,7 @@ class TestJobManager:
             assert job is not None
             job.status = JobStatus.COMPLETED
             job.created_at = datetime.now() - timedelta(hours=25)
+            mgr._persist_job(job)
             monkeypatch.setattr(db, "delete_jobs", Mock(return_value=0))
             deleted = mgr.cleanup_old_jobs(max_age_hours=24)
             assert deleted == 1
@@ -344,6 +592,37 @@ class TestJobManager:
             assert loaded.strategy_name == "persisted-strategy"
             assert loaded.job_type == "screening"
             assert loaded.status == JobStatus.PENDING
+            assert loaded.updated_at is not None
+        finally:
+            db.close()
+
+    @pytest.mark.asyncio
+    async def test_execution_control_fields_persist_in_portfolio_db(self, tmp_path):
+        db = PortfolioDb(str(tmp_path / "portfolio.db"))
+        try:
+            writer = JobManager(default_lease_seconds=15)
+            writer.set_portfolio_db(db)
+            job_id = writer.create_job("persisted-strategy", job_type="backtest")
+
+            await writer.claim_job_execution(
+                job_id,
+                lease_owner="worker-lease",
+                lease_seconds=15,
+                timeout_seconds=90,
+            )
+            await writer.request_job_cancel(job_id, reason="user_requested")
+
+            reader = JobManager()
+            reader.set_portfolio_db(db)
+            loaded = reader.get_job(job_id)
+
+            assert loaded is not None
+            assert loaded.lease_owner == "worker-lease"
+            assert loaded.lease_expires_at is not None
+            assert loaded.last_heartbeat_at is not None
+            assert loaded.cancel_requested_at is not None
+            assert loaded.cancel_reason == "user_requested"
+            assert loaded.timeout_at is not None
         finally:
             db.close()
 
@@ -477,3 +756,66 @@ class TestJobManager:
         mgr = JobManager(max_concurrent_jobs=1)
         await mgr.acquire_slot()
         mgr.release_slot()
+
+    @pytest.mark.asyncio
+    async def test_reload_job_from_storage_refreshes_in_memory_state(self, tmp_path):
+        db = PortfolioDb(str(tmp_path / "portfolio.db"))
+        try:
+            writer = JobManager()
+            writer.set_portfolio_db(db)
+            job_id = writer.create_job("persisted-strategy")
+
+            reader = JobManager()
+            reader.set_portfolio_db(db)
+            loaded = reader.get_job(job_id)
+            assert loaded is not None
+            assert loaded.status == JobStatus.PENDING
+
+            await writer.update_job_status(
+                job_id,
+                JobStatus.RUNNING,
+                message="worker-running",
+                progress=0.4,
+            )
+            refreshed = await reader.reload_job_from_storage(job_id, notify=True)
+
+            assert refreshed is not None
+            assert refreshed.status == JobStatus.RUNNING
+            assert refreshed.message == "worker-running"
+            assert refreshed.progress == 0.4
+        finally:
+            db.close()
+
+    @pytest.mark.asyncio
+    async def test_set_job_optimization_result_persists_fields(self, tmp_path):
+        db = PortfolioDb(str(tmp_path / "portfolio.db"))
+        try:
+            writer = JobManager()
+            writer.set_portfolio_db(db)
+            job_id = writer.create_job("opt-strategy", job_type="optimization")
+
+            await writer.set_job_optimization_result(
+                job_id,
+                raw_result={"best_score": 1.5, "html_path": "/tmp/out.html"},
+                best_score=1.5,
+                best_params={"period": 20},
+                worst_score=0.2,
+                worst_params={"period": 5},
+                total_combinations=8,
+                html_path="/tmp/out.html",
+            )
+
+            reader = JobManager()
+            reader.set_portfolio_db(db)
+            loaded = reader.get_job(job_id)
+
+            assert loaded is not None
+            assert loaded.best_score == 1.5
+            assert loaded.best_params == {"period": 20}
+            assert loaded.worst_score == 0.2
+            assert loaded.worst_params == {"period": 5}
+            assert loaded.total_combinations == 8
+            assert loaded.html_path == "/tmp/out.html"
+            assert loaded.raw_result == {"best_score": 1.5, "html_path": "/tmp/out.html"}
+        finally:
+            db.close()

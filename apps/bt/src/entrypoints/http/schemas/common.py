@@ -23,6 +23,30 @@ class JobStatus(str, Enum):
     CANCELLED = "cancelled"
 
 
+class JobExecutionControl(BaseModel):
+    """ジョブの durable execution control 状態"""
+
+    lease_owner: str | None = Field(default=None, description="現在の execution lease owner")
+    lease_expires_at: datetime | None = Field(
+        default=None,
+        description="現在の lease の失効時刻",
+    )
+    last_heartbeat_at: datetime | None = Field(
+        default=None,
+        description="最後の heartbeat 受信時刻",
+    )
+    cancel_requested: bool = Field(
+        default=False,
+        description="キャンセル要求が durable に記録されているか",
+    )
+    cancel_requested_at: datetime | None = Field(
+        default=None,
+        description="キャンセル要求受付時刻",
+    )
+    cancel_reason: str | None = Field(default=None, description="キャンセル理由")
+    timeout_at: datetime | None = Field(default=None, description="実行タイムアウト時刻")
+
+
 class BaseJobResponse(BaseModel):
     """ジョブレスポンス基底クラス"""
 
@@ -37,6 +61,10 @@ class BaseJobResponse(BaseModel):
     run_metadata: RunMetadata | None = Field(
         default=None,
         description="Engine-neutral run metadata",
+    )
+    execution_control: JobExecutionControl | None = Field(
+        default=None,
+        description="Durable execution control state",
     )
 
     model_config = {"use_enum_values": True}

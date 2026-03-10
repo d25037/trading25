@@ -70,6 +70,7 @@ class TestRunBacktest:
         )
         assert resp.status_code == 200
         assert resp.json()["job_id"] == "job-1"
+        assert resp.json()["execution_control"]["cancel_requested"] is False
 
     def test_not_found_job(self, client, mock_services):
         mock_bt_svc, mock_jm = mock_services
@@ -225,6 +226,7 @@ class TestBacktestJobEndpoints:
         assert resp.status_code == 200
         assert resp.json()["job_id"] == "job-1"
         assert resp.json()["result"]["sortino_ratio"] == 1.8
+        assert resp.json()["execution_control"]["cancel_requested"] is False
 
     def test_get_job_status_prefers_artifact_summary(self, client, mock_services, tmp_path):
         _, mock_jm = mock_services
