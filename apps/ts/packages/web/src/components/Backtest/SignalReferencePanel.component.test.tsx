@@ -117,9 +117,7 @@ describe('SignalReferencePanel', () => {
     const onCopySnippet = vi.fn();
     render(<SignalReferencePanel onCopySnippet={onCopySnippet} />);
 
-    expect(mockLoggerWarn).toHaveBeenCalledWith(
-      'Unknown signal category: not-defined (signal: trend.unknown)'
-    );
+    expect(mockLoggerWarn).toHaveBeenCalledWith('Unknown signal category: not-defined (signal: trend.unknown)');
     expect(screen.getByText('Signal Reference')).toBeInTheDocument();
     expect(screen.getByText('Breakout')).toBeInTheDocument();
     expect(screen.getByText('1')).toBeInTheDocument();
@@ -141,7 +139,16 @@ describe('SignalReferencePanel', () => {
     });
     expect(screen.queryByText('Copied!')).not.toBeInTheDocument();
 
-    fireEvent.change(screen.getByPlaceholderText('Search signals...'), { target: { value: 'non-existent' } });
+    const searchInput = screen.getByPlaceholderText('Search signals...');
+    fireEvent.change(searchInput, { target: { value: 'oracle' } });
+    expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
+    expect(screen.getByText('Breakout')).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'prior close' } });
+    expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
+    expect(screen.getByText('Breakout')).toBeInTheDocument();
+
+    fireEvent.change(searchInput, { target: { value: 'non-existent' } });
     expect(screen.getByText('No signals found')).toBeInTheDocument();
   });
 });

@@ -38,6 +38,36 @@ function formatTimingLabel(value: string) {
   return timingLabels[value] ?? value;
 }
 
+function normalizeSearchValue(value: string) {
+  return value.toLowerCase().replaceAll(/[_-]+/g, ' ');
+}
+
+function buildSignalSearchTerms(signal: SignalDefinition): string[] {
+  const availabilityTerms =
+    signal.availability_profiles?.flatMap((profile) => [
+      profile.scope,
+      profile.execution_semantics,
+      executionSemanticsLabels[profile.execution_semantics] ?? profile.execution_semantics,
+      profile.availability.observation_time,
+      formatTimingLabel(profile.availability.observation_time),
+      profile.availability.available_at,
+      formatTimingLabel(profile.availability.available_at),
+      profile.availability.decision_cutoff,
+      formatTimingLabel(profile.availability.decision_cutoff),
+      profile.availability.execution_session,
+      formatTimingLabel(profile.availability.execution_session),
+    ]) ?? [];
+
+  return [
+    signal.key,
+    signal.name,
+    signal.description,
+    signal.usage_hint,
+    ...(signal.data_requirements ?? []),
+    ...availabilityTerms,
+  ];
+}
+
 function SignalItem({ signal, onCopy }: SignalItemProps) {
   const [isExpanded, setIsExpanded] = useState(false);
   const [copied, setCopied] = useState(false);
@@ -213,14 +243,11 @@ export function SignalReferencePanel({ onCopySnippet }: SignalReferencePanelProp
   // Filter signals by search query
   const filteredByCategory = useMemo(() => {
     if (!searchQuery) return signalsByCategory;
-    const lowerQuery = searchQuery.toLowerCase();
+    const normalizedQuery = normalizeSearchValue(searchQuery);
     const filtered = new Map<string, { category: SignalCategory; signals: SignalDefinition[] }>();
     for (const [key, entry] of signalsByCategory) {
-      const matchingSignals = entry.signals.filter(
-        (signal) =>
-          signal.key.toLowerCase().includes(lowerQuery) ||
-          signal.name.toLowerCase().includes(lowerQuery) ||
-          signal.description.toLowerCase().includes(lowerQuery)
+      const matchingSignals = entry.signals.filter((signal) =>
+        buildSignalSearchTerms(signal).some((term) => normalizeSearchValue(term).includes(normalizedQuery))
       );
       filtered.set(key, { category: entry.category, signals: matchingSignals });
     }
