@@ -338,6 +338,100 @@
         "title": "ApiMarginInterestResponse",
         "type": "object"
       },
+      "ArtifactIndex": {
+        "description": "List of artifacts associated with a run.",
+        "properties": {
+          "artifacts": {
+            "description": "Artifact records",
+            "items": {
+              "$ref": "#/components/schemas/ArtifactRecord"
+            },
+            "title": "Artifacts",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "description": "Schema version",
+            "title": "Schema Version",
+            "type": "integer"
+          }
+        },
+        "title": "ArtifactIndex",
+        "type": "object"
+      },
+      "ArtifactKind": {
+        "description": "Artifact role within a run.",
+        "enum": [
+          "html",
+          "metrics_json",
+          "manifest_json",
+          "result_summary",
+          "raw_result_json",
+          "attribution_json",
+          "strategy_yaml",
+          "history_yaml"
+        ],
+        "title": "ArtifactKind",
+        "type": "string"
+      },
+      "ArtifactRecord": {
+        "description": "Artifact registry entry for a run output.",
+        "properties": {
+          "kind": {
+            "$ref": "#/components/schemas/ArtifactKind",
+            "description": "Artifact role"
+          },
+          "location": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Logical storage location when not stored on disk",
+            "title": "Location"
+          },
+          "metadata": {
+            "additionalProperties": true,
+            "description": "Additional artifact metadata",
+            "title": "Metadata",
+            "type": "object"
+          },
+          "path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Filesystem path when stored on disk",
+            "title": "Path"
+          },
+          "storage": {
+            "$ref": "#/components/schemas/ArtifactStorage",
+            "description": "Storage backend"
+          }
+        },
+        "required": [
+          "kind",
+          "storage"
+        ],
+        "title": "ArtifactRecord",
+        "type": "object"
+      },
+      "ArtifactStorage": {
+        "description": "Physical storage backend for an artifact record.",
+        "enum": [
+          "filesystem",
+          "portfolio_db"
+        ],
+        "title": "ArtifactStorage",
+        "type": "string"
+      },
       "AttributionArtifactContentResponse": {
         "description": "保存済み attribution JSON ファイル内容レスポンス",
         "properties": {
@@ -491,6 +585,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -530,6 +635,17 @@
               }
             ],
             "description": "結果サマリー（完了時のみ）"
+          },
+          "run_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral run metadata"
           },
           "started_at": {
             "anyOf": [
@@ -588,6 +704,28 @@
       "BacktestResultResponse": {
         "description": "バックテスト結果レスポンス（詳細）",
         "properties": {
+          "artifact_index": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactIndex"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resolved artifact index"
+          },
+          "canonical_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalExecutionResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral execution result"
+          },
           "created_at": {
             "description": "作成日時",
             "format": "date-time",
@@ -620,6 +758,17 @@
             "description": "ジョブID",
             "title": "Job Id",
             "type": "string"
+          },
+          "run_spec": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunSpec"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral execution input contract"
           },
           "strategy_name": {
             "description": "戦略名",
@@ -803,6 +952,269 @@
           "message"
         ],
         "title": "CancelJobResponse",
+        "type": "object"
+      },
+      "CanonicalExecutionMetrics": {
+        "description": "Common scalar metrics available across execution engines.",
+        "properties": {
+          "calmar_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Calmar ratio",
+            "title": "Calmar Ratio"
+          },
+          "max_drawdown": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Max drawdown",
+            "title": "Max Drawdown"
+          },
+          "sharpe_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sharpe ratio",
+            "title": "Sharpe Ratio"
+          },
+          "sortino_ratio": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Sortino ratio",
+            "title": "Sortino Ratio"
+          },
+          "total_return": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Total return",
+            "title": "Total Return"
+          },
+          "trade_count": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Closed trade count",
+            "title": "Trade Count"
+          },
+          "win_rate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Win rate",
+            "title": "Win Rate"
+          }
+        },
+        "title": "CanonicalExecutionMetrics",
+        "type": "object"
+      },
+      "CanonicalExecutionResult": {
+        "description": "Engine-neutral result envelope for run outputs.",
+        "properties": {
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Legacy dataset name for compatibility",
+            "title": "Dataset Name"
+          },
+          "dataset_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned dataset snapshot identifier",
+            "title": "Dataset Snapshot Id"
+          },
+          "engine_family": {
+            "$ref": "#/components/schemas/EngineFamily",
+            "description": "Execution engine family"
+          },
+          "execution_policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution semantics/policy version",
+            "title": "Execution Policy Version"
+          },
+          "execution_time": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution time in seconds",
+            "title": "Execution Time"
+          },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned market snapshot identifier",
+            "title": "Market Snapshot Id"
+          },
+          "payload": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Original engine-specific payload",
+            "title": "Payload"
+          },
+          "run_id": {
+            "description": "Run identifier",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_type": {
+            "$ref": "#/components/schemas/RunType",
+            "description": "Canonical run category"
+          },
+          "schema_version": {
+            "default": 1,
+            "description": "Schema version",
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "status": {
+            "description": "Run status",
+            "title": "Status",
+            "type": "string"
+          },
+          "strategy_name": {
+            "description": "Resolved strategy name",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "summary_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalExecutionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Common scalar metrics when available"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_type",
+          "strategy_name",
+          "engine_family",
+          "status"
+        ],
+        "title": "CanonicalExecutionResult",
+        "type": "object"
+      },
+      "CompiledStrategyInputRequirements": {
+        "description": "Declared inputs required by a compiled strategy.",
+        "properties": {
+          "required_data_domains": {
+            "description": "Required data domains such as market/statements/margin",
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Data Domains",
+            "type": "array"
+          },
+          "required_features": {
+            "description": "Required feature identifiers",
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Features",
+            "type": "array"
+          },
+          "required_fundamental_fields": {
+            "description": "Required fundamental fields",
+            "items": {
+              "type": "string"
+            },
+            "title": "Required Fundamental Fields",
+            "type": "array"
+          },
+          "schema_version": {
+            "default": 1,
+            "description": "Schema version",
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "signal_ids": {
+            "description": "Compiled signal identifiers",
+            "items": {
+              "type": "string"
+            },
+            "title": "Signal Ids",
+            "type": "array"
+          }
+        },
+        "title": "CompiledStrategyInputRequirements",
         "type": "object"
       },
       "CreateSyncJobResponse": {
@@ -2003,6 +2415,16 @@
         ],
         "title": "DeleteResponse",
         "type": "object"
+      },
+      "EngineFamily": {
+        "description": "Execution engine family.",
+        "enum": [
+          "vectorbt",
+          "nautilus",
+          "unknown"
+        ],
+        "title": "EngineFamily",
+        "type": "string"
       },
       "ErrorDetail": {
         "description": "バリデーションエラー詳細",
@@ -3983,12 +4405,8 @@
             "description": "相対OHLCオプション"
           },
           "source": {
-            "default": "dataset",
-            "description": "データソース",
-            "enum": [
-              "market",
-              "dataset"
-            ],
+            "default": "market",
+            "description": "データソース ('market' or dataset snapshot名)",
             "title": "Source",
             "type": "string"
           },
@@ -4198,6 +4616,95 @@
           "count"
         ],
         "title": "IntegrityIssue",
+        "type": "object"
+      },
+      "JobExecutionControl": {
+        "description": "ジョブの durable execution control 状態",
+        "properties": {
+          "cancel_reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "キャンセル理由",
+            "title": "Cancel Reason"
+          },
+          "cancel_requested": {
+            "default": false,
+            "description": "キャンセル要求が durable に記録されているか",
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "cancel_requested_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "キャンセル要求受付時刻",
+            "title": "Cancel Requested At"
+          },
+          "last_heartbeat_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "最後の heartbeat 受信時刻",
+            "title": "Last Heartbeat At"
+          },
+          "lease_expires_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "現在の lease の失効時刻",
+            "title": "Lease Expires At"
+          },
+          "lease_owner": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "現在の execution lease owner",
+            "title": "Lease Owner"
+          },
+          "timeout_at": {
+            "anyOf": [
+              {
+                "format": "date-time",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "実行タイムアウト時刻",
+            "title": "Timeout At"
+          }
+        },
+        "title": "JobExecutionControl",
         "type": "object"
       },
       "JobStatus": {
@@ -4679,6 +5186,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -4759,6 +5277,17 @@
             ],
             "description": "Lab結果データ（完了時のみ）",
             "title": "Result Data"
+          },
+          "run_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral run metadata"
           },
           "started_at": {
             "anyOf": [
@@ -6228,11 +6757,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース",
-            "enum": [
-              "market",
-              "dataset"
-            ],
+            "description": "データソース ('market' or dataset snapshot名)",
             "title": "Source",
             "type": "string"
           },
@@ -6598,6 +7123,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "html_path": {
             "anyOf": [
               {
@@ -6638,6 +7174,17 @@
             ],
             "description": "進捗（0.0 - 1.0）",
             "title": "Progress"
+          },
+          "run_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral run metadata"
           },
           "started_at": {
             "anyOf": [
@@ -8360,6 +8907,251 @@
         "title": "ROESummary",
         "type": "object"
       },
+      "RunMetadata": {
+        "description": "Resolved run metadata persisted in the experiment registry.",
+        "properties": {
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Legacy dataset name for compatibility",
+            "title": "Dataset Name"
+          },
+          "dataset_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned dataset snapshot identifier",
+            "title": "Dataset Snapshot Id"
+          },
+          "engine_family": {
+            "$ref": "#/components/schemas/EngineFamily",
+            "default": "unknown",
+            "description": "Execution engine family"
+          },
+          "execution_policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution semantics/policy version",
+            "title": "Execution Policy Version"
+          },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned market snapshot identifier",
+            "title": "Market Snapshot Id"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Parent run identifier for lineage",
+            "title": "Parent Run Id"
+          },
+          "run_id": {
+            "description": "Run identifier",
+            "title": "Run Id",
+            "type": "string"
+          },
+          "run_type": {
+            "$ref": "#/components/schemas/RunType",
+            "description": "Canonical run category"
+          },
+          "schema_version": {
+            "default": 1,
+            "description": "Schema version",
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "strategy_name": {
+            "description": "Resolved strategy name",
+            "title": "Strategy Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "run_id",
+          "run_type",
+          "strategy_name"
+        ],
+        "title": "RunMetadata",
+        "type": "object"
+      },
+      "RunSpec": {
+        "description": "Engine-neutral execution input contract.",
+        "properties": {
+          "compiled_strategy_requirements": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CompiledStrategyInputRequirements"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Input requirements expected from compiled strategy IR"
+          },
+          "dataset_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Legacy dataset name for compatibility",
+            "title": "Dataset Name"
+          },
+          "dataset_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned dataset snapshot identifier",
+            "title": "Dataset Snapshot Id"
+          },
+          "engine_family": {
+            "$ref": "#/components/schemas/EngineFamily",
+            "default": "unknown",
+            "description": "Execution engine family"
+          },
+          "execution_policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Execution semantics/policy version",
+            "title": "Execution Policy Version"
+          },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Pinned market snapshot identifier",
+            "title": "Market Snapshot Id"
+          },
+          "parameters": {
+            "additionalProperties": true,
+            "description": "Resolved run parameters",
+            "title": "Parameters",
+            "type": "object"
+          },
+          "parent_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Parent run identifier for lineage",
+            "title": "Parent Run Id"
+          },
+          "run_type": {
+            "$ref": "#/components/schemas/RunType",
+            "description": "Canonical run category"
+          },
+          "schema_version": {
+            "default": 1,
+            "description": "Schema version",
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "strategy_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Stable strategy fingerprint when available",
+            "title": "Strategy Fingerprint"
+          },
+          "strategy_name": {
+            "description": "Resolved strategy name",
+            "title": "Strategy Name",
+            "type": "string"
+          },
+          "strategy_source_ref": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Source reference for strategy definition",
+            "title": "Strategy Source Ref"
+          }
+        },
+        "required": [
+          "run_type",
+          "strategy_name"
+        ],
+        "title": "RunSpec",
+        "type": "object"
+      },
+      "RunType": {
+        "description": "Canonical run category.",
+        "enum": [
+          "backtest",
+          "optimization",
+          "attribution",
+          "screening",
+          "lab_generate",
+          "lab_evolve",
+          "lab_optimize",
+          "lab_improve",
+          "unknown"
+        ],
+        "title": "RunType",
+        "type": "string"
+      },
       "ScreeningJobRequest": {
         "additionalProperties": false,
         "description": "Screening ジョブ作成リクエスト",
@@ -8478,6 +9270,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -8559,6 +9362,17 @@
             ],
             "description": "基準日（任意）",
             "title": "Referencedate"
+          },
+          "run_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral run metadata"
           },
           "sortBy": {
             "description": "並び順の基準",
@@ -8992,6 +9806,17 @@
             "description": "エラーメッセージ",
             "title": "Error"
           },
+          "execution_control": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/JobExecutionControl"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Durable execution control state"
+          },
           "job_id": {
             "description": "ジョブID",
             "title": "Job Id",
@@ -9031,6 +9856,17 @@
               }
             ],
             "description": "寄与分析結果（完了時のみ）"
+          },
+          "run_metadata": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RunMetadata"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral run metadata"
           },
           "started_at": {
             "anyOf": [
@@ -9238,6 +10074,28 @@
       "SignalAttributionResultResponse": {
         "description": "シグナル寄与分析結果レスポンス（詳細）",
         "properties": {
+          "artifact_index": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ArtifactIndex"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Resolved artifact index"
+          },
+          "canonical_result": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalExecutionResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Engine-neutral execution result"
+          },
           "created_at": {
             "description": "作成日時",
             "format": "date-time",
@@ -9889,6 +10747,97 @@
           "type"
         ],
         "title": "SignalSpec",
+        "type": "object"
+      },
+      "SnapshotResolveResponse": {
+        "description": "Resolved snapshot metadata.",
+        "properties": {
+          "backend": {
+            "description": "resolved storage backend",
+            "title": "Backend",
+            "type": "string"
+          },
+          "compatibility_db_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "compatibility SQLite path",
+            "title": "Compatibility Db Path"
+          },
+          "duckdb_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "DuckDB path",
+            "title": "Duckdb Path"
+          },
+          "manifest_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "manifest path",
+            "title": "Manifest Path"
+          },
+          "plane": {
+            "description": "解決された plane",
+            "enum": [
+              "market",
+              "dataset"
+            ],
+            "title": "Plane",
+            "type": "string"
+          },
+          "primary_path": {
+            "description": "primary readable artifact path",
+            "title": "Primary Path",
+            "type": "string"
+          },
+          "requested_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "要求時の snapshot identifier",
+            "title": "Requested Id"
+          },
+          "root_path": {
+            "description": "snapshot root path",
+            "title": "Root Path",
+            "type": "string"
+          },
+          "snapshot_id": {
+            "description": "canonical snapshot identifier",
+            "title": "Snapshot Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "plane",
+          "snapshot_id",
+          "backend",
+          "root_path",
+          "primary_path"
+        ],
+        "title": "SnapshotResolveResponse",
         "type": "object"
       },
       "src__server__schemas__dataset__DateRange": {
@@ -22828,6 +23777,99 @@
         "summary": "Get Signal Schema",
         "tags": [
           "Signals"
+        ]
+      }
+    },
+    "/api/snapshots/resolve": {
+      "get": {
+        "description": "Resolve one logical snapshot contract for market and dataset planes.",
+        "operationId": "resolve_snapshot_api_snapshots_resolve_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "plane",
+            "required": true,
+            "schema": {
+              "enum": [
+                "market",
+                "dataset"
+              ],
+              "title": "Plane",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "snapshot_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Snapshot Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SnapshotResolveResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Resolve market or dataset snapshot",
+        "tags": [
+          "Snapshots"
         ]
       }
     },

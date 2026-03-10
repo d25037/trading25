@@ -43,6 +43,18 @@ class Settings(BaseModel):
     )
     api_timeout: float = Field(default=30.0, alias="API_TIMEOUT")
     log_level: str = Field(default="WARNING", alias="LOG_LEVEL")
+    backtest_job_timeout_seconds: int = Field(
+        default=3600,
+        alias="BT_BACKTEST_JOB_TIMEOUT_SECONDS",
+    )
+    optimization_job_timeout_seconds: int = Field(
+        default=3600,
+        alias="BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS",
+    )
+    lab_job_timeout_seconds: int = Field(
+        default=3600,
+        alias="BT_LAB_JOB_TIMEOUT_SECONDS",
+    )
 
     # JQuants API
     jquants_api_key: str = Field(default="", alias="JQUANTS_API_KEY")
@@ -51,13 +63,15 @@ class Settings(BaseModel):
     # Deprecated alias (legacy name): now points to DuckDB time-series file.
     market_db_path: str = Field(default="", alias="MARKET_DB_PATH")
 
-    # market time-series data plane (DuckDB SoT)
+    # market snapshot resolver root.
+    # The mutable latest pointer is {MARKET_TIMESERIES_DIR}/market.duckdb.
     market_timeseries_dir: str = Field(default="", alias="MARKET_TIMESERIES_DIR")
 
     # portfolio.db (Phase 3C)
     portfolio_db_path: str = Field(default="", alias="PORTFOLIO_DB_PATH")
 
-    # dataset base path (Phase 3C)
+    # dataset snapshot resolver root.
+    # Immutable snapshots live under {DATASET_BASE_PATH}/{snapshot}/.
     dataset_base_path: str = Field(default="", alias="DATASET_BASE_PATH")
 
     model_config = {"populate_by_name": True}

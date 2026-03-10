@@ -2,7 +2,7 @@
 API Schemas (Pydantic models)
 """
 
-from src.entrypoints.http.schemas.common import BaseJobResponse
+from src.entrypoints.http.schemas.common import BaseJobResponse, JobExecutionControl
 from src.entrypoints.http.schemas.backtest import (
     AttributionArtifactContentResponse,
     AttributionArtifactInfo,
@@ -41,6 +41,7 @@ from src.entrypoints.http.schemas.signals import (
 
 __all__ = [
     "BaseJobResponse",
+    "JobExecutionControl",
     "AttributionArtifactInfo",
     "AttributionArtifactListResponse",
     "AttributionArtifactContentResponse",

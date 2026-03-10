@@ -20,6 +20,10 @@ from src.entrypoints.http.routes.html_file_utils import (
     read_html_file,
     rename_html_file,
 )
+from src.entrypoints.http.routes.job_response_utils import (
+    build_job_execution_control,
+    build_run_metadata,
+)
 from src.entrypoints.http.schemas.backtest import (
     AttributionArtifactContentResponse,
     AttributionArtifactInfo,
@@ -38,13 +42,15 @@ from src.entrypoints.http.schemas.backtest import (
     JobStatus,
     SignalAttributionJobResponse,
     SignalAttributionRequest,
-    SignalAttributionResult,
     SignalAttributionResultResponse,
 )
 from src.application.services.backtest_attribution_service import backtest_attribution_service
-from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 from src.application.services.backtest_service import backtest_service
 from src.application.services.job_manager import JobInfo, job_manager
+from src.application.services.run_registry import (
+    resolve_job_backtest_summary as resolve_registry_backtest_summary,
+    resolve_signal_attribution_result,
+)
 from src.application.services.sse_manager import sse_manager
 
 router = APIRouter(tags=["Backtest"])
@@ -53,14 +59,10 @@ _ATTRIBUTION_JOB_TYPE = "backtest_attribution"
 
 def _resolve_job_backtest_summary(job: JobInfo) -> BacktestResultSummary | None:
     """ジョブ情報から成果物SoTベースのサマリーを解決"""
-    fallback = (
-        job.result
-        if job.result is not None
-        else (job.raw_result if isinstance(job.raw_result, dict) else None)
-    )
-    summary = resolve_backtest_result_summary(html_path=job.html_path, fallback=fallback)
+    summary = resolve_registry_backtest_summary(job)
     if summary is not None:
         job.result = summary
+        job_manager.refresh_job_contracts(job)
     return summary
 
 
@@ -81,6 +83,8 @@ def _build_backtest_job_response(job: JobInfo) -> BacktestJobResponse:
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        run_metadata=build_run_metadata(job),
+        execution_control=build_job_execution_control(job),
         result=result_summary,
     )
 
@@ -107,11 +111,8 @@ def _get_attribution_job_or_404(job_id: str) -> JobInfo:
 def _build_signal_attribution_job_response(job: JobInfo) -> SignalAttributionJobResponse:
     """JobInfoからSignalAttributionJobResponseを構築"""
     result_data = None
-    if job.raw_result is not None and job.status == JobStatus.COMPLETED:
-        try:
-            result_data = SignalAttributionResult.model_validate(job.raw_result)
-        except Exception as e:
-            logger.warning(f"寄与分析結果のパースに失敗: {e}")
+    if job.status == JobStatus.COMPLETED:
+        result_data = resolve_signal_attribution_result(job)
 
     return SignalAttributionJobResponse(
         job_id=job.job_id,
@@ -122,6 +123,8 @@ def _build_signal_attribution_job_response(job: JobInfo) -> SignalAttributionJob
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        run_metadata=build_run_metadata(job),
+        execution_control=build_job_execution_control(job),
         result_data=result_data,
     )
 
@@ -238,6 +241,9 @@ async def get_result(job_id: str, include_html: bool = False) -> BacktestResultR
         execution_time=job.execution_time or 0.0,
         html_content=html_content,
         created_at=job.created_at,
+        run_spec=job.run_spec,
+        canonical_result=job.canonical_result,
+        artifact_index=job.artifact_index,
     )
 
 
@@ -318,22 +324,20 @@ async def get_signal_attribution_result(job_id: str) -> SignalAttributionResultR
             status_code=400,
             detail=f"ジョブが完了していません（状態: {job.status}）",
         )
-    if not job.raw_result:
-        raise HTTPException(status_code=500, detail="結果がありません")
-
-    try:
-        result = SignalAttributionResult.model_validate(job.raw_result)
-    except Exception as e:
+    result = resolve_signal_attribution_result(job)
+    if result is None:
         raise HTTPException(
             status_code=500,
-            detail=f"結果の復元に失敗しました: {e}",
-        ) from e
+            detail="結果の復元に失敗しました",
+        )
 
     return SignalAttributionResultResponse(
         job_id=job.job_id,
         strategy_name=job.strategy_name,
         result=result,
         created_at=job.created_at,
+        canonical_result=job.canonical_result,
+        artifact_index=job.artifact_index,
     )
 
 
