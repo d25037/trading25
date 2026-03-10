@@ -10,6 +10,7 @@ from src.infrastructure.data_access.loaders.portfolio_loaders import (
     create_portfolio_price_matrix,
     create_portfolio_returns_matrix,
     load_portfolio_list,
+    load_portfolio_stock_data,
     load_portfolio_summary,
 )
 
@@ -86,6 +87,45 @@ class TestLoadPortfolioSummary:
             import pytest
             with pytest.raises(ValueError, match="not found"):
                 load_portfolio_summary("nonexistent")
+
+
+class TestLoadPortfolioStockData:
+    def test_uses_market_client_and_converts_codes(self):
+        portfolio_client = MagicMock()
+        portfolio_client.get_portfolio_codes.return_value = ["2207"]
+        portfolio_client.__enter__ = MagicMock(return_value=portfolio_client)
+        portfolio_client.__exit__ = MagicMock(return_value=False)
+
+        market_client = MagicMock()
+        market_client.get_stock_ohlcv.return_value = pd.DataFrame(
+            {"Close": [100.0, 101.0]},
+            index=pd.date_range("2025-01-01", periods=2),
+        )
+        market_client.__enter__ = MagicMock(return_value=market_client)
+        market_client.__exit__ = MagicMock(return_value=False)
+
+        with (
+            patch(
+                "src.infrastructure.data_access.loaders.portfolio_loaders.PortfolioAPIClient",
+                return_value=portfolio_client,
+            ),
+            patch(
+                "src.infrastructure.data_access.loaders.portfolio_loaders.MarketAPIClient",
+                return_value=market_client,
+            ),
+        ):
+            result = load_portfolio_stock_data(
+                "test",
+                start_date="2025-01-01",
+                end_date="2025-01-31",
+            )
+
+        assert list(result.keys()) == ["2207"]
+        market_client.get_stock_ohlcv.assert_called_once_with(
+            "22070",
+            "2025-01-01",
+            "2025-01-31",
+        )
 
 
 class TestCreatePortfolioReturnsMatrix:

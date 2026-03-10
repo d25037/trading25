@@ -207,6 +207,39 @@ class TestSSEManager:
         statuses = [e.get("event") for e in collected]
         assert "completed" in statuses
 
+    @pytest.mark.asyncio
+    async def test_running_job_refreshes_from_storage_on_idle(self, manager: JobManager) -> None:
+        """外部 worker 更新を reload_job_from_storage polling で拾える。"""
+        job_id = manager.create_job("test_strategy")
+        await manager.update_job_status(job_id, JobStatus.RUNNING, message="開始")
+        sse_manager = SSEManager(manager=manager, refresh_interval_seconds=0.1)
+
+        original_reload = manager.reload_job_from_storage
+        reload_calls = 0
+
+        async def _reload_job_from_storage(job_id_arg: str, *, notify: bool = False):
+            nonlocal reload_calls
+            reload_calls += 1
+            if notify and reload_calls == 1:
+                await manager.update_job_status(
+                    job_id_arg,
+                    JobStatus.COMPLETED,
+                    message="完了",
+                    progress=1.0,
+                )
+            return await original_reload(job_id_arg, notify=notify)
+
+        manager.reload_job_from_storage = _reload_job_from_storage  # type: ignore[method-assign]
+
+        events: list[dict[str, str]] = []
+        async for event in sse_manager.job_event_generator(job_id):
+            events.append(event)
+            if event["event"] == "completed":
+                break
+
+        assert reload_calls >= 1
+        assert any(event["event"] == "completed" for event in events)
+
 
 class TestSSEJobEvent:
     """SSEJobEventモデルのテスト"""

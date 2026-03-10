@@ -41,6 +41,41 @@ class TestComputeEndpoint:
         mock_compute.assert_called_once()
 
     @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_with_dataset_snapshot_source(self, mock_compute: MagicMock):
+        mock_compute.return_value = {
+            "stock_code": "7203",
+            "timeframe": "daily",
+            "meta": {"bars": 500},
+            "indicators": {
+                "sma_20": [{"date": "2024-01-01", "value": 100.5}],
+            },
+        }
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "source": "primeExTopix500",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 200
+        assert mock_compute.call_args.args[1] == "primeExTopix500"
+
+    def test_compute_rejects_blank_source(self):
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "source": "   ",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 422
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_not_found(self, mock_compute: MagicMock):
         mock_compute.side_effect = ValueError("銘柄 9999 のOHLCVデータが取得できません")
 

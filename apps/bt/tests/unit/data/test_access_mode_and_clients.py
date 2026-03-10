@@ -14,11 +14,9 @@ from src.infrastructure.data_access import clients, mode
 
 @pytest.fixture(autouse=True)
 def _reset_access_caches() -> Generator[None, None, None]:  # pyright: ignore[reportUnusedFunction]
-    clients._dataset_db_cache.clear()
-    clients._market_reader = None
+    clients.close_all_cached_data_access_clients()
     yield
-    clients._dataset_db_cache.clear()
-    clients._market_reader = None
+    clients.close_all_cached_data_access_clients()
 
 
 def _ns(**kwargs: Any) -> SimpleNamespace:
@@ -67,6 +65,15 @@ def test_resolve_dataset_db_raises_when_missing(
         clients._resolve_dataset_db("missing")
 
 
+def test_resolve_dataset_db_rejects_invalid_name(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+
+    with pytest.raises(ValueError, match="Invalid dataset name"):
+        clients._resolve_dataset_db("../sample.db")
+
+
 def test_resolve_dataset_db_uses_cache(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
@@ -86,6 +93,51 @@ def test_resolve_dataset_db_uses_cache(
 
     assert first is second
     assert len(init_calls) == 1
+
+
+def test_resolve_dataset_db_prefers_snapshot_reader(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    snapshot_dir = tmp_path / "sample"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("duckdb", encoding="utf-8")
+
+    init_calls: list[str] = []
+
+    class _FakeSnapshotReader:
+        def __init__(self, snapshot_path: str) -> None:
+            init_calls.append(snapshot_path)
+
+    monkeypatch.setattr(clients, "DatasetSnapshotReader", _FakeSnapshotReader)
+
+    resolved = clients._resolve_dataset_db("sample")
+
+    assert isinstance(resolved, _FakeSnapshotReader)
+    assert init_calls == [str(snapshot_dir)]
+
+
+def test_resolve_dataset_db_uses_snapshot_compatibility_db_when_duckdb_missing(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    _patch_settings(monkeypatch, tmp_path)
+    snapshot_dir = tmp_path / "sample"
+    snapshot_dir.mkdir()
+    compatibility_db_path = snapshot_dir / "dataset.db"
+    compatibility_db_path.write_text("", encoding="utf-8")
+
+    init_calls: list[str] = []
+
+    class _FakeDatasetDb:
+        def __init__(self, db_path: str) -> None:
+            init_calls.append(db_path)
+
+    monkeypatch.setattr(clients, "DatasetDb", _FakeDatasetDb)
+
+    resolved = clients._resolve_dataset_db("sample")
+
+    assert isinstance(resolved, _FakeDatasetDb)
+    assert init_calls == [str(compatibility_db_path)]
 
 
 def test_resolve_market_reader_raises_when_missing(
@@ -118,6 +170,27 @@ def test_resolve_market_reader_uses_singleton(
 
     assert first is second
     assert len(init_calls) == 1
+
+
+def test_close_all_cached_data_access_clients_closes_cached_resources() -> None:
+    events: list[str] = []
+
+    class _ClosableDataset:
+        def close(self) -> None:
+            events.append("dataset")
+
+    class _ClosableMarketReader:
+        def close(self) -> None:
+            events.append("market")
+
+    clients._dataset_db_cache["dataset"] = _ClosableDataset()
+    clients._market_reader_cache["market"] = _ClosableMarketReader()
+
+    clients.close_all_cached_data_access_clients()
+
+    assert events == ["dataset", "market"]
+    assert clients._dataset_db_cache == {}
+    assert clients._market_reader_cache == {}
 
 
 def test_conversion_helpers_empty_rows() -> None:
@@ -433,6 +506,39 @@ def test_direct_market_client_get_topix(monkeypatch: pytest.MonkeyPatch) -> None
     assert list(df.columns) == ["Open", "High", "Low", "Close"]
     assert "WHERE date >= ? AND date <= ?" in captured["sql"]
     assert captured["params"] == ("2024-01-01", "2024-12-31")
+
+
+def test_direct_market_client_close_is_noop() -> None:
+    clients.DirectMarketClient().close()
+
+
+def test_direct_market_client_get_stock_ohlcv(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeMarketReader:
+        def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                {
+                    "date": "2024-01-04",
+                    "open": 100.0,
+                    "high": 101.0,
+                    "low": 99.0,
+                    "close": 100.5,
+                    "volume": 1000,
+                }
+            ]
+
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda _snapshot_id=None: _FakeMarketReader())
+
+    market_client = clients.DirectMarketClient()
+    df = market_client.get_stock_ohlcv("7203", "2024-01-01", "2024-12-31")
+
+    assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
+    assert "FROM stock_data" in captured["sql"]
+    assert "ORDER BY date" in captured["sql"]
+    assert captured["params"] == ("7203", "72030", "2024-01-01", "2024-12-31")
 
 
 def test_direct_market_client_get_topix_empty(monkeypatch: pytest.MonkeyPatch) -> None:

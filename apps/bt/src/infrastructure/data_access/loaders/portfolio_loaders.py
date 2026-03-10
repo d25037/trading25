@@ -14,9 +14,12 @@ import pandas as pd
 import numpy as np
 from loguru import logger
 
+from src.infrastructure.data_access.clients import get_market_client
 from src.infrastructure.external_api.portfolio_client import PortfolioAPIClient
-from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.shared.models.portfolio import Portfolio, PortfolioItem, PortfolioSummary
+
+# Backward-compatible symbol for tests patching module-local client constructor.
+MarketAPIClient = get_market_client
 
 
 def _convert_portfolio_code_to_market_code(code: str) -> str:
