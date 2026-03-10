@@ -2269,6 +2269,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/snapshots/resolve": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Resolve market or dataset snapshot
+         * @description Resolve one logical snapshot contract for market and dataset planes.
+         */
+        get: operations["resolve_snapshot_api_snapshots_resolve_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/strategies": {
         parameters: {
             query?: never;
@@ -2685,6 +2705,62 @@ export interface components {
             symbol: string;
         };
         /**
+         * ArtifactIndex
+         * @description List of artifacts associated with a run.
+         */
+        ArtifactIndex: {
+            /**
+             * Artifacts
+             * @description Artifact records
+             */
+            artifacts?: components["schemas"]["ArtifactRecord"][];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+        };
+        /**
+         * ArtifactKind
+         * @description Artifact role within a run.
+         * @enum {string}
+         */
+        ArtifactKind: "html" | "metrics_json" | "manifest_json" | "result_summary" | "raw_result_json" | "attribution_json" | "strategy_yaml" | "history_yaml";
+        /**
+         * ArtifactRecord
+         * @description Artifact registry entry for a run output.
+         */
+        ArtifactRecord: {
+            /** @description Artifact role */
+            kind: components["schemas"]["ArtifactKind"];
+            /**
+             * Location
+             * @description Logical storage location when not stored on disk
+             */
+            location?: string | null;
+            /**
+             * Metadata
+             * @description Additional artifact metadata
+             */
+            metadata?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Path
+             * @description Filesystem path when stored on disk
+             */
+            path?: string | null;
+            /** @description Storage backend */
+            storage: components["schemas"]["ArtifactStorage"];
+        };
+        /**
+         * ArtifactStorage
+         * @description Physical storage backend for an artifact record.
+         * @enum {string}
+         */
+        ArtifactStorage: "filesystem" | "portfolio_db";
+        /**
          * AttributionArtifactContentResponse
          * @description 保存済み attribution JSON ファイル内容レスポンス
          */
@@ -2792,6 +2868,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -2809,6 +2887,8 @@ export interface components {
             progress?: number | null;
             /** @description 結果サマリー（完了時のみ） */
             result?: components["schemas"]["BacktestResultSummary"] | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -2839,6 +2919,10 @@ export interface components {
          * @description バックテスト結果レスポンス（詳細）
          */
         BacktestResultResponse: {
+            /** @description Resolved artifact index */
+            artifact_index?: components["schemas"]["ArtifactIndex"] | null;
+            /** @description Engine-neutral execution result */
+            canonical_result?: components["schemas"]["CanonicalExecutionResult"] | null;
             /**
              * Created At
              * Format: date-time
@@ -2865,6 +2949,8 @@ export interface components {
              * @description ジョブID
              */
             job_id: string;
+            /** @description Engine-neutral execution input contract */
+            run_spec?: components["schemas"]["RunSpec"] | null;
             /**
              * Strategy Name
              * @description 戦略名
@@ -2955,6 +3041,144 @@ export interface components {
             message: string;
             /** Success */
             success: boolean;
+        };
+        /**
+         * CanonicalExecutionMetrics
+         * @description Common scalar metrics available across execution engines.
+         */
+        CanonicalExecutionMetrics: {
+            /**
+             * Calmar Ratio
+             * @description Calmar ratio
+             */
+            calmar_ratio?: number | null;
+            /**
+             * Max Drawdown
+             * @description Max drawdown
+             */
+            max_drawdown?: number | null;
+            /**
+             * Sharpe Ratio
+             * @description Sharpe ratio
+             */
+            sharpe_ratio?: number | null;
+            /**
+             * Sortino Ratio
+             * @description Sortino ratio
+             */
+            sortino_ratio?: number | null;
+            /**
+             * Total Return
+             * @description Total return
+             */
+            total_return?: number | null;
+            /**
+             * Trade Count
+             * @description Closed trade count
+             */
+            trade_count?: number | null;
+            /**
+             * Win Rate
+             * @description Win rate
+             */
+            win_rate?: number | null;
+        };
+        /**
+         * CanonicalExecutionResult
+         * @description Engine-neutral result envelope for run outputs.
+         */
+        CanonicalExecutionResult: {
+            /**
+             * Dataset Name
+             * @description Legacy dataset name for compatibility
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Snapshot Id
+             * @description Pinned dataset snapshot identifier
+             */
+            dataset_snapshot_id?: string | null;
+            /** @description Execution engine family */
+            engine_family: components["schemas"]["EngineFamily"];
+            /**
+             * Execution Policy Version
+             * @description Execution semantics/policy version
+             */
+            execution_policy_version?: string | null;
+            /**
+             * Execution Time
+             * @description Execution time in seconds
+             */
+            execution_time?: number | null;
+            /**
+             * Market Snapshot Id
+             * @description Pinned market snapshot identifier
+             */
+            market_snapshot_id?: string | null;
+            /**
+             * Payload
+             * @description Original engine-specific payload
+             */
+            payload?: {
+                [key: string]: unknown;
+            } | null;
+            /**
+             * Run Id
+             * @description Run identifier
+             */
+            run_id: string;
+            /** @description Canonical run category */
+            run_type: components["schemas"]["RunType"];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Status
+             * @description Run status
+             */
+            status: string;
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+            /** @description Common scalar metrics when available */
+            summary_metrics?: components["schemas"]["CanonicalExecutionMetrics"] | null;
+        };
+        /**
+         * CompiledStrategyInputRequirements
+         * @description Declared inputs required by a compiled strategy.
+         */
+        CompiledStrategyInputRequirements: {
+            /**
+             * Required Data Domains
+             * @description Required data domains such as market/statements/margin
+             */
+            required_data_domains?: string[];
+            /**
+             * Required Features
+             * @description Required feature identifiers
+             */
+            required_features?: string[];
+            /**
+             * Required Fundamental Fields
+             * @description Required fundamental fields
+             */
+            required_fundamental_fields?: string[];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Signal Ids
+             * @description Compiled signal identifiers
+             */
+            signal_ids?: string[];
         };
         /** CreateSyncJobResponse */
         CreateSyncJobResponse: {
@@ -3535,6 +3759,12 @@ export interface components {
              */
             success: boolean;
         };
+        /**
+         * EngineFamily
+         * @description Execution engine family.
+         * @enum {string}
+         */
+        EngineFamily: "vectorbt" | "nautilus" | "unknown";
         /**
          * ErrorDetail
          * @description バリデーションエラー詳細
@@ -4558,11 +4788,10 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース
-             * @default dataset
-             * @enum {string}
+             * @description データソース ('market' or dataset snapshot名)
+             * @default market
              */
-            source: "market" | "dataset";
+            source: string;
             /**
              * Start Date
              * @description 開始日
@@ -4683,6 +4912,48 @@ export interface components {
             code: string;
             /** Count */
             count: number;
+        };
+        /**
+         * JobExecutionControl
+         * @description ジョブの durable execution control 状態
+         */
+        JobExecutionControl: {
+            /**
+             * Cancel Reason
+             * @description キャンセル理由
+             */
+            cancel_reason?: string | null;
+            /**
+             * Cancel Requested
+             * @description キャンセル要求が durable に記録されているか
+             * @default false
+             */
+            cancel_requested: boolean;
+            /**
+             * Cancel Requested At
+             * @description キャンセル要求受付時刻
+             */
+            cancel_requested_at?: string | null;
+            /**
+             * Last Heartbeat At
+             * @description 最後の heartbeat 受信時刻
+             */
+            last_heartbeat_at?: string | null;
+            /**
+             * Lease Expires At
+             * @description 現在の lease の失効時刻
+             */
+            lease_expires_at?: string | null;
+            /**
+             * Lease Owner
+             * @description 現在の execution lease owner
+             */
+            lease_owner?: string | null;
+            /**
+             * Timeout At
+             * @description 実行タイムアウト時刻
+             */
+            timeout_at?: string | null;
         };
         /**
          * JobStatus
@@ -4975,6 +5246,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -5000,6 +5273,8 @@ export interface components {
              * @description Lab結果データ（完了時のみ）
              */
             result_data?: (components["schemas"]["LabGenerateResult"] | components["schemas"]["LabEvolveResult"] | components["schemas"]["LabOptimizeResult"] | components["schemas"]["LabImproveResult"]) | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -5724,11 +5999,10 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース
+             * @description データソース ('market' or dataset snapshot名)
              * @default market
-             * @enum {string}
              */
-            source: "market" | "dataset";
+            source: string;
             /**
              * Start Date
              * @description 開始日
@@ -5977,6 +6251,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Html Path
              * @description 結果HTMLパス
@@ -5997,6 +6273,8 @@ export interface components {
              * @description 進捗（0.0 - 1.0）
              */
             progress?: number | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -6547,6 +6825,134 @@ export interface components {
             totalCompanies: number;
         };
         /**
+         * RunMetadata
+         * @description Resolved run metadata persisted in the experiment registry.
+         */
+        RunMetadata: {
+            /**
+             * Dataset Name
+             * @description Legacy dataset name for compatibility
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Snapshot Id
+             * @description Pinned dataset snapshot identifier
+             */
+            dataset_snapshot_id?: string | null;
+            /**
+             * @description Execution engine family
+             * @default unknown
+             */
+            engine_family: components["schemas"]["EngineFamily"];
+            /**
+             * Execution Policy Version
+             * @description Execution semantics/policy version
+             */
+            execution_policy_version?: string | null;
+            /**
+             * Market Snapshot Id
+             * @description Pinned market snapshot identifier
+             */
+            market_snapshot_id?: string | null;
+            /**
+             * Parent Run Id
+             * @description Parent run identifier for lineage
+             */
+            parent_run_id?: string | null;
+            /**
+             * Run Id
+             * @description Run identifier
+             */
+            run_id: string;
+            /** @description Canonical run category */
+            run_type: components["schemas"]["RunType"];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+        };
+        /**
+         * RunSpec
+         * @description Engine-neutral execution input contract.
+         */
+        RunSpec: {
+            /** @description Input requirements expected from compiled strategy IR */
+            compiled_strategy_requirements?: components["schemas"]["CompiledStrategyInputRequirements"] | null;
+            /**
+             * Dataset Name
+             * @description Legacy dataset name for compatibility
+             */
+            dataset_name?: string | null;
+            /**
+             * Dataset Snapshot Id
+             * @description Pinned dataset snapshot identifier
+             */
+            dataset_snapshot_id?: string | null;
+            /**
+             * @description Execution engine family
+             * @default unknown
+             */
+            engine_family: components["schemas"]["EngineFamily"];
+            /**
+             * Execution Policy Version
+             * @description Execution semantics/policy version
+             */
+            execution_policy_version?: string | null;
+            /**
+             * Market Snapshot Id
+             * @description Pinned market snapshot identifier
+             */
+            market_snapshot_id?: string | null;
+            /**
+             * Parameters
+             * @description Resolved run parameters
+             */
+            parameters?: {
+                [key: string]: unknown;
+            };
+            /**
+             * Parent Run Id
+             * @description Parent run identifier for lineage
+             */
+            parent_run_id?: string | null;
+            /** @description Canonical run category */
+            run_type: components["schemas"]["RunType"];
+            /**
+             * Schema Version
+             * @description Schema version
+             * @default 1
+             */
+            schema_version: number;
+            /**
+             * Strategy Fingerprint
+             * @description Stable strategy fingerprint when available
+             */
+            strategy_fingerprint?: string | null;
+            /**
+             * Strategy Name
+             * @description Resolved strategy name
+             */
+            strategy_name: string;
+            /**
+             * Strategy Source Ref
+             * @description Source reference for strategy definition
+             */
+            strategy_source_ref?: string | null;
+        };
+        /**
+         * RunType
+         * @description Canonical run category.
+         * @enum {string}
+         */
+        RunType: "backtest" | "optimization" | "attribution" | "screening" | "lab_generate" | "lab_evolve" | "lab_optimize" | "lab_improve" | "unknown";
+        /**
          * ScreeningJobRequest
          * @description Screening ジョブ作成リクエスト
          */
@@ -6607,6 +7013,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -6655,6 +7063,8 @@ export interface components {
              * @description 基準日（任意）
              */
             referenceDate?: string | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Sortby
              * @description 並び順の基準
@@ -6819,6 +7229,8 @@ export interface components {
              * @description エラーメッセージ
              */
             error?: string | null;
+            /** @description Durable execution control state */
+            execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
              * Job Id
              * @description ジョブID
@@ -6836,6 +7248,8 @@ export interface components {
             progress?: number | null;
             /** @description 寄与分析結果（完了時のみ） */
             result_data?: components["schemas"]["SignalAttributionResult"] | null;
+            /** @description Engine-neutral run metadata */
+            run_metadata?: components["schemas"]["RunMetadata"] | null;
             /**
              * Started At
              * @description 開始日時
@@ -6945,6 +7359,10 @@ export interface components {
          * @description シグナル寄与分析結果レスポンス（詳細）
          */
         SignalAttributionResultResponse: {
+            /** @description Resolved artifact index */
+            artifact_index?: components["schemas"]["ArtifactIndex"] | null;
+            /** @description Engine-neutral execution result */
+            canonical_result?: components["schemas"]["CanonicalExecutionResult"] | null;
             /**
              * Created At
              * Format: date-time
@@ -7312,6 +7730,58 @@ export interface components {
              * @description シグナルタイプ
              */
             type: string;
+        };
+        /**
+         * SnapshotResolveResponse
+         * @description Resolved snapshot metadata.
+         */
+        SnapshotResolveResponse: {
+            /**
+             * Backend
+             * @description resolved storage backend
+             */
+            backend: string;
+            /**
+             * Compatibility Db Path
+             * @description compatibility SQLite path
+             */
+            compatibility_db_path?: string | null;
+            /**
+             * Duckdb Path
+             * @description DuckDB path
+             */
+            duckdb_path?: string | null;
+            /**
+             * Manifest Path
+             * @description manifest path
+             */
+            manifest_path?: string | null;
+            /**
+             * Plane
+             * @description 解決された plane
+             * @enum {string}
+             */
+            plane: "market" | "dataset";
+            /**
+             * Primary Path
+             * @description primary readable artifact path
+             */
+            primary_path: string;
+            /**
+             * Requested Id
+             * @description 要求時の snapshot identifier
+             */
+            requested_id?: string | null;
+            /**
+             * Root Path
+             * @description snapshot root path
+             */
+            root_path: string;
+            /**
+             * Snapshot Id
+             * @description canonical snapshot identifier
+             */
+            snapshot_id: string;
         };
         /** DateRange */
         src__server__schemas__dataset__DateRange: {
@@ -15785,6 +16255,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    resolve_snapshot_api_snapshots_resolve_get: {
+        parameters: {
+            query: {
+                plane: "market" | "dataset";
+                snapshot_id?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["SnapshotResolveResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
             /** @description Internal Server Error */

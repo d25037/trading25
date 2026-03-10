@@ -19,6 +19,10 @@ from src.entrypoints.http.routes.html_file_utils import (
     read_html_file,
     rename_html_file,
 )
+from src.entrypoints.http.routes.job_response_utils import (
+    build_job_execution_control,
+    build_run_metadata,
+)
 from src.entrypoints.http.routes.utils import validate_path_param
 from src.entrypoints.http.schemas.backtest import (
     HtmlFileDeleteResponse,
@@ -66,6 +70,8 @@ def _build_optimization_job_response_from_job(job: JobInfo) -> OptimizationJobRe
         started_at=job.started_at,
         completed_at=job.completed_at,
         error=job.error,
+        run_metadata=build_run_metadata(job),
+        execution_control=build_job_execution_control(job),
         best_score=job.best_score,
         best_params=job.best_params,
         worst_score=job.worst_score,

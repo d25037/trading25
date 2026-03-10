@@ -15,6 +15,8 @@ from typing import Any
 
 from loguru import logger
 
+from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
+
 
 class MarimoExecutor:
     """
@@ -283,11 +285,7 @@ class MarimoExecutor:
         strategy_name = strategy_name or "unknown"
         shared_config = parameters.get("shared_config", {})
         dataset = shared_config.get("dataset", "")
-
-        if dataset:
-            dataset_name = Path(dataset).stem
-        else:
-            dataset_name = "unknown"
+        dataset_name = canonicalize_dataset_snapshot_id(dataset) or "unknown"
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 

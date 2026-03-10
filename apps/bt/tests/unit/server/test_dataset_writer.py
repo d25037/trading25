@@ -2,6 +2,7 @@
 
 from collections.abc import Generator
 import os
+import shutil
 import tempfile
 
 import pytest
@@ -19,6 +20,7 @@ def writer() -> Generator[DatasetWriter, None, None]:
     yield w
     w.close()
     os.unlink(path)
+    shutil.rmtree(w.snapshot_dir)
 
 
 def test_ensure_schema(writer: DatasetWriter) -> None:
@@ -28,6 +30,8 @@ def test_ensure_schema(writer: DatasetWriter) -> None:
     assert "stocks" in tables
     assert "stock_data" in tables
     assert "dataset_info" in tables
+    assert writer.duckdb_path.exists() is True
+    assert writer.parquet_dir.exists() is True
 
 
 def test_upsert_stocks(writer: DatasetWriter) -> None:
@@ -158,3 +162,44 @@ def test_existing_code_helpers_and_topix_presence(writer: DatasetWriter) -> None
     assert writer.get_existing_index_codes() == {"0040"}
     assert writer.get_existing_margin_codes() == {"7203"}
     assert writer.get_existing_statement_codes() == {"7203"}
+
+
+def test_close_exports_parquet_and_compatibility_artifact() -> None:
+    fd, path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+    writer = DatasetWriter(path)
+    try:
+        writer.upsert_stocks([
+            {
+                "code": "7203",
+                "company_name": "Toyota",
+                "market_code": "111",
+                "market_name": "プライム",
+                "sector_17_code": "7",
+                "sector_17_name": "自動車",
+                "sector_33_code": "3700",
+                "sector_33_name": "輸送用機器",
+                "listed_date": "2000-01-01",
+                "created_at": "2024-01-01",
+            }
+        ])
+        writer.upsert_stock_data([
+            {
+                "code": "7203",
+                "date": "2024-01-04",
+                "open": 100,
+                "high": 110,
+                "low": 90,
+                "close": 105,
+                "volume": 1000,
+                "created_at": "2024-01-04",
+            }
+        ])
+        writer.close()
+        assert writer.compatibility_db_path.exists() is True
+        assert writer.duckdb_path.exists() is True
+        assert (writer.parquet_dir / "stocks.parquet").exists() is True
+        assert (writer.parquet_dir / "stock_data.parquet").exists() is True
+    finally:
+        os.unlink(path)
+        shutil.rmtree(writer.snapshot_dir)
