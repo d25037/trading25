@@ -4,10 +4,16 @@
 
 import numpy as np
 import pandas as pd
+import pytest
+import vectorbt as vbt
 
 from src.domains.strategy.indicators.calculations import (
     compute_atr_support_line,
+    compute_macd,
+    compute_moving_average,
     compute_nbar_support,
+    compute_risk_adjusted_return,
+    compute_rsi,
     compute_trading_value_ma,
     compute_volume_mas,
     compute_volume_weighted_ema,
@@ -188,3 +194,65 @@ class TestComputeVolumeWeightedEMA:
         volume.iloc[0] = 0
         result = compute_volume_weighted_ema(self.close, volume, 10)
         assert len(result) == 50
+
+
+class TestComputeMovingAverage:
+    def test_invalid_ma_type_raises(self):
+        series = pd.Series([1.0, 2.0, 3.0])
+
+        with pytest.raises(ValueError, match="未対応のma_type"):
+            compute_moving_average(series, 2, ma_type="wma")  # type: ignore[arg-type]
+
+
+class TestVectorbtCompatibility:
+    def setup_method(self):
+        rng = np.random.default_rng(123)
+        self.close = pd.Series(
+            np.cumprod(1 + rng.normal(0, 0.01, 160)) * 100,
+            index=pd.date_range("2024-01-01", periods=160),
+        )
+
+    def test_compute_rsi_matches_vectorbt_default(self):
+        actual = compute_rsi(self.close, period=14)
+        expected = vbt.RSI.run(self.close, 14).rsi
+        aligned = pd.concat([actual, expected], axis=1).dropna()
+
+        assert not aligned.empty
+        assert np.allclose(aligned.iloc[:, 0], aligned.iloc[:, 1], atol=1e-10)
+
+    def test_compute_macd_matches_vectorbt_default(self):
+        actual = compute_macd(self.close, fast_period=12, slow_period=26, signal_period=9)
+        expected = vbt.MACD.run(self.close, fast_window=12, slow_window=26, signal_window=9)
+
+        for actual_series, expected_series in (
+            (actual.macd, expected.macd),
+            (actual.signal, expected.signal),
+            (actual.histogram, expected.hist),
+        ):
+            aligned = pd.concat([actual_series, expected_series], axis=1).dropna()
+            assert not aligned.empty
+            assert np.allclose(aligned.iloc[:, 0], aligned.iloc[:, 1], atol=1e-10)
+
+
+class TestComputeRiskAdjustedReturn:
+    def setup_method(self):
+        self.close = pd.Series([100.0, 101.0, 103.0, 102.0, 104.0, 106.0, 105.0, 107.0])
+
+    def test_sharpe_ratio_path_returns_series(self):
+        result = compute_risk_adjusted_return(
+            self.close,
+            lookback_period=3,
+            ratio_type="sharpe",
+        )
+
+        assert isinstance(result, pd.Series)
+        assert result.index.equals(self.close.index)
+        assert result.iloc[3:].notna().any()
+
+    def test_invalid_ratio_type_raises(self):
+        with pytest.raises(ValueError, match="不正なratio_type"):
+            compute_risk_adjusted_return(
+                self.close,
+                lookback_period=3,
+                ratio_type="omega",  # type: ignore[arg-type]
+            )

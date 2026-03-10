@@ -10,10 +10,12 @@ This module centralizes three distinct concepts that were previously blurred:
 from __future__ import annotations
 
 import pandas as pd
-import vectorbt as vbt
 from loguru import logger
 
-from src.domains.strategy.indicators import compute_volume_weighted_ema
+from src.domains.strategy.indicators import (
+    compute_moving_average,
+    compute_volume_weighted_ema,
+)
 
 
 def _compute_baseline(
@@ -26,9 +28,9 @@ def _compute_baseline(
 
     close = ohlc_data["Close"]
     if baseline_type == "sma":
-        return vbt.MA.run(close, baseline_period).ma
+        return compute_moving_average(close, baseline_period, ma_type="sma")
     if baseline_type == "ema":
-        return vbt.MA.run(close, baseline_period, ewm=True).ma
+        return compute_moving_average(close, baseline_period, ma_type="ema")
     if baseline_type == "vwema":
         if "Volume" not in ohlc_data.columns:
             raise ValueError(

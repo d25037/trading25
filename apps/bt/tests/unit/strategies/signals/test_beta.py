@@ -4,15 +4,21 @@
 
 import numpy as np
 import pandas as pd
+import pytest
 
 from src.domains.strategy.signals.beta import (
     beta_range_signal,
     beta_range_signal_with_value,
+    beta_stock_screen_signal,
     calculate_beta,
     dynamic_beta_signal,
+    fast_beta_nb,
     numba_rolling_beta,
     pandas_rolling_beta,
+    rolling_beta_multi_signal,
+    rolling_beta_nb,
     rolling_beta_calculation,
+    vectorbt_rolling_beta,
 )
 
 
@@ -89,6 +95,20 @@ class TestRollingBetaCalculation:
         )
         assert isinstance(rolling_beta, pd.Series)
         assert len(rolling_beta) == len(self.stock_price)
+
+    def test_vectorbt_rolling_beta_alias_matches_numba(self):
+        """vectorbt alias 関数は numba と一致する"""
+        alias_beta = vectorbt_rolling_beta(
+            self.stock_price,
+            self.market_price,
+            window=30,
+        )
+        numba_beta = numba_rolling_beta(
+            self.stock_price,
+            self.market_price,
+            window=30,
+        )
+        pd.testing.assert_series_equal(alias_beta, numba_beta)
 
 
 class TestBetaRangeSignal:
@@ -206,6 +226,28 @@ class TestBetaRangeSignal:
         assert isinstance(signal, pd.Series)
         assert signal.dtype == bool
 
+    def test_method_vectorbt_alias(self):
+        """vectorbt method は numba 互換 alias として動作する"""
+        signal_vectorbt = beta_range_signal(
+            self.high_beta_price,
+            self.market_price,
+            beta_min=0.5,
+            beta_max=1.5,
+            lookback_period=50,
+            fast=True,
+            method="vectorbt",
+        )
+        signal_numba = beta_range_signal(
+            self.high_beta_price,
+            self.market_price,
+            beta_min=0.5,
+            beta_max=1.5,
+            lookback_period=50,
+            fast=True,
+            method="numba",
+        )
+        pd.testing.assert_series_equal(signal_vectorbt, signal_numba)
+
     def test_fast_false(self):
         """従来実装テスト"""
         signal = beta_range_signal(
@@ -302,6 +344,28 @@ class TestPandasVsNumbaConsistency:
             assert correlation > 0.9
 
 
+class TestNumbaHelpers:
+    def test_fast_beta_nb_py_func_short_input_returns_nan(self):
+        result = fast_beta_nb.py_func(np.array([0.1]), np.array([0.1]))
+        assert np.isnan(result)
+
+    def test_fast_beta_nb_py_func_zero_variance_returns_nan(self):
+        result = fast_beta_nb.py_func(
+            np.array([1.0, 2.0, 3.0]),
+            np.array([0.0, 0.0, 0.0]),
+        )
+        assert np.isnan(result)
+
+    def test_rolling_beta_nb_py_func_populates_after_window(self):
+        result = rolling_beta_nb.py_func(
+            np.array([0.1, 0.15, 0.2, 0.25], dtype=np.float64),
+            np.array([0.05, 0.08, 0.1, 0.12], dtype=np.float64),
+            2,
+        )
+        assert np.isnan(result[0])
+        assert np.isfinite(result[-1])
+
+
 class TestBetaSignalEdgeCases:
     """エッジケーステスト"""
 
@@ -325,6 +389,22 @@ class TestBetaSignalEdgeCases:
         # lookback > データ長なので全てFalse
         assert signal.sum() == 0
 
+    def test_beta_range_signal_with_value_returns_none_when_no_valid_beta(self):
+        dates = pd.date_range("2024-01-01", periods=10)
+        stock = pd.Series(np.linspace(100, 110, 10), index=dates)
+        market = pd.Series(np.linspace(1000, 1100, 10), index=dates)
+
+        signal, beta_value = beta_range_signal_with_value(
+            stock,
+            market,
+            beta_min=0.5,
+            beta_max=1.5,
+            lookback_period=20,
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert beta_value is None
+
     def test_nan_handling(self):
         """NaN処理テスト"""
         dates = pd.date_range("2024-01-01", periods=100)
@@ -339,6 +419,58 @@ class TestBetaSignalEdgeCases:
         assert isinstance(signal, pd.Series)
         # NaN期間周辺はFalseになる
         assert not signal.iloc[40:50].any()
+
+    def test_vectorbt_rolling_beta_alias_matches_numba(self):
+        """vectorbt 互換関数は numba 実装と一致する"""
+        dates = pd.date_range("2024-01-01", periods=120)
+        stock = pd.Series(np.linspace(100, 130, 120), index=dates)
+        market = pd.Series(np.linspace(1000, 1120, 120), index=dates)
+
+        direct = vectorbt_rolling_beta(stock, market, window=20)
+        numba = numba_rolling_beta(stock, market, window=20)
+
+        pd.testing.assert_series_equal(direct, numba)
+
+    def test_invalid_method_raises(self):
+        """未対応 method は ValueError"""
+        dates = pd.date_range("2024-01-01", periods=80)
+        stock = pd.Series(np.linspace(100, 120, 80), index=dates)
+        market = pd.Series(np.linspace(1000, 1100, 80), index=dates)
+
+        with pytest.raises(ValueError, match="Unknown method"):
+            beta_range_signal_with_value(stock, market, method="unsupported")
+
+    def test_numba_py_funcs_cover_short_and_window_paths(self):
+        """Numba helper の Python 実装分岐を直接確認"""
+        assert np.isnan(fast_beta_nb.py_func(np.array([0.1]), np.array([0.1])))
+
+        rolling = rolling_beta_nb.py_func(
+            np.array([0.1, 0.2, 0.3, 0.4]),
+            np.array([0.1, 0.2, 0.3, 0.4]),
+            3,
+        )
+        assert np.isnan(rolling[0])
+        assert np.isnan(rolling[1])
+        assert not np.isnan(rolling[2])
+
+    def test_stock_screen_signal_defaults_false_for_missing_close(self):
+        """日足Closeを持たない銘柄は False 扱い"""
+        dates = pd.date_range("2024-01-01", periods=60)
+        market_data = pd.DataFrame({"Close": np.linspace(1000, 1100, 60)}, index=dates)
+        multi_stock_data = {
+            "7203": {"D": {"Close": pd.Series(np.linspace(100, 130, 60), index=dates)}},
+            "9999": {"D": {}},
+        }
+
+        result = beta_stock_screen_signal(
+            multi_stock_data,
+            market_data,
+            beta_min=0.0,
+            beta_max=3.0,
+            lookback_period=20,
+        )
+
+        assert result["9999"] is False
 
 
 class TestBetaRangeSignalWithValue:
@@ -420,7 +552,7 @@ class TestBetaRangeSignalWithValue:
 
     def test_different_methods(self):
         """異なる計算方法で動作テスト"""
-        for method in ["pandas", "numba"]:
+        for method in ["pandas", "numba", "vectorbt"]:
             signal, beta_value = beta_range_signal_with_value(
                 self.high_beta_price,
                 self.market_price,
@@ -433,3 +565,66 @@ class TestBetaRangeSignalWithValue:
             assert beta_value is not None
             # β値は妥当な範囲
             assert 0.5 < beta_value < 2.0
+
+    def test_vectorbt_value_alias_matches_numba(self):
+        """vectorbt method は β値も numba と一致する"""
+        _, beta_value_vectorbt = beta_range_signal_with_value(
+            self.high_beta_price,
+            self.market_price,
+            beta_min=0.5,
+            beta_max=1.5,
+            lookback_period=50,
+            method="vectorbt",
+        )
+        _, beta_value_numba = beta_range_signal_with_value(
+            self.high_beta_price,
+            self.market_price,
+            beta_min=0.5,
+            beta_max=1.5,
+            lookback_period=50,
+            method="numba",
+        )
+        assert beta_value_vectorbt == beta_value_numba
+
+
+class TestMultiAndScreenSignals:
+    def test_rolling_beta_multi_signal_returns_dataframe(self):
+        dates = pd.date_range("2024-01-01", periods=80)
+        market = pd.Series(np.linspace(100, 130, 80), index=dates)
+        multi = pd.DataFrame(
+            {
+                "1111": np.linspace(50, 70, 80),
+                "2222": np.linspace(80, 120, 80),
+            },
+            index=dates,
+        )
+
+        result = rolling_beta_multi_signal(
+            multi,
+            market,
+            beta_min=0.0,
+            beta_max=3.0,
+            lookback_period=20,
+        )
+
+        assert list(result.columns) == ["1111", "2222"]
+        assert len(result) == len(multi)
+
+    def test_beta_stock_screen_signal_handles_missing_close(self):
+        dates = pd.date_range("2024-01-01", periods=80)
+        market_data = pd.DataFrame({"Close": np.linspace(100, 130, 80)}, index=dates)
+        multi_stock_data = {
+            "1111": {"D": {"Close": pd.Series(np.linspace(50, 70, 80), index=dates)}},
+            "2222": {"D": {"Open": pd.Series(np.linspace(80, 90, 80), index=dates)}},
+        }
+
+        result = beta_stock_screen_signal(
+            multi_stock_data,
+            market_data,
+            beta_min=0.0,
+            beta_max=3.0,
+            lookback_period=20,
+        )
+
+        assert result["1111"] in (True, False)
+        assert result["2222"] is False

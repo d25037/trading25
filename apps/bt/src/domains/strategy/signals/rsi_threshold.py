@@ -5,8 +5,9 @@ RSIの閾値判定（RSI > 80、RSI < 30等）を行う汎用シグナル関数
 """
 
 import pandas as pd
-import vectorbt as vbt
 from loguru import logger
+
+from src.domains.strategy.indicators import compute_rsi
 
 
 def rsi_threshold_signal(
@@ -43,8 +44,8 @@ def rsi_threshold_signal(
         f"RSI閾値シグナル: 処理開始 (期間={period}, 閾値={threshold}, 条件={condition})"
     )
 
-    # VectorBTでRSI計算
-    rsi = vbt.RSI.run(close, period).rsi
+    # RSI計算
+    rsi = compute_rsi(close, period)
 
     # 閾値判定
     if condition == "below":

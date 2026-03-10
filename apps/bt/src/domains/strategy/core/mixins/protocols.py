@@ -7,7 +7,11 @@ Defines the expected interfaces that mixin classes assume from their host classe
 from typing import TYPE_CHECKING, Any, Literal, Protocol
 
 import pandas as pd
-import vectorbt as vbt
+
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionAdapterProtocol,
+    ExecutionPortfolioProtocol,
+)
 
 if TYPE_CHECKING:
     from src.domains.strategy.runtime.compiler import CompiledStrategyIR
@@ -27,8 +31,9 @@ class StrategyProtocol(Protocol):
     printlog: bool
 
     # Portfolio attributes
-    combined_portfolio: vbt.Portfolio | None
-    portfolio: vbt.Portfolio | None
+    combined_portfolio: ExecutionPortfolioProtocol | None
+    portfolio: ExecutionPortfolioProtocol | None
+    execution_adapter: ExecutionAdapterProtocol
 
     # Data management attributes
     include_margin_data: bool
@@ -115,7 +120,7 @@ class StrategyProtocol(Protocol):
     def run_multi_backtest_from_cached_signals(
         self,
         allocation_pct: float,
-    ) -> vbt.Portfolio:
+    ) -> ExecutionPortfolioProtocol:
         """Run grouped backtest by reusing cached close/entry/exit matrices."""
         ...
 

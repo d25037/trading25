@@ -8,6 +8,11 @@ from typing import Any
 
 import numpy as np
 
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionPortfolioProtocol,
+    canonical_metrics_from_portfolio,
+)
+
 
 def is_valid_metric(value: Any) -> bool:
     """
@@ -26,7 +31,7 @@ def is_valid_metric(value: Any) -> bool:
 
 
 def calculate_composite_score(
-    portfolio: Any,
+    portfolio: ExecutionPortfolioProtocol | Any,
     weights: dict[str, float],
 ) -> float:
     """
@@ -41,30 +46,21 @@ def calculate_composite_score(
         float: 複合スコア（各指標の重み付け合計）
     """
     metric_values: dict[str, float] = {}
+    canonical_metrics = canonical_metrics_from_portfolio(portfolio)
+    if canonical_metrics is None:
+        return 0.0
 
-    if "sharpe_ratio" in weights:
-        try:
-            sharpe = float(portfolio.sharpe_ratio())
-            if is_valid_metric(sharpe):
-                metric_values["sharpe_ratio"] = sharpe
-        except Exception:
-            pass
+    supported_metric_values = {
+        "sharpe_ratio": canonical_metrics.sharpe_ratio,
+        "calmar_ratio": canonical_metrics.calmar_ratio,
+        "total_return": canonical_metrics.total_return,
+    }
 
-    if "calmar_ratio" in weights:
-        try:
-            calmar = float(portfolio.calmar_ratio())
-            if is_valid_metric(calmar):
-                metric_values["calmar_ratio"] = calmar
-        except Exception:
-            pass
-
-    if "total_return" in weights:
-        try:
-            total_return = float(portfolio.total_return())
-            if is_valid_metric(total_return):
-                metric_values["total_return"] = total_return
-        except Exception:
-            pass
+    for metric, value in supported_metric_values.items():
+        if metric not in weights or value is None:
+            continue
+        if is_valid_metric(value):
+            metric_values[metric] = float(value)
 
     return calculate_weighted_score_from_metrics(metric_values, weights)
 

@@ -4,15 +4,20 @@
 
 from typing import Any, Mapping
 
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionPortfolioProtocol,
+    canonical_metrics_from_portfolio,
+)
+
 from .scoring import is_valid_metric
 
 
-def extract_trade_count(portfolio: Any) -> int:
+def extract_trade_count(portfolio: ExecutionPortfolioProtocol | Any) -> int:
     """
     ポートフォリオからclosed trades件数を取得
 
     Args:
-        portfolio: VectorBTポートフォリオオブジェクト
+        portfolio: 実行ポートフォリオ
 
     Returns:
         int: トレード件数（取得不能時は0）
@@ -42,33 +47,46 @@ def extract_trade_count(portfolio: Any) -> int:
 
 
 def collect_metrics(
-    portfolio: Any, scoring_weights: Mapping[str, float]
+    portfolio: ExecutionPortfolioProtocol | Any,
+    scoring_weights: Mapping[str, float],
 ) -> dict[str, float | int]:
     """
     ポートフォリオから最適化メトリクスを収集
 
     Args:
-        portfolio: VectorBTポートフォリオオブジェクト
+        portfolio: 実行ポートフォリオ
         scoring_weights: スコア計算対象メトリクスの重み
 
     Returns:
         dict[str, float | int]: メトリクス名と値のマッピング
     """
     metric_values: dict[str, float | int] = {}
+    canonical_metrics = canonical_metrics_from_portfolio(portfolio)
+    metric_lookup = {
+        "sharpe_ratio": (
+            canonical_metrics.sharpe_ratio if canonical_metrics is not None else None
+        ),
+        "calmar_ratio": (
+            canonical_metrics.calmar_ratio if canonical_metrics is not None else None
+        ),
+        "total_return": (
+            canonical_metrics.total_return if canonical_metrics is not None else None
+        ),
+    }
 
     for metric in scoring_weights.keys():
-        if metric == "sharpe_ratio":
-            value = portfolio.sharpe_ratio()
-        elif metric == "calmar_ratio":
-            value = portfolio.calmar_ratio()
-        elif metric == "total_return":
-            value = portfolio.total_return()
-        else:
+        value = metric_lookup.get(metric)
+        if value is None:
             continue
 
         metric_values[metric] = float(value) if is_valid_metric(value) else 0.0
 
     # 表示用途: closed trades件数（スコア計算には使用しない）
-    metric_values["trade_count"] = extract_trade_count(portfolio)
+    trade_count = (
+        canonical_metrics.trade_count if canonical_metrics is not None else None
+    )
+    metric_values["trade_count"] = (
+        int(trade_count) if trade_count is not None else extract_trade_count(portfolio)
+    )
 
     return metric_values

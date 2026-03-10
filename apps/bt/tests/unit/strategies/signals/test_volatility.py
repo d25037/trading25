@@ -9,6 +9,8 @@ import pandas as pd
 import numpy as np
 
 from src.domains.strategy.signals.volatility import (
+    bollinger_bands_signal,
+    bollinger_cross_signal,
     bollinger_position_signal,
     volatility_relative_signal,
     rolling_volatility_signal,
@@ -316,6 +318,111 @@ class TestBollingerPositionSignal:
         assert isinstance(signal_wide, pd.Series)
         # 広いバンドの方がTrue数が多い
         assert signal_wide.sum() >= signal_narrow.sum()
+
+
+class TestBollingerCrossSignal:
+    """bollinger_cross_signal() のテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=200)
+        close = np.concatenate(
+            [
+                np.linspace(100, 120, 100),
+                np.linspace(120, 95, 100),
+            ]
+        )
+        self.ohlc_data = pd.DataFrame(
+            {
+                "Open": close - 1,
+                "High": close + 2,
+                "Low": close - 2,
+                "Close": close,
+                "Volume": np.random.randint(1000, 10000, 200),
+            },
+            index=self.dates,
+        )
+
+    def test_cross_below_upper_returns_bool_series(self):
+        signal = bollinger_cross_signal(
+            self.ohlc_data,
+            window=20,
+            alpha=2.0,
+            level="upper",
+            direction="below",
+        )
+
+        assert isinstance(signal, pd.Series)
+        assert signal.dtype == bool
+        assert len(signal) == len(self.ohlc_data)
+
+    def test_lookback_extends_cross_event(self):
+        signal_short = bollinger_cross_signal(
+            self.ohlc_data,
+            window=20,
+            alpha=2.0,
+            level="middle",
+            direction="below",
+            lookback_days=1,
+        )
+        signal_long = bollinger_cross_signal(
+            self.ohlc_data,
+            window=20,
+            alpha=2.0,
+            level="middle",
+            direction="below",
+            lookback_days=5,
+        )
+
+        assert signal_long.sum() >= signal_short.sum()
+
+    def test_invalid_direction_raises(self):
+        with pytest.raises(ValueError, match="不正なdirection"):
+            bollinger_cross_signal(
+                self.ohlc_data,
+                window=20,
+                alpha=2.0,
+                level="upper",
+                direction="invalid",
+            )
+
+
+class TestBollingerBandsSignalAlias:
+    """後方互換 alias のテスト"""
+
+    def setup_method(self):
+        self.dates = pd.date_range("2023-01-01", periods=120)
+        close = np.linspace(100, 110, 120)
+        self.ohlc_data = pd.DataFrame(
+            {
+                "Open": close - 1,
+                "High": close + 1,
+                "Low": close - 1,
+                "Close": close,
+                "Volume": np.random.randint(1000, 10000, 120),
+            },
+            index=self.dates,
+        )
+
+    def test_alias_maps_to_position_signal(self):
+        alias_signal = bollinger_bands_signal(
+            self.ohlc_data,
+            window=20,
+            alpha=2.0,
+            position="below_upper",
+        )
+        direct_signal = bollinger_position_signal(
+            self.ohlc_data,
+            window=20,
+            alpha=2.0,
+            level="upper",
+            direction="below",
+        )
+
+        pd.testing.assert_series_equal(alias_signal, direct_signal)
+
+    def test_invalid_position_raises(self):
+        with pytest.raises(ValueError, match="不正なposition"):
+            bollinger_bands_signal(self.ohlc_data, position="invalid")
 
 
 class TestVolatilitySignalIntegration:

@@ -6,8 +6,10 @@ Note: 循環import回避のため importlib で直接モジュールをロード
 
 import random
 import sys
+import types
 from unittest.mock import MagicMock
 
+import pandas as pd
 import pytest
 
 # 循環import回避: src.domains.optimization をダミーで挿入してからインポート
@@ -38,6 +40,7 @@ from src.domains.strategy.utils.optimization import (  # noqa: E402
     ParameterOptimizer,
     ParameterRange,
 )
+from src.domains.strategy.utils import optimization as optimization_module  # noqa: E402
 
 
 # ===== Helpers =====
@@ -171,6 +174,194 @@ class TestGenerateRandomCombinations:
             assert "b" in c
 
 
+class TestSearchFlows:
+    def test_grid_search_limits_combinations_and_normalizes(self, monkeypatch):
+        opt = _make_optimizer()
+        combos = [{"a": 1}, {"a": 2}, {"a": 3}]
+        sentinel = OptimizationResult(
+            best_params={"a": 1},
+            best_score=1.0,
+            best_portfolio="p",
+            all_results=[{"params": {"a": 1}, "score": 1.0, "portfolio": "p"}],
+            scoring_weights=opt.scoring_weights,
+        )
+
+        monkeypatch.setattr(opt, "_generate_param_combinations", lambda _ranges: combos)
+        monkeypatch.setattr(opt, "_run_optimization", lambda _combos: sentinel.all_results)
+        monkeypatch.setattr(
+            optimization_module,
+            "normalize_and_recalculate_scores",
+            lambda results, _weights: results,
+        )
+        monkeypatch.setattr(opt, "_create_optimization_result", lambda results: sentinel)
+        monkeypatch.setattr("random.sample", lambda items, n: items[:n])
+
+        result = opt.grid_search([ParameterRange("a", [1, 2, 3])], max_combinations=2)
+
+        assert result is sentinel
+
+    def test_random_search_uses_generated_trials(self, monkeypatch):
+        opt = _make_optimizer()
+        sentinel = OptimizationResult(
+            best_params={"a": 1},
+            best_score=1.0,
+            best_portfolio="p",
+            all_results=[{"params": {"a": 1}, "score": 1.0, "portfolio": "p"}],
+            scoring_weights=opt.scoring_weights,
+        )
+
+        monkeypatch.setattr(
+            opt,
+            "_generate_random_combinations",
+            lambda _ranges, trials: [{"a": 1}] * trials,
+        )
+        monkeypatch.setattr(opt, "_run_optimization", lambda _combos: sentinel.all_results)
+        monkeypatch.setattr(
+            optimization_module,
+            "normalize_and_recalculate_scores",
+            lambda results, _weights: results,
+        )
+        monkeypatch.setattr(opt, "_create_optimization_result", lambda results: sentinel)
+
+        result = opt.random_search([ParameterRange("a", [1, 2, 3])], n_trials=4)
+
+        assert result is sentinel
+
+    def test_run_optimization_single_process_skips_none_results(self, monkeypatch):
+        opt = _make_optimizer()
+        opt.n_jobs = 1
+        results_iter = iter([{"params": {"a": 1}}, None])
+
+        monkeypatch.setattr(opt, "_evaluate_single_params", lambda _params: next(results_iter))
+
+        results = opt._run_optimization([{"a": 1}, {"a": 2}])
+
+        assert results == [{"params": {"a": 1}}]
+
+    def test_run_optimization_parallel_processes_futures(self, monkeypatch):
+        opt = _make_optimizer()
+        opt.n_jobs = 2
+
+        class _FakeFuture:
+            def __init__(self, result):
+                self._result = result
+
+            def result(self):
+                return self._result
+
+        class _FakeExecutor:
+            def __init__(self, max_workers):
+                self.max_workers = max_workers
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                return False
+
+            def submit(self, fn, params):
+                return _FakeFuture(fn(params))
+
+        monkeypatch.setattr(optimization_module, "ProcessPoolExecutor", _FakeExecutor)
+        monkeypatch.setattr(optimization_module, "as_completed", lambda futures: list(futures))
+        monkeypatch.setattr(opt, "_evaluate_single_params", lambda params: {"params": params})
+
+        results = opt._run_optimization([{"a": 1}, {"a": 2}])
+
+        assert results == [{"params": {"a": 1}}, {"params": {"a": 2}}]
+
+    def test_evaluate_single_params_success(self):
+        strategy_instance = MagicMock()
+        portfolio_equal = _make_mock_portfolio(sharpe=1.0)
+        portfolio_final = _make_mock_portfolio(sharpe=2.0, total_return=0.3)
+        strategy_instance.run_backtest.side_effect = [portfolio_equal, portfolio_final]
+        strategy_instance.calculate_kelly_allocations.return_value = {"7203": 0.5}
+
+        strategy_class = MagicMock(return_value=strategy_instance)
+        shared_config = MagicMock(kelly_fraction=0.4)
+        opt = ParameterOptimizer(
+            strategy_class=strategy_class,
+            strategy_kwargs={"shared_config": shared_config},
+            scoring_weights={"sharpe_ratio": 1.0},
+        )
+
+        result = opt._evaluate_single_params({"foo": 1})
+
+        assert result is not None
+        assert result["score"] == pytest.approx(2.0)
+        assert result["metric_values"]["sharpe_ratio"] == pytest.approx(2.0)
+        strategy_class.assert_called_once_with(shared_config=shared_config, foo=1, printlog=False)
+
+    def test_evaluate_single_params_returns_none_on_exception(self):
+        strategy_class = MagicMock(side_effect=RuntimeError("boom"))
+        opt = ParameterOptimizer(
+            strategy_class=strategy_class,
+            strategy_kwargs={},
+            scoring_weights={"sharpe_ratio": 1.0},
+        )
+
+        assert opt._evaluate_single_params({"foo": 1}) is None
+
+
+class TestSearchEntryPoints:
+    def test_grid_search_limits_combinations_and_returns_result(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        opt = _make_optimizer()
+        ranges = [
+            ParameterRange("a", [1, 2]),
+            ParameterRange("b", [10, 20]),
+        ]
+
+        monkeypatch.setattr(
+            opt,
+            "_run_optimization",
+            lambda combos: [{"params": combo, "score": 1.0, "portfolio": "p"} for combo in combos],
+        )
+        monkeypatch.setattr(
+            optimization_module,
+            "normalize_and_recalculate_scores",
+            lambda results, weights: results,
+        )
+        monkeypatch.setattr(
+            opt,
+            "_create_optimization_result",
+            lambda results: ("done", len(results)),
+        )
+
+        result = opt.grid_search(ranges, max_combinations=2)
+
+        assert result == ("done", 2)
+
+    def test_random_search_runs_requested_trials(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        opt = _make_optimizer()
+        ranges = [ParameterRange("a", [1, 2, 3])]
+
+        monkeypatch.setattr(
+            opt,
+            "_run_optimization",
+            lambda combos: [{"params": combo, "score": 1.0, "portfolio": "p"} for combo in combos],
+        )
+        monkeypatch.setattr(
+            optimization_module,
+            "normalize_and_recalculate_scores",
+            lambda results, weights: results,
+        )
+        monkeypatch.setattr(
+            opt,
+            "_create_optimization_result",
+            lambda results: ("random", len(results)),
+        )
+
+        result = opt.random_search(ranges, n_trials=3)
+
+        assert result == ("random", 3)
+
+
 # ===== _calculate_composite_score =====
 
 
@@ -188,6 +379,64 @@ class TestCalculateCompositeScore:
         opt.scoring_weights = {}
         with pytest.raises(ValueError, match="scoring_weights is not set"):
             opt._calculate_composite_score(MagicMock(), MagicMock())
+
+
+class TestRunOptimizationBranches:
+    def test_run_optimization_single_process_filters_none_results(self):
+        opt = _make_optimizer()
+        opt.n_jobs = 1
+        calls = iter(
+            [
+                {"params": {"a": 1}, "score": 1.0, "portfolio": "p"},
+                None,
+                {"params": {"a": 3}, "score": 0.5, "portfolio": "p"},
+            ]
+        )
+        opt._evaluate_single_params = lambda params: next(calls)
+
+        results = opt._run_optimization([{"a": 1}, {"a": 2}, {"a": 3}])
+
+        assert len(results) == 2
+
+    def test_run_optimization_parallel_collects_completed_futures(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ):
+        opt = _make_optimizer()
+        opt.n_jobs = 2
+
+        class _FakeFuture:
+            def __init__(self, result):
+                self._result = result
+
+            def result(self):
+                return self._result
+
+        class _FakeExecutor:
+            def __init__(self, *args, **kwargs):
+                _ = (args, kwargs)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, exc_type, exc, tb):
+                _ = (exc_type, exc, tb)
+                return None
+
+            def submit(self, fn, params):
+                return _FakeFuture(fn(params))
+
+        monkeypatch.setattr(optimization_module, "ProcessPoolExecutor", _FakeExecutor)
+        monkeypatch.setattr(optimization_module, "as_completed", lambda futures: list(futures))
+        monkeypatch.setattr(
+            opt,
+            "_evaluate_single_params",
+            lambda params: {"params": params, "score": 1.0, "portfolio": "p"},
+        )
+
+        results = opt._run_optimization([{"a": 1}, {"a": 2}])
+
+        assert len(results) == 2
 
 
 # ===== Metric extractors =====
@@ -263,6 +512,69 @@ class TestMetricExtractors:
         p.trades.records_readable = MagicMock(spec=[])
         assert opt._extract_win_rate(p, MagicMock()) == 0.0
 
+    def test_extract_win_rate_uses_records_readable_fallback(self):
+        opt = _make_optimizer()
+        p = MagicMock()
+        p.trades.win_rate.side_effect = Exception("fail")
+        p.trades.records_readable = pd.DataFrame({"PnL": [1.0, -0.5, 0.2, 0.3]})
+
+        assert opt._extract_win_rate(p, MagicMock()) == pytest.approx(0.75)
+
+
+class TestEvaluateSingleParams:
+    def test_evaluate_single_params_success(self):
+        class _FakeStrategy:
+            def __init__(self, **kwargs):
+                self.kwargs = kwargs
+                self.calls = 0
+
+            def run_backtest(self, custom_allocations=None):
+                self.calls += 1
+                portfolio = _make_mock_portfolio(
+                    sharpe=1.2 if custom_allocations is None else 2.0,
+                    total_return=0.1 if custom_allocations is None else 0.3,
+                    calmar=1.1 if custom_allocations is None else 2.5,
+                    max_dd=0.2,
+                    win_rate=0.6,
+                )
+                portfolio.custom_allocations = custom_allocations
+                return portfolio
+
+            def calculate_kelly_allocations(self, portfolio, kelly_fraction=0.5):
+                assert portfolio is not None
+                assert kelly_fraction == 0.7
+                return {"1111": 0.7}
+
+        opt = ParameterOptimizer(
+            strategy_class=_FakeStrategy,
+            strategy_kwargs={"shared_config": types.SimpleNamespace(kelly_fraction=0.7)},
+            scoring_weights={"sharpe_ratio": 0.6, "total_return": 0.4},
+        )
+
+        result = opt._evaluate_single_params({"window": 20})
+
+        assert result is not None
+        assert result["params"] == {"window": 20}
+        assert result["metric_values"]["sharpe_ratio"] == 2.0
+        assert result["metric_values"]["total_return"] == 0.3
+
+    def test_evaluate_single_params_failure_returns_none(self):
+        class _BrokenStrategy:
+            def __init__(self, **kwargs):
+                _ = kwargs
+
+            def run_backtest(self, custom_allocations=None):
+                _ = custom_allocations
+                raise RuntimeError("boom")
+
+        opt = ParameterOptimizer(
+            strategy_class=_BrokenStrategy,
+            strategy_kwargs={},
+            scoring_weights={"sharpe_ratio": 1.0},
+        )
+
+        assert opt._evaluate_single_params({"window": 20}) is None
+
 
 # ===== _create_optimization_result =====
 
@@ -314,3 +626,87 @@ class TestGetOptimizationSummary:
         assert "a" in df.columns
         assert df.iloc[0]["score"] == 0.9
         assert df.iloc[-1]["score"] == 0.3
+
+
+class TestPlotOptimizationSurface:
+    def test_plot_optimization_surface_save_path(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        tmp_path,
+    ):
+        opt = _make_optimizer()
+        result = OptimizationResult(
+            best_params={"a": 1},
+            best_score=1.0,
+            best_portfolio="p",
+            all_results=[
+                {"params": {"x": 1, "y": 10}, "score": 0.1},
+                {"params": {"x": 2, "y": 20}, "score": 0.2},
+            ],
+            scoring_weights={"sharpe_ratio": 1.0},
+        )
+        save_path = tmp_path / "surface.png"
+        saved_paths: list[object] = []
+
+        class _FakeAxes:
+            def scatter(self, *args, **kwargs):
+                _ = (args, kwargs)
+                return object()
+
+            def set_xlabel(self, value):
+                _ = value
+
+            def set_ylabel(self, value):
+                _ = value
+
+            def set_zlabel(self, value):
+                _ = value
+
+            def set_title(self, value):
+                _ = value
+
+        class _FakeFigure:
+            def add_subplot(self, *args, **kwargs):
+                _ = (args, kwargs)
+                return _FakeAxes()
+
+        fake_plt = types.SimpleNamespace(
+            figure=lambda **kwargs: _FakeFigure(),
+            colorbar=lambda value: value,
+            savefig=lambda path: saved_paths.append(path),
+            show=lambda: None,
+        )
+        monkeypatch.setitem(sys.modules, "matplotlib.pyplot", fake_plt)
+        monkeypatch.setitem(sys.modules, "mpl_toolkits.mplot3d", types.SimpleNamespace(Axes3D=object))
+
+        opt.plot_optimization_surface(result, "x", "y", save_path=str(save_path))
+
+        assert saved_paths == [str(save_path)]
+
+    def test_plot_optimization_surface_import_error_prints_hint(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+        capsys: pytest.CaptureFixture[str],
+    ):
+        opt = _make_optimizer()
+        result = OptimizationResult(
+            best_params={"a": 1},
+            best_score=1.0,
+            best_portfolio="p",
+            all_results=[{"params": {"x": 1, "y": 10}, "score": 0.1}],
+            scoring_weights={"sharpe_ratio": 1.0},
+        )
+
+        original_import = __import__
+
+        def _fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+            if name in {"matplotlib.pyplot", "mpl_toolkits.mplot3d"}:
+                raise ImportError("missing")
+            return original_import(name, globals, locals, fromlist, level)
+
+        monkeypatch.setattr("builtins.__import__", _fake_import)
+
+        opt.plot_optimization_surface(result, "x", "y")
+
+        captured = capsys.readouterr()
+        assert "matplotlib が必要です" in captured.out

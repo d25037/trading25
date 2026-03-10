@@ -5,8 +5,9 @@ RSIスプレッドシグナル実装
 """
 
 import pandas as pd
-import vectorbt as vbt
 from loguru import logger
+
+from src.domains.strategy.indicators import compute_rsi
 
 
 def rsi_spread_signal(
@@ -56,9 +57,9 @@ def rsi_spread_signal(
             f"短期期間({fast_period})は長期期間({slow_period})より小さい必要があります"
         )
 
-    # VectorBTでRSI計算（短期・長期）
-    rsi_fast = vbt.RSI.run(close, fast_period).rsi
-    rsi_slow = vbt.RSI.run(close, slow_period).rsi
+    # RSI計算（短期・長期）
+    rsi_fast = compute_rsi(close, fast_period)
+    rsi_slow = compute_rsi(close, slow_period)
 
     # スプレッド計算（短期RSI - 長期RSI）
     spread = rsi_fast - rsi_slow

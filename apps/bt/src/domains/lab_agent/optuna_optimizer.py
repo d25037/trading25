@@ -15,6 +15,7 @@ import pandas as pd
 from loguru import logger
 import random
 
+from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
 # 型チェック時のみoptunaをインポート
 if TYPE_CHECKING:
     import optuna
@@ -787,9 +788,16 @@ class OptunaOptimizer:
 
     def _extract_metrics(self, portfolio: Any) -> tuple[float, float, float]:
         """ポートフォリオから評価メトリクスを抽出する。"""
-        sharpe = self._safe_metric(portfolio.sharpe_ratio())
-        calmar = self._safe_metric(portfolio.calmar_ratio())
-        total_return = self._safe_metric(portfolio.total_return())
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
+        sharpe = self._safe_metric(
+            summary_metrics.sharpe_ratio if summary_metrics is not None else None
+        )
+        calmar = self._safe_metric(
+            summary_metrics.calmar_ratio if summary_metrics is not None else None
+        )
+        total_return = self._safe_metric(
+            summary_metrics.total_return if summary_metrics is not None else None
+        )
         return sharpe, calmar, total_return
 
     def _calculate_weighted_score(

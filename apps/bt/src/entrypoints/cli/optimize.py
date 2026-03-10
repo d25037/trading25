@@ -9,6 +9,7 @@ import sys
 from rich.console import Console
 from rich.table import Table
 
+from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
 from src.domains.optimization.engine import ParameterOptimizationEngine
 
 console = Console()
@@ -184,25 +185,26 @@ def _display_best_params(result):
     # パフォーマンス指標
     console.print("  パフォーマンス指標:", style="cyan")
     try:
-        portfolio = result.best_portfolio
+        metrics = canonical_metrics_from_portfolio(result.best_portfolio)
+        if metrics is None:
+            raise ValueError("summary metrics unavailable")
 
-        # Sharpe Ratio
-        sharpe = portfolio.sharpe_ratio()
-        console.print(f"    • Sharpe Ratio: [bold]{sharpe:.4f}[/bold]", style="dim")
-
-        # Calmar Ratio
-        calmar = portfolio.calmar_ratio()
-        console.print(f"    • Calmar Ratio: [bold]{calmar:.4f}[/bold]", style="dim")
-
-        # Total Return
-        total_return = portfolio.total_return()
         console.print(
-            f"    • Total Return: [bold]{total_return:.2%}[/bold]", style="dim"
+            f"    • Sharpe Ratio: [bold]{(metrics.sharpe_ratio or 0.0):.4f}[/bold]",
+            style="dim",
         )
-
-        # Max Drawdown
-        max_dd = portfolio.max_drawdown()
-        console.print(f"    • Max Drawdown: [bold]{max_dd:.2%}[/bold]", style="dim")
+        console.print(
+            f"    • Calmar Ratio: [bold]{(metrics.calmar_ratio or 0.0):.4f}[/bold]",
+            style="dim",
+        )
+        console.print(
+            f"    • Total Return: [bold]{(metrics.total_return or 0.0):.2%}[/bold]",
+            style="dim",
+        )
+        console.print(
+            f"    • Max Drawdown: [bold]{(metrics.max_drawdown or 0.0):.2%}[/bold]",
+            style="dim",
+        )
 
     except Exception as e:
         console.print(f"    （指標取得エラー: {e}）", style="dim red")

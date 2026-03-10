@@ -20,6 +20,7 @@ from src.infrastructure.data_access.mode import (
     data_access_mode_context,
     normalize_data_access_mode,
 )
+from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
 from src.domains.backtest.core.marimo_executor import MarimoExecutor
 from src.domains.strategy.runtime.loader import ConfigLoader
 
@@ -324,10 +325,18 @@ class BacktestRunner:
         if portfolio is None:
             return {}
 
+        metrics = canonical_metrics_from_portfolio(portfolio)
+        if metrics is not None:
+            return {
+                "total_return": metrics.total_return,
+                "sharpe_ratio": metrics.sharpe_ratio,
+                "calmar_ratio": metrics.calmar_ratio,
+            }
+
         return {
-            "total_return": self._coerce_metric(portfolio.total_return()),
-            "sharpe_ratio": self._coerce_metric(portfolio.sharpe_ratio()),
-            "calmar_ratio": self._coerce_metric(portfolio.calmar_ratio()),
+            "total_return": self._coerce_metric(getattr(portfolio, "total_return", lambda: None)()),
+            "sharpe_ratio": self._coerce_metric(getattr(portfolio, "sharpe_ratio", lambda: None)()),
+            "calmar_ratio": self._coerce_metric(getattr(portfolio, "calmar_ratio", lambda: None)()),
         }
 
     @staticmethod

@@ -11,8 +11,12 @@ YAML完全制御アーキテクチャの中核クラスを提供します：
 from typing import TYPE_CHECKING, Dict, Optional
 
 import pandas as pd
-import vectorbt as vbt
 
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionAdapterProtocol,
+    ExecutionPortfolioProtocol,
+    VectorbtAdapter,
+)
 from src.domains.strategy.runtime.compiler import (
     CompiledStrategyIR,
     compile_runtime_strategy,
@@ -54,6 +58,7 @@ class YamlConfigurableStrategy(
         shared_config: "SharedConfig",
         entry_filter_params: Optional[SignalParams] = None,
         exit_trigger_params: Optional[SignalParams] = None,
+        execution_adapter: ExecutionAdapterProtocol | None = None,
     ):
         """
         YAML設定駆動戦略クラスの初期化
@@ -107,8 +112,9 @@ class YamlConfigurableStrategy(
 
         # マルチアセット用の追加属性
         self.multi_data_dict: Optional[Dict[str, Dict[str, pd.DataFrame]]] = None
-        self.combined_portfolio: Optional[vbt.Portfolio] = None
-        self.portfolio: Optional[vbt.Portfolio] = None
+        self.combined_portfolio: Optional[ExecutionPortfolioProtocol] = None
+        self.portfolio: Optional[ExecutionPortfolioProtocol] = None
+        self.execution_adapter = execution_adapter or VectorbtAdapter()
         self._grouped_portfolio_inputs_cache: Optional[
             tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.DataFrame]
         ] = None

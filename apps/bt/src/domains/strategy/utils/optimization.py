@@ -11,6 +11,11 @@ from typing import Any, NamedTuple
 
 import pandas as pd
 
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionPortfolioProtocol,
+    canonical_metrics_from_portfolio,
+    ensure_execution_portfolio,
+)
 from src.domains.optimization.scoring import (
     is_valid_metric,
     normalize_and_recalculate_scores,
@@ -24,7 +29,7 @@ class OptimizationResult(NamedTuple):
 
     best_params: dict[str, Any]
     best_score: float
-    best_portfolio: Any
+    best_portfolio: ExecutionPortfolioProtocol
     all_results: list[dict[str, Any]]
     scoring_weights: dict[str, float]
     html_path: str = ""  # 可視化HTMLパス（オプション）
@@ -235,7 +240,7 @@ class ParameterOptimizer:
 
             # 1. 初回バックテスト実行（等分配）
             # Kelly基準計算用に全銘柄均等配分でバックテスト
-            portfolio_equal = strategy.run_backtest()
+            portfolio_equal = ensure_execution_portfolio(strategy.run_backtest())
 
             # 2. Kelly基準による最適資金配分計算（必須）
             # SharedConfigからKelly設定を取得
@@ -247,8 +252,10 @@ class ParameterOptimizer:
             )
 
             # 3. Kelly配分バックテスト実行（最終評価）
-            portfolio_final = strategy.run_backtest(
-                custom_allocations=kelly_allocations
+            portfolio_final = ensure_execution_portfolio(
+                strategy.run_backtest(
+                    custom_allocations=kelly_allocations
+                )
             )
 
             # 4. 指標を計算（Kelly配分結果を使用）
@@ -292,7 +299,9 @@ class ParameterOptimizer:
             print(f"警告: 重みの合計が1.0ではありません（合計={total_weight:.3f}）")
 
     def _calculate_composite_score(
-        self, portfolio: Any, strategy: YamlConfigurableStrategy
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy: YamlConfigurableStrategy,
     ) -> float:
         """
         複合スコアを計算（複数指標の重み付け合計・正規化前）
@@ -303,7 +312,7 @@ class ParameterOptimizer:
               Min-Max正規化を行い、複合スコアを再計算する
 
         Args:
-            portfolio: VectorBTポートフォリオ（Kelly配分後）
+            portfolio: 実行ポートフォリオ（Kelly配分後）
             strategy: 戦略インスタンス
 
         Returns:
@@ -320,40 +329,47 @@ class ParameterOptimizer:
         return composite_score
 
     def _extract_sharpe_ratio(
-        self, portfolio: Any, strategy: YamlConfigurableStrategy
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy: YamlConfigurableStrategy,
     ) -> float:
         """シャープレシオを抽出"""
-        try:
-            sharpe = portfolio.sharpe_ratio()
-            if not is_valid_metric(sharpe):
-                return 0.0
-            return float(sharpe)
-        except Exception:
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
+        sharpe = summary_metrics.sharpe_ratio if summary_metrics is not None else None
+        if sharpe is None or not is_valid_metric(sharpe):
             return 0.0
+        return float(sharpe)
 
     def _extract_total_return(
-        self, portfolio: Any, strategy: YamlConfigurableStrategy
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy: YamlConfigurableStrategy,
     ) -> float:
         """トータルリターンを抽出"""
-        try:
-            return float(portfolio.total_return())
-        except Exception:
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
+        total_return = (
+            summary_metrics.total_return if summary_metrics is not None else None
+        )
+        if total_return is None or not is_valid_metric(total_return):
             return 0.0
+        return float(total_return)
 
     def _extract_calmar_ratio(
-        self, portfolio: Any, strategy: YamlConfigurableStrategy
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy: YamlConfigurableStrategy,
     ) -> float:
         """カルマーレシオを抽出"""
-        try:
-            calmar = portfolio.calmar_ratio()
-            if not is_valid_metric(calmar):
-                return 0.0
-            return float(calmar)
-        except Exception:
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
+        calmar = summary_metrics.calmar_ratio if summary_metrics is not None else None
+        if calmar is None or not is_valid_metric(calmar):
             return 0.0
+        return float(calmar)
 
     def _extract_max_drawdown(
-        self, portfolio: Any, strategy: YamlConfigurableStrategy
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy: YamlConfigurableStrategy,
     ) -> float:
         """
         最大ドローダウンを抽出（最小化のため負の値として返す）
@@ -361,44 +377,41 @@ class ParameterOptimizer:
         注意: 最適化では最大値を探すため、負の値として返す
         （ドローダウンが小さいほど良い = 負の値が大きいほど良い）
         """
-        try:
-            max_dd = portfolio.max_drawdown()
-            if not is_valid_metric(max_dd):
-                return -100.0
-            # 負の値として返す（最小化のため）
-            return -abs(float(max_dd))
-        except Exception:
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
+        max_dd = summary_metrics.max_drawdown if summary_metrics is not None else None
+        if max_dd is None or not is_valid_metric(max_dd):
             return -100.0
+        # 負の値として返す（最小化のため）
+        return -abs(float(max_dd))
 
     def _extract_win_rate(
-        self, portfolio: Any, strategy: YamlConfigurableStrategy
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy: YamlConfigurableStrategy,
     ) -> float:
         """勝率を抽出"""
-        try:
-            # VectorBTの組み込みメソッドを使用
-            win_rate = portfolio.trades.win_rate()
-            if not is_valid_metric(win_rate):
-                return 0.0
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
+        win_rate = summary_metrics.win_rate if summary_metrics is not None else None
+        if win_rate is not None and is_valid_metric(win_rate):
             return float(win_rate)
-        except Exception:
-            # 代替手法: trades.records_readableから計算
-            try:
-                trades = portfolio.trades
-                if hasattr(trades, "records_readable"):
-                    trades_df = trades.records_readable
-                    if len(trades_df) == 0:
-                        return 0.0
 
-                    pnl_series = trades_df["PnL"]
-                    win_rate = (
-                        (pnl_series > 0).sum() / len(pnl_series)
-                        if len(pnl_series) > 0
-                        else 0.0
-                    )
-                    return float(win_rate)
-            except Exception:
-                pass
-            return 0.0
+        try:
+            trades = ensure_execution_portfolio(portfolio).trades
+            if hasattr(trades, "records_readable"):
+                trades_df = trades.records_readable
+                if len(trades_df) == 0:
+                    return 0.0
+
+                pnl_series = trades_df["PnL"]
+                win_rate = (
+                    (pnl_series > 0).sum() / len(pnl_series)
+                    if len(pnl_series) > 0
+                    else 0.0
+                )
+                return float(win_rate)
+        except Exception:
+            pass
+        return 0.0
 
     def _create_optimization_result(
         self, results: list[dict[str, Any]]
