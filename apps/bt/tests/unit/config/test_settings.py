@@ -11,24 +11,36 @@ def test_settings_defaults(monkeypatch):
     monkeypatch.delenv("API_BASE_URL", raising=False)
     monkeypatch.delenv("API_TIMEOUT", raising=False)
     monkeypatch.delenv("LOG_LEVEL", raising=False)
+    monkeypatch.delenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS", raising=False)
+    monkeypatch.delenv("BT_LAB_JOB_TIMEOUT_SECONDS", raising=False)
 
     settings = reload_settings()
 
     assert settings.api_base_url == "http://localhost:3002"
     assert settings.api_timeout == 30.0
     assert settings.log_level == "WARNING"
+    assert settings.backtest_job_timeout_seconds == 3600
+    assert settings.optimization_job_timeout_seconds == 3600
+    assert settings.lab_job_timeout_seconds == 3600
 
 
 def test_settings_env_override(monkeypatch):
     monkeypatch.setenv("API_BASE_URL", "http://example:3002")
     monkeypatch.setenv("API_TIMEOUT", "12.5")
     monkeypatch.setenv("LOG_LEVEL", "info")
+    monkeypatch.setenv("BT_BACKTEST_JOB_TIMEOUT_SECONDS", "1800")
+    monkeypatch.setenv("BT_OPTIMIZATION_JOB_TIMEOUT_SECONDS", "2400")
+    monkeypatch.setenv("BT_LAB_JOB_TIMEOUT_SECONDS", "3000")
 
     settings = reload_settings()
 
     assert settings.api_base_url == "http://example:3002"
     assert settings.api_timeout == 12.5
     assert settings.log_level == "info"
+    assert settings.backtest_job_timeout_seconds == 1800
+    assert settings.optimization_job_timeout_seconds == 2400
+    assert settings.lab_job_timeout_seconds == 3000
 
 
 def test_settings_cache(monkeypatch):

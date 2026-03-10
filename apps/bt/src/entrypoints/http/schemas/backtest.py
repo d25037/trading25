@@ -7,6 +7,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from src.domains.backtest.contracts import (
+    ArtifactIndex,
+    CanonicalExecutionResult,
+    RunSpec,
+)
 from src.entrypoints.http.schemas.common import BaseJobResponse, JobStatus
 
 # JobStatus を後方互換性のため再エクスポート
@@ -192,6 +197,18 @@ class BacktestResultResponse(BaseModel):
         default=None, description="HTMLコンテンツ（base64エンコード）"
     )
     created_at: datetime = Field(description="作成日時")
+    run_spec: RunSpec | None = Field(
+        default=None,
+        description="Engine-neutral execution input contract",
+    )
+    canonical_result: CanonicalExecutionResult | None = Field(
+        default=None,
+        description="Engine-neutral execution result",
+    )
+    artifact_index: ArtifactIndex | None = Field(
+        default=None,
+        description="Resolved artifact index",
+    )
 
 
 class SignalAttributionResultResponse(BaseModel):
@@ -201,6 +218,14 @@ class SignalAttributionResultResponse(BaseModel):
     strategy_name: str = Field(description="戦略名")
     result: SignalAttributionResult = Field(description="寄与分析結果")
     created_at: datetime = Field(description="作成日時")
+    canonical_result: CanonicalExecutionResult | None = Field(
+        default=None,
+        description="Engine-neutral execution result",
+    )
+    artifact_index: ArtifactIndex | None = Field(
+        default=None,
+        description="Resolved artifact index",
+    )
 
 
 class AttributionArtifactInfo(BaseModel):
