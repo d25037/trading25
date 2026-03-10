@@ -18,6 +18,55 @@ CLI引数経由でパラメータを受け取り、静的HTMLとして出力
 """
 
 import marimo
+import pickle
+from pathlib import Path
+from typing import Any
+
+
+def _load_simulation_payload(
+    simulation_payload_path: str,
+) -> tuple[Any, Any, Any, Any]:
+    if not simulation_payload_path:
+        return None, None, None, None
+
+    payload_path = Path(simulation_payload_path)
+    if not payload_path.exists():
+        return None, None, None, None
+
+    import vectorbt as vbt
+    from src.domains.backtest.vectorbt_adapter import ensure_execution_portfolio
+
+    def _restore_component(value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+
+        if value.get("__serialization__") != "vectorbt.dumps":
+            return value
+
+        payload = value.get("payload")
+        if not isinstance(payload, bytes):
+            return None
+
+        try:
+            return ensure_execution_portfolio(vbt.Portfolio.loads(payload))
+        except Exception:
+            return None
+
+    try:
+        with payload_path.open("rb") as f:
+            payload = pickle.load(f)
+    except Exception:
+        return None, None, None, None
+
+    if not isinstance(payload, dict):
+        return None, None, None, None
+
+    return (
+        _restore_component(payload.get("initial_portfolio")),
+        _restore_component(payload.get("kelly_portfolio")),
+        _restore_component(payload.get("allocation_info")),
+        _restore_component(payload.get("all_entries")),
+    )
 
 app = marimo.App(width="full", app_title="Strategy Analysis")
 
@@ -180,40 +229,11 @@ def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_par
 
 @app.cell
 def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params, simulation_payload_path):
-    import pickle
-    from pathlib import Path
-    import vectorbt as vbt
-    from src.domains.backtest.vectorbt_adapter import ensure_execution_portfolio
     from src.domains.strategy.core.factory import StrategyFactory
 
-    def _restore_component(value):
-        if not isinstance(value, dict):
-            return value
-
-        if value.get("__serialization__") != "vectorbt.dumps":
-            return value
-
-        payload = value.get("payload")
-        if not isinstance(payload, bytes):
-            return None
-
-        try:
-            return ensure_execution_portfolio(vbt.Portfolio.loads(payload))
-        except Exception:
-            return None
-
-    initial_portfolio = None
-    kelly_portfolio = None
-    allocation_info = None
-    all_entries = None
-
-    if simulation_payload_path and Path(simulation_payload_path).exists():
-        with Path(simulation_payload_path).open("rb") as f:
-            payload = pickle.load(f)
-        initial_portfolio = _restore_component(payload.get("initial_portfolio"))
-        kelly_portfolio = _restore_component(payload.get("kelly_portfolio"))
-        allocation_info = _restore_component(payload.get("allocation_info"))
-        all_entries = _restore_component(payload.get("all_entries"))
+    initial_portfolio, kelly_portfolio, allocation_info, all_entries = _load_simulation_payload(
+        simulation_payload_path
+    )
 
     if initial_portfolio is not None and kelly_portfolio is not None:
         mo.md("Loaded precomputed simulation artifact")

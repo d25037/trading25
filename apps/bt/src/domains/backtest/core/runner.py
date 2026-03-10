@@ -5,6 +5,7 @@ CLI/Streamlit両対応のバックテスト実行ロジック
 """
 
 import json
+import math
 import pickle
 import subprocess
 import sys
@@ -246,7 +247,16 @@ class BacktestRunner:
 
     def _write_json_artifact(self, path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        sanitized_payload = self._sanitize_json_payload(payload)
+        path.write_text(
+            json.dumps(
+                sanitized_payload,
+                ensure_ascii=False,
+                indent=2,
+                allow_nan=False,
+            ),
+            encoding="utf-8",
+        )
 
     def _write_metrics_artifact(self, metrics_path: Path, metrics_payload: dict[str, Any]) -> None:
         self._write_json_artifact(metrics_path, metrics_payload)
@@ -519,6 +529,17 @@ class BacktestRunner:
     def _prefer_metric_value(primary: Any, fallback: Any) -> Any:
         return primary if primary is not None else fallback
 
+    def _sanitize_json_payload(self, value: Any) -> Any:
+        if isinstance(value, dict):
+            return {key: self._sanitize_json_payload(item) for key, item in value.items()}
+        if isinstance(value, list):
+            return [self._sanitize_json_payload(item) for item in value]
+        if isinstance(value, tuple):
+            return [self._sanitize_json_payload(item) for item in value]
+        if isinstance(value, float):
+            return value if math.isfinite(value) else None
+        return value
+
     def _extract_stat(self, stats: Any, key: str) -> float | None:
         if stats is None:
             return None
@@ -642,9 +663,10 @@ class BacktestRunner:
         try:
             if hasattr(value, "mean"):
                 value = value.mean()
-            return float(value)
+            parsed = float(value)
         except Exception:
             return None
+        return parsed if math.isfinite(parsed) else None
 
     def _collect_portfolio_metrics(self, portfolio: Any) -> dict[str, float | None]:
         if portfolio is None:

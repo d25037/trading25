@@ -345,6 +345,8 @@ class TestRefreshJobExecutionContracts:
         metrics_path.write_text("{}", encoding="utf-8")
         manifest_path = tmp_path / "result.manifest.json"
         manifest_path.write_text("{}", encoding="utf-8")
+        simulation_payload_path = tmp_path / "result.simulation.pkl"
+        simulation_payload_path.write_bytes(b"payload")
 
         job = JobInfo("job-core", "demo-strategy", job_type="backtest")
         job.status = JobStatus.COMPLETED
@@ -362,6 +364,7 @@ class TestRefreshJobExecutionContracts:
         job.raw_result = {
             "_metrics_path": str(metrics_path),
             "_manifest_path": str(manifest_path),
+            "_simulation_payload_path": str(simulation_payload_path),
         }
 
         refresh_job_execution_contracts(job)
@@ -371,6 +374,7 @@ class TestRefreshJobExecutionContracts:
         assert ArtifactKind.HTML not in kinds
         assert ArtifactKind.METRICS_JSON in kinds
         assert ArtifactKind.MANIFEST_JSON in kinds
+        assert ArtifactKind.SIMULATION_PAYLOAD in kinds
 
     def test_attribution_job_uses_internal_artifact_path_for_index_and_strips_payload(self, tmp_path: Path) -> None:
         artifact_path = tmp_path / "attribution.json"

@@ -3,6 +3,7 @@ BacktestRunner unit tests
 """
 
 import json
+import math
 import pickle
 import subprocess
 import sys
@@ -598,6 +599,48 @@ def test_build_metrics_payload_preserves_zero_values():
     assert payload["sharpe_ratio"] == 0.0
     assert payload["trade_count"] == 0
     assert payload["optimal_allocation"] == 0.0
+
+
+def test_write_json_artifact_normalizes_non_finite_values(tmp_path: Path):
+    runner = BacktestRunner()
+    artifact_path = tmp_path / "result.metrics.json"
+
+    runner._write_json_artifact(
+        artifact_path,
+        {
+            "total_return": math.nan,
+            "nested": {"sharpe_ratio": math.inf},
+            "items": [1.0, -math.inf],
+        },
+    )
+
+    payload = json.loads(artifact_path.read_text(encoding="utf-8"))
+
+    assert payload == {
+        "total_return": None,
+        "nested": {"sharpe_ratio": None},
+        "items": [1.0, None],
+    }
+
+
+def test_collect_portfolio_metrics_drops_non_finite_values():
+    runner = BacktestRunner()
+
+    class _Portfolio:
+        def total_return(self):
+            return math.nan
+
+        def sharpe_ratio(self):
+            return math.inf
+
+        def calmar_ratio(self):
+            return -math.inf
+
+    assert runner._collect_portfolio_metrics(_Portfolio()) == {
+        "total_return": None,
+        "sharpe_ratio": None,
+        "calmar_ratio": None,
+    }
 
 
 def test_run_walk_forward_guard_paths(monkeypatch):

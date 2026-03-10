@@ -20,6 +20,7 @@ export type ArtifactKind =
   | 'html'
   | 'metrics_json'
   | 'manifest_json'
+  | 'simulation_payload'
   | 'result_summary'
   | 'raw_result_json'
   | 'attribution_json'
