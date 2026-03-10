@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Any
 
 import pandas as pd
 from loguru import logger
@@ -19,7 +20,10 @@ from src.entrypoints.http.schemas.fundamentals import (
     FundamentalsComputeResponse,
 )
 from src.infrastructure.external_api.jquants_client import JQuantsAPIClient, StockInfo
-from src.infrastructure.external_api.market_client import MarketAPIClient
+from src.infrastructure.data_access.clients import get_market_client
+
+# Backward-compatible symbol for tests patching module-local client constructor.
+MarketAPIClient = get_market_client
 
 
 class FundamentalsService:
@@ -27,7 +31,7 @@ class FundamentalsService:
 
     def __init__(self) -> None:
         self._jquants_client: JQuantsAPIClient | None = None
-        self._market_client: MarketAPIClient | None = None
+        self._market_client: Any | None = None
         self._calculator = FundamentalsCalculator()
 
     def __del__(self) -> None:
@@ -40,7 +44,7 @@ class FundamentalsService:
         return self._jquants_client
 
     @property
-    def market_client(self) -> MarketAPIClient:
+    def market_client(self) -> Any:
         if self._market_client is None:
             self._market_client = MarketAPIClient()
         return self._market_client
