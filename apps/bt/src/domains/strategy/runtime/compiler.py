@@ -280,6 +280,33 @@ def _resolve_required_features(signals: list[CompiledSignalIR]) -> list[str]:
     )
 
 
+def _has_configured_exit_signal_params(signal_params: SignalParams | None) -> bool:
+    if signal_params is None:
+        return False
+
+    fields_set = getattr(signal_params, "model_fields_set", None)
+    if isinstance(fields_set, set):
+        return len(fields_set) > 0
+
+    return True
+
+
+def _validate_round_trip_exit_rules(
+    *,
+    shared_config: SharedConfig,
+    exit_signal_params: SignalParams | None,
+) -> None:
+    mode_name = resolve_execution_semantics(shared_config)
+    if mode_name == "standard":
+        return
+
+    if _has_configured_exit_signal_params(exit_signal_params):
+        raise ValueError(
+            "exit_trigger_params must be empty when "
+            f"shared_config.{mode_name} is true"
+        )
+
+
 def compile_strategy_config(
     strategy_name: str,
     strategy_config: dict[str, Any],
@@ -297,6 +324,10 @@ def compile_strategy_config(
     )
     entry_signal_params = validated.entry_filter_params
     exit_signal_params = validated.exit_trigger_params or SignalParams()
+    _validate_round_trip_exit_rules(
+        shared_config=shared_config,
+        exit_signal_params=exit_signal_params,
+    )
     signals = _iter_enabled_signals(
         entry_signal_params=entry_signal_params,
         exit_signal_params=exit_signal_params,

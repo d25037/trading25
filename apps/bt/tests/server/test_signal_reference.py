@@ -52,9 +52,21 @@ class TestBuildSignalReference:
         signal = next(
             item for item in result["signals"] if item["key"] == "volume_ratio_above"
         )
-        assert len(signal["availability_profiles"]) == 6
+        assert len(signal["availability_profiles"]) == 4
         first = signal["availability_profiles"][0]
         assert set(first.keys()) == {"scope", "execution_semantics", "availability"}
+
+    def test_signal_reference_omits_round_trip_exit_profiles(self):
+        result = build_signal_reference()
+        signal = next(
+            item for item in result["signals"] if item["key"] == "volume_ratio_above"
+        )
+
+        assert not any(
+            profile["scope"] == "exit"
+            and profile["execution_semantics"] != "standard"
+            for profile in signal["availability_profiles"]
+        )
 
     def test_oracle_signal_reference_marks_same_session_availability(self):
         result = build_signal_reference()

@@ -330,14 +330,13 @@ def _build_shared_config_for_execution_semantics(
 
 def _build_availability_profiles(signal_def: Any) -> list[dict[str, Any]]:
     profiles: list[dict[str, Any]] = []
-    supported_scopes = [CompiledSignalScope.ENTRY]
-    if not signal_def.exit_disabled:
-        supported_scopes.append(CompiledSignalScope.EXIT)
-
     for execution_semantics in _REFERENCE_EXECUTION_SEMANTICS:
         shared_config = _build_shared_config_for_execution_semantics(
             execution_semantics
         )
+        supported_scopes = [CompiledSignalScope.ENTRY]
+        if execution_semantics == "standard" and not signal_def.exit_disabled:
+            supported_scopes.append(CompiledSignalScope.EXIT)
         for scope in supported_scopes:
             profiles.append(
                 {
