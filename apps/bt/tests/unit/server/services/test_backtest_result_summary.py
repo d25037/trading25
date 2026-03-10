@@ -130,6 +130,35 @@ def test_resolve_backtest_result_summary_accepts_summary_fallback():
     assert summary.trade_count == 9
 
 
+def test_resolve_backtest_result_summary_uses_metrics_artifact_without_html(tmp_path: Path):
+    metrics_path = tmp_path / "result.metrics.json"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "total_return": 9.5,
+                "sharpe_ratio": 1.4,
+                "sortino_ratio": 1.8,
+                "calmar_ratio": 1.1,
+                "max_drawdown": -3.2,
+                "win_rate": 61.0,
+                "trade_count": 17,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = resolve_backtest_result_summary(
+        None,
+        {"total_return": 1.0},
+        metrics_path=metrics_path,
+    )
+
+    assert summary is not None
+    assert summary.total_return == 9.5
+    assert summary.trade_count == 17
+    assert summary.html_path is None
+
+
 def test_resolve_backtest_result_summary_returns_none_when_no_sources():
     summary = resolve_backtest_result_summary(None, None)
     assert summary is None

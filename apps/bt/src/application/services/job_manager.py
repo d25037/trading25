@@ -568,7 +568,7 @@ class JobManager:
         job_id: str,
         result_summary: BacktestResultSummary,
         raw_result: dict[str, Any],
-        html_path: str,
+        html_path: str | None,
         dataset_name: str,
         execution_time: float,
     ) -> None:
@@ -579,7 +579,7 @@ class JobManager:
             job_id: ジョブID
             result_summary: 結果サマリー
             raw_result: 生の結果データ
-            html_path: HTMLファイルパス
+            html_path: HTMLファイルパス（未生成時はNone）
             dataset_name: データセット名
             execution_time: 実行時間
         """

@@ -37,9 +37,18 @@ if TYPE_CHECKING:
     from src.application.services.job_manager import JobInfo
 
 
-_INTERNAL_RAW_RESULT_KEYS = {"_artifact_path"}
+_INTERNAL_RAW_RESULT_KEYS = {
+    "_artifact_path",
+    "_metrics_path",
+    "_manifest_path",
+    "_simulation_payload_path",
+    "_render_error",
+}
 _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
     ("_artifact_path", ArtifactKind.ATTRIBUTION_JSON),
+    ("_metrics_path", ArtifactKind.METRICS_JSON),
+    ("_manifest_path", ArtifactKind.MANIFEST_JSON),
+    ("_simulation_payload_path", ArtifactKind.SIMULATION_PAYLOAD),
     ("saved_strategy_path", ArtifactKind.STRATEGY_YAML),
     ("saved_history_path", ArtifactKind.HISTORY_YAML),
 )
@@ -260,10 +269,18 @@ def build_run_metadata_from_spec(job_id: str, run_spec: RunSpec) -> RunMetadata:
 
 def build_artifact_index(job: JobInfo) -> ArtifactIndex | None:
     artifacts: list[ArtifactRecord] = []
+    seen: set[tuple[ArtifactKind, str | None, str | None]] = set()
+
+    def _append_artifact(record: ArtifactRecord) -> None:
+        key = (record.kind, record.path, record.location)
+        if key in seen:
+            return
+        seen.add(key)
+        artifacts.append(record)
 
     if job.html_path:
         html_path = Path(job.html_path)
-        artifacts.append(
+        _append_artifact(
             ArtifactRecord(
                 kind=ArtifactKind.HTML,
                 storage=ArtifactStorage.FILESYSTEM,
@@ -272,7 +289,7 @@ def build_artifact_index(job: JobInfo) -> ArtifactIndex | None:
         )
         metrics_path = html_path.with_suffix(".metrics.json")
         if metrics_path.exists():
-            artifacts.append(
+            _append_artifact(
                 ArtifactRecord(
                     kind=ArtifactKind.METRICS_JSON,
                     storage=ArtifactStorage.FILESYSTEM,
@@ -281,16 +298,25 @@ def build_artifact_index(job: JobInfo) -> ArtifactIndex | None:
             )
         manifest_path = html_path.with_suffix(".manifest.json")
         if manifest_path.exists():
-            artifacts.append(
+            _append_artifact(
                 ArtifactRecord(
                     kind=ArtifactKind.MANIFEST_JSON,
                     storage=ArtifactStorage.FILESYSTEM,
                     path=str(manifest_path),
                 )
             )
+        simulation_payload_path = html_path.with_suffix(".simulation.pkl")
+        if simulation_payload_path.exists():
+            _append_artifact(
+                ArtifactRecord(
+                    kind=ArtifactKind.SIMULATION_PAYLOAD,
+                    storage=ArtifactStorage.FILESYSTEM,
+                    path=str(simulation_payload_path),
+                )
+            )
 
     if job.result is not None:
-        artifacts.append(
+        _append_artifact(
             ArtifactRecord(
                 kind=ArtifactKind.RESULT_SUMMARY,
                 storage=ArtifactStorage.PORTFOLIO_DB,
@@ -313,7 +339,7 @@ def build_artifact_index(job: JobInfo) -> ArtifactIndex | None:
             path = Path(artifact_path)
             if not path.exists():
                 continue
-            artifacts.append(
+            _append_artifact(
                 ArtifactRecord(
                     kind=kind,
                     storage=ArtifactStorage.FILESYSTEM,

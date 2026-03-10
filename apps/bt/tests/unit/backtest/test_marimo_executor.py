@@ -5,6 +5,7 @@ Marimo Notebook実行ラッパーのテスト
 """
 
 import json
+import subprocess
 import tempfile
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -134,6 +135,13 @@ class TestFilenameValidation:
             with pytest.raises(ValueError, match="長すぎます"):
                 executor._validate_filename(long_name, ".html")
 
+    def test_invalid_filename_double_dot(self):
+        """危険な .. を含むファイル名"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = MarimoExecutor(output_dir=tmpdir)
+            with pytest.raises(ValueError, match="不正な文字"):
+                executor._validate_filename("bad..html", ".html")
+
 
 class TestOutputFilenameGeneration:
     """出力ファイル名生成テスト"""
@@ -171,6 +179,32 @@ class TestOutputFilenameGeneration:
             _, filename = executor._generate_output_filename(params, "range_break")
 
             assert "primeExTopix500" in filename
+
+    def test_plan_report_paths_with_explicit_output_filename(self):
+        """明示ファイル名指定時も sibling artifact を計画できる"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = MarimoExecutor(output_dir=tmpdir)
+
+            paths = executor.plan_report_paths(
+                {"shared_config": {"dataset": "sample"}},
+                strategy_name="demo",
+                output_filename="custom-report.html",
+            )
+
+            assert paths.html_path.name == "custom-report.html"
+            assert paths.metrics_path == paths.html_path.with_suffix(".metrics.json")
+            assert paths.manifest_path == paths.html_path.with_suffix(".manifest.json")
+            assert paths.simulation_payload_path == paths.html_path.with_suffix(".simulation.pkl")
+
+    def test_validate_output_dir_tmp_fallback_when_data_dir_lookup_fails(self, monkeypatch):
+        """get_data_dir が失敗しても /tmp は許可される"""
+        monkeypatch.setattr(
+            "src.shared.paths.get_data_dir",
+            lambda: (_ for _ in ()).throw(RuntimeError("boom")),
+        )
+
+        executor = MarimoExecutor(output_dir="/tmp/trading25-marimo-test")
+        assert str(executor.output_dir) == "/tmp/trading25-marimo-test"
 
 
 class TestExecuteNotebook:
@@ -261,6 +295,41 @@ class TestExecuteNotebook:
                     template_path=str(template_path),
                     parameters={"shared_config": {}},
                     strategy_name="test",
+                )
+
+    @patch("src.domains.backtest.core.marimo_executor.subprocess.run")
+    def test_execute_error_when_html_not_created(self, mock_run):
+        """subprocess 成功でも HTML 未作成ならエラー"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = MarimoExecutor(output_dir=tmpdir)
+            mock_run.return_value = MagicMock(returncode=0, stderr="", stdout="")
+
+            template_path = Path(tmpdir) / "test_template.py"
+            template_path.write_text("# test template")
+
+            with pytest.raises(RuntimeError, match="HTML file was not created"):
+                executor.execute_notebook(
+                    template_path=str(template_path),
+                    parameters={"shared_config": {}},
+                    strategy_name="test",
+                )
+
+    @patch("src.domains.backtest.core.marimo_executor.subprocess.run")
+    def test_execute_timeout_raises_runtime_error(self, mock_run):
+        """タイムアウトを RuntimeError へ変換する"""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = MarimoExecutor(output_dir=tmpdir)
+            mock_run.side_effect = subprocess.TimeoutExpired(cmd="marimo", timeout=3)
+
+            template_path = Path(tmpdir) / "test_template.py"
+            template_path.write_text("# test template")
+
+            with pytest.raises(RuntimeError, match="timed out after 3 seconds"):
+                executor.execute_notebook(
+                    template_path=str(template_path),
+                    parameters={"shared_config": {}},
+                    strategy_name="test",
+                    timeout=3,
                 )
 
     def test_execute_template_not_found(self):

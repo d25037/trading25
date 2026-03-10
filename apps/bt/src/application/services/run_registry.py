@@ -41,6 +41,7 @@ def _canonical_summary_fallback(job: JobInfo) -> Mapping[str, Any] | None:
 def resolve_job_backtest_summary(job: JobInfo) -> BacktestResultSummary | None:
     """Resolve a backtest summary from artifacts, then canonical result, then legacy fields."""
     artifact_html_path = _find_artifact_path(job.artifact_index, ArtifactKind.HTML)
+    artifact_metrics_path = _find_artifact_path(job.artifact_index, ArtifactKind.METRICS_JSON)
     fallback = (
         _canonical_summary_fallback(job)
         or job.result
@@ -49,6 +50,7 @@ def resolve_job_backtest_summary(job: JobInfo) -> BacktestResultSummary | None:
     return resolve_backtest_result_summary(
         html_path=artifact_html_path or job.html_path,
         fallback=fallback,
+        metrics_path=artifact_metrics_path,
     )
 
 

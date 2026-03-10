@@ -6,6 +6,7 @@ Backtest Result Summary Resolver
 
 from __future__ import annotations
 
+import json
 import math
 from collections.abc import Mapping
 from pathlib import Path
@@ -64,9 +65,28 @@ def _pick_value(
     return fallback_values.get(key)
 
 
+def _load_metrics_artifact(metrics_path: str | Path | None) -> dict[str, Any]:
+    if metrics_path is None:
+        return {}
+
+    path = Path(metrics_path)
+    if not path.exists():
+        return {}
+
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except Exception as e:
+        logger.warning(f"成果物メトリクス読み込み失敗: {path}: {e}")
+        return {}
+
+    return payload if isinstance(payload, dict) else {}
+
+
 def resolve_backtest_result_summary(
     html_path: str | Path | None,
     fallback: Mapping[str, Any] | BacktestResultSummary | None = None,
+    *,
+    metrics_path: str | Path | None = None,
 ) -> BacktestResultSummary | None:
     """
     BacktestResultSummary を成果物セットから解決する。
@@ -79,7 +99,28 @@ def resolve_backtest_result_summary(
     resolved_html_path: str | None = str(html_path) if html_path else None
 
     artifact_values: dict[str, Any] = {}
-    if html_path:
+    resolved_metrics_path: Path | None = None
+    if metrics_path is not None:
+        resolved_metrics_path = Path(metrics_path)
+    elif html_path:
+        resolved_metrics_path = Path(html_path).with_suffix(".metrics.json")
+
+    metrics_payload = _load_metrics_artifact(resolved_metrics_path)
+    if metrics_payload:
+        artifact_values = {
+            "total_return": metrics_payload.get("total_return"),
+            "max_drawdown": metrics_payload.get("max_drawdown"),
+            "sharpe_ratio": metrics_payload.get("sharpe_ratio"),
+            "sortino_ratio": metrics_payload.get("sortino_ratio"),
+            "calmar_ratio": metrics_payload.get("calmar_ratio"),
+            "win_rate": metrics_payload.get("win_rate"),
+            "trade_count": metrics_payload.get(
+                "trade_count",
+                metrics_payload.get("total_trades"),
+            ),
+        }
+
+    if not artifact_values and html_path:
         path = Path(html_path)
         if path.exists():
             try:

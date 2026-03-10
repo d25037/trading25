@@ -340,6 +340,42 @@ class TestRefreshJobExecutionContracts:
         assert job.canonical_result is not None
         assert job.canonical_result.dataset_snapshot_id == "primeExTopix500"
 
+    def test_backtest_job_indexes_metrics_and_manifest_without_html(self, tmp_path: Path) -> None:
+        metrics_path = tmp_path / "result.metrics.json"
+        metrics_path.write_text("{}", encoding="utf-8")
+        manifest_path = tmp_path / "result.manifest.json"
+        manifest_path.write_text("{}", encoding="utf-8")
+        simulation_payload_path = tmp_path / "result.simulation.pkl"
+        simulation_payload_path.write_bytes(b"payload")
+
+        job = JobInfo("job-core", "demo-strategy", job_type="backtest")
+        job.status = JobStatus.COMPLETED
+        job.dataset_name = "snapshot-20260309"
+        job.result = BacktestResultSummary(
+            total_return=8.0,
+            sharpe_ratio=1.2,
+            sortino_ratio=1.4,
+            calmar_ratio=1.1,
+            max_drawdown=-5.0,
+            win_rate=60.0,
+            trade_count=17,
+            html_path=None,
+        )
+        job.raw_result = {
+            "_metrics_path": str(metrics_path),
+            "_manifest_path": str(manifest_path),
+            "_simulation_payload_path": str(simulation_payload_path),
+        }
+
+        refresh_job_execution_contracts(job)
+
+        assert job.artifact_index is not None
+        kinds = {artifact.kind for artifact in job.artifact_index.artifacts}
+        assert ArtifactKind.HTML not in kinds
+        assert ArtifactKind.METRICS_JSON in kinds
+        assert ArtifactKind.MANIFEST_JSON in kinds
+        assert ArtifactKind.SIMULATION_PAYLOAD in kinds
+
     def test_attribution_job_uses_internal_artifact_path_for_index_and_strips_payload(self, tmp_path: Path) -> None:
         artifact_path = tmp_path / "attribution.json"
         artifact_path.write_text("{}", encoding="utf-8")
