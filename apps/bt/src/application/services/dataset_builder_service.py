@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import shutil
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -25,8 +26,17 @@ from src.application.services.index_master_catalog import get_index_catalog_code
 from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.entrypoints.http.schemas.job import JobProgress
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
-from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
-from src.infrastructure.db.market.dataset_db import DatasetDb
+from src.infrastructure.db.dataset_io.dataset_writer import (
+    DatasetWriter,
+    compatibility_db_path_for_path,
+    duckdb_path_for_path,
+    parquet_dir_for_path,
+    snapshot_dir_for_path,
+)
+from src.infrastructure.db.market.dataset_snapshot_reader import (
+    build_dataset_snapshot_logical_checksum,
+    inspect_dataset_snapshot_duckdb,
+)
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.config.reliability import DATASET_BUILD_TIMEOUT_MINUTES
 
@@ -57,8 +67,16 @@ _WARNING_SAMPLE_SIZE = 5
 
 
 def _manifest_path_for_db(db_path: str) -> Path:
-    db_file = Path(db_path)
-    return db_file.with_name(f"{db_file.stem}.manifest.v1.json")
+    return snapshot_dir_for_path(db_path) / "manifest.v1.json"
+
+
+def _delete_dataset_artifacts(resolver: DatasetResolver, name: str) -> None:
+    for path in resolver.get_artifact_paths(name):
+        target = Path(path)
+        if target.is_dir():
+            shutil.rmtree(target)
+        elif target.exists():
+            target.unlink()
 
 
 def _sha256_of_file(path: Path) -> str:
@@ -69,21 +87,6 @@ def _sha256_of_file(path: Path) -> str:
     return hasher.hexdigest()
 
 
-def _build_logical_checksum_payload(
-    *,
-    counts: dict[str, int],
-    coverage: dict[str, int],
-    date_range: dict[str, str] | None,
-) -> str:
-    payload = {
-        "counts": counts,
-        "coverage": coverage,
-        "dateRange": date_range,
-    }
-    normalized = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
-    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()
-
-
 def _write_dataset_manifest(
     *,
     db_path: str,
@@ -91,23 +94,18 @@ def _write_dataset_manifest(
     preset_name: str,
     manifest_path: Path | None = None,
 ) -> str:
-    db_file = Path(db_path)
-    if not db_file.exists():
-        raise FileNotFoundError(f"dataset db not found: {db_file}")
+    compatibility_db = compatibility_db_path_for_path(db_path)
+    duckdb_path = duckdb_path_for_path(db_path)
+    parquet_dir = parquet_dir_for_path(db_path)
+    if not compatibility_db.exists():
+        raise FileNotFoundError(f"dataset db not found: {compatibility_db}")
+    if not duckdb_path.exists():
+        raise FileNotFoundError(f"dataset.duckdb not found: {duckdb_path}")
 
-    db = DatasetDb(str(db_file))
-
-    try:
-        counts = db.get_table_counts()
-        date_range = db.get_date_range()
-        coverage = {
-            "totalStocks": db.get_stock_count(),
-            "stocksWithQuotes": db.get_stocks_with_quotes_count(),
-            "stocksWithStatements": db.get_stocks_with_statements_count(),
-            "stocksWithMargin": db.get_stocks_with_margin_count(),
-        }
-    finally:
-        db.close()
+    inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
+    counts = inspection.counts.model_dump()
+    coverage = inspection.coverage.model_dump()
+    date_range = inspection.date_range.model_dump() if inspection.date_range is not None else None
 
     manifest = {
         "schemaVersion": 1,
@@ -115,17 +113,28 @@ def _write_dataset_manifest(
         "dataset": {
             "name": dataset_name,
             "preset": preset_name,
-            "dbFile": db_file.name,
+            "duckdbFile": duckdb_path.name,
+            "compatibilityDbFile": compatibility_db.name,
+            "parquetDir": parquet_dir.name,
+        },
+        "source": {
+            "backend": "duckdb-parquet",
+            "compatibilityArtifact": "dataset.db",
         },
         "counts": counts,
         "coverage": coverage,
         "checksums": {
-            "datasetDbSha256": _sha256_of_file(db_file),
-            "logicalSha256": _build_logical_checksum_payload(
-                counts=counts,
-                coverage=coverage,
-                date_range=date_range,
+            "duckdbSha256": _sha256_of_file(duckdb_path),
+            "compatibilityDbSha256": _sha256_of_file(compatibility_db),
+            "logicalSha256": build_dataset_snapshot_logical_checksum(
+                counts=inspection.counts,
+                coverage=inspection.coverage,
+                date_range=inspection.date_range,
             ),
+            "parquet": {
+                parquet_file.name: _sha256_of_file(parquet_file)
+                for parquet_file in sorted(parquet_dir.glob("*.parquet"))
+            },
         },
     }
     if date_range is not None:
@@ -182,12 +191,16 @@ async def _build_dataset(
     name = job.data.name
     preset_name = job.data.preset
     db_path = resolver.get_db_path(name)
+    snapshot_dir = snapshot_dir_for_path(db_path)
     warnings: list[str] = []
     errors: list[str] = []
 
     preset = get_preset(preset_name)
     if preset is None:
         return DatasetResult(success=False, errors=[f"Unknown preset: {preset_name}"])
+
+    if job.data.overwrite and not job.data.resume:
+        _delete_dataset_artifacts(resolver, name)
 
     def progress(stage: str, current: int, total: int, message: str) -> None:
         pct = (current / total * 100) if total > 0 else 0
@@ -424,7 +437,7 @@ async def _build_dataset(
             processedStocks=processed,
             warnings=warnings if warnings else None,
             errors=errors if errors else None,
-            outputPath=db_path,
+            outputPath=str(snapshot_dir),
         )
     finally:
         writer.close()
