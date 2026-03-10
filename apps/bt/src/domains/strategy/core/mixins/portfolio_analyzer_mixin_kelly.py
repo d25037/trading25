@@ -9,7 +9,12 @@ import math
 from typing import TYPE_CHECKING, Any, Dict, Optional, Tuple
 
 import pandas as pd
-import vectorbt as vbt
+
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionPortfolioProtocol,
+    canonical_metrics_from_portfolio,
+    ensure_execution_portfolio,
+)
 
 if TYPE_CHECKING:
     from .protocols import StrategyProtocol
@@ -20,7 +25,7 @@ class PortfolioAnalyzerKellyMixin:
 
     def optimize_allocation_kelly(
         self: "StrategyProtocol",
-        portfolio: vbt.Portfolio,
+        portfolio: ExecutionPortfolioProtocol,
         kelly_fraction: float = 0.5,
         min_allocation: float = 0.0,
         max_allocation: float = 1.0,
@@ -105,13 +110,13 @@ class PortfolioAnalyzerKellyMixin:
             return default_allocation, {}
 
     def _calculate_kelly_for_portfolio(
-        self, portfolio: vbt.Portfolio
+        self, portfolio: ExecutionPortfolioProtocol
     ) -> Tuple[float, Dict[str, float]]:
         """
         統合ポートフォリオ全体のケリー基準を計算
 
         Args:
-            portfolio: VectorBTポートフォリオ
+            portfolio: 実行エンジン非依存のポートフォリオ
 
         Returns:
             Tuple[float, Dict[str, float]]: (ケリー基準値, 統計情報辞書)
@@ -208,7 +213,11 @@ class PortfolioAnalyzerKellyMixin:
         min_allocation: float = 0.01,
         max_allocation: float = 0.5,
     ) -> Tuple[
-        vbt.Portfolio, vbt.Portfolio, float, Dict[str, float], Optional[pd.DataFrame]
+        ExecutionPortfolioProtocol,
+        ExecutionPortfolioProtocol,
+        float,
+        Dict[str, float],
+        Optional[pd.DataFrame],
     ]:
         """
         ケリー基準を用いた2段階最適化バックテストを実行
@@ -219,7 +228,13 @@ class PortfolioAnalyzerKellyMixin:
             max_allocation: 最大配分率
 
         Returns:
-            Tuple[vbt.Portfolio, vbt.Portfolio, float, Dict[str, float], Optional[pd.DataFrame]]:
+            Tuple[
+                ExecutionPortfolioProtocol,
+                ExecutionPortfolioProtocol,
+                float,
+                Dict[str, float],
+                Optional[pd.DataFrame],
+            ]:
                 (第1段階結果, 第2段階最適化結果, 各銘柄への配分率, 統計情報, エントリーシグナルDataFrame)
         """
         self._log("🚀 ケリー基準2段階最適化バックテスト開始", "info")
@@ -228,6 +243,7 @@ class PortfolioAnalyzerKellyMixin:
             # 第1段階：探索的実行（均等配分）
             self._log("📊 第1段階：探索的バックテスト実行（均等配分）", "info")
             initial_portfolio, all_entries = self.run_multi_backtest()
+            initial_portfolio = ensure_execution_portfolio(initial_portfolio)
 
             # ポートフォリオ参照を設定
             if self.group_by:
@@ -267,13 +283,26 @@ class PortfolioAnalyzerKellyMixin:
                 kelly_portfolio, _ = self.run_multi_backtest(
                     allocation_pct=optimized_allocation,
                 )
+            kelly_portfolio = ensure_execution_portfolio(kelly_portfolio)
 
             # 結果比較ログ
             self._log("✅ ケリー基準2段階最適化バックテスト完了", "info")
             self._log("📈 最適化効果:", "info")
             try:
-                initial_return = initial_portfolio.total_return()
-                kelly_return = kelly_portfolio.total_return()
+                initial_metrics = canonical_metrics_from_portfolio(initial_portfolio)
+                kelly_metrics = canonical_metrics_from_portfolio(kelly_portfolio)
+                initial_return = (
+                    initial_metrics.total_return
+                    if initial_metrics is not None
+                    and initial_metrics.total_return is not None
+                    else initial_portfolio.total_return()
+                )
+                kelly_return = (
+                    kelly_metrics.total_return
+                    if kelly_metrics is not None
+                    and kelly_metrics.total_return is not None
+                    else kelly_portfolio.total_return()
+                )
 
                 # NaN/Inf チェックと安全な改善倍率計算
                 if initial_return != 0 and not (

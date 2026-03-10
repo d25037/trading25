@@ -11,6 +11,11 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from src.domains.backtest.vectorbt_adapter import (
+    ExecutionPortfolioProtocol,
+    canonical_metrics_from_portfolio,
+    ensure_execution_portfolio,
+)
 from src.infrastructure.data_access.mode import data_access_mode_context
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
@@ -109,7 +114,9 @@ class StrategyImprover:
         return report
 
     def _analyze_portfolio(
-        self, portfolio: Any, strategy_name: str
+        self,
+        portfolio: ExecutionPortfolioProtocol | Any,
+        strategy_name: str,
     ) -> WeaknessReport:
         """
         ポートフォリオを分析
@@ -121,11 +128,18 @@ class StrategyImprover:
         Returns:
             弱点レポート
         """
+        portfolio = ensure_execution_portfolio(portfolio)
         report = WeaknessReport(strategy_name=strategy_name)
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
 
         # 最大ドローダウン
         try:
-            max_dd = float(portfolio.max_drawdown())
+            max_dd = (
+                summary_metrics.max_drawdown
+                if summary_metrics is not None
+                and summary_metrics.max_drawdown is not None
+                else 0.0
+            )
             if pd.notna(max_dd) and np.isfinite(max_dd):
                 report.max_drawdown = max_dd
             else:

@@ -4,17 +4,10 @@
 ボラティリティに基づく銘柄シグナル生成機能を提供します。
 """
 
-from typing import Protocol, cast
-
 import pandas as pd
-import vectorbt as vbt
 from loguru import logger
 
-
-class _BollingerBandsLike(Protocol):
-    upper: pd.Series
-    middle: pd.Series
-    lower: pd.Series
+from src.domains.strategy.indicators import compute_bollinger_bands
 
 
 def volatility_relative_signal(
@@ -153,7 +146,7 @@ def low_volatility_stock_screen_signal(
 
 
 def _resolve_bollinger_band(
-    bbands: _BollingerBandsLike,
+    bbands,
     level: str,
 ) -> pd.Series:
     if level == "upper":
@@ -228,8 +221,7 @@ def bollinger_position_signal(
 
     close = ohlc_data["Close"]
 
-    # ボリンジャーバンド計算（VectorBT実装）
-    bbands = cast(_BollingerBandsLike, vbt.BBANDS.run(close, window=window, alpha=alpha))
+    bbands = compute_bollinger_bands(close, window=window, alpha=alpha)
     band = _resolve_bollinger_band(bbands, level)
     result = _level_position_signal(close, band, direction)
 
@@ -261,7 +253,7 @@ def bollinger_cross_signal(
     )
 
     close = ohlc_data["Close"]
-    bbands = cast(_BollingerBandsLike, vbt.BBANDS.run(close, window=window, alpha=alpha))
+    bbands = compute_bollinger_bands(close, window=window, alpha=alpha)
     band = _resolve_bollinger_band(bbands, level)
     result = _level_cross_signal(close, band, direction, lookback_days)
 

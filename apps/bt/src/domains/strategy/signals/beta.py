@@ -11,20 +11,15 @@
 高速化実装:
 - Pandas rolling.cov/var: 中速（従来比5-10倍高速）
 - Numba最適化: 高速（従来比10-50倍高速）
-- VectorBT rolling_apply: 最高速（従来比15-100倍高速）
+- `method="vectorbt"`: 互換 alias。内部では numba 実装を使う
 """
 
-import pandas as pd
 import numpy as np
-from typing import cast
+import pandas as pd
 from numba import njit
+from typing import Literal, cast
 
-try:
-    import vectorbt as vbt  # noqa: F401 # pyright: ignore[reportUnusedImport]
-
-    VBT_AVAILABLE = True
-except ImportError:
-    VBT_AVAILABLE = False
+BetaMethod = Literal["pandas", "numba", "vectorbt"]
 
 
 def calculate_beta(
@@ -318,13 +313,29 @@ def numba_rolling_beta(
     return cast(pd.Series, beta_series.reindex(stock_price.index, fill_value=np.nan))
 
 
+def _rolling_beta_by_method(
+    stock_price: pd.Series,
+    market_price: pd.Series,
+    window: int,
+    method: BetaMethod,
+) -> pd.Series:
+    """method 名に対応するローリングβ計算を解決する。"""
+    if method == "pandas":
+        return pandas_rolling_beta(stock_price, market_price, window)
+    if method in ("numba", "vectorbt"):
+        return numba_rolling_beta(stock_price, market_price, window)
+    raise ValueError(
+        f"Unknown method: {method}. Use 'pandas', 'numba', or 'vectorbt'"
+    )
+
+
 def vectorbt_rolling_beta(
     stock_price: pd.Series,
     market_price: pd.Series,
     window: int = 200,
 ) -> pd.Series:
     """
-    VectorBT rolling_apply最適化β値計算（最高速版）
+    旧 `vectorbt` method 互換のローリングβ値計算。
 
     Args:
         stock_price: 銘柄価格シリーズ
@@ -335,56 +346,10 @@ def vectorbt_rolling_beta(
         pd.Series: ローリングβ値
 
     Note:
-        VectorBTが利用可能な場合のみ使用可能
+        `vectorbt` 依存を domain surface から外したため、内部では
+        numba 実装にフォールバックする。
     """
-    if not VBT_AVAILABLE:
-        raise ImportError("VectorBT not available. Use numba_rolling_beta instead.")
-
-    # 共通期間に統一
-    common_index = stock_price.index.intersection(market_price.index)
-    stock_aligned = stock_price.reindex(common_index)
-    market_aligned = market_price.reindex(common_index)
-
-    # リターン計算
-    stock_returns = stock_aligned.pct_change().dropna()
-    market_returns = market_aligned.pct_change().dropna()
-
-    # 共通インデックスのデータを取得
-    common_index = stock_returns.index.intersection(market_returns.index)
-    stock_aligned = stock_returns.reindex(common_index)
-    market_aligned = market_returns.reindex(common_index)
-
-    # 欠損値を除去
-    valid_mask = stock_aligned.notna() & market_aligned.notna()
-    stock_clean = stock_aligned[valid_mask]
-    market_clean = market_aligned[valid_mask]
-
-    @njit
-    def vbt_beta_nb(i, col, stock_window):  # noqa: ARG001
-        """VectorBT rolling_apply用β値計算関数（修正版）"""
-        if len(stock_window) < 2:
-            return np.nan
-
-        # 対応する市場データのウィンドウを取得
-        start_idx = max(0, i + 1 - window)
-        end_idx = i + 1
-
-        if end_idx > len(market_clean):
-            return np.nan
-
-        market_window = market_clean.values[start_idx:end_idx]
-
-        if len(market_window) != len(stock_window):
-            return np.nan
-
-        # numpy配列への明示的変換（型エラー回避）
-        return fast_beta_nb(np.asarray(stock_window), np.asarray(market_window))
-
-    # VectorBT rolling_apply（修正版）
-    beta_series = stock_clean.vbt.rolling_apply(window, vbt_beta_nb)
-
-    # 元インデックスに戻す
-    return cast(pd.Series, beta_series.reindex(stock_price.index, fill_value=np.nan))
+    return numba_rolling_beta(stock_price, market_price, window)
 
 
 def beta_range_signal_with_value(
@@ -413,16 +378,12 @@ def beta_range_signal_with_value(
         β値計算を1回で済ませ、シグナルと値を同時取得（2x高速化）
     """
     # 計算方法選択（1回のみ計算）
-    if method == "pandas":
-        rolling_beta = pandas_rolling_beta(stock_price, market_price, lookback_period)
-    elif method == "numba":
-        rolling_beta = numba_rolling_beta(stock_price, market_price, lookback_period)
-    elif method == "vectorbt":
-        rolling_beta = vectorbt_rolling_beta(stock_price, market_price, lookback_period)
-    else:
-        raise ValueError(
-            f"Unknown method: {method}. Use 'pandas', 'numba', or 'vectorbt'"
-        )
+    rolling_beta = _rolling_beta_by_method(
+        stock_price,
+        market_price,
+        lookback_period,
+        cast(BetaMethod, method),
+    )
 
     # シグナル条件適用
     signal_condition = (rolling_beta >= beta_min) & (rolling_beta <= beta_max)
@@ -461,19 +422,14 @@ def fast_beta_range_signal(
     Performance:
         - pandas: 中速（rolling.cov/var使用）
         - numba: 高速（@njit最適化）
-        - vectorbt: 最高速（15倍高速化）
+        - vectorbt: 互換 alias（内部では numba を利用）
     """
-    # 計算方法選択
-    if method == "pandas":
-        rolling_beta = pandas_rolling_beta(stock_price, market_price, lookback_period)
-    elif method == "numba":
-        rolling_beta = numba_rolling_beta(stock_price, market_price, lookback_period)
-    elif method == "vectorbt":
-        rolling_beta = vectorbt_rolling_beta(stock_price, market_price, lookback_period)
-    else:
-        raise ValueError(
-            f"Unknown method: {method}. Use 'pandas', 'numba', or 'vectorbt'"
-        )
+    rolling_beta = _rolling_beta_by_method(
+        stock_price,
+        market_price,
+        lookback_period,
+        cast(BetaMethod, method),
+    )
 
     # シグナル条件適用
     signal_condition = (rolling_beta >= beta_min) & (rolling_beta <= beta_max)

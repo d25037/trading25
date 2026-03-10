@@ -6,12 +6,16 @@ from typing import Any, Literal, Protocol
 
 import numpy as np
 import pandas as pd
-import vectorbt as vbt
 
 from src.domains.strategy.indicators import (
+    compute_atr,
     compute_atr_support_line,
+    compute_bollinger_bands,
+    compute_macd,
+    compute_moving_average,
     compute_nbar_support,
     compute_risk_adjusted_return,
+    compute_rsi,
     compute_trading_value_ma,
     compute_volume_mas,
     compute_volume_weighted_ema,
@@ -88,7 +92,7 @@ def _compute_sma(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
     period = params["period"]
-    ma: pd.Series[float] = vbt.MA.run(ohlcv["Close"], period).ma
+    ma = compute_moving_average(ohlcv["Close"], period, ma_type="sma")
     key = _make_key("sma", period=period)
     return key, _series_to_records(ma, nan_handling)
 
@@ -97,7 +101,7 @@ def _compute_ema(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
     period = params["period"]
-    ma: pd.Series[float] = vbt.MA.run(ohlcv["Close"], period, ewm=True).ma
+    ma = compute_moving_average(ohlcv["Close"], period, ma_type="ema")
     key = _make_key("ema", period=period)
     return key, _series_to_records(ma, nan_handling)
 
@@ -119,7 +123,7 @@ def _compute_rsi(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
     period = params.get("period", 14)
-    rsi: pd.Series[float] = vbt.RSI.run(ohlcv["Close"], period).rsi
+    rsi = compute_rsi(ohlcv["Close"], period)
     key = _make_key("rsi", period=period)
     return key, _series_to_records(rsi, nan_handling)
 
@@ -130,18 +134,18 @@ def _compute_macd(
     fast = params.get("fast_period", 12)
     slow = params.get("slow_period", 26)
     signal_period = params.get("signal_period", 9)
-    macd_result = vbt.MACD.run(
+    macd_result = compute_macd(
         ohlcv["Close"],
-        fast_window=fast,
-        slow_window=slow,
-        signal_window=signal_period,
+        fast_period=fast,
+        slow_period=slow,
+        signal_period=signal_period,
     )
     key = _make_key("macd", fast=fast, slow=slow, signal=signal_period)
     return key, _multi_series_to_records(
         {
             "macd": macd_result.macd,
             "signal": macd_result.signal,
-            "histogram": macd_result.hist,
+            "histogram": macd_result.histogram,
         },
         nan_handling,
     )
@@ -155,12 +159,12 @@ def _compute_ppo(
     signal_period = params.get("signal_period", 9)
 
     close = ohlcv["Close"]
-    fast_ema: pd.Series[float] = vbt.MA.run(close, fast, ewm=True).ma
-    slow_ema: pd.Series[float] = vbt.MA.run(close, slow, ewm=True).ma
+    fast_ema = compute_moving_average(close, fast, ma_type="ema")
+    slow_ema = compute_moving_average(close, slow, ma_type="ema")
 
-    ppo_line: pd.Series[float] = (fast_ema - slow_ema) / slow_ema.replace(0, np.nan) * 100
-    signal_line: pd.Series[float] = vbt.MA.run(ppo_line, signal_period, ewm=True).ma
-    histogram: pd.Series[float] = ppo_line - signal_line
+    ppo_line = (fast_ema - slow_ema) / slow_ema.replace(0, np.nan) * 100
+    signal_line = compute_moving_average(ppo_line, signal_period, ma_type="ema")
+    histogram = ppo_line - signal_line
 
     key = _make_key("ppo", fast=fast, slow=slow, signal=signal_period)
     return key, _multi_series_to_records(
@@ -174,7 +178,7 @@ def _compute_bollinger(
 ) -> tuple[str, list[dict[str, Any]]]:
     period = params.get("period", 20)
     std_dev = params.get("std_dev", 2.0)
-    bb = vbt.BBANDS.run(ohlcv["Close"], window=period, alpha=std_dev)
+    bb = compute_bollinger_bands(ohlcv["Close"], window=period, alpha=std_dev)
     key = _make_key("bollinger", period=period, std=std_dev)
     return key, _multi_series_to_records(
         {"upper": bb.upper, "middle": bb.middle, "lower": bb.lower},
@@ -186,9 +190,14 @@ def _compute_atr(
     ohlcv: pd.DataFrame, params: dict[str, Any], nan_handling: str
 ) -> tuple[str, list[dict[str, Any]]]:
     period = params.get("period", 14)
-    atr_result = vbt.ATR.run(ohlcv["High"], ohlcv["Low"], ohlcv["Close"], window=period)
+    atr_result = compute_atr(
+        ohlcv["High"],
+        ohlcv["Low"],
+        ohlcv["Close"],
+        period=period,
+    )
     key = _make_key("atr", period=period)
-    return key, _series_to_records(atr_result.atr, nan_handling)
+    return key, _series_to_records(atr_result, nan_handling)
 
 
 def _compute_atr_support(

@@ -7,11 +7,119 @@ signal関数とindicator serviceの両方から呼ばれる計算ロジック。
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Literal
 
 import numpy as np
 import pandas as pd
-import vectorbt as vbt
+
+MovingAverageType = Literal["sma", "ema"]
+
+
+@dataclass(frozen=True, slots=True)
+class MACDResult:
+    macd: pd.Series[float]
+    signal: pd.Series[float]
+    histogram: pd.Series[float]
+
+
+@dataclass(frozen=True, slots=True)
+class BollingerBandsResult:
+    upper: pd.Series[float]
+    middle: pd.Series[float]
+    lower: pd.Series[float]
+
+
+def compute_moving_average(
+    series: pd.Series[float],
+    period: int,
+    ma_type: MovingAverageType = "sma",
+) -> pd.Series[float]:
+    """単純/指数移動平均を計算する。"""
+    if ma_type == "sma":
+        return series.rolling(window=period, min_periods=period).mean()
+    if ma_type == "ema":
+        return series.ewm(span=period, adjust=False, min_periods=period).mean()
+    raise ValueError(f"未対応のma_type: {ma_type} (sma/emaのみ)")
+
+
+def compute_rsi(
+    close: pd.Series[float],
+    period: int = 14,
+) -> pd.Series[float]:
+    """Wilder smoothing ベースの RSI を計算する。"""
+    delta = close.diff()
+    gains = delta.clip(lower=0)
+    losses = -delta.clip(upper=0)
+
+    avg_gain = gains.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+    avg_loss = losses.ewm(alpha=1 / period, adjust=False, min_periods=period).mean()
+
+    rs = avg_gain / avg_loss.replace(0, np.nan)
+    rsi = 100 - (100 / (1 + rs))
+
+    flat_mask = (avg_gain == 0) & (avg_loss == 0)
+    rsi = rsi.mask(flat_mask, 50.0)
+    rsi = rsi.mask((avg_loss == 0) & (avg_gain > 0), 100.0)
+    rsi = rsi.mask((avg_gain == 0) & (avg_loss > 0), 0.0)
+    return rsi
+
+
+def compute_macd(
+    close: pd.Series[float],
+    fast_period: int = 12,
+    slow_period: int = 26,
+    signal_period: int = 9,
+) -> MACDResult:
+    """MACD line / signal line / histogram を計算する。"""
+    fast_ema = compute_moving_average(close, fast_period, ma_type="ema")
+    slow_ema = compute_moving_average(close, slow_period, ma_type="ema")
+    macd_line = fast_ema - slow_ema
+    signal_line = compute_moving_average(macd_line, signal_period, ma_type="ema")
+    histogram = macd_line - signal_line
+    return MACDResult(
+        macd=macd_line,
+        signal=signal_line,
+        histogram=histogram,
+    )
+
+
+def compute_bollinger_bands(
+    close: pd.Series[float],
+    window: int = 20,
+    alpha: float = 2.0,
+) -> BollingerBandsResult:
+    """ボリンジャーバンドを計算する。"""
+    middle = close.rolling(window=window, min_periods=window).mean()
+    std = close.rolling(window=window, min_periods=window).std(ddof=0)
+    band_width = std * alpha
+    return BollingerBandsResult(
+        upper=middle + band_width,
+        middle=middle,
+        lower=middle - band_width,
+    )
+
+
+def _compute_true_range(
+    high: pd.Series[float],
+    low: pd.Series[float],
+    close: pd.Series[float],
+) -> pd.Series[float]:
+    tr1 = high - low
+    tr2 = abs(high - close.shift(1))
+    tr3 = abs(low - close.shift(1))
+    return pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+
+
+def compute_atr(
+    high: pd.Series[float],
+    low: pd.Series[float],
+    close: pd.Series[float],
+    period: int = 14,
+) -> pd.Series[float]:
+    """ATR を計算する。"""
+    true_range = _compute_true_range(high, low, close)
+    return compute_moving_average(true_range, period, ma_type="ema")
 
 
 def compute_atr_support_line(
@@ -28,11 +136,12 @@ def compute_atr_support_line(
       atr_value = ta.ema(trueRange, lookback_period)
       support_line = highest_close - (atr_value * atr_multiplier)
     """
-    tr1 = high - low
-    tr2 = abs(high - close.shift(1))
-    tr3 = abs(low - close.shift(1))
-    true_range = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
-    atr_ema: pd.Series[float] = vbt.MA.run(true_range, lookback_period, ewm=True).ma
+    true_range = _compute_true_range(high, low, close)
+    atr_ema = compute_moving_average(
+        true_range,
+        lookback_period,
+        ma_type="ema",
+    )
     highest_close = close.rolling(window=lookback_period).max()
     return highest_close - (atr_ema * atr_multiplier)
 
@@ -44,9 +153,9 @@ def compute_volume_mas(
     ma_type: str = "sma",
 ) -> tuple[pd.Series[float], pd.Series[float]]:
     """出来高の短期/長期MA"""
-    ewm = ma_type == "ema"
-    short_ma: pd.Series[float] = vbt.MA.run(volume, short_period, ewm=ewm).ma
-    long_ma: pd.Series[float] = vbt.MA.run(volume, long_period, ewm=ewm).ma
+    resolved_ma_type: MovingAverageType = "ema" if ma_type == "ema" else "sma"
+    short_ma = compute_moving_average(volume, short_period, ma_type=resolved_ma_type)
+    long_ma = compute_moving_average(volume, long_period, ma_type=resolved_ma_type)
     return short_ma, long_ma
 
 
@@ -57,8 +166,7 @@ def compute_trading_value_ma(
 ) -> pd.Series[float]:
     """売買代金MA (億円単位)"""
     trading_value = close * volume / 1e8
-    ma: pd.Series[float] = vbt.MA.run(trading_value, period).ma
-    return ma
+    return compute_moving_average(trading_value, period)
 
 
 def compute_volume_weighted_ema(
@@ -71,8 +179,12 @@ def compute_volume_weighted_ema(
     定義: EMA(close * volume, period) / EMA(volume, period)
     """
     weighted_price = close * volume
-    weighted_price_ema: pd.Series[float] = vbt.MA.run(weighted_price, period, ewm=True).ma
-    volume_ema: pd.Series[float] = vbt.MA.run(volume, period, ewm=True).ma
+    weighted_price_ema = compute_moving_average(
+        weighted_price,
+        period,
+        ma_type="ema",
+    )
+    volume_ema = compute_moving_average(volume, period, ma_type="ema")
     return weighted_price_ema / volume_ema.replace(0, np.nan)
 
 
@@ -121,5 +233,7 @@ def compute_risk_adjusted_return(
 
     ratio = pd.Series(np.nan, index=close.index, dtype=float)
     valid_mask = rolling_denominator > 0
-    ratio[valid_mask] = (rolling_mean[valid_mask] / rolling_denominator[valid_mask]) * np.sqrt(252)
+    ratio[valid_mask] = (
+        rolling_mean[valid_mask] / rolling_denominator[valid_mask]
+    ) * np.sqrt(252)
     return ratio

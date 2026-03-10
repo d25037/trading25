@@ -5,7 +5,7 @@ from unittest.mock import MagicMock
 import pandas as pd
 
 from src.domains.optimization.engine import ParameterOptimizationEngine
-from src.domains.optimization.metrics import collect_metrics
+from src.domains.optimization.metrics import collect_metrics, extract_trade_count
 from src.shared.models.signals import SignalParams
 
 
@@ -37,6 +37,37 @@ def test_collect_metrics_includes_trade_count_from_trades_count():
     assert metrics["trade_count"] == 12
 
 
+def test_extract_trade_count_uses_count_sum_when_available():
+    portfolio = _make_portfolio()
+    portfolio.trades.count.return_value = pd.Series([1, 2, 3])
+
+    assert extract_trade_count(portfolio) == 6
+
+
+def test_extract_trade_count_returns_zero_when_trades_access_fails():
+    class _BrokenPortfolio:
+        @property
+        def trades(self):
+            raise RuntimeError("no trades")
+
+    assert extract_trade_count(_BrokenPortfolio()) == 0
+
+
+def test_extract_trade_count_clamps_negative_count_to_zero():
+    portfolio = _make_portfolio()
+    portfolio.trades.count.return_value = -3
+
+    assert extract_trade_count(portfolio) == 0
+
+
+def test_extract_trade_count_falls_back_to_records_length_when_count_invalid():
+    portfolio = _make_portfolio()
+    portfolio.trades.count.return_value = "invalid"
+    portfolio.trades.records_readable = pd.DataFrame({"PnL": [1.0, -0.5]})
+
+    assert extract_trade_count(portfolio) == 2
+
+
 def test_collect_metrics_fallbacks_to_records_readable_when_count_fails():
     portfolio = _make_portfolio()
     portfolio.trades.count.side_effect = RuntimeError("count unavailable")
@@ -63,6 +94,16 @@ def test_collect_metrics_sets_trade_count_zero_when_trades_access_fails():
     metrics = collect_metrics(portfolio, _make_scoring_weights())
 
     assert metrics["trade_count"] == 0
+
+
+def test_collect_metrics_uses_zero_for_invalid_canonical_metric():
+    portfolio = _make_portfolio()
+    portfolio.sharpe_ratio.return_value = float("nan")
+    portfolio.trades.count.return_value = 1
+
+    metrics = collect_metrics(portfolio, _make_scoring_weights())
+
+    assert "sharpe_ratio" not in metrics
 
 
 def test_collect_metrics_ignores_unsupported_metric_key():

@@ -5,8 +5,13 @@
 """
 
 import pandas as pd
-import vectorbt as vbt
 from loguru import logger
+
+from src.domains.strategy.indicators import (
+    compute_macd,
+    compute_moving_average,
+    compute_rsi,
+)
 
 
 def crossover_signal(
@@ -113,22 +118,22 @@ def indicator_crossover_signal(
         f"短期={fast_period}, 長期={slow_period}, ルックバック={lookback_days}日"
     )
 
-    # インジケーター計算（VectorBT使用）
+    # インジケーター計算
     if indicator_type == "sma":
-        fast = vbt.MA.run(close, fast_period).ma
-        slow = vbt.MA.run(close, slow_period).ma
+        fast = compute_moving_average(close, fast_period, ma_type="sma")
+        slow = compute_moving_average(close, slow_period, ma_type="sma")
     elif indicator_type == "ema":
-        fast = vbt.MA.run(close, fast_period, ewm=True).ma
-        slow = vbt.MA.run(close, slow_period, ewm=True).ma
+        fast = compute_moving_average(close, fast_period, ma_type="ema")
+        slow = compute_moving_average(close, slow_period, ma_type="ema")
     elif indicator_type == "rsi":
-        fast = vbt.RSI.run(close, fast_period).rsi
-        slow = vbt.RSI.run(close, slow_period).rsi
+        fast = compute_rsi(close, fast_period)
+        slow = compute_rsi(close, slow_period)
     elif indicator_type == "macd":
-        macd = vbt.MACD.run(
+        macd = compute_macd(
             close,
-            fast_window=fast_period,
-            slow_window=slow_period,
-            signal_window=signal_period,
+            fast_period=fast_period,
+            slow_period=slow_period,
+            signal_period=signal_period,
         )
         fast = macd.macd
         slow = macd.signal

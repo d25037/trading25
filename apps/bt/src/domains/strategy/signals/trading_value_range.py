@@ -1,13 +1,14 @@
 """
 売買代金範囲シグナル実装
 
-VectorBTベースの売買代金範囲判定シグナル関数を提供
+売買代金範囲判定シグナル関数を提供
 流動性が適度にある銘柄の絞り込みに使用
 """
 
 import pandas as pd
-import vectorbt as vbt
 from loguru import logger
+
+from src.domains.strategy.indicators import compute_trading_value_ma
 
 
 def trading_value_range_signal(
@@ -46,13 +47,8 @@ def trading_value_range_signal(
         logger.debug("売買代金範囲シグナル: 空データのため空Seriesを返します")
         return pd.Series([], dtype=bool)
 
-    # 売買代金計算（億円単位）
-    trading_value = close * volume / 1e8
-
     # 売買代金移動平均計算
-    trading_value_ma = vbt.indicators.MA.run(
-        trading_value, period, short_name="TradingValue_MA"
-    ).ma
+    trading_value_ma = compute_trading_value_ma(close, volume, period)
 
     # 範囲判定: min_threshold ≤ trading_value_ma ≤ max_threshold
     result = (

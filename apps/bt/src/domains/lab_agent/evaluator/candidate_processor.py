@@ -10,6 +10,10 @@ import numpy as np
 import pandas as pd
 from loguru import logger
 
+from src.domains.backtest.vectorbt_adapter import (
+    canonical_metrics_from_portfolio,
+    ensure_execution_portfolio,
+)
 from src.infrastructure.data_access.mode import data_access_mode_context
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
@@ -19,7 +23,7 @@ from ..models import EvaluationResult, StrategyCandidate
 from .data_preparation import convert_dict_to_dataframes
 
 
-def _safe_float(value: float, default: float = 0.0) -> float:
+def _safe_float(value: Any, default: float = 0.0) -> float:
     """NaN/Inf値を安全にfloatに変換"""
     if pd.notna(value) and np.isfinite(value):
         return float(value)
@@ -101,17 +105,22 @@ def evaluate_single_candidate(
                 max_allocation=shared_config.max_allocation,
             )
 
-        # メトリクス抽出
-        sharpe = portfolio.sharpe_ratio()
-        calmar = portfolio.calmar_ratio()
-        total_return = portfolio.total_return()
-        max_dd = portfolio.max_drawdown()
+        portfolio = ensure_execution_portfolio(portfolio)
+        summary_metrics = canonical_metrics_from_portfolio(portfolio)
 
-        # NaN/Infチェック
-        sharpe = _safe_float(sharpe)
-        calmar = _safe_float(calmar)
-        total_return = _safe_float(total_return)
-        max_dd = _safe_float(max_dd)
+        # メトリクス抽出
+        sharpe = _safe_float(
+            summary_metrics.sharpe_ratio if summary_metrics is not None else float("nan")
+        )
+        calmar = _safe_float(
+            summary_metrics.calmar_ratio if summary_metrics is not None else float("nan")
+        )
+        total_return = _safe_float(
+            summary_metrics.total_return if summary_metrics is not None else float("nan")
+        )
+        max_dd = _safe_float(
+            summary_metrics.max_drawdown if summary_metrics is not None else float("nan")
+        )
 
         # 勝率・トレード数
         try:
@@ -126,8 +135,14 @@ def evaluate_single_candidate(
                 win_rate = 0.0
                 trade_count = 0
         except Exception:
-            win_rate = 0.0
-            trade_count = 0
+            win_rate = _safe_float(
+                summary_metrics.win_rate if summary_metrics is not None else float("nan")
+            )
+            trade_count = (
+                int(summary_metrics.trade_count)
+                if summary_metrics is not None and summary_metrics.trade_count is not None
+                else 0
+            )
 
         # 複合スコア計算（仮、後で正規化）
         metrics = {"sharpe_ratio": sharpe, "calmar_ratio": calmar, "total_return": total_return}

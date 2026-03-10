@@ -22,6 +22,7 @@ import pandas as pd
 from loguru import logger
 
 from src.domains.backtest.core.runner import BacktestRunner
+from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 from src.domains.strategy.core.yaml_configurable_strategy import YamlConfigurableStrategy
@@ -81,7 +82,7 @@ class StrategyRuntimeCache:
 
 
 def _safe_metric(value: Any) -> float:
-    """Convert vectorbt metric outputs to finite float."""
+    """Convert metric outputs to finite float."""
     try:
         if hasattr(value, "mean"):
             value = value.mean()
@@ -216,10 +217,14 @@ def _evaluate_parameters(
         min_allocation=shared_config.min_allocation,
         max_allocation=shared_config.max_allocation,
     )
-    portfolio_any: Any = kelly_portfolio
+    summary_metrics = canonical_metrics_from_portfolio(kelly_portfolio)
     metrics = AttributionMetrics(
-        total_return=_safe_metric(portfolio_any.total_return()),
-        sharpe_ratio=_safe_metric(portfolio_any.sharpe_ratio()),
+        total_return=_safe_metric(
+            summary_metrics.total_return if summary_metrics is not None else None
+        ),
+        sharpe_ratio=_safe_metric(
+            summary_metrics.sharpe_ratio if summary_metrics is not None else None
+        ),
     )
     return metrics, StrategyRuntimeCache.from_strategy(strategy)
 
