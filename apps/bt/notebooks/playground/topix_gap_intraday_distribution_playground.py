@@ -9,7 +9,7 @@
 
 import marimo
 
-__generated_with = "0.19.0"
+__generated_with = "0.20.4"
 app = marimo.App(
     width="full",
     app_title="TOPIX Gap / Intraday Distribution Playground",
@@ -19,10 +19,12 @@ app = marimo.App(
 @app.cell
 def _():
     import marimo as mo
+    import pandas as pd
     import matplotlib.pyplot as plt
     import sys
     from pathlib import Path
-    return Path, mo, plt, sys
+
+    return Path, mo, pd, plt, sys
 
 
 @app.cell
@@ -220,6 +222,7 @@ def _(error_message, mo, parsed_inputs, result):
     - Sample size per group/bucket: **{parsed_inputs["selected_sample_size"]}**
     - Plot clip: **{_selected_clip[0]:.1f}% → {_selected_clip[1]:.1f}%**
     - Excluded TOPIX days without previous close: **{result.excluded_topix_days_without_prev_close}**
+    - Fixed rotation rule: **weak => TOPIX500 long / strong => PRIME ex TOPIX500 long / neutral => flat**
     """
         )
     _summary_view
@@ -290,6 +293,43 @@ def _(error_message, mo, plt, result):
 
 @app.cell
 def _(error_message, mo, plt, result):
+    _expected_return_chart = mo.md("")
+    if not error_message and result is not None:
+        _summary_df = result.summary_df[result.summary_df["sample_count"] > 0].copy()
+        if _summary_df.empty:
+            _expected_return_chart = mo.md("No sampled rows for expected-return chart.")
+        else:
+            _summary_df["label"] = (
+                _summary_df["stock_group"] + "\n" + _summary_df["gap_bucket_label"]
+            )
+            _summary_df["mean_intraday_return_pct"] = (
+                _summary_df["mean_intraday_return"] * 100.0
+            )
+
+            _fig, _ax = plt.subplots(figsize=(14, 5))
+            _x = range(len(_summary_df))
+            _values = _summary_df["mean_intraday_return_pct"].fillna(0.0)
+            _colors = [
+                "#7a7a7a"
+                if raw_value != raw_value
+                else ("#2a9d8f" if raw_value >= 0 else "#e76f51")
+                for raw_value in _summary_df["mean_intraday_return"]
+            ]
+            _ax.bar(_x, _values, color=_colors)
+            _ax.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.7)
+            _ax.set_ylabel("Mean return (%)")
+            _ax.set_title("Expected Intraday Return by Group and Gap Bucket")
+            _ax.set_xticks(list(_x))
+            _ax.set_xticklabels(_summary_df["label"], rotation=35, ha="right")
+            _ax.grid(axis="y", alpha=0.2)
+            _fig.tight_layout()
+            _expected_return_chart = _fig
+    _expected_return_chart
+    return
+
+
+@app.cell
+def _(error_message, mo, plt, result):
     _distribution_chart = mo.md("")
     if not error_message and result is not None:
         _plot_df = result.clipped_samples_df
@@ -350,6 +390,157 @@ def _(error_message, mo, plt, result):
 
 @app.cell
 def _(error_message, mo, result):
+    _rotation_summary_view = mo.md("")
+    if not error_message and result is not None:
+        _overall_df = result.rotation_overall_summary_df
+        if _overall_df.empty:
+            _rotation_summary_view = mo.md(
+                "## Simple Rotation Strategy\n\nNo analyzable TOPIX gap days in range."
+            )
+        else:
+            _row = _overall_df.iloc[0]
+            _rotation_summary_view = mo.md(
+                f"""
+    ## Simple Rotation Strategy
+
+    - Rule: **weak => TOPIX500 long / strong => PRIME ex TOPIX500 long / neutral => flat**
+    - Total days: **{int(_row["total_days"])}**
+    - Trade days: **{int(_row["trade_days"])}** (weak: **{int(_row["weak_trade_days"])}**, strong: **{int(_row["strong_trade_days"])}**)
+    - Flat days: **{int(_row["flat_days"])}**
+    - Mean trade return: **{_row["mean_trade_return"] * 100:.3f}%**
+    - Mean daily return: **{_row["mean_daily_return"] * 100:.3f}%**
+    - Cumulative return: **{_row["cumulative_return"] * 100:.2f}%**
+    - Max drawdown: **{_row["max_drawdown"] * 100:.2f}%**
+    """
+            )
+    _rotation_summary_view
+    return
+
+
+@app.cell
+def _(error_message, mo, pd, plt, result):
+    _rotation_curve_chart = mo.md("")
+    if not error_message and result is not None:
+        _daily_df = result.rotation_daily_df.copy()
+        if _daily_df.empty:
+            _rotation_curve_chart = mo.md("No strategy daily rows to plot.")
+        else:
+            _dates = pd.to_datetime(_daily_df["date"])
+            _signal_colors = _daily_df["signal_label"].map(
+                {
+                    "weak": "#e07a5f",
+                    "strong": "#2a9d8f",
+                    "neutral": "#9aa5b1",
+                }
+            )
+
+            _fig, (_ax1, _ax2) = plt.subplots(
+                2,
+                1,
+                figsize=(14, 8),
+                sharex=True,
+                gridspec_kw={"height_ratios": [2, 1]},
+            )
+            _ax1.plot(_dates, _daily_df["equity_curve"], color="#1d3557", linewidth=2.0)
+            _ax1.set_title("Simple Rotation Strategy Equity Curve")
+            _ax1.set_ylabel("Equity")
+            _ax1.grid(axis="y", alpha=0.2)
+
+            _ax2.bar(
+                _dates,
+                _daily_df["strategy_return"] * 100.0,
+                color=_signal_colors,
+                width=1.2,
+            )
+            _ax2.axhline(0.0, color="#444444", linewidth=1.0, alpha=0.7)
+            _ax2.set_title("Daily Strategy Return")
+            _ax2.set_ylabel("Return (%)")
+            _ax2.grid(axis="y", alpha=0.2)
+
+            _fig.tight_layout()
+            _rotation_curve_chart = _fig
+    _rotation_curve_chart
+    return
+
+
+@app.cell
+def _(error_message, mo, result):
+    _rotation_table_view = mo.md("")
+    if not error_message and result is not None:
+        if result.rotation_daily_df.empty:
+            _rotation_table_view = mo.md("No strategy summary rows to display.")
+        else:
+            _overall_columns = [
+                "strategy_name",
+                "total_days",
+                "trade_days",
+                "flat_days",
+                "weak_trade_days",
+                "strong_trade_days",
+                "missing_trade_days",
+                "mean_trade_return",
+                "median_trade_return",
+                "mean_daily_return",
+                "win_trade_ratio",
+                "loss_trade_ratio",
+                "cumulative_return",
+                "final_equity",
+                "max_drawdown",
+            ]
+            _signal_columns = [
+                "signal_label",
+                "selected_group",
+                "position",
+                "day_count",
+                "mean_strategy_return",
+                "median_strategy_return",
+                "win_ratio",
+                "loss_ratio",
+                "cumulative_return",
+            ]
+            _daily_columns = [
+                "date",
+                "gap_bucket_label",
+                "gap_return",
+                "signal_label",
+                "selected_group",
+                "position",
+                "selected_group_constituent_count",
+                "selected_group_return",
+                "strategy_return",
+                "cumulative_return",
+            ]
+            _rotation_table_view = mo.vstack(
+                [
+                    mo.md("### Rotation Strategy Summary"),
+                    mo.Html(
+                        result.rotation_overall_summary_df[_overall_columns].to_html(
+                            index=False,
+                            float_format=lambda value: f"{value:.4f}",
+                        )
+                    ),
+                    mo.md("### Rotation Strategy by Signal"),
+                    mo.Html(
+                        result.rotation_signal_summary_df[_signal_columns].to_html(
+                            index=False,
+                            float_format=lambda value: f"{value:.4f}",
+                        )
+                    ),
+                    mo.md("### Rotation Strategy Daily Rows (latest 120)"),
+                    mo.Html(
+                        result.rotation_daily_df[_daily_columns].tail(120).to_html(
+                            index=False,
+                            float_format=lambda value: f"{value:.4f}",
+                        )
+                    ),
+                ]
+            )
+    _rotation_table_view
+    return
+
+
+@app.cell
+def _(error_message, mo, result):
     _table_view = mo.md("")
     if not error_message and result is not None:
         _summary_columns = [
@@ -362,6 +553,7 @@ def _(error_message, mo, result):
             "up_ratio",
             "down_ratio",
             "flat_ratio",
+            "mean_intraday_return",
             "mean_intraday_diff",
             "median_intraday_diff",
             "p05_intraday_diff",
@@ -376,6 +568,7 @@ def _(error_message, mo, result):
             "date",
             "code",
             "intraday_diff",
+            "intraday_return",
             "direction",
             "sample_rank",
         ]
@@ -383,7 +576,10 @@ def _(error_message, mo, result):
             [
                 mo.md("### Bucket Day Counts"),
                 mo.Html(result.day_counts_df.to_html(index=False)),
-                mo.md("### Exact Summary"),
+                mo.md(
+                    "### Exact Summary\n\n"
+                    "`mean_intraday_return = average((close-open)/open)`"
+                ),
                 mo.Html(
                     result.summary_df[_summary_columns].to_html(
                         index=False,
@@ -400,6 +596,17 @@ def _(error_message, mo, result):
             ]
         )
     _table_view
+    return
+
+
+@app.cell
+def _():
+    return
+
+
+@app.cell
+def _():
+    return
 
 
 if __name__ == "__main__":

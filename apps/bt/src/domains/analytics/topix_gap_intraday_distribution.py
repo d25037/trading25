@@ -33,6 +33,7 @@ StockGroup = Literal[
     "PRIME ex TOPIX500",
 ]
 SourceMode = Literal["live", "snapshot"]
+RotationSignalLabel = Literal["weak", "strong", "neutral"]
 
 GAP_BUCKET_ORDER: tuple[GapBucketKey, ...] = (
     "gap_le_negative_threshold_2",
@@ -61,6 +62,12 @@ _LOCK_ERROR_PATTERNS: tuple[str, ...] = (
     "conflicting lock is held",
     "could not set lock",
 )
+ROTATION_WEAK_GROUP: StockGroup = "TOPIX500"
+ROTATION_STRONG_GROUP: StockGroup = "PRIME ex TOPIX500"
+ROTATION_REQUIRED_GROUPS: tuple[StockGroup, StockGroup] = (
+    ROTATION_WEAK_GROUP,
+    ROTATION_STRONG_GROUP,
+)
 
 
 @dataclass(frozen=True)
@@ -81,6 +88,9 @@ class TopixGapIntradayDistributionResult:
     samples_df: pd.DataFrame
     clipped_samples_df: pd.DataFrame
     clip_bounds_df: pd.DataFrame
+    rotation_daily_df: pd.DataFrame
+    rotation_signal_summary_df: pd.DataFrame
+    rotation_overall_summary_df: pd.DataFrame
 
 
 @dataclass(frozen=True)
@@ -251,22 +261,22 @@ def _grouped_stock_days_cte(
 
     group_selects = {
         "PRIME": """
-            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'PRIME' AS stock_group
+            SELECT date, normalized_code, intraday_diff, intraday_return, direction, gap_bucket_key, gap_return, 'PRIME' AS stock_group
             FROM stock_days_joined
             WHERE is_prime
         """,
         "TOPIX100": """
-            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'TOPIX100' AS stock_group
+            SELECT date, normalized_code, intraday_diff, intraday_return, direction, gap_bucket_key, gap_return, 'TOPIX100' AS stock_group
             FROM stock_days_joined
             WHERE is_topix100
         """,
         "TOPIX500": """
-            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'TOPIX500' AS stock_group
+            SELECT date, normalized_code, intraday_diff, intraday_return, direction, gap_bucket_key, gap_return, 'TOPIX500' AS stock_group
             FROM stock_days_joined
             WHERE is_topix500
         """,
         "PRIME ex TOPIX500": """
-            SELECT date, normalized_code, intraday_diff, direction, gap_bucket_key, gap_return, 'PRIME ex TOPIX500' AS stock_group
+            SELECT date, normalized_code, intraday_diff, intraday_return, direction, gap_bucket_key, gap_return, 'PRIME ex TOPIX500' AS stock_group
             FROM stock_days_joined
             WHERE is_prime_ex_topix500
         """,
@@ -338,6 +348,10 @@ def _grouped_stock_days_cte(
                 normalized_code,
                 close - open AS intraday_diff,
                 CASE
+                    WHEN open = 0 THEN NULL
+                    ELSE (close - open) / open
+                END AS intraday_return,
+                CASE
                     WHEN close - open > 0 THEN 'up'
                     WHEN close - open < 0 THEN 'down'
                     ELSE 'flat'
@@ -350,6 +364,7 @@ def _grouped_stock_days_cte(
                 s.date,
                 s.normalized_code,
                 s.intraday_diff,
+                s.intraday_return,
                 s.direction,
                 t.gap_bucket_key,
                 t.gap_return,
@@ -443,6 +458,54 @@ def _query_day_counts(
     return df, excluded_count
 
 
+def _query_topix_gap_days(
+    conn: Any,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    gap_threshold_1: float,
+    gap_threshold_2: float,
+) -> pd.DataFrame:
+    gap_where_sql, gap_params = _date_where_clause("date", start_date, end_date)
+    gap_return_sql = _gap_return_sql()
+    gap_bucket_case_sql = _gap_bucket_case_sql()
+    sql = f"""
+        WITH topix_with_gap AS (
+            SELECT
+                date,
+                {gap_bucket_case_sql} AS gap_bucket_key,
+                CASE
+                    WHEN open IS NULL OR prev_close IS NULL OR prev_close = 0 THEN NULL
+                    ELSE {gap_return_sql}
+                END AS gap_return
+            FROM (
+                SELECT
+                    date,
+                    open,
+                    close,
+                    LAG(close) OVER (ORDER BY date) AS prev_close
+                FROM topix_data
+            ) ordered_topix
+            {gap_where_sql}
+        )
+        SELECT
+            date,
+            gap_bucket_key,
+            gap_return
+        FROM topix_with_gap
+        WHERE gap_bucket_key IS NOT NULL
+        ORDER BY date
+    """
+    params = [
+        gap_threshold_2,
+        gap_threshold_1,
+        gap_threshold_1,
+        gap_threshold_2,
+        *gap_params,
+    ]
+    return cast(pd.DataFrame, conn.execute(sql, params).fetchdf())
+
+
 def _query_summary(
     conn: Any,
     *,
@@ -471,6 +534,7 @@ def _query_summary(
             AVG(CASE WHEN direction = 'up' THEN 1.0 ELSE 0.0 END) AS up_ratio,
             AVG(CASE WHEN direction = 'down' THEN 1.0 ELSE 0.0 END) AS down_ratio,
             AVG(CASE WHEN direction = 'flat' THEN 1.0 ELSE 0.0 END) AS flat_ratio,
+            AVG(intraday_return) AS mean_intraday_return,
             AVG(intraday_diff) AS mean_intraday_diff,
             median(intraday_diff) AS median_intraday_diff,
             quantile_cont(intraday_diff, 0.05) AS p05_intraday_diff,
@@ -480,6 +544,39 @@ def _query_summary(
             quantile_cont(intraday_diff, 0.95) AS p95_intraday_diff
         FROM grouped_stock_days
         GROUP BY stock_group, gap_bucket_key
+    """
+    return cast(pd.DataFrame, conn.execute(sql, params).fetchdf())
+
+
+def _query_daily_group_returns(
+    conn: Any,
+    *,
+    start_date: str | None,
+    end_date: str | None,
+    gap_threshold_1: float,
+    gap_threshold_2: float,
+    selected_groups: Sequence[StockGroup],
+) -> pd.DataFrame:
+    cte_sql, params = _grouped_stock_days_cte(
+        start_date=start_date,
+        end_date=end_date,
+        gap_threshold_1=gap_threshold_1,
+        gap_threshold_2=gap_threshold_2,
+        selected_groups=selected_groups,
+    )
+    sql = f"""
+        {cte_sql}
+        SELECT
+            stock_group,
+            gap_bucket_key,
+            date,
+            AVG(intraday_return) AS day_mean_intraday_return,
+            AVG(CASE WHEN direction = 'up' THEN 1.0 ELSE 0.0 END) AS day_up_ratio,
+            AVG(CASE WHEN direction = 'down' THEN 1.0 ELSE 0.0 END) AS day_down_ratio,
+            COUNT(*) AS constituent_count
+        FROM grouped_stock_days
+        GROUP BY stock_group, gap_bucket_key, date
+        ORDER BY date, stock_group
     """
     return cast(pd.DataFrame, conn.execute(sql, params).fetchdf())
 
@@ -531,6 +628,7 @@ def _query_samples(
                 "date",
                 "code",
                 "intraday_diff",
+                "intraday_return",
                 "direction",
                 "sample_rank",
             ]
@@ -551,6 +649,7 @@ def _query_samples(
             date,
             normalized_code AS code,
             intraday_diff,
+            intraday_return,
             direction,
             sample_rank
         FROM (
@@ -560,6 +659,7 @@ def _query_samples(
                 date,
                 normalized_code,
                 intraday_diff,
+                intraday_return,
                 direction,
                 ROW_NUMBER() OVER (
                     PARTITION BY stock_group, gap_bucket_key
@@ -626,6 +726,223 @@ def _complete_summary_grid(
         )
     )
     return merged
+
+
+def _rotation_signal_for_bucket(bucket_key: GapBucketKey) -> RotationSignalLabel:
+    if bucket_key in (
+        "gap_le_negative_threshold_2",
+        "gap_negative_threshold_2_to_1",
+    ):
+        return "weak"
+    if bucket_key in ("gap_threshold_1_to_2", "gap_ge_threshold_2"):
+        return "strong"
+    return "neutral"
+
+
+def _rotation_group_for_signal(signal_label: RotationSignalLabel) -> StockGroup | None:
+    if signal_label == "weak":
+        return ROTATION_WEAK_GROUP
+    if signal_label == "strong":
+        return ROTATION_STRONG_GROUP
+    return None
+
+
+def _max_drawdown(equity_curve: pd.Series) -> float:
+    if equity_curve.empty:
+        return 0.0
+    anchored_equity = pd.concat(
+        [pd.Series([1.0], dtype=float), equity_curve.reset_index(drop=True)],
+        ignore_index=True,
+    )
+    drawdown = anchored_equity / anchored_equity.cummax() - 1.0
+    return float(drawdown.min())
+
+
+def _build_rotation_strategy_outputs(
+    *,
+    topix_gap_days_df: pd.DataFrame,
+    rotation_group_daily_df: pd.DataFrame,
+    gap_threshold_1: float,
+    gap_threshold_2: float,
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    strategy_daily_df = topix_gap_days_df.copy()
+    if strategy_daily_df.empty:
+        empty_daily = pd.DataFrame(
+            columns=[
+                "date",
+                "gap_bucket_key",
+                "gap_bucket_label",
+                "gap_return",
+                "signal_label",
+                "selected_group",
+                "position",
+                "selected_group_return",
+                "selected_group_up_ratio",
+                "selected_group_down_ratio",
+                "selected_group_constituent_count",
+                "missing_selected_group_return",
+                "strategy_return",
+                "equity_curve",
+                "cumulative_return",
+            ]
+        )
+        empty_signal_summary = pd.DataFrame(
+            columns=[
+                "signal_label",
+                "selected_group",
+                "position",
+                "day_count",
+                "mean_strategy_return",
+                "median_strategy_return",
+                "win_ratio",
+                "loss_ratio",
+                "cumulative_return",
+            ]
+        )
+        empty_overall_summary = pd.DataFrame(
+            columns=[
+                "strategy_name",
+                "total_days",
+                "trade_days",
+                "flat_days",
+                "weak_trade_days",
+                "strong_trade_days",
+                "missing_trade_days",
+                "mean_trade_return",
+                "median_trade_return",
+                "mean_daily_return",
+                "win_trade_ratio",
+                "loss_trade_ratio",
+                "cumulative_return",
+                "final_equity",
+                "max_drawdown",
+            ]
+        )
+        return empty_daily, empty_signal_summary, empty_overall_summary
+
+    strategy_daily_df["gap_bucket_label"] = strategy_daily_df["gap_bucket_key"].map(
+        lambda value: format_gap_bucket_label(
+            cast(GapBucketKey, value),
+            gap_threshold_1=gap_threshold_1,
+            gap_threshold_2=gap_threshold_2,
+        )
+    )
+    strategy_daily_df["signal_label"] = strategy_daily_df["gap_bucket_key"].map(
+        lambda value: _rotation_signal_for_bucket(cast(GapBucketKey, value))
+    )
+    strategy_daily_df["selected_group"] = strategy_daily_df["signal_label"].map(
+        _rotation_group_for_signal
+    )
+    strategy_daily_df["position"] = strategy_daily_df["selected_group"].map(
+        lambda value: "long" if value else "flat"
+    )
+
+    group_daily = rotation_group_daily_df.rename(
+        columns={
+            "stock_group": "selected_group",
+            "day_mean_intraday_return": "selected_group_return",
+            "day_up_ratio": "selected_group_up_ratio",
+            "day_down_ratio": "selected_group_down_ratio",
+            "constituent_count": "selected_group_constituent_count",
+        }
+    )
+    strategy_daily_df = strategy_daily_df.merge(
+        group_daily[
+            [
+                "date",
+                "gap_bucket_key",
+                "selected_group",
+                "selected_group_return",
+                "selected_group_up_ratio",
+                "selected_group_down_ratio",
+                "selected_group_constituent_count",
+            ]
+        ],
+        how="left",
+        on=["date", "gap_bucket_key", "selected_group"],
+    )
+    strategy_daily_df["missing_selected_group_return"] = (
+        strategy_daily_df["position"].eq("long")
+        & strategy_daily_df["selected_group_return"].isna()
+    )
+    strategy_daily_df["strategy_return"] = strategy_daily_df["selected_group_return"]
+    strategy_daily_df.loc[
+        strategy_daily_df["position"].eq("flat"), "strategy_return"
+    ] = 0.0
+    strategy_daily_df.loc[
+        strategy_daily_df["missing_selected_group_return"], "strategy_return"
+    ] = 0.0
+    strategy_daily_df["equity_curve"] = (
+        1.0 + strategy_daily_df["strategy_return"]
+    ).cumprod()
+    strategy_daily_df["cumulative_return"] = strategy_daily_df["equity_curve"] - 1.0
+
+    strategy_signal_summary_df = (
+        strategy_daily_df.groupby(
+            ["signal_label", "selected_group", "position"],
+            as_index=False,
+            dropna=False,
+        )
+        .agg(
+            day_count=("date", "count"),
+            mean_strategy_return=("strategy_return", "mean"),
+            median_strategy_return=("strategy_return", "median"),
+            win_ratio=("strategy_return", lambda values: (values > 0).mean()),
+            loss_ratio=("strategy_return", lambda values: (values < 0).mean()),
+            cumulative_return=(
+                "strategy_return",
+                lambda values: (1.0 + values).prod() - 1.0,
+            ),
+        )
+    )
+
+    trade_mask = strategy_daily_df["position"].eq("long")
+    trade_returns = strategy_daily_df.loc[trade_mask, "strategy_return"]
+    final_equity = float(strategy_daily_df["equity_curve"].iloc[-1])
+    strategy_overall_summary_df = pd.DataFrame(
+        [
+            {
+                "strategy_name": (
+                    "weak=>TOPIX500 long / strong=>PRIME ex TOPIX500 long / "
+                    "neutral=>flat"
+                ),
+                "total_days": int(len(strategy_daily_df)),
+                "trade_days": int(trade_mask.sum()),
+                "flat_days": int((~trade_mask).sum()),
+                "weak_trade_days": int(
+                    strategy_daily_df["signal_label"].eq("weak").sum()
+                ),
+                "strong_trade_days": int(
+                    strategy_daily_df["signal_label"].eq("strong").sum()
+                ),
+                "missing_trade_days": int(
+                    strategy_daily_df["missing_selected_group_return"].sum()
+                ),
+                "mean_trade_return": float(trade_returns.mean())
+                if not trade_returns.empty
+                else 0.0,
+                "median_trade_return": float(trade_returns.median())
+                if not trade_returns.empty
+                else 0.0,
+                "mean_daily_return": float(strategy_daily_df["strategy_return"].mean()),
+                "win_trade_ratio": float((trade_returns > 0).mean())
+                if not trade_returns.empty
+                else 0.0,
+                "loss_trade_ratio": float((trade_returns < 0).mean())
+                if not trade_returns.empty
+                else 0.0,
+                "cumulative_return": final_equity - 1.0,
+                "final_equity": final_equity,
+                "max_drawdown": _max_drawdown(strategy_daily_df["equity_curve"]),
+            }
+        ]
+    )
+
+    return (
+        strategy_daily_df,
+        strategy_signal_summary_df,
+        strategy_overall_summary_df,
+    )
 
 
 def _apply_sample_clipping(
@@ -743,6 +1060,13 @@ def run_topix_gap_intraday_distribution(
             gap_threshold_1=gap_threshold_1,
             gap_threshold_2=gap_threshold_2,
         )
+        rotation_topix_gap_days_df = _query_topix_gap_days(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+            gap_threshold_1=gap_threshold_1,
+            gap_threshold_2=gap_threshold_2,
+        )
         summary_df = _query_summary(
             conn,
             start_date=start_date,
@@ -750,6 +1074,14 @@ def run_topix_gap_intraday_distribution(
             gap_threshold_1=gap_threshold_1,
             gap_threshold_2=gap_threshold_2,
             selected_groups=validated_groups,
+        )
+        rotation_group_daily_df = _query_daily_group_returns(
+            conn,
+            start_date=start_date,
+            end_date=end_date,
+            gap_threshold_1=gap_threshold_1,
+            gap_threshold_2=gap_threshold_2,
+            selected_groups=ROTATION_REQUIRED_GROUPS,
         )
         samples_df = _query_samples(
             conn,
@@ -795,6 +1127,16 @@ def run_topix_gap_intraday_distribution(
                 gap_threshold_2=gap_threshold_2,
             )
         )
+    (
+        rotation_daily_df,
+        rotation_signal_summary_df,
+        rotation_overall_summary_df,
+    ) = _build_rotation_strategy_outputs(
+        topix_gap_days_df=rotation_topix_gap_days_df,
+        rotation_group_daily_df=rotation_group_daily_df,
+        gap_threshold_1=gap_threshold_1,
+        gap_threshold_2=gap_threshold_2,
+    )
 
     return TopixGapIntradayDistributionResult(
         db_path=db_path,
@@ -813,4 +1155,7 @@ def run_topix_gap_intraday_distribution(
         samples_df=samples_df,
         clipped_samples_df=clipped_samples_df,
         clip_bounds_df=clip_bounds_df,
+        rotation_daily_df=rotation_daily_df,
+        rotation_signal_summary_df=rotation_signal_summary_df,
+        rotation_overall_summary_df=rotation_overall_summary_df,
     )

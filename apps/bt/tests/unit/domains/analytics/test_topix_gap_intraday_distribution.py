@@ -118,6 +118,20 @@ def _summary_row(result, stock_group: str, bucket_key: str) -> pd.Series:
     return row.iloc[0]
 
 
+def _rotation_daily_row(result, date: str) -> pd.Series:
+    row = result.rotation_daily_df[result.rotation_daily_df["date"] == date]
+    assert len(row) == 1
+    return row.iloc[0]
+
+
+def _rotation_signal_row(result, signal_label: str) -> pd.Series:
+    row = result.rotation_signal_summary_df[
+        result.rotation_signal_summary_df["signal_label"] == signal_label
+    ]
+    assert len(row) == 1
+    return row.iloc[0]
+
+
 def test_gap_boundaries_and_missing_prev_close_are_handled(analytics_db_path: str) -> None:
     result = run_topix_gap_intraday_distribution(
         analytics_db_path,
@@ -158,6 +172,7 @@ def test_group_classification_and_4digit_preference(analytics_db_path: str) -> N
     assert prime_mid["up_count"] == 1
     assert prime_mid["down_count"] == 1
     assert prime_mid["flat_count"] == 1
+    assert prime_mid["mean_intraday_return"] == pytest.approx(1.0 / 30.0)
     assert prime_mid["mean_intraday_diff"] == pytest.approx(0.0)
     assert prime_mid["median_intraday_diff"] == pytest.approx(0.0)
     assert prime_mid["p50_intraday_diff"] == pytest.approx(0.0)
@@ -165,24 +180,92 @@ def test_group_classification_and_4digit_preference(analytics_db_path: str) -> N
     assert prime_down_large["sample_count"] == 3
     assert prime_down_large["up_count"] == 2
     assert prime_down_large["down_count"] == 1
+    assert prime_down_large["mean_intraday_return"] == pytest.approx(16.0 / 135.0)
     assert prime_down_large["mean_intraday_diff"] == pytest.approx(4.0 / 3.0)
 
     assert prime_small["sample_count"] == 3
     assert prime_small["up_count"] == 1
     assert prime_small["down_count"] == 2
+    assert prime_small["mean_intraday_return"] == pytest.approx(233.0 / 26448.0)
 
     assert topix100_mid["sample_count"] == 1
     assert topix100_mid["up_count"] == 1
+    assert topix100_mid["mean_intraday_return"] == pytest.approx(0.2)
     assert topix100_mid["mean_intraday_diff"] == pytest.approx(2.0)
 
     assert topix500_mid["sample_count"] == 2
     assert topix500_mid["up_count"] == 1
     assert topix500_mid["flat_count"] == 1
+    assert topix500_mid["mean_intraday_return"] == pytest.approx(0.1)
     assert topix500_mid["mean_intraday_diff"] == pytest.approx(1.0)
 
     assert prime_ex_mid["sample_count"] == 1
     assert prime_ex_mid["down_count"] == 1
+    assert prime_ex_mid["mean_intraday_return"] == pytest.approx(-0.1)
     assert prime_ex_mid["mean_intraday_diff"] == pytest.approx(-2.0)
+
+    sample_row = result.samples_df[
+        (result.samples_df["stock_group"] == "TOPIX100")
+        & (result.samples_df["gap_bucket_key"] == "gap_threshold_1_to_2")
+    ]
+    assert len(sample_row) == 1
+    assert sample_row.iloc[0]["intraday_return"] == pytest.approx(0.2)
+
+
+def test_rotation_strategy_outputs_are_returned(analytics_db_path: str) -> None:
+    result = run_topix_gap_intraday_distribution(
+        analytics_db_path,
+        sample_size=0,
+    )
+
+    day_1 = _rotation_daily_row(result, "2024-01-02")
+    day_2 = _rotation_daily_row(result, "2024-01-03")
+    day_3 = _rotation_daily_row(result, "2024-01-04")
+
+    assert day_1["signal_label"] == "strong"
+    assert day_1["selected_group"] == "PRIME ex TOPIX500"
+    assert day_1["position"] == "long"
+    assert day_1["strategy_return"] == pytest.approx(-0.1)
+    assert day_1["equity_curve"] == pytest.approx(0.9)
+
+    assert day_2["signal_label"] == "weak"
+    assert day_2["selected_group"] == "TOPIX500"
+    assert day_2["position"] == "long"
+    assert day_2["selected_group_return"] == pytest.approx(0.15)
+    assert day_2["strategy_return"] == pytest.approx(0.15)
+    assert day_2["equity_curve"] == pytest.approx(1.035)
+
+    assert day_3["signal_label"] == "neutral"
+    assert pd.isna(day_3["selected_group"])
+    assert day_3["position"] == "flat"
+    assert day_3["strategy_return"] == pytest.approx(0.0)
+    assert day_3["equity_curve"] == pytest.approx(1.035)
+
+    weak_signal = _rotation_signal_row(result, "weak")
+    strong_signal = _rotation_signal_row(result, "strong")
+    neutral_signal = _rotation_signal_row(result, "neutral")
+
+    assert weak_signal["day_count"] == 1
+    assert weak_signal["mean_strategy_return"] == pytest.approx(0.15)
+    assert strong_signal["day_count"] == 1
+    assert strong_signal["mean_strategy_return"] == pytest.approx(-0.1)
+    assert neutral_signal["day_count"] == 1
+    assert neutral_signal["cumulative_return"] == pytest.approx(0.0)
+
+    overall = result.rotation_overall_summary_df.iloc[0]
+    assert overall["total_days"] == 3
+    assert overall["trade_days"] == 2
+    assert overall["flat_days"] == 1
+    assert overall["weak_trade_days"] == 1
+    assert overall["strong_trade_days"] == 1
+    assert overall["missing_trade_days"] == 0
+    assert overall["mean_trade_return"] == pytest.approx(0.025)
+    assert overall["mean_daily_return"] == pytest.approx(1.0 / 60.0)
+    assert overall["win_trade_ratio"] == pytest.approx(0.5)
+    assert overall["loss_trade_ratio"] == pytest.approx(0.5)
+    assert overall["cumulative_return"] == pytest.approx(0.035)
+    assert overall["final_equity"] == pytest.approx(1.035)
+    assert overall["max_drawdown"] == pytest.approx(-0.1)
 
 
 def test_selected_date_range_filters_results(analytics_db_path: str) -> None:
@@ -248,6 +331,9 @@ def test_analysis_range_is_empty_when_no_rows_are_analyzable(analytics_db_path: 
     assert result.analysis_end_date is None
     assert result.samples_df.empty
     assert result.summary_df["sample_count"].sum() == 0
+    assert result.rotation_daily_df.empty
+    assert result.rotation_signal_summary_df.empty
+    assert result.rotation_overall_summary_df.empty
 
 
 def test_sampling_is_deterministic(analytics_db_path: str) -> None:
@@ -335,6 +421,7 @@ def test_sample_size_zero_returns_empty_samples(analytics_db_path: str) -> None:
     assert result.clipped_samples_df.empty
     assert result.clip_bounds_df.empty
     assert "gap_bucket_label" in result.samples_df.columns
+    assert "intraday_return" in result.samples_df.columns
 
 
 def test_selected_groups_are_deduplicated(analytics_db_path: str) -> None:
