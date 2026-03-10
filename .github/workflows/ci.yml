@@ -112,7 +112,7 @@ jobs:
         run: uv sync --locked
         working-directory: apps/bt
       - name: Download bt coverage artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           pattern: bt-coverage-*
           path: /tmp/bt-coverage
