@@ -11,6 +11,7 @@ import json
 import os
 import socket
 import uuid
+from contextlib import suppress
 from datetime import datetime, timedelta
 from typing import TYPE_CHECKING, Any
 
@@ -216,6 +217,33 @@ class JobManager:
         resolved_timeout_at = self._resolve_timeout_at(started_at, timeout_seconds)
         if resolved_timeout_at is not None:
             job.timeout_at = resolved_timeout_at
+
+    @staticmethod
+    def _lease_is_expired(job: JobInfo, *, now: datetime | None = None) -> bool:
+        if job.lease_expires_at is None:
+            return False
+        return job.lease_expires_at <= (now or datetime.now())
+
+    def _can_claim_execution_locked(
+        self,
+        job: JobInfo,
+        *,
+        lease_owner: str,
+        now: datetime | None = None,
+    ) -> bool:
+        if job.cancel_requested_at is not None:
+            return False
+
+        current_owner = job.lease_owner
+        if current_owner is None or current_owner == lease_owner:
+            return True
+
+        return self._lease_is_expired(job, now=now)
+
+    @staticmethod
+    def _can_heartbeat_execution_locked(job: JobInfo, *, lease_owner: str) -> bool:
+        current_owner = job.lease_owner
+        return current_owner == lease_owner
 
     def _clear_execution_claim_locked(self, job: JobInfo) -> None:
         job.lease_owner = None
@@ -630,6 +658,8 @@ class JobManager:
             job = self._resolve_job(job_id)
             if job is None or job.status in _TERMINAL_STATUSES:
                 return None
+            if not self._can_claim_execution_locked(job, lease_owner=lease_owner):
+                return None
 
             self._claim_execution_locked(
                 job,
@@ -657,6 +687,8 @@ class JobManager:
             job = self._resolve_job(job_id)
             if job is None or job.status in _TERMINAL_STATUSES:
                 return None
+            if not self._can_heartbeat_execution_locked(job, lease_owner=lease_owner):
+                return None
             self._claim_execution_locked(
                 job,
                 lease_owner=lease_owner,
@@ -664,6 +696,38 @@ class JobManager:
             )
             self._persist_job(job)
             return job
+
+    async def _await_cancelled_tasks(
+        self,
+        tasks: list[asyncio.Task[None]],
+        *,
+        timeout_seconds: float | None,
+    ) -> None:
+        pending = [task for task in tasks if not task.done()]
+        if not pending:
+            return
+
+        done, still_pending = await asyncio.wait(
+            pending,
+            timeout=timeout_seconds,
+        )
+
+        for task in done:
+            with suppress(asyncio.CancelledError):
+                exc = task.exception()
+                if exc is not None:
+                    logger.warning(f"shutdown中のジョブタスクが例外終了: {exc}")
+
+        if still_pending:
+            pending_job_ids = [
+                job.job_id
+                for job in self._jobs.values()
+                if job.task in still_pending
+            ]
+            logger.warning(
+                "shutdown待機後も完了していないジョブタスクがあります: "
+                f"count={len(still_pending)}, jobs={pending_job_ids}"
+            )
 
     async def reload_job_from_storage(
         self,
@@ -796,15 +860,23 @@ class JobManager:
         job_types: set[str] | None = None,
         limit: int = 10_000,
         reason: str = "process_shutdown",
+        task_timeout_seconds: float | None = 5.0,
     ) -> int:
         """アクティブジョブに durable cancel intent を残す。"""
         requested = 0
+        tasks_to_wait: list[asyncio.Task[None]] = []
         for job in self.list_jobs(limit=limit, job_types=job_types):
             if job.status not in _INCOMPLETE_STATUSES:
                 continue
             result = await self.request_job_cancel(job.job_id, reason=reason)
             if result is not None:
                 requested += 1
+                if result.task is not None and not result.task.done():
+                    tasks_to_wait.append(result.task)
+        await self._await_cancelled_tasks(
+            tasks_to_wait,
+            timeout_seconds=task_timeout_seconds,
+        )
         return requested
 
     async def cancel_job(self, job_id: str, *, reason: str = "user_requested") -> JobInfo | None:

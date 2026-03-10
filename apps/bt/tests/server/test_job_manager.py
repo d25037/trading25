@@ -185,6 +185,80 @@ class TestJobManager:
         assert heartbeated.lease_expires_at > previous_lease_expiry
 
     @pytest.mark.asyncio
+    async def test_claim_job_execution_rejects_other_owner_until_lease_expires(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        claimed = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=30,
+        )
+        assert claimed is not None
+
+        rejected = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-2",
+            lease_seconds=30,
+        )
+        assert rejected is None
+
+        active_job = mgr.get_job(job_id)
+        assert active_job is not None
+        assert active_job.lease_owner == "worker-1"
+
+        active_job.lease_expires_at = datetime.now() - timedelta(seconds=1)
+        taken_over = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-2",
+            lease_seconds=30,
+        )
+        assert taken_over is not None
+        assert taken_over.lease_owner == "worker-2"
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_job_execution_rejects_other_owner(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        claimed = await mgr.claim_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=30,
+        )
+        assert claimed is not None
+        previous_heartbeat = claimed.last_heartbeat_at
+
+        rejected = await mgr.heartbeat_job_execution(
+            job_id,
+            lease_owner="worker-2",
+            lease_seconds=45,
+        )
+        assert rejected is None
+
+        active_job = mgr.get_job(job_id)
+        assert active_job is not None
+        assert active_job.lease_owner == "worker-1"
+        assert active_job.last_heartbeat_at == previous_heartbeat
+
+    @pytest.mark.asyncio
+    async def test_heartbeat_job_execution_requires_existing_owner(self):
+        mgr = JobManager(default_lease_seconds=30)
+        job_id = mgr.create_job("test")
+
+        rejected = await mgr.heartbeat_job_execution(
+            job_id,
+            lease_owner="worker-1",
+            lease_seconds=45,
+        )
+
+        assert rejected is None
+        active_job = mgr.get_job(job_id)
+        assert active_job is not None
+        assert active_job.lease_owner is None
+        assert active_job.last_heartbeat_at is None
+
+    @pytest.mark.asyncio
     async def test_request_job_cancel_records_intent(self):
         mgr = JobManager()
         job_id = mgr.create_job("test")
@@ -283,6 +357,31 @@ class TestJobManager:
         assert running_job.cancel_requested_at is not None
         assert pending_job.cancel_reason == "process_shutdown"
         assert running_job.cancel_reason == "process_shutdown"
+
+    @pytest.mark.asyncio
+    async def test_shutdown_waits_for_cancelled_tasks_to_finish(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("running")
+        await mgr.update_job_status(job_id, JobStatus.RUNNING)
+        started = asyncio.Event()
+        finished = asyncio.Event()
+
+        async def _long_running() -> None:
+            started.set()
+            try:
+                await asyncio.sleep(100)
+            finally:
+                finished.set()
+
+        task = asyncio.create_task(_long_running())
+        await mgr.set_job_task(job_id, task)
+        await started.wait()
+
+        requested_count = await mgr.shutdown(task_timeout_seconds=1.0)
+
+        assert requested_count == 1
+        assert finished.is_set()
+        assert task.done()
 
     def test_subscribe_and_unsubscribe(self):
         mgr = JobManager()
