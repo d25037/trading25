@@ -18,56 +18,8 @@ CLI引数経由でパラメータを受け取り、静的HTMLとして出力
 """
 
 import marimo
-import pickle
-from pathlib import Path
-from typing import Any
 
-
-def _load_simulation_payload(
-    simulation_payload_path: str,
-) -> tuple[Any, Any, Any, Any]:
-    if not simulation_payload_path:
-        return None, None, None, None
-
-    payload_path = Path(simulation_payload_path)
-    if not payload_path.exists():
-        return None, None, None, None
-
-    import vectorbt as vbt
-    from src.domains.backtest.vectorbt_adapter import ensure_execution_portfolio
-
-    def _restore_component(value: Any) -> Any:
-        if not isinstance(value, dict):
-            return value
-
-        if value.get("__serialization__") != "vectorbt.dumps":
-            return value
-
-        payload = value.get("payload")
-        if not isinstance(payload, bytes):
-            return None
-
-        try:
-            return ensure_execution_portfolio(vbt.Portfolio.loads(payload))
-        except Exception:
-            return None
-
-    try:
-        with payload_path.open("rb") as f:
-            payload = pickle.load(f)
-    except Exception:
-        return None, None, None, None
-
-    if not isinstance(payload, dict):
-        return None, None, None, None
-
-    return (
-        _restore_component(payload.get("initial_portfolio")),
-        _restore_component(payload.get("kelly_portfolio")),
-        _restore_component(payload.get("allocation_info")),
-        _restore_component(payload.get("all_entries")),
-    )
-
+__generated_with = "0.20.4"
 app = marimo.App(width="full", app_title="Strategy Analysis")
 
 
@@ -115,6 +67,7 @@ def load_parameters(mo, json, sys, Path):
     exit_trigger_params = _params.get("exit_trigger_params", {})
     execution_meta = _params.get("_execution", {})
     output_html_path = execution_meta.get("html_path", "")
+    report_payload_path = execution_meta.get("report_payload_path", "")
     simulation_payload_path = execution_meta.get("simulation_payload_path", "")
 
     return (
@@ -123,6 +76,7 @@ def load_parameters(mo, json, sys, Path):
         exit_trigger_params,
         project_root,
         output_html_path,
+        report_payload_path,
         simulation_payload_path,
     )
 
@@ -222,23 +176,47 @@ def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_par
         _validation_errors.append(f"ExitTriggerParams: {e}")
 
     if _validation_errors:
-        mo.md("**Validation Errors:**\n" + "\n".join(_validation_errors))
+        _validation_view = mo.md("**Validation Errors:**\n" + "\n".join(_validation_errors))
     else:
-        mo.md("Parameters validated successfully")
+        _validation_view = mo.md("Parameters validated successfully")
+
+    _validation_view
 
 
 @app.cell
-def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params, simulation_payload_path):
+def execute_strategy(
+    mo,
+    shared_config,
+    entry_filter_params,
+    exit_trigger_params,
+    report_payload_path,
+    simulation_payload_path,
+):
+    from src.domains.backtest.core.report_payload import (
+        load_backtest_report_inputs,
+        load_legacy_simulation_inputs,
+    )
     from src.domains.strategy.core.factory import StrategyFactory
 
-    initial_portfolio, kelly_portfolio, allocation_info, all_entries = _load_simulation_payload(
-        simulation_payload_path
+    initial_portfolio, kelly_portfolio, allocation_info, all_entries = load_backtest_report_inputs(
+        report_payload_path
     )
 
     if initial_portfolio is not None and kelly_portfolio is not None:
-        mo.md("Loaded precomputed simulation artifact")
+        _status_view = mo.md("Loaded precomputed report payload")
+    else:
+        (
+            initial_portfolio,
+            kelly_portfolio,
+            allocation_info,
+            all_entries,
+        ) = load_legacy_simulation_inputs(simulation_payload_path)
+        _status_view = None
+
+    if initial_portfolio is not None and kelly_portfolio is not None:
+        _status_view = mo.md("Loaded precomputed simulation artifact")
     elif not shared_config:
-        mo.md("**Error**: No shared_config provided. Skipping strategy execution.")
+        _status_view = mo.md("**Error**: No shared_config provided. Skipping strategy execution.")
     else:
         _result = StrategyFactory.execute_strategy_with_config(
             shared_config, entry_filter_params, exit_trigger_params
@@ -249,7 +227,9 @@ def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params
         allocation_info = _result.get("allocation_info", _max_concurrent)
         all_entries = _result.get("all_entries", None)
 
-        mo.md("Strategy execution completed")
+        _status_view = mo.md("Strategy execution completed")
+
+    _ = _status_view
 
     return initial_portfolio, kelly_portfolio, allocation_info, all_entries
 

@@ -102,6 +102,7 @@ class _FakeExecutor:
             metrics_path=html_path.with_suffix(".metrics.json"),
             manifest_path=html_path.with_suffix(".manifest.json"),
             simulation_payload_path=html_path.with_suffix(".simulation.pkl"),
+            report_payload_path=html_path.with_suffix(".report.json"),
         )
 
     def execute_notebook(
@@ -163,11 +164,13 @@ def test_backtest_runner_uses_execution_config(monkeypatch, tmp_path: Path):
 
     assert result.html_path.exists()
     assert result.metrics_path is not None and result.metrics_path.exists()
+    assert result.report_payload_path is not None and result.report_payload_path.exists()
     assert fake_executor.executed_template_path == "custom_template.py"
     assert fake_executor.executed_strategy_name == "test_strategy"
     assert fake_executor.executed_extra_env == {"BT_DATA_ACCESS_MODE": "direct"}
     assert fake_executor.execution_metadata is not None
     assert "simulation_payload_path" in fake_executor.execution_metadata
+    assert "report_payload_path" in fake_executor.execution_metadata
 
 
 def test_backtest_runner_allows_http_override(monkeypatch, tmp_path: Path):
@@ -366,6 +369,7 @@ def test_backtest_runner_preserves_core_artifacts_when_html_render_fails(monkeyp
     assert result.metrics_path is not None and result.metrics_path.exists()
     assert result.manifest_path is not None and result.manifest_path.exists()
     assert result.render_error == "HTML file was not created"
+    assert result.report_payload_path is not None and result.report_payload_path.exists()
 
 
 def test_backtest_runner_preserves_core_artifacts_when_walk_forward_fails(
@@ -406,6 +410,7 @@ def test_backtest_runner_preserves_core_artifacts_when_walk_forward_fails(
     assert result.metrics_path is not None and result.metrics_path.exists()
     assert result.manifest_path is not None and result.manifest_path.exists()
     assert result.simulation_payload_path is not None and result.simulation_payload_path.exists()
+    assert result.report_payload_path is not None and result.report_payload_path.exists()
     assert "walk_forward" not in result.summary
 
 
