@@ -195,6 +195,7 @@ class TestOutputFilenameGeneration:
             assert paths.metrics_path == paths.html_path.with_suffix(".metrics.json")
             assert paths.manifest_path == paths.html_path.with_suffix(".manifest.json")
             assert paths.simulation_payload_path == paths.html_path.with_suffix(".simulation.pkl")
+            assert paths.report_payload_path == paths.html_path.with_suffix(".report.json")
 
     def test_validate_output_dir_tmp_fallback_when_data_dir_lookup_fails(self, monkeypatch):
         """get_data_dir が失敗しても /tmp は許可される"""

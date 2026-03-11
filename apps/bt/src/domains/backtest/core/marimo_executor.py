@@ -4,7 +4,6 @@ Marimo Notebook Executor
 Marimoを使用したNotebook実行・HTML出力ラッパー
 """
 
-from dataclasses import dataclass
 import json
 import os
 import re
@@ -16,17 +15,13 @@ from typing import Any
 
 from loguru import logger
 
+from src.domains.backtest.core.artifacts import (
+    BacktestArtifactPaths,
+    BacktestArtifactWriter,
+)
 from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
-
-@dataclass(frozen=True, slots=True)
-class BacktestReportPaths:
-    """Filesystem paths for backtest report artifacts."""
-
-    html_path: Path
-    metrics_path: Path
-    manifest_path: Path
-    simulation_payload_path: Path
+BacktestReportPaths = BacktestArtifactPaths
 
 
 class MarimoExecutor:
@@ -203,12 +198,7 @@ class MarimoExecutor:
             strategy_name=strategy_name,
             output_filename=output_filename,
         )
-        return BacktestReportPaths(
-            html_path=html_path,
-            metrics_path=html_path.with_suffix(".metrics.json"),
-            manifest_path=html_path.with_suffix(".manifest.json"),
-            simulation_payload_path=html_path.with_suffix(".simulation.pkl"),
-        )
+        return BacktestArtifactWriter.artifact_paths_for_html(html_path)
 
     def execute_notebook(
         self,

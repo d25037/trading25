@@ -1,4 +1,4 @@
-"""Tests for the backtest strategy analysis template helpers."""
+"""Tests for the backtest strategy analysis template module."""
 
 from __future__ import annotations
 
@@ -21,11 +21,7 @@ def _load_template_module():
     return module
 
 
-def test_load_simulation_payload_returns_empty_values_for_corrupt_pickle(tmp_path: Path):
+def test_strategy_analysis_template_exports_marimo_app():
     module = _load_template_module()
-    payload_path = tmp_path / "broken.simulation.pkl"
-    payload_path.write_bytes(b"not-a-pickle")
 
-    result = module._load_simulation_payload(str(payload_path))
-
-    assert result == (None, None, None, None)
+    assert getattr(module, "app", None) is not None

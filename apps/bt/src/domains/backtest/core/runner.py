@@ -8,9 +8,7 @@ import json
 import math
 import pickle
 import subprocess
-import sys
 import time
-from datetime import datetime
 from pathlib import Path
 from typing import Any, Callable
 
@@ -22,8 +20,20 @@ from src.infrastructure.data_access.mode import (
     data_access_mode_context,
     normalize_data_access_mode,
 )
+from src.domains.backtest.core.artifacts import (
+    BacktestArtifactWriter,
+    build_metrics_payload as build_backtest_metrics_payload,
+)
 from src.domains.backtest.vectorbt_adapter import canonical_metrics_from_portfolio
 from src.domains.backtest.core.marimo_executor import BacktestReportPaths, MarimoExecutor
+from src.domains.backtest.core.report_payload import (
+    build_backtest_report_payload,
+    write_backtest_report_payload,
+)
+from src.domains.backtest.core.simulation import (
+    BacktestSimulationExecutor,
+    BacktestSimulationResult,
+)
 from src.domains.strategy.runtime.loader import ConfigLoader
 
 
@@ -36,6 +46,10 @@ class BacktestResult(BaseModel):
     simulation_payload_path: Path | None = Field(
         default=None,
         description="serialized simulation payload artifact path",
+    )
+    report_payload_path: Path | None = Field(
+        default=None,
+        description="serialized report payload artifact path",
     )
     elapsed_time: float = Field(gt=0, description="完了ジョブの総実行時間（秒）")
     simulation_elapsed_time: float | None = Field(
@@ -60,6 +74,8 @@ class BacktestRunner:
     def __init__(self) -> None:
         """初期化"""
         self.config_loader = ConfigLoader()
+        self.artifact_writer = BacktestArtifactWriter()
+        self.simulation_executor = BacktestSimulationExecutor()
 
     def execute(
         self,
@@ -119,16 +135,21 @@ class BacktestRunner:
 
             notify("バックテストを実行中...")
 
-            simulation_result = self._execute_simulation(parameters)
+            simulation_result = self._normalize_simulation_result(
+                self._execute_simulation(parameters)
+            )
             simulation_elapsed_time = time.time() - start_time
 
-            metrics_payload = self._build_metrics_payload(
-                kelly_portfolio=simulation_result.get("kelly_portfolio"),
-                allocation_info=simulation_result.get("allocation_info"),
+            self._write_metrics_artifact(
+                report_paths.metrics_path,
+                simulation_result.metrics_payload,
             )
-            self._write_metrics_artifact(report_paths.metrics_path, metrics_payload)
             self._write_simulation_payload(
                 report_paths.simulation_payload_path,
+                simulation_result,
+            )
+            self._write_report_payload(
+                report_paths.report_payload_path,
                 simulation_result,
             )
 
@@ -138,6 +159,7 @@ class BacktestRunner:
                 manifest_path=report_paths.manifest_path,
                 metrics_path=report_paths.metrics_path,
                 simulation_payload_path=report_paths.simulation_payload_path,
+                report_payload_path=report_paths.report_payload_path,
                 parameters=parameters,
                 strategy_name=strategy_name_only,
                 dataset_name=dataset_name,
@@ -171,6 +193,7 @@ class BacktestRunner:
                 manifest_path=report_paths.manifest_path,
                 metrics_path=report_paths.metrics_path,
                 simulation_payload_path=report_paths.simulation_payload_path,
+                report_payload_path=report_paths.report_payload_path,
                 parameters=parameters,
                 strategy_name=strategy_name_only,
                 dataset_name=dataset_name,
@@ -187,6 +210,7 @@ class BacktestRunner:
                 metrics_path=report_paths.metrics_path,
                 manifest_path=manifest_path,
                 simulation_payload_path=report_paths.simulation_payload_path,
+                report_payload_path=report_paths.report_payload_path,
                 simulation_elapsed_time=simulation_elapsed_time,
                 total_elapsed_time=total_elapsed_time,
                 report_status=report_status,
@@ -207,6 +231,7 @@ class BacktestRunner:
                 metrics_path=report_paths.metrics_path,
                 manifest_path=manifest_path,
                 simulation_payload_path=report_paths.simulation_payload_path,
+                report_payload_path=report_paths.report_payload_path,
                 elapsed_time=total_elapsed_time,
                 simulation_elapsed_time=simulation_elapsed_time,
                 summary=summary,
@@ -233,17 +258,10 @@ class BacktestRunner:
         strategy_config = self.config_loader.load_strategy_config(strategy)
         return self._build_parameters(strategy_config, config_override)
 
-    def _execute_simulation(self, parameters: dict[str, Any]) -> dict[str, Any]:
-        from src.domains.strategy.core.factory import StrategyFactory
-
-        result = StrategyFactory.execute_strategy_with_config(
-            parameters.get("shared_config", {}),
-            parameters.get("entry_filter_params"),
-            parameters.get("exit_trigger_params"),
-        )
-        if not isinstance(result, dict):
-            raise RuntimeError("strategy simulation returned an invalid payload")
-        return result
+    def _execute_simulation(
+        self, parameters: dict[str, Any]
+    ) -> BacktestSimulationResult | dict[str, Any]:
+        return self.simulation_executor.execute(parameters)
 
     def _write_json_artifact(self, path: Path, payload: dict[str, Any]) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
@@ -259,22 +277,43 @@ class BacktestRunner:
         )
 
     def _write_metrics_artifact(self, metrics_path: Path, metrics_payload: dict[str, Any]) -> None:
-        self._write_json_artifact(metrics_path, metrics_payload)
+        self.artifact_writer.write_metrics(
+            metrics_path=metrics_path,
+            metrics_payload=metrics_payload,
+        )
 
-    def _write_simulation_payload(self, payload_path: Path, simulation_result: dict[str, Any]) -> None:
+    def _write_simulation_payload(
+        self,
+        payload_path: Path,
+        simulation_result: BacktestSimulationResult | dict[str, Any],
+    ) -> None:
+        normalized = self._normalize_simulation_result(simulation_result)
         payload = {
             "initial_portfolio": self._serialize_simulation_portfolio(
-                simulation_result.get("initial_portfolio")
+                normalized.initial_portfolio
             ),
             "kelly_portfolio": self._serialize_simulation_portfolio(
-                simulation_result.get("kelly_portfolio")
+                normalized.kelly_portfolio
             ),
-            "allocation_info": simulation_result.get("allocation_info"),
-            "all_entries": simulation_result.get("all_entries"),
+            "allocation_info": normalized.allocation_info,
+            "all_entries": normalized.all_entries,
         }
         payload_path.parent.mkdir(parents=True, exist_ok=True)
         with payload_path.open("wb") as file:
             pickle.dump(payload, file)
+
+    def _write_report_payload(
+        self,
+        payload_path: Path | None,
+        simulation_result: BacktestSimulationResult | dict[str, Any],
+    ) -> None:
+        if payload_path is None:
+            return
+        normalized = self._normalize_simulation_result(simulation_result)
+        write_backtest_report_payload(
+            path=payload_path,
+            payload=build_backtest_report_payload(normalized),
+        )
 
     def _serialize_simulation_portfolio(self, portfolio: Any) -> Any:
         if portfolio is None:
@@ -326,7 +365,10 @@ class BacktestRunner:
                 extra_env={DATA_ACCESS_MODE_ENV: data_access_mode},
                 html_path=report_paths.html_path,
                 execution_metadata={
-                    "simulation_payload_path": str(report_paths.simulation_payload_path)
+                    "simulation_payload_path": str(report_paths.simulation_payload_path),
+                    "report_payload_path": str(report_paths.report_payload_path)
+                    if report_paths.report_payload_path is not None
+                    else "",
                 },
             )
             if rendered_html_path.exists():
@@ -345,6 +387,7 @@ class BacktestRunner:
         metrics_path: Path,
         manifest_path: Path,
         simulation_payload_path: Path,
+        report_payload_path: Path | None,
         simulation_elapsed_time: float,
         total_elapsed_time: float,
         report_status: str,
@@ -360,6 +403,7 @@ class BacktestRunner:
             "_metrics_path": str(metrics_path),
             "_manifest_path": str(manifest_path),
             "_simulation_payload_path": str(simulation_payload_path),
+            "_report_payload_path": str(report_payload_path) if report_payload_path else None,
         }
         if render_error is not None:
             summary["_render_error"] = render_error
@@ -374,6 +418,7 @@ class BacktestRunner:
         manifest_path: Path | None = None,
         metrics_path: Path | None = None,
         simulation_payload_path: Path | None = None,
+        report_payload_path: Path | None = None,
         parameters: dict[str, Any],
         strategy_name: str,
         dataset_name: str,
@@ -385,56 +430,22 @@ class BacktestRunner:
         render_error: str | None = None,
     ) -> Path:
         """実行マニフェストをJSONで保存する。"""
-        resolved_manifest_path = manifest_path
-        if resolved_manifest_path is None:
-            if html_path is None:
-                raise ValueError("manifest_path is required when html_path is not available")
-            resolved_manifest_path = html_path.with_suffix(".manifest.json")
-        resolved_execution_time = (
-            total_elapsed_time if total_elapsed_time is not None else elapsed_time
+        return self.artifact_writer.write_manifest(
+            html_path=html_path,
+            manifest_path=manifest_path,
+            metrics_path=metrics_path,
+            simulation_payload_path=simulation_payload_path,
+            report_payload_path=report_payload_path,
+            parameters=parameters,
+            strategy_name=strategy_name,
+            dataset_name=dataset_name,
+            elapsed_time=elapsed_time,
+            total_elapsed_time=total_elapsed_time,
+            walk_forward=walk_forward,
+            report_status=report_status,
+            report_render_time=report_render_time,
+            render_error=render_error,
         )
-
-        manifest = {
-            "generated_at": datetime.now().isoformat(),
-            "strategy_name": strategy_name,
-            "dataset_name": dataset_name,
-            "html_path": str(html_path) if html_path else None,
-            "metrics_path": str(metrics_path) if metrics_path else None,
-            "simulation_payload_path": (
-                str(simulation_payload_path) if simulation_payload_path else None
-            ),
-            "execution_time": resolved_execution_time,
-            "simulation_elapsed_time": elapsed_time,
-            "total_elapsed_time": total_elapsed_time,
-            "parameters": parameters,
-            "simulation": {
-                "status": "completed",
-                "execution_time": elapsed_time,
-                "metrics_path": str(metrics_path) if metrics_path else None,
-                "simulation_payload_path": (
-                    str(simulation_payload_path) if simulation_payload_path else None
-                ),
-            },
-            "report": {
-                "renderer": "marimo_html",
-                "status": report_status,
-                "html_path": str(html_path) if html_path else None,
-                "render_time": report_render_time,
-                "error": render_error,
-            },
-            "versions": {
-                "python": sys.version.split()[0],
-                "vectorbt": self._get_package_version("vectorbt"),
-                "marimo": self._get_package_version("marimo"),
-                "pydantic": self._get_package_version("pydantic"),
-            },
-            "git_commit": self._get_git_commit(),
-        }
-        if walk_forward:
-            manifest["walk_forward"] = walk_forward
-
-        self._write_json_artifact(resolved_manifest_path, manifest)
-        return resolved_manifest_path
 
     @staticmethod
     def _get_package_version(package: str) -> str | None:
@@ -464,70 +475,10 @@ class BacktestRunner:
         kelly_portfolio: Any,
         allocation_info: Any,
     ) -> dict[str, Any]:
-        stats = None
-        if kelly_portfolio is not None and hasattr(kelly_portfolio, "stats"):
-            try:
-                stats = kelly_portfolio.stats()
-            except Exception as exc:
-                logger.warning(f"バックテストstats取得失敗: {exc}")
-
-        canonical_metrics = canonical_metrics_from_portfolio(kelly_portfolio)
-        metrics: dict[str, Any] = {
-            "total_return": self._extract_stat(stats, "Total Return [%]"),
-            "max_drawdown": self._extract_stat(stats, "Max Drawdown [%]"),
-            "sharpe_ratio": self._extract_stat(stats, "Sharpe Ratio"),
-            "sortino_ratio": self._extract_stat(stats, "Sortino Ratio"),
-            "calmar_ratio": self._extract_stat(stats, "Calmar Ratio"),
-            "win_rate": self._extract_stat(stats, "Win Rate [%]"),
-            "profit_factor": self._extract_stat(stats, "Profit Factor"),
-        }
-        total_trades = self._extract_stat(stats, "Total Trades")
-        metrics["total_trades"] = int(total_trades) if total_trades is not None else None
-        metrics["trade_count"] = metrics["total_trades"]
-
-        if canonical_metrics is not None:
-            metrics["total_return"] = self._prefer_metric_value(
-                metrics["total_return"],
-                canonical_metrics.total_return,
-            )
-            metrics["max_drawdown"] = self._prefer_metric_value(
-                metrics["max_drawdown"],
-                canonical_metrics.max_drawdown,
-            )
-            metrics["sharpe_ratio"] = self._prefer_metric_value(
-                metrics["sharpe_ratio"],
-                canonical_metrics.sharpe_ratio,
-            )
-            metrics["sortino_ratio"] = self._prefer_metric_value(
-                metrics["sortino_ratio"],
-                canonical_metrics.sortino_ratio,
-            )
-            metrics["calmar_ratio"] = self._prefer_metric_value(
-                metrics["calmar_ratio"],
-                canonical_metrics.calmar_ratio,
-            )
-            metrics["win_rate"] = self._prefer_metric_value(
-                metrics["win_rate"],
-                canonical_metrics.win_rate,
-            )
-            if metrics["trade_count"] is None:
-                metrics["trade_count"] = canonical_metrics.trade_count
-            if metrics["total_trades"] is None:
-                metrics["total_trades"] = canonical_metrics.trade_count
-
-        if hasattr(allocation_info, "allocation"):
-            metrics["optimal_allocation"] = self._coerce_metric(allocation_info.allocation)
-        elif isinstance(allocation_info, int | float):
-            metrics["optimal_allocation"] = self._coerce_metric(allocation_info)
-        else:
-            metrics["optimal_allocation"] = None
-
-        metrics["generated_at"] = datetime.now().isoformat()
-        return metrics
-
-    @staticmethod
-    def _prefer_metric_value(primary: Any, fallback: Any) -> Any:
-        return primary if primary is not None else fallback
+        return build_backtest_metrics_payload(
+            portfolio=kelly_portfolio,
+            allocation_info=allocation_info,
+        )
 
     def _sanitize_json_payload(self, value: Any) -> Any:
         if isinstance(value, dict):
@@ -540,32 +491,31 @@ class BacktestRunner:
             return value if math.isfinite(value) else None
         return value
 
-    def _extract_stat(self, stats: Any, key: str) -> float | None:
-        if stats is None:
-            return None
+    def _normalize_simulation_result(
+        self,
+        simulation_result: BacktestSimulationResult | dict[str, Any],
+    ) -> BacktestSimulationResult:
+        if isinstance(simulation_result, BacktestSimulationResult):
+            return simulation_result
+        if not isinstance(simulation_result, dict):
+            raise RuntimeError("strategy simulation returned an invalid payload")
 
-        try:
-            if hasattr(stats, "get"):
-                direct_value = stats.get(key)
-                parsed = self._coerce_metric(direct_value)
-                if parsed is not None:
-                    return parsed
-        except Exception:
-            pass
-
-        try:
-            index = getattr(stats, "index", None)
-            if index is not None and key in index:
-                row = stats.loc[key]
-                if hasattr(row, "mean"):
-                    return self._coerce_metric(row.mean())
-                if hasattr(row, "iloc"):
-                    return self._coerce_metric(row.iloc[0])
-                return self._coerce_metric(row)
-        except Exception:
-            return None
-
-        return None
+        allocation_info = simulation_result.get(
+            "allocation_info",
+            simulation_result.get("max_concurrent"),
+        )
+        kelly_portfolio = simulation_result.get("kelly_portfolio")
+        return BacktestSimulationResult(
+            initial_portfolio=simulation_result.get("initial_portfolio"),
+            kelly_portfolio=kelly_portfolio,
+            allocation_info=allocation_info,
+            all_entries=simulation_result.get("all_entries"),
+            summary_metrics=canonical_metrics_from_portfolio(kelly_portfolio),
+            metrics_payload=self._build_metrics_payload(
+                kelly_portfolio=kelly_portfolio,
+                allocation_info=allocation_info,
+            ),
+        )
 
     def _run_walk_forward(self, parameters: dict[str, Any]) -> dict[str, Any] | None:
         """ウォークフォワード分析を実行（設定有効時のみ）"""
