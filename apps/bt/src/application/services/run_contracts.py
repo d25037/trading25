@@ -50,6 +50,7 @@ _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
     ("_metrics_path", ArtifactKind.METRICS_JSON),
     ("_manifest_path", ArtifactKind.MANIFEST_JSON),
     ("_simulation_payload_path", ArtifactKind.SIMULATION_PAYLOAD),
+    ("_report_payload_path", ArtifactKind.REPORT_PAYLOAD),
     ("saved_strategy_path", ArtifactKind.STRATEGY_YAML),
     ("saved_history_path", ArtifactKind.HISTORY_YAML),
 )
@@ -313,6 +314,15 @@ def build_artifact_index(job: JobInfo) -> ArtifactIndex | None:
                     kind=ArtifactKind.SIMULATION_PAYLOAD,
                     storage=ArtifactStorage.FILESYSTEM,
                     path=str(simulation_payload_path),
+                )
+            )
+        report_payload_path = html_path.with_suffix(".report.json")
+        if report_payload_path.exists():
+            _append_artifact(
+                ArtifactRecord(
+                    kind=ArtifactKind.REPORT_PAYLOAD,
+                    storage=ArtifactStorage.FILESYSTEM,
+                    path=str(report_payload_path),
                 )
             )
 

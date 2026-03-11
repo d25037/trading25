@@ -284,6 +284,7 @@ class TestRefreshJobExecutionContracts:
         html_path.write_text("<html>ok</html>", encoding="utf-8")
         html_path.with_suffix(".metrics.json").write_text("{}", encoding="utf-8")
         html_path.with_suffix(".manifest.json").write_text("{}", encoding="utf-8")
+        html_path.with_suffix(".report.json").write_text("{}", encoding="utf-8")
 
         job = JobInfo("job-1", "demo-strategy", job_type="backtest")
         job.status = JobStatus.COMPLETED
@@ -317,6 +318,7 @@ class TestRefreshJobExecutionContracts:
         assert ArtifactKind.HTML in kinds
         assert ArtifactKind.METRICS_JSON in kinds
         assert ArtifactKind.MANIFEST_JSON in kinds
+        assert ArtifactKind.REPORT_PAYLOAD in kinds
         assert ArtifactKind.RESULT_SUMMARY in kinds
         assert ArtifactKind.RAW_RESULT_JSON in kinds
 
@@ -347,6 +349,8 @@ class TestRefreshJobExecutionContracts:
         manifest_path.write_text("{}", encoding="utf-8")
         simulation_payload_path = tmp_path / "result.simulation.pkl"
         simulation_payload_path.write_bytes(b"payload")
+        report_payload_path = tmp_path / "result.report.json"
+        report_payload_path.write_text("{}", encoding="utf-8")
 
         job = JobInfo("job-core", "demo-strategy", job_type="backtest")
         job.status = JobStatus.COMPLETED
@@ -365,6 +369,7 @@ class TestRefreshJobExecutionContracts:
             "_metrics_path": str(metrics_path),
             "_manifest_path": str(manifest_path),
             "_simulation_payload_path": str(simulation_payload_path),
+            "_report_payload_path": str(report_payload_path),
         }
 
         refresh_job_execution_contracts(job)
@@ -375,6 +380,7 @@ class TestRefreshJobExecutionContracts:
         assert ArtifactKind.METRICS_JSON in kinds
         assert ArtifactKind.MANIFEST_JSON in kinds
         assert ArtifactKind.SIMULATION_PAYLOAD in kinds
+        assert ArtifactKind.REPORT_PAYLOAD in kinds
 
     def test_attribution_job_uses_internal_artifact_path_for_index_and_strips_payload(self, tmp_path: Path) -> None:
         artifact_path = tmp_path / "attribution.json"
