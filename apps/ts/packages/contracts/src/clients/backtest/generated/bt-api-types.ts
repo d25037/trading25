@@ -2726,7 +2726,7 @@ export interface components {
          * @description Artifact role within a run.
          * @enum {string}
          */
-        ArtifactKind: "html" | "metrics_json" | "manifest_json" | "simulation_payload" | "result_summary" | "raw_result_json" | "attribution_json" | "strategy_yaml" | "history_yaml";
+        ArtifactKind: "html" | "metrics_json" | "manifest_json" | "simulation_payload" | "report_payload" | "result_summary" | "raw_result_json" | "attribution_json" | "strategy_yaml" | "history_yaml";
         /**
          * ArtifactRecord
          * @description Artifact registry entry for a run output.
