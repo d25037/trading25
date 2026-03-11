@@ -43,7 +43,7 @@ def _make_item(**kwargs) -> PortfolioItem:
         updated_at=NOW,
     )
     defaults.update(kwargs)
-    return PortfolioItem(**defaults)
+    return PortfolioItem.model_validate(defaults)
 
 
 class TestPortfolioItem:

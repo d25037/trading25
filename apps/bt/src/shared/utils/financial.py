@@ -6,14 +6,21 @@ signal関数とserver serviceの両方から呼ばれる計算ロジック。
 
 from __future__ import annotations
 
+from typing import TYPE_CHECKING, TypeAlias
+
 import numpy as np
 import pandas as pd
+
+if TYPE_CHECKING:
+    NumericSeries: TypeAlias = pd.Series[float] | pd.Series[int]
+else:
+    NumericSeries = pd.Series
 
 
 def calc_market_cap(
     close: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
+    shares_outstanding: NumericSeries,
+    treasury_shares: NumericSeries,
     use_floating_shares: bool = True,
 ) -> pd.Series[float]:
     """時価総額を計算（ベクトル化版: シグナル・バックテスト用）
@@ -27,11 +34,13 @@ def calc_market_cap(
     Returns:
         時価総額（円）。株式数が0以下の場合はNaN。
     """
-    # fillna(0) により int→float に暗黙変換されるが、計算結果は float で正しい
+    shares_outstanding_float = pd.to_numeric(shares_outstanding, errors="coerce").astype(float)
+    treasury_shares_float = pd.to_numeric(treasury_shares, errors="coerce").astype(float)
+
     shares = (
-        shares_outstanding - treasury_shares.fillna(0)
+        shares_outstanding_float - treasury_shares_float.fillna(0.0)
         if use_floating_shares
-        else shares_outstanding
+        else shares_outstanding_float
     )
     return close * shares.where(shares > 0, np.nan)
 

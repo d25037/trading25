@@ -3,23 +3,18 @@
 import asyncio
 import sys
 from types import SimpleNamespace
+from typing import cast
 
 import pytest
 
 from src.entrypoints.http.schemas.backtest import JobStatus
+from src.application.services.job_manager import JobManager
 from src.application.services.optimization_service import OptimizationService
 from src.domains.backtest.contracts import RunType
 
 
-def _success_payload() -> dict[str, object]:
-    return {
-        "best_score": 0.9,
-        "best_params": {"period": 20},
-        "worst_score": 0.1,
-        "worst_params": {"period": 5},
-        "total_combinations": 9,
-        "html_path": "/tmp/result.html",
-    }
+def _manager(**kwargs: object) -> JobManager:
+    return cast(JobManager, SimpleNamespace(**kwargs))
 
 
 def test_execute_optimization_sync_extracts_best_and_worst(monkeypatch):
@@ -87,7 +82,7 @@ async def test_submit_optimization_creates_task_and_returns_job_id(monkeypatch):
         _ = (args, kwargs)
         return None
 
-    manager = SimpleNamespace(
+    manager = _manager(
         create_job=lambda _strategy_name, job_type="optimization", run_spec=None: (
             captured.update({"job_type": job_type, "run_spec": run_spec}) or "opt-job-1"
         ),
@@ -121,7 +116,7 @@ async def test_submit_optimization_resolves_dataset_from_base_strategy(monkeypat
         _ = (args, kwargs)
         return None
 
-    manager = SimpleNamespace(
+    manager = _manager(
         create_job=lambda _strategy_name, job_type="optimization", run_spec=None: (
             captured.update({"job_type": job_type, "run_spec": run_spec}) or "opt-job-2"
         ),
@@ -169,7 +164,7 @@ async def test_run_optimization_success_sets_job_fields(monkeypatch):
         _ = (job_id, kwargs)
         statuses.append(status.value)
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: events.append("release"),
         update_job_status=_update_job_status,
@@ -222,7 +217,7 @@ async def test_run_optimization_success_without_job_object(monkeypatch):
         _ = (job_id, kwargs)
         statuses.append(status.value)
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: None,
         update_job_status=_update_job_status,
@@ -261,7 +256,7 @@ async def test_run_optimization_handles_cancelled(monkeypatch):
         _ = (job_id, kwargs)
         statuses.append(status.value)
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: events.append("release"),
         update_job_status=_update_job_status,
@@ -316,7 +311,7 @@ async def test_run_optimization_handles_failure(monkeypatch):
         statuses.append(status.value)
         errors.append(kwargs.get("error"))
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: events.append("release"),
         update_job_status=_update_job_status,
@@ -364,7 +359,7 @@ async def test_run_optimization_marks_failed_when_worker_exits_without_terminal_
         _ = job_id
         statuses.append((status.value, kwargs.get("error")))
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: None,
         update_job_status=_update_job_status,
@@ -410,7 +405,7 @@ async def test_run_optimization_cancelled_without_cancel_request_updates_cancell
         _ = (job_id, kwargs)
         statuses.append(status.value)
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: None,
         update_job_status=_update_job_status,
@@ -455,7 +450,7 @@ async def test_run_optimization_handles_start_worker_process_exception(monkeypat
         _ = job_id
         statuses.append((status.value, kwargs.get("error")))
 
-    manager = SimpleNamespace(
+    manager = _manager(
         acquire_slot=_acquire_slot,
         release_slot=lambda: None,
         update_job_status=_update_job_status,
@@ -476,7 +471,7 @@ async def test_run_optimization_handles_start_worker_process_exception(monkeypat
 
 @pytest.mark.asyncio
 async def test_wait_for_worker_completion_reloads_until_process_exits(monkeypatch):
-    manager = SimpleNamespace(reload_job_from_storage=pytest.fail)
+    manager = _manager(reload_job_from_storage=pytest.fail)
     service = OptimizationService(manager=manager, worker_poll_interval_seconds=0.01)
     reload_calls: list[tuple[str, bool]] = []
 
@@ -502,7 +497,10 @@ async def test_wait_for_worker_completion_reloads_until_process_exits(monkeypatc
 
     monkeypatch.setattr(asyncio, "wait_for", _wait_for)
 
-    exit_code = await service._wait_for_worker_completion("job-1", _FakeProcess())
+    exit_code = await service._wait_for_worker_completion(
+        "job-1",
+        cast(asyncio.subprocess.Process, _FakeProcess()),
+    )
 
     assert exit_code == 0
     assert reload_calls == [("job-1", True), ("job-1", True)]
@@ -537,7 +535,9 @@ async def test_terminate_worker_process_kills_when_terminate_times_out(monkeypat
 
     monkeypatch.setattr(asyncio, "wait_for", _wait_for)
 
-    await service._terminate_worker_process(_FakeProcess())
+    await service._terminate_worker_process(
+        cast(asyncio.subprocess.Process, _FakeProcess())
+    )
 
     assert events == ["terminate", "kill", "wait"]
 

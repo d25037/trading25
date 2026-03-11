@@ -7,7 +7,7 @@ UnifiedFilterProcessor + UnifiedTriggerProcessor の統合版
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING, Callable, Literal, Optional
+from typing import TYPE_CHECKING, Callable, Literal, Optional, Protocol
 
 import pandas as pd
 from loguru import logger
@@ -15,13 +15,28 @@ from loguru import logger
 from src.shared.models.signals import SignalParams, Signals
 
 # データ駆動設計: シグナルレジストリからの動的処理
-from .registry import SIGNAL_REGISTRY, SignalDefinition
+from .registry import SIGNAL_REGISTRY
 
 if TYPE_CHECKING:
     from src.domains.strategy.runtime.compiler import (
         CompiledSignalAvailability,
         CompiledStrategyIR,
     )
+
+
+class SignalDefinitionLike(Protocol):
+    name: str
+    signal_func: Callable[..., pd.Series]
+    enabled_checker: Callable[[SignalParams], bool]
+    param_builder: Callable[[SignalParams, dict], dict]
+    entry_purpose: str
+    exit_purpose: str
+    category: str
+    description: str
+    param_key: str
+    data_checker: Callable[[dict], bool] | None
+    exit_disabled: bool
+    data_requirements: list[str]
 
 
 class SignalProcessor:
@@ -267,7 +282,7 @@ class SignalProcessor:
         self,
         base_signal: pd.Series,
         signal_type: Literal["entry", "exit"],
-        ohlc_data: pd.DataFrame,
+        ohlc_data: pd.DataFrame | None,
         signal_params: SignalParams,
         margin_data: Optional[pd.DataFrame] = None,
         statements_data: Optional[pd.DataFrame] = None,
@@ -493,7 +508,7 @@ class SignalProcessor:
         compiled_strategy: CompiledStrategyIR | None,
         *,
         signal_type: Literal["entry", "exit"],
-        signal_def: SignalDefinition,
+        signal_def: SignalDefinitionLike,
     ) -> CompiledSignalAvailability | None:
         if compiled_strategy is None:
             return None
@@ -509,7 +524,7 @@ class SignalProcessor:
     def _should_lag_entry_signal_for_current_session_oracle(
         cls,
         signal_type: Literal["entry", "exit"],
-        signal_def: SignalDefinition,
+        signal_def: SignalDefinitionLike,
         compiled_strategy: CompiledStrategyIR | None = None,
     ) -> bool:
         availability = cls._get_compiled_signal_availability(
@@ -572,7 +587,7 @@ class SignalProcessor:
 
     def _describe_missing_requirements(
         self,
-        signal_def: SignalDefinition,
+        signal_def: SignalDefinitionLike,
         data_sources: dict,
     ) -> str:
         if not signal_def.data_requirements:
@@ -589,7 +604,7 @@ class SignalProcessor:
 
     def _apply_unified_signal(
         self,
-        signal_def: SignalDefinition,
+        signal_def: SignalDefinitionLike,
         signal_conditions: list,
         signal_type: Literal["entry", "exit"],
         signal_params: SignalParams,

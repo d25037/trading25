@@ -16,7 +16,7 @@ def _format_choices_message(choices: list[Any], field_name: str) -> str:
 def create_choice_validator(
     valid_values: list[str],
     field_name: str,
-) -> Callable[[type, str], str]:
+) -> Callable[[type | None, str], str]:
     """
     選択肢バリデータのファクトリ関数
 
@@ -45,7 +45,8 @@ def create_choice_validator(
     """
     error_msg = _format_choices_message(valid_values, field_name)
 
-    def validator(cls: type, v: str) -> str:
+    def validator(cls: type | None, v: str) -> str:
+        del cls
         if v not in valid_values:
             raise ValueError(error_msg)
         return v
@@ -57,7 +58,7 @@ def create_range_validator(
     min_val: float | None = None,
     max_val: float | None = None,
     field_name: str = "value",
-) -> Callable[[type, float], float]:
+) -> Callable[[type | None, float], float]:
     """
     範囲バリデータのファクトリ関数
 
@@ -70,7 +71,8 @@ def create_range_validator(
         Pydantic field_validator として使用可能なクラスメソッド
     """
 
-    def validator(cls: type, v: float) -> float:
+    def validator(cls: type | None, v: float) -> float:
+        del cls
         if min_val is not None and v < min_val:
             raise ValueError(f"{field_name}は{min_val}以上である必要があります")
         if max_val is not None and v > max_val:

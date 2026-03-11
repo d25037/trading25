@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock
 
 import pytest
@@ -64,6 +64,21 @@ class DummyJQuantsClient:
         return []
 
 
+def _market_db(last_sync_date: str | None = None) -> sync_service.SyncServiceMarketDbLike:
+    return cast(sync_service.SyncServiceMarketDbLike, DummyMarketDb(last_sync_date=last_sync_date))
+
+
+def _time_series_store(
+    *,
+    inspection: TimeSeriesInspection | None = None,
+    inspect_error: Exception | None = None,
+) -> sync_service.SyncServiceTimeSeriesStoreLike:
+    return cast(
+        sync_service.SyncServiceTimeSeriesStoreLike,
+        DummyTimeSeriesStore(inspection=inspection, inspect_error=inspect_error),
+    )
+
+
 class StrategyProbe:
     def __init__(
         self,
@@ -111,7 +126,7 @@ def isolated_manager(monkeypatch: pytest.MonkeyPatch) -> GenericJobManager:
 
 
 def test_resolve_mode_prefers_requested_non_auto() -> None:
-    market_db = DummyMarketDb(last_sync_date=None)
+    market_db = _market_db(last_sync_date=None)
     assert sync_service._resolve_mode(SyncMode.INDICES_ONLY, market_db) == "indices-only"
     assert sync_service._resolve_mode(SyncMode.REPAIR, market_db) == "repair"
 
@@ -119,20 +134,20 @@ def test_resolve_mode_prefers_requested_non_auto() -> None:
 def test_resolve_mode_auto_uses_metadata_anchor() -> None:
     assert sync_service._resolve_mode(
         SyncMode.AUTO,
-        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),
-        time_series_store=DummyTimeSeriesStore(),
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
+        time_series_store=_time_series_store(),
     ) == "incremental"
 
 
 def test_resolve_mode_auto_uses_timeseries_snapshot_when_last_sync_missing() -> None:
-    empty_store = DummyTimeSeriesStore(inspection=TimeSeriesInspection(source="duckdb-parquet"))
+    empty_store = _time_series_store(inspection=TimeSeriesInspection(source="duckdb-parquet"))
     assert sync_service._resolve_mode(
         SyncMode.AUTO,
-        DummyMarketDb(last_sync_date=None),
+        _market_db(last_sync_date=None),
         time_series_store=empty_store,
     ) == "initial"
 
-    populated_store = DummyTimeSeriesStore(
+    populated_store = _time_series_store(
         inspection=TimeSeriesInspection(
             source="duckdb-parquet",
             stock_count=10,
@@ -141,17 +156,17 @@ def test_resolve_mode_auto_uses_timeseries_snapshot_when_last_sync_missing() -> 
     )
     assert sync_service._resolve_mode(
         SyncMode.AUTO,
-        DummyMarketDb(last_sync_date=None),
+        _market_db(last_sync_date=None),
         time_series_store=populated_store,
     ) == "incremental"
 
 
 def test_resolve_mode_auto_raises_when_inspection_fails() -> None:
-    failing_store = DummyTimeSeriesStore(inspect_error=RuntimeError("inspect failed"))
+    failing_store = _time_series_store(inspect_error=RuntimeError("inspect failed"))
     with pytest.raises(RuntimeError, match="DuckDB inspection failed while resolving AUTO sync mode"):
         sync_service._resolve_mode(
             SyncMode.AUTO,
-            DummyMarketDb(last_sync_date=None),
+            _market_db(last_sync_date=None),
             time_series_store=failing_store,
         )
 
@@ -162,7 +177,7 @@ async def test_start_sync_requires_duckdb_store(isolated_manager: GenericJobMana
     with pytest.raises(RuntimeError, match="DuckDB time-series store is required for sync"):
         await sync_service.start_sync(
             SyncMode.AUTO,
-            DummyMarketDb(),
+            _market_db(),
             DummyJQuantsClient(),
             time_series_store=None,
         )
@@ -183,9 +198,9 @@ async def test_start_sync_returns_none_when_manager_rejects_job(
 
     job = await sync_service.start_sync(
         SyncMode.AUTO,
-        DummyMarketDb(),
+        _market_db(),
         DummyJQuantsClient(),
-        time_series_store=DummyTimeSeriesStore(),
+        time_series_store=_time_series_store(),
     )
     assert job is None
 
@@ -200,8 +215,8 @@ async def test_start_sync_completes_job_and_passes_bulk_enforcement(
     stream_manager = MagicMock()
     monkeypatch.setattr(sync_service, "sync_stream_manager", stream_manager)
 
-    market_db = DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00")
-    store = DummyTimeSeriesStore()
+    market_db = _market_db(last_sync_date="2026-03-01T00:00:00+00:00")
+    store = _time_series_store()
     job = await sync_service.start_sync(
         SyncMode.AUTO,
         market_db,
@@ -245,9 +260,9 @@ async def test_start_sync_passes_requested_bulk_enforcement(
 
     job = await sync_service.start_sync(
         SyncMode.INCREMENTAL,
-        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
         DummyJQuantsClient(),
-        time_series_store=DummyTimeSeriesStore(),
+        time_series_store=_time_series_store(),
         enforce_bulk_for_stock_data=True,
     )
     assert job is not None and job.task is not None
@@ -273,9 +288,9 @@ async def test_start_sync_closes_stream_when_job_is_marked_cancelled_after_execu
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
-        DummyMarketDb(),
+        _market_db(),
         DummyJQuantsClient(),
-        time_series_store=DummyTimeSeriesStore(),
+        time_series_store=_time_series_store(),
     )
     assert job is not None and job.task is not None
     await job.task
@@ -306,9 +321,9 @@ async def test_start_sync_marks_failed_on_timeout(
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
-        DummyMarketDb(),
+        _market_db(),
         DummyJQuantsClient(),
-        time_series_store=DummyTimeSeriesStore(),
+        time_series_store=_time_series_store(),
     )
     assert job is not None and job.task is not None
     await job.task
@@ -329,9 +344,9 @@ async def test_start_sync_marks_failed_on_unexpected_exception(
 
     job = await sync_service.start_sync(
         SyncMode.INCREMENTAL,
-        DummyMarketDb(last_sync_date="2026-03-01T00:00:00+00:00"),
+        _market_db(last_sync_date="2026-03-01T00:00:00+00:00"),
         DummyJQuantsClient(),
-        time_series_store=DummyTimeSeriesStore(),
+        time_series_store=_time_series_store(),
     )
     assert job is not None and job.task is not None
     await job.task
@@ -355,9 +370,9 @@ async def test_start_sync_skips_completion_when_job_already_cancelled(
 
     job = await sync_service.start_sync(
         SyncMode.INITIAL,
-        DummyMarketDb(),
+        _market_db(),
         DummyJQuantsClient(),
-        time_series_store=DummyTimeSeriesStore(),
+        time_series_store=_time_series_store(),
     )
     assert job is not None and job.task is not None
     await job.task

@@ -11,11 +11,11 @@ from typing import Literal
 import numpy as np
 import pandas as pd
 
-from .fundamental_helpers import _calc_growth_signal
+from .fundamental_helpers import NumericSeries, _calc_growth_signal
 
 
 def is_growing_eps(
-    eps: pd.Series[float],
+    eps: NumericSeries,
     growth_threshold: float = 0.1,
     periods: int = 1,
     condition: Literal["above", "below"] = "above",
@@ -45,8 +45,8 @@ def is_growing_eps(
 
 
 def is_expected_growth_eps(
-    eps: pd.Series[float],
-    next_year_forecast_eps: pd.Series[float],
+    eps: NumericSeries,
+    next_year_forecast_eps: NumericSeries,
     growth_threshold: float = 0.1,
     condition: Literal["above", "below"] = "above",
 ) -> pd.Series[bool]:
@@ -88,8 +88,8 @@ def is_expected_growth_eps(
 
 
 def is_forecast_eps_above_recent_fy_actuals(
-    actual_eps: pd.Series[float],
-    latest_forecast_eps: pd.Series[float],
+    actual_eps: NumericSeries,
+    latest_forecast_eps: NumericSeries,
     lookback_fy_count: int = 3,
     fy_release_marker: pd.Series | None = None,
     fy_period_key: pd.Series | None = None,
@@ -153,8 +153,8 @@ def is_forecast_eps_above_recent_fy_actuals(
 
 
 def is_expected_growth_dividend_per_share(
-    dividend_fy: pd.Series[float],
-    next_year_forecast_dividend_fy: pd.Series[float],
+    dividend_fy: NumericSeries,
+    next_year_forecast_dividend_fy: NumericSeries,
     growth_threshold: float = 0.05,
     condition: Literal["above", "below"] = "above",
 ) -> pd.Series[bool]:
@@ -197,7 +197,7 @@ def is_expected_growth_dividend_per_share(
 
 
 def is_growing_profit(
-    profit: pd.Series[float],
+    profit: NumericSeries,
     growth_threshold: float = 0.1,
     periods: int = 1,
     condition: Literal["above", "below"] = "above",
@@ -227,7 +227,7 @@ def is_growing_profit(
 
 
 def is_growing_sales(
-    sales: pd.Series[float],
+    sales: NumericSeries,
     growth_threshold: float = 0.1,
     periods: int = 1,
     condition: Literal["above", "below"] = "above",
@@ -258,7 +258,7 @@ def is_growing_sales(
 
 
 def is_growing_dividend_per_share(
-    dividend_fy: pd.Series[float],
+    dividend_fy: NumericSeries,
     growth_threshold: float = 0.1,
     periods: int = 1,
     condition: Literal["above", "below"] = "above",
