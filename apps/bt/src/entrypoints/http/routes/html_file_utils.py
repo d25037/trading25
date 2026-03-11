@@ -20,6 +20,40 @@ HTML_FILENAME_PATTERN = re.compile(r"^(.+)_(\d{8})_(\d{6})\.html$")
 
 # リネーム時の有効ファイル名パターン（英数字・アンダースコア・ハイフン・ピリオドのみ）
 VALID_FILENAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\-\.]+\.html$")
+HTML_BUNDLE_SUFFIXES = (".metrics.json", ".manifest.json", ".report.json")
+
+
+def _bundle_paths_for_html(html_path: Path) -> list[Path]:
+    return [html_path, *[html_path.with_suffix(suffix) for suffix in HTML_BUNDLE_SUFFIXES]]
+
+
+def _anchor_html_name_for_bundle_path(path: Path) -> str | None:
+    if path.suffix == ".html":
+        return path.name
+    for suffix in HTML_BUNDLE_SUFFIXES:
+        if path.name.endswith(suffix):
+            return f"{path.name[: -len(suffix)]}.html"
+    return None
+
+
+def _existing_bundle_paths(html_path: Path) -> list[Path]:
+    return [path for path in _bundle_paths_for_html(html_path) if path.exists()]
+
+
+def _primary_bundle_path(html_path: Path, existing_paths: list[Path]) -> Path:
+    for path in _bundle_paths_for_html(html_path):
+        if path in existing_paths:
+            return path
+    return existing_paths[0]
+
+
+def _rollback_renames(renamed_pairs: list[tuple[Path, Path]]) -> None:
+    for original_path, renamed_path in reversed(renamed_pairs):
+        try:
+            if renamed_path.exists() and not original_path.exists():
+                renamed_path.rename(original_path)
+        except OSError:
+            pass
 
 
 def parse_html_filename(filename: str) -> tuple[str, datetime | None]:
@@ -80,19 +114,32 @@ def list_html_files_in_dir(
             continue
 
         strategy_name = strategy_dir.name
+        bundle_names: set[str] = set()
+        for pattern in ("*.html", "*.metrics.json", "*.manifest.json", "*.report.json"):
+            for artifact_path in strategy_dir.glob(pattern):
+                anchor_name = _anchor_html_name_for_bundle_path(artifact_path)
+                if anchor_name is not None:
+                    bundle_names.add(anchor_name)
 
-        for html_file in strategy_dir.glob("*.html"):
-            dataset_name, created_at = parse_html_filename(html_file.name)
-            # ファイル名パースできない場合はファイルのmtimeを使用
+        for bundle_name in bundle_names:
+            html_path = strategy_dir / bundle_name
+            existing_paths = _existing_bundle_paths(html_path)
+            if not existing_paths:
+                continue
+
+            dataset_name, created_at = parse_html_filename(bundle_name)
             if created_at is None:
-                mtime = os.path.getmtime(html_file)
+                primary_path = _primary_bundle_path(html_path, existing_paths)
+                mtime = os.path.getmtime(primary_path)
                 created_at = datetime.fromtimestamp(mtime)
+            primary_path = _primary_bundle_path(html_path, existing_paths)
             files.append({
                 "strategy_name": strategy_name,
-                "filename": html_file.name,
+                "filename": bundle_name,
                 "dataset_name": dataset_name,
                 "created_at": created_at,
-                "size_bytes": html_file.stat().st_size,
+                "size_bytes": primary_path.stat().st_size,
+                "html_available": html_path.exists(),
             })
 
     # 作成日時で降順ソート（新しいファイルが先頭）
@@ -193,28 +240,55 @@ def rename_html_file(
     if new_path == current_path:
         return
 
+    existing_paths = _existing_bundle_paths(current_path)
+    if not existing_paths:
+        raise HTTPException(
+            status_code=404,
+            detail=f"HTMLファイルが見つかりません: {strategy}/{filename}",
+        )
+
     # 既存ファイル上書き防止（POSIX rename()はサイレント上書きするため）
-    if new_path.exists():
+    if _existing_bundle_paths(new_path):
         raise HTTPException(
             status_code=409,
             detail=f"ファイル名が既に存在します: {new_filename}",
         )
 
+    bundle_pairs: list[tuple[Path, Path]] = []
+    for source_path in existing_paths:
+        if source_path == current_path:
+            target_path = new_path
+        else:
+            matching_suffix = next(
+                suffix
+                for suffix in HTML_BUNDLE_SUFFIXES
+                if source_path.name.endswith(suffix)
+            )
+            target_path = new_path.with_suffix(matching_suffix)
+        bundle_pairs.append((source_path, target_path))
+
     # リネーム実行
+    renamed_pairs: list[tuple[Path, Path]] = []
     try:
-        current_path.rename(new_path)
-        logger.info(f"{log_prefix}HTMLファイルリネーム: {strategy}/{filename} -> {new_filename}")
+        for source_path, target_path in bundle_pairs:
+            source_path.rename(target_path)
+            renamed_pairs.append((source_path, target_path))
+        logger.info(
+            f"{log_prefix}HTML成果物リネーム: {strategy}/{filename} -> {new_filename}"
+        )
     except FileNotFoundError:
         raise HTTPException(
             status_code=404,
             detail=f"HTMLファイルが見つかりません: {strategy}/{filename}",
         )
     except PermissionError as e:
+        _rollback_renames(renamed_pairs)
         logger.error(f"ファイルリネーム権限エラー: {e}")
         raise HTTPException(
             status_code=403, detail="ファイルのリネーム権限がありません"
         ) from e
     except OSError as e:
+        _rollback_renames(renamed_pairs)
         logger.error(f"ファイルリネームエラー: {e}")
         raise HTTPException(status_code=500, detail=f"リネームエラー: {e}") from e
 
@@ -244,10 +318,17 @@ def delete_html_file(
         raise HTTPException(status_code=400, detail="無効なファイルパス")
 
     html_path = results_dir / strategy / filename
+    bundle_paths = _existing_bundle_paths(html_path)
+    if not bundle_paths:
+        raise HTTPException(
+            status_code=404,
+            detail=f"HTMLファイルが見つかりません: {strategy}/{filename}",
+        )
 
     try:
-        html_path.unlink()
-        logger.info(f"{log_prefix}HTMLファイル削除: {strategy}/{filename}")
+        for path in bundle_paths:
+            path.unlink()
+        logger.info(f"{log_prefix}HTML成果物削除: {strategy}/{filename}")
     except FileNotFoundError:
         raise HTTPException(
             status_code=404,

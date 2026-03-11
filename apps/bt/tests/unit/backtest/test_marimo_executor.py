@@ -211,6 +211,43 @@ class TestExecuteNotebook:
             assert mock_run.called
 
     @patch("src.domains.backtest.core.marimo_executor.subprocess.run")
+    def test_execute_preserves_existing_execution_metadata(self, mock_run):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            executor = MarimoExecutor(output_dir=tmpdir)
+            captured_params: dict[str, object] = {}
+
+            def create_html_and_capture_params(*args, **kwargs):
+                cmd = args[0]
+                output_idx = cmd.index("-o") + 1
+                html_path = Path(cmd[output_idx])
+                html_path.parent.mkdir(parents=True, exist_ok=True)
+                html_path.write_text("<html>test</html>")
+
+                params_idx = cmd.index("--params-json") + 1
+                params_path = Path(cmd[params_idx])
+                captured_params.update(json.loads(params_path.read_text(encoding="utf-8")))
+                return MagicMock(returncode=0, stderr="", stdout="")
+
+            mock_run.side_effect = create_html_and_capture_params
+
+            template_path = Path(tmpdir) / "test_template.py"
+            template_path.write_text("# test template")
+
+            executor.execute_notebook(
+                template_path=str(template_path),
+                parameters={
+                    "shared_config": {"dataset": "test"},
+                    "_execution": {"report_data_path": "/tmp/report.json"},
+                },
+                strategy_name="test_strategy",
+            )
+
+            execution_meta = captured_params["_execution"]
+            assert isinstance(execution_meta, dict)
+            assert execution_meta["report_data_path"] == "/tmp/report.json"
+            assert str(execution_meta["html_path"]).endswith(".html")
+
+    @patch("src.domains.backtest.core.marimo_executor.subprocess.run")
     def test_execute_with_timeout(self, mock_run):
         """タイムアウト設定の確認"""
         with tempfile.TemporaryDirectory() as tmpdir:

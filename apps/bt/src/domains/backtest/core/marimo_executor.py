@@ -15,6 +15,7 @@ from typing import Any
 
 from loguru import logger
 
+from src.domains.backtest.core.artifacts import BacktestArtifactPaths, BacktestArtifactWriter
 from src.shared.utils.snapshot_ids import canonicalize_dataset_snapshot_id
 
 
@@ -168,43 +169,41 @@ class MarimoExecutor:
         if not template_path_obj.exists():
             raise FileNotFoundError(f"テンプレートが見つかりません: {template_path}")
 
-        if output_filename is None:
-            strategy_dir_path, base_filename = self._generate_output_filename(
-                parameters, strategy_name
-            )
-        else:
-            if strategy_name:
-                strategy_dir_path = f"backtest/{strategy_name}"
-            else:
-                strategy_dir_path = ""
-            base_filename = output_filename.replace(".html", "")
-
-        strategy_output_dir = self.output_dir / strategy_dir_path
-        strategy_output_dir.mkdir(parents=True, exist_ok=True)
-
-        html_filename = f"{base_filename}.html"
-        self._validate_filename(html_filename, ".html")
-        html_path = strategy_output_dir / html_filename
+        artifact_paths = self.resolve_output_paths(
+            parameters,
+            strategy_name=strategy_name,
+            output_filename=output_filename,
+        )
+        html_path = artifact_paths.html_path
 
         try:
             html_path_resolved = html_path.resolve()
             output_dir_resolved = self.output_dir.resolve()
 
             if not str(html_path_resolved).startswith(str(output_dir_resolved)):
-                raise ValueError(
-                    f"出力ファイルパスが出力ディレクトリ外です: {strategy_dir_path}/{html_filename}"
-                )
+                raise ValueError(f"出力ファイルパスが出力ディレクトリ外です: {html_path.name}")
         except Exception as e:
             logger.error(f"出力パス検証エラー: {e}")
-            raise ValueError(f"不正な出力パス: {html_filename}")
+            raise ValueError(f"不正な出力パス: {html_path.name}")
 
         parameters_with_meta = dict(parameters)
-        parameters_with_meta["_execution"] = {"html_path": str(html_path)}
+        execution_meta = parameters_with_meta.get("_execution")
+        if not isinstance(execution_meta, dict):
+            execution_meta = {}
+        parameters_with_meta["_execution"] = {
+            **execution_meta,
+            "html_path": str(html_path),
+        }
         params_json_path = self._serialize_params_to_json(parameters_with_meta)
 
         try:
+            relative_output = (
+                str(html_path.relative_to(self.output_dir))
+                if html_path.is_absolute()
+                else str(html_path)
+            )
             logger.info(f"Marimo notebook実行開始: {template_path_obj.name}")
-            logger.debug(f"出力先: {strategy_dir_path}/{html_filename}")
+            logger.debug(f"出力先: {relative_output}")
             print(f"  Executing: {template_path_obj.name}")
             print(f"  Output: {html_path}")
 
@@ -254,7 +253,7 @@ class MarimoExecutor:
 
             file_size = html_path.stat().st_size
             logger.info(
-                f"HTML出力完了: {strategy_dir_path}/{html_filename} ({file_size} bytes)"
+                f"HTML出力完了: {relative_output} ({file_size} bytes)"
             )
             print(f"  HTML generated: {html_path} ({file_size} bytes)")
 
@@ -268,6 +267,34 @@ class MarimoExecutor:
             if Path(params_json_path).exists():
                 Path(params_json_path).unlink()
                 logger.debug(f"一時JSONファイル削除: {params_json_path}")
+
+    def resolve_output_paths(
+        self,
+        parameters: dict[str, Any],
+        *,
+        strategy_name: str | None = None,
+        output_filename: str | None = None,
+    ) -> BacktestArtifactPaths:
+        """Resolve the expected artifact locations before rendering starts."""
+
+        if output_filename is None:
+            strategy_dir_path, base_filename = self._generate_output_filename(
+                parameters, strategy_name
+            )
+        else:
+            if strategy_name:
+                strategy_dir_path = f"backtest/{strategy_name}"
+            else:
+                strategy_dir_path = ""
+            base_filename = output_filename.replace(".html", "")
+
+        strategy_output_dir = self.output_dir / strategy_dir_path
+        strategy_output_dir.mkdir(parents=True, exist_ok=True)
+
+        html_filename = f"{base_filename}.html"
+        self._validate_filename(html_filename, ".html")
+        html_path = strategy_output_dir / html_filename
+        return BacktestArtifactWriter.artifact_paths_for_html(html_path)
 
     def _generate_output_filename(
         self, parameters: dict[str, Any], strategy_name: str | None = None

@@ -65,14 +65,14 @@ def load_parameters(mo, json, sys, Path):
     entry_filter_params = _params.get("entry_filter_params", {})
     exit_trigger_params = _params.get("exit_trigger_params", {})
     execution_meta = _params.get("_execution", {})
-    output_html_path = execution_meta.get("html_path", "")
+    report_data_path = execution_meta.get("report_data_path", "")
 
     return (
         shared_config,
         entry_filter_params,
         exit_trigger_params,
         project_root,
-        output_html_path,
+        report_data_path,
     )
 
 
@@ -177,26 +177,37 @@ def validate_parameters(mo, shared_config, entry_filter_params, exit_trigger_par
 
 
 @app.cell
-def execute_strategy(mo, shared_config, entry_filter_params, exit_trigger_params):
-    from src.domains.strategy.core.factory import StrategyFactory
+def execute_strategy(
+    mo,
+    shared_config,
+    report_data_path,
+    Path,
+):
+    from src.domains.backtest.core.report_payload import load_backtest_report_payload
 
-    if not shared_config:
-        mo.md("**Error**: No shared_config provided. Skipping strategy execution.")
+    if report_data_path and Path(report_data_path).exists():
+        render_context = load_backtest_report_payload(report_data_path)
+        initial_portfolio = render_context.initial_portfolio
+        kelly_portfolio = render_context.kelly_portfolio
+        allocation_info = render_context.allocation_info
+        all_entries = render_context.all_entries
+
+        mo.md("Loaded simulation artifacts for report rendering")
+    elif report_data_path:
+        mo.md(f"**Error**: Report payload not found: `{report_data_path}`")
         initial_portfolio = None
         kelly_portfolio = None
         allocation_info = None
         all_entries = None
     else:
-        _result = StrategyFactory.execute_strategy_with_config(
-            shared_config, entry_filter_params, exit_trigger_params
+        _dataset = shared_config.get("dataset", "N/A") if isinstance(shared_config, dict) else "N/A"
+        mo.md(
+            f"**Error**: Report payload is required for rendering. Dataset: `{_dataset}`"
         )
-        initial_portfolio = _result["initial_portfolio"]
-        kelly_portfolio = _result["kelly_portfolio"]
-        _max_concurrent = _result["max_concurrent"]
-        allocation_info = _result.get("allocation_info", _max_concurrent)
-        all_entries = _result.get("all_entries", None)
-
-        mo.md("Strategy execution completed")
+        initial_portfolio = None
+        kelly_portfolio = None
+        allocation_info = None
+        all_entries = None
 
     return initial_portfolio, kelly_portfolio, allocation_info, all_entries
 
@@ -534,59 +545,6 @@ def final_stats(mo, pd, kelly_portfolio):
         _final_stats = kelly_portfolio.stats()
         _output.append(mo.Html(pd.DataFrame(_final_stats).to_html()))
     mo.vstack(_output) if _output else None
-
-
-@app.cell
-def export_metrics_json(json, Path, pd, kelly_portfolio, allocation_info, output_html_path):
-    import math
-
-    def _coerce_float(value):
-        """Convert value to float, returning None for non-finite or invalid values."""
-        if value is None:
-            return None
-        try:
-            f = float(value)
-        except (TypeError, ValueError):
-            return None
-        if not math.isfinite(f):
-            return None
-        return f
-
-    def _extract_stat(stats, key):
-        """Extract a single stat value from vectorbt stats (Series or DataFrame)."""
-        if stats is None:
-            return None
-        if isinstance(stats, pd.Series):
-            return _coerce_float(stats.get(key))
-        if isinstance(stats, pd.DataFrame) and key in stats.index:
-            row = stats.loc[key]
-            return _coerce_float(row.mean() if hasattr(row, "mean") else row.iloc[0])
-        return None
-
-    if output_html_path:
-        metrics = {}
-
-        if kelly_portfolio is not None:
-            stats = kelly_portfolio.stats()
-            metrics["total_return"] = _extract_stat(stats, "Total Return [%]")
-            metrics["max_drawdown"] = _extract_stat(stats, "Max Drawdown [%]")
-            metrics["sharpe_ratio"] = _extract_stat(stats, "Sharpe Ratio")
-            metrics["sortino_ratio"] = _extract_stat(stats, "Sortino Ratio")
-            metrics["calmar_ratio"] = _extract_stat(stats, "Calmar Ratio")
-            metrics["win_rate"] = _extract_stat(stats, "Win Rate [%]")
-            metrics["profit_factor"] = _extract_stat(stats, "Profit Factor")
-            total_trades = _extract_stat(stats, "Total Trades")
-            metrics["total_trades"] = int(total_trades) if total_trades is not None else None
-
-        if hasattr(allocation_info, "allocation"):
-            metrics["optimal_allocation"] = _coerce_float(allocation_info.allocation)
-        elif isinstance(allocation_info, (int, float)):
-            metrics["optimal_allocation"] = _coerce_float(allocation_info)
-
-        metrics_path = Path(output_html_path).with_suffix(".metrics.json")
-        metrics_path.write_text(
-            json.dumps(metrics, ensure_ascii=False, indent=2), encoding="utf-8"
-        )
 
 
 if __name__ == "__main__":

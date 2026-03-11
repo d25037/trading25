@@ -365,6 +365,7 @@
           "html",
           "metrics_json",
           "manifest_json",
+          "report_json",
           "result_summary",
           "raw_result_json",
           "attribution_json",
@@ -799,6 +800,18 @@
             "title": "Calmar Ratio",
             "type": "number"
           },
+          "expected_html_path": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "成果物bundleのHTMLアンカーパス",
+            "title": "Expected Html Path"
+          },
           "html_path": {
             "anyOf": [
               {
@@ -808,13 +821,42 @@
                 "type": "null"
               }
             ],
-            "description": "結果HTMLファイルのパス",
+            "description": "結果HTMLファイルのパス（生成された場合のみ）",
             "title": "Html Path"
           },
           "max_drawdown": {
             "description": "最大ドローダウン (%)",
             "title": "Max Drawdown",
             "type": "number"
+          },
+          "render_error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "レポート生成エラー",
+            "title": "Render Error"
+          },
+          "render_status": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pending",
+                  "completed",
+                  "failed"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "レポート生成ステータス",
+            "title": "Render Status"
           },
           "sharpe_ratio": {
             "description": "シャープレシオ",
@@ -4086,6 +4128,11 @@
             "title": "Filename",
             "type": "string"
           },
+          "html_available": {
+            "description": "HTML本体が存在するか",
+            "title": "Html Available",
+            "type": "boolean"
+          },
           "size_bytes": {
             "description": "ファイルサイズ（バイト）",
             "title": "Size Bytes",
@@ -4102,7 +4149,8 @@
           "filename",
           "dataset_name",
           "created_at",
-          "size_bytes"
+          "size_bytes",
+          "html_available"
         ],
         "title": "HtmlFileInfo",
         "type": "object"

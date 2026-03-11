@@ -1,6 +1,7 @@
 """server/routes/backtest.py のテスト"""
 
 import base64
+import json
 from datetime import datetime
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -184,6 +185,58 @@ class TestGetResult:
         assert data["summary"]["sortino_ratio"] == 2.2
         assert data["summary"]["trade_count"] == 17
 
+    def test_success_uses_metrics_artifact_without_html(
+        self,
+        client,
+        mock_services,
+        tmp_path,
+    ):
+        _, mock_jm = mock_services
+        metrics_path = tmp_path / "report.metrics.json"
+        metrics_path.write_text(
+            json.dumps(
+                {
+                    "total_return": 8.0,
+                    "sharpe_ratio": 1.6,
+                    "sortino_ratio": 1.8,
+                    "calmar_ratio": 1.1,
+                    "max_drawdown": -2.0,
+                    "win_rate": 57.0,
+                    "total_trades": 10,
+                }
+            ),
+            encoding="utf-8",
+        )
+        job = _make_job(
+            "job-1",
+            JobStatus.COMPLETED,
+            result=None,
+            html_path=None,
+            raw_result={
+                "_expected_html_path": str(tmp_path / "report.html"),
+                "_metrics_path": str(metrics_path),
+            },
+        )
+        job.artifact_index = ArtifactIndex(
+            artifacts=[
+                ArtifactRecord(
+                    kind=ArtifactKind.METRICS_JSON,
+                    storage=ArtifactStorage.FILESYSTEM,
+                    path=str(metrics_path),
+                )
+            ]
+        )
+        mock_jm.get_job.return_value = job
+
+        resp = client.get("/api/backtest/result/job-1")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["summary"]["total_return"] == 8.0
+        assert data["summary"]["trade_count"] == 10
+        assert data["summary"]["html_path"] is None
+        assert data["summary"]["expected_html_path"] == str(tmp_path / "report.html")
+
     def test_include_html_returns_base64_content(self, client, mock_services, tmp_path):
         _, mock_jm = mock_services
         html_path = tmp_path / "report.html"
@@ -266,6 +319,7 @@ class TestBacktestJobEndpoints:
         assert data["result"]["total_return"] == 15.0
         assert data["result"]["sortino_ratio"] == 2.9
         assert data["result"]["trade_count"] == 21
+        assert data["result"]["expected_html_path"] == str(html_path)
 
     def test_list_jobs_success(self, client, mock_services):
         _, mock_jm = mock_services
@@ -613,6 +667,7 @@ class TestHtmlFileEndpoints:
                         "dataset_name": "d1",
                         "created_at": datetime(2025, 1, 1),
                         "size_bytes": 123,
+                        "html_available": True,
                     }
                 ],
                 1,
@@ -622,6 +677,7 @@ class TestHtmlFileEndpoints:
             data = resp.json()
             assert data["total"] == 1
             assert data["files"][0]["filename"] == "f1.html"
+            assert data["files"][0]["html_available"] is True
 
     def test_get_html_file_content_with_metrics(self, client, tmp_path):
         metrics = MagicMock(

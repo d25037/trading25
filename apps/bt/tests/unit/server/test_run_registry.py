@@ -99,6 +99,120 @@ def test_resolve_job_backtest_summary_prefers_canonical_result_before_legacy_sum
     assert summary.win_rate == 70.0
 
 
+def test_resolve_job_backtest_summary_uses_metrics_artifact_without_html(
+    tmp_path: Path,
+) -> None:
+    metrics_path = tmp_path / "report.metrics.json"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "total_return": 9.0,
+                "sharpe_ratio": 1.7,
+                "sortino_ratio": 1.9,
+                "calmar_ratio": 1.1,
+                "max_drawdown": -2.5,
+                "win_rate": 58.0,
+                "total_trades": 12,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    job = JobInfo("job-2b", "demo-strategy", job_type="backtest")
+    job.status = JobStatus.COMPLETED
+    job.artifact_index = ArtifactIndex(
+        artifacts=[
+            ArtifactRecord(
+                kind=ArtifactKind.METRICS_JSON,
+                storage=ArtifactStorage.FILESYSTEM,
+                path=str(metrics_path),
+            )
+        ]
+    )
+    job.raw_result = {
+        "_expected_html_path": str(tmp_path / "report.html"),
+        "_metrics_path": str(metrics_path),
+    }
+
+    summary = resolve_job_backtest_summary(job)
+
+    assert summary is not None
+    assert summary.total_return == 9.0
+    assert summary.trade_count == 12
+    assert summary.html_path is None
+    assert summary.expected_html_path == str(tmp_path / "report.html")
+
+
+def test_resolve_job_backtest_summary_does_not_synthesize_html_path_from_metrics_artifact(
+    tmp_path: Path,
+) -> None:
+    metrics_path = tmp_path / "report.metrics.json"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "total_return": 3.0,
+                "sharpe_ratio": 1.1,
+                "sortino_ratio": 1.4,
+                "calmar_ratio": 0.9,
+                "max_drawdown": -1.0,
+                "win_rate": 54.0,
+                "total_trades": 5,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    job = JobInfo("job-2c", "demo-strategy", job_type="backtest")
+    job.status = JobStatus.COMPLETED
+    job.artifact_index = ArtifactIndex(
+        artifacts=[
+            ArtifactRecord(
+                kind=ArtifactKind.METRICS_JSON,
+                storage=ArtifactStorage.FILESYSTEM,
+                path=str(metrics_path),
+            )
+        ]
+    )
+
+    summary = resolve_job_backtest_summary(job)
+
+    assert summary is not None
+    assert summary.total_return == 3.0
+    assert summary.trade_count == 5
+    assert summary.html_path is None
+    assert summary.expected_html_path is None
+
+
+def test_resolve_job_backtest_summary_merges_render_metadata_from_raw_result(tmp_path: Path) -> None:
+    metrics_path = tmp_path / "report.metrics.json"
+    metrics_path.write_text(json.dumps({"total_return": 6.0}), encoding="utf-8")
+
+    job = JobInfo("job-2d", "demo-strategy", job_type="backtest")
+    job.status = JobStatus.COMPLETED
+    job.artifact_index = ArtifactIndex(
+        artifacts=[
+            ArtifactRecord(
+                kind=ArtifactKind.METRICS_JSON,
+                storage=ArtifactStorage.FILESYSTEM,
+                path=str(metrics_path),
+            )
+        ]
+    )
+    job.raw_result = {
+        "_expected_html_path": str(tmp_path / "report.html"),
+        "_metrics_path": str(metrics_path),
+        "render_status": "failed",
+        "render_error": "render boom",
+    }
+
+    summary = resolve_job_backtest_summary(job)
+
+    assert summary is not None
+    assert summary.render_status == "failed"
+    assert summary.render_error == "render boom"
+    assert summary.expected_html_path == str(tmp_path / "report.html")
+
+
 def test_resolve_job_backtest_summary_returns_none_when_no_matching_artifact_or_fallback() -> None:
     job = JobInfo("job-3", "demo-strategy", job_type="backtest")
     job.status = JobStatus.COMPLETED

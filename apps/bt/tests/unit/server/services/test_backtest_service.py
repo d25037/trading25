@@ -7,6 +7,7 @@ import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
+from typing import cast
 from unittest.mock import patch
 
 import pytest
@@ -27,6 +28,9 @@ def test_execute_backtest_sync_uses_threadsafe_progress(monkeypatch, tmp_path: P
 
     result = BacktestResult(
         html_path=tmp_path / "result.html",
+        expected_html_path=tmp_path / "result.html",
+        metrics_path=tmp_path / "result.metrics.json",
+        manifest_path=tmp_path / "result.manifest.json",
         elapsed_time=1.0,
         summary={},
         strategy_name="test",
@@ -69,6 +73,9 @@ def test_execute_backtest_sync_uses_runner_default_data_access_mode(monkeypatch,
 
     result = BacktestResult(
         html_path=tmp_path / "result.html",
+        expected_html_path=tmp_path / "result.html",
+        metrics_path=tmp_path / "result.metrics.json",
+        manifest_path=tmp_path / "result.manifest.json",
         elapsed_time=1.0,
         summary={},
         strategy_name="test",
@@ -220,14 +227,17 @@ async def test_submit_backtest_normalizes_blank_dataset_override_before_executio
     run_spec = captured["run_spec"]
     assert run_spec is not None
     assert run_spec.dataset_name == "primeExTopix500"
-    _, _, forwarded_override = captured["run_args"]
+    _, _, forwarded_override = cast(
+        tuple[str, str, dict[str, object] | None],
+        captured["run_args"],
+    )
     assert forwarded_override == {"shared_config": {"direction": "shortonly"}}
 
 
 @pytest.mark.asyncio
 async def test_run_backtest_success_updates_result_and_status(monkeypatch, tmp_path: Path):
     service = BacktestService()
-    events: list[tuple[str, object]] = []
+    events: list[tuple[str, tuple[str, JobStatus, dict[str, object]] | None]] = []
 
     async def _acquire_slot():
         events.append(("acquire", None))
@@ -268,11 +278,12 @@ async def test_run_backtest_success_updates_result_and_status(monkeypatch, tmp_p
     await service._run_backtest("job-1", "strategy-1")
 
     assert ("acquire", None) in events
-    assert any(
-        name == "status"
-        and payload[1] == JobStatus.PENDING
+    status_payloads = [
+        cast(tuple[str, JobStatus, dict[str, object]], payload)
         for name, payload in events
-    )
+        if name == "status" and payload is not None
+    ]
+    assert any(status == JobStatus.PENDING for _, status, _ in status_payloads)
     assert any(name == "release" for name, _ in events)
 
 
@@ -508,7 +519,10 @@ async def test_wait_for_worker_completion_reloads_until_process_exits(monkeypatc
 
     monkeypatch.setattr(asyncio, "wait_for", _wait_for)
 
-    exit_code = await service._wait_for_worker_completion("job-1", process)
+    exit_code = await service._wait_for_worker_completion(
+        "job-1",
+        cast(asyncio.subprocess.Process, process),
+    )
 
     assert exit_code == 0
     assert reload_calls == [("job-1", True), ("job-1", True)]
@@ -544,7 +558,9 @@ async def test_terminate_worker_process_kills_when_terminate_times_out(monkeypat
 
     monkeypatch.setattr(asyncio, "wait_for", _wait_for)
 
-    await service._terminate_worker_process(process)
+    await service._terminate_worker_process(
+        cast(asyncio.subprocess.Process, process)
+    )
 
     assert events == ["terminate", "kill", "wait"]
 
@@ -591,6 +607,9 @@ def test_extract_result_summary_prefers_html_metrics(tmp_path: Path):
     html_path.write_text("<html></html>", encoding="utf-8")
     result = BacktestResult(
         html_path=html_path,
+        expected_html_path=html_path,
+        metrics_path=html_path.with_suffix(".metrics.json"),
+        manifest_path=html_path.with_suffix(".manifest.json"),
         elapsed_time=1.0,
         summary={},
         strategy_name="test",
@@ -624,6 +643,9 @@ def test_extract_result_summary_fallback_when_metrics_fail(tmp_path: Path):
     html_path.write_text("<html></html>", encoding="utf-8")
     result = BacktestResult(
         html_path=html_path,
+        expected_html_path=html_path,
+        metrics_path=html_path.with_suffix(".metrics.json"),
+        manifest_path=html_path.with_suffix(".manifest.json"),
         elapsed_time=1.0,
         summary={
             "total_return": 7.0,
@@ -643,6 +665,45 @@ def test_extract_result_summary_fallback_when_metrics_fail(tmp_path: Path):
         assert summary.total_return == 7.0
         assert summary.sortino_ratio == 8.5
         assert summary.trade_count == 12
+
+
+def test_extract_result_summary_uses_expected_html_path_when_render_missing(tmp_path: Path):
+    service = BacktestService()
+    expected_html_path = tmp_path / "result.html"
+    expected_html_path.with_suffix(".metrics.json").write_text(
+        json.dumps(
+            {
+                "total_return": 4.2,
+                "sharpe_ratio": 1.3,
+                "sortino_ratio": 1.5,
+                "calmar_ratio": 1.1,
+                "max_drawdown": -2.0,
+                "win_rate": 57.0,
+                "total_trades": 8,
+            }
+        ),
+        encoding="utf-8",
+    )
+    result = BacktestResult(
+        html_path=None,
+        expected_html_path=expected_html_path,
+        metrics_path=expected_html_path.with_suffix(".metrics.json"),
+        manifest_path=expected_html_path.with_suffix(".manifest.json"),
+        elapsed_time=1.0,
+        summary={},
+        strategy_name="test",
+        dataset_name="sample",
+        render_error="HTML file not found after execution",
+    )
+
+    summary = service._extract_result_summary(result)
+
+    assert summary.total_return == 4.2
+    assert summary.trade_count == 8
+    assert summary.html_path is None
+    assert summary.expected_html_path == str(expected_html_path)
+    assert summary.render_status == "failed"
+    assert summary.render_error == "HTML file not found after execution"
 
 
 def test_get_execution_info_delegates_to_runner(monkeypatch):

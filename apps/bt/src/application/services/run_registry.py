@@ -31,6 +31,35 @@ def _find_artifact_path(
     return None
 
 
+def _resolve_backtest_artifact_paths(job: JobInfo) -> tuple[str | None, str | None, str | None]:
+    raw_result = job.raw_result if isinstance(job.raw_result, dict) else None
+    artifact_html_path = _find_artifact_path(job.artifact_index, ArtifactKind.HTML)
+    artifact_metrics_path = _find_artifact_path(job.artifact_index, ArtifactKind.METRICS_JSON)
+
+    resolved_html_path = artifact_html_path or job.html_path
+    resolved_metrics_path = artifact_metrics_path
+    resolved_expected_html_path = resolved_html_path
+
+    if raw_result is not None:
+        expected_html_path = raw_result.get("_expected_html_path")
+        if (
+            resolved_expected_html_path is None
+            and isinstance(expected_html_path, str)
+            and expected_html_path.strip()
+        ):
+            resolved_expected_html_path = expected_html_path
+
+        raw_metrics_path = raw_result.get("_metrics_path")
+        if (
+            resolved_metrics_path is None
+            and isinstance(raw_metrics_path, str)
+            and raw_metrics_path.strip()
+        ):
+            resolved_metrics_path = raw_metrics_path
+
+    return resolved_html_path, resolved_metrics_path, resolved_expected_html_path
+
+
 def _canonical_summary_fallback(job: JobInfo) -> Mapping[str, Any] | None:
     summary_metrics = job.canonical_result.summary_metrics if job.canonical_result else None
     if summary_metrics is None:
@@ -40,15 +69,21 @@ def _canonical_summary_fallback(job: JobInfo) -> Mapping[str, Any] | None:
 
 def resolve_job_backtest_summary(job: JobInfo) -> BacktestResultSummary | None:
     """Resolve a backtest summary from artifacts, then canonical result, then legacy fields."""
-    artifact_html_path = _find_artifact_path(job.artifact_index, ArtifactKind.HTML)
-    fallback = (
-        _canonical_summary_fallback(job)
-        or job.result
-        or (job.raw_result if isinstance(job.raw_result, dict) else None)
-    )
+    fallback: dict[str, Any] = {}
+    if job.result is not None:
+        fallback.update(job.result.model_dump(exclude_none=True))
+    if isinstance(job.raw_result, dict):
+        fallback.update(job.raw_result)
+    canonical_summary = _canonical_summary_fallback(job)
+    if canonical_summary is not None:
+        fallback.update(canonical_summary)
+
+    html_path, metrics_path, expected_html_path = _resolve_backtest_artifact_paths(job)
     return resolve_backtest_result_summary(
-        html_path=artifact_html_path or job.html_path,
-        fallback=fallback,
+        html_path=html_path,
+        fallback=fallback or None,
+        metrics_path=metrics_path,
+        expected_html_path=expected_html_path,
     )
 
 

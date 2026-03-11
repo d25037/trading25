@@ -2726,7 +2726,7 @@ export interface components {
          * @description Artifact role within a run.
          * @enum {string}
          */
-        ArtifactKind: "html" | "metrics_json" | "manifest_json" | "result_summary" | "raw_result_json" | "attribution_json" | "strategy_yaml" | "history_yaml";
+        ArtifactKind: "html" | "metrics_json" | "manifest_json" | "report_json" | "result_summary" | "raw_result_json" | "attribution_json" | "strategy_yaml" | "history_yaml";
         /**
          * ArtifactRecord
          * @description Artifact registry entry for a run output.
@@ -2970,8 +2970,13 @@ export interface components {
              */
             calmar_ratio: number;
             /**
+             * Expected Html Path
+             * @description 成果物bundleのHTMLアンカーパス
+             */
+            expected_html_path?: string | null;
+            /**
              * Html Path
-             * @description 結果HTMLファイルのパス
+             * @description 結果HTMLファイルのパス（生成された場合のみ）
              */
             html_path?: string | null;
             /**
@@ -2979,6 +2984,16 @@ export interface components {
              * @description 最大ドローダウン (%)
              */
             max_drawdown: number;
+            /**
+             * Render Error
+             * @description レポート生成エラー
+             */
+            render_error?: string | null;
+            /**
+             * Render Status
+             * @description レポート生成ステータス
+             */
+            render_status?: ("pending" | "completed" | "failed") | null;
             /**
              * Sharpe Ratio
              * @description シャープレシオ
@@ -4637,6 +4652,11 @@ export interface components {
              * @description ファイル名
              */
             filename: string;
+            /**
+             * Html Available
+             * @description HTML本体が存在するか
+             */
+            html_available: boolean;
             /**
              * Size Bytes
              * @description ファイルサイズ（バイト）

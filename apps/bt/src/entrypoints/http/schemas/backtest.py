@@ -70,7 +70,22 @@ class BacktestResultSummary(BaseModel):
     max_drawdown: float = Field(description="最大ドローダウン (%)")
     win_rate: float = Field(description="勝率 (%)")
     trade_count: int = Field(description="取引回数")
-    html_path: str | None = Field(default=None, description="結果HTMLファイルのパス")
+    html_path: str | None = Field(
+        default=None,
+        description="結果HTMLファイルのパス（生成された場合のみ）",
+    )
+    expected_html_path: str | None = Field(
+        default=None,
+        description="成果物bundleのHTMLアンカーパス",
+    )
+    render_status: Literal["pending", "completed", "failed"] | None = Field(
+        default=None,
+        description="レポート生成ステータス",
+    )
+    render_error: str | None = Field(
+        default=None,
+        description="レポート生成エラー",
+    )
 
 
 class SignalAttributionMetrics(BaseModel):
@@ -261,6 +276,9 @@ class HtmlFileInfo(BaseModel):
     dataset_name: str = Field(description="データセット名")
     created_at: datetime = Field(description="作成日時")
     size_bytes: int = Field(description="ファイルサイズ（バイト）")
+    html_available: bool = Field(
+        description="HTML本体が存在するか",
+    )
 
 
 class HtmlFileListResponse(BaseModel):

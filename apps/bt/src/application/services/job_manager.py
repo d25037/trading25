@@ -568,7 +568,7 @@ class JobManager:
         job_id: str,
         result_summary: BacktestResultSummary,
         raw_result: dict[str, Any],
-        html_path: str,
+        html_path: str | None,
         dataset_name: str,
         execution_time: float,
     ) -> None:
@@ -590,7 +590,7 @@ class JobManager:
 
             job.result = result_summary
             job.raw_result = raw_result
-            job.html_path = html_path
+            job.html_path = html_path or None
             job.dataset_name = dataset_name
             job.execution_time = execution_time
             self._persist_job(job)

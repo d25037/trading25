@@ -20,6 +20,7 @@ export type ArtifactKind =
   | 'html'
   | 'metrics_json'
   | 'manifest_json'
+  | 'report_json'
   | 'result_summary'
   | 'raw_result_json'
   | 'attribution_json'
@@ -127,6 +128,9 @@ export interface BacktestResultSummary {
   win_rate: number;
   trade_count: number;
   html_path: string | null;
+  expected_html_path?: string | null;
+  render_status?: 'pending' | 'completed' | 'failed' | null;
+  render_error?: string | null;
 }
 
 export interface BacktestJobResponse {
@@ -424,6 +428,7 @@ export interface HtmlFileInfo {
   dataset_name: string;
   created_at: string;
   size_bytes: number;
+  html_available: boolean;
 }
 
 export interface HtmlFileListResponse {

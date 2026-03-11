@@ -420,6 +420,7 @@ async def list_html_files(
             dataset_name=f["dataset_name"],
             created_at=f["created_at"],
             size_bytes=f["size_bytes"],
+            html_available=f["html_available"],
         )
         for f in file_dicts
     ]

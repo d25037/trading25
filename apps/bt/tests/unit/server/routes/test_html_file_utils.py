@@ -1,11 +1,16 @@
 """server/routes/html_file_utils.py のテスト"""
 
+import builtins
 from datetime import datetime
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
 
 from src.entrypoints.http.routes.html_file_utils import (
+    _anchor_html_name_for_bundle_path,
+    _existing_bundle_paths,
+    _primary_bundle_path,
     delete_html_file,
     list_html_files_in_dir,
     parse_html_filename,
@@ -45,7 +50,7 @@ class TestParseHtmlFilename:
         assert dt is None
 
     def test_non_html(self):
-        name, dt = parse_html_filename("test_20250101_120000.txt")
+        _name, dt = parse_html_filename("test_20250101_120000.txt")
         assert dt is None
 
 
@@ -77,7 +82,7 @@ class TestListHtmlFilesInDir:
         (tmp_path / "strat_a" / "data_20250101_120000.html").write_text("<html/>")
         (tmp_path / "strat_b").mkdir()
         (tmp_path / "strat_b" / "data_20250102_120000.html").write_text("<html/>")
-        files, total = list_html_files_in_dir(tmp_path, strategy="strat_a")
+        _files, total = list_html_files_in_dir(tmp_path, strategy="strat_a")
         assert total == 1
 
     def test_limit_parameter(self, tmp_path):
@@ -94,6 +99,28 @@ class TestListHtmlFilesInDir:
         (tmp_path / "s" / "d_20250301_120000.html").write_text("<html/>")
         files, _ = list_html_files_in_dir(tmp_path)
         assert files[0]["created_at"] >= files[1]["created_at"]
+
+    def test_metrics_only_bundle_is_listed(self, tmp_path):
+        strategy_dir = tmp_path / "s"
+        strategy_dir.mkdir()
+        (strategy_dir / "d_20250301_120000.metrics.json").write_text("{}")
+
+        files, total = list_html_files_in_dir(tmp_path)
+
+        assert total == 1
+        assert files[0]["filename"] == "d_20250301_120000.html"
+        assert files[0]["html_available"] is False
+
+    def test_bundle_path_helpers(self, tmp_path):
+        html_path = tmp_path / "bundle.html"
+        metrics_path = tmp_path / "bundle.metrics.json"
+        metrics_path.write_text("{}")
+
+        assert _anchor_html_name_for_bundle_path(metrics_path) == "bundle.html"
+        assert _anchor_html_name_for_bundle_path(Path("bundle.txt")) is None
+        existing_paths = _existing_bundle_paths(html_path)
+        assert existing_paths == [metrics_path]
+        assert _primary_bundle_path(html_path, existing_paths) == metrics_path
 
 
 # ===== read_html_file =====
@@ -122,6 +149,23 @@ class TestReadHtmlFile:
         with pytest.raises(HTTPException) as exc_info:
             read_html_file(tmp_path, "strat", "test.txt")
         assert exc_info.value.status_code == 400
+
+    def test_read_error_returns_500(self, tmp_path, monkeypatch):
+        (tmp_path / "strat").mkdir()
+        html_file = tmp_path / "strat" / "test.html"
+        html_file.write_text("<html>hello</html>")
+        original_open = builtins.open
+
+        def _raise_open(*args, **kwargs):  # noqa: ANN002, ANN003
+            if args and args[0] == html_file and len(args) > 1 and args[1] == "rb":
+                raise OSError("boom")
+            return original_open(*args, **kwargs)
+
+        monkeypatch.setattr(builtins, "open", _raise_open)
+
+        with pytest.raises(HTTPException) as exc_info:
+            read_html_file(tmp_path, "strat", "test.html")
+        assert exc_info.value.status_code == 500
 
 
 # ===== rename_html_file =====
@@ -170,6 +214,66 @@ class TestRenameHtmlFile:
             rename_html_file(tmp_path, "strat", "old.txt", "new.html")
         assert exc_info.value.status_code == 400
 
+    def test_renames_sibling_artifacts(self, tmp_path):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        for suffix in (".html", ".metrics.json", ".manifest.json", ".report.json"):
+            (strategy_dir / f"old{suffix}").write_text("data")
+
+        rename_html_file(tmp_path, "strat", "old.html", "new.html")
+
+        for suffix in (".html", ".metrics.json", ".manifest.json", ".report.json"):
+            assert (strategy_dir / f"new{suffix}").exists()
+            assert not (strategy_dir / f"old{suffix}").exists()
+
+    def test_conflict_when_target_sibling_exists(self, tmp_path):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        (strategy_dir / "old.html").write_text("html")
+        (strategy_dir / "old.metrics.json").write_text("{}")
+        (strategy_dir / "new.metrics.json").write_text("{}")
+
+        with pytest.raises(HTTPException) as exc_info:
+            rename_html_file(tmp_path, "strat", "old.html", "new.html")
+
+        assert exc_info.value.status_code == 409
+        assert (strategy_dir / "old.html").exists()
+        assert (strategy_dir / "old.metrics.json").exists()
+
+    def test_renames_metrics_only_bundle(self, tmp_path):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        for suffix in (".metrics.json", ".manifest.json", ".report.json"):
+            (strategy_dir / f"old{suffix}").write_text("data")
+
+        rename_html_file(tmp_path, "strat", "old.html", "new.html")
+
+        for suffix in (".metrics.json", ".manifest.json", ".report.json"):
+            assert (strategy_dir / f"new{suffix}").exists()
+            assert not (strategy_dir / f"old{suffix}").exists()
+
+    def test_rename_permission_error_rolls_back(self, tmp_path, monkeypatch):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        (strategy_dir / "old.html").write_text("html")
+        (strategy_dir / "old.metrics.json").write_text("{}")
+        original_rename = Path.rename
+
+        def _rename(self: Path, target: Path):  # noqa: ANN001
+            if self.name == "old.metrics.json":
+                raise PermissionError("boom")
+            return original_rename(self, target)
+
+        monkeypatch.setattr(Path, "rename", _rename)
+
+        with pytest.raises(HTTPException) as exc_info:
+            rename_html_file(tmp_path, "strat", "old.html", "new.html")
+
+        assert exc_info.value.status_code == 403
+        assert (strategy_dir / "old.html").exists()
+        assert (strategy_dir / "old.metrics.json").exists()
+        assert not (strategy_dir / "new.html").exists()
+
 
 # ===== delete_html_file =====
 
@@ -191,3 +295,43 @@ class TestDeleteHtmlFile:
         with pytest.raises(HTTPException) as exc_info:
             delete_html_file(tmp_path, "strat", "file.txt")
         assert exc_info.value.status_code == 400
+
+    def test_deletes_sibling_artifacts(self, tmp_path):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        for suffix in (".html", ".metrics.json", ".manifest.json", ".report.json"):
+            (strategy_dir / f"del{suffix}").write_text("data")
+
+        delete_html_file(tmp_path, "strat", "del.html")
+
+        for suffix in (".html", ".metrics.json", ".manifest.json", ".report.json"):
+            assert not (strategy_dir / f"del{suffix}").exists()
+
+    def test_deletes_metrics_only_bundle(self, tmp_path):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        for suffix in (".metrics.json", ".manifest.json", ".report.json"):
+            (strategy_dir / f"del{suffix}").write_text("data")
+
+        delete_html_file(tmp_path, "strat", "del.html")
+
+        for suffix in (".metrics.json", ".manifest.json", ".report.json"):
+            assert not (strategy_dir / f"del{suffix}").exists()
+
+    def test_delete_permission_error_returns_403(self, tmp_path, monkeypatch):
+        strategy_dir = tmp_path / "strat"
+        strategy_dir.mkdir()
+        html_path = strategy_dir / "del.html"
+        html_path.write_text("data")
+        original_unlink = Path.unlink
+
+        def _unlink(self: Path, *args, **kwargs):  # noqa: ANN002, ANN003
+            if self == html_path:
+                raise PermissionError("boom")
+            return original_unlink(self, *args, **kwargs)
+
+        monkeypatch.setattr(Path, "unlink", _unlink)
+
+        with pytest.raises(HTTPException) as exc_info:
+            delete_html_file(tmp_path, "strat", "del.html")
+        assert exc_info.value.status_code == 403

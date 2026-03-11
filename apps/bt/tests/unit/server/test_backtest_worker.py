@@ -25,12 +25,16 @@ async def test_run_backtest_worker_completes_job(tmp_path: Path) -> None:
             progress_callback=None,
             config_override=None,
             data_access_mode: str | None = "direct",
+            simulation_artifacts_callback=None,
         ) -> BacktestResult:
-            _ = (config_override, data_access_mode)
+            _ = (config_override, data_access_mode, simulation_artifacts_callback)
             if progress_callback is not None:
                 progress_callback("running", 0.1)
             return BacktestResult(
                 html_path=tmp_path / "result.html",
+                expected_html_path=tmp_path / "result.html",
+                metrics_path=tmp_path / "result.metrics.json",
+                manifest_path=tmp_path / "result.manifest.json",
                 elapsed_time=1.2,
                 summary={"total_return": 12.3},
                 strategy_name=strategy,
@@ -67,8 +71,15 @@ async def test_run_backtest_worker_marks_job_failed_on_error() -> None:
             progress_callback=None,
             config_override=None,
             data_access_mode: str | None = "direct",
+            simulation_artifacts_callback=None,
         ) -> BacktestResult:
-            _ = (strategy, progress_callback, config_override, data_access_mode)
+            _ = (
+                strategy,
+                progress_callback,
+                config_override,
+                data_access_mode,
+                simulation_artifacts_callback,
+            )
             raise RuntimeError("boom")
 
     exit_code = await run_backtest_worker(
@@ -98,11 +109,21 @@ async def test_run_backtest_worker_marks_job_failed_on_timeout() -> None:
             progress_callback=None,
             config_override=None,
             data_access_mode: str | None = "direct",
+            simulation_artifacts_callback=None,
         ) -> BacktestResult:
-            _ = (strategy, progress_callback, config_override, data_access_mode)
+            _ = (
+                strategy,
+                progress_callback,
+                config_override,
+                data_access_mode,
+                simulation_artifacts_callback,
+            )
             time.sleep(1.2)
             return BacktestResult(
                 html_path=Path("/tmp/slow-result.html"),
+                expected_html_path=Path("/tmp/slow-result.html"),
+                metrics_path=Path("/tmp/slow-result.metrics.json"),
+                manifest_path=Path("/tmp/slow-result.manifest.json"),
                 elapsed_time=1.2,
                 summary={"total_return": 1.0},
                 strategy_name="worker-strategy",
@@ -257,3 +278,144 @@ def test_backtest_worker_main_rejects_non_object_config_override(monkeypatch: py
 
     with pytest.raises(ValueError, match="config override must be a JSON object"):
         worker_mod.main()
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_worker_completes_without_html_when_metrics_exist(tmp_path: Path) -> None:
+    manager = JobManager()
+    job_id = manager.create_job("worker-strategy")
+    expected_html_path = tmp_path / "result.html"
+    metrics_path = expected_html_path.with_suffix(".metrics.json")
+    metrics_path.write_text(
+        '{"total_return": 9.9, "sharpe_ratio": 1.1, "calmar_ratio": 0.8, "max_drawdown": -1.2, "win_rate": 60.0, "total_trades": 5}',
+        encoding="utf-8",
+    )
+    manifest_path = expected_html_path.with_suffix(".manifest.json")
+    manifest_path.write_text("{}", encoding="utf-8")
+
+    class _MetricsOnlyRunner:
+        def execute(
+            self,
+            strategy: str,
+            progress_callback=None,
+            config_override=None,
+            data_access_mode: str | None = "direct",
+            simulation_artifacts_callback=None,
+        ) -> BacktestResult:
+            _ = (
+                strategy,
+                progress_callback,
+                config_override,
+                data_access_mode,
+                simulation_artifacts_callback,
+            )
+            return BacktestResult(
+                html_path=None,
+                expected_html_path=expected_html_path,
+                metrics_path=metrics_path,
+                manifest_path=manifest_path,
+                elapsed_time=1.2,
+                summary={
+                    "total_return": 9.9,
+                    "sharpe_ratio": 1.1,
+                    "calmar_ratio": 0.8,
+                    "max_drawdown": -1.2,
+                    "win_rate": 60.0,
+                    "trade_count": 5,
+                    "_metrics_path": str(metrics_path),
+                    "_manifest_path": str(manifest_path),
+                    "render_error": "HTML file not found after execution",
+                },
+                strategy_name="worker-strategy",
+                dataset_name="dataset-a",
+                render_error="HTML file not found after execution",
+            )
+
+    exit_code = await run_backtest_worker(
+        job_id,
+        "worker-strategy",
+        manager=manager,
+        runner=_MetricsOnlyRunner(),
+        heartbeat_seconds=60.0,
+    )
+
+    job = manager.get_job(job_id)
+    assert exit_code == 0
+    assert job is not None
+    assert job.status == JobStatus.COMPLETED
+    assert job.html_path is None
+    assert job.result is not None
+    assert job.result.total_return == 9.9
+    assert job.artifact_index is not None
+    kinds = {artifact.kind for artifact in job.artifact_index.artifacts}
+    assert "metrics_json" in {kind.value for kind in kinds}
+    assert "manifest_json" in {kind.value for kind in kinds}
+
+
+@pytest.mark.asyncio
+async def test_run_backtest_worker_preserves_simulation_checkpoint_on_render_failure(
+    tmp_path: Path,
+) -> None:
+    manager = JobManager()
+    job_id = manager.create_job("worker-strategy")
+    expected_html_path = tmp_path / "result.html"
+    metrics_path = expected_html_path.with_suffix(".metrics.json")
+    metrics_path.write_text(
+        '{"total_return": 4.4, "sharpe_ratio": 1.0, "calmar_ratio": 0.9, "max_drawdown": -1.2, "win_rate": 50.0, "total_trades": 2}',
+        encoding="utf-8",
+    )
+    manifest_path = expected_html_path.with_suffix(".manifest.json")
+    manifest_path.write_text("{}", encoding="utf-8")
+    report_path = expected_html_path.with_suffix(".report.json")
+    report_path.write_text("{}", encoding="utf-8")
+
+    class _CheckpointThenFailRunner:
+        def execute(
+            self,
+            strategy: str,
+            progress_callback=None,
+            config_override=None,
+            data_access_mode: str | None = "direct",
+            simulation_artifacts_callback=None,
+        ) -> BacktestResult:
+            _ = (strategy, progress_callback, config_override, data_access_mode)
+            if simulation_artifacts_callback is not None:
+                simulation_artifacts_callback(
+                    {
+                        "total_return": 4.4,
+                        "sharpe_ratio": 1.0,
+                        "calmar_ratio": 0.9,
+                        "max_drawdown": -1.2,
+                        "win_rate": 50.0,
+                        "trade_count": 2,
+                        "_metrics_path": str(metrics_path),
+                        "_manifest_path": str(manifest_path),
+                        "_report_data_path": str(report_path),
+                        "_expected_html_path": str(expected_html_path),
+                        "metrics_path": str(metrics_path),
+                        "manifest_path": str(manifest_path),
+                        "render_status": "pending",
+                    }
+                )
+            raise RuntimeError("render boom")
+
+    exit_code = await run_backtest_worker(
+        job_id,
+        "worker-strategy",
+        manager=manager,
+        runner=_CheckpointThenFailRunner(),
+        heartbeat_seconds=60.0,
+    )
+
+    job = manager.get_job(job_id)
+    assert exit_code == 1
+    assert job is not None
+    assert job.status == JobStatus.FAILED
+    assert job.error == "render boom"
+    assert job.raw_result is not None
+    assert job.raw_result["_metrics_path"] == str(metrics_path)
+    assert job.artifact_index is not None
+    kinds = {kind.value for kind in {artifact.kind for artifact in job.artifact_index.artifacts}}
+    assert "metrics_json" in kinds
+    assert "manifest_json" in kinds
+    assert "report_json" in kinds

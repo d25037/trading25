@@ -108,6 +108,7 @@ def test_resolve_backtest_result_summary_falls_back_without_artifact():
     assert summary.win_rate == 55.0
     assert summary.trade_count == 11
     assert summary.html_path == "/tmp/not-found.html"
+    assert summary.expected_html_path == "/tmp/not-found.html"
 
 
 def test_resolve_backtest_result_summary_accepts_summary_fallback():
@@ -128,6 +129,88 @@ def test_resolve_backtest_result_summary_accepts_summary_fallback():
     assert summary.total_return == 3.0
     assert summary.sortino_ratio == 1.0
     assert summary.trade_count == 9
+
+
+def test_resolve_backtest_result_summary_uses_metrics_json_without_html(tmp_path: Path):
+    expected_html_path = tmp_path / "result.html"
+    expected_html_path.with_suffix(".metrics.json").write_text(
+        json.dumps(
+            {
+                "total_return": 2.5,
+                "sharpe_ratio": 1.3,
+                "sortino_ratio": 1.4,
+                "calmar_ratio": 1.1,
+                "max_drawdown": -1.8,
+                "win_rate": 53.0,
+                "total_trades": 4,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = resolve_backtest_result_summary(
+        None,
+        None,
+        metrics_path=expected_html_path.with_suffix(".metrics.json"),
+        expected_html_path=expected_html_path,
+    )
+
+    assert summary is not None
+    assert summary.total_return == 2.5
+    assert summary.trade_count == 4
+    assert summary.html_path is None
+    assert summary.expected_html_path == str(expected_html_path)
+
+
+def test_resolve_backtest_result_summary_accepts_explicit_metrics_path_without_html(tmp_path: Path):
+    metrics_path = tmp_path / "result.metrics.json"
+    metrics_path.write_text(
+        json.dumps(
+            {
+                "total_return": 6.5,
+                "sharpe_ratio": 1.9,
+                "sortino_ratio": 2.2,
+                "calmar_ratio": 1.4,
+                "max_drawdown": -3.1,
+                "win_rate": 61.0,
+                "total_trades": 14,
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    summary = resolve_backtest_result_summary(
+        None,
+        {"expected_html_path": "fallback.html", "render_status": "failed"},
+        metrics_path=metrics_path,
+    )
+
+    assert summary is not None
+    assert summary.total_return == 6.5
+    assert summary.trade_count == 14
+    assert summary.html_path is None
+    assert summary.expected_html_path == "fallback.html"
+    assert summary.render_status == "failed"
+
+
+def test_resolve_backtest_result_summary_carries_render_metadata(tmp_path: Path):
+    metrics_path = tmp_path / "result.metrics.json"
+    metrics_path.write_text(json.dumps({"total_return": 1.5}), encoding="utf-8")
+
+    summary = resolve_backtest_result_summary(
+        None,
+        {
+            "render_status": "failed",
+            "render_error": "render boom",
+            "expected_html_path": str(tmp_path / "result.html"),
+        },
+        metrics_path=metrics_path,
+    )
+
+    assert summary is not None
+    assert summary.render_status == "failed"
+    assert summary.render_error == "render boom"
+    assert summary.expected_html_path == str(tmp_path / "result.html")
 
 
 def test_resolve_backtest_result_summary_returns_none_when_no_sources():

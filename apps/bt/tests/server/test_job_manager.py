@@ -142,6 +142,25 @@ class TestJobManager:
         assert job.artifact_index is not None
 
     @pytest.mark.asyncio
+    async def test_set_job_result_allows_missing_html(self):
+        mgr = JobManager()
+        job_id = mgr.create_job("test")
+        summary = BacktestResultSummary(
+            total_return=0.2,
+            sharpe_ratio=1.1,
+            calmar_ratio=0.7,
+            max_drawdown=-0.2,
+            win_rate=0.5,
+            trade_count=10,
+        )
+        await mgr.set_job_result(job_id, summary, {"_manifest_path": "/tmp/x.manifest.json"}, None, "ds", 2.5)
+
+        job = mgr.get_job(job_id)
+        assert job is not None
+        assert job.html_path is None
+        assert job.result == summary
+
+    @pytest.mark.asyncio
     async def test_set_job_task(self):
         mgr = JobManager()
         job_id = mgr.create_job("test")

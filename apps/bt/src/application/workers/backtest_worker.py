@@ -36,8 +36,16 @@ def _extract_result_summary(result: BacktestResult) -> BacktestResultSummary:
     summary = resolve_backtest_result_summary(
         html_path=result.html_path,
         fallback=result.summary,
+        metrics_path=result.metrics_path,
+        expected_html_path=result.expected_html_path,
     )
     if summary is not None:
+        if summary.expected_html_path is None:
+            summary.expected_html_path = str(result.expected_html_path)
+        if summary.render_status is None:
+            summary.render_status = "completed" if result.render_error is None else "failed"
+        if summary.render_error is None and result.render_error is not None:
+            summary.render_error = result.render_error
         return summary
     return BacktestResultSummary(
         total_return=0.0,
@@ -47,7 +55,10 @@ def _extract_result_summary(result: BacktestResult) -> BacktestResultSummary:
         max_drawdown=0.0,
         win_rate=0.0,
         trade_count=0,
-        html_path=str(result.html_path),
+        html_path=str(result.html_path) if result.html_path is not None else None,
+        expected_html_path=str(result.expected_html_path),
+        render_status="completed" if result.render_error is None else "failed",
+        render_error=result.render_error,
     )
 
 
@@ -187,11 +198,18 @@ async def run_backtest_worker(
             )
         )
 
+        def simulation_artifacts_callback(raw_result: dict[str, Any]) -> None:
+            asyncio.run_coroutine_threadsafe(
+                resolved_manager.set_job_raw_result(job_id, raw_result),
+                loop,
+            )
+
         result = await asyncio.to_thread(
             resolved_runner.execute,
             strategy=strategy_name,
             progress_callback=progress_callback,
             config_override=config_override,
+            simulation_artifacts_callback=simulation_artifacts_callback,
         )
         current_job = await resolved_manager.reload_job_from_storage(job_id)
         if current_job is not None and current_job.status in _TERMINAL_STATUSES:
@@ -203,14 +221,18 @@ async def run_backtest_worker(
             job_id=job_id,
             result_summary=summary,
             raw_result=result.summary,
-            html_path=str(result.html_path),
+            html_path=str(result.html_path) if result.html_path is not None else None,
             dataset_name=result.dataset_name,
             execution_time=result.elapsed_time,
         )
         await resolved_manager.update_job_status(
             job_id,
             JobStatus.COMPLETED,
-            message="バックテスト完了",
+            message=(
+                "バックテスト完了"
+                if result.render_error is None
+                else "バックテスト完了（レポート生成は警告あり）"
+            ),
             progress=1.0,
         )
         duration_ms = round((perf_counter() - started_at) * 1000, 2)
