@@ -18,7 +18,7 @@ from typing import Any, cast
 import pandas as pd
 from loguru import logger
 
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.domains.analytics.screening_requirements import (
     APIPeriodType,
@@ -256,7 +256,7 @@ class ScreeningService:
     _DEFAULT_BACKTEST_METRIC = "sharpe_ratio"
     _DEFAULT_HISTORY_TRADING_DAYS = 520
 
-    def __init__(self, reader: MarketDbReader) -> None:
+    def __init__(self, reader: MarketDbReadable) -> None:
         self._reader = reader
         self._config_loader = ConfigLoader()
         self._signal_processor = SignalProcessor()

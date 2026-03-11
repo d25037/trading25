@@ -14,22 +14,26 @@ import pandas as pd
 from src.shared.utils.financial import calc_market_cap
 
 from .fundamental_helpers import (
+    NumericSeries,
     _calc_consecutive_threshold_signal,
     _calc_growth_signal,
     _calc_threshold_signal,
+    _to_float_series,
 )
 
 
 def _calc_margin_percent(
-    numerator: pd.Series[float],
-    sales: pd.Series[float],
+    numerator: NumericSeries,
+    sales: NumericSeries,
 ) -> pd.Series[float]:
     """売上高が正の期間のみを分母にしてマージン(%)を計算する。"""
-    return (numerator / sales.where(sales > 0, np.nan)) * 100
+    numerator_float = _to_float_series(numerator)
+    sales_float = _to_float_series(sales)
+    return (numerator_float / sales_float.where(sales_float > 0, np.nan)) * 100
 
 
 def operating_cash_flow_threshold(
-    operating_cash_flow: pd.Series[float],
+    operating_cash_flow: NumericSeries,
     threshold: float = 0.0,
     condition: Literal["above", "below"] = "above",
     consecutive_periods: int = 1,
@@ -63,8 +67,8 @@ def operating_cash_flow_threshold(
 
 
 def cfo_to_net_profit_ratio_threshold(
-    operating_cash_flow: pd.Series[float],
-    net_profit: pd.Series[float],
+    operating_cash_flow: NumericSeries,
+    net_profit: NumericSeries,
     threshold: float = 1.0,
     condition: Literal["above", "below"] = "above",
     consecutive_periods: int = 1,
@@ -90,7 +94,12 @@ def cfo_to_net_profit_ratio_threshold(
         - consecutive_periods > 1 の場合、直近N回分の決算発表で条件を満たす必要がある
         - 推奨period_type: "FY"（純利益・営業CFの整合を優先）
     """
-    ratio = operating_cash_flow / net_profit.where(net_profit != 0, np.nan)
+    operating_cash_flow_float = _to_float_series(operating_cash_flow)
+    net_profit_float = _to_float_series(net_profit)
+    ratio = operating_cash_flow_float / net_profit_float.where(
+        net_profit_float != 0,
+        np.nan,
+    )
 
     if consecutive_periods > 1:
         return _calc_consecutive_release_threshold_signal(
@@ -98,15 +107,15 @@ def cfo_to_net_profit_ratio_threshold(
             threshold,
             condition,
             consecutive_periods,
-            operating_cash_flow,
-            net_profit,
+            operating_cash_flow_float,
+            net_profit_float,
         )
     return _calc_threshold_signal(ratio, threshold, condition, require_positive=False)
 
 
 def simple_fcf_threshold(
-    operating_cash_flow: pd.Series[float],
-    investing_cash_flow: pd.Series[float],
+    operating_cash_flow: NumericSeries,
+    investing_cash_flow: NumericSeries,
     threshold: float = 0.0,
     condition: Literal["above", "below"] = "above",
     consecutive_periods: int = 1,
@@ -133,7 +142,7 @@ def simple_fcf_threshold(
         - consecutive_periods > 1 の場合、直近N回分の決算発表で条件を満たす必要がある
         - 推奨period_type: "FY"（CFデータはFYで一貫性あり）
     """
-    fcf = operating_cash_flow + investing_cash_flow
+    fcf = _to_float_series(operating_cash_flow) + _to_float_series(investing_cash_flow)
     if consecutive_periods > 1:
         return _calc_consecutive_threshold_signal(
             fcf, threshold, condition, consecutive_periods
@@ -143,9 +152,9 @@ def simple_fcf_threshold(
 
 def cfo_yield_threshold(
     close: pd.Series[float],
-    operating_cash_flow: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
+    operating_cash_flow: NumericSeries,
+    shares_outstanding: NumericSeries,
+    treasury_shares: NumericSeries,
     threshold: float = 5.0,
     condition: Literal["above", "below"] = "above",
     use_floating_shares: bool = True,
@@ -179,14 +188,16 @@ def cfo_yield_threshold(
     market_cap = calc_market_cap(
         close, shares_outstanding, treasury_shares, use_floating_shares
     )
-    cfo_yield = (operating_cash_flow / market_cap.where(market_cap > 0, np.nan)) * 100
+    cfo_yield = (
+        _to_float_series(operating_cash_flow) / market_cap.where(market_cap > 0, np.nan)
+    ) * 100
 
     return _calc_threshold_signal(cfo_yield, threshold, condition, require_positive=False)
 
 
 def cfo_margin_threshold(
-    operating_cash_flow: pd.Series[float],
-    sales: pd.Series[float],
+    operating_cash_flow: NumericSeries,
+    sales: NumericSeries,
     threshold: float = 5.0,
     condition: Literal["above", "below"] = "above",
 ) -> pd.Series[bool]:
@@ -215,10 +226,10 @@ def cfo_margin_threshold(
 
 def simple_fcf_yield_threshold(
     close: pd.Series[float],
-    operating_cash_flow: pd.Series[float],
-    investing_cash_flow: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
+    operating_cash_flow: NumericSeries,
+    investing_cash_flow: NumericSeries,
+    shares_outstanding: NumericSeries,
+    treasury_shares: NumericSeries,
     threshold: float = 5.0,
     condition: Literal["above", "below"] = "above",
     use_floating_shares: bool = True,
@@ -254,16 +265,16 @@ def simple_fcf_yield_threshold(
     market_cap = calc_market_cap(
         close, shares_outstanding, treasury_shares, use_floating_shares
     )
-    fcf = operating_cash_flow + investing_cash_flow
+    fcf = _to_float_series(operating_cash_flow) + _to_float_series(investing_cash_flow)
     fcf_yield = (fcf / market_cap.where(market_cap > 0, np.nan)) * 100
 
     return _calc_threshold_signal(fcf_yield, threshold, condition, require_positive=False)
 
 
 def simple_fcf_margin_threshold(
-    operating_cash_flow: pd.Series[float],
-    investing_cash_flow: pd.Series[float],
-    sales: pd.Series[float],
+    operating_cash_flow: NumericSeries,
+    investing_cash_flow: NumericSeries,
+    sales: NumericSeries,
     threshold: float = 5.0,
     condition: Literal["above", "below"] = "above",
 ) -> pd.Series[bool]:
@@ -294,19 +305,20 @@ def simple_fcf_margin_threshold(
 
 
 def _freeze_metric_by_release_dates(
-    metric: pd.Series[float],
+    metric: NumericSeries,
     *release_sources: pd.Series,
 ) -> pd.Series[float]:
     """開示更新タイミングのみ値を採用し、日次へffillした系列を返す。"""
-    if metric.empty:
-        return metric
+    metric_float = _to_float_series(metric)
+    if metric_float.empty:
+        return metric_float
 
-    release_mask = _build_release_mask(metric.index, *release_sources)
-    return metric.where(release_mask).ffill()
+    release_mask = _build_release_mask(metric_float.index, *release_sources)
+    return metric_float.where(release_mask).ffill()
 
 
 def _calc_consecutive_release_threshold_signal(
-    metric: pd.Series[float],
+    metric: NumericSeries,
     threshold: float,
     condition: Literal["above", "below"],
     consecutive_periods: int,
@@ -317,15 +329,16 @@ def _calc_consecutive_release_threshold_signal(
 
     metric 値自体が同値継続でも、source が更新されていれば新しい決算発表として扱う。
     """
-    if metric.empty:
-        return metric.astype(bool)
+    metric_float = _to_float_series(metric)
+    if metric_float.empty:
+        return metric_float.astype(bool)
 
-    release_mask = _build_release_mask(metric.index, *release_sources)
+    release_mask = _build_release_mask(metric_float.index, *release_sources)
     release_dates = release_mask[release_mask].index
     if len(release_dates) < consecutive_periods:
-        return pd.Series(False, index=metric.index)
+        return pd.Series(False, index=metric_float.index)
 
-    release_values = metric.loc[release_dates]
+    release_values = metric_float.loc[release_dates]
     meets_threshold = (
         release_values >= threshold if condition == "above" else release_values < threshold
     )
@@ -337,9 +350,9 @@ def _calc_consecutive_release_threshold_signal(
         .eq(consecutive_periods)
     )
 
-    daily_result = pd.Series(np.nan, index=metric.index)
+    daily_result = pd.Series(np.nan, index=metric_float.index)
     daily_result.loc[consecutive_met.index] = consecutive_met.astype(float)
-    return daily_result.ffill().fillna(0.0).astype(bool) & metric.notna()
+    return daily_result.ffill().fillna(0.0).astype(bool) & metric_float.notna()
 
 
 def _build_release_mask(
@@ -361,9 +374,9 @@ def _build_release_mask(
 
 def is_growing_cfo_yield(
     close: pd.Series[float],
-    operating_cash_flow: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
+    operating_cash_flow: NumericSeries,
+    shares_outstanding: NumericSeries,
+    treasury_shares: NumericSeries,
     growth_threshold: float = 0.1,
     periods: int = 1,
     condition: Literal["above", "below"] = "above",
@@ -378,7 +391,9 @@ def is_growing_cfo_yield(
     market_cap = calc_market_cap(
         close, shares_outstanding, treasury_shares, use_floating_shares
     )
-    cfo_yield = (operating_cash_flow / market_cap.where(market_cap > 0, np.nan)) * 100
+    cfo_yield = (
+        _to_float_series(operating_cash_flow) / market_cap.where(market_cap > 0, np.nan)
+    ) * 100
     release_sources: list[pd.Series] = [operating_cash_flow, shares_outstanding]
     if use_floating_shares:
         release_sources.append(treasury_shares)
@@ -391,10 +406,10 @@ def is_growing_cfo_yield(
 
 def is_growing_simple_fcf_yield(
     close: pd.Series[float],
-    operating_cash_flow: pd.Series[float],
-    investing_cash_flow: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
+    operating_cash_flow: NumericSeries,
+    investing_cash_flow: NumericSeries,
+    shares_outstanding: NumericSeries,
+    treasury_shares: NumericSeries,
     growth_threshold: float = 0.1,
     periods: int = 1,
     condition: Literal["above", "below"] = "above",
@@ -409,7 +424,7 @@ def is_growing_simple_fcf_yield(
     market_cap = calc_market_cap(
         close, shares_outstanding, treasury_shares, use_floating_shares
     )
-    fcf = operating_cash_flow + investing_cash_flow
+    fcf = _to_float_series(operating_cash_flow) + _to_float_series(investing_cash_flow)
     fcf_yield = (fcf / market_cap.where(market_cap > 0, np.nan)) * 100
     release_sources: list[pd.Series] = [
         operating_cash_flow,
@@ -427,8 +442,8 @@ def is_growing_simple_fcf_yield(
 
 def market_cap_threshold(
     close: pd.Series[float],
-    shares_outstanding: pd.Series[int],
-    treasury_shares: pd.Series[int],
+    shares_outstanding: NumericSeries,
+    treasury_shares: NumericSeries,
     threshold: float = 100.0,
     condition: Literal["above", "below"] = "above",
     use_floating_shares: bool = True,

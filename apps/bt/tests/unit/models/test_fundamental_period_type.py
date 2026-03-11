@@ -43,13 +43,13 @@ class TestFundamentalPeriodType:
     def test_from_dict_with_period_type(self):
         """辞書から period_type 付きで構築できること"""
         data = {"enabled": True, "period_type": "2Q"}
-        params = FundamentalSignalParams(**data)
+        params = FundamentalSignalParams.model_validate(data)
         assert params.period_type == "2Q"
 
     def test_from_dict_without_period_type(self):
         """辞書から period_type なしで構築できること（デフォルト適用）"""
         data = {"enabled": True}
-        params = FundamentalSignalParams(**data)
+        params = FundamentalSignalParams.model_validate(data)
         assert params.period_type == "FY"
 
 
@@ -126,8 +126,8 @@ class TestResolvePeriodType:
         mock_self.entry_filter_params = MagicMock()
         mock_self.entry_filter_params.fundamental = FundamentalSignalParams(
             enabled=True,
-            forward_eps_growth={"enabled": False},
-            peg_ratio={"enabled": True},
+            forward_eps_growth=FundamentalSignalParams.ForwardEPSParams(enabled=False),
+            peg_ratio=FundamentalSignalParams.PEGRatioParams(enabled=True),
         )
         mock_self.exit_trigger_params = None
 
@@ -142,8 +142,8 @@ class TestResolvePeriodType:
         mock_self.entry_filter_params = MagicMock()
         mock_self.entry_filter_params.fundamental = FundamentalSignalParams(
             enabled=False,
-            forward_eps_growth={"enabled": True},
-            peg_ratio={"enabled": True},
+            forward_eps_growth=FundamentalSignalParams.ForwardEPSParams(enabled=True),
+            peg_ratio=FundamentalSignalParams.PEGRatioParams(enabled=True),
         )
         mock_self.exit_trigger_params = None
 

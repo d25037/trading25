@@ -1680,7 +1680,7 @@ class TestConsecutivePeriodsOperatingCashFlow:
 
         # 日次データ作成（ffillで補完）
         cf_data = []
-        for i, val in enumerate(release_values):
+        for val in release_values:
             cf_data.extend([val] * 10)
         self.operating_cash_flow = pd.Series(cf_data, index=self.dates)
 
@@ -2670,8 +2670,14 @@ class TestFundamentalSignalParamsConfig:
         """forward_eps_growthフィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            forward_eps_growth={"enabled": True, "threshold": 0.15, "condition": "above"}
+        params = FundamentalSignalParams.model_validate(
+            {
+                "forward_eps_growth": {
+                    "enabled": True,
+                    "threshold": 0.15,
+                    "condition": "above",
+                }
+            }
         )
         assert params.forward_eps_growth.enabled is True
         assert params.forward_eps_growth.threshold == 0.15
@@ -2681,8 +2687,14 @@ class TestFundamentalSignalParamsConfig:
         """forward_dividend_growthフィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            forward_dividend_growth={"enabled": True, "threshold": 0.08, "condition": "above"}
+        params = FundamentalSignalParams.model_validate(
+            {
+                "forward_dividend_growth": {
+                    "enabled": True,
+                    "threshold": 0.08,
+                    "condition": "above",
+                }
+            }
         )
         assert params.forward_dividend_growth.enabled is True
         assert params.forward_dividend_growth.threshold == 0.08
@@ -2692,8 +2704,8 @@ class TestFundamentalSignalParamsConfig:
         """forecast_eps_above_recent_fy_actualsフィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            forecast_eps_above_recent_fy_actuals={"enabled": True}
+        params = FundamentalSignalParams.model_validate(
+            {"forecast_eps_above_recent_fy_actuals": {"enabled": True}}
         )
         assert params.forecast_eps_above_recent_fy_actuals.enabled is True
         assert params.forecast_eps_above_recent_fy_actuals.lookback_fy_count == 3
@@ -2702,8 +2714,13 @@ class TestFundamentalSignalParamsConfig:
         """legacy key でも新フィールドへマッピングされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            forecast_eps_above_all_actuals={"enabled": True, "lookback_fy_count": 5}
+        params = FundamentalSignalParams.model_validate(
+            {
+                "forecast_eps_above_all_actuals": {
+                    "enabled": True,
+                    "lookback_fy_count": 5,
+                }
+            }
         )
         assert params.forecast_eps_above_recent_fy_actuals.enabled is True
         assert params.forecast_eps_above_recent_fy_actuals.lookback_fy_count == 5
@@ -2712,8 +2729,15 @@ class TestFundamentalSignalParamsConfig:
         """eps_growth（実績ベース）フィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            eps_growth={"enabled": True, "threshold": 0.2, "periods": 2, "condition": "above"}
+        params = FundamentalSignalParams.model_validate(
+            {
+                "eps_growth": {
+                    "enabled": True,
+                    "threshold": 0.2,
+                    "periods": 2,
+                    "condition": "above",
+                }
+            }
         )
         assert params.eps_growth.enabled is True
         assert params.eps_growth.threshold == 0.2
@@ -2745,9 +2769,11 @@ class TestFundamentalSignalParamsConfig:
         """forward_eps_growthとeps_growthが共存できること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            forward_eps_growth={"enabled": True, "threshold": 0.1},
-            eps_growth={"enabled": True, "threshold": 0.2, "periods": 1},
+        params = FundamentalSignalParams.model_validate(
+            {
+                "forward_eps_growth": {"enabled": True, "threshold": 0.1},
+                "eps_growth": {"enabled": True, "threshold": 0.2, "periods": 1},
+            }
         )
         assert params.forward_eps_growth.enabled is True
         assert params.eps_growth.enabled is True
@@ -2758,12 +2784,14 @@ class TestFundamentalSignalParamsConfig:
         """dividend_per_share_growthフィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            dividend_per_share_growth={
-                "enabled": True,
-                "threshold": 0.15,
-                "periods": 2,
-                "condition": "above",
+        params = FundamentalSignalParams.model_validate(
+            {
+                "dividend_per_share_growth": {
+                    "enabled": True,
+                    "threshold": 0.15,
+                    "periods": 2,
+                    "condition": "above",
+                }
             }
         )
         assert params.dividend_per_share_growth.enabled is True
@@ -2775,12 +2803,14 @@ class TestFundamentalSignalParamsConfig:
         """cfo_to_net_profit_ratioフィールドが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            cfo_to_net_profit_ratio={
-                "enabled": True,
-                "threshold": 1.2,
-                "condition": "above",
-                "consecutive_periods": 2,
+        params = FundamentalSignalParams.model_validate(
+            {
+                "cfo_to_net_profit_ratio": {
+                    "enabled": True,
+                    "threshold": 1.2,
+                    "condition": "above",
+                    "consecutive_periods": 2,
+                }
             }
         )
         assert params.cfo_to_net_profit_ratio.enabled is True
@@ -2792,9 +2822,19 @@ class TestFundamentalSignalParamsConfig:
         """payout_ratio/forward_payout_ratioが正しくパースされること"""
         from src.shared.models.signals.fundamental import FundamentalSignalParams
 
-        params = FundamentalSignalParams(
-            payout_ratio={"enabled": True, "threshold": 40.0, "condition": "above"},
-            forward_payout_ratio={"enabled": True, "threshold": 45.0, "condition": "below"},
+        params = FundamentalSignalParams.model_validate(
+            {
+                "payout_ratio": {
+                    "enabled": True,
+                    "threshold": 40.0,
+                    "condition": "above",
+                },
+                "forward_payout_ratio": {
+                    "enabled": True,
+                    "threshold": 45.0,
+                    "condition": "below",
+                },
+            }
         )
         assert params.payout_ratio.enabled is True
         assert params.payout_ratio.threshold == 40.0
