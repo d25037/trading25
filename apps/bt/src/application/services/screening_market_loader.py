@@ -18,7 +18,7 @@ from src.infrastructure.data_access.loaders.statements_loaders import (
     resolve_shared_baseline_shares,
     transform_statements_df,
 )
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_reader import MarketDbQueryable
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
 from src.shared.models.types import normalize_period_type
 
@@ -58,7 +58,7 @@ _STATEMENT_DB_TO_API_COLUMNS = {
 
 
 def load_market_multi_data(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     stock_codes: list[str],
     *,
     start_date: str | None = None,
@@ -125,7 +125,7 @@ def load_market_multi_data(
 
 
 def load_market_topix_data(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     *,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -150,7 +150,7 @@ def load_market_topix_data(
 
 
 def load_market_sector_indices(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     *,
     start_date: str | None = None,
     end_date: str | None = None,
@@ -207,7 +207,7 @@ def load_market_sector_indices(
     }
 
 
-def load_market_stock_sector_mapping(reader: MarketDbReader) -> dict[str, str]:
+def load_market_stock_sector_mapping(reader: MarketDbQueryable) -> dict[str, str]:
     """stocks から銘柄 -> sector_33_name を取得"""
     rows = reader.query(
         """
@@ -238,7 +238,7 @@ def _normalize_codes(stock_codes: list[str]) -> list[str]:
 
 
 def _load_daily_by_code(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     stock_codes: list[str],
     *,
     start_date: str | None,
@@ -276,7 +276,7 @@ def _load_daily_by_code(
 
 
 def _attach_margin(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     result: dict[str, dict[str, pd.DataFrame]],
     daily_index_by_code: dict[str, pd.DatetimeIndex],
     *,
@@ -320,7 +320,7 @@ def _attach_margin(
 
 
 def _attach_statements(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     result: dict[str, dict[str, pd.DataFrame]],
     daily_index_by_code: dict[str, pd.DatetimeIndex],
     *,
@@ -402,7 +402,7 @@ def _is_missing_table_error(exc: Exception) -> bool:
 
 
 def _query_statements_rows(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     stock_codes: list[str],
     *,
     start_date: str | None,
@@ -471,7 +471,7 @@ def _query_statements_rows(
 
 
 def _query_margin_rows(
-    reader: MarketDbReader,
+    reader: MarketDbQueryable,
     stock_codes: list[str],
     *,
     start_date: str | None,

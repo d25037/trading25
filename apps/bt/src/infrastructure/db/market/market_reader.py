@@ -10,7 +10,7 @@ import importlib
 import threading
 from dataclasses import dataclass
 from collections.abc import Iterator
-from typing import Any, cast
+from typing import Any, Protocol, cast
 
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 
@@ -46,6 +46,22 @@ class _DuckDbRow:
 
     def values(self) -> tuple[Any, ...]:
         return self._values
+
+
+class MarketDbQueryable(Protocol):
+    """Minimal read-only SQL query contract for market data consumers."""
+
+    def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
+        """Execute a read-only query and return adapted rows."""
+        ...
+
+
+class MarketDbReadable(MarketDbQueryable, Protocol):
+    """Read contract that includes single-row lookup helpers."""
+
+    def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> Any | None:
+        """Execute a read-only query and return the first row when present."""
+        ...
 
 
 class MarketDbReader:

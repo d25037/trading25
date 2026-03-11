@@ -18,7 +18,11 @@ from src.domains.strategy.runtime.screening_mode import (
 )
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
-from src.entrypoints.http.schemas.screening import MatchedStrategyItem, ScreeningResultItem
+from src.entrypoints.http.schemas.screening import (
+    MatchedStrategyItem,
+    ScreeningMode,
+    ScreeningResultItem,
+)
 from src.application.services.screening_service import (
     MultiDataRequirementKey,
     ScreeningService,
@@ -34,8 +38,13 @@ from src.application.services.screening_service import (
 
 
 class DummyReader:
-    def query(self, sql, params=()):  # noqa: ANN001, ANN201
+    def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
+        del sql, params
         return []
+
+    def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> Any | None:
+        del sql, params
+        return None
 
 
 def _runtime(
@@ -45,7 +54,7 @@ def _runtime(
     entry_params: SignalParams | None = None,
     exit_params: SignalParams | None = None,
 ) -> StrategyRuntime:
-    shared_payload = {"dataset": "primeExTopix500"}
+    shared_payload: dict[str, object] = {"dataset": "primeExTopix500"}
     if shared_overrides:
         shared_payload.update(shared_overrides)
     resolved_entry_params = entry_params or SignalParams()
@@ -61,6 +70,7 @@ def _runtime(
         exit_signal_params=resolved_exit_params,
     )
     screening_mode = resolve_strategy_screening_mode(compiled_strategy)
+    assert screening_mode != "unsupported"
 
     return StrategyRuntime(
         name=f"production/{name}",
@@ -70,7 +80,7 @@ def _runtime(
         exit_params=resolved_exit_params,
         shared_config=shared_config,
         compiled_strategy=compiled_strategy,
-        screening_mode=screening_mode,
+        screening_mode=cast(ScreeningMode, screening_mode),
     )
 
 
@@ -502,13 +512,13 @@ class TestRuntimeEvaluationHelpers:
 
         assert (
             service._load_benchmark_data(  # noqa: SLF001
-                key=SimpleNamespace(start_date="2026-01-01", end_date="2026-02-17")
+                key=TopixDataRequirementKey(start_date="2026-01-01", end_date="2026-02-17")
             )
             is benchmark
         )
         assert (
             service._load_sector_data(  # noqa: SLF001
-                key=SimpleNamespace(start_date="2026-01-01", end_date="2026-02-17")
+                key=SectorDataRequirementKey(start_date="2026-01-01", end_date="2026-02-17")
             )
             is sector
         )
@@ -534,15 +544,18 @@ class TestRuntimeEvaluationHelpers:
 
     def test_get_latest_market_date_handles_none_and_error(self):
         class _ReaderWithDate(DummyReader):
-            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+            def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> dict[str, str]:
+                del sql, params
                 return {"max_date": "2026-02-17"}
 
         class _ReaderWithNone(DummyReader):
-            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+            def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> None:
+                del sql, params
                 return None
 
         class _ReaderWithError(DummyReader):
-            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+            def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> Any | None:
+                del sql, params
                 raise RuntimeError("db error")
 
         assert ScreeningService(_ReaderWithDate())._get_latest_market_date() == "2026-02-17"  # noqa: SLF001
@@ -551,10 +564,11 @@ class TestRuntimeEvaluationHelpers:
 
     def test_get_trading_date_before_handles_branches(self):
         class _Reader(DummyReader):
-            def __init__(self, responses):  # noqa: ANN001
+            def __init__(self, responses: list[Any]) -> None:
                 self._responses = iter(responses)
 
-            def query_one(self, _sql, _params=()):  # noqa: ANN001, ANN201
+            def query_one(self, sql: str, params: tuple[Any, ...] = ()) -> Any | None:
+                del sql, params
                 result = next(self._responses)
                 if isinstance(result, Exception):
                     raise result

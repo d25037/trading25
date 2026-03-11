@@ -62,6 +62,20 @@ def _make_test_app() -> TestClient:
     async def trigger_jquants_504() -> dict:
         raise JQuantsApiError(504, "JQuants API timeout: /equities/master")
 
+    _registered_handlers = (
+        trigger_not_found,
+        trigger_bad_request,
+        trigger_server_error,
+        trigger_conflict,
+        trigger_validation,
+        trigger_runtime_error,
+        trigger_attribute_error,
+        trigger_sqlalchemy_error,
+        trigger_jquants_502,
+        trigger_jquants_504,
+    )
+    _ = tuple(handler.__name__ for handler in _registered_handlers)
+
     app.include_router(test_router)
     return TestClient(app)
 

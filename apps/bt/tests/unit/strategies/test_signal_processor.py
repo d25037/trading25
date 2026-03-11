@@ -4,15 +4,48 @@ SignalProcessor unit tests
 SignalProcessorクラスの基本機能・エラーハンドリング・統合処理をテスト
 """
 
+from collections.abc import Callable
+
 import pytest
 import pandas as pd
-from types import SimpleNamespace
 from unittest.mock import patch
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.domains.strategy.signals.registry import SignalDefinition
 from src.shared.models.config import SharedConfig
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.shared.models.signals import SignalParams, Signals
+
+
+def _signal_definition(
+    *,
+    name: str = "TestSignal",
+    signal_func: Callable[..., pd.Series] | None = None,
+    enabled_checker: Callable[[SignalParams], bool] | None = None,
+    param_builder: Callable[[SignalParams, dict], dict] | None = None,
+    entry_purpose: str = "",
+    exit_purpose: str = "",
+    category: str = "test",
+    description: str = "",
+    param_key: str = "test",
+    data_checker: Callable[[dict], bool] | None = None,
+    exit_disabled: bool = False,
+    data_requirements: list[str] | None = None,
+) -> SignalDefinition:
+    return SignalDefinition(
+        name=name,
+        signal_func=signal_func or (lambda **_kwargs: pd.Series(dtype=bool)),
+        enabled_checker=enabled_checker or (lambda _params: True),
+        param_builder=param_builder or (lambda _params, _data: {}),
+        entry_purpose=entry_purpose,
+        exit_purpose=exit_purpose,
+        category=category,
+        description=description,
+        param_key=param_key,
+        data_checker=data_checker,
+        exit_disabled=exit_disabled,
+        data_requirements=[] if data_requirements is None else data_requirements,
+    )
 
 
 class TestSignalProcessor:
@@ -244,18 +277,11 @@ class TestSignalProcessor:
 
     def test_missing_data_warning_reports_requirement_name(self):
         """必須データ不足ログが実際の要件を示すことを確認"""
-        dummy_signal = SimpleNamespace(
+        dummy_signal = _signal_definition(
             name="Forward EPS成長率",
             signal_func=lambda **_kwargs: self.base_signal,
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
-            entry_purpose="",
-            exit_purpose="",
-            category="test",
-            description="",
             param_key="test.forward",
             data_checker=lambda _data: False,
-            exit_disabled=False,
             data_requirements=["statements:ForwardForecastEPS"],
         )
 
@@ -327,13 +353,13 @@ class TestSignalProcessor:
         assert self.processor._is_requirement_satisfied("unknown", sources)  # noqa: SLF001
 
     def test_describe_missing_requirements_fallback_message(self):
-        no_requirements = SimpleNamespace(data_requirements=[])
+        no_requirements = _signal_definition(data_requirements=[])
         assert (
             self.processor._describe_missing_requirements(no_requirements, {"volume": self.test_data["Volume"]})  # noqa: SLF001
             == "data checker returned False"
         )
 
-        satisfied = SimpleNamespace(data_requirements=["volume"])
+        satisfied = _signal_definition(data_requirements=["volume"])
         assert (
             self.processor._describe_missing_requirements(  # noqa: SLF001
                 satisfied,
@@ -343,19 +369,13 @@ class TestSignalProcessor:
         )
 
     def test_apply_unified_signal_exit_disabled_is_skipped(self):
-        dummy_signal = SimpleNamespace(
+        dummy_signal = _signal_definition(
             name="BuyAndHold",
             signal_func=lambda **_kwargs: self.base_signal,
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test",
-            data_checker=None,
             exit_disabled=True,
-            data_requirements=[],
         )
 
         signal_conditions = [self.base_signal]
@@ -374,19 +394,12 @@ class TestSignalProcessor:
 
     def test_apply_unified_signal_reindexes_when_index_mismatch(self):
         result_index = self.base_signal.index[2:]
-        dummy_signal = SimpleNamespace(
+        dummy_signal = _signal_definition(
             name="MismatchSignal",
             signal_func=lambda **_kwargs: pd.Series([True, False, True], index=result_index),
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         signal_conditions = [self.base_signal]
@@ -407,22 +420,15 @@ class TestSignalProcessor:
         assert any("日付不一致" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
 
     def test_apply_unified_signal_lags_non_oracle_entry_in_current_session_oracle(self):
-        dummy_signal = SimpleNamespace(
+        dummy_signal = _signal_definition(
             name="RSI",
             signal_func=lambda **_kwargs: pd.Series(
                 [True, True, False, True, False],
                 index=self.base_signal.index,
             ),
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="rsi_threshold",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         signal_conditions = [self.base_signal]
@@ -463,39 +469,27 @@ class TestSignalProcessor:
         params.oracle_index_open_gap_regime.enabled = True
         params.rsi_threshold.enabled = True
 
-        oracle_signal = SimpleNamespace(
+        oracle_signal = _signal_definition(
             name="TOPIX Gap Oracle",
             signal_func=lambda **_kwargs: pd.Series(
                 [False, True, True, False, True],
                 index=self.test_data.index,
             ),
             enabled_checker=lambda signal_params: signal_params.oracle_index_open_gap_regime.enabled,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="oracle_index_open_gap_regime",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
-        technical_signal = SimpleNamespace(
+        technical_signal = _signal_definition(
             name="RSI",
             signal_func=lambda **_kwargs: pd.Series(
                 [True, False, True, True, False],
                 index=self.test_data.index,
             ),
             enabled_checker=lambda signal_params: signal_params.rsi_threshold.enabled,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="rsi_threshold",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         compiled_strategy = compile_runtime_strategy(
@@ -549,39 +543,27 @@ class TestSignalProcessor:
             entry_signal_params=params,
         )
 
-        oracle_signal = SimpleNamespace(
+        oracle_signal = _signal_definition(
             name="TOPIX Gap Oracle",
             signal_func=lambda **_kwargs: pd.Series(
                 [False, True, True, False, True],
                 index=self.test_data.index,
             ),
             enabled_checker=lambda signal_params: signal_params.oracle_index_open_gap_regime.enabled,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="oracle_index_open_gap_regime",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
-        technical_signal = SimpleNamespace(
+        technical_signal = _signal_definition(
             name="RSI",
             signal_func=lambda **_kwargs: pd.Series(
                 [True, False, True, True, False],
                 index=self.test_data.index,
             ),
             enabled_checker=lambda signal_params: signal_params.rsi_threshold.enabled,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="rsi_threshold",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         with patch(
@@ -604,19 +586,12 @@ class TestSignalProcessor:
         pd.testing.assert_series_equal(result, expected)
 
     def test_apply_unified_signal_keyerror_is_reraised(self):
-        dummy_signal = SimpleNamespace(
+        dummy_signal = _signal_definition(
             name="KeyErrorSignal",
             signal_func=lambda **_kwargs: (_ for _ in ()).throw(KeyError("missing key")),
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         with pytest.raises(KeyError):
@@ -630,33 +605,19 @@ class TestSignalProcessor:
             )
 
     def test_apply_unified_signal_value_and_unknown_errors_are_swallowed(self):
-        value_error_signal = SimpleNamespace(
+        value_error_signal = _signal_definition(
             name="ValueErrorSignal",
             signal_func=lambda **_kwargs: (_ for _ in ()).throw(ValueError("invalid")),
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
-        unexpected_error_signal = SimpleNamespace(
+        unexpected_error_signal = _signal_definition(
             name="UnexpectedSignal",
             signal_func=lambda **_kwargs: (_ for _ in ()).throw(RuntimeError("boom")),
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         signal_conditions = [self.base_signal]
@@ -686,22 +647,15 @@ class TestSignalProcessor:
     def test_apply_signals_entry_early_stop_when_recent_window_exhausted(self):
         base_signal = pd.Series([True, True, True, True, True], index=self.test_data.index)
 
-        first_signal = SimpleNamespace(
+        first_signal = _signal_definition(
             name="FirstGate",
             signal_func=lambda **_kwargs: pd.Series(
                 [True, True, False, False, False],
                 index=self.test_data.index,
             ),
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test.first",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         second_called = {"value": False}
@@ -710,19 +664,12 @@ class TestSignalProcessor:
             second_called["value"] = True
             return pd.Series([True, True, True, True, True], index=self.test_data.index)
 
-        second_signal = SimpleNamespace(
+        second_signal = _signal_definition(
             name="SecondGate",
             signal_func=_second_signal,
-            enabled_checker=lambda _params: True,
-            param_builder=lambda _params, _data: {},
             entry_purpose="entry",
             exit_purpose="exit",
-            category="test",
-            description="",
             param_key="test.second",
-            data_checker=None,
-            exit_disabled=False,
-            data_requirements=[],
         )
 
         with patch(

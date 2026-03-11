@@ -9,9 +9,9 @@ from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
+from src.infrastructure.external_api.clients.jquants_client import JQuantsGetClient
 from src.infrastructure.db.market.query_helpers import expand_stock_code, stock_code_candidates
-from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.application.services.market_code_alias import resolve_market_codes
 from src.entrypoints.http.schemas.chart import (
     IndexDataResponse,
@@ -53,8 +53,8 @@ class ChartService:
 
     def __init__(
         self,
-        reader: MarketDbReader | None,
-        jquants_client: JQuantsAsyncClient,
+        reader: MarketDbReadable | None,
+        jquants_client: JQuantsGetClient,
     ) -> None:
         self._reader = reader
         self._jquants = jquants_client

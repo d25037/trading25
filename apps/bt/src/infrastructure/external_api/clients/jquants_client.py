@@ -8,7 +8,7 @@ JQuants API v2 への非同期 HTTP クライアント。
 from __future__ import annotations
 
 import asyncio
-from typing import Any
+from typing import Any, Protocol
 
 import httpx
 from loguru import logger
@@ -26,6 +26,14 @@ class JQuantsApiError(Exception):
         self.status_code = status_code
         self.message = message
         super().__init__(message)
+
+
+class JQuantsGetClient(Protocol):
+    """Minimal async GET contract used by service-layer consumers."""
+
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        """Fetch a J-Quants endpoint and return the parsed response body."""
+        ...
 
 
 class JQuantsAsyncClient:
