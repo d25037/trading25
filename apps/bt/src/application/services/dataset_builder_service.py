@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import json
 import shutil
-from collections.abc import Mapping
+from collections.abc import Iterable, Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -512,7 +512,9 @@ def _row_to_dict(row: Any) -> dict[str, Any]:
         return dict(row)
     keys = getattr(row, "keys", None)
     if callable(keys):
-        return {str(key): row[key] for key in keys()}
+        row_keys = keys()
+        if isinstance(row_keys, Iterable):
+            return {str(key): row[key] for key in row_keys}
     raise TypeError(f"Unsupported row type: {type(row)!r}")
 
 
