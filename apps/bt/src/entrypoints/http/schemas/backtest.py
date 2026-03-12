@@ -32,7 +32,7 @@ class BacktestRequest(BaseModel):
         description="戦略設定のオーバーライド（オプション）",
     )
     engine_family: EngineFamily = Field(
-        default=EngineFamily.VECTORBT,
+        ...,
         description="実行エンジン。verification run では nautilus を明示指定する。",
     )
 

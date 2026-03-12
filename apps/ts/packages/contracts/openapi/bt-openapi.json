@@ -681,7 +681,6 @@
         "properties": {
           "engine_family": {
             "$ref": "#/components/schemas/EngineFamily",
-            "default": "vectorbt",
             "description": "実行エンジン。verification run では nautilus を明示指定する。"
           },
           "strategy_config_override": {
@@ -705,6 +704,7 @@
           }
         },
         "required": [
+          "engine_family",
           "strategy_name"
         ],
         "title": "BacktestRequest",

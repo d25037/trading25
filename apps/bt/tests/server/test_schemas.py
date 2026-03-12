@@ -1,5 +1,7 @@
 """server/schemas/ のテスト"""
 
+import pytest
+
 from src.domains.backtest.contracts import EngineFamily
 from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
@@ -24,10 +26,17 @@ class TestJobStatus:
 
 class TestBacktestRequest:
     def test_basic(self):
-        req = BacktestRequest(strategy_name="test")
+        req = BacktestRequest(
+            strategy_name="test",
+            engine_family=EngineFamily.VECTORBT,
+        )
         assert req.strategy_name == "test"
         assert req.strategy_config_override is None
         assert req.engine_family == EngineFamily.VECTORBT
+
+    def test_requires_engine_family(self):
+        with pytest.raises(Exception):
+            BacktestRequest(strategy_name="test")
 
     def test_with_override(self):
         req = BacktestRequest(

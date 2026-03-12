@@ -105,6 +105,10 @@ class _CapturedExecutionAdapter:
     round_trip_inputs: tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame] | None = None
     effective_fees: float | None = None
     effective_slippage: float | None = None
+    entry_size: float | None = None
+    max_size: float | None = None
+    cash_sharing: bool | None = None
+    group_by: bool | None = None
     signal_portfolio_requested: bool = False
 
     def create_signal_portfolio(
@@ -166,13 +170,9 @@ class _CapturedExecutionAdapter:
         freq: str = "D",
     ) -> Any:
         _ = (
-            entry_size,
             entry_size_type,
             direction,
             init_cash,
-            max_size,
-            cash_sharing,
-            group_by,
             freq,
         )
         self.round_trip_inputs = (
@@ -182,6 +182,10 @@ class _CapturedExecutionAdapter:
         )
         self.effective_fees = float(fees)
         self.effective_slippage = float(slippage)
+        self.entry_size = float(entry_size)
+        self.max_size = float(max_size)
+        self.cash_sharing = bool(cash_sharing)
+        self.group_by = group_by
         return object()
 
     def build_summary_metrics(self, portfolio: Any) -> None:
@@ -408,8 +412,6 @@ def _prepare_portfolio_inputs(
         exit_trigger_params=exit_trigger_params,
         execution_adapter=cast(Any, capture_adapter),
     )
-    strategy.group_by = True
-    strategy.cash_sharing = True
     strategy.run_multi_backtest()
 
     execution_mode = resolve_round_trip_execution_mode_name(strategy.compiled_strategy)
@@ -435,11 +437,24 @@ def _prepare_portfolio_inputs(
                 "does not support signal-portfolio mode yet."
             )
         raise RuntimeError("Failed to capture round-trip execution inputs for Nautilus.")
+    if capture_adapter.cash_sharing is not True or capture_adapter.group_by is not True:
+        raise ValueError(
+            "Nautilus verification currently requires grouped cash-sharing round-trip "
+            "execution."
+        )
+    if capture_adapter.entry_size is None:
+        raise RuntimeError("Failed to capture round-trip position sizing for Nautilus.")
+    if (
+        capture_adapter.max_size is not None
+        and capture_adapter.max_size + 1e-12 < capture_adapter.entry_size
+    ):
+        raise ValueError(
+            "Nautilus verification currently does not support capped round-trip position "
+            "sizing (`max_exposure < entry_size`)."
+        )
 
     open_data, close_data, entries_data = capture_adapter.round_trip_inputs
     dataset_name = str(shared_config.dataset or "unknown")
-    stock_count = max(len(strategy.stock_codes), 1)
-    allocation_per_asset = 1.0 / stock_count if stock_count > 1 else 1.0
     return _PreparedPortfolioInputs(
         strategy_name=strategy_name,
         dataset_name=dataset_name,
@@ -451,7 +466,7 @@ def _prepare_portfolio_inputs(
         execution_mode=execution_mode,
         effective_fees=float(capture_adapter.effective_fees or 0.0),
         effective_slippage=float(capture_adapter.effective_slippage or 0.0),
-        allocation_per_asset=allocation_per_asset,
+        allocation_per_asset=float(capture_adapter.entry_size),
     )
 
 
@@ -466,6 +481,7 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
     for date_value in prepared.entries_data.index:
         trade_date = _to_timestamp(date_value)
         starting_equity = current_equity
+        available_cash = starting_equity
         day_pnl = 0.0
         for code in prepared.entries_data.columns:
             if not bool(prepared.entries_data.at[date_value, code]):
@@ -479,7 +495,7 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
                 )
                 continue
 
-            budget = starting_equity * prepared.allocation_per_asset
+            budget = available_cash * prepared.allocation_per_asset
             open_price_value = _to_float(open_price)
             close_price_value = _to_float(close_price)
             quantity = _max_affordable_quantity(
@@ -505,6 +521,10 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
             exit_price = close_price_value * max(0.0, 1.0 - prepared.effective_slippage)
             notional_in = entry_price * quantity
             notional_out = exit_price * quantity
+            available_cash = max(
+                available_cash - (notional_in * (1.0 + prepared.effective_fees)),
+                0.0,
+            )
             fees_cost = (notional_in + notional_out) * prepared.effective_fees
             pnl = notional_out - notional_in - fees_cost
             gross_return = ((close_price_value / open_price_value) - 1.0) * 100.0
@@ -777,10 +797,15 @@ def _run_nautilus_engine(
             trade_plans = verification_plan.trades_by_code.get(code, [])
             instrument = _build_instrument(runtime, code, venue)
             bar_type = _build_bar_type(runtime, instrument)
-            bars_df = _build_bars_dataframe(
-                prepared.open_data[code],
-                prepared.close_data[code],
-            )
+            try:
+                bars_df = _build_bars_dataframe(
+                    prepared.open_data[code],
+                    prepared.close_data[code],
+                )
+            except ValueError:
+                if trade_plans:
+                    raise
+                continue
             wrangler = runtime.BarDataWrangler(bar_type, instrument)
             bars = wrangler.process(bars_df)
             engine.add_instrument(instrument)

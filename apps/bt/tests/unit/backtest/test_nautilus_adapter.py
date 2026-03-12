@@ -105,6 +105,45 @@ def test_build_verification_plan_skips_unaffordable_trade_after_fees_and_slippag
     assert plan.trade_records == []
 
 
+def test_build_verification_plan_matches_vectorbt_cash_sharing_order_sizing() -> None:
+    prepared = _PreparedPortfolioInputs(
+        strategy_name="demo",
+        dataset_name="sample",
+        shared_config=SharedConfig(
+            dataset="sample",
+            stock_codes=["1301", "1332"],
+            initial_cash=100_000,
+            timeframe="daily",
+            direction="longonly",
+            group_by=True,
+            cash_sharing=True,
+        ),
+        compiled_strategy=None,
+        open_data=pd.DataFrame(
+            {"1301": [100.0], "1332": [100.0]},
+            index=pd.to_datetime(["2024-01-04"]),
+        ),
+        close_data=pd.DataFrame(
+            {"1301": [110.0], "1332": [110.0]},
+            index=pd.to_datetime(["2024-01-04"]),
+        ),
+        entries_data=pd.DataFrame(
+            {"1301": [True], "1332": [True]},
+            index=pd.to_datetime(["2024-01-04"]),
+        ),
+        execution_mode="next_session_round_trip",
+        effective_fees=0.0,
+        effective_slippage=0.0,
+        allocation_per_asset=0.5,
+    )
+
+    plan = _build_verification_plan(prepared)
+
+    assert [trade["quantity"] for trade in plan.trade_records] == [500, 250]
+    assert plan.metrics_payload["trade_count"] == 2
+    assert plan.metrics_payload["total_return"] == pytest.approx(7.5)
+
+
 def test_nautilus_verification_runner_writes_core_artifacts(monkeypatch, tmp_path: Path) -> None:
     runner = NautilusVerificationRunner()
     output_dir = Path.cwd() / ".tmp" / "nautilus-runner-test"
@@ -222,8 +261,8 @@ def test_prepare_portfolio_inputs_captures_round_trip_inputs(monkeypatch) -> Non
             self.execution_adapter = execution_adapter
             self.compiled_strategy = {"compiled": True}
             self.stock_codes = ["1301", "1332"]
-            self.group_by = False
-            self.cash_sharing = False
+            self.group_by = True
+            self.cash_sharing = True
 
         def run_multi_backtest(self) -> None:
             index = pd.to_datetime(["2024-01-04"])
@@ -231,15 +270,15 @@ def test_prepare_portfolio_inputs_captures_round_trip_inputs(monkeypatch) -> Non
                 open_data=pd.DataFrame({"1301": [100.0], "1332": [50.0]}, index=index),
                 close_data=pd.DataFrame({"1301": [102.0], "1332": [52.0]}, index=index),
                 entries_data=pd.DataFrame({"1301": [True], "1332": [0]}, index=index),
-                entry_size=1.0,
+                entry_size=0.5,
                 entry_size_type=1,
                 direction=1,
                 fees=0.001,
                 slippage=0.002,
                 init_cash=1_000_000,
                 max_size=1.0,
-                cash_sharing=True,
-                group_by=True,
+                cash_sharing=self.cash_sharing,
+                group_by=self.group_by,
             )
 
     monkeypatch.setattr(adapter, "YamlConfigurableStrategy", _FakeStrategy)
@@ -271,11 +310,34 @@ def test_prepare_portfolio_inputs_captures_round_trip_inputs(monkeypatch) -> Non
 
 
 @pytest.mark.parametrize(
-    ("execution_mode", "timeframe", "direction", "expected_error"),
+    ("execution_mode", "timeframe", "direction", "group_by", "cash_sharing", "expected_error"),
     [
-        ("unsupported_mode", "daily", "longonly", "supports only"),
-        ("next_session_round_trip", "weekly", "longonly", "supports only daily timeframe"),
-        ("next_session_round_trip", "daily", "both", "supports only longonly direction"),
+        ("unsupported_mode", "daily", "longonly", True, True, "supports only"),
+        (
+            "next_session_round_trip",
+            "weekly",
+            "longonly",
+            True,
+            True,
+            "supports only daily timeframe",
+        ),
+        ("next_session_round_trip", "daily", "both", True, True, "supports only longonly direction"),
+        (
+            "next_session_round_trip",
+            "daily",
+            "longonly",
+            False,
+            True,
+            "requires grouped cash-sharing round-trip execution",
+        ),
+        (
+            "next_session_round_trip",
+            "daily",
+            "longonly",
+            True,
+            False,
+            "requires grouped cash-sharing round-trip execution",
+        ),
     ],
 )
 def test_prepare_portfolio_inputs_rejects_unsupported_config(
@@ -283,6 +345,8 @@ def test_prepare_portfolio_inputs_rejects_unsupported_config(
     execution_mode: str,
     timeframe: str,
     direction: str,
+    group_by: bool,
+    cash_sharing: bool,
     expected_error: str,
 ) -> None:
     class _FakeStrategy:
@@ -307,8 +371,8 @@ def test_prepare_portfolio_inputs_rejects_unsupported_config(
                 slippage=0.0,
                 init_cash=1_000_000,
                 max_size=1.0,
-                cash_sharing=True,
-                group_by=True,
+                cash_sharing=cash_sharing,
+                group_by=group_by,
             )
 
     monkeypatch.setattr(adapter, "YamlConfigurableStrategy", _FakeStrategy)
@@ -1092,6 +1156,104 @@ def test_run_nautilus_engine_skips_strategy_for_symbols_without_trade_plan(monke
     )
 
     assert payload["strategyCount"] == 0
+
+
+def test_run_nautilus_engine_skips_symbols_without_executable_bars(monkeypatch) -> None:
+    class _EngineWithoutDispose:
+        def __init__(self, *, config) -> None:
+            self.config = config
+            self.data: list[object] = []
+
+        def add_venue(self, **kwargs: object) -> None:
+            return None
+
+        def add_instrument(self, instrument: object) -> None:
+            return None
+
+        def add_data(self, bars: object) -> None:
+            self.data.append(bars)
+
+        def add_strategy(self, strategy: object) -> None:
+            return None
+
+        def run(self) -> None:
+            return None
+
+    class _FakeProvider:
+        @staticmethod
+        def equity(*args: object, **kwargs: object) -> object:
+            symbol = kwargs.get("symbol") or (args[0] if args else "1301")
+            return SimpleNamespace(id=f"SIM-{symbol}")
+
+    class _FakeWrangler:
+        def __init__(self, bar_type: object, instrument: object) -> None:
+            _ = (bar_type, instrument)
+
+        def process(self, bars_df: pd.DataFrame) -> list[dict[str, object]]:
+            return bars_df.reset_index().to_dict("records")
+
+    runtime = SimpleNamespace(
+        BacktestEngine=_EngineWithoutDispose,
+        BacktestEngineConfig=lambda **kwargs: kwargs,
+        LoggingConfig=lambda **kwargs: kwargs,
+        Venue=lambda value: value,
+        Money=lambda amount, currency: (amount, currency),
+        AccountType=SimpleNamespace(CASH="cash"),
+        OmsType=SimpleNamespace(NETTING="netting"),
+        TestInstrumentProvider=_FakeProvider,
+        BarDataWrangler=_FakeWrangler,
+        BarType=lambda instrument_id, bar_spec, source: (instrument_id, bar_spec, source),
+        BarSpecification=lambda **kwargs: kwargs,
+        AggregationSource=SimpleNamespace(EXTERNAL="external"),
+        BarAggregation=SimpleNamespace(MINUTE="minute"),
+        PriceType=SimpleNamespace(LAST="last"),
+        OrderSide=SimpleNamespace(BUY="BUY", SELL="SELL"),
+        Quantity=SimpleNamespace(from_int=lambda value: value),
+        Strategy=type("FakeStrategyBase", (), {"__init__": lambda self: None}),
+        JPY="JPY",
+    )
+    monkeypatch.setattr(adapter, "_resolve_nautilus_version", lambda: "test-version")
+
+    prepared = _PreparedPortfolioInputs(
+        strategy_name="demo",
+        dataset_name="sample",
+        shared_config=SharedConfig(
+            dataset="sample",
+            stock_codes=["1301", "1332"],
+            initial_cash=1_000_000,
+            timeframe="daily",
+            direction="longonly",
+            group_by=True,
+            cash_sharing=True,
+        ),
+        compiled_strategy=None,
+        open_data=pd.DataFrame(
+            {"1301": [100.0], "1332": [float("nan")]},
+            index=pd.to_datetime(["2024-01-04"]),
+        ),
+        close_data=pd.DataFrame(
+            {"1301": [105.0], "1332": [float("nan")]},
+            index=pd.to_datetime(["2024-01-04"]),
+        ),
+        entries_data=pd.DataFrame(
+            {"1301": [False], "1332": [False]},
+            index=pd.to_datetime(["2024-01-04"]),
+        ),
+        execution_mode="next_session_round_trip",
+        effective_fees=0.0,
+        effective_slippage=0.0,
+        allocation_per_asset=0.5,
+    )
+    verification_plan = _build_verification_plan(prepared)
+
+    payload = adapter._run_nautilus_engine(  # noqa: SLF001
+        runtime,
+        prepared=prepared,
+        verification_plan=verification_plan,
+    )
+
+    assert payload["strategyCount"] == 0
+    assert payload["totalSyntheticBars"] == 2
 
 
 def test_resolve_nautilus_version_handles_success_and_total_miss(monkeypatch) -> None:

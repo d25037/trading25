@@ -2901,10 +2901,7 @@ export interface components {
          * @description バックテスト実行リクエスト
          */
         BacktestRequest: {
-            /**
-             * @description 実行エンジン。verification run では nautilus を明示指定する。
-             * @default vectorbt
-             */
+            /** @description 実行エンジン。verification run では nautilus を明示指定する。 */
             engine_family: components["schemas"]["EngineFamily"];
             /**
              * Strategy Config Override
