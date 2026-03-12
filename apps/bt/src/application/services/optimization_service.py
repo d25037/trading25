@@ -12,6 +12,7 @@ from typing import Any
 
 from loguru import logger
 
+from src.domains.backtest.contracts import EnginePolicy
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager, job_manager
@@ -46,7 +47,11 @@ class OptimizationService:
     # Grid Search Optimization
     # ============================================
 
-    async def submit_optimization(self, strategy_name: str) -> str:
+    async def submit_optimization(
+        self,
+        strategy_name: str,
+        engine_policy: EnginePolicy | None = None,
+    ) -> str:
         """
         グリッドサーチ最適化をサブミット
 
@@ -56,10 +61,14 @@ class OptimizationService:
         Returns:
             ジョブID
         """
+        resolved_engine_policy = engine_policy or EnginePolicy()
         run_spec = build_strategy_run_spec(
             "optimization",
             strategy_name,
-            parameters={"optimization_mode": "grid_search"},
+            parameters={
+                "optimization_mode": "grid_search",
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
+            },
             config_loader=self._config_loader,
         )
         job_id = self._manager.create_job(
@@ -68,12 +77,24 @@ class OptimizationService:
             run_spec=run_spec,
         )
 
-        task = asyncio.create_task(self._run_optimization(job_id, strategy_name))
+        task = asyncio.create_task(
+            self._run_optimization(
+                job_id,
+                strategy_name,
+                engine_policy=resolved_engine_policy,
+            )
+        )
         await self._manager.set_job_task(job_id, task)
 
         return job_id
 
-    async def _run_optimization(self, job_id: str, strategy_name: str) -> None:
+    async def _run_optimization(
+        self,
+        job_id: str,
+        strategy_name: str,
+        *,
+        engine_policy: EnginePolicy | None = None,
+    ) -> None:
         """グリッドサーチ最適化を実行（バックグラウンド）"""
         process: asyncio.subprocess.Process | None = None
         try:
@@ -88,7 +109,14 @@ class OptimizationService:
 
             logger.info(f"最適化開始: {job_id} (戦略: {strategy_name})")
 
-            process = await self._start_worker_process(job_id, strategy_name)
+            if engine_policy is None:
+                process = await self._start_worker_process(job_id, strategy_name)
+            else:
+                process = await self._start_worker_process(
+                    job_id,
+                    strategy_name,
+                    engine_policy=engine_policy,
+                )
             exit_code = await self._wait_for_worker_completion(job_id, process)
             job = await self._manager.reload_job_from_storage(job_id, notify=True)
             if job is None or job.status in (
@@ -143,15 +171,28 @@ class OptimizationService:
         self,
         job_id: str,
         strategy_name: str,
+        *,
+        engine_policy: EnginePolicy | None = None,
     ) -> asyncio.subprocess.Process:
         return await asyncio.create_subprocess_exec(
-            *self._build_worker_command(job_id, strategy_name),
+            *self._build_worker_command(
+                job_id,
+                strategy_name,
+                engine_policy=engine_policy,
+            ),
             cwd=str(_PROJECT_ROOT),
             stdout=asyncio.subprocess.DEVNULL,
             stderr=asyncio.subprocess.DEVNULL,
         )
 
-    def _build_worker_command(self, job_id: str, strategy_name: str) -> list[str]:
+    def _build_worker_command(
+        self,
+        job_id: str,
+        strategy_name: str,
+        *,
+        engine_policy: EnginePolicy | None = None,
+    ) -> list[str]:
+        resolved_engine_policy = engine_policy or EnginePolicy()
         return [
             sys.executable,
             "-m",
@@ -160,6 +201,8 @@ class OptimizationService:
             job_id,
             "--strategy-name",
             strategy_name,
+            "--engine-policy-json",
+            resolved_engine_policy.model_dump_json(),
             "--timeout-seconds",
             str(self._worker_timeout_seconds),
         ]

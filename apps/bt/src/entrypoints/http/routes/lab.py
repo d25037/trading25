@@ -33,6 +33,7 @@ from src.entrypoints.http.schemas.lab import (
 from src.application.services.job_manager import JobInfo, job_manager
 from src.application.services.lab_service import lab_service
 from src.application.services.sse_manager import sse_manager
+from src.application.services.verification_orchestrator import resolve_verification_summary
 from src.domains.lab_agent.optuna_optimizer import OptunaOptimizer
 
 router = APIRouter(tags=["Lab"])
@@ -74,7 +75,11 @@ def _build_lab_job_response(job: JobInfo) -> LabJobResponse:
         result_cls = _RESULT_CLASS_MAP.get(lab_type)
         if result_cls:
             try:
-                result_data = result_cls.model_validate(job.raw_result)
+                result_payload = dict(job.raw_result)
+                verification = resolve_verification_summary(job_manager, job)
+                if verification is not None:
+                    result_payload["verification"] = verification.model_dump(mode="json")
+                result_data = result_cls.model_validate(result_payload)
             except Exception as e:
                 logger.warning(f"Lab結果のパースに失敗: {e}")
 
@@ -132,6 +137,7 @@ async def run_lab_generate(request: LabGenerateRequest) -> LabJobResponse:
             "dataset": request.dataset,
             "entry_filter_only": request.entry_filter_only,
             "allowed_categories": request.allowed_categories,
+            "engine_policy": request.engine_policy,
         },
         error_label="generate",
     )
@@ -154,6 +160,7 @@ async def run_lab_evolve(request: LabEvolveRequest) -> LabJobResponse:
             "entry_filter_only": request.entry_filter_only,
             "target_scope": request.target_scope,
             "allowed_categories": request.allowed_categories,
+            "engine_policy": request.engine_policy,
         },
         error_label="evolve",
     )
@@ -177,6 +184,7 @@ async def run_lab_optimize(request: LabOptimizeRequest) -> LabJobResponse:
             "target_scope": request.target_scope,
             "allowed_categories": request.allowed_categories,
             "scoring_weights": request.scoring_weights,
+            "engine_policy": request.engine_policy,
         },
         error_label="optimize",
     )

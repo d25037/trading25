@@ -1,9 +1,10 @@
 import { useState } from 'react';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { LabEvolveRequest } from '@/types/backtest';
+import type { EnginePolicyMode, LabEvolveRequest } from '@/types/backtest';
 
 type CategoryScope = 'all' | 'fundamental';
 type TargetScope = 'entry_filter_only' | 'exit_trigger_only' | 'both';
@@ -32,6 +33,8 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
   const [randomAddEntrySignals, setRandomAddEntrySignals] = useState('1');
   const [randomAddExitSignals, setRandomAddExitSignals] = useState('1');
   const [seed, setSeed] = useState('');
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
+  const [verificationTopK, setVerificationTopK] = useState('5');
   const isEntryTargeted = targetScope !== 'exit_trigger_only';
   const isExitTargeted = targetScope !== 'entry_filter_only';
 
@@ -71,6 +74,7 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
     };
     applyRandomAddOptions(request);
     applyCompatibilityFlags(request);
+    request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     return request;
   };
 
@@ -212,6 +216,14 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
           </div>
         </div>
       )}
+
+      <EnginePolicySelector
+        mode={enginePolicyMode}
+        onModeChange={setEnginePolicyMode}
+        verificationTopK={verificationTopK}
+        onVerificationTopKChange={setVerificationTopK}
+        disabled={disabled}
+      />
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled || !strategyName}>
         Start Evolution

@@ -2629,6 +2629,41 @@
         "title": "EngineFamily",
         "type": "string"
       },
+      "EnginePolicy": {
+        "description": "Requested execution policy for optimize and lab jobs.",
+        "properties": {
+          "mode": {
+            "$ref": "#/components/schemas/EnginePolicyMode",
+            "default": "fast_only",
+            "description": "Whether to run only the fast path or add Nautilus verification."
+          },
+          "verification_top_k": {
+            "anyOf": [
+              {
+                "maximum": 10,
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Number of top-ranked fast-path candidates to verify when mode=fast_then_verify.",
+            "title": "Verification Top K"
+          }
+        },
+        "title": "EnginePolicy",
+        "type": "object"
+      },
+      "EnginePolicyMode": {
+        "description": "Execution policy for fast and verification paths.",
+        "enum": [
+          "fast_only",
+          "fast_then_verify"
+        ],
+        "title": "EnginePolicyMode",
+        "type": "string"
+      },
       "ErrorDetail": {
         "description": "バリデーションエラー詳細",
         "properties": {
@@ -2833,6 +2868,44 @@
           "dateRange"
         ],
         "title": "FactorRegressionResponse",
+        "type": "object"
+      },
+      "FastCandidateSummary": {
+        "description": "Fast-path ranked candidate summary.",
+        "properties": {
+          "candidate_id": {
+            "description": "Candidate identifier",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalExecutionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fast-path scalar metrics"
+          },
+          "rank": {
+            "description": "1-based fast-path rank",
+            "title": "Rank",
+            "type": "integer"
+          },
+          "score": {
+            "description": "Fast-path weighted score",
+            "title": "Score",
+            "type": "number"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "rank",
+          "score"
+        ],
+        "title": "FastCandidateSummary",
         "type": "object"
       },
       "FieldConstraints": {
@@ -4950,6 +5023,10 @@
             "description": "最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
             "title": "Allowed Categories"
           },
+          "engine_policy": {
+            "$ref": "#/components/schemas/EnginePolicy",
+            "description": "Fast path / verification execution policy"
+          },
           "entry_filter_only": {
             "default": false,
             "description": "（互換性用）true の場合 target_scope=entry_filter_only と同義",
@@ -5053,6 +5130,14 @@
             "title": "Best Strategy Id",
             "type": "string"
           },
+          "fast_candidates": {
+            "description": "Fast-path ranked candidates",
+            "items": {
+              "$ref": "#/components/schemas/FastCandidateSummary"
+            },
+            "title": "Fast Candidates",
+            "type": "array"
+          },
           "history": {
             "description": "進化履歴",
             "items": {
@@ -5090,6 +5175,17 @@
             ],
             "description": "保存先パス",
             "title": "Saved Strategy Path"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verification summary for top-ranked candidates"
           }
         },
         "required": [
@@ -5152,6 +5248,10 @@
             ],
             "title": "Direction",
             "type": "string"
+          },
+          "engine_policy": {
+            "$ref": "#/components/schemas/EnginePolicy",
+            "description": "Fast path / verification execution policy"
           },
           "entry_filter_only": {
             "default": false,
@@ -5232,6 +5332,17 @@
             "description": "生成総数",
             "title": "Total Generated",
             "type": "integer"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verification summary for top-ranked candidates"
           }
         },
         "required": [
@@ -5631,6 +5742,10 @@
             "description": "最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
             "title": "Allowed Categories"
           },
+          "engine_policy": {
+            "$ref": "#/components/schemas/EnginePolicy",
+            "description": "Fast path / verification execution policy"
+          },
           "entry_filter_only": {
             "default": false,
             "description": "（互換性用）true の場合 target_scope=entry_filter_only と同義",
@@ -5753,6 +5868,14 @@
             "title": "Best Score",
             "type": "number"
           },
+          "fast_candidates": {
+            "description": "Fast-path ranked candidates",
+            "items": {
+              "$ref": "#/components/schemas/FastCandidateSummary"
+            },
+            "title": "Fast Candidates",
+            "type": "array"
+          },
           "history": {
             "description": "トライアル履歴",
             "items": {
@@ -5795,6 +5918,17 @@
             "description": "総トライアル数",
             "title": "Total Trials",
             "type": "integer"
+          },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verification summary for top-ranked candidates"
           }
         },
         "required": [
@@ -7337,6 +7471,21 @@
             ],
             "description": "Durable execution control state"
           },
+          "fast_candidates": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/FastCandidateSummary"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fast-path ranked candidates",
+            "title": "Fast Candidates"
+          },
           "html_path": {
             "anyOf": [
               {
@@ -7417,6 +7566,17 @@
             "description": "パラメータ組み合わせ総数",
             "title": "Total Combinations"
           },
+          "verification": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verification summary for top-ranked candidates"
+          },
           "worst_params": {
             "anyOf": [
               {
@@ -7454,6 +7614,10 @@
       "OptimizationRequest": {
         "description": "最適化リクエスト",
         "properties": {
+          "engine_policy": {
+            "$ref": "#/components/schemas/EnginePolicy",
+            "description": "Fast path / verification execution policy"
+          },
           "strategy_name": {
             "description": "戦略名",
             "minLength": 1,
@@ -13255,6 +13419,227 @@
           "marginEmptySkippedCodes"
         ],
         "title": "ValidationSampleWindows",
+        "type": "object"
+      },
+      "VerificationCandidateStatus": {
+        "description": "Verification state of a single fast-path candidate.",
+        "enum": [
+          "queued",
+          "running",
+          "verified",
+          "failed"
+        ],
+        "title": "VerificationCandidateStatus",
+        "type": "string"
+      },
+      "VerificationCandidateSummary": {
+        "description": "Verification summary for a ranked candidate.",
+        "properties": {
+          "candidate_id": {
+            "description": "Candidate identifier",
+            "title": "Candidate Id",
+            "type": "string"
+          },
+          "delta": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VerificationDelta"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Metric deltas between fast and verification paths"
+          },
+          "fast_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalExecutionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Fast-path scalar metrics"
+          },
+          "fast_rank": {
+            "description": "1-based fast-path rank",
+            "title": "Fast Rank",
+            "type": "integer"
+          },
+          "fast_score": {
+            "description": "Fast-path weighted score",
+            "title": "Fast Score",
+            "type": "number"
+          },
+          "mismatch_reasons": {
+            "description": "Reasons why the verified candidate was demoted or considered mismatched",
+            "items": {
+              "type": "string"
+            },
+            "title": "Mismatch Reasons",
+            "type": "array"
+          },
+          "verification_run_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Backtest child run identifier for Nautilus verification",
+            "title": "Verification Run Id"
+          },
+          "verification_status": {
+            "$ref": "#/components/schemas/VerificationCandidateStatus",
+            "description": "Verification execution state"
+          },
+          "verified_metrics": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CanonicalExecutionMetrics"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Verified scalar metrics when available"
+          }
+        },
+        "required": [
+          "candidate_id",
+          "fast_rank",
+          "fast_score",
+          "verification_status"
+        ],
+        "title": "VerificationCandidateSummary",
+        "type": "object"
+      },
+      "VerificationDelta": {
+        "description": "Delta between fast-path and verification metrics.",
+        "properties": {
+          "max_drawdown_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "verified.max_drawdown - fast.max_drawdown",
+            "title": "Max Drawdown Delta"
+          },
+          "sharpe_ratio_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "verified.sharpe_ratio - fast.sharpe_ratio",
+            "title": "Sharpe Ratio Delta"
+          },
+          "total_return_delta": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "verified.total_return - fast.total_return",
+            "title": "Total Return Delta"
+          },
+          "trade_count_delta": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "verified.trade_count - fast.trade_count",
+            "title": "Trade Count Delta"
+          }
+        },
+        "title": "VerificationDelta",
+        "type": "object"
+      },
+      "VerificationOverallStatus": {
+        "description": "Aggregate verification state for a parent job.",
+        "enum": [
+          "queued",
+          "running",
+          "completed",
+          "completed_with_mismatch",
+          "failed"
+        ],
+        "title": "VerificationOverallStatus",
+        "type": "string"
+      },
+      "VerificationSummary": {
+        "description": "Verification summary for optimize and lab jobs.",
+        "properties": {
+          "authoritative_candidate_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Top verified non-mismatch candidate when available",
+            "title": "Authoritative Candidate Id"
+          },
+          "candidates": {
+            "description": "Per-candidate verification summaries",
+            "items": {
+              "$ref": "#/components/schemas/VerificationCandidateSummary"
+            },
+            "title": "Candidates",
+            "type": "array"
+          },
+          "completed_count": {
+            "description": "Number of verification runs that reached a terminal state",
+            "title": "Completed Count",
+            "type": "integer"
+          },
+          "mismatch_count": {
+            "description": "Number of candidates demoted after verification",
+            "title": "Mismatch Count",
+            "type": "integer"
+          },
+          "overall_status": {
+            "$ref": "#/components/schemas/VerificationOverallStatus",
+            "description": "Aggregate verification state for the parent job"
+          },
+          "requested_top_k": {
+            "description": "Requested number of candidates to verify",
+            "title": "Requested Top K",
+            "type": "integer"
+          },
+          "winner_changed": {
+            "default": false,
+            "description": "Whether the authoritative verified candidate differs from the fast-path winner",
+            "title": "Winner Changed",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "overall_status",
+          "requested_top_k",
+          "completed_count",
+          "mismatch_count"
+        ],
+        "title": "VerificationSummary",
         "type": "object"
       },
       "WatchlistCreateRequest": {

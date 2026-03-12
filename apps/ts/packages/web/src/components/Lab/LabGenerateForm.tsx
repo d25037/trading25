@@ -1,10 +1,11 @@
 import { useState } from 'react';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import type { LabGenerateRequest } from '@/types/backtest';
+import type { EnginePolicyMode, LabGenerateRequest } from '@/types/backtest';
 
 interface LabGenerateFormProps {
   onSubmit: (request: LabGenerateRequest) => void;
@@ -19,6 +20,8 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
   const [dataset, setDataset] = useState('');
   const [entryFilterOnly, setEntryFilterOnly] = useState(false);
   const [categoryScope, setCategoryScope] = useState<'all' | 'fundamental'>('all');
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
+  const [verificationTopK, setVerificationTopK] = useState('5');
 
   const handleSubmit = () => {
     const request: LabGenerateRequest = {
@@ -27,6 +30,7 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
       direction,
       timeframe,
     };
+    request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     if (dataset.trim()) {
       request.dataset = dataset.trim();
     }
@@ -141,6 +145,14 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
           </SelectContent>
         </Select>
       </div>
+
+      <EnginePolicySelector
+        mode={enginePolicyMode}
+        onModeChange={setEnginePolicyMode}
+        verificationTopK={verificationTopK}
+        onVerificationTopKChange={setVerificationTopK}
+        disabled={disabled}
+      />
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled}>
         Generate Strategies

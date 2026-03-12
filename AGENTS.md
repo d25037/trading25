@@ -126,6 +126,7 @@ uv run pyright src/              # 型チェック
 - Lab `evolve/optimize` の API/Web は `target_scope`（`entry_filter_only` / `exit_trigger_only` / `both`）を受け付ける（`entry_filter_only` は互換フラグとして維持）
 - Lab `evolve/optimize` の frontend `allowed categories` は `all` / `fundamental only` を提供
 - Lab frontend は `Run` / `History` タブを持ち、`/api/lab/jobs` で実行履歴を一覧し、選択したジョブの進捗・結果を再表示できる
+- `Optimization` と candidate-producing な `Lab generate/evolve/optimize` は `engine_policy`（`fast_only` / `fast_then_verify`）と `verification_top_k`（`1..10`, default `5`）を受け付ける。`fast_then_verify` では `vectorbt` fast path 後に上位候補を `Nautilus` child backtest で直列 verification し、親 job は verification 完了まで `running` を維持し、API payload は `fast_candidates` / `verification` を返す
 - Lab `evolve` は依存パラメータ制約付き mutation（`long>short` / `slow>fast` / `max>min`）を適用し、baseline（ベース戦略）より悪化した候補は guardrail で棄却して base 採用へフォールバックする
 - Lab `evolve` は世代間で OHLCV/benchmark prefetch を再利用し、forecast revision が必要になった場合のみ再prefetch する
 - Lab `optimize`（Optuna）は開始時に OHLCV/benchmark を1回プリフェッチして trial 間で再利用し、`pruning=true` 時は第1段階バックテストの暫定スコアで早期枝刈りを行う
@@ -171,6 +172,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - Backtest `Strategies` 画面の YAML Editor は `production` / `experimental` の編集を許可し、`Rename` / `Delete` は `experimental` のみ許可
 - Backtest `Strategies > Optimize` は `Open Editor` ポップアップで Monaco + Signal Reference を表示し、`Current` / `Saved` / `State` 要約を維持する。保存ブロックは YAML 構文エラー時のみとする
 - Backtest Runner の `Optimization` セクションは Grid 概要（params/combinations）に加えて `parameter_ranges` の具体値一覧を表示し、Optimization 完了カードでは Best/Worst Params と各 score を表示する
+- Backtest `Optimization` / `Lab` form は `Fast only` / `Fast + Nautilus verify` と `Top K` を提供し、progress/history/result で fast stage と verification stage を分離表示する
 - `analysis screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
 - Analysis `Screening / Daily Ranking / Fundamental Ranking` の結果テーブルは大量件数時に virtualization を適用する
 - Analysis 画面は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する

@@ -10,7 +10,7 @@ import pytest
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.application.services.job_manager import JobManager
 from src.application.services.optimization_service import OptimizationService
-from src.domains.backtest.contracts import RunType
+from src.domains.backtest.contracts import EnginePolicyMode, RunType
 
 
 def _manager(**kwargs: object) -> JobManager:
@@ -105,7 +105,13 @@ async def test_submit_optimization_creates_task_and_returns_job_id(monkeypatch):
     run_spec = captured["run_spec"]
     assert run_spec is not None
     assert run_spec.run_type == RunType.OPTIMIZATION
-    assert run_spec.parameters == {"optimization_mode": "grid_search"}
+    assert run_spec.parameters == {
+        "optimization_mode": "grid_search",
+        "engine_policy": {
+            "mode": EnginePolicyMode.FAST_ONLY.value,
+            "verification_top_k": None,
+        },
+    }
 
 
 @pytest.mark.asyncio
@@ -572,6 +578,8 @@ def test_build_worker_command() -> None:
         "job-1",
         "--strategy-name",
         "strategy-1",
+        "--engine-policy-json",
+        '{"mode":"fast_only","verification_top_k":null}',
         "--timeout-seconds",
         "1200",
     ]

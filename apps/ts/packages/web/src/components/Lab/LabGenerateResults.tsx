@@ -1,3 +1,4 @@
+import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { LabGenerateResult } from '@/types/backtest';
 import { formatPercentage } from '@/utils/formatters';
@@ -56,6 +57,8 @@ export function LabGenerateResults({ result }: LabGenerateResultsProps) {
           </TableBody>
         </Table>
       </div>
+
+      <VerificationSummarySection verification={result.verification} />
     </div>
   );
 }

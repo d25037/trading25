@@ -1,3 +1,4 @@
+import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { LabEvolveResult } from '@/types/backtest';
 
@@ -44,6 +45,8 @@ export function LabEvolveResults({ result }: LabEvolveResultsProps) {
           </TableBody>
         </Table>
       </div>
+
+      <VerificationSummarySection fastCandidates={result.fast_candidates} verification={result.verification} />
     </div>
   );
 }

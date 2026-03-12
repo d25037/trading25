@@ -3885,6 +3885,28 @@ export interface components {
          */
         EngineFamily: "vectorbt" | "nautilus" | "unknown";
         /**
+         * EnginePolicy
+         * @description Requested execution policy for optimize and lab jobs.
+         */
+        EnginePolicy: {
+            /**
+             * @description Whether to run only the fast path or add Nautilus verification.
+             * @default fast_only
+             */
+            mode: components["schemas"]["EnginePolicyMode"];
+            /**
+             * Verification Top K
+             * @description Number of top-ranked fast-path candidates to verify when mode=fast_then_verify.
+             */
+            verification_top_k?: number | null;
+        };
+        /**
+         * EnginePolicyMode
+         * @description Execution policy for fast and verification paths.
+         * @enum {string}
+         */
+        EnginePolicyMode: "fast_only" | "fast_then_verify";
+        /**
          * ErrorDetail
          * @description バリデーションエラー詳細
          */
@@ -3998,6 +4020,29 @@ export interface components {
             stockCode: string;
             /** Topixstylematches */
             topixStyleMatches: components["schemas"]["src__server__schemas__factor_regression__IndexMatch"][];
+        };
+        /**
+         * FastCandidateSummary
+         * @description Fast-path ranked candidate summary.
+         */
+        FastCandidateSummary: {
+            /**
+             * Candidate Id
+             * @description Candidate identifier
+             */
+            candidate_id: string;
+            /** @description Fast-path scalar metrics */
+            metrics?: components["schemas"]["CanonicalExecutionMetrics"] | null;
+            /**
+             * Rank
+             * @description 1-based fast-path rank
+             */
+            rank: number;
+            /**
+             * Score
+             * @description Fast-path weighted score
+             */
+            score: number;
         };
         /**
          * FieldConstraints
@@ -5090,6 +5135,8 @@ export interface components {
              * @description 最適化対象として許可するカテゴリ（未指定時は全カテゴリ）
              */
             allowed_categories?: ("breakout" | "trend" | "oscillator" | "volatility" | "volume" | "macro" | "fundamental" | "sector")[] | null;
+            /** @description Fast path / verification execution policy */
+            engine_policy?: components["schemas"]["EnginePolicy"];
             /**
              * Entry Filter Only
              * @description （互換性用）true の場合 target_scope=entry_filter_only と同義
@@ -5167,6 +5214,11 @@ export interface components {
              */
             best_strategy_id: string;
             /**
+             * Fast Candidates
+             * @description Fast-path ranked candidates
+             */
+            fast_candidates?: components["schemas"]["FastCandidateSummary"][];
+            /**
              * History
              * @description 進化履歴
              */
@@ -5186,6 +5238,8 @@ export interface components {
              * @description 保存先パス
              */
             saved_strategy_path?: string | null;
+            /** @description Verification summary for top-ranked candidates */
+            verification?: components["schemas"]["VerificationSummary"] | null;
         };
         /**
          * LabGenerateRequest
@@ -5216,6 +5270,8 @@ export interface components {
              * @enum {string}
              */
             direction: "longonly" | "shortonly" | "both";
+            /** @description Fast path / verification execution policy */
+            engine_policy?: components["schemas"]["EnginePolicy"];
             /**
              * Entry Filter Only
              * @description Entryフィルターのみ生成（Exitシグナルを生成しない）
@@ -5272,6 +5328,8 @@ export interface components {
              * @description 生成総数
              */
             total_generated: number;
+            /** @description Verification summary for top-ranked candidates */
+            verification?: components["schemas"]["VerificationSummary"] | null;
         };
         /**
          * LabImproveRequest
@@ -5463,6 +5521,8 @@ export interface components {
              * @description 最適化対象として許可するカテゴリ（未指定時は全カテゴリ）
              */
             allowed_categories?: ("breakout" | "trend" | "oscillator" | "volatility" | "volume" | "macro" | "fundamental" | "sector")[] | null;
+            /** @description Fast path / verification execution policy */
+            engine_policy?: components["schemas"]["EnginePolicy"];
             /**
              * Entry Filter Only
              * @description （互換性用）true の場合 target_scope=entry_filter_only と同義
@@ -5550,6 +5610,11 @@ export interface components {
              */
             best_score: number;
             /**
+             * Fast Candidates
+             * @description Fast-path ranked candidates
+             */
+            fast_candidates?: components["schemas"]["FastCandidateSummary"][];
+            /**
              * History
              * @description トライアル履歴
              */
@@ -5574,6 +5639,8 @@ export interface components {
              * @description 総トライアル数
              */
             total_trials: number;
+            /** @description Verification summary for top-ranked candidates */
+            verification?: components["schemas"]["VerificationSummary"] | null;
         };
         /** ListedMarketCoverage */
         ListedMarketCoverage: {
@@ -6373,6 +6440,11 @@ export interface components {
             /** @description Durable execution control state */
             execution_control?: components["schemas"]["JobExecutionControl"] | null;
             /**
+             * Fast Candidates
+             * @description Fast-path ranked candidates
+             */
+            fast_candidates?: components["schemas"]["FastCandidateSummary"][] | null;
+            /**
              * Html Path
              * @description 結果HTMLパス
              */
@@ -6405,6 +6477,8 @@ export interface components {
              * @description パラメータ組み合わせ総数
              */
             total_combinations?: number | null;
+            /** @description Verification summary for top-ranked candidates */
+            verification?: components["schemas"]["VerificationSummary"] | null;
             /**
              * Worst Params
              * @description 最悪スコア時のパラメータ
@@ -6423,6 +6497,8 @@ export interface components {
          * @description 最適化リクエスト
          */
         OptimizationRequest: {
+            /** @description Fast path / verification execution policy */
+            engine_policy?: components["schemas"]["EnginePolicy"];
             /**
              * Strategy Name
              * @description 戦略名
@@ -8920,6 +8996,122 @@ export interface components {
             missingListedMarketStocks: components["schemas"]["ValidationSampleWindow"];
             stockDataMissingDates: components["schemas"]["ValidationSampleWindow"];
             stocksNeedingRefresh: components["schemas"]["ValidationSampleWindow"];
+        };
+        /**
+         * VerificationCandidateStatus
+         * @description Verification state of a single fast-path candidate.
+         * @enum {string}
+         */
+        VerificationCandidateStatus: "queued" | "running" | "verified" | "failed";
+        /**
+         * VerificationCandidateSummary
+         * @description Verification summary for a ranked candidate.
+         */
+        VerificationCandidateSummary: {
+            /**
+             * Candidate Id
+             * @description Candidate identifier
+             */
+            candidate_id: string;
+            /** @description Metric deltas between fast and verification paths */
+            delta?: components["schemas"]["VerificationDelta"] | null;
+            /** @description Fast-path scalar metrics */
+            fast_metrics?: components["schemas"]["CanonicalExecutionMetrics"] | null;
+            /**
+             * Fast Rank
+             * @description 1-based fast-path rank
+             */
+            fast_rank: number;
+            /**
+             * Fast Score
+             * @description Fast-path weighted score
+             */
+            fast_score: number;
+            /**
+             * Mismatch Reasons
+             * @description Reasons why the verified candidate was demoted or considered mismatched
+             */
+            mismatch_reasons?: string[];
+            /**
+             * Verification Run Id
+             * @description Backtest child run identifier for Nautilus verification
+             */
+            verification_run_id?: string | null;
+            /** @description Verification execution state */
+            verification_status: components["schemas"]["VerificationCandidateStatus"];
+            /** @description Verified scalar metrics when available */
+            verified_metrics?: components["schemas"]["CanonicalExecutionMetrics"] | null;
+        };
+        /**
+         * VerificationDelta
+         * @description Delta between fast-path and verification metrics.
+         */
+        VerificationDelta: {
+            /**
+             * Max Drawdown Delta
+             * @description verified.max_drawdown - fast.max_drawdown
+             */
+            max_drawdown_delta?: number | null;
+            /**
+             * Sharpe Ratio Delta
+             * @description verified.sharpe_ratio - fast.sharpe_ratio
+             */
+            sharpe_ratio_delta?: number | null;
+            /**
+             * Total Return Delta
+             * @description verified.total_return - fast.total_return
+             */
+            total_return_delta?: number | null;
+            /**
+             * Trade Count Delta
+             * @description verified.trade_count - fast.trade_count
+             */
+            trade_count_delta?: number | null;
+        };
+        /**
+         * VerificationOverallStatus
+         * @description Aggregate verification state for a parent job.
+         * @enum {string}
+         */
+        VerificationOverallStatus: "queued" | "running" | "completed" | "completed_with_mismatch" | "failed";
+        /**
+         * VerificationSummary
+         * @description Verification summary for optimize and lab jobs.
+         */
+        VerificationSummary: {
+            /**
+             * Authoritative Candidate Id
+             * @description Top verified non-mismatch candidate when available
+             */
+            authoritative_candidate_id?: string | null;
+            /**
+             * Candidates
+             * @description Per-candidate verification summaries
+             */
+            candidates?: components["schemas"]["VerificationCandidateSummary"][];
+            /**
+             * Completed Count
+             * @description Number of verification runs that reached a terminal state
+             */
+            completed_count: number;
+            /**
+             * Mismatch Count
+             * @description Number of candidates demoted after verification
+             */
+            mismatch_count: number;
+            /** @description Aggregate verification state for the parent job */
+            overall_status: components["schemas"]["VerificationOverallStatus"];
+            /**
+             * Requested Top K
+             * @description Requested number of candidates to verify
+             */
+            requested_top_k: number;
+            /**
+             * Winner Changed
+             * @description Whether the authoritative verified candidate differs from the fast-path winner
+             * @default false
+             */
+            winner_changed: boolean;
         };
         /** WatchlistCreateRequest */
         WatchlistCreateRequest: {

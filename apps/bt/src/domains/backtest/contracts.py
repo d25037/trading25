@@ -7,7 +7,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 
 class EngineFamily(str, Enum):
@@ -54,6 +54,143 @@ class ArtifactStorage(str, Enum):
 
     FILESYSTEM = "filesystem"
     PORTFOLIO_DB = "portfolio_db"
+
+
+class EnginePolicyMode(str, Enum):
+    """Execution policy for fast and verification paths."""
+
+    FAST_ONLY = "fast_only"
+    FAST_THEN_VERIFY = "fast_then_verify"
+
+
+class EnginePolicy(BaseModel):
+    """Requested execution policy for optimize and lab jobs."""
+
+    mode: EnginePolicyMode = Field(
+        default=EnginePolicyMode.FAST_ONLY,
+        description="Whether to run only the fast path or add Nautilus verification.",
+    )
+    verification_top_k: int | None = Field(
+        default=None,
+        ge=1,
+        le=10,
+        description="Number of top-ranked fast-path candidates to verify when mode=fast_then_verify.",
+    )
+
+    @model_validator(mode="after")
+    def _normalize_verification_top_k(self) -> "EnginePolicy":
+        if self.mode == EnginePolicyMode.FAST_THEN_VERIFY:
+            if self.verification_top_k is None:
+                self.verification_top_k = 5
+        else:
+            self.verification_top_k = None
+        return self
+
+
+class VerificationCandidateStatus(str, Enum):
+    """Verification state of a single fast-path candidate."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    VERIFIED = "verified"
+    FAILED = "failed"
+
+
+class VerificationOverallStatus(str, Enum):
+    """Aggregate verification state for a parent job."""
+
+    QUEUED = "queued"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    COMPLETED_WITH_MISMATCH = "completed_with_mismatch"
+    FAILED = "failed"
+
+
+class VerificationDelta(BaseModel):
+    """Delta between fast-path and verification metrics."""
+
+    total_return_delta: float | None = Field(
+        default=None,
+        description="verified.total_return - fast.total_return",
+    )
+    sharpe_ratio_delta: float | None = Field(
+        default=None,
+        description="verified.sharpe_ratio - fast.sharpe_ratio",
+    )
+    max_drawdown_delta: float | None = Field(
+        default=None,
+        description="verified.max_drawdown - fast.max_drawdown",
+    )
+    trade_count_delta: int | None = Field(
+        default=None,
+        description="verified.trade_count - fast.trade_count",
+    )
+
+
+class FastCandidateSummary(BaseModel):
+    """Fast-path ranked candidate summary."""
+
+    candidate_id: str = Field(description="Candidate identifier")
+    rank: int = Field(description="1-based fast-path rank")
+    score: float = Field(description="Fast-path weighted score")
+    metrics: "CanonicalExecutionMetrics | None" = Field(
+        default=None,
+        description="Fast-path scalar metrics",
+    )
+
+
+class VerificationCandidateSummary(BaseModel):
+    """Verification summary for a ranked candidate."""
+
+    candidate_id: str = Field(description="Candidate identifier")
+    fast_rank: int = Field(description="1-based fast-path rank")
+    fast_score: float = Field(description="Fast-path weighted score")
+    fast_metrics: "CanonicalExecutionMetrics | None" = Field(
+        default=None,
+        description="Fast-path scalar metrics",
+    )
+    verification_run_id: str | None = Field(
+        default=None,
+        description="Backtest child run identifier for Nautilus verification",
+    )
+    verification_status: VerificationCandidateStatus = Field(
+        description="Verification execution state",
+    )
+    verified_metrics: "CanonicalExecutionMetrics | None" = Field(
+        default=None,
+        description="Verified scalar metrics when available",
+    )
+    delta: VerificationDelta | None = Field(
+        default=None,
+        description="Metric deltas between fast and verification paths",
+    )
+    mismatch_reasons: list[str] = Field(
+        default_factory=list,
+        description="Reasons why the verified candidate was demoted or considered mismatched",
+    )
+
+
+class VerificationSummary(BaseModel):
+    """Verification summary for optimize and lab jobs."""
+
+    overall_status: VerificationOverallStatus = Field(
+        description="Aggregate verification state for the parent job",
+    )
+    requested_top_k: int = Field(description="Requested number of candidates to verify")
+    completed_count: int = Field(description="Number of verification runs that reached a terminal state")
+    mismatch_count: int = Field(description="Number of candidates demoted after verification")
+    winner_changed: bool = Field(
+        default=False,
+        description="Whether the authoritative verified candidate differs from the fast-path winner",
+    )
+    authoritative_candidate_id: str | None = Field(
+        default=None,
+        description="Top verified non-mismatch candidate when available",
+    )
+    candidates: list[VerificationCandidateSummary] = Field(
+        default_factory=list,
+        description="Per-candidate verification summaries",
+    )
 
 
 class CompiledStrategyInputRequirements(BaseModel):

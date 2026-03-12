@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Play, Settings, Settings2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -18,11 +19,12 @@ import {
   useRunOptimization,
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
+import type { EnginePolicyMode } from '@/types/backtest';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
-import { StrategySelector } from './StrategySelector';
 import { extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
+import { StrategySelector } from './StrategySelector';
 
 type BacktestJobStatusData = ReturnType<typeof useJobStatus>['data'];
 type OptimizationJobStatusData = ReturnType<typeof useOptimizationJobStatus>['data'];
@@ -132,13 +134,20 @@ async function runOptimizationForSelectedStrategy({
   selectedStrategy,
   runOptimization,
   setActiveOptimizationJobId,
+  enginePolicyMode,
+  verificationTopK,
 }: {
   selectedStrategy: string | null;
   runOptimization: RunOptimizationMutation;
   setActiveOptimizationJobId: (jobId: string | null) => void;
+  enginePolicyMode: EnginePolicyMode;
+  verificationTopK: string;
 }): Promise<void> {
   if (!selectedStrategy) return;
-  const result = await runOptimization.mutateAsync({ strategy_name: selectedStrategy });
+  const result = await runOptimization.mutateAsync({
+    strategy_name: selectedStrategy,
+    engine_policy: buildEnginePolicy(enginePolicyMode, verificationTopK),
+  });
   setActiveOptimizationJobId(result.job_id);
 }
 
@@ -191,6 +200,10 @@ function OptimizationSection({
   optimizationJobStatus,
   isLoadingOptJob,
   runOptimization,
+  enginePolicyMode,
+  onEnginePolicyModeChange,
+  optimizationVerificationTopK,
+  onOptimizationVerificationTopKChange,
 }: {
   gridConfig: ReturnType<typeof useOptimizationGridConfig>['data'];
   gridParameterEntries: Array<{ path: string; values: unknown[] }>;
@@ -200,6 +213,10 @@ function OptimizationSection({
   optimizationJobStatus: OptimizationJobStatusData;
   isLoadingOptJob: boolean;
   runOptimization: RunOptimizationMutation;
+  enginePolicyMode: EnginePolicyMode;
+  onEnginePolicyModeChange: (value: EnginePolicyMode) => void;
+  optimizationVerificationTopK: string;
+  onOptimizationVerificationTopKChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -220,6 +237,14 @@ function OptimizationSection({
         </p>
       )}
 
+      <EnginePolicySelector
+        mode={enginePolicyMode}
+        onModeChange={onEnginePolicyModeChange}
+        verificationTopK={optimizationVerificationTopK}
+        onVerificationTopKChange={onOptimizationVerificationTopKChange}
+        disabled={isOptRunning}
+      />
+
       <Button
         onClick={onRunOptimization}
         disabled={!selectedStrategy || !gridConfig || isOptRunning}
@@ -230,7 +255,10 @@ function OptimizationSection({
         {isOptRunning ? 'Optimizing...' : 'Run Optimization'}
       </Button>
 
-      <OptimizationJobProgressCard job={optimizationJobStatus} isLoading={isLoadingOptJob || runOptimization.isPending} />
+      <OptimizationJobProgressCard
+        job={optimizationJobStatus}
+        isLoading={isLoadingOptJob || runOptimization.isPending}
+      />
 
       {runOptimization.isError && (
         <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runOptimization.error.message}</div>
@@ -241,6 +269,8 @@ function OptimizationSection({
 
 export function BacktestRunner() {
   const [defaultConfigOpen, setDefaultConfigOpen] = useState(false);
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
+  const [optimizationVerificationTopK, setOptimizationVerificationTopK] = useState('5');
   const {
     selectedStrategy,
     setSelectedStrategy,
@@ -281,6 +311,8 @@ export function BacktestRunner() {
       selectedStrategy,
       runOptimization,
       setActiveOptimizationJobId,
+      enginePolicyMode,
+      verificationTopK: optimizationVerificationTopK,
     });
 
   const isRunning = runBacktest.isPending || isRunningStatus(jobStatus?.status);
@@ -340,6 +372,10 @@ export function BacktestRunner() {
         optimizationJobStatus={optimizationJobStatus}
         isLoadingOptJob={isLoadingOptJob}
         runOptimization={runOptimization}
+        enginePolicyMode={enginePolicyMode}
+        onEnginePolicyModeChange={setEnginePolicyMode}
+        optimizationVerificationTopK={optimizationVerificationTopK}
+        onOptimizationVerificationTopKChange={setOptimizationVerificationTopK}
       />
     </div>
   );

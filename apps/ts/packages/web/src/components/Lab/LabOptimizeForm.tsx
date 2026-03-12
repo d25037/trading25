@@ -1,10 +1,12 @@
 import { useState } from 'react';
-import { useLabOptimizeRecommendation } from '@/hooks/useLab';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useLabOptimizeRecommendation } from '@/hooks/useLab';
 import type {
+  EnginePolicyMode,
   LabOptimizeRequest,
   LabOptimizeTrialRecommendationResponse,
   LabSignalCategory,
@@ -73,6 +75,9 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
     if (selectedCategories.length > 0) request.allowed_categories = selectedCategories;
   };
 
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
+  const [verificationTopK, setVerificationTopK] = useState('5');
+
   const buildRequest = (strategy: string): LabOptimizeRequest => {
     const request: LabOptimizeRequest = {
       strategy_name: strategy,
@@ -83,6 +88,7 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
     };
     applyRandomAddOptions(request);
     applyCompatibilityFlags(request);
+    request.engine_policy = buildEnginePolicy(enginePolicyMode, verificationTopK);
     return request;
   };
 
@@ -94,8 +100,7 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
   const currentTrials = parseIntInRange(trials, 50, 10, 1000);
   const effectiveRecommendation = trialRecommendation ?? dynamicRecommendation;
   const showRecommendation = !!effectiveRecommendation && effectiveRecommendation.dimension_count > 0;
-  const isUnderMinimum =
-    showRecommendation && currentTrials < (effectiveRecommendation?.minimum_trials ?? 0);
+  const isUnderMinimum = showRecommendation && currentTrials < (effectiveRecommendation?.minimum_trials ?? 0);
 
   return (
     <div className="space-y-3">
@@ -243,6 +248,14 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
           </div>
         </div>
       )}
+
+      <EnginePolicySelector
+        mode={enginePolicyMode}
+        onModeChange={setEnginePolicyMode}
+        verificationTopK={verificationTopK}
+        onVerificationTopKChange={setVerificationTopK}
+        disabled={disabled}
+      />
 
       <Button className="w-full" onClick={handleSubmit} disabled={disabled || !strategyName}>
         Start Optimization
