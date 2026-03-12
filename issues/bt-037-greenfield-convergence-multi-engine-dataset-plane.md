@@ -6,7 +6,7 @@ priority: high
 labels: [greenfield, architecture, backtest, dataset, engine, bt]
 project: bt
 created: 2026-03-08
-updated: 2026-03-10
+updated: 2026-03-12
 depends_on: []
 blocks: [bt-038, bt-039, bt-040, bt-041, bt-042, bt-043, bt-044, bt-045, bt-046]
 parent: null
@@ -34,11 +34,12 @@ parent: null
 - [ ] 完了時に最終アーキテクチャと移行結果を docs へ反映する。
 
 ## 結果
-- 2026-03-09 までに基盤整備の 4 本である `bt-039` / `bt-038` / `bt-043` / `bt-042` を child issue 単位で完了し、段階的に `main` へ戻した。
-- `RunSpec` / canonical result / artifact index、dataset snapshot SoT、snapshot resolver、durable worker runtime が先に安定したことで、engine/runtime 置換の前提条件が揃った。
-- 2026-03-10 時点で専用 worktree は `bt-040` の仕上げとレビューに使っており、`CompiledStrategyIR` / availability model の導入は issue 上 `done` に到達した。
-- 実行順は当初の計画から少し前後し、基盤は `bt-039 -> bt-038 -> bt-043 -> bt-042` を先に `main` へ戻し、その後に同一 worktree 上で `bt-040` を深掘りした。
-- したがって現時点の program 状態は「基盤 5 本のうち 4 本は `main` 反映済み、`bt-040` は worktree 上で最終確認中、残る高 churn issue は未着手」という段階にある。
+- 2026-03-09 までに基盤整備の 4 本である `bt-039` / `bt-038` / `bt-043` / `bt-042` を child issue 単位で完了し、RunSpec / canonical result / artifact index、dataset snapshot SoT、snapshot resolver、durable worker runtime を先に安定化した。
+- 2026-03-10 に `bt-040` が完了し、`CompiledStrategyIR` / availability model が strategy validation、signal processing、screening 判定、signal reference まで通る形で導入された。
+- 2026-03-10 に `bt-041` が完了し、`VectorbtAdapter` と `ExecutionPortfolioProtocol` への移行によって domain surface から `vbt.Portfolio` を除去した。
+- 2026-03-10 に `bt-046` が完了し、simulation と report rendering / artifact generation が分離され、canonical result と core artifacts を HTML 非依存で再解決できる状態になった。
+- 2026-03-12 時点の child issue 進捗は 9 本中 7 本完了で、未完了は `bt-044` と `bt-045` の 2 本のみである。
+- 依存関係も整理され、現在のクリティカルパスは `bt-044 -> bt-045` に収束した。`bt-044` は `bt-040` / `bt-042` / `bt-043` 完了により着手可能で、`bt-045` は `bt-041` 完了済みのため `bt-044` のみが blocker になっている。
 
 ## Child Issue 状態
 
@@ -48,32 +49,31 @@ parent: null
 - [x] `bt-043` market / dataset snapshot resolver を共通化
 - [x] `bt-042` worker runtime と durable execution control を導入
 - [x] `bt-040` CompiledStrategyIR と availability model を導入
+- [x] `bt-041` VectorbtAdapter を抽出し domain から `vbt.Portfolio` を除去
+- [x] `bt-046` Simulation と report rendering / artifact generation を分離
 
 ### 未完了
-- [ ] `bt-041` VectorbtAdapter を抽出し domain から `vbt.Portfolio` を除去
 - [ ] `bt-044` NautilusAdapter を verification engine として追加
 - [ ] `bt-045` Optimize / Lab を fast path と verification path の二段実行へ移行
-- [ ] `bt-046` Simulation と report rendering / artifact generation を分離
 
 ## 現在の判断
-- 基盤の child issue は、専用 worktree で統合検証した後に child issue 単位で `main` へ戻す、という program 方針どおりに運用できている。
-- ズレているのは順序の細部で、`bt-042` を `bt-040` より先に固めた点と、`bt-040` を shadow compile だけでなく execution path まで広げた点である。
-- ただしこのズレは program の意図に反しておらず、むしろ `bt-041` 以降の adapter/engine 置換に必要な契約境界を先に安定化する方向で吸収できている。
+- dataset plane migration、execution contract、snapshot resolver、worker runtime、compiled strategy、VectorBT adapter 抽出、artifact 分離までが完了し、program は「基盤整備フェーズ」から「multi-engine verification フェーズ」へ移った。
+- 当初は `bt-040` 仕上げ前に `bt-041` / `bt-046` を残していたが、実際には `bt-041` と `bt-046` まで先行して閉じられたため、残課題は verification engine (`bt-044`) とその product integration (`bt-045`) に絞られた。
+- したがって現在の主要リスクは dataset plane や execution contract ではなく、`RunSpec` / snapshot / compiled strategy を Nautilus verification path にどう接続し、その差分を optimize/lab と UI/API にどう露出するかである。
 
 ## Worktree運用計画
-- 専用の長寿命 worktree は引き続き `bt-037` program の統合検証用として維持するが、今後は新しい基盤整備を溜め込む場所ではなく、`bt-040` 以降の高 churn 変更を隔離する場所として使う。
-- 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` はすでに `main` へ戻したため、現在の隔離対象は `bt-040` の最終化と `bt-041` / `bt-044` / `bt-045` / `bt-046` である。
+- 専用の長寿命 worktree は引き続き `bt-037` program の統合検証用として維持するが、用途は基盤整備の溜め込みではなく、`bt-044` / `bt-045` の high churn 変更を隔離することに絞る。
+- 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` に加え、`bt-040` / `bt-041` / `bt-046` も issue 管理上は完了済みであり、現在の隔離対象は `bt-044` と `bt-045` のみである。
 - dataset plane の移行線 `ts-125 -> bt-028 -> bt-038 -> bt-043` は完了済みとみなし、以後は snapshot contract を壊さない限り `main` を基準に進める。
-- execution/control plane は実績ベースで `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-046` を主線とし、`bt-044` は `bt-040/042/043` を前提に別線で進め、`bt-045` は `bt-041 + bt-044` 完了後に着手する。
-- 次の実行順は `bt-040` を commit/review/merge したあと、専用 worktree で `bt-041` を最優先とする。その後に `bt-046` と `bt-044` を状況に応じて並行または連続で進め、`bt-045` を最後に閉じる。
+- execution/control plane の実績線は `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-046` まで完了しており、残る拡張線は `bt-044 -> bt-045` である。
+- 次の実行順は専用 worktree で `bt-044` を最優先とし、Nautilus verification path を最小スコープで成立させたうえで `bt-045` の fast/verification 二段化へ接続する。
 - `main` へ戻す条件は引き続き「child issue 単位で完結」「OpenAPI/contracts 更新反映済み」「既存 UI/CLI の後方互換または明示的移行手順あり」「bt/ts の主要テスト通過」の 4 点とする。
-- したがって、残る高 churn 変更は worktree に隔離し続けるが、安定化した child issue まで `bt-037` 全体を待つのではなく、引き続き child issue 単位で順次 `main` へ戻す。
+- したがって、残る高 churn 変更は worktree に隔離し続けるが、`bt-037` 全体完了を待たず、引き続き child issue 単位で順次 `main` へ戻す。
 
 ## 今後の予定
-- `bt-040` の最終レビュー・commit・PR 作成を先に完了する。
-- 次の本丸は `bt-041` とし、`vectorbt` を domain surface から引き剥がして adapter 境界を確立する。
-- `bt-041` 後に `bt-046` を進め、simulation と report rendering / artifact generation を分離して canonical result を HTML 依存から切り離す。
-- `bt-044` は `RunSpec` / worker runtime / snapshot resolver を前提に verification engine として追加し、`bt-045` で optimize/lab の fast/verification 二段化へつなぐ。
+- 次の本丸は `bt-044` とし、`RunSpec` / worker runtime / snapshot resolver / compiled strategy を前提に Nautilus verification engine を最小構成で成立させる。
+- `bt-044` 完了後に `bt-045` を進め、optimize/lab を fast path と verification path の二段実行へ移行する。
+- `bt-045` では verification 結果との差分保存、API/UI 表示、queueing policy をまとめて片付ける。
 - 全 child issue 完了後に `docs/backtest-greenfield-rebuild.md` と AGENTS.md の program 差分を解消し、本 issue を close する。
 
 ## 補足
