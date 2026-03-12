@@ -42,6 +42,10 @@ interface LegacyDatasetInfoResponse {
   };
 }
 
+type DatasetStorage = DatasetInfoResponse['storage'];
+type LegacySnapshot = LegacyDatasetInfoResponse['snapshot'];
+type LegacyValidation = NonNullable<LegacySnapshot['validation']>;
+
 function inferLegacyStorage(path: string) {
   const isLegacySqlite = path.endsWith('.db');
   return {
@@ -61,20 +65,24 @@ function isDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoRes
   return 'stats' in value && 'validation' in value;
 }
 
-function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): DatasetInfoResponse {
-  if (isDatasetInfoResponse(value)) {
-    return {
-      ...value,
-      storage: 'storage' in value && value.storage ? value.storage : inferLegacyStorage(value.path),
-    };
-  }
+function normalizeStorage(
+  path: string,
+  storage: DatasetStorage | null | undefined
+): DatasetStorage {
+  return storage ?? inferLegacyStorage(path);
+}
 
-  const snapshot = value.snapshot ?? {};
-  const validation = snapshot.validation ?? {
+function normalizeLegacyValidation(snapshot: LegacySnapshot): LegacyValidation {
+  return snapshot.validation ?? {
     isValid: true,
     errors: [],
     warnings: [],
   };
+}
+
+function normalizeLegacyDatasetInfoResponse(value: LegacyDatasetInfoResponse): DatasetInfoResponse {
+  const snapshot = value.snapshot ?? {};
+  const validation = normalizeLegacyValidation(snapshot);
   const dateRange = snapshot.dateRange ?? {};
   const totalStocks = snapshot.totalStocks ?? 0;
   const stocksWithQuotes = snapshot.stocksWithQuotes ?? 0;
@@ -116,6 +124,17 @@ function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDataset
       },
     },
   };
+}
+
+function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): DatasetInfoResponse {
+  if (isDatasetInfoResponse(value)) {
+    return {
+      ...value,
+      storage: normalizeStorage(value.path, value.storage),
+    };
+  }
+
+  return normalizeLegacyDatasetInfoResponse(value);
 }
 
 function fetchDatasets(): Promise<DatasetListResponse> {
