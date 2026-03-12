@@ -11,21 +11,21 @@ import asyncio
 import hashlib
 import json
 import shutil
+from collections.abc import Mapping
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol
 
 from loguru import logger
 
+from src.application.services.market_code_alias import expand_market_codes
 from src.application.services.dataset_presets import PresetConfig, get_preset
 from src.application.services.dataset_resolver import DatasetResolver
-from src.application.services.fins_summary_mapper import convert_fins_summary_rows
 from src.application.services.generic_job_manager import GenericJobManager, JobInfo
 from src.application.services.index_master_catalog import get_index_catalog_codes
 from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.entrypoints.http.schemas.job import JobProgress
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
     compatibility_db_path_for_path,
@@ -37,7 +37,11 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
 )
-from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.infrastructure.db.market.query_helpers import (
+    expand_stock_code,
+    normalize_stock_code,
+    stock_code_candidates,
+)
 from src.shared.config.reliability import DATASET_BUILD_TIMEOUT_MINUTES
 
 
@@ -64,6 +68,40 @@ class DatasetResult:
 dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResult] = GenericJobManager()
 _TOTAL_STAGES = 7
 _WARNING_SAMPLE_SIZE = 5
+_STATEMENT_COLUMNS: tuple[str, ...] = (
+    "code",
+    "disclosed_date",
+    "earnings_per_share",
+    "profit",
+    "equity",
+    "type_of_current_period",
+    "type_of_document",
+    "next_year_forecast_earnings_per_share",
+    "bps",
+    "sales",
+    "operating_profit",
+    "ordinary_profit",
+    "operating_cash_flow",
+    "dividend_fy",
+    "forecast_dividend_fy",
+    "next_year_forecast_dividend_fy",
+    "payout_ratio",
+    "forecast_payout_ratio",
+    "next_year_forecast_payout_ratio",
+    "forecast_eps",
+    "investing_cash_flow",
+    "financing_cash_flow",
+    "cash_and_equivalents",
+    "total_assets",
+    "shares_outstanding",
+    "treasury_shares",
+)
+
+
+class MarketDatasetSource(Protocol):
+    def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
+        """Read-only DuckDB query interface."""
+        ...
 
 
 def _manifest_path_for_db(db_path: str) -> Path:
@@ -151,7 +189,7 @@ def _write_dataset_manifest(
 async def start_dataset_build(
     data: DatasetJobData,
     resolver: DatasetResolver,
-    jquants_client: JQuantsAsyncClient,
+    market_reader: MarketDatasetSource,
 ) -> JobInfo[DatasetJobData, JobProgress, DatasetResult] | None:
     """データセットビルドジョブを作成して開始"""
     job = await dataset_job_manager.create_job(data)
@@ -163,7 +201,7 @@ async def start_dataset_build(
     async def _run() -> None:
         try:
             result = await asyncio.wait_for(
-                _build_dataset(job, resolver, jquants_client),
+                _build_dataset(job, resolver, market_reader),
                 timeout=timeout_minutes * 60,
             )
             if dataset_job_manager.is_cancelled(job.job_id):
@@ -185,7 +223,7 @@ async def start_dataset_build(
 async def _build_dataset(
     job: JobInfo[DatasetJobData, JobProgress, DatasetResult],
     resolver: DatasetResolver,
-    jquants_client: JQuantsAsyncClient,
+    market_reader: MarketDatasetSource,
 ) -> DatasetResult:
     """データセットをビルドする実際のロジック"""
     name = job.data.name
@@ -210,11 +248,11 @@ async def _build_dataset(
         )
 
     # Step 1: 銘柄マスタ取得
-    progress("master", 0, _TOTAL_STAGES, "Fetching stock master data...")
+    progress("master", 0, _TOTAL_STAGES, "Loading stock master from market.duckdb...")
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
-    stocks_data = await jquants_client.get_paginated("/equities/master")
+    stocks_data = await _load_market_stock_master(market_reader)
     filtered = _filter_stocks(stocks_data, preset)
 
     if not filtered:
@@ -246,7 +284,7 @@ async def _build_dataset(
             "stock_data",
             2,
             _TOTAL_STAGES,
-            f"Fetching stock price data ({len(stocks_for_ohlcv)}/{len(filtered)} targets)...",
+            f"Copying stock price data from market.duckdb ({len(stocks_for_ohlcv)}/{len(filtered)} targets)...",
         )
         processed = 0
         empty_ohlcv_codes: list[str] = []
@@ -257,18 +295,18 @@ async def _build_dataset(
             code5 = stock.get("Code", "")
             code4 = normalize_stock_code(code5)
             try:
-                data = await jquants_client.get_paginated("/equities/bars/daily", params={"code": code5})
+                data = await _load_market_stock_data(market_reader, code4)
                 rows: list[dict[str, Any]] = []
                 skipped_rows = 0
-                created_at = datetime.now(UTC).isoformat()
                 for quote in data:
                     if not isinstance(quote, dict):
                         skipped_rows += 1
                         continue
+                    created_at = quote.get("created_at")
                     row = build_stock_data_row(
                         quote,
                         normalized_code=code4,
-                        created_at=created_at,
+                        created_at=str(created_at) if created_at is not None else None,
                     )
                     if row is None:
                         skipped_rows += 1
@@ -282,7 +320,12 @@ async def _build_dataset(
                     empty_ohlcv_codes.append(code4)
                 processed += 1
                 if (i + 1) % 10 == 0:
-                    progress("stock_data", 2, _TOTAL_STAGES, f"Stock data: {i + 1}/{len(stocks_for_ohlcv)}")
+                    progress(
+                        "stock_data",
+                        2,
+                        _TOTAL_STAGES,
+                        f"Stock data from market.duckdb: {i + 1}/{len(stocks_for_ohlcv)}",
+                    )
             except Exception as e:
                 warnings.append(f"Stock {code4}: {e}")
 
@@ -312,23 +355,14 @@ async def _build_dataset(
                 "topix",
                 3,
                 _TOTAL_STAGES,
-                "Fetching TOPIX data..." if should_fetch_topix else "TOPIX data already exists, skipping fetch",
+                "Copying TOPIX data from market.duckdb..."
+                if should_fetch_topix
+                else "TOPIX data already exists, skipping copy",
             )
             if not job.cancelled.is_set():
                 if should_fetch_topix:
                     try:
-                        topix = await jquants_client.get_paginated("/indices/bars/daily/topix")
-                        topix_rows = [
-                            {
-                                "date": d.get("Date", ""),
-                                "open": d.get("O", 0),
-                                "high": d.get("H", 0),
-                                "low": d.get("L", 0),
-                                "close": d.get("C", 0),
-                                "created_at": datetime.now(UTC).isoformat(),
-                            }
-                            for d in topix
-                        ]
+                        topix_rows = await _load_market_topix_data(market_reader)
                         if topix_rows:
                             await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
                     except Exception as e:
@@ -350,14 +384,13 @@ async def _build_dataset(
                 "indices",
                 4,
                 _TOTAL_STAGES,
-                f"Fetching sector index data ({len(target_index_codes)} targets)...",
+                f"Copying sector index data from market.duckdb ({len(target_index_codes)} targets)...",
             )
             for code in target_index_codes:
                 if job.cancelled.is_set():
                     break
                 try:
-                    data = await jquants_client.get_paginated("/indices/bars/daily", params={"code": code})
-                    rows = _convert_indices_rows(data, fallback_code=code)
+                    rows = await _load_market_index_data(market_reader, code)
                     if rows:
                         await asyncio.to_thread(writer.upsert_indices_data, rows)
                 except Exception as e:
@@ -377,7 +410,7 @@ async def _build_dataset(
                 "statements",
                 5,
                 _TOTAL_STAGES,
-                f"Fetching financial statements ({len(stocks_for_statements)}/{len(filtered)} targets)...",
+                f"Copying financial statements from market.duckdb ({len(stocks_for_statements)}/{len(filtered)} targets)...",
             )
             for stock in stocks_for_statements:
                 if job.cancelled.is_set():
@@ -385,8 +418,7 @@ async def _build_dataset(
                 code5 = stock.get("Code", "")
                 code4 = normalize_stock_code(code5)
                 try:
-                    data = await jquants_client.get_paginated("/fins/summary", params={"code": code5})
-                    rows = convert_fins_summary_rows(data, default_code=code4)
+                    rows = await _load_market_statements(market_reader, code4)
                     if rows:
                         await asyncio.to_thread(writer.upsert_statements, rows)
                 except Exception as e:
@@ -406,7 +438,7 @@ async def _build_dataset(
                 "margin",
                 6,
                 _TOTAL_STAGES,
-                f"Fetching margin data ({len(stocks_for_margin)}/{len(filtered)} targets)...",
+                f"Copying margin data from market.duckdb ({len(stocks_for_margin)}/{len(filtered)} targets)...",
             )
             for stock in stocks_for_margin:
                 if job.cancelled.is_set():
@@ -414,16 +446,7 @@ async def _build_dataset(
                 code5 = stock.get("Code", "")
                 code4 = normalize_stock_code(code5)
                 try:
-                    data = await jquants_client.get_paginated("/markets/margin-interest", params={"code": code5})
-                    rows = [
-                        {
-                            "code": code4,
-                            "date": d.get("Date", ""),
-                            "long_margin_volume": d.get("LongVol"),
-                            "short_margin_volume": d.get("ShrtVol"),
-                        }
-                        for d in data
-                    ]
+                    rows = await _load_market_margin_data(market_reader, code4)
                     if rows:
                         await asyncio.to_thread(writer.upsert_margin_data, rows)
                 except Exception as e:
@@ -482,41 +505,216 @@ def _is_sector_index_code(code: str) -> bool:
     )
 
 
-def _extract_index_code(row: dict[str, Any]) -> str:
-    return _normalize_index_code(
-        row.get("Code")
-        or row.get("code")
-        or row.get("indexCode")
-        or row.get("index_code")
+def _row_to_dict(row: Any) -> dict[str, Any]:
+    if isinstance(row, dict):
+        return dict(row)
+    if isinstance(row, Mapping):
+        return dict(row)
+    keys = getattr(row, "keys", None)
+    if callable(keys):
+        return {str(key): row[key] for key in keys()}
+    raise TypeError(f"Unsupported row type: {type(row)!r}")
+
+
+async def _query_market_rows(
+    market_reader: MarketDatasetSource,
+    sql: str,
+    params: tuple[Any, ...] = (),
+) -> list[dict[str, Any]]:
+    rows = await asyncio.to_thread(market_reader.query, sql, params)
+    if asyncio.iscoroutine(rows):
+        rows = await rows
+    return [_row_to_dict(row) for row in rows]
+
+
+async def _load_market_stock_master(market_reader: MarketDatasetSource) -> list[dict[str, Any]]:
+    rows = await _query_market_rows(
+        market_reader,
+        """
+        SELECT
+            code,
+            company_name,
+            company_name_english,
+            market_code,
+            market_name,
+            sector_17_code,
+            sector_17_name,
+            sector_33_code,
+            sector_33_name,
+            scale_category,
+            listed_date
+        FROM stocks
+        ORDER BY code
+        """,
     )
+    return [
+        {
+            "Code": expand_stock_code(str(row.get("code", "") or "")),
+            "CoName": str(row.get("company_name", "") or ""),
+            "CoNameEn": row.get("company_name_english"),
+            "Mkt": str(row.get("market_code", "") or ""),
+            "MktNm": str(row.get("market_name", "") or ""),
+            "S17": str(row.get("sector_17_code", "") or ""),
+            "S17Nm": str(row.get("sector_17_name", "") or ""),
+            "S33": str(row.get("sector_33_code", "") or ""),
+            "S33Nm": str(row.get("sector_33_name", "") or ""),
+            "ScaleCat": row.get("scale_category"),
+            "Date": str(row.get("listed_date", "") or ""),
+        }
+        for row in rows
+    ]
 
 
-def _convert_indices_rows(data: list[dict[str, Any]], *, fallback_code: str) -> list[dict[str, Any]]:
-    rows: list[dict[str, Any]] = []
-    created_at = datetime.now(UTC).isoformat()
-    normalized_fallback = _normalize_index_code(fallback_code)
-
-    for row in data:
-        if not isinstance(row, dict):
+async def _load_market_stock_data(
+    market_reader: MarketDatasetSource,
+    normalized_code: str,
+) -> list[dict[str, Any]]:
+    candidates = stock_code_candidates(normalized_code)
+    placeholders = ", ".join("?" for _ in candidates)
+    rows = await _query_market_rows(
+        market_reader,
+        f"""
+        SELECT code, date, open, high, low, close, volume, adjustment_factor, created_at
+        FROM stock_data
+        WHERE code IN ({placeholders})
+        ORDER BY date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+        """,
+        tuple(candidates),
+    )
+    by_date: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        date = str(row.get("date", "") or "")
+        if not date:
             continue
-        code = _extract_index_code(row) or normalized_fallback
-        date = row.get("Date") or row.get("date")
-        if not code or not date:
-            continue
-        rows.append(
+        by_date.setdefault(
+            date,
             {
-                "code": code,
-                "date": str(date),
-                "open": row.get("O", row.get("open")),
-                "high": row.get("H", row.get("high")),
-                "low": row.get("L", row.get("low")),
-                "close": row.get("C", row.get("close")),
-                "sector_name": row.get("SectorName", row.get("sector_name")),
-                "created_at": created_at,
-            }
+                "Date": date,
+                "O": row.get("open"),
+                "H": row.get("high"),
+                "L": row.get("low"),
+                "C": row.get("close"),
+                "Vo": row.get("volume"),
+                "AdjFactor": row.get("adjustment_factor"),
+                "created_at": row.get("created_at"),
+            },
         )
+    return list(by_date.values())
 
-    return rows
+
+async def _load_market_topix_data(market_reader: MarketDatasetSource) -> list[dict[str, Any]]:
+    rows = await _query_market_rows(
+        market_reader,
+        """
+        SELECT date, open, high, low, close, created_at
+        FROM topix_data
+        ORDER BY date
+        """,
+    )
+    return [
+        {
+            "date": str(row.get("date", "") or ""),
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "close": row.get("close"),
+            "created_at": row.get("created_at"),
+        }
+        for row in rows
+        if row.get("date") is not None
+    ]
+
+
+async def _load_market_index_data(
+    market_reader: MarketDatasetSource,
+    code: str,
+) -> list[dict[str, Any]]:
+    rows = await _query_market_rows(
+        market_reader,
+        """
+        SELECT code, date, open, high, low, close, sector_name, created_at
+        FROM indices_data
+        WHERE upper(code) = ?
+        ORDER BY date
+        """,
+        (_normalize_index_code(code),),
+    )
+    return [
+        {
+            "code": _normalize_index_code(row.get("code")),
+            "date": str(row.get("date", "") or ""),
+            "open": row.get("open"),
+            "high": row.get("high"),
+            "low": row.get("low"),
+            "close": row.get("close"),
+            "sector_name": row.get("sector_name"),
+            "created_at": row.get("created_at"),
+        }
+        for row in rows
+        if row.get("date") is not None
+    ]
+
+
+async def _load_market_statements(
+    market_reader: MarketDatasetSource,
+    normalized_code: str,
+) -> list[dict[str, Any]]:
+    candidates = stock_code_candidates(normalized_code)
+    placeholders = ", ".join("?" for _ in candidates)
+    rows = await _query_market_rows(
+        market_reader,
+        f"""
+        SELECT {", ".join(_STATEMENT_COLUMNS)}
+        FROM statements
+        WHERE code IN ({placeholders})
+        ORDER BY disclosed_date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+        """,
+        tuple(candidates),
+    )
+    by_date: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        disclosed_date = str(row.get("disclosed_date", "") or "")
+        if not disclosed_date:
+            continue
+        if disclosed_date in by_date:
+            continue
+        mapped = dict(row)
+        mapped["code"] = normalized_code
+        by_date[disclosed_date] = mapped
+    return list(by_date.values())
+
+
+async def _load_market_margin_data(
+    market_reader: MarketDatasetSource,
+    normalized_code: str,
+) -> list[dict[str, Any]]:
+    candidates = stock_code_candidates(normalized_code)
+    placeholders = ", ".join("?" for _ in candidates)
+    rows = await _query_market_rows(
+        market_reader,
+        f"""
+        SELECT code, date, long_margin_volume, short_margin_volume
+        FROM margin_data
+        WHERE code IN ({placeholders})
+        ORDER BY date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+        """,
+        tuple(candidates),
+    )
+    by_date: dict[str, dict[str, Any]] = {}
+    for row in rows:
+        date = str(row.get("date", "") or "")
+        if not date:
+            continue
+        by_date.setdefault(
+            date,
+            {
+                "code": normalized_code,
+                "date": date,
+                "long_margin_volume": row.get("long_margin_volume"),
+                "short_margin_volume": row.get("short_margin_volume"),
+            },
+        )
+    return list(by_date.values())
 
 
 def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[dict[str, Any]]:
@@ -528,8 +726,13 @@ def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[d
         "growth": "グロース",
     }
     market_names = [market_name_map.get(m, m) for m in preset.markets]
+    query_market_codes = {code.lower() for code in expand_market_codes(preset.markets)}
 
-    filtered = [s for s in stocks if s.get("MktNm", "") in market_names]
+    filtered = [
+        s
+        for s in stocks
+        if s.get("MktNm", "") in market_names or str(s.get("Mkt", "") or "").lower() in query_market_codes
+    ]
 
     if preset.scale_categories:
         filtered = [s for s in filtered if s.get("ScaleCat", "") in preset.scale_categories]

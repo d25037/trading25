@@ -93,6 +93,14 @@ describe('useDatasetInfo', () => {
       path: '/tmp/modern.db',
       fileSize: 200,
       lastModified: '2026-01-02T00:00:00Z',
+      storage: {
+        backend: 'duckdb-parquet',
+        primaryPath: '/tmp/modern/dataset.duckdb',
+        duckdbPath: '/tmp/modern/dataset.duckdb',
+        compatibilityDbPath: '/tmp/modern/dataset.db',
+        manifestPath: '/tmp/modern/manifest.v1.json',
+        hasCompatibilityArtifact: true,
+      },
       snapshot: {
         preset: 'primeMarket',
         createdAt: '2026-01-01T00:00:00Z',
@@ -145,6 +153,7 @@ describe('useDatasetInfo', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.stats.dateRange.from).toBe('-');
     expect(result.current.data?.stats.dateRange.to).toBe('-');
+    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
     expect(result.current.data?.stats.hasTOPIXData).toBe(true);
     expect(result.current.data?.validation.isValid).toBe(true);
     expect(result.current.data?.validation.details?.dataCoverage?.totalStocks).toBe(0);
@@ -172,6 +181,7 @@ describe('useDatasetInfo', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.stats.hasTOPIXData).toBe(false);
+    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
   });
 
   it('does not fetch when name is null', () => {

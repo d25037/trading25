@@ -42,13 +42,31 @@ interface LegacyDatasetInfoResponse {
   };
 }
 
+function inferLegacyStorage(path: string) {
+  const isLegacySqlite = path.endsWith('.db');
+  return {
+    backend: (isLegacySqlite ? 'sqlite-legacy' : 'duckdb-parquet') as
+      | 'duckdb-parquet'
+      | 'sqlite-compatibility'
+      | 'sqlite-legacy',
+    primaryPath: path,
+    duckdbPath: null,
+    compatibilityDbPath: null,
+    manifestPath: null,
+    hasCompatibilityArtifact: false,
+  };
+}
+
 function isDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): value is DatasetInfoResponse {
   return 'stats' in value && 'validation' in value;
 }
 
 function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): DatasetInfoResponse {
   if (isDatasetInfoResponse(value)) {
-    return value;
+    return {
+      ...value,
+      storage: 'storage' in value && value.storage ? value.storage : inferLegacyStorage(value.path),
+    };
   }
 
   const snapshot = value.snapshot ?? {};
@@ -66,6 +84,7 @@ function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDataset
     path: value.path,
     fileSize: value.fileSize,
     lastModified: value.lastModified,
+    storage: inferLegacyStorage(value.path),
     snapshot: {
       preset: snapshot.preset ?? null,
       createdAt: snapshot.createdAt ?? null,

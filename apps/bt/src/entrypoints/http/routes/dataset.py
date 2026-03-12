@@ -17,7 +17,6 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.entrypoints.http.schemas.dataset import (
     DatasetCreateRequest,
     DatasetCreateResponse,
@@ -37,6 +36,7 @@ from src.application.services.dataset_builder_service import (
 )
 from src.application.services.dataset_presets import get_preset, list_presets
 from src.application.services.dataset_resolver import DatasetResolver
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 router = APIRouter(tags=["Dataset"])
 
@@ -48,11 +48,11 @@ def _get_resolver(request: Request) -> DatasetResolver:
     return resolver
 
 
-def _get_jquants_client(request: Request) -> JQuantsAsyncClient:
-    client = getattr(request.app.state, "jquants_client", None)
-    if client is None:
-        raise HTTPException(status_code=422, detail="JQuants client not initialized")
-    return client
+def _get_market_reader(request: Request) -> MarketDbReader:
+    reader = getattr(request.app.state, "market_reader", None)
+    if reader is None:
+        raise HTTPException(status_code=422, detail="Market database not initialized")
+    return reader
 
 
 # --- List ---
@@ -213,7 +213,7 @@ def _estimate_time(preset_name: str) -> str:
 )
 async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONResponse:
     resolver = _get_resolver(request)
-    jquants_client = _get_jquants_client(request)
+    market_reader = _get_market_reader(request)
 
     # Validate preset
     if get_preset(body.preset) is None:
@@ -236,7 +236,7 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
         overwrite=body.overwrite,
         timeout_minutes=body.timeoutMinutes,
     )
-    job = await start_dataset_build(data, resolver, jquants_client)
+    job = await start_dataset_build(data, resolver, market_reader)
     if job is None:
         raise HTTPException(status_code=409, detail="Another dataset build job is already running")
 
@@ -264,7 +264,7 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
 )
 async def resume_dataset(request: Request, body: DatasetCreateRequest) -> JSONResponse:
     resolver = _get_resolver(request)
-    jquants_client = _get_jquants_client(request)
+    market_reader = _get_market_reader(request)
 
     # Validate preset
     if get_preset(body.preset) is None:
@@ -284,7 +284,7 @@ async def resume_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
         resume=True,
         timeout_minutes=body.timeoutMinutes,
     )
-    job = await start_dataset_build(data, resolver, jquants_client)
+    job = await start_dataset_build(data, resolver, market_reader)
     if job is None:
         raise HTTPException(status_code=409, detail="Another dataset build job is already running")
 

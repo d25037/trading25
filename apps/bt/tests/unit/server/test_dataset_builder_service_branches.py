@@ -4,6 +4,8 @@ import asyncio
 import hashlib
 import json
 import sqlite3
+from collections.abc import Awaitable, Callable
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,6 +22,7 @@ from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
 from src.entrypoints.http.schemas.job import JobStatus
 from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot
+from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 
 
 @pytest.fixture
@@ -90,6 +93,119 @@ def _master_row(code: str, name: str) -> dict[str, str]:
     return {"Code": code, "MktNm": "プライム", "CoName": name}
 
 
+class _LegacyEndpointMarketReader:
+    def __init__(
+        self,
+        fetch: Callable[[str, dict[str, str] | None], list[dict[str, object]] | Awaitable[list[dict[str, object]]]],
+    ) -> None:
+        self._fetch = fetch
+
+    def _call(self, path: str, params: dict[str, str] | None = None) -> list[dict[str, object]]:
+        result = self._fetch(path, params)
+        if asyncio.iscoroutine(result):
+            return asyncio.run(result)
+        return result
+
+    def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, object]]:
+        normalized = " ".join(sql.split()).lower()
+        if " from stocks " in f" {normalized} ":
+            rows = self._call("/equities/master")
+            return [
+                {
+                    "code": normalize_stock_code(str(row.get("Code", "") or "")),
+                    "company_name": str(row.get("CoName", "") or ""),
+                    "company_name_english": row.get("CoNameEn"),
+                    "market_code": str(row.get("Mkt", "") or ""),
+                    "market_name": str(row.get("MktNm", "") or ""),
+                    "sector_17_code": str(row.get("S17", "") or ""),
+                    "sector_17_name": str(row.get("S17Nm", "") or ""),
+                    "sector_33_code": str(row.get("S33", "") or ""),
+                    "sector_33_name": str(row.get("S33Nm", "") or ""),
+                    "scale_category": row.get("ScaleCat"),
+                    "listed_date": str(row.get("Date", "") or ""),
+                }
+                for row in rows
+            ]
+        if " from stock_data " in f" {normalized} ":
+            result: list[dict[str, object]] = []
+            for code in sorted({normalize_stock_code(str(value)) for value in params}):
+                for row in self._call("/equities/bars/daily", {"code": expand_stock_code(code)}):
+                    result.append(
+                        {
+                            "code": code,
+                            "date": row.get("Date"),
+                            "open": row.get("O"),
+                            "high": row.get("H"),
+                            "low": row.get("L"),
+                            "close": row.get("C"),
+                            "volume": row.get("Vo"),
+                            "adjustment_factor": row.get("AdjFactor"),
+                            "created_at": row.get("created_at"),
+                        }
+                    )
+            return result
+        if " from topix_data " in f" {normalized} ":
+            return [
+                {
+                    "date": row.get("Date"),
+                    "open": row.get("O"),
+                    "high": row.get("H"),
+                    "low": row.get("L"),
+                    "close": row.get("C"),
+                    "created_at": row.get("created_at"),
+                }
+                for row in self._call("/indices/bars/daily/topix")
+            ]
+        if " from indices_data " in f" {normalized} ":
+            code = str(params[0]) if params else ""
+            return [
+                {
+                    "code": row.get("Code", code),
+                    "date": row.get("Date"),
+                    "open": row.get("O"),
+                    "high": row.get("H"),
+                    "low": row.get("L"),
+                    "close": row.get("C"),
+                    "sector_name": row.get("SectorName"),
+                    "created_at": row.get("created_at"),
+                }
+                for row in self._call("/indices/bars/daily", {"code": code})
+            ]
+        if " from statements " in f" {normalized} ":
+            result = []
+            for code in sorted({normalize_stock_code(str(value)) for value in params}):
+                for row in self._call("/fins/summary", {"code": expand_stock_code(code)}):
+                    payload = {column: None for column in dataset_builder_service._STATEMENT_COLUMNS}
+                    payload["code"] = code
+                    payload["disclosed_date"] = row.get("DisclosedDate") or row.get("DiscDate")
+                    result.append(payload)
+            return result
+        if " from margin_data " in f" {normalized} ":
+            result = []
+            for code in sorted({normalize_stock_code(str(value)) for value in params}):
+                for row in self._call("/markets/margin-interest", {"code": expand_stock_code(code)}):
+                    result.append(
+                        {
+                            "code": code,
+                            "date": row.get("Date"),
+                            "long_margin_volume": row.get("LongVol"),
+                            "short_margin_volume": row.get("ShrtVol"),
+                        }
+                    )
+            return result
+        raise AssertionError(f"Unexpected query: {sql}")
+
+def _statement_row(code: str, disclosed_date: str) -> dict[str, Any]:
+    return {
+        "Code": code,
+        "DisclosedDate": disclosed_date,
+    }
+
+
+def _reader_from_fetch(fetcher) -> _LegacyEndpointMarketReader:
+    return _LegacyEndpointMarketReader(fetcher)
+
+
 def test_convert_stocks_maps_jquants_fields():
     rows = _convert_stocks(
         [
@@ -118,9 +234,9 @@ async def test_build_dataset_returns_error_for_unknown_preset(isolated_dataset_m
     job = await _create_job(isolated_dataset_manager, preset="unknown")
     resolver = MagicMock()
     resolver.get_db_path.return_value = "/tmp/unknown.db"
-    client = AsyncMock()
+    reader = MagicMock()
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is False
     assert result.errors == ["Unknown preset: unknown"]
 
@@ -131,7 +247,7 @@ async def test_build_dataset_returns_cancelled_before_master_fetch(monkeypatch, 
     job.cancelled.set()
     resolver = MagicMock()
     resolver.get_db_path.return_value = "/tmp/cancelled.db"
-    client = AsyncMock()
+    reader = MagicMock()
 
     monkeypatch.setattr(
         dataset_builder_service,
@@ -139,10 +255,10 @@ async def test_build_dataset_returns_cancelled_before_master_fetch(monkeypatch, 
         lambda name: PresetConfig(markets=["prime"]),
     )
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is False
     assert result.errors == ["Cancelled"]
-    assert client.get_paginated.await_count == 0
+    reader.query.assert_not_called()
 
 
 @pytest.mark.asyncio
@@ -151,8 +267,12 @@ async def test_build_dataset_returns_error_when_no_stock_matches_preset(monkeypa
     resolver = MagicMock()
     resolver.get_db_path.return_value = "/tmp/empty.db"
 
-    client = AsyncMock()
-    client.get_paginated = AsyncMock(return_value=[{"Code": "99990", "MktNm": "グロース"}])
+    async def fake_get_paginated(path: str, params=None):
+        del params
+        assert path == "/equities/master"
+        return [{"Code": "99990", "MktNm": "グロース"}]
+
+    reader = _reader_from_fetch(fake_get_paginated)
 
     monkeypatch.setattr(
         dataset_builder_service,
@@ -160,7 +280,7 @@ async def test_build_dataset_returns_error_when_no_stock_matches_preset(monkeypa
         lambda name: PresetConfig(markets=["prime"]),
     )
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is False
     assert result.errors == ["No stocks matched the preset filters"]
 
@@ -178,11 +298,6 @@ async def test_build_dataset_success_with_warnings(monkeypatch, isolated_dataset
         include_margin=True,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
-    monkeypatch.setattr(
-        dataset_builder_service,
-        "convert_fins_summary_rows",
-        lambda data, default_code: [{"code": default_code, "disclosed_date": "2026-01-01"}] if data else [],
-    )
 
     class DummyWriter:
         instances: list["DummyWriter"] = []
@@ -243,10 +358,9 @@ async def test_build_dataset_success_with_warnings(monkeypatch, isolated_dataset
             raise RuntimeError("margin failed")
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
 
     assert result.success is True
     assert result.totalStocks == 2
@@ -315,10 +429,9 @@ async def test_build_dataset_returns_partial_result_when_cancelled_during_stock_
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is False
     assert result.processedStocks == 1
     assert result.errors == ["Cancelled"]
@@ -348,10 +461,9 @@ async def test_build_dataset_writes_manifest_v1(monkeypatch, isolated_dataset_ma
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
 
     manifest_path = tmp_path / "manifest" / "manifest.v1.json"
@@ -402,18 +514,17 @@ async def test_build_dataset_rerun_keeps_logical_checksum_reproducible(
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
     job_first = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
-    first_result = await _build_dataset(job_first, resolver, client)
+    first_result = await _build_dataset(job_first, resolver, reader)
     assert first_result.success is True
     isolated_dataset_manager.complete_job(job_first.job_id, first_result)
     first_manifest_path = tmp_path / "repro" / "manifest.v1.json"
     first_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
 
     job_second = await _create_job(isolated_dataset_manager, name="repro", preset="quick")
-    second_result = await _build_dataset(job_second, resolver, client)
+    second_result = await _build_dataset(job_second, resolver, reader)
     assert second_result.success is True
     isolated_dataset_manager.complete_job(job_second.job_id, second_result)
     second_manifest = json.loads(first_manifest_path.read_text(encoding="utf-8"))
@@ -450,10 +561,9 @@ async def test_build_dataset_manifest_uses_duckdb_state_as_sot(
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
 
     compatibility_db = tmp_path / "duckdb-sot" / "dataset.db"
@@ -512,11 +622,10 @@ async def test_build_dataset_raises_when_manifest_generation_fails(monkeypatch, 
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
     with pytest.raises(RuntimeError, match="manifest failed"):
-        await _build_dataset(job, resolver, client)
+        await _build_dataset(job, resolver, reader)
 
 
 @pytest.mark.asyncio
@@ -575,13 +684,12 @@ async def test_build_dataset_handles_empty_stock_rows_and_progress_mod10(monkeyp
             return []
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     assert result.processedStocks == 10
-    assert any("Stock data: 10/10" in message for message in progress_messages)
+    assert any("Stock data from market.duckdb: 10/10" in message for message in progress_messages)
     writer = DummyWriter.instances[-1]
     assert writer.stock_data_calls == 0
     assert writer.closed is True
@@ -638,10 +746,9 @@ async def test_build_dataset_resume_skips_existing_stock_data_codes(monkeypatch,
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     assert fetched_codes == ["22220"]
     assert result.processedStocks == 1
@@ -695,10 +802,9 @@ async def test_build_dataset_overwrite_removes_legacy_db_artifact(
             return [_daily_bar_row()]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
 
     assert result.success is True
     assert legacy_db.exists() is False
@@ -746,10 +852,9 @@ async def test_build_dataset_topix_skips_fetch_when_cancelled_before_topix(monke
             raise AssertionError("topix should not be fetched when cancelled")
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     assert result.processedStocks == 1
 
@@ -808,10 +913,9 @@ async def test_build_dataset_topix_rows_true_and_false_branches(
             return topix_rows
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     writer = DummyWriter.instances[-1]
     assert writer.topix_calls == expected_topix_calls
@@ -870,10 +974,9 @@ async def test_build_dataset_fetches_sector_indices_from_catalog(monkeypatch, is
             return []
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     writer = DummyWriter.instances[-1]
     assert writer.indices_calls == 2
@@ -926,10 +1029,9 @@ async def test_build_dataset_skips_incomplete_ohlcv_rows_without_failing_stock(m
             ]
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     assert result.processedStocks == 1
     assert result.warnings is not None
@@ -951,7 +1053,6 @@ async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monk
         include_margin=False,
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
-    monkeypatch.setattr(dataset_builder_service, "convert_fins_summary_rows", lambda data, default_code: [])
 
     class DummyWriter:
         instances: list["DummyWriter"] = []
@@ -991,10 +1092,9 @@ async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monk
             return []
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     writer = DummyWriter.instances[-1]
     assert writer.statement_calls == 0
@@ -1052,10 +1152,9 @@ async def test_build_dataset_margin_handles_empty_rows_and_cancel_break(monkeypa
             return []
         return []
 
-    client = AsyncMock()
-    client.get_paginated.side_effect = fake_get_paginated
+    reader = _reader_from_fetch(fake_get_paginated)
 
-    result = await _build_dataset(job, resolver, client)
+    result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     writer = DummyWriter.instances[-1]
     assert writer.margin_calls == 0
