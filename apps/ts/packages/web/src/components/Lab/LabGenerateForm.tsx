@@ -1,10 +1,10 @@
 import { useState } from 'react';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
-import { EnginePolicySelector, buildEnginePolicy } from '@/components/EnginePolicySelector';
 import type { EnginePolicyMode, LabGenerateRequest } from '@/types/backtest';
 
 interface LabGenerateFormProps {
@@ -20,7 +20,7 @@ export function LabGenerateForm({ onSubmit, disabled }: LabGenerateFormProps) {
   const [dataset, setDataset] = useState('');
   const [entryFilterOnly, setEntryFilterOnly] = useState(false);
   const [categoryScope, setCategoryScope] = useState<'all' | 'fundamental'>('all');
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_then_verify');
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
   const [verificationTopK, setVerificationTopK] = useState('5');
 
   const handleSubmit = () => {

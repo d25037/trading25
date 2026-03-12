@@ -519,3 +519,45 @@ async def test_run_verification_orchestrator_creates_and_executes_child_runs(
     persisted_parent = manager.get_job(parent_id)
     assert persisted_parent is not None
     assert persisted_parent.raw_result == updated
+
+
+@pytest.mark.asyncio
+async def test_internal_verification_helpers_identify_and_cancel_child_jobs() -> None:
+    manager = JobManager()
+    parent_id = manager.create_job("demo", job_type="optimization")
+    child_run_spec = build_config_override_run_spec(
+        "backtest",
+        "demo-strategy",
+        config_override={"shared_config": {"dataset": "demo"}},
+        parameters={"verification_candidate_id": "child-1"},
+        engine_family=EngineFamily.NAUTILUS,
+    )
+    child_id = manager.create_job(
+        "demo-strategy",
+        job_type="backtest",
+        run_spec=child_run_spec,
+        parent_run_id=parent_id,
+    )
+
+    parent = manager.get_job(parent_id)
+    child = manager.get_job(child_id)
+    assert parent is not None
+    assert child is not None
+
+    seed = _make_seed("child-1", verification_run_id=child_id)
+    parent.raw_result = orchestrator.serialize_candidate_seeds({}, [seed], requested_top_k=1)
+
+    assert orchestrator.verification_child_job_ids(parent.raw_result) == [child_id]
+    assert orchestrator.is_internal_verification_job(child) is True
+    assert orchestrator.is_internal_verification_job(parent) is False
+
+    cancelled = await orchestrator.cancel_verification_children(
+        manager,
+        parent_id,
+        reason="parent_job_failed",
+    )
+
+    assert cancelled == [child_id]
+    cancelled_child = manager.get_job(child_id)
+    assert cancelled_child is not None
+    assert cancelled_child.status == JobStatus.CANCELLED

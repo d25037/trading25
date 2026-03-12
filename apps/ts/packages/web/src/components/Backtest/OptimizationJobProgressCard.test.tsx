@@ -55,6 +55,21 @@ describe('OptimizationJobProgressCard', () => {
     expect(screen.getByText(/⏱/)).toBeInTheDocument();
   });
 
+  it('does not switch to verification stage without an explicit verification message', () => {
+    const job = createJob({
+      status: 'running',
+      progress: 0.75,
+      message: 'trial 7/9',
+      best_params: null,
+      worst_params: null,
+    });
+
+    render(<OptimizationJobProgressCard job={job} />);
+
+    expect(screen.getByText('Fast stage')).toBeInTheDocument();
+    expect(screen.queryByText('Verification stage')).not.toBeInTheDocument();
+  });
+
   it('renders failed state error', () => {
     const job = createJob({
       status: 'failed',

@@ -1,6 +1,7 @@
 import { useQueryClient } from '@tanstack/react-query';
 import { Play, Settings, Settings2 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
@@ -18,13 +19,12 @@ import {
   useRunOptimization,
 } from '@/hooks/useOptimization';
 import { useBacktestStore } from '@/stores/backtestStore';
+import type { EnginePolicyMode } from '@/types/backtest';
 import { DefaultConfigEditor } from './DefaultConfigEditor';
 import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
-import { StrategySelector } from './StrategySelector';
 import { extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
-import { EnginePolicySelector, buildEnginePolicy } from '@/components/EnginePolicySelector';
-import type { EnginePolicyMode } from '@/types/backtest';
+import { StrategySelector } from './StrategySelector';
 
 type BacktestJobStatusData = ReturnType<typeof useJobStatus>['data'];
 type OptimizationJobStatusData = ReturnType<typeof useOptimizationJobStatus>['data'];
@@ -255,7 +255,10 @@ function OptimizationSection({
         {isOptRunning ? 'Optimizing...' : 'Run Optimization'}
       </Button>
 
-      <OptimizationJobProgressCard job={optimizationJobStatus} isLoading={isLoadingOptJob || runOptimization.isPending} />
+      <OptimizationJobProgressCard
+        job={optimizationJobStatus}
+        isLoading={isLoadingOptJob || runOptimization.isPending}
+      />
 
       {runOptimization.isError && (
         <div className="rounded-md bg-red-500/10 p-3 text-sm text-red-500">{runOptimization.error.message}</div>
@@ -266,7 +269,7 @@ function OptimizationSection({
 
 export function BacktestRunner() {
   const [defaultConfigOpen, setDefaultConfigOpen] = useState(false);
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_then_verify');
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
   const [optimizationVerificationTopK, setOptimizationVerificationTopK] = useState('5');
   const {
     selectedStrategy,

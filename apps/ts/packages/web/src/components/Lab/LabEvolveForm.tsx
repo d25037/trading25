@@ -1,9 +1,9 @@
 import { useState } from 'react';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { EnginePolicySelector, buildEnginePolicy } from '@/components/EnginePolicySelector';
 import type { EnginePolicyMode, LabEvolveRequest } from '@/types/backtest';
 
 type CategoryScope = 'all' | 'fundamental';
@@ -33,7 +33,7 @@ export function LabEvolveForm({ strategyName, onSubmit, disabled }: LabEvolveFor
   const [randomAddEntrySignals, setRandomAddEntrySignals] = useState('1');
   const [randomAddExitSignals, setRandomAddExitSignals] = useState('1');
   const [seed, setSeed] = useState('');
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_then_verify');
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
   const [verificationTopK, setVerificationTopK] = useState('5');
   const isEntryTargeted = targetScope !== 'exit_trigger_only';
   const isExitTargeted = targetScope !== 'entry_filter_only';

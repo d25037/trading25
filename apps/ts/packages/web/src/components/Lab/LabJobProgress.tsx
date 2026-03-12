@@ -31,10 +31,9 @@ function ProgressStatusIcon({ status }: { status: JobStatus }) {
   }
 }
 
-function resolveStageLabel(status: JobStatus, progress: number | null, message: string | null): string | null {
+function resolveStageLabel(status: JobStatus, message: string | null): string | null {
   if (status !== 'pending' && status !== 'running') return null;
   if (message?.toLowerCase().includes('nautilus verification')) return 'Verification stage';
-  if ((progress ?? 0) >= 0.5) return 'Verification stage';
   return 'Fast stage';
 }
 
@@ -71,7 +70,7 @@ export function LabJobProgress({
   };
 
   const progressPercent = progress != null ? Math.round(progress * 100) : null;
-  const stageLabel = resolveStageLabel(status, progress, message);
+  const stageLabel = resolveStageLabel(status, message);
 
   return (
     <Card>

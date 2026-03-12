@@ -20,6 +20,7 @@ from src.application.services.verification_orchestrator import (
     INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY,
     build_canonical_metrics,
     build_verification_seed,
+    cancel_verification_children,
     extract_candidate_seeds,
     run_verification_orchestrator,
     serialize_candidate_seeds,
@@ -116,6 +117,11 @@ async def _heartbeat_loop(
                 message="最適化がタイムアウトしました",
                 error=_TIMED_OUT_ERROR,
             )
+            await cancel_verification_children(
+                manager,
+                job_id,
+                reason="parent_job_timed_out",
+            )
             metrics_recorder.record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
             logger.warning(
                 f"optimization worker timed out: {job_id}",
@@ -134,6 +140,11 @@ async def _heartbeat_loop(
             now = datetime.now()
             duration_ms = _duration_ms_for_job(now, started_at=job.started_at, created_at=job.created_at)
             await manager.cancel_job(
+                job_id,
+                reason=job.cancel_reason or "controller_requested",
+            )
+            await cancel_verification_children(
+                manager,
                 job_id,
                 reason=job.cancel_reason or "controller_requested",
             )
@@ -291,6 +302,11 @@ async def run_optimization_worker(
         )
         return 0
     except Exception as exc:
+        await cancel_verification_children(
+            resolved_manager,
+            job_id,
+            reason="parent_job_failed",
+        )
         duration_ms = round((perf_counter() - started_at) * 1000, 2)
         metrics_recorder.record_job_duration("optimization", JobStatus.FAILED.value, duration_ms)
         logger.exception(

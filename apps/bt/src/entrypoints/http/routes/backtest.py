@@ -52,6 +52,7 @@ from src.application.services.run_registry import (
     resolve_signal_attribution_result,
 )
 from src.application.services.sse_manager import sse_manager
+from src.application.services.verification_orchestrator import is_internal_verification_job
 
 router = APIRouter(tags=["Backtest"])
 _ATTRIBUTION_JOB_TYPE = "backtest_attribution"
@@ -92,7 +93,7 @@ def _build_backtest_job_response(job: JobInfo) -> BacktestJobResponse:
 def _get_job_or_404(job_id: str) -> JobInfo:
     """ジョブを取得、存在しなければ404"""
     job = job_manager.get_job(job_id)
-    if job is None:
+    if job is None or is_internal_verification_job(job):
         raise HTTPException(status_code=404, detail=f"ジョブが見つかりません: {job_id}")
     return job
 
@@ -174,7 +175,7 @@ async def list_jobs(limit: int = 50) -> list[BacktestJobResponse]:
     Args:
         limit: 取得件数上限（デフォルト50）
     """
-    jobs = job_manager.list_jobs(limit=limit)
+    jobs = [job for job in job_manager.list_jobs(limit=limit) if not is_internal_verification_job(job)]
     return [_build_backtest_job_response(job) for job in jobs]
 
 

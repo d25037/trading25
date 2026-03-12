@@ -10,6 +10,7 @@ from src.application.services.verification_orchestrator import (
     INTERNAL_VERIFICATION_CANDIDATES_KEY,
     INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY,
     build_verification_seed,
+    serialize_candidate_seeds,
 )
 from src.application.services.job_manager import JobManager
 from src.application.workers import optimization_worker as worker_mod
@@ -123,6 +124,7 @@ async def test_run_optimization_worker_marks_job_failed_on_timeout() -> None:
 async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     manager = JobManager()
     timeout_job_id = manager.create_job("worker-strategy", job_type="optimization")
+    timeout_child_id = manager.create_job("worker-strategy", job_type="backtest")
     await manager.claim_job_execution(
         timeout_job_id,
         lease_owner="worker",
@@ -131,6 +133,20 @@ async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     timeout_job = manager.get_job(timeout_job_id)
     assert timeout_job is not None
     timeout_job.timeout_at = datetime.now() - timedelta(seconds=1)
+    timeout_job.raw_result = serialize_candidate_seeds(
+        {},
+        [
+            build_verification_seed(
+                candidate_id="grid_0001",
+                fast_rank=1,
+                fast_score=1.2,
+                fast_metrics=None,
+                strategy_name="worker-strategy",
+                config_override={"shared_config": {"dataset": "demo"}},
+            ).model_copy(update={"verification_run_id": timeout_child_id})
+        ],
+        requested_top_k=1,
+    )
 
     exit_codes: list[int] = []
     await worker_mod._heartbeat_loop(  # noqa: SLF001
@@ -144,10 +160,30 @@ async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     assert timeout_job is not None
     assert timeout_job.status == JobStatus.FAILED
     assert timeout_job.error == "worker_timed_out"
+    timeout_child = manager.get_job(timeout_child_id)
+    assert timeout_child is not None
+    assert timeout_child.status == JobStatus.CANCELLED
     assert exit_codes == [124]
 
     cancel_job_id = manager.create_job("worker-strategy", job_type="optimization")
+    cancel_child_id = manager.create_job("worker-strategy", job_type="backtest")
     await manager.claim_job_execution(cancel_job_id, lease_owner="worker")
+    cancel_job = manager.get_job(cancel_job_id)
+    assert cancel_job is not None
+    cancel_job.raw_result = serialize_candidate_seeds(
+        {},
+        [
+            build_verification_seed(
+                candidate_id="grid_0002",
+                fast_rank=1,
+                fast_score=1.1,
+                fast_metrics=None,
+                strategy_name="worker-strategy",
+                config_override={"shared_config": {"dataset": "demo"}},
+            ).model_copy(update={"verification_run_id": cancel_child_id})
+        ],
+        requested_top_k=1,
+    )
     await manager.request_job_cancel(cancel_job_id, reason="user_requested")
     exit_codes.clear()
     await worker_mod._heartbeat_loop(  # noqa: SLF001
@@ -160,6 +196,9 @@ async def test_optimization_heartbeat_loop_handles_timeout_and_cancel() -> None:
     cancelled_job = manager.get_job(cancel_job_id)
     assert cancelled_job is not None
     assert cancelled_job.status == JobStatus.CANCELLED
+    cancelled_child = manager.get_job(cancel_child_id)
+    assert cancelled_child is not None
+    assert cancelled_child.status == JobStatus.CANCELLED
     assert exit_codes == [0]
 
 

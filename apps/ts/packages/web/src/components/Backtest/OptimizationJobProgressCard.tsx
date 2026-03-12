@@ -1,7 +1,7 @@
 import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
 
 interface OptimizationJobProgressCardProps {
@@ -108,7 +108,6 @@ function StatusLabel({ status }: { status: JobStatus }) {
 function resolveStageLabel(job: OptimizationJobResponse): string | null {
   if (job.status !== 'pending' && job.status !== 'running') return null;
   if (job.message?.toLowerCase().includes('nautilus verification')) return 'Verification stage';
-  if ((job.progress ?? 0) >= 0.5) return 'Verification stage';
   return 'Fast stage';
 }
 

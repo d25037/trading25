@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import { useLabOptimizeRecommendation } from '@/hooks/useLab';
-import { EnginePolicySelector, buildEnginePolicy } from '@/components/EnginePolicySelector';
+import { buildEnginePolicy, EnginePolicySelector } from '@/components/EnginePolicySelector';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useLabOptimizeRecommendation } from '@/hooks/useLab';
 import type {
   EnginePolicyMode,
   LabOptimizeRequest,
@@ -75,7 +75,7 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
     if (selectedCategories.length > 0) request.allowed_categories = selectedCategories;
   };
 
-  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_then_verify');
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
   const [verificationTopK, setVerificationTopK] = useState('5');
 
   const buildRequest = (strategy: string): LabOptimizeRequest => {
@@ -100,8 +100,7 @@ export function LabOptimizeForm({ strategyName, trialRecommendation, onSubmit, d
   const currentTrials = parseIntInRange(trials, 50, 10, 1000);
   const effectiveRecommendation = trialRecommendation ?? dynamicRecommendation;
   const showRecommendation = !!effectiveRecommendation && effectiveRecommendation.dimension_count > 0;
-  const isUnderMinimum =
-    showRecommendation && currentTrials < (effectiveRecommendation?.minimum_trials ?? 0);
+  const isUnderMinimum = showRecommendation && currentTrials < (effectiveRecommendation?.minimum_trials ?? 0);
 
   return (
     <div className="space-y-3">

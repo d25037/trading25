@@ -19,8 +19,7 @@ describe('LabEvolveForm', () => {
       structure_mode: 'params_only',
       target_scope: 'both',
       engine_policy: {
-        mode: 'fast_then_verify',
-        verification_top_k: 5,
+        mode: 'fast_only',
       },
     });
   });
@@ -53,8 +52,7 @@ describe('LabEvolveForm', () => {
       entry_filter_only: true,
       allowed_categories: ['fundamental'],
       engine_policy: {
-        mode: 'fast_then_verify',
-        verification_top_k: 5,
+        mode: 'fast_only',
       },
     });
   });
@@ -90,8 +88,7 @@ describe('LabEvolveForm', () => {
       random_add_exit_signals: 3,
       seed: 42,
       engine_policy: {
-        mode: 'fast_then_verify',
-        verification_top_k: 5,
+        mode: 'fast_only',
       },
     });
   });
@@ -127,8 +124,7 @@ describe('LabEvolveForm', () => {
       random_add_entry_signals: 0,
       random_add_exit_signals: 4,
       engine_policy: {
-        mode: 'fast_then_verify',
-        verification_top_k: 5,
+        mode: 'fast_only',
       },
     });
   });
@@ -151,8 +147,7 @@ describe('LabEvolveForm', () => {
       structure_mode: 'params_only',
       target_scope: 'both',
       engine_policy: {
-        mode: 'fast_then_verify',
-        verification_top_k: 5,
+        mode: 'fast_only',
       },
     });
   });

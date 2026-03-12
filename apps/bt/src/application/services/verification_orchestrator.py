@@ -170,6 +170,58 @@ def verification_requested(raw_result: dict[str, Any] | None) -> bool:
     return bool(extract_candidate_seeds(raw_result))
 
 
+def verification_child_job_ids(raw_result: dict[str, Any] | None) -> list[str]:
+    """Return durable verification child job ids in fast-rank order."""
+    seen: set[str] = set()
+    child_job_ids: list[str] = []
+    for seed in extract_candidate_seeds(raw_result):
+        verification_run_id = seed.verification_run_id
+        if not isinstance(verification_run_id, str) or not verification_run_id.strip():
+            continue
+        if verification_run_id in seen:
+            continue
+        seen.add(verification_run_id)
+        child_job_ids.append(verification_run_id)
+    return child_job_ids
+
+
+def is_internal_verification_job(job: JobInfo | None) -> bool:
+    """Identify a durable backtest job created only for internal verification."""
+    if job is None or job.job_type != "backtest" or job.run_spec is None:
+        return False
+    parameters = job.run_spec.parameters
+    return bool(
+        job.run_spec.parent_run_id
+        and job.run_spec.engine_family == EngineFamily.NAUTILUS
+        and isinstance(parameters, dict)
+        and isinstance(parameters.get("verification_candidate_id"), str)
+    )
+
+
+async def cancel_verification_children(
+    manager: JobManager,
+    parent_job_id: str,
+    *,
+    reason: str,
+) -> list[str]:
+    """Best-effort cancellation for verification children when the parent terminates early."""
+    parent_job = manager.get_job(parent_job_id)
+    if parent_job is None:
+        return []
+
+    cancelled_job_ids: list[str] = []
+    for child_job_id in verification_child_job_ids(parent_job.raw_result):
+        child_job = manager.get_job(child_job_id)
+        if child_job is None:
+            continue
+        if child_job.status in (JobStatus.COMPLETED, JobStatus.FAILED, JobStatus.CANCELLED):
+            continue
+        cancelled = await manager.cancel_job(child_job_id, reason=reason)
+        if cancelled is not None:
+            cancelled_job_ids.append(child_job_id)
+    return cancelled_job_ids
+
+
 def _embedded_verification_summary(raw_result: dict[str, Any] | None) -> VerificationSummary | None:
     if not isinstance(raw_result, dict):
         return None

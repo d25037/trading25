@@ -27,14 +27,12 @@ const mockHookState = {
     },
     isLoading: false,
   },
-  strategyDetail: null as
-    | {
-        name: string;
-        display_name: string | null;
-        category: string;
-        description: string | null;
-      }
-    | null,
+  strategyDetail: null as {
+    name: string;
+    display_name: string | null;
+    category: string;
+    description: string | null;
+  } | null,
   jobStatus: {
     data: null as { status?: string } | null,
     isLoading: false,
@@ -146,13 +144,7 @@ vi.mock('./StrategySelector', () => ({
 }));
 
 vi.mock('./DefaultConfigEditor', () => ({
-  DefaultConfigEditor: ({
-    open,
-    onOpenChange,
-  }: {
-    open: boolean;
-    onOpenChange: (next: boolean) => void;
-  }) => (
+  DefaultConfigEditor: ({ open, onOpenChange }: { open: boolean; onOpenChange: (next: boolean) => void }) => (
     <div>
       <div>default-config-open:{String(open)}</div>
       <button type="button" onClick={() => onOpenChange(false)}>
@@ -312,8 +304,7 @@ describe('BacktestRunner', () => {
     expect(mockRunOptimizationMutateAsync).toHaveBeenCalledWith({
       strategy_name: 'production/alpha',
       engine_policy: {
-        mode: 'fast_then_verify',
-        verification_top_k: 5,
+        mode: 'fast_only',
       },
     });
     await waitFor(() => {
