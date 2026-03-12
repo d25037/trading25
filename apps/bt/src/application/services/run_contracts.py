@@ -41,6 +41,8 @@ _INTERNAL_RAW_RESULT_KEYS = {
     "_artifact_path",
     "_metrics_path",
     "_manifest_path",
+    "_engine_path",
+    "_diagnostics_path",
     "_simulation_payload_path",
     "_report_payload_path",
     "_render_error",
@@ -49,6 +51,8 @@ _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
     ("_artifact_path", ArtifactKind.ATTRIBUTION_JSON),
     ("_metrics_path", ArtifactKind.METRICS_JSON),
     ("_manifest_path", ArtifactKind.MANIFEST_JSON),
+    ("_engine_path", ArtifactKind.ENGINE_JSON),
+    ("_diagnostics_path", ArtifactKind.DIAGNOSTICS_JSON),
     ("_simulation_payload_path", ArtifactKind.SIMULATION_PAYLOAD),
     ("_report_payload_path", ArtifactKind.REPORT_PAYLOAD),
     ("saved_strategy_path", ArtifactKind.STRATEGY_YAML),
@@ -56,6 +60,7 @@ _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
 )
 
 _LEGACY_VECTORBT_POLICY_VERSION = "vectorbt-legacy-v1"
+_NAUTILUS_VERIFICATION_POLICY_VERSION = "nautilus-daily-verification-v1"
 _JOB_TYPE_TO_RUN_TYPE: dict[str, RunType] = {
     "backtest": RunType.BACKTEST,
     "optimization": RunType.OPTIMIZATION,
@@ -87,18 +92,29 @@ def infer_engine_family(job_type: str) -> EngineFamily:
     return EngineFamily.UNKNOWN
 
 
-def build_default_run_spec(job_type: str, strategy_name: str) -> RunSpec:
-    engine_family = infer_engine_family(job_type)
+def resolve_execution_policy_version(engine_family: EngineFamily) -> str | None:
+    if engine_family == EngineFamily.VECTORBT:
+        return _LEGACY_VECTORBT_POLICY_VERSION
+    if engine_family == EngineFamily.NAUTILUS:
+        return _NAUTILUS_VERIFICATION_POLICY_VERSION
+    return None
+
+
+def build_default_run_spec(
+    job_type: str,
+    strategy_name: str,
+    *,
+    engine_family: EngineFamily | None = None,
+) -> RunSpec:
+    resolved_engine_family = engine_family or infer_engine_family(job_type)
     return RunSpec(
         run_type=infer_run_type(job_type),
         strategy_name=strategy_name,
         strategy_source_ref=strategy_name,
         market_snapshot_id=resolve_market_snapshot_id(),
-        engine_family=engine_family,
-        execution_policy_version=(
-            _LEGACY_VECTORBT_POLICY_VERSION
-            if engine_family == EngineFamily.VECTORBT
-            else None
+        engine_family=resolved_engine_family,
+        execution_policy_version=resolve_execution_policy_version(
+            resolved_engine_family
         ),
     )
 
@@ -109,8 +125,13 @@ def build_parameterized_run_spec(
     *,
     dataset_name: str | None = None,
     parameters: dict[str, Any] | None = None,
+    engine_family: EngineFamily | None = None,
 ) -> RunSpec:
-    run_spec = build_default_run_spec(job_type, strategy_name)
+    run_spec = build_default_run_spec(
+        job_type,
+        strategy_name,
+        engine_family=engine_family,
+    )
     if dataset_name is not None:
         run_spec.dataset_name = dataset_name
         run_spec.dataset_snapshot_id = resolve_dataset_snapshot_id(dataset_name)
@@ -201,6 +222,7 @@ def build_strategy_run_spec(
     config_override: dict[str, Any] | None = None,
     parameters: dict[str, Any] | None = None,
     config_loader: ConfigLoader | None = None,
+    engine_family: EngineFamily | None = None,
 ) -> RunSpec:
     loader = config_loader or ConfigLoader()
     normalized_config_override = normalize_config_override(config_override)
@@ -219,6 +241,7 @@ def build_strategy_run_spec(
             config_loader=loader,
         ),
         parameters=payload or None,
+        engine_family=engine_family,
     )
     try:
         strategy_config = loader.load_strategy_config(strategy_name)
@@ -246,12 +269,14 @@ def build_config_override_run_spec(
     *,
     config_override: dict[str, Any] | None = None,
     parameters: dict[str, Any] | None = None,
+    engine_family: EngineFamily | None = None,
 ) -> RunSpec:
     return build_strategy_run_spec(
         job_type,
         strategy_name,
         config_override=config_override,
         parameters=parameters,
+        engine_family=engine_family,
     )
 
 
@@ -420,6 +445,17 @@ def refresh_job_execution_contracts(job: JobInfo) -> None:
         job.run_spec = build_default_run_spec(job.job_type, job.strategy_name)
     if job.run_metadata is None:
         job.run_metadata = build_run_metadata_from_spec(job.job_id, job.run_spec)
+    else:
+        job.run_metadata.run_type = job.run_spec.run_type
+        job.run_metadata.strategy_name = job.run_spec.strategy_name
+        job.run_metadata.dataset_name = job.run_spec.dataset_name
+        job.run_metadata.dataset_snapshot_id = job.run_spec.dataset_snapshot_id
+        job.run_metadata.market_snapshot_id = job.run_spec.market_snapshot_id
+        job.run_metadata.engine_family = job.run_spec.engine_family
+        job.run_metadata.execution_policy_version = (
+            job.run_spec.execution_policy_version
+        )
+        job.run_metadata.parent_run_id = job.run_spec.parent_run_id
 
     if job.run_spec.market_snapshot_id is None:
         job.run_spec.market_snapshot_id = resolve_market_snapshot_id()

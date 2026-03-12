@@ -116,6 +116,7 @@ GET /api/analytics/fundamental-ranking?markets=prime&limit=20
 ./scripts/typecheck.sh    # apps/ts typecheck + apps/bt pyright
 ./scripts/test-packages.sh # package unit tests (ts packages + bt unit)
 ./scripts/test-apps.sh    # app integration tests (ts apps + bt api/integration)
+./scripts/test-nautilus-smoke.sh # optional Nautilus real-runtime smoke (requires apps/bt uv sync --group nautilus)
 ./scripts/test.sh         # test-packages + test-apps
 ```
 
@@ -139,6 +140,8 @@ bun run --filter @trading25/contracts bt:sync
 6. Secret scan（gitleaks）
 7. Dependency vulnerability audit（Bun/Python）
 8. Web E2E smoke tests（Playwright Chromium + bt server）
+
+`nautilus_trader` の real-runtime verification smoke は `.github/workflows/nautilus-smoke.yml` で別実行し、`apps/bt` に `uv sync --locked --group nautilus` を入れたうえで `./scripts/test-nautilus-smoke.sh` を回します。既定の `ci.yml` には混ぜません。
 
 ## Governance
 

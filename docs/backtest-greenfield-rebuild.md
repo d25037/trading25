@@ -279,9 +279,12 @@ engine 実装:
   - signal system の研究
   - notebook sandbox
 - `Nautilus`
-  - 上位候補の高忠実度再検証
-  - intraday / event-driven execution model を含む backtest
-  - live execution との意味論整合
+  - 現実装は日足 `Open/Close` ベースの verification run のみに限定する
+  - `RunSpec.engine_family=nautilus` を worker runtime で解釈し、single backtest run を canonical result に正規化する
+  - 未対応の execution semantics / timeframe / data shape は fail-fast し、`vectorbt` へ自動 fallback しない
+  - `metrics.json` / `manifest.json` / `engine.json` / `diagnostics.json` を core artifact とし、`result.html` は生成しない
+  - real runtime smoke は optional dependency を入れた separate CI workflow で観測し、default CI には混ぜない
+  - intraday / event-driven execution model、paper/live parity は次段階の拡張範囲として残す
 
 つまり、全 run を `Nautilus` に寄せるのではなく、`fast path` と `verification path` を分ける。
 
@@ -353,6 +356,7 @@ presentation artifact と canonical artifact を分ける。
 
 `result.html` は見るためのものに限定する。  
 canonical な結果再解決は HTML パースに寄せない。
+`vectorbt` path は presentation artifact として `result.html` を持てるが、`Nautilus` verification path は core artifact のみを authoritative output とし、`html_path=None` を許容する。
 
 ### 7.3 registry reader の優先順位
 
@@ -450,14 +454,16 @@ dataset plane と engine abstraction は一緒に進める必要がある。
 
 ### Phase D: Nautilus を verification engine として追加する
 
-- 同じ `RunSpec` と snapshot から Nautilus run を起動する
-- result を canonical schema に正規化する
-- vectorbt 結果と比較できるようにする
+- 同じ `RunSpec` と snapshot から worker runtime 上で Nautilus verification run を起動する
+- backtest family の single run を engine-aware に dispatch できるようにする
+- result を canonical schema と artifact registry に正規化する
+- 初期スコープは日足 `Open/Close` verification とし、HTML 生成や比較 orchestration は含めない
 
 ### Phase E: optimize/lab を二段化する
 
 - trial 全件は vectorbt
 - 上位候補のみ Nautilus
+- `bt-044` で導入した core artifact / canonical result を使って fast path と verification path を比較保存する
 - 差分が大きい候補は warning / invalidation / priority review の対象にする
 
 ## 11. ゼロからでも変えない判断

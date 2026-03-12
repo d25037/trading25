@@ -1,6 +1,6 @@
 """server/schemas/ のテスト"""
 
-
+from src.domains.backtest.contracts import EngineFamily
 from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
     BacktestResultSummary,
@@ -27,13 +27,16 @@ class TestBacktestRequest:
         req = BacktestRequest(strategy_name="test")
         assert req.strategy_name == "test"
         assert req.strategy_config_override is None
+        assert req.engine_family == EngineFamily.VECTORBT
 
     def test_with_override(self):
         req = BacktestRequest(
             strategy_name="test",
             strategy_config_override={"initial_cash": 5000000},
+            engine_family=EngineFamily.NAUTILUS,
         )
         assert req.strategy_config_override["initial_cash"] == 5000000
+        assert req.engine_family == EngineFamily.NAUTILUS
 
 
 class TestBacktestResultSummary:

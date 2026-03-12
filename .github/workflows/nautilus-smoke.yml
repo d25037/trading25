@@ -1,0 +1,33 @@
+name: Nautilus Smoke
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: nautilus-smoke-${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  nautilus-real-runtime-smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: astral-sh/setup-uv@v3
+        with:
+          version: "latest"
+      - name: Install deps (apps/bt + nautilus)
+        run: uv sync --locked --group nautilus
+        working-directory: apps/bt
+      - name: Run Nautilus real-runtime smoke
+        run: ./scripts/test-nautilus-smoke.sh
+        env:
+          NAUTILUS_SMOKE_REQUIRE_RUNTIME: "1"

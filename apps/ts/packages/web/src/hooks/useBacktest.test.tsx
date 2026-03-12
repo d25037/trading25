@@ -331,7 +331,7 @@ describe('useRunBacktest', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useRunBacktest(), { wrapper });
 
-    const request = { strategy_name: 'test.yml' } as BacktestRequest;
+    const request = { strategy_name: 'test.yml', engine_family: 'vectorbt' } as BacktestRequest;
 
     await act(async () => {
       await result.current.mutateAsync(request);
