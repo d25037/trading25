@@ -11,7 +11,6 @@ from src.domains.backtest.contracts import (
     CanonicalExecutionMetrics,
     EngineFamily,
     VerificationCandidateStatus,
-    VerificationDelta,
     VerificationOverallStatus,
     VerificationSummary,
 )
