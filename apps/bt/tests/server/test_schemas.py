@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.domains.backtest.contracts import EngineFamily
+from src.domains.backtest.contracts import EngineFamily, EnginePolicyMode
 from src.entrypoints.http.schemas.backtest import (
     BacktestRequest,
     BacktestResultSummary,
@@ -89,6 +89,7 @@ class TestOptimizationRequest:
     def test_basic(self):
         req = OptimizationRequest(strategy_name="test")
         assert req.strategy_name == "test"
+        assert req.engine_policy.mode == EnginePolicyMode.FAST_ONLY
 
 
 

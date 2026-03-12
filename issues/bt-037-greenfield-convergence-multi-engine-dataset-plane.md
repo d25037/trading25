@@ -39,8 +39,8 @@ parent: null
 - 2026-03-10 に `bt-041` が完了し、`VectorbtAdapter` と `ExecutionPortfolioProtocol` への移行によって domain surface から `vbt.Portfolio` を除去した。
 - 2026-03-10 に `bt-046` が完了し、simulation と report rendering / artifact generation が分離され、canonical result と core artifacts を HTML 非依存で再解決できる状態になった。
 - 2026-03-12 に `bt-044` が完了し、`RunSpec.engine_family` を SoT にした worker dispatch と、日足限定の Nautilus verification run、canonical result / core artifact 正規化が実装された。
-- 2026-03-12 時点の child issue 進捗は 9 本中 8 本完了で、未完了は `bt-045` のみである。
-- 依存関係も整理され、現在のクリティカルパスは `bt-045` 単独に収束した。残課題は optimize/lab の fast/verification orchestration と product surface である。
+- 2026-03-12 に `bt-045` が完了し、optimize/lab の `engine_policy`、verification orchestration、verification delta 保存、web/API の二段実行表示まで product integration が完了した。
+- 2026-03-12 時点で child issue 9 本はすべて完了しており、残課題は tracking issue としての docs close-out（`docs/backtest-greenfield-rebuild.md` と AGENTS.md の最終同期）のみである。
 
 ## Child Issue 状態
 
@@ -51,29 +51,27 @@ parent: null
 - [x] `bt-042` worker runtime と durable execution control を導入
 - [x] `bt-040` CompiledStrategyIR と availability model を導入
 - [x] `bt-041` VectorbtAdapter を抽出し domain から `vbt.Portfolio` を除去
+- [x] `bt-045` Optimize / Lab を fast path と verification path の二段実行へ移行
 - [x] `bt-046` Simulation と report rendering / artifact generation を分離
 
-### 未完了
-- [ ] `bt-045` Optimize / Lab を fast path と verification path の二段実行へ移行
-
 ## 現在の判断
-- dataset plane migration、execution contract、snapshot resolver、worker runtime、compiled strategy、VectorBT adapter 抽出、artifact 分離、single Nautilus verification path までが完了し、program は「multi-engine verification 導入」から「product integration 仕上げ」フェーズへ移った。
-- verification engine (`bt-044`) は閉じられたため、残課題はその product integration (`bt-045`) のみである。
-- したがって現在の主要リスクは dataset plane や execution contract ではなく、verification 差分を optimize/lab と UI/API にどう露出し、queueing と ranking にどう組み込むかである。
+- dataset plane migration、execution contract、snapshot resolver、worker runtime、compiled strategy、VectorBT adapter 抽出、single Nautilus verification path、optimize/lab の product integration まで完了した。
+- 実装上のクリティカルパスは解消され、残タスクは `bt-037` 自体の close-out として `docs/backtest-greenfield-rebuild.md` および AGENTS.md の最終同期を行うことに絞られた。
+- したがって現在の主要リスクは runtime/contract ではなく、program documentation と最終統合記録の取りこぼしである。
 
 ## Worktree運用計画
-- 専用の長寿命 worktree は引き続き `bt-037` program の統合検証用として維持するが、用途は基盤整備の溜め込みではなく、残る `bt-045` の high churn 変更を隔離することに絞る。
-- 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` に加え、`bt-040` / `bt-041` / `bt-044` / `bt-046` も issue 管理上は完了済みであり、現在の隔離対象は `bt-045` のみである。
+- 専用の長寿命 worktree は引き続き `bt-037` program の統合検証用として維持するが、用途は高 churn 実装隔離ではなく、docs close-out と最終統合確認へ移った。
+- 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` に加え、`bt-040` / `bt-041` / `bt-044` / `bt-045` / `bt-046` も issue 管理上は完了済みであり、実装面の隔離対象は解消した。
 - dataset plane の移行線 `ts-125 -> bt-028 -> bt-038 -> bt-043` は完了済みとみなし、以後は snapshot contract を壊さない限り `main` を基準に進める。
-- execution/control plane の実績線は `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-044 -> bt-046` まで完了しており、残る拡張線は `bt-045` である。
-- 次の実行順は専用 worktree で `bt-045` を最優先とし、Nautilus verification path を optimize/lab の fast/verification 二段化へ接続する。
+- execution/control plane の実績線は `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-044 -> bt-045 -> bt-046` まで完了している。
+- 次の実行順は専用 worktree 上で `docs/backtest-greenfield-rebuild.md` と AGENTS.md の差分解消を行い、tracking issue 自体を閉じることである。
 - `main` へ戻す条件は引き続き「child issue 単位で完結」「OpenAPI/contracts 更新反映済み」「既存 UI/CLI の後方互換または明示的移行手順あり」「bt/ts の主要テスト通過」の 4 点とする。
-- したがって、残る高 churn 変更は worktree に隔離し続けるが、`bt-037` 全体完了を待たず、引き続き child issue 単位で順次 `main` へ戻す。
+- したがって、残る作業は実装ではなく close-out なので、worktree は最終同期が済み次第 retire 可能である。
 
 ## 今後の予定
-- 次の本丸は `bt-045` とし、optimize/lab を fast path と verification path の二段実行へ移行する。
-- `bt-045` では verification 結果との差分保存、API/UI 表示、queueing policy をまとめて片付ける。
-- 全 child issue 完了後に `docs/backtest-greenfield-rebuild.md` と AGENTS.md の program 差分を解消し、本 issue を close する。
+- `docs/backtest-greenfield-rebuild.md` に最終アーキテクチャと移行結果を反映する。
+- AGENTS.md と program 実態の差分を解消し、`bt-037` tracking issue を close する。
+- 必要なら repo-wide CI / smoke の最終確認を行い、greenfield convergence program を完了扱いにする。
 
 ## 補足
 - 参照: `docs/backtest-greenfield-rebuild.md`

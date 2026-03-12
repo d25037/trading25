@@ -91,6 +91,53 @@ export interface JobExecutionControl {
   timeout_at?: string | null;
 }
 
+export type EnginePolicyMode = 'fast_only' | 'fast_then_verify';
+
+export interface EnginePolicy {
+  mode: EnginePolicyMode;
+  verification_top_k?: number | null;
+}
+
+export interface FastCandidateSummary {
+  candidate_id: string;
+  rank: number;
+  score: number;
+  metrics?: CanonicalExecutionMetrics | null;
+}
+
+export type VerificationStatus = 'queued' | 'running' | 'verified' | 'failed';
+
+export interface VerificationDelta {
+  total_return_delta?: number | null;
+  sharpe_ratio_delta?: number | null;
+  max_drawdown_delta?: number | null;
+  trade_count_delta?: number | null;
+}
+
+export interface VerificationCandidate {
+  candidate_id: string;
+  fast_rank: number;
+  fast_score: number;
+  fast_metrics?: CanonicalExecutionMetrics | null;
+  verification_run_id?: string | null;
+  verification_status: VerificationStatus;
+  verified_metrics?: CanonicalExecutionMetrics | null;
+  delta?: VerificationDelta | null;
+  mismatch_reasons?: string[];
+}
+
+export type VerificationOverallStatus = 'queued' | 'running' | 'completed' | 'completed_with_mismatch' | 'failed';
+
+export interface VerificationSummary {
+  overall_status: VerificationOverallStatus;
+  requested_top_k: number;
+  completed_count: number;
+  mismatch_count: number;
+  winner_changed: boolean;
+  authoritative_candidate_id?: string | null;
+  candidates?: VerificationCandidate[];
+}
+
 export interface CanonicalExecutionMetrics {
   total_return?: number | null;
   sharpe_ratio?: number | null;
@@ -477,6 +524,7 @@ export interface HtmlFileDeleteResponse {
 
 export interface OptimizationRequest {
   strategy_name: string;
+  engine_policy?: EnginePolicy;
 }
 
 export interface OptimizationJobResponse {
@@ -496,6 +544,8 @@ export interface OptimizationJobResponse {
   worst_params: Record<string, unknown> | null;
   total_combinations: number | null;
   html_path: string | null;
+  fast_candidates?: FastCandidateSummary[] | null;
+  verification?: VerificationSummary | null;
 }
 
 export interface OptimizationGridConfig {
@@ -640,6 +690,7 @@ export interface LabGenerateRequest {
   dataset?: string;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
+  engine_policy?: EnginePolicy;
 }
 
 export interface LabEvolveRequest {
@@ -654,6 +705,7 @@ export interface LabEvolveRequest {
   target_scope?: LabTargetScope;
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
+  engine_policy?: EnginePolicy;
 }
 
 export interface LabOptimizeRequest {
@@ -669,6 +721,7 @@ export interface LabOptimizeRequest {
   entry_filter_only?: boolean;
   allowed_categories?: LabSignalCategory[];
   scoring_weights?: Record<string, number>;
+  engine_policy?: EnginePolicy;
 }
 
 export interface LabOptimizeTrialRecommendationResponse {
@@ -733,6 +786,7 @@ export interface LabGenerateResult {
   results: GenerateResultItem[];
   total_generated: number;
   saved_strategy_path?: string;
+  verification?: VerificationSummary | null;
 }
 
 export interface LabEvolveResult {
@@ -742,6 +796,8 @@ export interface LabEvolveResult {
   history: EvolutionHistoryItem[];
   saved_strategy_path?: string;
   saved_history_path?: string;
+  fast_candidates?: FastCandidateSummary[];
+  verification?: VerificationSummary | null;
 }
 
 export interface LabOptimizeResult {
@@ -752,6 +808,8 @@ export interface LabOptimizeResult {
   history: OptimizeTrialItem[];
   saved_strategy_path?: string;
   saved_history_path?: string;
+  fast_candidates?: FastCandidateSummary[];
+  verification?: VerificationSummary | null;
 }
 
 export interface LabImproveResult {

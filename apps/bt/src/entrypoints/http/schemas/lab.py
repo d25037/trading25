@@ -8,6 +8,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from src.domains.backtest.contracts import EnginePolicy, FastCandidateSummary, VerificationSummary
 from src.entrypoints.http.schemas.common import BaseJobResponse
 
 LabSignalCategory = Literal[
@@ -48,6 +49,10 @@ class LabGenerateRequest(BaseModel):
         default=None,
         description="許可するシグナルカテゴリ（未指定時は全カテゴリ）",
     )
+    engine_policy: EnginePolicy = Field(
+        default_factory=EnginePolicy,
+        description="Fast path / verification execution policy",
+    )
 
 
 class LabEvolveRequest(BaseModel):
@@ -85,6 +90,10 @@ class LabEvolveRequest(BaseModel):
     allowed_categories: list[LabSignalCategory] | None = Field(
         default=None,
         description="最適化対象として許可するカテゴリ（未指定時は全カテゴリ）",
+    )
+    engine_policy: EnginePolicy = Field(
+        default_factory=EnginePolicy,
+        description="Fast path / verification execution policy",
     )
 
     @model_validator(mode="after")
@@ -137,6 +146,10 @@ class LabOptimizeRequest(BaseModel):
     )
     scoring_weights: dict[str, float] | None = Field(
         default=None, description="スコアリング重み"
+    )
+    engine_policy: EnginePolicy = Field(
+        default_factory=EnginePolicy,
+        description="Fast path / verification execution policy",
     )
 
     @model_validator(mode="after")
@@ -242,6 +255,10 @@ class LabGenerateResult(BaseModel):
     results: list[GenerateResultItem] = Field(description="生成結果リスト")
     total_generated: int = Field(description="生成総数")
     saved_strategy_path: str | None = Field(default=None, description="保存先パス")
+    verification: VerificationSummary | None = Field(
+        default=None,
+        description="Verification summary for top-ranked candidates",
+    )
 
 
 class LabEvolveResult(BaseModel):
@@ -251,8 +268,16 @@ class LabEvolveResult(BaseModel):
     best_strategy_id: str = Field(description="最良戦略ID")
     best_score: float = Field(description="最良スコア")
     history: list[EvolutionHistoryItem] = Field(description="進化履歴")
+    fast_candidates: list[FastCandidateSummary] = Field(
+        default_factory=list,
+        description="Fast-path ranked candidates",
+    )
     saved_strategy_path: str | None = Field(default=None, description="保存先パス")
     saved_history_path: str | None = Field(default=None, description="履歴保存先パス")
+    verification: VerificationSummary | None = Field(
+        default=None,
+        description="Verification summary for top-ranked candidates",
+    )
 
 
 class LabOptimizeResult(BaseModel):
@@ -263,8 +288,16 @@ class LabOptimizeResult(BaseModel):
     best_params: dict[str, Any] = Field(description="最良パラメータ")
     total_trials: int = Field(description="総トライアル数")
     history: list[OptimizeTrialItem] = Field(description="トライアル履歴")
+    fast_candidates: list[FastCandidateSummary] = Field(
+        default_factory=list,
+        description="Fast-path ranked candidates",
+    )
     saved_strategy_path: str | None = Field(default=None, description="保存先パス")
     saved_history_path: str | None = Field(default=None, description="履歴保存先パス")
+    verification: VerificationSummary | None = Field(
+        default=None,
+        description="Verification summary for top-ranked candidates",
+    )
 
 
 class LabImproveResult(BaseModel):

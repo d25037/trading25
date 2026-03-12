@@ -159,6 +159,24 @@ class ParameterOptimizationEngine:
             **base_strategy_config.get("exit_trigger_params", {})
         )
 
+    def build_config_override(self, params: dict[str, Any]) -> dict[str, Any]:
+        """最適化パラメータから backtest 再実行用の config_override を構築する。"""
+        entry_params = build_signal_params(
+            params,
+            "entry_filter_params",
+            self.base_entry_params,
+        )
+        exit_params = build_signal_params(
+            params,
+            "exit_trigger_params",
+            self.base_exit_params,
+        )
+        return {
+            "shared_config": dict(self.shared_config_dict),
+            "entry_filter_params": entry_params.model_dump(mode="json"),
+            "exit_trigger_params": exit_params.model_dump(mode="json"),
+        }
+
     @property
     def total_combinations(self) -> int:
         """パラメータ組み合わせ総数を返す"""

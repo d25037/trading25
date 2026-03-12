@@ -44,6 +44,7 @@ from src.entrypoints.http.schemas.optimize import (
 from src.application.services.job_manager import JobInfo, job_manager
 from src.application.services.optimization_service import optimization_service
 from src.application.services.sse_manager import sse_manager
+from src.application.services.verification_orchestrator import resolve_verification_summary
 
 router = APIRouter(tags=["Optimization"])
 _OPTIMIZATION_JOB_TYPE = "optimization"
@@ -61,6 +62,12 @@ def _get_optimization_job_or_404(job_id: str) -> JobInfo:
 
 def _build_optimization_job_response_from_job(job: JobInfo) -> OptimizationJobResponse:
     """JobInfoからOptimizationJobResponseを構築"""
+    fast_candidates = None
+    if job.raw_result is not None:
+        payload = job.raw_result.get("fast_candidates")
+        if isinstance(payload, list):
+            fast_candidates = payload
+    verification = resolve_verification_summary(job_manager, job)
     return OptimizationJobResponse(
         job_id=job.job_id,
         status=job.status,
@@ -78,6 +85,8 @@ def _build_optimization_job_response_from_job(job: JobInfo) -> OptimizationJobRe
         worst_params=job.worst_params,
         total_combinations=job.total_combinations,
         html_path=job.html_path,
+        fast_candidates=fast_candidates,
+        verification=verification,
     )
 
 
@@ -97,6 +106,7 @@ async def run_optimization(request: OptimizationRequest) -> OptimizationJobRespo
     try:
         job_id = await optimization_service.submit_optimization(
             strategy_name=request.strategy_name,
+            engine_policy=request.engine_policy,
         )
         return _build_optimization_job_response(job_id)
     except Exception as e:

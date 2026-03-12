@@ -46,6 +46,9 @@ _INTERNAL_RAW_RESULT_KEYS = {
     "_simulation_payload_path",
     "_report_payload_path",
     "_render_error",
+    "_verification_candidates",
+    "_verification_requested_top_k",
+    "_verification_scoring_weights",
 }
 _RAW_RESULT_ARTIFACT_PATHS: tuple[tuple[str, ArtifactKind], ...] = (
     ("_artifact_path", ArtifactKind.ATTRIBUTION_JSON),

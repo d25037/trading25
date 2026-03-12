@@ -33,6 +33,7 @@ class TestBuildOptimizationJobResponse:
         mock_job.completed_at = datetime(2025, 1, 1)
         mock_job.error = None
         mock_job.run_metadata = None
+        mock_job.raw_result = None
         mock_job.best_score = 0.85
         mock_job.best_params = {"period": 20, "threshold": 0.3}
         mock_job.worst_score = 0.12
@@ -69,6 +70,7 @@ def _make_job(job_id: str, status: JobStatus, job_type: str = "optimization") ->
     job.completed_at = datetime(2026, 1, 1) if status in {JobStatus.CANCELLED, JobStatus.COMPLETED} else None
     job.error = None
     job.run_metadata = None
+    job.raw_result = None
     job.best_score = None
     job.best_params = None
     job.worst_score = None

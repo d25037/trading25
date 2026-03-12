@@ -1,5 +1,6 @@
 import { AlertCircle, Ban, CheckCircle2, Loader2, XCircle } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import type { JobStatus, OptimizationJobResponse } from '@/types/backtest';
 
@@ -104,6 +105,13 @@ function StatusLabel({ status }: { status: JobStatus }) {
   return <span className="font-medium capitalize">{labels[status]}</span>;
 }
 
+function resolveStageLabel(job: OptimizationJobResponse): string | null {
+  if (job.status !== 'pending' && job.status !== 'running') return null;
+  if (job.message?.toLowerCase().includes('nautilus verification')) return 'Verification stage';
+  if ((job.progress ?? 0) >= 0.5) return 'Verification stage';
+  return 'Fast stage';
+}
+
 export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobProgressCardProps) {
   const isActive = job?.status === 'pending' || job?.status === 'running';
 
@@ -144,6 +152,7 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
 
   const bestParamsText = stringifyParams(job.best_params);
   const worstParamsText = stringifyParams(job.worst_params);
+  const stageLabel = resolveStageLabel(job);
 
   return (
     <Card className="mt-2">
@@ -162,6 +171,7 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
         {/* Progress bar (indeterminate) */}
         {isActive && (
           <div className="space-y-2">
+            {stageLabel && <p className="text-xs font-medium text-blue-600">{stageLabel}</p>}
             <div className="h-2 w-full rounded-full bg-secondary overflow-hidden">
               <div className="h-full rounded-full bg-blue-500 animate-progress-indeterminate" />
             </div>
@@ -171,7 +181,10 @@ export function OptimizationJobProgressCard({ job, isLoading }: OptimizationJobP
 
         {/* Completed result summary */}
         {job.status === 'completed' && (
-          <CompletedSummary job={job} bestParamsText={bestParamsText} worstParamsText={worstParamsText} />
+          <div className="space-y-3">
+            <CompletedSummary job={job} bestParamsText={bestParamsText} worstParamsText={worstParamsText} />
+            <VerificationSummarySection fastCandidates={job.fast_candidates} verification={job.verification} />
+          </div>
         )}
 
         {/* Failed error */}

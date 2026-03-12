@@ -925,12 +925,31 @@ class OptunaOptimizer:
 
             # メトリクス抽出
             sharpe, calmar, total_return = self._extract_metrics(portfolio)
+            summary_metrics = canonical_metrics_from_portfolio(portfolio)
             score = self._calculate_weighted_score(sharpe, calmar, total_return)
 
             # 中間結果をログ
             trial.set_user_attr("sharpe_ratio", sharpe)
             trial.set_user_attr("calmar_ratio", calmar)
             trial.set_user_attr("total_return", total_return)
+            trial.set_user_attr(
+                "max_drawdown",
+                float(summary_metrics.max_drawdown)
+                if summary_metrics is not None and summary_metrics.max_drawdown is not None
+                else 0.0,
+            )
+            trial.set_user_attr(
+                "win_rate",
+                float(summary_metrics.win_rate)
+                if summary_metrics is not None and summary_metrics.win_rate is not None
+                else 0.0,
+            )
+            trial.set_user_attr(
+                "trade_count",
+                int(summary_metrics.trade_count)
+                if summary_metrics is not None and summary_metrics.trade_count is not None
+                else 0,
+            )
 
             return score
 
@@ -1061,8 +1080,11 @@ class OptunaOptimizer:
             return False
         return is_signal_allowed(signal_name, self.allowed_category_set)
 
-    def _build_candidate_from_params(
-        self, params: dict[str, Any]
+    def build_candidate_from_params(
+        self,
+        params: dict[str, Any],
+        *,
+        strategy_id: str = "optuna_best",
     ) -> StrategyCandidate:
         """
         Optunaパラメータから戦略候補を構築
@@ -1111,12 +1133,17 @@ class OptunaOptimizer:
                     self._set_nested_param(exit_params[signal_name], signal_param, value)
 
         return StrategyCandidate(
-            strategy_id="optuna_best",
+            strategy_id=strategy_id,
             entry_filter_params=entry_params,
             exit_trigger_params=exit_params,
             shared_config=copy.deepcopy(self.base_shared_config),
             metadata={"optimization_method": "optuna"},
         )
+
+    def _build_candidate_from_params(
+        self, params: dict[str, Any]
+    ) -> StrategyCandidate:
+        return self.build_candidate_from_params(params)
 
     def _set_nested_param(
         self,
@@ -1157,6 +1184,9 @@ class OptunaOptimizer:
                         "sharpe_ratio": trial.user_attrs.get("sharpe_ratio", 0),
                         "calmar_ratio": trial.user_attrs.get("calmar_ratio", 0),
                         "total_return": trial.user_attrs.get("total_return", 0),
+                        "max_drawdown": trial.user_attrs.get("max_drawdown", 0),
+                        "win_rate": trial.user_attrs.get("win_rate", 0),
+                        "trade_count": trial.user_attrs.get("trade_count", 0),
                         "params": trial.params,
                     }
                 )

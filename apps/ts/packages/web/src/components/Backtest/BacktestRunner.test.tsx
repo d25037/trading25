@@ -309,7 +309,13 @@ describe('BacktestRunner', () => {
     expect(screen.getByText('exit_trigger_params.signal_b: [x, y]')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Run Optimization' }));
-    expect(mockRunOptimizationMutateAsync).toHaveBeenCalledWith({ strategy_name: 'production/alpha' });
+    expect(mockRunOptimizationMutateAsync).toHaveBeenCalledWith({
+      strategy_name: 'production/alpha',
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
+    });
     await waitFor(() => {
       expect(mockSetActiveOptimizationJobId).toHaveBeenCalledWith('opt-1');
     });

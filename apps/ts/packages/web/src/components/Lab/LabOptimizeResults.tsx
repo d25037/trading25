@@ -1,3 +1,4 @@
+import { VerificationSummarySection } from '@/components/VerificationSummarySection';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
 import type { LabOptimizeResult } from '@/types/backtest';
@@ -60,6 +61,8 @@ export function LabOptimizeResults({ result }: LabOptimizeResultsProps) {
           </TableBody>
         </Table>
       </div>
+
+      <VerificationSummarySection fastCandidates={result.fast_candidates} verification={result.verification} />
     </div>
   );
 }

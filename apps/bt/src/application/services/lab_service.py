@@ -5,6 +5,7 @@ Lab Service
 """
 
 import asyncio
+from copy import deepcopy
 import json
 import sys
 from collections.abc import Callable
@@ -14,8 +15,19 @@ from typing import Any
 
 from loguru import logger
 
-from src.domains.backtest.contracts import RunSpec
-from src.domains.lab_agent.models import LabStructureMode, LabTargetScope, SignalCategory
+from src.application.services.verification_orchestrator import (
+    INTERNAL_VERIFICATION_CANDIDATES_KEY,
+    INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY,
+    build_canonical_metrics,
+    build_verification_seed,
+)
+from src.domains.backtest.contracts import EnginePolicy, RunSpec
+from src.domains.lab_agent.models import (
+    LabStructureMode,
+    LabTargetScope,
+    SignalCategory,
+    StrategyCandidate,
+)
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.entrypoints.http.schemas.backtest import JobStatus
 from src.entrypoints.http.schemas.lab import (
@@ -80,6 +92,20 @@ def _resolve_target_scope(
     if target_scope == "both" and entry_filter_only:
         return "entry_filter_only"
     return target_scope
+
+
+def _candidate_to_config_override(
+    candidate: StrategyCandidate,
+    *,
+    shared_config_override: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    merged_shared_config = dict(shared_config_override or {})
+    merged_shared_config.update(candidate.shared_config or {})
+    return {
+        "shared_config": merged_shared_config,
+        "entry_filter_params": deepcopy(candidate.entry_filter_params),
+        "exit_trigger_params": deepcopy(candidate.exit_trigger_params),
+    }
 
 
 class LabService:
@@ -362,8 +388,10 @@ class LabService:
         dataset: str = "primeExTopix500",
         entry_filter_only: bool = False,
         allowed_categories: list[SignalCategory] | None = None,
+        engine_policy: EnginePolicy | None = None,
     ) -> str:
         """戦略自動生成ジョブをサブミット"""
+        resolved_engine_policy = engine_policy or EnginePolicy()
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
         run_spec = build_parameterized_run_spec(
             "lab_generate",
@@ -379,6 +407,7 @@ class LabService:
                 "dataset": dataset,
                 "entry_filter_only": entry_filter_only,
                 "allowed_categories": resolved_categories,
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
             },
         )
         return await self._submit_worker_job(
@@ -396,6 +425,7 @@ class LabService:
                 "dataset": dataset,
                 "entry_filter_only": entry_filter_only,
                 "allowed_categories": resolved_categories,
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
             },
         )
 
@@ -436,6 +466,8 @@ class LabService:
             n_jobs=-1,
         )
         results = evaluator.evaluate_batch(candidates, top_k=top)
+        successful_results = [result for result in results if result.success]
+        verification_candidates = []
 
         result_items = [
             GenerateResultItem(
@@ -453,10 +485,39 @@ class LabService:
             for r in results
             if r.success
         ]
+        for rank, result in enumerate(successful_results, start=1):
+            fast_metrics = build_canonical_metrics(
+                {
+                    "total_return": result.total_return,
+                    "sharpe_ratio": result.sharpe_ratio,
+                    "calmar_ratio": result.calmar_ratio,
+                    "max_drawdown": result.max_drawdown,
+                    "win_rate": result.win_rate,
+                    "trade_count": result.trade_count,
+                }
+            )
+            verification_candidates.append(
+                build_verification_seed(
+                    candidate_id=result.candidate.strategy_id,
+                    fast_rank=rank,
+                    fast_score=result.score,
+                    fast_metrics=fast_metrics,
+                    strategy_name="reference/strategy_template",
+                    config_override=_candidate_to_config_override(
+                        result.candidate,
+                        shared_config_override={
+                            "direction": direction,
+                            "timeframe": timeframe,
+                            "dataset": dataset,
+                        },
+                    ),
+                    strategy_candidate=result.candidate,
+                ).model_dump(mode="json")
+            )
 
         saved_path: str | None = None
-        if save and results:
-            best = results[0]
+        if save and successful_results:
+            best = successful_results[0]
             yaml_updater = YamlUpdater()
             saved_path = yaml_updater.save_candidate(best.candidate)
 
@@ -465,6 +526,8 @@ class LabService:
             "results": result_items,
             "total_generated": count,
             "saved_strategy_path": saved_path,
+            INTERNAL_VERIFICATION_CANDIDATES_KEY: verification_candidates,
+            INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY: dict(evaluator.scoring_weights),
         }
 
     # ============================================
@@ -484,8 +547,10 @@ class LabService:
         entry_filter_only: bool = False,
         target_scope: LabTargetScope = "both",
         allowed_categories: list[SignalCategory] | None = None,
+        engine_policy: EnginePolicy | None = None,
     ) -> str:
         """GA進化ジョブをサブミット"""
+        resolved_engine_policy = engine_policy or EnginePolicy()
         resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
@@ -503,6 +568,7 @@ class LabService:
                 "entry_filter_only": effective_entry_filter_only,
                 "target_scope": resolved_target_scope,
                 "allowed_categories": resolved_categories,
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
             },
             config_loader=self._config_loader,
         )
@@ -523,6 +589,7 @@ class LabService:
                 "entry_filter_only": effective_entry_filter_only,
                 "allowed_categories": resolved_categories,
                 "target_scope": resolved_target_scope,
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
             },
         )
 
@@ -560,8 +627,13 @@ class LabService:
             seed=seed,
         )
         evolver = ParameterEvolver(config=config)
-        best_candidate, _ = evolver.evolve(strategy_name)
+        best_candidate, all_results = evolver.evolve(strategy_name)
         history = evolver.get_evolution_history()
+        successful_results = sorted(
+            [result for result in all_results if result.success],
+            key=lambda result: result.score,
+            reverse=True,
+        )
         best_is_base_strategy = (
             best_candidate.strategy_id == f"base_{strategy_name}"
         )
@@ -580,6 +652,40 @@ class LabService:
             ).model_dump()
             for i, h in enumerate(history)
         ]
+        fast_candidates = []
+        verification_candidates = []
+        for rank, result in enumerate(successful_results, start=1):
+            candidate_id = f"evolve_{rank:04d}"
+            fast_metrics = build_canonical_metrics(
+                {
+                    "total_return": result.total_return,
+                    "sharpe_ratio": result.sharpe_ratio,
+                    "calmar_ratio": result.calmar_ratio,
+                    "max_drawdown": result.max_drawdown,
+                    "win_rate": result.win_rate,
+                    "trade_count": result.trade_count,
+                }
+            )
+            if rank <= 10:
+                fast_candidates.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "rank": rank,
+                        "score": result.score,
+                        "metrics": fast_metrics.model_dump(mode="json") if fast_metrics is not None else None,
+                    }
+                )
+            verification_candidates.append(
+                build_verification_seed(
+                    candidate_id=candidate_id,
+                    fast_rank=rank,
+                    fast_score=result.score,
+                    fast_metrics=fast_metrics,
+                    strategy_name=strategy_name,
+                    config_override=_candidate_to_config_override(result.candidate),
+                    strategy_candidate=result.candidate,
+                ).model_dump(mode="json")
+            )
 
         saved_strategy_path: str | None = None
         saved_history_path: str | None = None
@@ -594,8 +700,11 @@ class LabService:
             "best_strategy_id": best_candidate.strategy_id,
             "best_score": history[-1]["best_score"] if history else 0.0,
             "history": history_items,
+            "fast_candidates": fast_candidates,
             "saved_strategy_path": saved_strategy_path,
             "saved_history_path": saved_history_path,
+            INTERNAL_VERIFICATION_CANDIDATES_KEY: verification_candidates,
+            INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY: dict(evolver.scoring_weights),
             _INTERNAL_JOB_MESSAGE_KEY: (
                 _EVOLVE_BASE_BEST_MESSAGE
                 if best_is_base_strategy
@@ -621,8 +730,10 @@ class LabService:
         target_scope: LabTargetScope = "both",
         allowed_categories: list[SignalCategory] | None = None,
         scoring_weights: dict[str, float] | None = None,
+        engine_policy: EnginePolicy | None = None,
     ) -> str:
         """Optuna最適化ジョブをサブミット"""
+        resolved_engine_policy = engine_policy or EnginePolicy()
         resolved_target_scope = _resolve_target_scope(target_scope, entry_filter_only)
         effective_entry_filter_only = resolved_target_scope == "entry_filter_only"
         resolved_categories: list[SignalCategory] = list(allowed_categories or [])
@@ -641,6 +752,7 @@ class LabService:
                 "target_scope": resolved_target_scope,
                 "allowed_categories": resolved_categories,
                 "scoring_weights": scoring_weights,
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
             },
             config_loader=self._config_loader,
         )
@@ -662,6 +774,7 @@ class LabService:
                 "target_scope": resolved_target_scope,
                 "allowed_categories": resolved_categories,
                 "scoring_weights": scoring_weights,
+                "engine_policy": resolved_engine_policy.model_dump(mode="json"),
             },
         )
 
@@ -807,6 +920,11 @@ class LabService:
         )
 
         history = optimizer.get_optimization_history(study)
+        sorted_history = sorted(
+            history,
+            key=lambda trial_result: float(trial_result.get("score", 0.0)),
+            reverse=True,
+        )
 
         history_items = [
             OptimizeTrialItem(
@@ -816,6 +934,35 @@ class LabService:
             ).model_dump()
             for i, h in enumerate(history)
         ]
+        fast_candidates = []
+        verification_candidates = []
+        for rank, trial_result in enumerate(sorted_history, start=1):
+            candidate_id = f"trial_{int(trial_result.get('trial', rank))}"
+            fast_metrics = build_canonical_metrics(trial_result)
+            strategy_candidate = optimizer.build_candidate_from_params(
+                dict(trial_result.get("params") or {}),
+                strategy_id=candidate_id,
+            )
+            if rank <= 10:
+                fast_candidates.append(
+                    {
+                        "candidate_id": candidate_id,
+                        "rank": rank,
+                        "score": float(trial_result.get("score", 0.0)),
+                        "metrics": fast_metrics.model_dump(mode="json") if fast_metrics is not None else None,
+                    }
+                )
+            verification_candidates.append(
+                build_verification_seed(
+                    candidate_id=candidate_id,
+                    fast_rank=rank,
+                    fast_score=float(trial_result.get("score", 0.0)),
+                    fast_metrics=fast_metrics,
+                    strategy_name=strategy_name,
+                    config_override=_candidate_to_config_override(strategy_candidate),
+                    strategy_candidate=strategy_candidate,
+                ).model_dump(mode="json")
+            )
 
         best_params: dict[str, Any] = {}
         if study.best_trial:
@@ -835,8 +982,11 @@ class LabService:
             "best_params": best_params,
             "total_trials": len(study.trials),
             "history": history_items,
+            "fast_candidates": fast_candidates,
             "saved_strategy_path": saved_strategy_path,
             "saved_history_path": saved_history_path,
+            INTERNAL_VERIFICATION_CANDIDATES_KEY: verification_candidates,
+            INTERNAL_VERIFICATION_SCORING_WEIGHTS_KEY: dict(optimizer.scoring_weights),
         }
 
     # ============================================

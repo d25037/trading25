@@ -29,7 +29,10 @@ export type {
   DefaultConfigUpdateRequest,
   DefaultConfigUpdateResponse,
   EngineFamily,
+  EnginePolicy,
+  EnginePolicyMode,
   EvolutionHistoryItem,
+  FastCandidateSummary,
   GenerateResultItem,
   HealthResponse,
   HtmlFileContentResponse,
@@ -103,6 +106,11 @@ export type {
   StrategyUpdateResponse,
   StrategyValidationRequest,
   StrategyValidationResponse,
+  VerificationCandidate,
+  VerificationDelta,
+  VerificationOverallStatus,
+  VerificationStatus,
+  VerificationSummary,
 } from '@trading25/api-clients/backtest';
 
 // Frontend-specific types

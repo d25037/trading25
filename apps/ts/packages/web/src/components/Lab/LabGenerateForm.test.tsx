@@ -17,6 +17,10 @@ describe('LabGenerateForm', () => {
       top: 5,
       direction: 'longonly',
       timeframe: 'daily',
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 
@@ -36,6 +40,10 @@ describe('LabGenerateForm', () => {
       top: 5,
       direction: 'longonly',
       timeframe: 'daily',
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 
@@ -69,6 +77,10 @@ describe('LabGenerateForm', () => {
       dataset: 'custom_dataset',
       entry_filter_only: true,
       allowed_categories: ['fundamental'],
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 

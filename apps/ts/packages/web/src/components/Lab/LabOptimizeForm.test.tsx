@@ -29,6 +29,10 @@ describe('LabOptimizeForm', () => {
       sampler: 'tpe',
       structure_mode: 'params_only',
       target_scope: 'both',
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 
@@ -59,6 +63,10 @@ describe('LabOptimizeForm', () => {
       target_scope: 'entry_filter_only',
       entry_filter_only: true,
       allowed_categories: ['fundamental'],
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 
@@ -97,6 +105,10 @@ describe('LabOptimizeForm', () => {
       random_add_entry_signals: 2,
       random_add_exit_signals: 3,
       seed: 42,
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 
@@ -130,6 +142,10 @@ describe('LabOptimizeForm', () => {
       target_scope: 'exit_trigger_only',
       random_add_entry_signals: 0,
       random_add_exit_signals: 4,
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 
@@ -149,6 +165,10 @@ describe('LabOptimizeForm', () => {
       sampler: 'tpe',
       structure_mode: 'params_only',
       target_scope: 'both',
+      engine_policy: {
+        mode: 'fast_then_verify',
+        verification_top_k: 5,
+      },
     });
   });
 

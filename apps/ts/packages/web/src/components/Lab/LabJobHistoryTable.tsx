@@ -26,6 +26,23 @@ function actionLabel(status: JobStatus): string {
   return 'View';
 }
 
+function resolveVerificationLabel(job: LabJobResponse): string {
+  const result = job.result_data;
+  if (result && 'verification' in result && result.verification) {
+    return result.verification.overall_status;
+  }
+  if ((job.message ?? '').toLowerCase().includes('nautilus verification')) {
+    return 'verifying';
+  }
+  if (
+    (job.lab_type === 'generate' || job.lab_type === 'evolve' || job.lab_type === 'optimize') &&
+    (job.status === 'pending' || job.status === 'running')
+  ) {
+    return 'fast path';
+  }
+  return '-';
+}
+
 export function LabJobHistoryTable({
   jobs,
   isLoading,
@@ -49,6 +66,11 @@ export function LabJobHistoryTable({
       key: 'createdAt',
       header: 'Created',
       render: (job) => <span className="text-sm">{formatDate(job.created_at)}</span>,
+    },
+    {
+      key: 'verification',
+      header: 'Verification',
+      render: (job) => <span className="text-xs text-muted-foreground">{resolveVerificationLabel(job)}</span>,
     },
   ];
 

@@ -72,9 +72,18 @@ def collect_metrics(
         "total_return": (
             canonical_metrics.total_return if canonical_metrics is not None else None
         ),
+        "sortino_ratio": (
+            canonical_metrics.sortino_ratio if canonical_metrics is not None else None
+        ),
+        "max_drawdown": (
+            canonical_metrics.max_drawdown if canonical_metrics is not None else None
+        ),
+        "win_rate": (
+            canonical_metrics.win_rate if canonical_metrics is not None else None
+        ),
     }
 
-    for metric in scoring_weights.keys():
+    for metric in (*scoring_weights.keys(), "sortino_ratio", "max_drawdown", "win_rate"):
         value = metric_lookup.get(metric)
         if value is None:
             continue

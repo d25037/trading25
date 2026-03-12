@@ -23,6 +23,8 @@ import { JobProgressCard } from './JobProgressCard';
 import { OptimizationJobProgressCard } from './OptimizationJobProgressCard';
 import { StrategySelector } from './StrategySelector';
 import { extractGridParameterEntries, formatGridParameterValue } from './optimizationGridParams';
+import { EnginePolicySelector, buildEnginePolicy } from '@/components/EnginePolicySelector';
+import type { EnginePolicyMode } from '@/types/backtest';
 
 type BacktestJobStatusData = ReturnType<typeof useJobStatus>['data'];
 type OptimizationJobStatusData = ReturnType<typeof useOptimizationJobStatus>['data'];
@@ -132,13 +134,20 @@ async function runOptimizationForSelectedStrategy({
   selectedStrategy,
   runOptimization,
   setActiveOptimizationJobId,
+  enginePolicyMode,
+  verificationTopK,
 }: {
   selectedStrategy: string | null;
   runOptimization: RunOptimizationMutation;
   setActiveOptimizationJobId: (jobId: string | null) => void;
+  enginePolicyMode: EnginePolicyMode;
+  verificationTopK: string;
 }): Promise<void> {
   if (!selectedStrategy) return;
-  const result = await runOptimization.mutateAsync({ strategy_name: selectedStrategy });
+  const result = await runOptimization.mutateAsync({
+    strategy_name: selectedStrategy,
+    engine_policy: buildEnginePolicy(enginePolicyMode, verificationTopK),
+  });
   setActiveOptimizationJobId(result.job_id);
 }
 
@@ -191,6 +200,10 @@ function OptimizationSection({
   optimizationJobStatus,
   isLoadingOptJob,
   runOptimization,
+  enginePolicyMode,
+  onEnginePolicyModeChange,
+  optimizationVerificationTopK,
+  onOptimizationVerificationTopKChange,
 }: {
   gridConfig: ReturnType<typeof useOptimizationGridConfig>['data'];
   gridParameterEntries: Array<{ path: string; values: unknown[] }>;
@@ -200,6 +213,10 @@ function OptimizationSection({
   optimizationJobStatus: OptimizationJobStatusData;
   isLoadingOptJob: boolean;
   runOptimization: RunOptimizationMutation;
+  enginePolicyMode: EnginePolicyMode;
+  onEnginePolicyModeChange: (value: EnginePolicyMode) => void;
+  optimizationVerificationTopK: string;
+  onOptimizationVerificationTopKChange: (value: string) => void;
 }) {
   return (
     <div className="space-y-3">
@@ -219,6 +236,14 @@ function OptimizationSection({
           No grid config found. Configure in Strategies &gt; Optimize tab.
         </p>
       )}
+
+      <EnginePolicySelector
+        mode={enginePolicyMode}
+        onModeChange={onEnginePolicyModeChange}
+        verificationTopK={optimizationVerificationTopK}
+        onVerificationTopKChange={onOptimizationVerificationTopKChange}
+        disabled={isOptRunning}
+      />
 
       <Button
         onClick={onRunOptimization}
@@ -241,6 +266,8 @@ function OptimizationSection({
 
 export function BacktestRunner() {
   const [defaultConfigOpen, setDefaultConfigOpen] = useState(false);
+  const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_then_verify');
+  const [optimizationVerificationTopK, setOptimizationVerificationTopK] = useState('5');
   const {
     selectedStrategy,
     setSelectedStrategy,
@@ -281,6 +308,8 @@ export function BacktestRunner() {
       selectedStrategy,
       runOptimization,
       setActiveOptimizationJobId,
+      enginePolicyMode,
+      verificationTopK: optimizationVerificationTopK,
     });
 
   const isRunning = runBacktest.isPending || isRunningStatus(jobStatus?.status);
@@ -340,6 +369,10 @@ export function BacktestRunner() {
         optimizationJobStatus={optimizationJobStatus}
         isLoadingOptJob={isLoadingOptJob}
         runOptimization={runOptimization}
+        enginePolicyMode={enginePolicyMode}
+        onEnginePolicyModeChange={setEnginePolicyMode}
+        optimizationVerificationTopK={optimizationVerificationTopK}
+        onOptimizationVerificationTopKChange={setOptimizationVerificationTopK}
       />
     </div>
   );
