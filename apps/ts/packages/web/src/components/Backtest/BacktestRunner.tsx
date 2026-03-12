@@ -121,7 +121,10 @@ async function runBacktestForSelectedStrategy({
   setActiveJobId: (jobId: string | null) => void;
 }): Promise<void> {
   if (!selectedStrategy) return;
-  const result = await runBacktest.mutateAsync({ strategy_name: selectedStrategy });
+  const result = await runBacktest.mutateAsync({
+    strategy_name: selectedStrategy,
+    engine_family: 'vectorbt',
+  });
   setActiveJobId(result.job_id);
 }
 

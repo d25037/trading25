@@ -6,7 +6,7 @@ priority: medium
 labels: [optimize, lab, vectorbt, nautilus, bt]
 project: bt
 created: 2026-03-08
-updated: 2026-03-08
+updated: 2026-03-12
 depends_on: [bt-041, bt-044]
 blocks: []
 parent: bt-037
@@ -31,8 +31,8 @@ parent: bt-037
 - [ ] web/API 表示項目を更新する。
 
 ## 結果
-- 未着手
+- `bt-044` により backtest family の single Nautilus verification run、worker runtime からの engine dispatch、core artifact (`metrics.json` / `manifest.json` / `engine.json` / `diagnostics.json`) 正規化までは完了した。
+- 本 issue の残作業は optimize/lab orchestration の二段化、verification queue / ranking 反映、差分保存、UI/API 表示差分の導入である。
 
 ## 補足
 - 参照: `docs/backtest-greenfield-rebuild.md` Section 8, 10
-

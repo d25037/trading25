@@ -7,7 +7,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from fastapi.testclient import TestClient
 
-from src.domains.backtest.contracts import ArtifactIndex, ArtifactKind, ArtifactRecord, ArtifactStorage
+from src.domains.backtest.contracts import (
+    ArtifactIndex,
+    ArtifactKind,
+    ArtifactRecord,
+    ArtifactStorage,
+    EngineFamily,
+)
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 
 
@@ -66,7 +72,10 @@ class TestRunBacktest:
         mock_jm.get_job.return_value = _make_job("job-1", JobStatus.PENDING)
         resp = client.post(
             "/api/backtest/run",
-            json={"strategy_name": "test"},
+            json={
+                "strategy_name": "test",
+                "engine_family": EngineFamily.VECTORBT.value,
+            },
         )
         assert resp.status_code == 200
         assert resp.json()["job_id"] == "job-1"
@@ -78,15 +87,28 @@ class TestRunBacktest:
         mock_jm.get_job.return_value = None
         resp = client.post(
             "/api/backtest/run",
-            json={"strategy_name": "test"},
+            json={
+                "strategy_name": "test",
+                "engine_family": EngineFamily.VECTORBT.value,
+            },
         )
         assert resp.status_code == 404
+
+    def test_missing_engine_family_returns_422(self, client, mock_services):
+        resp = client.post("/api/backtest/run", json={"strategy_name": "test"})
+        assert resp.status_code == 422
 
     def test_submit_error_returns_500(self, client, mock_services):
         mock_bt_svc, _ = mock_services
         mock_bt_svc.submit_backtest = AsyncMock(side_effect=RuntimeError("submit failed"))
 
-        resp = client.post("/api/backtest/run", json={"strategy_name": "test"})
+        resp = client.post(
+            "/api/backtest/run",
+            json={
+                "strategy_name": "test",
+                "engine_family": EngineFamily.VECTORBT.value,
+            },
+        )
         assert resp.status_code == 500
         assert "submit failed" in str(resp.json())
 

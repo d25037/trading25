@@ -250,7 +250,10 @@ describe('BacktestRunner', () => {
 
     await user.click(screen.getByRole('button', { name: 'Run Backtest' }));
 
-    expect(mockRunBacktestMutateAsync).toHaveBeenCalledWith({ strategy_name: 'production/alpha' });
+    expect(mockRunBacktestMutateAsync).toHaveBeenCalledWith({
+      strategy_name: 'production/alpha',
+      engine_family: 'vectorbt',
+    });
     await waitFor(() => {
       expect(mockSetActiveJobId).toHaveBeenCalledWith('job-1');
     });

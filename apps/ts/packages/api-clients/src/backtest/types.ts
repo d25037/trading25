@@ -20,6 +20,8 @@ export type ArtifactKind =
   | 'html'
   | 'metrics_json'
   | 'manifest_json'
+  | 'engine_json'
+  | 'diagnostics_json'
   | 'simulation_payload'
   | 'report_payload'
   | 'result_summary'
@@ -116,6 +118,7 @@ export interface CanonicalExecutionResult {
 }
 
 export interface BacktestRequest {
+  engine_family: EngineFamily;
   strategy_name: string;
   strategy_config_override?: Record<string, unknown>;
 }

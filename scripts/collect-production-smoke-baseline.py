@@ -250,7 +250,7 @@ def run_smoke_cycle(
         "statusPayload": screening_status_payload,
     }
 
-    backtest_payload = {"strategy_name": strategy}
+    backtest_payload = {"strategy_name": strategy, "engine_family": "vectorbt"}
     backtest_started = time.perf_counter()
     backtest_create = client.post("/api/backtest/run", json=backtest_payload)
     backtest_create.raise_for_status()

@@ -168,13 +168,14 @@ describe('BacktestClient', () => {
     } satisfies BacktestJobResponse;
     fetchSpy.mockResolvedValueOnce(createMockResponse(job));
 
-    const request = { strategy: 'sma_cross', start_date: '2024-01-01', end_date: '2024-12-31' };
+    const request = { strategy_name: 'sma_cross', engine_family: 'vectorbt' };
     const result = await client.runBacktest(request as never);
     expect(result).toEqual(job);
 
     const lastCall = fetchSpy.mock.calls.at(-1);
     expect(lastCall?.[0]).toContain('/api/backtest/run');
     expect(lastCall?.[1]?.method).toBe('POST');
+    expect(JSON.parse(String(lastCall?.[1]?.body))).toEqual(request);
   });
 
   test('getJobStatus calls correct endpoint', async () => {

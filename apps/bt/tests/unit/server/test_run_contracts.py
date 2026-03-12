@@ -37,6 +37,17 @@ class TestBuildDefaultRunSpec:
         assert run_spec.engine_family == EngineFamily.UNKNOWN
         assert run_spec.execution_policy_version is None
 
+    def test_backtest_allows_explicit_nautilus_engine(self) -> None:
+        run_spec = build_default_run_spec(
+            "backtest",
+            "demo-strategy",
+            engine_family=EngineFamily.NAUTILUS,
+        )
+
+        assert run_spec.run_type == RunType.BACKTEST
+        assert run_spec.engine_family == EngineFamily.NAUTILUS
+        assert run_spec.execution_policy_version == "nautilus-daily-verification-v1"
+
 
 class TestBuildRunMetadata:
     def test_metadata_keeps_parent_and_snapshot(self) -> None:
@@ -347,6 +358,10 @@ class TestRefreshJobExecutionContracts:
         metrics_path.write_text("{}", encoding="utf-8")
         manifest_path = tmp_path / "result.manifest.json"
         manifest_path.write_text("{}", encoding="utf-8")
+        engine_path = tmp_path / "result.engine.json"
+        engine_path.write_text("{}", encoding="utf-8")
+        diagnostics_path = tmp_path / "result.diagnostics.json"
+        diagnostics_path.write_text("{}", encoding="utf-8")
         simulation_payload_path = tmp_path / "result.simulation.pkl"
         simulation_payload_path.write_bytes(b"payload")
         report_payload_path = tmp_path / "result.report.json"
@@ -368,6 +383,8 @@ class TestRefreshJobExecutionContracts:
         job.raw_result = {
             "_metrics_path": str(metrics_path),
             "_manifest_path": str(manifest_path),
+            "_engine_path": str(engine_path),
+            "_diagnostics_path": str(diagnostics_path),
             "_simulation_payload_path": str(simulation_payload_path),
             "_report_payload_path": str(report_payload_path),
         }
@@ -379,6 +396,8 @@ class TestRefreshJobExecutionContracts:
         assert ArtifactKind.HTML not in kinds
         assert ArtifactKind.METRICS_JSON in kinds
         assert ArtifactKind.MANIFEST_JSON in kinds
+        assert ArtifactKind.ENGINE_JSON in kinds
+        assert ArtifactKind.DIAGNOSTICS_JSON in kinds
         assert ArtifactKind.SIMULATION_PAYLOAD in kinds
         assert ArtifactKind.REPORT_PAYLOAD in kinds
 

@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 from src.domains.backtest.contracts import (
     ArtifactIndex,
     CanonicalExecutionResult,
+    EngineFamily,
     RunSpec,
 )
 from src.entrypoints.http.schemas.common import BaseJobResponse, JobStatus
@@ -29,6 +30,10 @@ class BacktestRequest(BaseModel):
     strategy_config_override: dict[str, Any] | None = Field(
         default=None,
         description="戦略設定のオーバーライド（オプション）",
+    )
+    engine_family: EngineFamily = Field(
+        ...,
+        description="実行エンジン。verification run では nautilus を明示指定する。",
     )
 
 

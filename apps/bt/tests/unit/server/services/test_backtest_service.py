@@ -13,7 +13,7 @@ import pytest
 
 from src.domains.backtest.core.runner import BacktestResult
 from src.application.services.backtest_service import BacktestService
-from src.domains.backtest.contracts import RunType
+from src.domains.backtest.contracts import EngineFamily, RunType
 from src.entrypoints.http.schemas.backtest import JobStatus
 
 
@@ -128,6 +128,43 @@ async def test_submit_backtest_creates_task_and_returns_job_id(monkeypatch):
     assert run_spec is not None
     assert run_spec.run_type == RunType.BACKTEST
     assert run_spec.dataset_name == "sample-dataset"
+    assert run_spec.engine_family == EngineFamily.VECTORBT
+
+
+@pytest.mark.asyncio
+async def test_submit_backtest_keeps_explicit_nautilus_engine(monkeypatch):
+    service = BacktestService()
+    captured: dict[str, object] = {}
+
+    async def _dummy_run_backtest(*args, **kwargs):  # noqa: ANN002
+        _ = (args, kwargs)
+        return None
+
+    monkeypatch.setattr(service, "_run_backtest", _dummy_run_backtest)
+    monkeypatch.setattr(
+        service._manager,
+        "create_job",
+        lambda _strategy_name, job_type="backtest", run_spec=None: (
+            captured.update({"job_type": job_type, "run_spec": run_spec}) or "job-nautilus"
+        ),
+    )
+
+    async def _set_job_task(job_id: str, task):
+        captured["job_id"] = job_id
+        await task
+
+    monkeypatch.setattr(service._manager, "set_job_task", _set_job_task)
+
+    job_id = await service.submit_backtest(
+        "strategy",
+        engine_family=EngineFamily.NAUTILUS,
+    )
+
+    assert job_id == "job-nautilus"
+    run_spec = captured["run_spec"]
+    assert run_spec is not None
+    assert run_spec.engine_family == EngineFamily.NAUTILUS
+    assert run_spec.execution_policy_version == "nautilus-daily-verification-v1"
 
 
 @pytest.mark.asyncio
@@ -650,3 +687,40 @@ def test_get_execution_info_delegates_to_runner(monkeypatch):
     monkeypatch.setattr(service._runner, "get_execution_info", lambda name: {"strategy": name})
 
     assert service.get_execution_info("abc") == {"strategy": "abc"}
+
+
+def test_build_worker_command_omits_config_override_when_none() -> None:
+    service = BacktestService(worker_timeout_seconds=123)
+
+    command = service._build_worker_command("job-1", "strategy-1")
+
+    assert "--config-override-json" not in command
+
+
+@pytest.mark.asyncio
+async def test_terminate_worker_process_returns_when_process_already_exited() -> None:
+    service = BacktestService()
+    process = SimpleNamespace(returncode=0, terminate=lambda: pytest.fail("terminate should not be called"))
+
+    await service._terminate_worker_process(process)
+
+
+def test_extract_result_summary_returns_zero_value_when_resolution_fails(monkeypatch) -> None:
+    service = BacktestService()
+    monkeypatch.setattr(
+        "src.application.services.backtest_service.resolve_backtest_result_summary",
+        lambda **kwargs: None,
+    )
+
+    summary = service._extract_result_summary(  # noqa: SLF001
+        BacktestResult(
+            html_path=None,
+            elapsed_time=0.5,
+            summary={},
+            strategy_name="strategy",
+            dataset_name="sample",
+        )
+    )
+
+    assert summary.total_return == 0.0
+    assert summary.trade_count == 0

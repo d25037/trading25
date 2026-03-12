@@ -38,8 +38,9 @@ parent: null
 - 2026-03-10 に `bt-040` が完了し、`CompiledStrategyIR` / availability model が strategy validation、signal processing、screening 判定、signal reference まで通る形で導入された。
 - 2026-03-10 に `bt-041` が完了し、`VectorbtAdapter` と `ExecutionPortfolioProtocol` への移行によって domain surface から `vbt.Portfolio` を除去した。
 - 2026-03-10 に `bt-046` が完了し、simulation と report rendering / artifact generation が分離され、canonical result と core artifacts を HTML 非依存で再解決できる状態になった。
-- 2026-03-12 時点の child issue 進捗は 9 本中 7 本完了で、未完了は `bt-044` と `bt-045` の 2 本のみである。
-- 依存関係も整理され、現在のクリティカルパスは `bt-044 -> bt-045` に収束した。`bt-044` は `bt-040` / `bt-042` / `bt-043` 完了により着手可能で、`bt-045` は `bt-041` 完了済みのため `bt-044` のみが blocker になっている。
+- 2026-03-12 に `bt-044` が完了し、`RunSpec.engine_family` を SoT にした worker dispatch と、日足限定の Nautilus verification run、canonical result / core artifact 正規化が実装された。
+- 2026-03-12 時点の child issue 進捗は 9 本中 8 本完了で、未完了は `bt-045` のみである。
+- 依存関係も整理され、現在のクリティカルパスは `bt-045` 単独に収束した。残課題は optimize/lab の fast/verification orchestration と product surface である。
 
 ## Child Issue 状態
 
@@ -53,26 +54,24 @@ parent: null
 - [x] `bt-046` Simulation と report rendering / artifact generation を分離
 
 ### 未完了
-- [ ] `bt-044` NautilusAdapter を verification engine として追加
 - [ ] `bt-045` Optimize / Lab を fast path と verification path の二段実行へ移行
 
 ## 現在の判断
-- dataset plane migration、execution contract、snapshot resolver、worker runtime、compiled strategy、VectorBT adapter 抽出、artifact 分離までが完了し、program は「基盤整備フェーズ」から「multi-engine verification フェーズ」へ移った。
-- 当初は `bt-040` 仕上げ前に `bt-041` / `bt-046` を残していたが、実際には `bt-041` と `bt-046` まで先行して閉じられたため、残課題は verification engine (`bt-044`) とその product integration (`bt-045`) に絞られた。
-- したがって現在の主要リスクは dataset plane や execution contract ではなく、`RunSpec` / snapshot / compiled strategy を Nautilus verification path にどう接続し、その差分を optimize/lab と UI/API にどう露出するかである。
+- dataset plane migration、execution contract、snapshot resolver、worker runtime、compiled strategy、VectorBT adapter 抽出、artifact 分離、single Nautilus verification path までが完了し、program は「multi-engine verification 導入」から「product integration 仕上げ」フェーズへ移った。
+- verification engine (`bt-044`) は閉じられたため、残課題はその product integration (`bt-045`) のみである。
+- したがって現在の主要リスクは dataset plane や execution contract ではなく、verification 差分を optimize/lab と UI/API にどう露出し、queueing と ranking にどう組み込むかである。
 
 ## Worktree運用計画
-- 専用の長寿命 worktree は引き続き `bt-037` program の統合検証用として維持するが、用途は基盤整備の溜め込みではなく、`bt-044` / `bt-045` の high churn 変更を隔離することに絞る。
-- 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` に加え、`bt-040` / `bt-041` / `bt-046` も issue 管理上は完了済みであり、現在の隔離対象は `bt-044` と `bt-045` のみである。
+- 専用の長寿命 worktree は引き続き `bt-037` program の統合検証用として維持するが、用途は基盤整備の溜め込みではなく、残る `bt-045` の high churn 変更を隔離することに絞る。
+- 初期フェーズで想定していた `bt-039` / `bt-038` / `bt-043` / `bt-042` に加え、`bt-040` / `bt-041` / `bt-044` / `bt-046` も issue 管理上は完了済みであり、現在の隔離対象は `bt-045` のみである。
 - dataset plane の移行線 `ts-125 -> bt-028 -> bt-038 -> bt-043` は完了済みとみなし、以後は snapshot contract を壊さない限り `main` を基準に進める。
-- execution/control plane の実績線は `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-046` まで完了しており、残る拡張線は `bt-044 -> bt-045` である。
-- 次の実行順は専用 worktree で `bt-044` を最優先とし、Nautilus verification path を最小スコープで成立させたうえで `bt-045` の fast/verification 二段化へ接続する。
+- execution/control plane の実績線は `bt-039 -> bt-042 -> bt-040 -> bt-041 -> bt-044 -> bt-046` まで完了しており、残る拡張線は `bt-045` である。
+- 次の実行順は専用 worktree で `bt-045` を最優先とし、Nautilus verification path を optimize/lab の fast/verification 二段化へ接続する。
 - `main` へ戻す条件は引き続き「child issue 単位で完結」「OpenAPI/contracts 更新反映済み」「既存 UI/CLI の後方互換または明示的移行手順あり」「bt/ts の主要テスト通過」の 4 点とする。
 - したがって、残る高 churn 変更は worktree に隔離し続けるが、`bt-037` 全体完了を待たず、引き続き child issue 単位で順次 `main` へ戻す。
 
 ## 今後の予定
-- 次の本丸は `bt-044` とし、`RunSpec` / worker runtime / snapshot resolver / compiled strategy を前提に Nautilus verification engine を最小構成で成立させる。
-- `bt-044` 完了後に `bt-045` を進め、optimize/lab を fast path と verification path の二段実行へ移行する。
+- 次の本丸は `bt-045` とし、optimize/lab を fast path と verification path の二段実行へ移行する。
 - `bt-045` では verification 結果との差分保存、API/UI 表示、queueing policy をまとめて片付ける。
 - 全 child issue 完了後に `docs/backtest-greenfield-rebuild.md` と AGENTS.md の program 差分を解消し、本 issue を close する。
 

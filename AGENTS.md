@@ -117,6 +117,7 @@ uv run bt lab generate --entry-filter-only --allowed-category fundamental
 uv run bt lab evolve <strategy> --entry-filter-only --allowed-category fundamental
 uv run bt lab optimize <strategy> --entry-filter-only --allowed-category fundamental
 uv run bt lab improve <strategy> --entry-filter-only --allowed-category fundamental
+uv sync --group nautilus         # optional: real Nautilus runtime smoke 用依存を追加
 uv run pytest tests/             # テスト
 uv run ruff check src/           # リント
 uv run pyright src/              # 型チェック
@@ -199,6 +200,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - **ts**: lint → 型生成 → build → typecheck → test + coverage
 - **web e2e**: Playwright Chromium smoke（bt server :3002 を起動して実行）
 - **bt**: lint → typecheck → test + coverage（ゲート70%）
+- `.github/workflows/nautilus-smoke.yml` は `uv sync --locked --group nautilus` + `scripts/test-nautilus-smoke.sh` を使う separate CI で、default CI には混ぜない
 
 ## ロードマップ
 

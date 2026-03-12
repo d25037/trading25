@@ -16,7 +16,9 @@ from loguru import logger
 
 from src.application.services.backtest_result_summary import resolve_backtest_result_summary
 from src.application.services.job_manager import JobManager
+from src.domains.backtest.contracts import EngineFamily
 from src.domains.backtest.core.runner import BacktestResult, BacktestRunner
+from src.domains.backtest.nautilus_adapter import NautilusVerificationRunner
 from src.entrypoints.http.schemas.backtest import BacktestResultSummary, JobStatus
 from src.infrastructure.db.market.portfolio_db import PortfolioDb
 from src.shared.config.settings import get_settings
@@ -47,9 +49,9 @@ def _extract_result_summary(result: BacktestResult) -> BacktestResultSummary:
         calmar_ratio=0.0,
         max_drawdown=0.0,
         win_rate=0.0,
-            trade_count=0,
-            html_path=str(result.html_path) if result.html_path else None,
-        )
+        trade_count=0,
+        html_path=str(result.html_path) if result.html_path else None,
+    )
 
 
 async def _heartbeat_loop(
@@ -124,6 +126,7 @@ async def run_backtest_worker(
     config_override: dict[str, Any] | None = None,
     manager: JobManager | None = None,
     runner: BacktestRunner | None = None,
+    nautilus_runner: NautilusVerificationRunner | None = None,
     heartbeat_seconds: float = _HEARTBEAT_SECONDS,
     timeout_seconds: int | None = None,
     exit_on_cancel: Callable[[int], None] = os._exit,
@@ -138,6 +141,7 @@ async def run_backtest_worker(
         resolved_manager.set_portfolio_db(portfolio_db)
         owns_portfolio_db = True
     resolved_runner = runner or BacktestRunner()
+    resolved_nautilus_runner = nautilus_runner or NautilusVerificationRunner()
     lease_owner = f"backtest-worker:{socket.gethostname()}:{os.getpid()}"
 
     heartbeat_task: asyncio.Task[None] | None = None
@@ -164,6 +168,21 @@ async def run_backtest_worker(
             timeoutAt=claimed.timeout_at.isoformat() if claimed.timeout_at else None,
             executionMode="external_worker",
         )
+        effective_run_spec = claimed.run_spec
+        effective_strategy_name = (
+            effective_run_spec.strategy_name
+            if effective_run_spec is not None
+            else strategy_name
+        )
+        effective_engine_family = (
+            effective_run_spec.engine_family
+            if effective_run_spec is not None
+            else EngineFamily.VECTORBT
+        )
+        effective_config_override = _resolve_config_override(
+            claimed,
+            fallback=config_override,
+        )
 
         loop = asyncio.get_running_loop()
 
@@ -188,12 +207,26 @@ async def run_backtest_worker(
             )
         )
 
-        result = await asyncio.to_thread(
-            resolved_runner.execute,
-            strategy=strategy_name,
-            progress_callback=progress_callback,
-            config_override=config_override,
-        )
+        if effective_engine_family == EngineFamily.NAUTILUS:
+            if effective_run_spec is None:
+                raise RuntimeError("Persisted run_spec is required for Nautilus verification.")
+            result = await asyncio.to_thread(
+                resolved_nautilus_runner.execute,
+                strategy=effective_strategy_name,
+                run_spec=effective_run_spec,
+                run_id=job_id,
+                progress_callback=progress_callback,
+                config_override=effective_config_override,
+            )
+        elif effective_engine_family in (EngineFamily.VECTORBT, EngineFamily.UNKNOWN):
+            result = await asyncio.to_thread(
+                resolved_runner.execute,
+                strategy=effective_strategy_name,
+                progress_callback=progress_callback,
+                config_override=effective_config_override,
+            )
+        else:
+            raise ValueError(f"Unsupported backtest engine: {effective_engine_family}")
         current_job = await resolved_manager.reload_job_from_storage(job_id)
         if current_job is not None and current_job.status in _TERMINAL_STATUSES:
             if current_job.error == _TIMED_OUT_ERROR:
@@ -265,6 +298,19 @@ def _parse_args() -> argparse.Namespace:
     parser.add_argument("--config-override-json")
     parser.add_argument("--timeout-seconds", type=int)
     return parser.parse_args()
+
+
+def _resolve_config_override(
+    job: Any,
+    *,
+    fallback: dict[str, Any] | None,
+) -> dict[str, Any] | None:
+    run_spec = getattr(job, "run_spec", None)
+    if run_spec is not None and isinstance(getattr(run_spec, "parameters", None), dict):
+        persisted = run_spec.parameters.get("config_override")
+        if isinstance(persisted, dict):
+            return persisted
+    return fallback
 
 
 def main() -> int:

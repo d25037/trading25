@@ -365,6 +365,8 @@
           "html",
           "metrics_json",
           "manifest_json",
+          "engine_json",
+          "diagnostics_json",
           "simulation_payload",
           "report_payload",
           "result_summary",
@@ -677,6 +679,10 @@
       "BacktestRequest": {
         "description": "バックテスト実行リクエスト",
         "properties": {
+          "engine_family": {
+            "$ref": "#/components/schemas/EngineFamily",
+            "description": "実行エンジン。verification run では nautilus を明示指定する。"
+          },
           "strategy_config_override": {
             "anyOf": [
               {
@@ -698,7 +704,8 @@
           }
         },
         "required": [
-          "strategy_name"
+          "strategy_name",
+          "engine_family"
         ],
         "title": "BacktestRequest",
         "type": "object"
