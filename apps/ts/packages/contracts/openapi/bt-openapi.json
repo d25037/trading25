@@ -704,8 +704,8 @@
           }
         },
         "required": [
-          "engine_family",
-          "strategy_name"
+          "strategy_name",
+          "engine_family"
         ],
         "title": "BacktestRequest",
         "type": "object"
