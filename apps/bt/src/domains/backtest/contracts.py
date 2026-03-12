@@ -39,6 +39,7 @@ class ArtifactKind(str, Enum):
     METRICS_JSON = "metrics_json"
     MANIFEST_JSON = "manifest_json"
     SIMULATION_PAYLOAD = "simulation_payload"
+    REPORT_PAYLOAD = "report_payload"
     RESULT_SUMMARY = "result_summary"
     RAW_RESULT_JSON = "raw_result_json"
     ATTRIBUTION_JSON = "attribution_json"

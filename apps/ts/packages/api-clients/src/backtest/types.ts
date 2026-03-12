@@ -21,6 +21,7 @@ export type ArtifactKind =
   | 'metrics_json'
   | 'manifest_json'
   | 'simulation_payload'
+  | 'report_payload'
   | 'result_summary'
   | 'raw_result_json'
   | 'attribution_json'
