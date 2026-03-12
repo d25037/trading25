@@ -15,7 +15,12 @@ from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.data_access.clients import get_dataset_client, get_market_client
-from src.application.services.market_ohlcv_loader import load_stock_ohlcv_df, load_topix_df
+from src.application.services.market_data_errors import MarketDataError
+from src.application.services.market_ohlcv_loader import (
+    load_stock_ohlcv_df,
+    load_topix_df,
+    stock_exists_in_reader,
+)
 from src.domains.analytics.margin_metrics import (
     compute_margin_flow_pressure,
     compute_margin_long_pressure,
@@ -76,8 +81,23 @@ class IndicatorService:
         if source == "market":
             if self._market_reader is not None:
                 df = load_stock_ohlcv_df(self._market_reader, stock_code, sd, ed)
+                if df.empty:
+                    if stock_exists_in_reader(self._market_reader, stock_code):
+                        raise MarketDataError(
+                            f"銘柄 {stock_code} のローカルOHLCVデータがありません",
+                            reason="local_stock_data_missing",
+                            recovery="stock_refresh",
+                        )
+                    raise MarketDataError(
+                        f"銘柄 {stock_code} がローカル市場データに存在しません",
+                        reason="stock_not_found",
+                    )
             else:
-                df = self.market_client.get_stock_ohlcv(stock_code, sd, ed)
+                raise MarketDataError(
+                    f"銘柄 {stock_code} のローカルOHLCVデータがありません",
+                    reason="local_stock_data_missing",
+                    recovery="market_db_sync",
+                )
         else:
             with DatasetAPIClient(source) as client:
                 df = client.get_stock_ohlcv(stock_code, sd, ed)
@@ -125,8 +145,18 @@ class IndicatorService:
         if benchmark_code == "topix":
             if self._market_reader is not None:
                 df = load_topix_df(self._market_reader, sd, ed)
+                if df.empty:
+                    raise MarketDataError(
+                        "TOPIX のローカルデータがありません",
+                        reason="topix_data_missing",
+                        recovery="market_db_sync",
+                    )
             else:
-                df = self.market_client.get_topix(sd, ed)
+                raise MarketDataError(
+                    "TOPIX のローカルデータがありません",
+                    reason="topix_data_missing",
+                    recovery="market_db_sync",
+                )
         else:
             raise ValueError(f"未対応のベンチマーク: {benchmark_code}")
 

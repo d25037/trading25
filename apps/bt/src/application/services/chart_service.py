@@ -1,18 +1,13 @@
-"""
-Chart Service
-
-チャートデータの提供サービス。DuckDB + JQuants fallback。
-Hono chart/indices, chart/stocks 系ルートと同等のロジック。
-"""
+"""DuckDB-backed chart service."""
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsGetClient
-from src.infrastructure.db.market.query_helpers import expand_stock_code, stock_code_candidates
+from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.infrastructure.db.market.market_reader import MarketDbReadable
 from src.application.services.market_code_alias import resolve_market_codes
+from src.application.services.market_data_errors import MarketDataError
 from src.entrypoints.http.schemas.chart import (
     IndexDataResponse,
     IndexInfo,
@@ -38,11 +33,6 @@ def _db_stock_code_candidates(code: str) -> tuple[str, ...]:
     return stock_code_candidates(code)
 
 
-def _api_stock_code(code: str) -> str:
-    """JQuants API向けに銘柄コードを正規化"""
-    return expand_stock_code(code)
-
-
 def _normalize_middle_dot(text: str) -> str:
     """全角中黒 (・ U+30FB) を半角中黒 (･ U+FF65) に変換"""
     return text.replace("\u30fb", "\uff65")
@@ -54,10 +44,8 @@ class ChartService:
     def __init__(
         self,
         reader: MarketDbReadable | None,
-        jquants_client: JQuantsGetClient,
     ) -> None:
         self._reader = reader
-        self._jquants = jquants_client
 
     # --- Indices ---
 
@@ -127,25 +115,22 @@ class ChartService:
         self,
         from_date: str | None = None,
         to_date: str | None = None,
-    ) -> TopixDataResponse | None:
-        """TOPIX データを取得（DuckDB → JQuants fallback）"""
-        # DuckDB を試行
-        if self._reader is not None:
-            data = self._get_topix_from_db(from_date, to_date)
-            if data is not None:
-                return data
-
-        # JQuants fallback
-        return await self._get_topix_from_jquants(from_date, to_date)
+    ) -> TopixDataResponse:
+        """TOPIX データを DuckDB から取得する。"""
+        return self._get_topix_from_db(from_date, to_date)
 
     def _get_topix_from_db(
         self,
         from_date: str | None,
         to_date: str | None,
-    ) -> TopixDataResponse | None:
+    ) -> TopixDataResponse:
         """DuckDB から TOPIX データを取得"""
         if self._reader is None:
-            return None
+            raise MarketDataError(
+                "TOPIX のローカルデータがありません",
+                reason="topix_data_missing",
+                recovery="market_db_sync",
+            )
 
         sql = "SELECT date, open, high, low, close FROM topix_data"
         params: list[str] = []
@@ -164,7 +149,11 @@ class ChartService:
 
         rows = self._reader.query(sql, tuple(params))
         if not rows:
-            return None
+            raise MarketDataError(
+                "TOPIX のローカルデータがありません",
+                reason="topix_data_missing",
+                recovery="market_db_sync",
+            )
 
         topix = [
             TopixDataPoint(
@@ -180,42 +169,6 @@ class ChartService:
 
         return TopixDataResponse(topix=topix, lastUpdated=_now_iso())
 
-    async def _get_topix_from_jquants(
-        self,
-        from_date: str | None,
-        to_date: str | None,
-    ) -> TopixDataResponse | None:
-        """JQuants API から TOPIX データを取得"""
-        params: dict[str, str] = {}
-        if from_date:
-            params["from"] = from_date.replace("-", "")
-        if to_date:
-            params["to"] = to_date.replace("-", "")
-
-        try:
-            body = await self._jquants.get("/indices/bars/daily/topix", params)
-            raw = body.get("data", [])
-        except Exception:
-            return None
-
-        if not raw:
-            return None
-
-        topix = [
-            TopixDataPoint(
-                date=item.get("Date", ""),
-                open=float(item.get("O", 0) or 0),
-                high=float(item.get("H", 0) or 0),
-                low=float(item.get("L", 0) or 0),
-                close=float(item.get("C", 0) or 0),
-                volume=0,
-            )
-            for item in raw
-            if item.get("C") is not None
-        ]
-
-        return TopixDataResponse(topix=topix, lastUpdated=_now_iso())
-
     # --- Stock Chart ---
 
     async def get_stock_data(
@@ -223,25 +176,26 @@ class ChartService:
         symbol: str,
         timeframe: str = "daily",
         adjusted: bool = True,
-    ) -> StockDataResponse | None:
-        """銘柄チャートデータを取得（DuckDB → JQuants fallback）"""
-        # DuckDB を試行
-        if self._reader is not None:
-            data = self._get_stock_from_db(symbol, timeframe)
-            if data is not None:
-                return data
+    ) -> StockDataResponse:
+        """銘柄チャートデータを DuckDB から取得する。"""
+        del adjusted
+        return self._get_stock_from_db(symbol, timeframe)
 
-        # JQuants fallback
-        return await self._get_stock_from_jquants(symbol, timeframe, adjusted)
-
-    def _get_stock_from_db(self, symbol: str, timeframe: str) -> StockDataResponse | None:
+    def _get_stock_from_db(self, symbol: str, timeframe: str) -> StockDataResponse:
         """DuckDB から銘柄データを取得"""
         if self._reader is None:
-            return None
+            raise MarketDataError(
+                f"銘柄 {symbol} のローカルOHLCVデータがありません",
+                reason="local_stock_data_missing",
+                recovery="market_db_sync",
+            )
 
         codes = _db_stock_code_candidates(symbol)
         if not codes:
-            return None
+            raise MarketDataError(
+                f"銘柄 {symbol} がローカル市場データに存在しません",
+                reason="stock_not_found",
+            )
         placeholders = ",".join("?" for _ in codes)
 
         # 銘柄情報
@@ -279,7 +233,16 @@ class ChartService:
             tuple(resolved_codes),
         )
         if not rows:
-            return None
+            if stock is None:
+                raise MarketDataError(
+                    f"銘柄 {symbol} がローカル市場データに存在しません",
+                    reason="stock_not_found",
+                )
+            raise MarketDataError(
+                f"銘柄 {symbol} のローカルOHLCVデータがありません",
+                reason="local_stock_data_missing",
+                recovery="stock_refresh",
+            )
 
         data = [
             StockDataPoint(
@@ -301,66 +264,21 @@ class ChartService:
             lastUpdated=_now_iso(),
         )
 
-    async def _get_stock_from_jquants(
-        self,
-        symbol: str,
-        timeframe: str,
-        adjusted: bool,
-    ) -> StockDataResponse | None:
-        """JQuants API から銘柄データを取得"""
-        code5 = _api_stock_code(symbol)
+    def has_stock_metadata(self, symbol: str) -> bool:
+        """銘柄マスタに symbol が存在するかを返す。"""
+        if self._reader is None:
+            return False
 
-        try:
-            body = await self._jquants.get("/equities/bars/daily", {"code": code5})
-            raw = body.get("data", [])
-        except Exception:
-            return None
-
-        if not raw:
-            return None
-
-        # 会社名の取得
-        company_name = ""
-        try:
-            info_body = await self._jquants.get("/equities/master", {"code": code5})
-            info_list = info_body.get("data", [])
-            if info_list:
-                company_name = info_list[0].get("CoName", "")
-        except Exception:
-            pass
-
-        data: list[StockDataPoint] = []
-        for item in raw:
-            if adjusted and item.get("AdjC") is not None:
-                o = float(item.get("AdjO") or 0)
-                h = float(item.get("AdjH") or 0)
-                lo = float(item.get("AdjL") or 0)
-                c = float(item.get("AdjC") or 0)
-                v = float(item.get("AdjVo") or 0)
-            else:
-                o = float(item.get("O", 0) or 0)
-                h = float(item.get("H", 0) or 0)
-                lo = float(item.get("L", 0) or 0)
-                c = float(item.get("C", 0) or 0)
-                v = float(item.get("Vo", 0) or 0)
-
-            if c <= 0:
-                continue
-
-            data.append(
-                StockDataPoint(time=item.get("Date", ""), open=o, high=h, low=lo, close=c, volume=v)
-            )
-
-        if not data:
-            return None
-
-        return StockDataResponse(
-            symbol=symbol,
-            companyName=company_name,
-            timeframe=timeframe,
-            data=data,
-            lastUpdated=_now_iso(),
+        codes = _db_stock_code_candidates(symbol)
+        if not codes:
+            return False
+        placeholders = ",".join("?" for _ in codes)
+        row = self._reader.query_one(
+            f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(codes),
         )
+        return row is not None
 
     # --- Stock Search ---
 

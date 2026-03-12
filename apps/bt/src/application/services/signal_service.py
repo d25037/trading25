@@ -14,7 +14,8 @@ from loguru import logger
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.data_access.clients import get_dataset_client, get_market_client
-from src.application.services.market_ohlcv_loader import load_stock_ohlcv_df
+from src.application.services.market_data_errors import MarketDataError
+from src.application.services.market_ohlcv_loader import load_stock_ohlcv_df, stock_exists_in_reader
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY, SignalDefinition
 
 # Phase 1対象シグナル（OHLCV系: ohlc/volume データのみ使用）
@@ -130,8 +131,23 @@ class SignalService:
         if source == "market":
             if self._market_reader is not None:
                 df = load_stock_ohlcv_df(self._market_reader, stock_code, start_str, end_str)
+                if df.empty:
+                    if stock_exists_in_reader(self._market_reader, stock_code):
+                        raise MarketDataError(
+                            f"銘柄 {stock_code} のローカルOHLCVデータがありません",
+                            reason="local_stock_data_missing",
+                            recovery="stock_refresh",
+                        )
+                    raise MarketDataError(
+                        f"銘柄 {stock_code} がローカル市場データに存在しません",
+                        reason="stock_not_found",
+                    )
             else:
-                df = self.market_client.get_stock_ohlcv(stock_code, start_str, end_str)
+                raise MarketDataError(
+                    f"銘柄 {stock_code} のローカルOHLCVデータがありません",
+                    reason="local_stock_data_missing",
+                    recovery="market_db_sync",
+                )
         else:
             with DatasetAPIClient(source) as client:
                 df = client.get_stock_ohlcv(stock_code, start_str, end_str)

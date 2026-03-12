@@ -55,6 +55,37 @@ class TestGetSignalSchema:
 
 
 class TestComputeSignals:
+    def test_stock_data_missing_returns_404_with_structured_details(self, client: TestClient) -> None:
+        class StaticReader:
+            def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
+                del sql, params
+                return {"code": "7203"}
+
+        client.app.state.market_reader = StaticReader()
+
+        with patch(
+            "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",
+            side_effect=ValueError("銘柄 7203 のOHLCVデータが取得できません"),
+        ):
+            resp = client.post(
+                "/api/signals/compute",
+                json={
+                    "stock_code": "7203",
+                    "signals": [
+                        {
+                            "type": "volume_ratio_above",
+                            "params": {"ratio_threshold": 1.5},
+                        }
+                    ],
+                },
+            )
+
+        assert resp.status_code == 404
+        assert resp.json()["details"] == [
+            {"field": "reason", "message": "local_stock_data_missing"},
+            {"field": "recovery", "message": "stock_refresh"},
+        ]
+
     def test_value_error_returns_400(self, client: TestClient) -> None:
         with patch(
             "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",

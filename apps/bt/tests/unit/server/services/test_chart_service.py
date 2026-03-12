@@ -84,7 +84,7 @@ def chart_db(tmp_path):
 @pytest.fixture
 def service(chart_db):
     reader = MarketDbReader(chart_db)
-    yield ChartService(reader, None)
+    yield ChartService(reader)
     reader.close()
 
 
@@ -174,7 +174,7 @@ def test_get_stock_from_db_supports_mixed_stock_and_stock_data_codes(tmp_path) -
 
     reader = MarketDbReader(db_path)
     try:
-        service = ChartService(reader, None)
+        service = ChartService(reader)
         result = service._get_stock_from_db("7203", "daily")  # noqa: SLF001
         assert result is not None
         assert result.companyName == "Toyota"

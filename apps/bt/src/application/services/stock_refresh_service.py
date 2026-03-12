@@ -129,9 +129,35 @@ async def refresh_stocks(
                 break
             elif rows:
                 stored = await asyncio.to_thread(time_series_store.publish_stock_data, rows)
-                any_rows_published = True
                 if stored > 0:
+                    any_rows_published = True
                     resolved_codes.append(normalized)
+                else:
+                    failure_message = "No rows were published to the local market snapshot"
+                    errors.append(f"{normalized}: {failure_message}")
+                    results.append(RefreshStockResult(
+                        code=normalized,
+                        success=False,
+                        recordsFetched=len(data),
+                        recordsStored=0,
+                        error=failure_message,
+                    ))
+                    if progress_callback is not None:
+                        progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
+                    continue
+            else:
+                failure_message = "No publishable rows matched the local market snapshot date range"
+                errors.append(f"{normalized}: {failure_message}")
+                results.append(RefreshStockResult(
+                    code=normalized,
+                    success=False,
+                    recordsFetched=len(data),
+                    recordsStored=0,
+                    error=failure_message,
+                ))
+                if progress_callback is not None:
+                    progress_callback(index, total_codes, f"Refresh failed for stock {index}/{total_codes}: {normalized}")
+                continue
             total_stored += stored
             results.append(RefreshStockResult(
                 code=normalized,

@@ -21,6 +21,7 @@ from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncC
 from src.entrypoints.http.middleware.correlation import CorrelationIdMiddleware
 from src.shared.observability.correlation import get_correlation_id
 from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddleware
+from src.entrypoints.http.error_utils import extract_http_exception_detail
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
 from src.entrypoints.http.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
@@ -126,8 +127,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     # Phase 3B-3: market_reader を直接公開（ranking/factor-regression/screening 用）
     app.state.market_reader = market_reader
 
-    # Chart service — DuckDB reader + JQuants fallback
-    app.state.chart_service = ChartService(market_reader, jquants_client)
+    # Chart service — DuckDB reader only
+    app.state.chart_service = ChartService(market_reader)
 
     # Phase 3C: DuckDB metadata accessor
     market_db: MarketDb | None = None
@@ -312,8 +313,8 @@ def create_app() -> FastAPI:
     async def http_exception_handler(  # pyright: ignore[reportUnusedFunction]
         _request: Request, exc: HTTPException
     ) -> JSONResponse:
-        message = exc.detail if isinstance(exc.detail, str) else str(exc.detail)
-        return _build_error_response(exc.status_code, message)
+        message, details = extract_http_exception_detail(exc.detail)
+        return _build_error_response(exc.status_code, message, details)
 
     # 例外ハンドラ: RequestValidationError → 統一エラーレスポンス + details
     @app.exception_handler(RequestValidationError)

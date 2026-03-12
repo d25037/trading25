@@ -11,6 +11,11 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
+from src.application.services.market_data_errors import MarketDataError
+from src.entrypoints.http.error_utils import (
+    classify_market_data_http_exception,
+    market_data_http_exception,
+)
 from src.shared.models.signals import SignalParams
 from src.entrypoints.http.schemas.signal_reference import SignalReferenceResponse
 from src.entrypoints.http.schemas.signals import SignalComputeRequest, SignalComputeResponse
@@ -113,7 +118,17 @@ async def compute_signals(
             return SignalComputeResponse(**result)
         finally:
             service.close()
+    except MarketDataError as e:
+        raise market_data_http_exception(e) from e
     except ValueError as e:
+        classified = classify_market_data_http_exception(
+            stock_code=payload.stock_code,
+            source=payload.source,
+            raw_message=str(e),
+            market_reader=getattr(request.app.state, "market_reader", None),
+        )
+        if classified is not None:
+            raise classified from e
         logger.warning(f"シグナル計算バリデーションエラー: {e}")
         raise HTTPException(status_code=400, detail=str(e)) from e
     except Exception as e:

@@ -1,4 +1,5 @@
 import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import type { ReactNode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
@@ -11,11 +12,14 @@ import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
 } from '@/constants/fundamentalsHistoryMetrics';
+import { ApiError } from '@/lib/api-client';
+import { createTestWrapper } from '@/test-utils';
 import { ChartsPage } from './ChartsPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
 const mockUseBtMarginIndicators = vi.fn();
-const mockUseStockData = vi.fn();
+const mockUseStockInfo = vi.fn();
+const mockUseRefreshStocks = vi.fn();
 const mockUseFundamentals = vi.fn();
 const mockWindowOpen = vi.fn();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
@@ -29,8 +33,15 @@ vi.mock('@/hooks/useBtMarginIndicators', () => ({
   useBtMarginIndicators: (...args: unknown[]) => mockUseBtMarginIndicators(...args),
 }));
 
-vi.mock('@/hooks/useStockData', () => ({
-  useStockData: (...args: unknown[]) => mockUseStockData(...args),
+vi.mock('@/hooks/useStockInfo', () => ({
+  useStockInfo: (...args: unknown[]) => mockUseStockInfo(...args),
+  stockInfoKeys: {
+    detail: (symbol: string) => ['stock-info', symbol],
+  },
+}));
+
+vi.mock('@/hooks/useDbSync', () => ({
+  useRefreshStocks: () => mockUseRefreshStocks(),
 }));
 
 vi.mock('@/hooks/useFundamentals', () => ({
@@ -146,6 +157,14 @@ vi.mock('@/components/ErrorBoundary', () => ({
   ErrorBoundary: ({ children }: { children: ReactNode }) => <div>{children}</div>,
 }));
 
+function renderChartsPage() {
+  const { queryClient, wrapper } = createTestWrapper();
+  return {
+    queryClient,
+    ...render(<ChartsPage />, { wrapper }),
+  };
+}
+
 describe('ChartsPage', () => {
   class MockIntersectionObserver {
     static instances: MockIntersectionObserver[] = [];
@@ -200,8 +219,10 @@ describe('ChartsPage', () => {
     mockWindowOpen.mockReset();
     vi.spyOn(window, 'open').mockImplementation(mockWindowOpen as typeof window.open);
 
+    mockUseMultiTimeframeChart.mockReset();
     mockUseBtMarginIndicators.mockReset();
-    mockUseStockData.mockReset();
+    mockUseStockInfo.mockReset();
+    mockUseRefreshStocks.mockReset();
     mockUseFundamentals.mockReset();
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
@@ -224,6 +245,17 @@ describe('ChartsPage', () => {
     mockSettings.relativeMode = true;
 
     mockUseFundamentals.mockReturnValue({ data: null });
+    mockUseBtMarginIndicators.mockReturnValue({
+      data: null,
+      isLoading: false,
+      error: null,
+    });
+    mockUseStockInfo.mockReturnValue({ data: null });
+    mockUseRefreshStocks.mockReturnValue({
+      mutate: vi.fn(),
+      isPending: false,
+      error: null,
+    });
   });
 
   it('renders loading state', () => {
@@ -238,9 +270,9 @@ describe('ChartsPage', () => {
       isLoading: true,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: null });
+    mockUseStockInfo.mockReturnValue({ data: null });
 
-    render(<ChartsPage />);
+    renderChartsPage();
     expect(screen.getByText(/Loading chart data/i)).toBeInTheDocument();
   });
 
@@ -256,11 +288,83 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: null });
+    mockUseStockInfo.mockReturnValue({ data: null });
 
-    render(<ChartsPage />);
+    renderChartsPage();
     expect(screen.getByText(/Unable to load chart data/i)).toBeInTheDocument();
     expect(screen.getByText('Boom')).toBeInTheDocument();
+  });
+
+  it('shows stock refresh guidance when local stock data is missing', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      isLoading: false,
+      error: new ApiError('Local data missing', 404, {
+        message: 'Local stock data is missing.',
+        details: [
+          { field: 'reason', message: 'local_stock_data_missing' },
+          { field: 'recovery', message: 'stock_refresh' },
+        ],
+      }),
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+
+    expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open Market DB/i })).not.toBeInTheDocument();
+  });
+
+  it('does not show market db guidance for local stock data missing even if recovery suggests sync', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      isLoading: false,
+      error: new ApiError('Local snapshot unavailable', 404, {
+        message: 'Local stock data is missing.',
+        details: [
+          { field: 'reason', message: 'local_stock_data_missing' },
+          { field: 'recovery', message: 'market_db_sync' },
+        ],
+      }),
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+
+    expect(
+      screen.getByText(/Use Stock Refresh above to restore the DuckDB snapshot/i)
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/Relative mode requires local TOPIX data/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /Open Market DB/i })).not.toBeInTheDocument();
+  });
+
+  it('shows market db guidance when TOPIX data is missing', () => {
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: null,
+      isLoading: false,
+      error: new ApiError('TOPIX missing', 404, {
+        message: 'TOPIX data is missing.',
+        details: [
+          { field: 'reason', message: 'topix_data_missing' },
+          { field: 'recovery', message: 'market_db_sync' },
+        ],
+      }),
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+
+    expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
+    expect(
+      screen.getByText(/Relative mode requires local TOPIX data/i)
+    ).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /Open Market DB/i })).toHaveAttribute('href', '/market-db');
   });
 
   it('renders empty state when no symbol selected', () => {
@@ -275,9 +379,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: null });
+    mockUseStockInfo.mockReturnValue({ data: null });
 
-    render(<ChartsPage />);
+    renderChartsPage();
     expect(screen.getByText(/Start Trading Analysis/i)).toBeInTheDocument();
   });
 
@@ -293,9 +397,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: null });
+    mockUseStockInfo.mockReturnValue({ data: null });
 
-    render(<ChartsPage />);
+    renderChartsPage();
     expect(screen.getByText('An unexpected error occurred while fetching market data')).toBeInTheDocument();
   });
 
@@ -319,10 +423,11 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
+    expect(screen.getByRole('button', { name: /Stock Refresh/i })).toBeInTheDocument();
     expect(screen.getByText('Stock Chart')).toBeInTheDocument();
     expect(screen.getByText('PPO Chart')).toBeInTheDocument();
     expect(screen.getByText('Risk Adjusted Return Chart')).toBeInTheDocument();
@@ -345,6 +450,67 @@ describe('ChartsPage', () => {
       enabled: false,
       metricOrder: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
       metricVisibility: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
+    });
+  });
+
+  it('refreshes the selected symbol and invalidates related chart queries', async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn((_request, options) => {
+      options?.onSuccess?.({
+        totalStocks: 1,
+        successCount: 1,
+        failedCount: 0,
+        totalApiCalls: 1,
+        totalRecordsStored: 60,
+        results: [{ code: '7203', success: true, recordsFetched: 60, recordsStored: 60 }],
+        errors: [],
+        lastUpdated: '2026-03-12T00:00:00Z',
+      });
+    });
+    mockUseRefreshStocks.mockReturnValue({
+      mutate,
+      isPending: false,
+      error: null,
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    const { queryClient } = renderChartsPage();
+    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
+
+    await user.click(screen.getByRole('button', { name: /Stock Refresh/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { codes: ['7203'] },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      })
+    );
+    expect(await screen.findByText('7203 refreshed: fetched 60, stored 60.')).toBeInTheDocument();
+
+    await waitFor(() => {
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-ohlcv', 'resample', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-indicators', 'compute', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-signals', 'compute', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['fundamentals', 'v2', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['bt-margin', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['stock-info', '7203'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
+      expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-validation'] });
     });
   });
 
@@ -373,9 +539,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     expect(screen.queryByText('Fundamentals Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
@@ -408,9 +574,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
@@ -442,9 +608,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     const marginHeading = screen.getByRole('heading', { name: /^信用圧力指標/ });
     const fyHeading = screen.getByRole('heading', { name: 'FY推移' });
@@ -477,9 +643,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 1 });
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
@@ -530,9 +696,9 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     const section = screen.getByTestId('fundamentals-panel-section');
     const visibleCount = countVisibleFundamentalMetrics(
@@ -557,14 +723,14 @@ describe('ChartsPage', () => {
       error: null,
       selectedSymbol: '7203',
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
 
     mockUseBtMarginIndicators.mockReturnValue({
       data: null,
       isLoading: true,
       error: null,
     });
-    const { rerender } = render(<ChartsPage />);
+    const { rerender } = renderChartsPage();
     expect(screen.getByText('Loading...')).toBeInTheDocument();
 
     mockUseBtMarginIndicators.mockReturnValue({
@@ -596,14 +762,14 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
         data: options?.enabled ? { dailyValuation: [{ marketCap: 1000000000 }] } : null,
       })
     );
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     act(() => {
       MockIntersectionObserver.triggerAll(true);
@@ -640,10 +806,10 @@ describe('ChartsPage', () => {
       selectedSymbol: '7203',
     });
     mockUseBtMarginIndicators.mockReturnValue({ data: null, isLoading: false, error: null });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockReturnValue({ data: null });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     await waitFor(() => {
       expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: true });
@@ -669,10 +835,10 @@ describe('ChartsPage', () => {
       selectedSymbol: '7203',
     });
     mockUseBtMarginIndicators.mockReturnValue({ data: null, isLoading: false, error: null });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockReturnValue({ data: null });
 
-    render(<ChartsPage />);
+    renderChartsPage();
 
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
     expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
@@ -725,10 +891,10 @@ describe('ChartsPage', () => {
     };
     mockUseMultiTimeframeChart.mockImplementation(() => chartState);
     mockUseBtMarginIndicators.mockReturnValue({ data: null, isLoading: false, error: null });
-    mockUseStockData.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
     mockUseFundamentals.mockReturnValue({ data: null });
 
-    const { rerender } = render(<ChartsPage />);
+    const { rerender } = renderChartsPage();
 
     expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: false });
     expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });

@@ -12,6 +12,7 @@ from src.application.services.market_ohlcv_loader import (
     _rows_to_dataframe,
     load_stock_ohlcv_df,
     load_topix_df,
+    stock_exists_in_reader,
 )
 
 
@@ -151,5 +152,21 @@ def test_load_topix_df_out_of_range_returns_empty(market_db_path: str) -> None:
             end_date="2030-12-31",
         )
         assert df.empty
+    finally:
+        reader.close()
+
+
+def test_stock_exists_in_reader_returns_true(market_db_path: str) -> None:
+    reader = MarketDbReader(market_db_path)
+    try:
+        assert stock_exists_in_reader(reader, "7203") is True
+    finally:
+        reader.close()
+
+
+def test_stock_exists_in_reader_returns_false(market_db_path: str) -> None:
+    reader = MarketDbReader(market_db_path)
+    try:
+        assert stock_exists_in_reader(reader, "0000") is False
     finally:
         reader.close()

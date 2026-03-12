@@ -1,10 +1,9 @@
-import { Activity, Database, Loader2, RotateCcw, Wrench } from 'lucide-react';
+import { Activity, Database, Loader2, Wrench } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { SyncModeSelect } from '@/components/Settings/SyncModeSelect';
 import { SyncStatusCard } from '@/components/Settings/SyncStatusCard';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
 import {
@@ -12,7 +11,6 @@ import {
   useCancelSync,
   useDbStats,
   useDbValidation,
-  useRefreshStocks,
   useStartSync,
   useSyncFetchDetails,
   useSyncJobStatus,
@@ -21,7 +19,6 @@ import {
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import type {
-  MarketRefreshResponse,
   MarketStatsResponse,
   MarketValidationResponse,
   StartSyncRequest,
@@ -654,90 +651,6 @@ function SnapshotStatus({
   );
 }
 
-function parseStockCodes(value: string): string[] {
-  const tokens = value
-    .split(/[,\s]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0);
-  const unique = new Set<string>();
-  for (const token of tokens) {
-    if (/^\d{4}$/.test(token)) {
-      unique.add(token);
-    }
-  }
-  return [...unique];
-}
-
-function getRefreshCodesValidationError(codes: string[]): string | null {
-  if (codes.length === 0) {
-    return 'Enter at least one 4-digit stock code (comma/space/newline separated).';
-  }
-  if (codes.length > 50) {
-    return 'Maximum 50 stock codes are allowed.';
-  }
-  return null;
-}
-
-function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
-  return (
-    <div className="space-y-3 text-sm">
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
-        <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-          <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Total Stocks</span>
-          <p className="mt-2 text-lg font-semibold">{result.totalStocks}</p>
-        </div>
-        <div className="rounded-xl border border-emerald-500/20 bg-emerald-500/10 p-3">
-          <span className="text-xs uppercase tracking-[0.18em] text-emerald-700">Success</span>
-          <p className="mt-2 text-lg font-semibold text-emerald-700">{result.successCount}</p>
-        </div>
-        <div className="rounded-xl border border-red-500/20 bg-red-500/10 p-3">
-          <span className="text-xs uppercase tracking-[0.18em] text-red-700">Failed</span>
-          <p className="mt-2 text-lg font-semibold text-red-700">{result.failedCount}</p>
-        </div>
-        <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-          <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">API Calls</span>
-          <p className="mt-2 text-lg font-semibold">{result.totalApiCalls}</p>
-        </div>
-        <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-          <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Records Stored</span>
-          <p className="mt-2 text-lg font-semibold">{result.totalRecordsStored}</p>
-        </div>
-        <div className="rounded-xl border border-border/70 bg-background/60 p-3">
-          <span className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Updated</span>
-          <p className="mt-2 text-sm font-semibold">{formatTimestamp(result.lastUpdated)}</p>
-        </div>
-      </div>
-
-      <div className="max-h-56 overflow-auto rounded-xl border border-border/70">
-        <table className="w-full text-xs">
-          <thead className="sticky top-0 bg-muted/40">
-            <tr>
-              <th className="px-2 py-2 text-left">Code</th>
-              <th className="px-2 py-2 text-left">Status</th>
-              <th className="px-2 py-2 text-right">Fetched</th>
-              <th className="px-2 py-2 text-right">Stored</th>
-              <th className="px-2 py-2 text-left">Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {result.results.map((item) => (
-              <tr key={item.code} className="border-t border-border/70">
-                <td className="px-2 py-2 font-medium">{item.code}</td>
-                <td className={`px-2 py-2 ${item.success ? 'text-green-500' : 'text-red-500'}`}>
-                  {item.success ? 'ok' : 'failed'}
-                </td>
-                <td className="px-2 py-2 text-right">{item.recordsFetched}</td>
-                <td className="px-2 py-2 text-right">{item.recordsStored}</td>
-                <td className="px-2 py-2">{item.error ?? '-'}</td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-    </div>
-  );
-}
-
 interface DatabaseSyncSectionProps {
   syncMode: SyncMode;
   onSyncModeChange: (mode: SyncMode) => void;
@@ -882,80 +795,6 @@ function WarningRecoverySection({
             'No Repairs Needed'
           )}
         </Button>
-      </CardContent>
-    </Card>
-  );
-}
-
-interface ManualStockRefreshSectionProps {
-  refreshCodesInput: string;
-  refreshInputError: string | null;
-  refreshErrorMessage: string | null;
-  refreshResult: MarketRefreshResponse | null;
-  isRefreshing: boolean;
-  onRefreshCodesInputChange: (value: string) => void;
-  onRefreshStocks: () => void;
-  className?: string;
-}
-
-function ManualStockRefreshSection({
-  refreshCodesInput,
-  refreshInputError,
-  refreshErrorMessage,
-  refreshResult,
-  isRefreshing,
-  onRefreshCodesInputChange,
-  onRefreshStocks,
-  className,
-}: ManualStockRefreshSectionProps) {
-  return (
-    <Card className={cn('border-border/70 bg-card/90 shadow-sm', className)}>
-      <CardHeader className="pb-4">
-        <span className="inline-flex w-fit rounded-full border border-border/70 bg-background/60 px-2.5 py-1 text-[11px] font-medium uppercase tracking-[0.18em] text-muted-foreground">
-          Targeted Repair
-        </span>
-        <div className="flex items-center gap-2">
-          <RotateCcw className="h-5 w-5" />
-          <CardTitle className="text-xl">Stock Refresh (Manual)</CardTitle>
-        </div>
-        <CardDescription>
-          Re-fetch specific DuckDB stock series when you need a one-off repair outside the bulk warning flow.
-        </CardDescription>
-      </CardHeader>
-      <CardContent className="space-y-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-end">
-          <div className="flex-1 space-y-2">
-            <Label htmlFor="manual-stock-refresh-input">Stock codes</Label>
-            <Input
-              id="manual-stock-refresh-input"
-              placeholder="e.g. 7203, 6758, 9984"
-              value={refreshCodesInput}
-              onChange={(e) => onRefreshCodesInputChange(e.target.value)}
-              disabled={isRefreshing}
-            />
-            <p className="text-xs text-muted-foreground">
-              Accepts comma, space, or newline separated 4-digit codes, up to 50 at once.
-            </p>
-          </div>
-          <Button onClick={onRefreshStocks} disabled={isRefreshing} className="w-full lg:w-auto">
-            {isRefreshing ? (
-              <>
-                <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                Refreshing...
-              </>
-            ) : (
-              'Refresh Stocks'
-            )}
-          </Button>
-        </div>
-
-        {refreshInputError && (
-          <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">{refreshInputError}</div>
-        )}
-        {refreshErrorMessage && (
-          <div className="rounded-xl bg-red-500/10 p-3 text-sm text-red-500">{refreshErrorMessage}</div>
-        )}
-        {refreshResult && <RefreshResultTable result={refreshResult} />}
       </CardContent>
     </Card>
   );
@@ -1163,9 +1002,6 @@ export function SettingsPage() {
   const [syncMode, setSyncMode] = useState<SyncMode>('auto');
   const [enforceBulkForStockData, setEnforceBulkForStockData] = useState(false);
   const [activeJobId, setActiveJobId] = useState<string | null>(readPersistedActiveSyncJobId);
-  const [refreshCodesInput, setRefreshCodesInput] = useState('');
-  const [refreshInputError, setRefreshInputError] = useState<string | null>(null);
-  const [refreshResult, setRefreshResult] = useState<MarketRefreshResponse | null>(null);
 
   const startSync = useStartSync();
   const { data: activeSyncJob } = useActiveSyncJob(activeJobId === null);
@@ -1176,7 +1012,6 @@ export function SettingsPage() {
   );
   const { data: syncFetchDetails } = useSyncFetchDetails(activeJobId, syncSse.isConnected);
   const cancelSync = useCancelSync();
-  const refreshStocks = useRefreshStocks();
 
   useEffect(() => {
     if (!activeSyncJob?.jobId) {
@@ -1213,7 +1048,6 @@ export function SettingsPage() {
   } = useDbValidation({ isSyncRunning: isRunning });
   const repairTargets = resolveRepairTargets(dbValidation);
   const startSyncErrorMessage = startSync.error?.message ?? null;
-  const refreshErrorMessage = refreshStocks.error?.message ?? null;
   const currentJob = jobStatus ?? activeSyncJob ?? null;
   const repairSignalCount = sumRepairTargets(repairTargets);
 
@@ -1233,7 +1067,6 @@ export function SettingsPage() {
   };
 
   const handleRepairWarnings = () => {
-    setRefreshResult(null);
     startSync.mutate(
       { mode: 'repair', enforceBulkForStockData: false },
       {
@@ -1246,27 +1079,6 @@ export function SettingsPage() {
     if (activeJobId) {
       cancelSync.mutate(activeJobId);
     }
-  };
-
-  const handleRefreshStocks = () => {
-    setRefreshResult(null);
-    const codes = parseStockCodes(refreshCodesInput);
-    const validationError = getRefreshCodesValidationError(codes);
-
-    if (validationError) {
-      setRefreshInputError(validationError);
-      return;
-    }
-
-    setRefreshInputError(null);
-    refreshStocks.mutate(
-      { codes },
-      {
-        onSuccess: (data) => {
-          setRefreshResult(data);
-        },
-      }
-    );
   };
 
   return (
@@ -1284,7 +1096,7 @@ export function SettingsPage() {
           <SectionLabel
             eyebrow="Operations"
             title="Sync and repair"
-            description="The left side is for actions that change the local market DB: full syncs, warning repair, and targeted stock refresh."
+            description="The left side is for actions that change the local market DB: full syncs and warning repair."
           />
 
           <div className="grid gap-6 lg:grid-cols-2">
@@ -1309,19 +1121,6 @@ export function SettingsPage() {
               onRepairWarnings={handleRepairWarnings}
             />
           </div>
-
-          <ManualStockRefreshSection
-            refreshCodesInput={refreshCodesInput}
-            refreshInputError={refreshInputError}
-            refreshErrorMessage={refreshErrorMessage}
-            refreshResult={refreshResult}
-            isRefreshing={refreshStocks.isPending}
-            onRefreshCodesInputChange={(value) => {
-              setRefreshCodesInput(value);
-              setRefreshInputError(null);
-            }}
-            onRefreshStocks={handleRefreshStocks}
-          />
         </div>
 
         <MarketDbHealthColumn

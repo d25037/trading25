@@ -1,4 +1,5 @@
-import { AlertCircle, BookOpen, Loader2, TrendingUp, Wallet } from 'lucide-react';
+import { useQueryClient } from '@tanstack/react-query';
+import { AlertCircle, BookOpen, Loader2, RotateCcw, TrendingUp, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
 import { FactorRegressionPanel } from '@/components/Chart/FactorRegressionPanel';
@@ -16,10 +17,13 @@ import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/button';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
+import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
-import { useStockData } from '@/hooks/useStockData';
+import { stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
+import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { type FundamentalsPanelId, useChartStore } from '@/stores/chartStore';
+import type { MarketRefreshResponse } from '@/types/sync';
 import type {
   BollingerBandsData,
   IndicatorValue,
@@ -37,6 +41,21 @@ type ChartSettings = ReturnType<typeof useChartStore.getState>['settings'];
 interface LazySectionState {
   sectionRef: (node: HTMLDivElement | null) => void;
   isVisible: boolean;
+}
+
+type ChartRecoveryReason = 'local_stock_data_missing' | 'stock_not_found' | 'topix_data_missing' | null;
+
+type ChartRecoveryType = 'stock_refresh' | 'market_db_sync' | null;
+
+interface ChartErrorContext {
+  message: string;
+  reason: ChartRecoveryReason;
+  recovery: ChartRecoveryType;
+}
+
+interface ChartRefreshFeedback {
+  tone: 'success' | 'error';
+  message: string;
 }
 
 // Helper component for margin pressure indicators section
@@ -137,6 +156,88 @@ function shouldRenderChartPanels(
   chartData: unknown
 ): boolean {
   return !isLoading && !error && !!selectedSymbol && !!chartData;
+}
+
+function getErrorDetailMessage(
+  details: unknown,
+  fieldName: 'reason' | 'recovery'
+): string | null {
+  if (!Array.isArray(details)) {
+    return null;
+  }
+
+  for (const detail of details) {
+    if (
+      detail &&
+      typeof detail === 'object' &&
+      'field' in detail &&
+      'message' in detail &&
+      detail.field === fieldName &&
+      typeof detail.message === 'string'
+    ) {
+      return detail.message;
+    }
+  }
+
+  return null;
+}
+
+function getChartErrorContext(error: unknown): ChartErrorContext {
+  const fallbackMessage =
+    error instanceof Error ? error.message : 'An unexpected error occurred while fetching market data';
+
+  if (!(error instanceof ApiError) || !error.details || typeof error.details !== 'object') {
+    return { message: fallbackMessage, reason: null, recovery: null };
+  }
+
+  const body = error.details as { message?: unknown; details?: unknown };
+  const reason = getErrorDetailMessage(body.details, 'reason') as ChartRecoveryReason;
+  const recovery = getErrorDetailMessage(body.details, 'recovery') as ChartRecoveryType;
+
+  return {
+    message: typeof body.message === 'string' ? body.message : fallbackMessage,
+    reason,
+    recovery,
+  };
+}
+
+function buildRefreshFeedback(
+  result: MarketRefreshResponse,
+  selectedSymbol: string
+): ChartRefreshFeedback {
+  const stockResult = result.results.find((item) => item.code === selectedSymbol) ?? result.results[0];
+
+  if (!stockResult) {
+    return {
+      tone: result.failedCount > 0 ? 'error' : 'success',
+      message: result.failedCount > 0 ? 'Stock refresh failed.' : `Refreshed ${selectedSymbol}.`,
+    };
+  }
+
+  if (!stockResult.success) {
+    return {
+      tone: 'error',
+      message: stockResult.error ?? `Failed to refresh ${stockResult.code}.`,
+    };
+  }
+
+  return {
+    tone: 'success',
+    message: `${stockResult.code} refreshed: fetched ${stockResult.recordsFetched}, stored ${stockResult.recordsStored}.`,
+  };
+}
+
+function invalidateSelectedSymbolQueries(queryClient: ReturnType<typeof useQueryClient>, selectedSymbol: string): void {
+  void Promise.all([
+    queryClient.invalidateQueries({ queryKey: ['bt-ohlcv', 'resample', selectedSymbol] }),
+    queryClient.invalidateQueries({ queryKey: ['bt-indicators', 'compute', selectedSymbol] }),
+    queryClient.invalidateQueries({ queryKey: ['bt-signals', 'compute', selectedSymbol] }),
+    queryClient.invalidateQueries({ queryKey: ['fundamentals', 'v2', selectedSymbol] }),
+    queryClient.invalidateQueries({ queryKey: ['bt-margin', selectedSymbol] }),
+    queryClient.invalidateQueries({ queryKey: stockInfoKeys.detail(selectedSymbol) }),
+    queryClient.invalidateQueries({ queryKey: ['db-stats'] }),
+    queryClient.invalidateQueries({ queryKey: ['db-validation'] }),
+  ]);
 }
 
 function resolveFundamentalPanelVisibility(settings: ChartSettings): Record<FundamentalsPanelId, boolean> {
@@ -310,6 +411,11 @@ function LoadingState({ selectedSymbol }: { selectedSymbol: string | null }) {
 }
 
 function ErrorState({ error }: { error: unknown }) {
+  const context = getChartErrorContext(error);
+  const showStockRefreshGuidance =
+    context.reason === 'local_stock_data_missing' || context.recovery === 'stock_refresh';
+  const showMarketDbGuidance = context.reason === 'topix_data_missing';
+
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center space-y-6 max-w-md">
@@ -321,18 +427,28 @@ function ErrorState({ error }: { error: unknown }) {
 
         <div className="space-y-2">
           <h3 className="text-xl font-semibold text-foreground">Unable to load chart data</h3>
-          <p className="text-sm text-muted-foreground">
-            {error instanceof Error ? error.message : 'An unexpected error occurred while fetching market data'}
-          </p>
+          <p className="text-sm text-muted-foreground">{context.message}</p>
+          {showStockRefreshGuidance && (
+            <p className="text-sm text-emerald-700">
+              Local stock history is missing for this symbol. Use Stock Refresh above to restore the DuckDB snapshot.
+            </p>
+          )}
+          {showMarketDbGuidance && (
+            <p className="text-sm text-amber-700">
+              Relative mode requires local TOPIX data. Run Market DB sync or repair to restore the benchmark snapshot.
+            </p>
+          )}
         </div>
 
         <div className="flex gap-3 justify-center">
           <Button variant="outline" onClick={() => window.location.reload()} className="glass-panel hover:bg-accent/50">
             Try Again
           </Button>
-          <Button variant="default" className="gradient-primary hover:opacity-90">
-            Contact Support
-          </Button>
+          {showMarketDbGuidance && (
+            <Button variant="default" className="gradient-primary hover:opacity-90" asChild>
+              <a href="/market-db">Open Market DB</a>
+            </Button>
+          )}
         </div>
       </div>
     </div>
@@ -385,11 +501,104 @@ function openCompanyPage(baseUrl: string, selectedSymbol: string | null, suffix 
   window.open(`${baseUrl}${selectedSymbol}${suffix}`, '_blank', 'noopener,noreferrer');
 }
 
+function ChartRefreshFeedbackBanner({ feedback }: { feedback: ChartRefreshFeedback }) {
+  const toneClassName =
+    feedback.tone === 'success'
+      ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-700'
+      : 'border-red-500/20 bg-red-500/10 text-red-700';
+
+  return <div className={cn('rounded-xl border px-4 py-3 text-sm', toneClassName)}>{feedback.message}</div>;
+}
+
+function ChartHeader({
+  settings,
+  selectedSymbol,
+  stockInfo,
+  latestMarketCap,
+  refreshFeedback,
+  isRefreshing,
+  onRefresh,
+}: {
+  settings: ChartSettings;
+  selectedSymbol: string;
+  stockInfo: { companyName?: string | null } | undefined;
+  latestMarketCap: number | null;
+  refreshFeedback: ChartRefreshFeedback | null;
+  isRefreshing: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="space-y-3">
+      <div className="px-6 py-4 gradient-primary rounded-xl">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="flex items-center gap-3">
+            <div className="gradient-secondary rounded-lg p-2">
+              <TrendingUp className="h-6 w-6 text-white" />
+            </div>
+            <div className="flex flex-col">
+              <h2 className="text-2xl font-bold text-white">
+                {selectedSymbol}
+                {stockInfo?.companyName && <span className="ml-2 font-medium text-white/90">{stockInfo.companyName}</span>}
+                {latestMarketCap != null && (
+                  <span className="ml-3 text-sm font-medium text-white/80">時価総額 {formatMarketCap(latestMarketCap)}</span>
+                )}
+                {settings.relativeMode && <span className="font-medium text-white/70"> / TOPIX</span>}
+              </h2>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
+            <Button
+              variant="secondary"
+              size="sm"
+              onClick={onRefresh}
+              disabled={isRefreshing}
+              className="bg-white/15 text-white hover:bg-white/25 hover:text-white"
+            >
+              {isRefreshing ? (
+                <>
+                  <Loader2 className="mr-1 h-4 w-4 animate-spin" />
+                  Refreshing...
+                </>
+              ) : (
+                <>
+                  <RotateCcw className="mr-1 h-4 w-4" />
+                  Stock Refresh
+                </>
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
+              className="text-white/80 hover:bg-white/10 hover:text-white"
+              title="四季報を開く"
+            >
+              <BookOpen className="mr-1 h-4 w-4" />
+              四季報
+            </Button>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
+              className="text-white/80 hover:bg-white/10 hover:text-white"
+              title="Buffett Codeを開く"
+            >
+              <Wallet className="mr-1 h-4 w-4" />
+              B.C.
+            </Button>
+            <TimeframeSelector />
+          </div>
+        </div>
+      </div>
+
+      {refreshFeedback && <ChartRefreshFeedbackBanner feedback={refreshFeedback} />}
+    </div>
+  );
+}
+
 function ChartsPanelsContent({
   settings,
   selectedSymbol,
-  stockData,
-  latestMarketCap,
   chartData,
   signalMarkers,
   panelVisibilityById,
@@ -405,8 +614,6 @@ function ChartsPanelsContent({
 }: {
   settings: ChartSettings;
   selectedSymbol: string | null;
-  stockData: { companyName?: string | null } | undefined;
-  latestMarketCap: number | null;
   chartData: ReturnType<typeof useMultiTimeframeChart>['chartData'];
   signalMarkers: ReturnType<typeof useMultiTimeframeChart>['signalMarkers'];
   panelVisibilityById: Record<FundamentalsPanelId, boolean>;
@@ -422,51 +629,6 @@ function ChartsPanelsContent({
 }) {
   return (
     <div className="h-full flex flex-col gap-4">
-      <div className="px-6 py-4 gradient-primary rounded-xl">
-        <div className="flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="gradient-secondary rounded-lg p-2">
-              <TrendingUp className="h-6 w-6 text-white" />
-            </div>
-            <div className="flex flex-col">
-              <h2 className="text-2xl font-bold text-white">
-                {selectedSymbol}
-                {stockData?.companyName && <span className="text-white/90 font-medium ml-2">{stockData.companyName}</span>}
-                {latestMarketCap != null && (
-                  <span className="text-white/80 text-sm font-medium ml-3">時価総額 {formatMarketCap(latestMarketCap)}</span>
-                )}
-                {settings.relativeMode && <span className="text-white/70 font-medium"> / TOPIX</span>}
-              </h2>
-            </div>
-          </div>
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
-                className="text-white/80 hover:text-white hover:bg-white/10"
-                title="四季報を開く"
-              >
-                <BookOpen className="h-4 w-4 mr-1" />
-                四季報
-              </Button>
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
-                className="text-white/80 hover:text-white hover:bg-white/10"
-                title="Buffett Codeを開く"
-              >
-                <Wallet className="h-4 w-4 mr-1" />
-                B.C.
-              </Button>
-            </div>
-            <TimeframeSelector />
-          </div>
-        </div>
-      </div>
-
       <div className="h-[512px]">
         <div className={cn('h-full rounded-xl glass-panel', 'relative overflow-hidden')}>
           <div className="absolute inset-0 gradient-glass opacity-50" />
@@ -606,6 +768,7 @@ function ChartsPanelsContent({
 }
 
 export function ChartsPage() {
+  const queryClient = useQueryClient();
   const marginSection = useLazySectionVisibility();
   const fundamentalsPanelSection = useLazySectionVisibility();
   const fundamentalsHistorySection = useLazySectionVisibility();
@@ -613,6 +776,8 @@ export function ChartsPage() {
 
   const { chartData, signalMarkers, isLoading, error, selectedSymbol } = useMultiTimeframeChart();
   const { settings } = useChartStore();
+  const refreshStocks = useRefreshStocks();
+  const [refreshFeedback, setRefreshFeedback] = useState<ChartRefreshFeedback | null>(null);
   const shouldFetchMarginPressure = settings.showMarginPressurePanel && marginSection.isVisible;
   const shouldFetchFundamentals =
     (settings.showFundamentalsPanel && fundamentalsPanelSection.isVisible) ||
@@ -622,7 +787,7 @@ export function ChartsPage() {
     isLoading: marginPressureLoading,
     error: marginPressureError,
   } = useBtMarginIndicators(selectedSymbol, { enabled: shouldFetchMarginPressure });
-  const { data: stockData } = useStockData(selectedSymbol, 'daily'); // Get stock data for company name
+  const { data: stockInfo } = useStockInfo(selectedSymbol);
   const tradingValuePeriod = Math.max(1, Math.trunc(settings.tradingValueMA.period ?? 15));
   const { data: fundamentalsData } = useFundamentals(selectedSymbol, {
     enabled: shouldFetchFundamentals,
@@ -637,6 +802,10 @@ export function ChartsPage() {
     error: error?.message,
     hasChartData: !!chartData,
   });
+
+  useEffect(() => {
+    setRefreshFeedback(null);
+  }, [selectedSymbol]);
 
   const latestMarketCap = useMemo(() => {
     if (!settings.showFundamentalsPanel && !settings.showFundamentalsHistoryPanel) return null;
@@ -654,6 +823,28 @@ export function ChartsPage() {
   );
 
   const panelVisibilityById = resolveFundamentalPanelVisibility(settings);
+  const handleRefresh = useCallback(() => {
+    if (!selectedSymbol) {
+      return;
+    }
+
+    setRefreshFeedback(null);
+    refreshStocks.mutate(
+      { codes: [selectedSymbol] },
+      {
+        onSuccess: (result) => {
+          setRefreshFeedback(buildRefreshFeedback(result, selectedSymbol));
+          invalidateSelectedSymbolQueries(queryClient, selectedSymbol);
+        },
+        onError: (mutationError) => {
+          setRefreshFeedback({
+            tone: 'error',
+            message: mutationError instanceof Error ? mutationError.message : 'Stock refresh failed.',
+          });
+        },
+      }
+    );
+  }, [queryClient, refreshStocks, selectedSymbol]);
 
   return (
     <div className="flex">
@@ -665,7 +856,18 @@ export function ChartsPage() {
       </div>
 
       {/* Main Chart Area */}
-      <div className="flex-1 p-6">
+      <div className="flex-1 space-y-4 p-6">
+        {selectedSymbol && (
+          <ChartHeader
+            settings={settings}
+            selectedSymbol={selectedSymbol}
+            stockInfo={stockInfo}
+            latestMarketCap={latestMarketCap}
+            refreshFeedback={refreshFeedback}
+            isRefreshing={refreshStocks.isPending}
+            onRefresh={handleRefresh}
+          />
+        )}
         {error && <ErrorState error={error} />}
         {isLoading && <LoadingState selectedSymbol={selectedSymbol} />}
         {showEmptyState && <EmptyState />}
@@ -673,8 +875,6 @@ export function ChartsPage() {
           <ChartsPanelsContent
             settings={settings}
             selectedSymbol={selectedSymbol}
-            stockData={stockData}
-            latestMarketCap={latestMarketCap}
             chartData={chartData}
             signalMarkers={signalMarkers}
             panelVisibilityById={panelVisibilityById}

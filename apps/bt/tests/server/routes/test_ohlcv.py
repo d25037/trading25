@@ -188,6 +188,52 @@ class TestResampleEndpoint:
 
             assert response.status_code == 404
             assert "取得できません" in response.json()["message"]
+            assert response.json()["details"] == [
+                {"field": "reason", "message": "stock_not_found"},
+            ]
+
+    def test_resample_local_stock_data_missing_includes_recovery_details(self, client):
+        class StaticReader:
+            def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
+                del sql, params
+                return {"code": "7203"}
+
+        client.app.state.market_reader = StaticReader()
+
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.side_effect = ValueError("銘柄 7203 のOHLCVデータが取得できません")
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "7203",
+                "source": "market",
+                "timeframe": "weekly",
+            })
+
+            assert response.status_code == 404
+            assert response.json()["details"] == [
+                {"field": "reason", "message": "local_stock_data_missing"},
+                {"field": "recovery", "message": "stock_refresh"},
+            ]
+
+    def test_resample_topix_missing_includes_market_db_sync_details(self, client, mock_ohlcv_data):
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.return_value = mock_ohlcv_data
+            mock_service.load_benchmark_ohlcv.side_effect = ValueError("ベンチマーク 'topix' のデータが取得できません")
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "7203",
+                "source": "market",
+                "timeframe": "weekly",
+                "benchmark_code": "topix",
+            })
+
+            assert response.status_code == 404
+            assert response.json()["details"] == [
+                {"field": "reason", "message": "topix_data_missing"},
+                {"field": "recovery", "message": "market_db_sync"},
+            ]
 
     def test_resample_invalid_benchmark(self, client):
         """無効なベンチマークコードで422を返すこと"""

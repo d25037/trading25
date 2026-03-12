@@ -74,6 +74,21 @@ def load_stock_ohlcv_df(
     return df
 
 
+def stock_exists_in_reader(reader: MarketDbReader, stock_code: str) -> bool:
+    """Return whether the stocks master contains the given code (4/5 digit tolerant)."""
+    candidates = stock_code_candidates(stock_code)
+    if not candidates:
+        return False
+
+    placeholders = ",".join("?" for _ in candidates)
+    row = reader.query_one(
+        f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
+        "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+        tuple(candidates),
+    )
+    return row is not None
+
+
 def load_topix_df(
     reader: MarketDbReader,
     start_date: str | None = None,

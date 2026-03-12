@@ -88,6 +88,56 @@ class TestComputeEndpoint:
         )
 
         assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "stock_not_found"},
+        ]
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_local_stock_data_missing_details(self, mock_compute: MagicMock):
+        class StaticReader:
+            def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
+                del sql, params
+                return {"code": "7203"}
+
+        previous_reader = getattr(client.app.state, "market_reader", None)
+        client.app.state.market_reader = StaticReader()
+        mock_compute.side_effect = ValueError("銘柄 7203 のOHLCVデータが取得できません")
+
+        try:
+            response = client.post(
+                "/api/indicators/compute",
+                json={
+                    "stock_code": "7203",
+                    "indicators": [{"type": "sma", "params": {"period": 20}}],
+                },
+            )
+        finally:
+            client.app.state.market_reader = previous_reader
+
+        assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "local_stock_data_missing"},
+            {"field": "recovery", "message": "stock_refresh"},
+        ]
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_topix_missing_details(self, mock_compute: MagicMock):
+        mock_compute.side_effect = ValueError("ベンチマーク 'topix' のデータが取得できません")
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "benchmark_code": "topix",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "topix_data_missing"},
+            {"field": "recovery", "message": "market_db_sync"},
+        ]
 
     def test_invalid_indicator_type(self):
         response = client.post(
