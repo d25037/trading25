@@ -2,10 +2,10 @@ from __future__ import annotations
 
 import asyncio
 import hashlib
+import inspect
 import json
 import sqlite3
 from collections.abc import Awaitable, Callable
-from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -102,8 +102,8 @@ class _LegacyEndpointMarketReader:
 
     def _call(self, path: str, params: dict[str, str] | None = None) -> list[dict[str, object]]:
         result = self._fetch(path, params)
-        if asyncio.iscoroutine(result):
-            return asyncio.run(result)
+        if inspect.isawaitable(result):
+            return asyncio.run(_await_rows(result))
         return result
 
     def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, object]]:
@@ -175,7 +175,9 @@ class _LegacyEndpointMarketReader:
             result = []
             for code in sorted({normalize_stock_code(str(value)) for value in params}):
                 for row in self._call("/fins/summary", {"code": expand_stock_code(code)}):
-                    payload = {column: None for column in dataset_builder_service._STATEMENT_COLUMNS}
+                    payload: dict[str, object] = {
+                        column: None for column in dataset_builder_service._STATEMENT_COLUMNS
+                    }
                     payload["code"] = code
                     payload["disclosed_date"] = row.get("DisclosedDate") or row.get("DiscDate")
                     result.append(payload)
@@ -195,15 +197,21 @@ class _LegacyEndpointMarketReader:
             return result
         raise AssertionError(f"Unexpected query: {sql}")
 
-def _statement_row(code: str, disclosed_date: str) -> dict[str, Any]:
-    return {
-        "Code": code,
-        "DisclosedDate": disclosed_date,
-    }
-
-
 def _reader_from_fetch(fetcher) -> _LegacyEndpointMarketReader:
     return _LegacyEndpointMarketReader(fetcher)
+
+
+async def _await_rows(result: Awaitable[list[dict[str, object]]]) -> list[dict[str, object]]:
+    return await result
+
+
+class _StaticRowsMarketReader:
+    def __init__(self, rows: list[dict[str, object]]) -> None:
+        self._rows = rows
+
+    def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, object]]:
+        del sql, params
+        return list(self._rows)
 
 
 def test_convert_stocks_maps_jquants_fields():
@@ -227,6 +235,148 @@ def test_convert_stocks_maps_jquants_fields():
     assert rows[0]["code"] == "7203"
     assert rows[0]["company_name"] == "Toyota"
     assert rows[0]["market_name"] == "プライム"
+
+
+@pytest.mark.asyncio
+async def test_load_market_stock_data_merges_alias_rows_before_validation():
+    reader = _StaticRowsMarketReader(
+        [
+            {
+                "code": "1111",
+                "date": "2026-01-01",
+                "open": None,
+                "high": 12,
+                "low": 9,
+                "close": 11,
+                "volume": 100,
+                "adjustment_factor": None,
+                "created_at": None,
+            },
+            {
+                "code": "11110",
+                "date": "2026-01-01",
+                "open": 10,
+                "high": 12,
+                "low": 9,
+                "close": 11,
+                "volume": 100,
+                "adjustment_factor": 1.0,
+                "created_at": "2026-01-02T00:00:00+00:00",
+            },
+        ]
+    )
+
+    rows = await dataset_builder_service._load_market_stock_data(reader, "1111")
+
+    assert rows == [
+        {
+            "Date": "2026-01-01",
+            "O": 10,
+            "H": 12,
+            "L": 9,
+            "C": 11,
+            "Vo": 100,
+            "AdjFactor": 1.0,
+            "created_at": "2026-01-02T00:00:00+00:00",
+        }
+    ]
+
+
+@pytest.mark.asyncio
+async def test_load_market_statements_merges_alias_rows_by_disclosed_date():
+    reader = _StaticRowsMarketReader(
+        [
+            {
+                "code": "1111",
+                "disclosed_date": "2026-01-01",
+                "earnings_per_share": 1.0,
+                "profit": 10.0,
+                "equity": 20.0,
+                "type_of_current_period": "FY",
+                "type_of_document": "Earnings",
+                "next_year_forecast_earnings_per_share": None,
+                "bps": 30.0,
+                "sales": 40.0,
+                "operating_profit": 50.0,
+                "ordinary_profit": 60.0,
+                "operating_cash_flow": 70.0,
+                "dividend_fy": 1.5,
+                "forecast_dividend_fy": None,
+                "next_year_forecast_dividend_fy": None,
+                "payout_ratio": 15.0,
+                "forecast_payout_ratio": None,
+                "next_year_forecast_payout_ratio": None,
+                "forecast_eps": None,
+                "investing_cash_flow": None,
+                "financing_cash_flow": None,
+                "cash_and_equivalents": None,
+                "total_assets": 80.0,
+                "shares_outstanding": None,
+                "treasury_shares": None,
+            },
+            {
+                "code": "11110",
+                "disclosed_date": "2026-01-01",
+                "earnings_per_share": None,
+                "profit": None,
+                "equity": None,
+                "type_of_current_period": None,
+                "type_of_document": None,
+                "next_year_forecast_earnings_per_share": 2.0,
+                "bps": None,
+                "sales": None,
+                "operating_profit": None,
+                "ordinary_profit": None,
+                "operating_cash_flow": None,
+                "dividend_fy": None,
+                "forecast_dividend_fy": 1.8,
+                "next_year_forecast_dividend_fy": 2.1,
+                "payout_ratio": None,
+                "forecast_payout_ratio": 22.0,
+                "next_year_forecast_payout_ratio": 24.0,
+                "forecast_eps": 2.2,
+                "investing_cash_flow": 5.0,
+                "financing_cash_flow": 6.0,
+                "cash_and_equivalents": 7.0,
+                "total_assets": None,
+                "shares_outstanding": 1000.0,
+                "treasury_shares": 100.0,
+            },
+        ]
+    )
+
+    rows = await dataset_builder_service._load_market_statements(reader, "1111")
+
+    assert rows == [
+        {
+            "code": "1111",
+            "disclosed_date": "2026-01-01",
+            "earnings_per_share": 1.0,
+            "profit": 10.0,
+            "equity": 20.0,
+            "type_of_current_period": "FY",
+            "type_of_document": "Earnings",
+            "next_year_forecast_earnings_per_share": 2.0,
+            "bps": 30.0,
+            "sales": 40.0,
+            "operating_profit": 50.0,
+            "ordinary_profit": 60.0,
+            "operating_cash_flow": 70.0,
+            "dividend_fy": 1.5,
+            "forecast_dividend_fy": 1.8,
+            "next_year_forecast_dividend_fy": 2.1,
+            "payout_ratio": 15.0,
+            "forecast_payout_ratio": 22.0,
+            "next_year_forecast_payout_ratio": 24.0,
+            "forecast_eps": 2.2,
+            "investing_cash_flow": 5.0,
+            "financing_cash_flow": 6.0,
+            "cash_and_equivalents": 7.0,
+            "total_assets": 80.0,
+            "shares_outstanding": 1000.0,
+            "treasury_shares": 100.0,
+        }
+    ]
 
 
 @pytest.mark.asyncio

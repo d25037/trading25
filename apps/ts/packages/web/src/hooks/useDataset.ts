@@ -6,6 +6,7 @@ import type {
   DatasetCreateRequest,
   DatasetDeleteResponse,
   DatasetInfoResponse,
+  DatasetListItem,
   DatasetJobResponse,
   DatasetListResponse,
 } from '@/types/dataset';
@@ -40,6 +41,17 @@ interface LegacyDatasetInfoResponse {
       warnings?: string[];
     };
   };
+}
+
+interface LegacyDatasetListItem {
+  name: string;
+  path?: string;
+  fileSize: number;
+  lastModified: string;
+  preset?: string | null;
+  createdAt?: string | null;
+  backend?: DatasetListItem['backend'];
+  hasCompatibilityArtifact?: boolean;
 }
 
 type DatasetStorage = DatasetInfoResponse['storage'];
@@ -137,8 +149,22 @@ function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDataset
   return normalizeLegacyDatasetInfoResponse(value);
 }
 
+function normalizeDatasetListItem(value: DatasetListItem | LegacyDatasetListItem): DatasetListItem {
+  const legacyPath = 'path' in value ? value.path : undefined;
+  const inferredStorage = inferLegacyStorage(legacyPath ?? value.name);
+  return {
+    ...value,
+    preset: value.preset ?? null,
+    createdAt: value.createdAt ?? null,
+    backend: value.backend ?? inferredStorage.backend,
+    hasCompatibilityArtifact: value.hasCompatibilityArtifact ?? inferredStorage.hasCompatibilityArtifact,
+  };
+}
+
 function fetchDatasets(): Promise<DatasetListResponse> {
-  return apiGet<DatasetListResponse>('/api/dataset');
+  return apiGet<DatasetListResponse | LegacyDatasetListItem[]>('/api/dataset').then((items) =>
+    items.map(normalizeDatasetListItem)
+  );
 }
 
 function fetchDatasetInfo(name: string): Promise<DatasetInfoResponse> {

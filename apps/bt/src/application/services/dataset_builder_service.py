@@ -104,6 +104,17 @@ class MarketDatasetSource(Protocol):
         ...
 
 
+def _is_missing_value(value: Any) -> bool:
+    return value is None or (isinstance(value, str) and value == "")
+
+
+def _merge_prefer_existing(target: dict[str, Any], incoming: Mapping[str, Any]) -> dict[str, Any]:
+    for key, value in incoming.items():
+        if _is_missing_value(target.get(key)) and not _is_missing_value(value):
+            target[key] = value
+    return target
+
+
 def _manifest_path_for_db(db_path: str) -> Path:
     return snapshot_dir_for_path(db_path) / "manifest.v1.json"
 
@@ -588,19 +599,21 @@ async def _load_market_stock_data(
         date = str(row.get("date", "") or "")
         if not date:
             continue
-        by_date.setdefault(
-            date,
-            {
-                "Date": date,
-                "O": row.get("open"),
-                "H": row.get("high"),
-                "L": row.get("low"),
-                "C": row.get("close"),
-                "Vo": row.get("volume"),
-                "AdjFactor": row.get("adjustment_factor"),
-                "created_at": row.get("created_at"),
-            },
-        )
+        candidate = {
+            "Date": date,
+            "O": row.get("open"),
+            "H": row.get("high"),
+            "L": row.get("low"),
+            "C": row.get("close"),
+            "Vo": row.get("volume"),
+            "AdjFactor": row.get("adjustment_factor"),
+            "created_at": row.get("created_at"),
+        }
+        existing = by_date.get(date)
+        if existing is None:
+            by_date[date] = candidate
+            continue
+        _merge_prefer_existing(existing, candidate)
     return list(by_date.values())
 
 
@@ -678,11 +691,13 @@ async def _load_market_statements(
         disclosed_date = str(row.get("disclosed_date", "") or "")
         if not disclosed_date:
             continue
-        if disclosed_date in by_date:
-            continue
         mapped = dict(row)
         mapped["code"] = normalized_code
-        by_date[disclosed_date] = mapped
+        existing = by_date.get(disclosed_date)
+        if existing is None:
+            by_date[disclosed_date] = mapped
+            continue
+        _merge_prefer_existing(existing, mapped)
     return list(by_date.values())
 
 
@@ -707,15 +722,17 @@ async def _load_market_margin_data(
         date = str(row.get("date", "") or "")
         if not date:
             continue
-        by_date.setdefault(
-            date,
-            {
-                "code": normalized_code,
-                "date": date,
-                "long_margin_volume": row.get("long_margin_volume"),
-                "short_margin_volume": row.get("short_margin_volume"),
-            },
-        )
+        candidate = {
+            "code": normalized_code,
+            "date": date,
+            "long_margin_volume": row.get("long_margin_volume"),
+            "short_margin_volume": row.get("short_margin_volume"),
+        }
+        existing = by_date.get(date)
+        if existing is None:
+            by_date[date] = candidate
+            continue
+        _merge_prefer_existing(existing, candidate)
     return list(by_date.values())
 
 
