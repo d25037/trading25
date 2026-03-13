@@ -4396,13 +4396,6 @@
             "default": false,
             "description": "Overwrite existing dataset",
             "example": false
-          },
-          "timeoutMinutes": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 120,
-            "description": "Job timeout in minutes (default: 35)",
-            "example": 30
           }
         },
         "required": [
@@ -8934,76 +8927,6 @@
           },
           "404": {
             "description": "Dataset not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "500": {
-            "description": "Internal server error",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          }
-        }
-      }
-    },
-    "/api/dataset/resume": {
-      "post": {
-        "tags": [
-          "Dataset"
-        ],
-        "summary": "Resume incomplete dataset",
-        "description": "Resume fetching missing data for an existing dataset. Detects and fetches only missing quotes/statements/margin data.",
-        "requestBody": {
-          "content": {
-            "application/json": {
-              "schema": {
-                "$ref": "#/components/schemas/DatasetCreateRequest"
-              }
-            }
-          }
-        },
-        "responses": {
-          "202": {
-            "description": "Dataset resume job started",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/CreateDatasetJobResponse"
-                }
-              }
-            }
-          },
-          "400": {
-            "description": "Invalid request parameters",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Dataset not found",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/ErrorResponse"
-                }
-              }
-            }
-          },
-          "409": {
-            "description": "Another job is already running",
             "content": {
               "application/json": {
                 "schema": {
