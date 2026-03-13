@@ -14,9 +14,14 @@ from typing import Any
 from fastapi import APIRouter, HTTPException, Request
 from loguru import logger
 
+from src.application.services.market_data_errors import MarketDataError
 from src.infrastructure.external_api.exceptions import APIError, APINotFoundError
 from src.infrastructure.db.market.market_reader import MarketDbReader
 
+from src.entrypoints.http.error_utils import (
+    classify_market_data_http_exception,
+    market_data_http_exception,
+)
 from src.entrypoints.http.schemas.indicators import (
     OHLCVResampleRequest,
     OHLCVResampleResponse,
@@ -163,13 +168,34 @@ async def resample_ohlcv(
             detail=f"OHLCVリサンプルがタイムアウトしました ({TIMEOUT_SECONDS}秒)",
         )
     except APINotFoundError as e:
+        classified = classify_market_data_http_exception(
+            stock_code=request.stock_code,
+            source=request.source,
+            raw_message=str(e),
+            market_reader=market_reader,
+            benchmark_code=request.benchmark_code,
+            force_lookup=True,
+        )
+        if classified is not None:
+            raise classified from e
         raise HTTPException(status_code=404, detail=str(e))
     except APIError as e:
         logger.error(f"OHLCVリサンプル APIエラー: {e}")
         raise HTTPException(
             status_code=e.status_code or 500, detail=str(e)
         )
+    except MarketDataError as e:
+        raise market_data_http_exception(e) from e
     except ValueError as e:
+        classified = classify_market_data_http_exception(
+            stock_code=request.stock_code,
+            source=request.source,
+            raw_message=str(e),
+            market_reader=market_reader,
+            benchmark_code=request.benchmark_code,
+        )
+        if classified is not None:
+            raise classified from e
         status = 404 if "取得できません" in str(e) else 422
         raise HTTPException(status_code=status, detail=str(e))
     except Exception as e:

@@ -161,12 +161,41 @@ async def test_refresh_stocks_dedupes_codes_and_skips_index_when_no_rows() -> No
     )
 
     assert result.totalStocks == 1
-    assert result.successCount == 1
+    assert result.successCount == 0
+    assert result.failedCount == 1
     assert result.totalRecordsStored == 0
     assert store.index_calls == 0
     assert len(client.calls) == 1
+    assert result.results[0].success is False
+    assert result.results[0].error == "No publishable rows matched the local market snapshot date range"
     assert progress_messages[0][2].startswith("Refreshing stock 1/1")
-    assert progress_messages[-1][2].startswith("Refreshed stock 1/1")
+    assert progress_messages[-1][2].startswith("Refresh failed for stock 1/1")
+
+
+@pytest.mark.asyncio
+async def test_refresh_stocks_marks_zero_stored_publish_as_failure() -> None:
+    market_db = DummyMarketDb()
+
+    class ZeroPublishStore(DummyTimeSeriesStore):
+        def publish_stock_data(self, rows: list[dict[str, Any]]) -> int:
+            self.rows.extend(rows)
+            return 0
+
+    store = ZeroPublishStore()
+    client = DummyJQuantsClient(
+        rows=[
+            {"Code": "72030", "Date": "2026-02-10", "O": 10, "H": 12, "L": 9, "C": 11, "Vo": 1000},
+        ]
+    )
+
+    result = await refresh_stocks(["7203"], market_db, store, client)
+
+    assert result.successCount == 0
+    assert result.failedCount == 1
+    assert result.results[0].success is False
+    assert result.results[0].error == "No rows were published to the local market snapshot"
+    assert store.index_calls == 0
+    assert market_db.resolved_calls == []
 
 
 @pytest.mark.asyncio

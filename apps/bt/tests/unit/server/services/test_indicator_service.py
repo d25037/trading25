@@ -10,6 +10,7 @@ import pandas as pd
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.market_data_errors import MarketDataError
 from src.application.services.indicator_service import IndicatorService
 from src.domains.analytics.margin_metrics import (
     compute_margin_flow_pressure,
@@ -406,15 +407,14 @@ class TestIndicatorServiceLoadOHLCV:
         assert len(df) == 50
         mock_client.get_stock_ohlcv.assert_called_once_with("7203", None, None)
 
-    def test_load_market_source(self):
+    def test_load_market_source_without_reader_raises_structured_error(self):
         service = IndicatorService()
-        mock_client = MagicMock()
-        mock_client.get_stock_ohlcv.return_value = _make_ohlcv(50)
-        service._market_client = mock_client
 
-        df = service.load_ohlcv("7203", "market")
-        assert len(df) == 50
-        mock_client.get_stock_ohlcv.assert_called_once()
+        with pytest.raises(MarketDataError, match="ローカルOHLCVデータがありません") as exc_info:
+            service.load_ohlcv("7203", "market")
+
+        assert exc_info.value.reason == "local_stock_data_missing"
+        assert exc_info.value.recovery == "market_db_sync"
 
     @patch("src.application.services.indicator_service.MarketAPIClient")
     def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
@@ -451,6 +451,31 @@ class TestIndicatorServiceLoadOHLCV:
 
         with pytest.raises(ValueError, match="取得できません"):
             service.load_ohlcv("9999", "topix500")
+
+    def test_close_resets_market_client(self):
+        service = IndicatorService()
+        mock_client = MagicMock()
+        service._market_client = mock_client
+
+        service.close()
+
+        mock_client.close.assert_called_once()
+        assert service._market_client is None
+
+    def test_load_topix_benchmark_without_reader_raises_structured_error(self):
+        service = IndicatorService()
+
+        with pytest.raises(MarketDataError, match="TOPIX のローカルデータがありません") as exc_info:
+            service.load_benchmark_ohlcv("topix")
+
+        assert exc_info.value.reason == "topix_data_missing"
+        assert exc_info.value.recovery == "market_db_sync"
+
+    def test_load_benchmark_unsupported_raises(self):
+        service = IndicatorService()
+
+        with pytest.raises(ValueError, match="未対応のベンチマーク"):
+            service.load_benchmark_ohlcv("nikkei225")
 
 
 class TestIndicatorServiceComputeIndicators:

@@ -13,6 +13,7 @@ import pytest
 from datetime import date
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.market_data_errors import MarketDataError
 from src.application.services.signal_service import (
     PHASE1_SIGNAL_NAMES,
     SignalService,
@@ -134,14 +135,14 @@ class TestSignalService:
         assert len(df) == 5
         mock_client.get_stock_ohlcv.assert_called_once_with("7203", None, None)
 
-    def test_load_market_source_empty_raises(self):
+    def test_load_market_source_without_reader_raises_structured_error(self):
         service = SignalService()
-        mock_client = MagicMock()
-        mock_client.get_stock_ohlcv.return_value = pd.DataFrame()
-        service._market_client = mock_client
 
-        with pytest.raises(ValueError, match="取得できません"):
+        with pytest.raises(MarketDataError, match="ローカルOHLCVデータがありません") as exc_info:
             service.load_ohlcv("7203", "market")
+
+        assert exc_info.value.reason == "local_stock_data_missing"
+        assert exc_info.value.recovery == "market_db_sync"
 
     def test_compute_signal_exit_disabled(self, service):
         data = {

@@ -38,6 +38,19 @@ def _make_test_app() -> TestClient:
     async def trigger_conflict() -> dict:
         raise HTTPException(status_code=409, detail="リソースが競合しています")
 
+    @test_router.get("/test/structured-not-found")
+    async def trigger_structured_not_found() -> dict:
+        raise HTTPException(
+            status_code=404,
+            detail={
+                "message": "Structured not found",
+                "details": [
+                    {"field": "reason", "message": "stock_not_found"},
+                    {"field": "recovery", "message": "stock_refresh"},
+                ],
+            },
+        )
+
     @test_router.post("/test/validation")
     async def trigger_validation(body: TestBody) -> dict:
         return {"name": body.name, "age": body.age}
@@ -67,6 +80,7 @@ def _make_test_app() -> TestClient:
         trigger_bad_request,
         trigger_server_error,
         trigger_conflict,
+        trigger_structured_not_found,
         trigger_validation,
         trigger_runtime_error,
         trigger_attribute_error,
@@ -126,6 +140,16 @@ class TestHttpExceptionFormat:
         resp = self.client.get("/test/not-found")
         body = resp.json()
         assert "details" not in body
+
+    def test_structured_http_exception_preserves_details(self) -> None:
+        resp = self.client.get("/test/structured-not-found")
+        assert resp.status_code == 404
+        body = resp.json()
+        assert body["message"] == "Structured not found"
+        assert body["details"] == [
+            {"field": "reason", "message": "stock_not_found"},
+            {"field": "recovery", "message": "stock_refresh"},
+        ]
 
 
 class TestValidationErrorFormat:

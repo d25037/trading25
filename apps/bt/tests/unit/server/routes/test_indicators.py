@@ -2,6 +2,7 @@
 Indicator Routes ユニットテスト
 """
 
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 from fastapi.testclient import TestClient
@@ -10,6 +11,7 @@ from src.infrastructure.external_api.exceptions import APIError, APINotFoundErro
 from src.entrypoints.http.app import app
 
 client = TestClient(app)
+client_app = cast(Any, client.app)
 
 
 class TestComputeEndpoint:
@@ -88,6 +90,107 @@ class TestComputeEndpoint:
         )
 
         assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "stock_not_found"},
+        ]
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_local_stock_data_missing_details(self, mock_compute: MagicMock):
+        class StaticReader:
+            def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
+                del sql, params
+                return {"code": "7203"}
+
+        previous_reader = getattr(client_app.state, "market_reader", None)
+        client_app.state.market_reader = StaticReader()
+        mock_compute.side_effect = ValueError("銘柄 7203 のOHLCVデータが取得できません")
+
+        try:
+            response = client.post(
+                "/api/indicators/compute",
+                json={
+                    "stock_code": "7203",
+                    "indicators": [{"type": "sma", "params": {"period": 20}}],
+                },
+            )
+        finally:
+            client_app.state.market_reader = previous_reader
+
+        assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "local_stock_data_missing"},
+            {"field": "recovery", "message": "stock_refresh"},
+        ]
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_topix_missing_details(self, mock_compute: MagicMock):
+        mock_compute.side_effect = ValueError("ベンチマーク 'topix' のデータが取得できません")
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "7203",
+                "benchmark_code": "topix",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "topix_data_missing"},
+            {"field": "recovery", "message": "market_db_sync"},
+        ]
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_dataset_not_found_with_topix_does_not_misclassify_topix(self, mock_compute: MagicMock):
+        mock_compute.side_effect = APINotFoundError("Resource not found: Stock not found")
+
+        response = client.post(
+            "/api/indicators/compute",
+            json={
+                "stock_code": "9999",
+                "source": "primeExTopix500",
+                "benchmark_code": "topix",
+                "indicators": [{"type": "sma", "params": {"period": 20}}],
+            },
+        )
+
+        assert response.status_code == 404
+        assert response.json()["message"] == "Resource not found: Stock not found"
+        assert response.json().get("details") is None
+
+    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
+    def test_compute_local_stock_data_missing_details_when_only_stock_data_exists(
+        self,
+        mock_compute: MagicMock,
+    ):
+        class StaticReader:
+            def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
+                del params
+                if "FROM stock_data" in sql:
+                    return {"code": "7203"}
+                return None
+
+        previous_reader = getattr(client_app.state, "market_reader", None)
+        client_app.state.market_reader = StaticReader()
+        mock_compute.side_effect = ValueError("銘柄 7203 のOHLCVデータが取得できません")
+
+        try:
+            response = client.post(
+                "/api/indicators/compute",
+                json={
+                    "stock_code": "7203",
+                    "indicators": [{"type": "sma", "params": {"period": 20}}],
+                },
+            )
+        finally:
+            client_app.state.market_reader = previous_reader
+
+        assert response.status_code == 404
+        assert response.json()["details"] == [
+            {"field": "reason", "message": "local_stock_data_missing"},
+            {"field": "recovery", "message": "stock_refresh"},
+        ]
 
     def test_invalid_indicator_type(self):
         response = client.post(

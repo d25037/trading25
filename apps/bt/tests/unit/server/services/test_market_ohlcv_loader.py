@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import pandas as pd
@@ -12,6 +13,7 @@ from src.application.services.market_ohlcv_loader import (
     _rows_to_dataframe,
     load_stock_ohlcv_df,
     load_topix_df,
+    stock_exists_in_reader,
 )
 
 
@@ -111,8 +113,8 @@ def test_load_stock_ohlcv_df_handles_mixed_code_formats(tmp_path: Path) -> None:
     try:
         df = load_stock_ohlcv_df(reader, "7203")
         assert len(df) == 2
-        assert float(df.loc[pd.Timestamp("2024-01-15"), "Close"]) == 2510.0
-        assert float(df.loc[pd.Timestamp("2024-01-16"), "Close"]) == 2515.0
+        assert cast(float, df.loc[pd.Timestamp("2024-01-15"), "Close"]) == 2510.0
+        assert cast(float, df.loc[pd.Timestamp("2024-01-16"), "Close"]) == 2515.0
     finally:
         reader.close()
 
@@ -151,5 +153,63 @@ def test_load_topix_df_out_of_range_returns_empty(market_db_path: str) -> None:
             end_date="2030-12-31",
         )
         assert df.empty
+    finally:
+        reader.close()
+
+
+def test_stock_exists_in_reader_returns_true(market_db_path: str) -> None:
+    reader = MarketDbReader(market_db_path)
+    try:
+        assert stock_exists_in_reader(reader, "7203") is True
+    finally:
+        reader.close()
+
+
+def test_stock_exists_in_reader_returns_false(market_db_path: str) -> None:
+    reader = MarketDbReader(market_db_path)
+    try:
+        assert stock_exists_in_reader(reader, "0000") is False
+    finally:
+        reader.close()
+
+
+def test_stock_exists_in_reader_returns_true_when_only_stock_data_exists(tmp_path: Path) -> None:
+    db_path = str(tmp_path / "stock-only-exists.duckdb")
+    conn = duckdb.connect(db_path)
+    try:
+        conn.execute(
+            """
+            CREATE TABLE stocks (
+                code TEXT PRIMARY KEY,
+                company_name TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE stock_data (
+                code TEXT NOT NULL,
+                date TEXT NOT NULL,
+                open DOUBLE NOT NULL,
+                high DOUBLE NOT NULL,
+                low DOUBLE NOT NULL,
+                close DOUBLE NOT NULL,
+                volume BIGINT NOT NULL,
+                adjustment_factor DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            ("7203", "2024-01-15", 2500.0, 2520.0, 2490.0, 2510.0, 1_000_000, 1.0, None),
+        )
+    finally:
+        conn.close()
+
+    reader = MarketDbReader(db_path)
+    try:
+        assert stock_exists_in_reader(reader, "7203") is True
     finally:
         reader.close()

@@ -123,6 +123,30 @@ function formatSyncJobLabel(job: SyncJobResponse | null): string {
   return job.status.toUpperCase();
 }
 
+function parseStockCodes(value: string): string[] {
+  const tokens = value
+    .split(/[,\s]+/)
+    .map((token) => token.trim())
+    .filter((token) => token.length > 0);
+  const unique = new Set<string>();
+  for (const token of tokens) {
+    if (/^\d{4}$/.test(token)) {
+      unique.add(token);
+    }
+  }
+  return [...unique];
+}
+
+function getRefreshCodesValidationError(codes: string[]): string | null {
+  if (codes.length === 0) {
+    return 'Enter at least one 4-digit stock code (comma/space/newline separated).';
+  }
+  if (codes.length > 50) {
+    return 'Maximum 50 stock codes are allowed.';
+  }
+  return null;
+}
+
 function isSyncJobRunning(job: SyncJobStatusShape): boolean {
   return job?.status === 'pending' || job?.status === 'running';
 }
@@ -654,30 +678,6 @@ function SnapshotStatus({
   );
 }
 
-function parseStockCodes(value: string): string[] {
-  const tokens = value
-    .split(/[,\s]+/)
-    .map((token) => token.trim())
-    .filter((token) => token.length > 0);
-  const unique = new Set<string>();
-  for (const token of tokens) {
-    if (/^\d{4}$/.test(token)) {
-      unique.add(token);
-    }
-  }
-  return [...unique];
-}
-
-function getRefreshCodesValidationError(codes: string[]): string | null {
-  if (codes.length === 0) {
-    return 'Enter at least one 4-digit stock code (comma/space/newline separated).';
-  }
-  if (codes.length > 50) {
-    return 'Maximum 50 stock codes are allowed.';
-  }
-  return null;
-}
-
 function RefreshResultTable({ result }: { result: MarketRefreshResponse }) {
   return (
     <div className="space-y-3 text-sm">
@@ -919,7 +919,7 @@ function ManualStockRefreshSection({
           <CardTitle className="text-xl">Stock Refresh (Manual)</CardTitle>
         </div>
         <CardDescription>
-          Re-fetch specific DuckDB stock series when you need a one-off repair outside the bulk warning flow.
+          Re-fetch specific DuckDB stock series when you need a one-off repair outside the chart header flow.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

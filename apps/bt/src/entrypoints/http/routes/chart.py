@@ -13,6 +13,10 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from src.application.services.market_data_errors import MarketDataError
+from src.entrypoints.http.error_utils import (
+    market_data_http_exception,
+)
 from src.entrypoints.http.schemas.chart import (
     IndexDataResponse,
     IndicesListResponse,
@@ -72,10 +76,10 @@ async def get_topix_data(
         )
 
     service = _get_chart_service(request)
-    result = await service.get_topix_data(from_date=effective_from, to_date=effective_to)
-    if result is None:
-        raise HTTPException(status_code=500, detail="TOPIX data not available")
-    return result
+    try:
+        return await service.get_topix_data(from_date=effective_from, to_date=effective_to)
+    except MarketDataError as exc:
+        raise market_data_http_exception(exc) from exc
 
 
 @router.get(
@@ -123,14 +127,14 @@ async def get_stock_data(
     adjusted: Literal["true", "false"] = Query(default="true"),
 ) -> StockDataResponse:
     service = _get_chart_service(request)
-    result = await service.get_stock_data(
-        symbol=symbol,
-        timeframe=timeframe,
-        adjusted=(adjusted == "true"),
-    )
-    if result is None:
-        raise HTTPException(status_code=404, detail="Stock symbol not found")
-    return result
+    try:
+        return await service.get_stock_data(
+            symbol=symbol,
+            timeframe=timeframe,
+            adjusted=(adjusted == "true"),
+        )
+    except MarketDataError as exc:
+        raise market_data_http_exception(exc) from exc
 
 
 # --- Sector Stocks ---
