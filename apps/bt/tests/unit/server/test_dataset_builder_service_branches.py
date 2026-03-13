@@ -62,16 +62,12 @@ async def _create_job(
     name: str = "dataset",
     preset: str = "quickTesting",
     overwrite: bool = False,
-    resume: bool = False,
-    timeout_minutes: int = 35,
 ):
     job = await manager.create_job(
         DatasetJobData(
             name=name,
             preset=preset,
             overwrite=overwrite,
-            resume=resume,
-            timeout_minutes=timeout_minutes,
         )
     )
     assert job is not None
@@ -157,20 +153,22 @@ class _LegacyEndpointMarketReader:
                 for row in self._call("/indices/bars/daily/topix")
             ]
         if " from indices_data " in f" {normalized} ":
-            code = str(params[0]) if params else ""
-            return [
-                {
-                    "code": row.get("Code", code),
-                    "date": row.get("Date"),
-                    "open": row.get("O"),
-                    "high": row.get("H"),
-                    "low": row.get("L"),
-                    "close": row.get("C"),
-                    "sector_name": row.get("SectorName"),
-                    "created_at": row.get("created_at"),
-                }
-                for row in self._call("/indices/bars/daily", {"code": code})
-            ]
+            result = []
+            for code in sorted({str(value) for value in params}):
+                result.extend(
+                    {
+                        "code": row.get("Code", code),
+                        "date": row.get("Date"),
+                        "open": row.get("O"),
+                        "high": row.get("H"),
+                        "low": row.get("L"),
+                        "close": row.get("C"),
+                        "sector_name": row.get("SectorName"),
+                        "created_at": row.get("created_at"),
+                    }
+                    for row in self._call("/indices/bars/daily", {"code": code})
+                )
+            return result
         if " from statements " in f" {normalized} ":
             result = []
             for code in sorted({normalize_stock_code(str(value)) for value in params}):
@@ -238,7 +236,7 @@ def test_convert_stocks_maps_jquants_fields():
 
 
 @pytest.mark.asyncio
-async def test_load_market_stock_data_merges_alias_rows_before_validation():
+async def test_load_market_stock_data_batch_merges_alias_rows_before_validation():
     reader = _StaticRowsMarketReader(
         [
             {
@@ -266,24 +264,26 @@ async def test_load_market_stock_data_merges_alias_rows_before_validation():
         ]
     )
 
-    rows = await dataset_builder_service._load_market_stock_data(reader, "1111")
+    rows = await dataset_builder_service._load_market_stock_data_batch(reader, ["1111"])
 
-    assert rows == [
-        {
-            "Date": "2026-01-01",
-            "O": 10,
-            "H": 12,
-            "L": 9,
-            "C": 11,
-            "Vo": 100,
-            "AdjFactor": 1.0,
-            "created_at": "2026-01-02T00:00:00+00:00",
-        }
-    ]
+    assert rows == {
+        "1111": [
+            {
+                "Date": "2026-01-01",
+                "O": 10,
+                "H": 12,
+                "L": 9,
+                "C": 11,
+                "Vo": 100,
+                "AdjFactor": 1.0,
+                "created_at": "2026-01-02T00:00:00+00:00",
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio
-async def test_load_market_statements_merges_alias_rows_by_disclosed_date():
+async def test_load_market_statements_batch_merges_alias_rows_by_disclosed_date():
     reader = _StaticRowsMarketReader(
         [
             {
@@ -345,38 +345,40 @@ async def test_load_market_statements_merges_alias_rows_by_disclosed_date():
         ]
     )
 
-    rows = await dataset_builder_service._load_market_statements(reader, "1111")
+    rows = await dataset_builder_service._load_market_statements_batch(reader, ["1111"])
 
-    assert rows == [
-        {
-            "code": "1111",
-            "disclosed_date": "2026-01-01",
-            "earnings_per_share": 1.0,
-            "profit": 10.0,
-            "equity": 20.0,
-            "type_of_current_period": "FY",
-            "type_of_document": "Earnings",
-            "next_year_forecast_earnings_per_share": 2.0,
-            "bps": 30.0,
-            "sales": 40.0,
-            "operating_profit": 50.0,
-            "ordinary_profit": 60.0,
-            "operating_cash_flow": 70.0,
-            "dividend_fy": 1.5,
-            "forecast_dividend_fy": 1.8,
-            "next_year_forecast_dividend_fy": 2.1,
-            "payout_ratio": 15.0,
-            "forecast_payout_ratio": 22.0,
-            "next_year_forecast_payout_ratio": 24.0,
-            "forecast_eps": 2.2,
-            "investing_cash_flow": 5.0,
-            "financing_cash_flow": 6.0,
-            "cash_and_equivalents": 7.0,
-            "total_assets": 80.0,
-            "shares_outstanding": 1000.0,
-            "treasury_shares": 100.0,
-        }
-    ]
+    assert rows == {
+        "1111": [
+            {
+                "code": "1111",
+                "disclosed_date": "2026-01-01",
+                "earnings_per_share": 1.0,
+                "profit": 10.0,
+                "equity": 20.0,
+                "type_of_current_period": "FY",
+                "type_of_document": "Earnings",
+                "next_year_forecast_earnings_per_share": 2.0,
+                "bps": 30.0,
+                "sales": 40.0,
+                "operating_profit": 50.0,
+                "ordinary_profit": 60.0,
+                "operating_cash_flow": 70.0,
+                "dividend_fy": 1.5,
+                "forecast_dividend_fy": 1.8,
+                "next_year_forecast_dividend_fy": 2.1,
+                "payout_ratio": 15.0,
+                "forecast_payout_ratio": 22.0,
+                "next_year_forecast_payout_ratio": 24.0,
+                "forecast_eps": 2.2,
+                "investing_cash_flow": 5.0,
+                "financing_cash_flow": 6.0,
+                "cash_and_equivalents": 7.0,
+                "total_assets": 80.0,
+                "shares_outstanding": 1000.0,
+                "treasury_shares": 100.0,
+            }
+        ]
+    }
 
 
 @pytest.mark.asyncio
@@ -436,7 +438,7 @@ async def test_build_dataset_returns_error_when_no_stock_matches_preset(monkeypa
 
 
 @pytest.mark.asyncio
-async def test_build_dataset_success_with_warnings(monkeypatch, isolated_dataset_manager):
+async def test_build_dataset_success_copies_all_enabled_tables(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="full")
     resolver = MagicMock()
     resolver.get_db_path.return_value = "/tmp/full.db"
@@ -493,19 +495,13 @@ async def test_build_dataset_success_with_warnings(monkeypatch, isolated_dataset
                 _master_row("22220", "B"),
             ]
         if path == "/equities/bars/daily":
-            if params and params.get("code") == "11110":
-                return [_daily_bar_row()]
-            raise RuntimeError("bars failed")
+            return [_daily_bar_row()]
         if path == "/indices/bars/daily/topix":
-            raise RuntimeError("topix failed")
+            return [{"Date": "2026-01-01", "O": 1, "H": 2, "L": 1, "C": 2}]
         if path == "/fins/summary":
-            if params and params.get("code") == "11110":
-                return [{"Code": "11110", "DisclosedDate": "2026-01-01"}]
-            raise RuntimeError("fins failed")
+            return [{"Code": params.get("code"), "DisclosedDate": "2026-01-01"}]
         if path == "/markets/margin-interest":
-            if params and params.get("code") == "11110":
-                return [{"Date": "2026-01-01", "LongVol": 10, "ShrtVol": 5}]
-            raise RuntimeError("margin failed")
+            return [{"Date": "2026-01-01", "LongVol": 10, "ShrtVol": 5}]
         return []
 
     reader = _reader_from_fetch(fake_get_paginated)
@@ -514,17 +510,14 @@ async def test_build_dataset_success_with_warnings(monkeypatch, isolated_dataset
 
     assert result.success is True
     assert result.totalStocks == 2
-    assert result.processedStocks == 1
+    assert result.processedStocks == 2
     assert result.outputPath == "/tmp/full"
-    assert result.warnings is not None
-    assert any("Stock 2222" in warning for warning in result.warnings)
-    assert any("TOPIX:" in warning for warning in result.warnings)
-    assert any("Statements 2222" in warning for warning in result.warnings)
-    assert any("Margin 2222" in warning for warning in result.warnings)
+    assert result.warnings is None
 
     writer = DummyWriter.instances[-1]
     assert "stocks" in writer.calls
     assert "stock_data" in writer.calls
+    assert "topix" in writer.calls
     assert "statements" in writer.calls
     assert "margin" in writer.calls
     assert writer.closed is True
@@ -583,7 +576,7 @@ async def test_build_dataset_returns_partial_result_when_cancelled_during_stock_
 
     result = await _build_dataset(job, resolver, reader)
     assert result.success is False
-    assert result.processedStocks == 1
+    assert result.processedStocks == 0
     assert result.errors == ["Cancelled"]
     assert DummyWriter.instances[-1].closed is True
 
@@ -846,10 +839,10 @@ async def test_build_dataset_handles_empty_stock_rows_and_progress_mod10(monkeyp
 
 
 @pytest.mark.asyncio
-async def test_build_dataset_resume_skips_existing_stock_data_codes(monkeypatch, isolated_dataset_manager):
-    job = await _create_job(isolated_dataset_manager, preset="quick", resume=True)
+async def test_build_dataset_queries_stock_data_per_batch(monkeypatch, isolated_dataset_manager):
+    job = await _create_job(isolated_dataset_manager, preset="quick")
     resolver = MagicMock()
-    resolver.get_db_path.return_value = "/tmp/resume.db"
+    resolver.get_db_path.return_value = "/tmp/batch.db"
 
     preset = PresetConfig(
         markets=["prime"],
@@ -870,9 +863,6 @@ async def test_build_dataset_resume_skips_existing_stock_data_codes(monkeypatch,
         def set_dataset_info(self, key: str, value: str):
             return None
 
-        def get_existing_stock_data_codes(self):
-            return {"1111"}
-
         def upsert_stock_data(self, rows):
             return len(rows)
 
@@ -880,28 +870,36 @@ async def test_build_dataset_resume_skips_existing_stock_data_codes(monkeypatch,
             return None
 
     monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
-
-    fetched_codes: list[str] = []
+    monkeypatch.setattr(dataset_builder_service, "_BATCH_COPY_SIZE", 2)
 
     async def fake_get_paginated(path: str, params=None):
         if path == "/equities/master":
             return [
                 _master_row("11110", "A"),
                 _master_row("22220", "B"),
+                _master_row("33330", "C"),
             ]
         if path == "/equities/bars/daily":
-            code = params.get("code") if params else None
-            if code is not None:
-                fetched_codes.append(str(code))
             return [_daily_bar_row()]
         return []
 
-    reader = _reader_from_fetch(fake_get_paginated)
+    class CountingReader(_LegacyEndpointMarketReader):
+        def __init__(self, fetch):
+            super().__init__(fetch)
+            self.stock_data_query_count = 0
+
+        def query(self, sql: str, params: tuple[object, ...] = ()) -> list[dict[str, object]]:
+            normalized = " ".join(sql.split()).lower()
+            if " from stock_data " in f" {normalized} ":
+                self.stock_data_query_count += 1
+            return super().query(sql, params)
+
+    reader = CountingReader(fake_get_paginated)
 
     result = await _build_dataset(job, resolver, reader)
     assert result.success is True
-    assert fetched_codes == ["22220"]
-    assert result.processedStocks == 1
+    assert result.processedStocks == 3
+    assert reader.stock_data_query_count == 2
 
 
 @pytest.mark.asyncio
@@ -1005,8 +1003,9 @@ async def test_build_dataset_topix_skips_fetch_when_cancelled_before_topix(monke
     reader = _reader_from_fetch(fake_get_paginated)
 
     result = await _build_dataset(job, resolver, reader)
-    assert result.success is True
-    assert result.processedStocks == 1
+    assert result.success is False
+    assert result.processedStocks == 0
+    assert result.errors == ["Cancelled"]
 
 
 @pytest.mark.asyncio
@@ -1129,7 +1128,7 @@ async def test_build_dataset_fetches_sector_indices_from_catalog(monkeypatch, is
     result = await _build_dataset(job, resolver, reader)
     assert result.success is True
     writer = DummyWriter.instances[-1]
-    assert writer.indices_calls == 2
+    assert writer.indices_calls == 1
 
 
 @pytest.mark.asyncio
@@ -1245,7 +1244,8 @@ async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monk
     reader = _reader_from_fetch(fake_get_paginated)
 
     result = await _build_dataset(job, resolver, reader)
-    assert result.success is True
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
     writer = DummyWriter.instances[-1]
     assert writer.statement_calls == 0
 
@@ -1305,7 +1305,8 @@ async def test_build_dataset_margin_handles_empty_rows_and_cancel_break(monkeypa
     reader = _reader_from_fetch(fake_get_paginated)
 
     result = await _build_dataset(job, resolver, reader)
-    assert result.success is True
+    assert result.success is False
+    assert result.errors == ["Cancelled"]
     writer = DummyWriter.instances[-1]
     assert writer.margin_calls == 0
 
@@ -1334,8 +1335,8 @@ async def test_start_dataset_build_marks_failed_on_timeout(monkeypatch, isolated
 
 
 @pytest.mark.asyncio
-async def test_start_dataset_build_marks_failed_on_custom_timeout(monkeypatch, isolated_dataset_manager):
-    data = DatasetJobData(name="timeout-custom", preset="quickTesting", timeout_minutes=90)
+async def test_start_dataset_build_uses_fixed_timeout(monkeypatch, isolated_dataset_manager):
+    data = DatasetJobData(name="timeout-fixed", preset="quickTesting")
     resolver = MagicMock()
     client = AsyncMock()
     timeout_values: list[int] = []
@@ -1355,8 +1356,8 @@ async def test_start_dataset_build_marks_failed_on_custom_timeout(monkeypatch, i
     stored = isolated_dataset_manager.get_job(job.job_id)
     assert stored is not None
     assert stored.status == JobStatus.FAILED
-    assert stored.error == "Dataset build timed out after 90 minutes"
-    assert timeout_values == [90 * 60]
+    assert stored.error == "Dataset build timed out after 35 minutes"
+    assert timeout_values == [35 * 60]
 
 
 @pytest.mark.asyncio

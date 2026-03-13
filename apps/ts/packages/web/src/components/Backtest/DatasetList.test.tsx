@@ -5,50 +5,49 @@ import type { DatasetListItem } from '@/types/dataset';
 import { DatasetList } from './DatasetList';
 
 const mockUseDatasets = vi.fn();
-const mockMutateResume = vi.fn();
-const mockSetActiveDatasetJobId = vi.fn();
-const mockResumeState = {
-  isPending: false,
-  isError: false,
-  error: null as Error | null,
-};
 
 vi.mock('@/hooks/useDataset', () => ({
   useDatasets: () => mockUseDatasets(),
-  useResumeDataset: () => ({
-    mutate: mockMutateResume,
-    isPending: mockResumeState.isPending,
-    isError: mockResumeState.isError,
-    error: mockResumeState.error,
-  }),
-}));
-
-vi.mock('@/stores/backtestStore', () => ({
-  useBacktestStore: () => ({
-    setActiveDatasetJobId: mockSetActiveDatasetJobId,
-  }),
 }));
 
 vi.mock('./DatasetInfoDialog', () => ({
   DatasetInfoDialog: ({
     open,
     datasetName,
+    onOpenChange,
   }: {
     open: boolean;
     datasetName: string | null;
     onOpenChange: (open: boolean) => void;
-  }) => (open ? <div>info:{datasetName}</div> : null),
+  }) =>
+    open ? (
+      <div>
+        <div>info:{datasetName}</div>
+        <button type="button" onClick={() => onOpenChange(false)}>
+          close-info
+        </button>
+      </div>
+    ) : null,
 }));
 
 vi.mock('./DatasetDeleteDialog', () => ({
   DatasetDeleteDialog: ({
     open,
     datasetName,
+    onOpenChange,
   }: {
     open: boolean;
     datasetName: string;
     onOpenChange: (open: boolean) => void;
-  }) => (open ? <div>delete:{datasetName}</div> : null),
+  }) =>
+    open ? (
+      <div>
+        <div>delete:{datasetName}</div>
+        <button type="button" onClick={() => onOpenChange(false)}>
+          close-delete
+        </button>
+      </div>
+    ) : null,
 }));
 
 function createDatasets(): DatasetListItem[] {
@@ -90,7 +89,7 @@ function setDatasetsQueryState({
     isLoading,
     isError,
     error,
-    refetch: vi.fn(),
+    refetch: vi.fn().mockResolvedValue(undefined),
   });
 }
 
@@ -113,9 +112,6 @@ function getFirstByTitle(title: string): HTMLElement {
 describe('DatasetList', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockResumeState.isPending = false;
-    mockResumeState.isError = false;
-    mockResumeState.error = null;
     setDatasetsQueryState({});
   });
 
@@ -164,45 +160,39 @@ describe('DatasetList', () => {
     expect(within(getFirstDataRow()).getByText('alpha')).toBeInTheDocument();
   });
 
-  it('resumes a resumable dataset and stores returned job id', async () => {
+  it('opens info/delete dialogs and renders storage labels', async () => {
     const user = userEvent.setup();
-    setDatasetsQueryState({ data: createDatasets() });
-    mockMutateResume.mockImplementation((_input, options) => {
-      options.onSuccess({ jobId: 'job-123' });
-    });
-
-    render(<DatasetList />);
-
-    expect(screen.getAllByTitle('レジューム')).toHaveLength(1);
-    await user.click(screen.getByTitle('レジューム'));
-
-    expect(mockMutateResume).toHaveBeenCalledWith(
-      {
-        name: 'alpha',
-        preset: 'primeMarket',
-      },
-      expect.objectContaining({
-        onSuccess: expect.any(Function),
-      })
-    );
-    expect(mockSetActiveDatasetJobId).toHaveBeenCalledWith('job-123');
-  });
-
-  it('renders resume error and opens info/delete dialogs', async () => {
-    const user = userEvent.setup();
-    mockResumeState.isError = true;
-    mockResumeState.error = new Error('resume failed');
     setDatasetsQueryState({ data: createDatasets() });
 
     render(<DatasetList />);
 
-    expect(screen.getByText('Resume Error: resume failed')).toBeInTheDocument();
     expect(screen.getByText('Legacy SQLite')).toBeInTheDocument();
     expect(screen.getByText('DuckDB + compat')).toBeInTheDocument();
     await user.click(getFirstByTitle('詳細'));
     expect(screen.getByText('info:alpha')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'close-info' }));
+    expect(screen.queryByText('info:alpha')).not.toBeInTheDocument();
 
     await user.click(getFirstByTitle('削除'));
     expect(screen.getByText('delete:alpha')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: 'close-delete' }));
+    expect(screen.queryByText('delete:alpha')).not.toBeInTheDocument();
+  });
+
+  it('calls refetch when refresh button is clicked', async () => {
+    const user = userEvent.setup();
+    const refetch = vi.fn().mockResolvedValue(undefined);
+    mockUseDatasets.mockReturnValue({
+      data: createDatasets(),
+      isLoading: false,
+      isError: false,
+      error: null,
+      refetch,
+    });
+
+    render(<DatasetList />);
+
+    await user.click(screen.getByRole('button', { name: '' }));
+    expect(refetch).toHaveBeenCalledTimes(1);
   });
 });

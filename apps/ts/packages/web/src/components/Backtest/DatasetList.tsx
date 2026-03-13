@@ -3,8 +3,7 @@ import { useMemo, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
-import { useDatasets, useResumeDataset } from '@/hooks/useDataset';
-import { useBacktestStore } from '@/stores/backtestStore';
+import { useDatasets } from '@/hooks/useDataset';
 import type { DatasetListItem } from '@/types/dataset';
 import { formatBytes } from '@/utils/formatters';
 import { DatasetDeleteDialog } from './DatasetDeleteDialog';
@@ -75,8 +74,6 @@ function SortIcon({ column, sortKey, sortDir }: { column: SortKey; sortKey: Sort
 
 export function DatasetList() {
   const { data, isLoading, isError, error, refetch } = useDatasets();
-  const { setActiveDatasetJobId } = useBacktestStore();
-  const resumeDataset = useResumeDataset();
 
   const [infoDataset, setInfoDataset] = useState<string | null>(null);
   const [deleteDataset, setDeleteDataset] = useState<string | null>(null);
@@ -97,18 +94,6 @@ export function DatasetList() {
       setSortKey(key);
       setSortDir(key === 'name' || key === 'backend' || key === 'preset' ? 'asc' : 'desc');
     }
-  };
-
-  const handleResume = (item: DatasetListItem) => {
-    if (!item.preset) return;
-    resumeDataset.mutate(
-      { name: item.name, preset: item.preset },
-      {
-        onSuccess: (resp) => {
-          setActiveDatasetJobId(resp.jobId);
-        },
-      }
-    );
   };
 
   const headerClass = 'cursor-pointer select-none hover:text-foreground';
@@ -197,17 +182,6 @@ export function DatasetList() {
                         <Button variant="ghost" size="sm" onClick={() => setInfoDataset(item.name)} title="詳細">
                           <Info className="h-4 w-4" />
                         </Button>
-                        {item.preset && (
-                          <Button
-                            variant="ghost"
-                            size="sm"
-                            onClick={() => handleResume(item)}
-                            disabled={resumeDataset.isPending}
-                            title="レジューム"
-                          >
-                            <RefreshCw className="h-4 w-4" />
-                          </Button>
-                        )}
                         <Button
                           variant="ghost"
                           size="sm"
@@ -225,9 +199,6 @@ export function DatasetList() {
             </Table>
           )}
 
-          {resumeDataset.isError && (
-            <p className="text-sm text-destructive mt-2">Resume Error: {resumeDataset.error.message}</p>
-          )}
         </CardContent>
       </Card>
 

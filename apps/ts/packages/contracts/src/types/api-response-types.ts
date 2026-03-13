@@ -288,7 +288,6 @@ export interface DatasetCreateRequest {
   name: string;
   preset: string;
   overwrite?: boolean;
-  timeoutMinutes?: number;
 }
 
 export interface DatasetCreateJobResponse {

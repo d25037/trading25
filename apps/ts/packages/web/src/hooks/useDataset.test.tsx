@@ -11,7 +11,6 @@ import {
   useDatasetJobStatus,
   useDatasets,
   useDeleteDataset,
-  useResumeDataset,
 } from './useDataset';
 
 vi.mock('@/lib/api-client', () => ({
@@ -355,43 +354,6 @@ describe('useCreateDataset', () => {
 
     const { logger } = await import('@/utils/logger');
     expect(logger.error).toHaveBeenCalledWith('Failed to create dataset', { error: 'Network error' });
-  });
-});
-
-describe('useResumeDataset', () => {
-  it('resumes dataset and invalidates list', async () => {
-    vi.mocked(apiPost).mockResolvedValueOnce({ jobId: 'job-2' });
-
-    const { queryClient, wrapper } = createWrapper();
-    const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
-    const { result } = renderHook(() => useResumeDataset(), { wrapper });
-
-    const request: DatasetCreateRequest = { name: 'prime.db', preset: 'primeMarket' };
-
-    await act(async () => {
-      await result.current.mutateAsync(request);
-    });
-
-    expect(apiPost).toHaveBeenCalledWith('/api/dataset/resume', request);
-    expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: datasetKeys.list() });
-  });
-
-  it('logs error when resume fails', async () => {
-    vi.mocked(apiPost).mockRejectedValueOnce(new Error('Resume failed'));
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useResumeDataset(), { wrapper });
-
-    await act(async () => {
-      try {
-        await result.current.mutateAsync({ name: 'fail.db', preset: 'primeMarket' });
-      } catch {
-        // expected
-      }
-    });
-
-    const { logger } = await import('@/utils/logger');
-    expect(logger.error).toHaveBeenCalledWith('Failed to resume dataset', { error: 'Resume failed' });
   });
 });
 

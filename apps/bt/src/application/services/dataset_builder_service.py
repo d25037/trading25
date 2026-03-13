@@ -1,7 +1,7 @@
 """
 Dataset Builder Service
 
-データセット作成/再開のオーケストレーション。
+データセット作成のオーケストレーション。
 GenericJobManager を使用してバックグラウンドビルドを管理する。
 """
 
@@ -11,7 +11,7 @@ import asyncio
 import hashlib
 import json
 import shutil
-from collections.abc import Iterable, Mapping
+from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
@@ -50,8 +50,6 @@ class DatasetJobData:
     name: str
     preset: str
     overwrite: bool = False
-    resume: bool = False
-    timeout_minutes: int = DATASET_BUILD_TIMEOUT_MINUTES
 
 
 @dataclass
@@ -67,6 +65,7 @@ class DatasetResult:
 # Module-level manager instance
 dataset_job_manager: GenericJobManager[DatasetJobData, JobProgress, DatasetResult] = GenericJobManager()
 _TOTAL_STAGES = 7
+_BATCH_COPY_SIZE = 200
 _WARNING_SAMPLE_SIZE = 5
 _STATEMENT_COLUMNS: tuple[str, ...] = (
     "code",
@@ -207,19 +206,20 @@ async def start_dataset_build(
     if job is None:
         return None
 
-    timeout_minutes = max(1, data.timeout_minutes)
-
     async def _run() -> None:
         try:
             result = await asyncio.wait_for(
                 _build_dataset(job, resolver, market_reader),
-                timeout=timeout_minutes * 60,
+                timeout=DATASET_BUILD_TIMEOUT_MINUTES * 60,
             )
             if dataset_job_manager.is_cancelled(job.job_id):
                 return
             dataset_job_manager.complete_job(job.job_id, result)
         except asyncio.TimeoutError:
-            dataset_job_manager.fail_job(job.job_id, f"Dataset build timed out after {timeout_minutes} minutes")
+            dataset_job_manager.fail_job(
+                job.job_id,
+                f"Dataset build timed out after {DATASET_BUILD_TIMEOUT_MINUTES} minutes",
+            )
         except asyncio.CancelledError:
             pass
         except Exception as e:
@@ -248,7 +248,7 @@ async def _build_dataset(
     if preset is None:
         return DatasetResult(success=False, errors=[f"Unknown preset: {preset_name}"])
 
-    if job.data.overwrite and not job.data.resume:
+    if job.data.overwrite:
         _delete_dataset_artifacts(resolver, name)
 
     def progress(stage: str, current: int, total: int, message: str) -> None:
@@ -272,7 +272,6 @@ async def _build_dataset(
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
     writer = DatasetWriter(db_path)
-    resume_mode = job.data.resume
     success_result: DatasetResult | None = None
     manifest_path = _manifest_path_for_db(db_path)
 
@@ -285,28 +284,28 @@ async def _build_dataset(
         writer.set_dataset_info("stock_count", str(len(filtered)))
 
         # Step 3: 株価データ取得
-        stocks_for_ohlcv = filtered
-        if resume_mode:
-            existing_codes = writer.get_existing_stock_data_codes()
-            stocks_for_ohlcv = [
-                stock for stock in filtered if normalize_stock_code(stock.get("Code", "")) not in existing_codes
-            ]
         progress(
             "stock_data",
             2,
             _TOTAL_STAGES,
-            f"Copying stock price data from market.duckdb ({len(stocks_for_ohlcv)}/{len(filtered)} targets)...",
+            f"Copying stock price data from market.duckdb in batches ({len(filtered)} targets)...",
         )
         processed = 0
         empty_ohlcv_codes: list[str] = []
         incomplete_ohlcv_codes: list[tuple[str, int, int]] = []
-        for i, stock in enumerate(stocks_for_ohlcv):
+        for batch in _chunked(filtered, _BATCH_COPY_SIZE):
             if job.cancelled.is_set():
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            code5 = stock.get("Code", "")
-            code4 = normalize_stock_code(code5)
-            try:
-                data = await _load_market_stock_data(market_reader, code4)
+
+            batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
+            batch_data = await _load_market_stock_data_batch(market_reader, batch_codes)
+            if job.cancelled.is_set():
+                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+
+            rows_to_write: list[dict[str, Any]] = []
+            for stock in batch:
+                code4 = normalize_stock_code(stock.get("Code", ""))
+                data = batch_data.get(code4, [])
                 rows: list[dict[str, Any]] = []
                 skipped_rows = 0
                 for quote in data:
@@ -326,19 +325,18 @@ async def _build_dataset(
                 if skipped_rows > 0:
                     incomplete_ohlcv_codes.append((code4, skipped_rows, len(data)))
                 if rows:
-                    await asyncio.to_thread(writer.upsert_stock_data, rows)
+                    rows_to_write.extend(rows)
                 else:
                     empty_ohlcv_codes.append(code4)
-                processed += 1
-                if (i + 1) % 10 == 0:
-                    progress(
-                        "stock_data",
-                        2,
-                        _TOTAL_STAGES,
-                        f"Stock data from market.duckdb: {i + 1}/{len(stocks_for_ohlcv)}",
-                    )
-            except Exception as e:
-                warnings.append(f"Stock {code4}: {e}")
+            if rows_to_write:
+                await asyncio.to_thread(writer.upsert_stock_data, rows_to_write)
+            processed += len(batch)
+            progress(
+                "stock_data",
+                2,
+                _TOTAL_STAGES,
+                f"Stock data from market.duckdb: {processed}/{len(filtered)}",
+            )
 
         if empty_ohlcv_codes:
             warnings.append(
@@ -359,109 +357,105 @@ async def _build_dataset(
 
         # Step 4: TOPIX
         if preset.include_topix:
-            should_fetch_topix = True
-            if resume_mode:
-                should_fetch_topix = not writer.has_topix_data()
             progress(
                 "topix",
                 3,
                 _TOTAL_STAGES,
-                "Copying TOPIX data from market.duckdb..."
-                if should_fetch_topix
-                else "TOPIX data already exists, skipping copy",
+                "Copying TOPIX data from market.duckdb...",
             )
-            if not job.cancelled.is_set():
-                if should_fetch_topix:
-                    try:
-                        topix_rows = await _load_market_topix_data(market_reader)
-                        if topix_rows:
-                            await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
-                    except Exception as e:
-                        warnings.append(f"TOPIX: {e}")
+            if job.cancelled.is_set():
+                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+            topix_rows = await _load_market_topix_data(market_reader)
+            if job.cancelled.is_set():
+                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+            if topix_rows:
+                await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
 
         # Step 5: セクター指数
         if preset.include_sector_indices:
-            existing_index_codes: set[str] = set()
-            if resume_mode:
-                existing_index_codes = writer.get_existing_index_codes()
             target_index_codes = sorted(
                 code for code in get_index_catalog_codes() if _is_sector_index_code(code)
             )
-            if existing_index_codes:
-                target_index_codes = [
-                    code for code in target_index_codes if _normalize_index_code(code) not in existing_index_codes
-                ]
             progress(
                 "indices",
                 4,
                 _TOTAL_STAGES,
-                f"Copying sector index data from market.duckdb ({len(target_index_codes)} targets)...",
+                f"Copying sector index data from market.duckdb in one batch ({len(target_index_codes)} targets)...",
             )
-            for code in target_index_codes:
-                if job.cancelled.is_set():
-                    break
-                try:
-                    rows = await _load_market_index_data(market_reader, code)
-                    if rows:
-                        await asyncio.to_thread(writer.upsert_indices_data, rows)
-                except Exception as e:
-                    warnings.append(f"Indices {code}: {e}")
+            if job.cancelled.is_set():
+                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+            index_rows = await _load_market_index_data_batch(market_reader, target_index_codes)
+            if job.cancelled.is_set():
+                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+            rows_to_write = [
+                row
+                for code in target_index_codes
+                for row in index_rows.get(_normalize_index_code(code), [])
+            ]
+            if rows_to_write:
+                await asyncio.to_thread(writer.upsert_indices_data, rows_to_write)
 
         # Step 6: 財務諸表
         if preset.include_statements:
-            stocks_for_statements = filtered
-            if resume_mode:
-                existing_statement_codes = writer.get_existing_statement_codes()
-                stocks_for_statements = [
-                    stock
-                    for stock in filtered
-                    if normalize_stock_code(stock.get("Code", "")) not in existing_statement_codes
-                ]
             progress(
                 "statements",
                 5,
                 _TOTAL_STAGES,
-                f"Copying financial statements from market.duckdb ({len(stocks_for_statements)}/{len(filtered)} targets)...",
+                f"Copying financial statements from market.duckdb in batches ({len(filtered)} targets)...",
             )
-            for stock in stocks_for_statements:
+            statements_processed = 0
+            for batch in _chunked(filtered, _BATCH_COPY_SIZE):
                 if job.cancelled.is_set():
-                    break
-                code5 = stock.get("Code", "")
-                code4 = normalize_stock_code(code5)
-                try:
-                    rows = await _load_market_statements(market_reader, code4)
-                    if rows:
-                        await asyncio.to_thread(writer.upsert_statements, rows)
-                except Exception as e:
-                    warnings.append(f"Statements {code4}: {e}")
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
+                statement_rows = await _load_market_statements_batch(market_reader, batch_codes)
+                if job.cancelled.is_set():
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                rows_to_write = [
+                    row
+                    for stock in batch
+                    for row in statement_rows.get(normalize_stock_code(stock.get("Code", "")), [])
+                ]
+                if rows_to_write:
+                    await asyncio.to_thread(writer.upsert_statements, rows_to_write)
+                statements_processed += len(batch)
+                progress(
+                    "statements",
+                    5,
+                    _TOTAL_STAGES,
+                    f"Financial statements from market.duckdb: {statements_processed}/{len(filtered)}",
+                )
 
         # Step 7: 信用取引
         if preset.include_margin:
-            stocks_for_margin = filtered
-            if resume_mode:
-                existing_margin_codes = writer.get_existing_margin_codes()
-                stocks_for_margin = [
-                    stock
-                    for stock in filtered
-                    if normalize_stock_code(stock.get("Code", "")) not in existing_margin_codes
-                ]
             progress(
                 "margin",
                 6,
                 _TOTAL_STAGES,
-                f"Copying margin data from market.duckdb ({len(stocks_for_margin)}/{len(filtered)} targets)...",
+                f"Copying margin data from market.duckdb in batches ({len(filtered)} targets)...",
             )
-            for stock in stocks_for_margin:
+            margin_processed = 0
+            for batch in _chunked(filtered, _BATCH_COPY_SIZE):
                 if job.cancelled.is_set():
-                    break
-                code5 = stock.get("Code", "")
-                code4 = normalize_stock_code(code5)
-                try:
-                    rows = await _load_market_margin_data(market_reader, code4)
-                    if rows:
-                        await asyncio.to_thread(writer.upsert_margin_data, rows)
-                except Exception as e:
-                    warnings.append(f"Margin {code4}: {e}")
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
+                margin_rows = await _load_market_margin_data_batch(market_reader, batch_codes)
+                if job.cancelled.is_set():
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                rows_to_write = [
+                    row
+                    for stock in batch
+                    for row in margin_rows.get(normalize_stock_code(stock.get("Code", "")), [])
+                ]
+                if rows_to_write:
+                    await asyncio.to_thread(writer.upsert_margin_data, rows_to_write)
+                margin_processed += len(batch)
+                progress(
+                    "margin",
+                    6,
+                    _TOTAL_STAGES,
+                    f"Margin data from market.duckdb: {margin_processed}/{len(filtered)}",
+                )
 
         writer.set_dataset_info("manifest_path", str(manifest_path))
         writer.set_dataset_info("manifest_schema_version", "1")
@@ -514,6 +508,11 @@ def _is_sector_index_code(code: str) -> bool:
         int("0040", 16) <= value <= int("0060", 16)
         or int("0080", 16) <= value <= int("0090", 16)
     )
+
+
+def _chunked(values: Sequence[dict[str, Any]], size: int) -> Iterator[list[dict[str, Any]]]:
+    for index in range(0, len(values), size):
+        yield list(values[index : index + size])
 
 
 def _row_to_dict(row: Any) -> dict[str, Any]:
@@ -578,45 +577,6 @@ async def _load_market_stock_master(market_reader: MarketDatasetSource) -> list[
     ]
 
 
-async def _load_market_stock_data(
-    market_reader: MarketDatasetSource,
-    normalized_code: str,
-) -> list[dict[str, Any]]:
-    candidates = stock_code_candidates(normalized_code)
-    placeholders = ", ".join("?" for _ in candidates)
-    rows = await _query_market_rows(
-        market_reader,
-        f"""
-        SELECT code, date, open, high, low, close, volume, adjustment_factor, created_at
-        FROM stock_data
-        WHERE code IN ({placeholders})
-        ORDER BY date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
-        """,
-        tuple(candidates),
-    )
-    by_date: dict[str, dict[str, Any]] = {}
-    for row in rows:
-        date = str(row.get("date", "") or "")
-        if not date:
-            continue
-        candidate = {
-            "Date": date,
-            "O": row.get("open"),
-            "H": row.get("high"),
-            "L": row.get("low"),
-            "C": row.get("close"),
-            "Vo": row.get("volume"),
-            "AdjFactor": row.get("adjustment_factor"),
-            "created_at": row.get("created_at"),
-        }
-        existing = by_date.get(date)
-        if existing is None:
-            by_date[date] = candidate
-            continue
-        _merge_prefer_existing(existing, candidate)
-    return list(by_date.values())
-
-
 async def _load_market_topix_data(market_reader: MarketDatasetSource) -> list[dict[str, Any]]:
     rows = await _query_market_rows(
         market_reader,
@@ -640,100 +600,206 @@ async def _load_market_topix_data(market_reader: MarketDatasetSource) -> list[di
     ]
 
 
-async def _load_market_index_data(
+async def _load_market_index_data_batch(
     market_reader: MarketDatasetSource,
-    code: str,
-) -> list[dict[str, Any]]:
+    codes: Sequence[str],
+) -> dict[str, list[dict[str, Any]]]:
+    normalized_codes = _normalize_index_codes(codes)
+    if not normalized_codes:
+        return {}
+
+    placeholders = ", ".join("?" for _ in normalized_codes)
     rows = await _query_market_rows(
         market_reader,
-        """
+        f"""
         SELECT code, date, open, high, low, close, sector_name, created_at
         FROM indices_data
-        WHERE upper(code) = ?
-        ORDER BY date
+        WHERE upper(code) IN ({placeholders})
+        ORDER BY upper(code), date
         """,
-        (_normalize_index_code(code),),
+        tuple(normalized_codes),
     )
-    return [
-        {
-            "code": _normalize_index_code(row.get("code")),
-            "date": str(row.get("date", "") or ""),
-            "open": row.get("open"),
-            "high": row.get("high"),
-            "low": row.get("low"),
-            "close": row.get("close"),
-            "sector_name": row.get("sector_name"),
-            "created_at": row.get("created_at"),
-        }
-        for row in rows
-        if row.get("date") is not None
-    ]
+    grouped: dict[str, list[dict[str, Any]]] = {code: [] for code in normalized_codes}
+    for row in rows:
+        date = str(row.get("date", "") or "")
+        if not date:
+            continue
+        normalized_code = _normalize_index_code(row.get("code"))
+        if not normalized_code:
+            continue
+        grouped.setdefault(normalized_code, []).append(
+            {
+                "code": normalized_code,
+                "date": date,
+                "open": row.get("open"),
+                "high": row.get("high"),
+                "low": row.get("low"),
+                "close": row.get("close"),
+                "sector_name": row.get("sector_name"),
+                "created_at": row.get("created_at"),
+            }
+        )
+    return {code: rows for code, rows in grouped.items() if rows}
 
 
-async def _load_market_statements(
+async def _load_market_statements_batch(
     market_reader: MarketDatasetSource,
-    normalized_code: str,
-) -> list[dict[str, Any]]:
-    candidates = stock_code_candidates(normalized_code)
-    placeholders = ", ".join("?" for _ in candidates)
+    normalized_codes: Sequence[str],
+) -> dict[str, list[dict[str, Any]]]:
+    requested_codes, candidate_map = _build_stock_candidate_map(normalized_codes)
+    if not candidate_map:
+        return {}
+
+    placeholders = ", ".join("?" for _ in candidate_map)
     rows = await _query_market_rows(
         market_reader,
         f"""
         SELECT {", ".join(_STATEMENT_COLUMNS)}
         FROM statements
         WHERE code IN ({placeholders})
-        ORDER BY disclosed_date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+        ORDER BY code, disclosed_date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
         """,
-        tuple(candidates),
+        tuple(candidate_map),
     )
-    by_date: dict[str, dict[str, Any]] = {}
+    grouped: dict[str, dict[str, dict[str, Any]]] = {code: {} for code in requested_codes}
     for row in rows:
         disclosed_date = str(row.get("disclosed_date", "") or "")
         if not disclosed_date:
             continue
+        normalized = _resolve_batch_stock_code(row.get("code"), candidate_map)
+        if not normalized:
+            continue
         mapped = dict(row)
-        mapped["code"] = normalized_code
-        existing = by_date.get(disclosed_date)
+        mapped["code"] = normalized
+        per_code = grouped.setdefault(normalized, {})
+        existing = per_code.get(disclosed_date)
         if existing is None:
-            by_date[disclosed_date] = mapped
+            per_code[disclosed_date] = mapped
             continue
         _merge_prefer_existing(existing, mapped)
-    return list(by_date.values())
+    return {code: list(by_date.values()) for code, by_date in grouped.items() if by_date}
 
 
-async def _load_market_margin_data(
+async def _load_market_margin_data_batch(
     market_reader: MarketDatasetSource,
-    normalized_code: str,
-) -> list[dict[str, Any]]:
-    candidates = stock_code_candidates(normalized_code)
-    placeholders = ", ".join("?" for _ in candidates)
+    normalized_codes: Sequence[str],
+) -> dict[str, list[dict[str, Any]]]:
+    requested_codes, candidate_map = _build_stock_candidate_map(normalized_codes)
+    if not candidate_map:
+        return {}
+
+    placeholders = ", ".join("?" for _ in candidate_map)
     rows = await _query_market_rows(
         market_reader,
         f"""
         SELECT code, date, long_margin_volume, short_margin_volume
         FROM margin_data
         WHERE code IN ({placeholders})
-        ORDER BY date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+        ORDER BY code, date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
         """,
-        tuple(candidates),
+        tuple(candidate_map),
     )
-    by_date: dict[str, dict[str, Any]] = {}
+    grouped: dict[str, dict[str, dict[str, Any]]] = {code: {} for code in requested_codes}
     for row in rows:
         date = str(row.get("date", "") or "")
         if not date:
             continue
+        normalized = _resolve_batch_stock_code(row.get("code"), candidate_map)
+        if not normalized:
+            continue
         candidate = {
-            "code": normalized_code,
+            "code": normalized,
             "date": date,
             "long_margin_volume": row.get("long_margin_volume"),
             "short_margin_volume": row.get("short_margin_volume"),
         }
-        existing = by_date.get(date)
+        per_code = grouped.setdefault(normalized, {})
+        existing = per_code.get(date)
         if existing is None:
-            by_date[date] = candidate
+            per_code[date] = candidate
             continue
         _merge_prefer_existing(existing, candidate)
-    return list(by_date.values())
+    return {code: list(by_date.values()) for code, by_date in grouped.items() if by_date}
+
+
+async def _load_market_stock_data_batch(
+    market_reader: MarketDatasetSource,
+    normalized_codes: Sequence[str],
+) -> dict[str, list[dict[str, Any]]]:
+    requested_codes, candidate_map = _build_stock_candidate_map(normalized_codes)
+    if not candidate_map:
+        return {}
+
+    placeholders = ", ".join("?" for _ in candidate_map)
+    rows = await _query_market_rows(
+        market_reader,
+        f"""
+        SELECT code, date, open, high, low, close, volume, adjustment_factor, created_at
+        FROM stock_data
+        WHERE code IN ({placeholders})
+        ORDER BY code, date, CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+        """,
+        tuple(candidate_map),
+    )
+    grouped: dict[str, dict[str, dict[str, Any]]] = {code: {} for code in requested_codes}
+    for row in rows:
+        date = str(row.get("date", "") or "")
+        if not date:
+            continue
+        normalized = _resolve_batch_stock_code(row.get("code"), candidate_map)
+        if not normalized:
+            continue
+        candidate = {
+            "Date": date,
+            "O": row.get("open"),
+            "H": row.get("high"),
+            "L": row.get("low"),
+            "C": row.get("close"),
+            "Vo": row.get("volume"),
+            "AdjFactor": row.get("adjustment_factor"),
+            "created_at": row.get("created_at"),
+        }
+        per_code = grouped.setdefault(normalized, {})
+        existing = per_code.get(date)
+        if existing is None:
+            per_code[date] = candidate
+            continue
+        _merge_prefer_existing(existing, candidate)
+    return {code: list(by_date.values()) for code, by_date in grouped.items() if by_date}
+
+
+def _build_stock_candidate_map(normalized_codes: Sequence[str]) -> tuple[list[str], dict[str, str]]:
+    requested_codes: list[str] = []
+    candidate_map: dict[str, str] = {}
+    seen_codes: set[str] = set()
+    for value in normalized_codes:
+        normalized = normalize_stock_code(value)
+        if not normalized or normalized in seen_codes:
+            continue
+        seen_codes.add(normalized)
+        requested_codes.append(normalized)
+        for candidate in stock_code_candidates(normalized):
+            candidate_map[str(candidate)] = normalized
+    return requested_codes, candidate_map
+
+
+def _resolve_batch_stock_code(value: Any, candidate_map: Mapping[str, str]) -> str:
+    raw_code = str(value).strip() if value is not None else ""
+    if not raw_code:
+        return ""
+    return candidate_map.get(raw_code, normalize_stock_code(raw_code))
+
+
+def _normalize_index_codes(codes: Sequence[str]) -> list[str]:
+    normalized_codes: list[str] = []
+    seen: set[str] = set()
+    for code in codes:
+        normalized = _normalize_index_code(code)
+        if not normalized or normalized in seen:
+            continue
+        seen.add(normalized)
+        normalized_codes.append(normalized)
+    return normalized_codes
 
 
 def _filter_stocks(stocks: list[dict[str, Any]], preset: PresetConfig) -> list[dict[str, Any]]:

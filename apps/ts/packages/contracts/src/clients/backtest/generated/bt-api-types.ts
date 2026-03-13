@@ -1140,23 +1140,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/dataset/resume": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        get?: never;
-        put?: never;
-        /** Resume an incomplete dataset build */
-        post: operations["resume_dataset_api_dataset_resume_post"];
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/db/stats": {
         parameters: {
             query?: never;
@@ -3415,12 +3398,6 @@ export interface components {
              * @description Preset config name
              */
             preset: string;
-            /**
-             * Timeoutminutes
-             * @description Build timeout in minutes
-             * @default 35
-             */
-            timeoutMinutes: number;
         };
         /** DatasetCreateResponse */
         DatasetCreateResponse: {
@@ -12938,66 +12915,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["CancelJobResponse"];
-                };
-            };
-            /** @description Bad Request */
-            400: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Not Found */
-            404: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-            /** @description Internal Server Error */
-            500: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["ErrorResponse"];
-                };
-            };
-        };
-    };
-    resume_dataset_api_dataset_resume_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["DatasetCreateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            202: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["DatasetCreateResponse"];
                 };
             };
             /** @description Bad Request */
