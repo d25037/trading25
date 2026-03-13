@@ -139,6 +139,8 @@ class TestDatasetManagementRoutes:
         assert data[0]["fileSize"] > 0
         assert data[0]["preset"] == "primeMarket"
         assert data[0]["createdAt"] == "2026-01-01T00:00:00+00:00"
+        assert data[0]["backend"] == "duckdb-parquet"
+        assert data[0]["hasCompatibilityArtifact"] is True
 
     def test_list_datasets_handles_missing_dataset_info_table(self, client: TestClient, test_dataset_dir: str) -> None:
         broken_db_path = Path(test_dataset_dir) / "broken.db"
@@ -200,6 +202,8 @@ class TestDatasetManagementRoutes:
         broken = next(item for item in data if item["name"] == "broken")
         assert broken["preset"] is None
         assert broken["createdAt"] is None
+        assert broken["backend"] == "sqlite-legacy"
+        assert broken["hasCompatibilityArtifact"] is False
 
     def test_dataset_info(self, client: TestClient) -> None:
         resp = client.get("/api/dataset/test-market/info")
@@ -214,6 +218,10 @@ class TestDatasetManagementRoutes:
         assert data["stats"]["totalQuotes"] == 2
         assert data["stats"]["dateRange"]["from"] == "2024-01-04"
         assert data["stats"]["dateRange"]["to"] == "2024-01-04"
+        assert data["storage"]["backend"] == "duckdb-parquet"
+        assert data["storage"]["duckdbPath"].endswith("/test-market/dataset.duckdb")
+        assert data["storage"]["compatibilityDbPath"].endswith("/test-market/dataset.db")
+        assert data["storage"]["hasCompatibilityArtifact"] is True
         assert data["validation"]["details"]["dataCoverage"]["stocksWithQuotes"] == 2
         assert data["validation"]["details"]["stockCountValidation"]["isWithinRange"] is True
 

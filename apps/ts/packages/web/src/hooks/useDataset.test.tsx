@@ -55,6 +55,52 @@ describe('useDatasets', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(apiGet).toHaveBeenCalledWith('/api/dataset');
   });
+
+  it('normalizes legacy dataset list items for mixed deploy compatibility', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce([
+      {
+        name: 'legacy',
+        path: '/tmp/legacy.db',
+        fileSize: 100,
+        lastModified: '2026-01-01T00:00:00Z',
+      },
+      {
+        name: 'snapshot',
+        path: '/tmp/snapshot',
+        fileSize: 200,
+        lastModified: '2026-01-02T00:00:00Z',
+        preset: 'primeMarket',
+        createdAt: '2026-01-02T00:00:00Z',
+      },
+    ]);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasets(), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      {
+        name: 'legacy',
+        path: '/tmp/legacy.db',
+        fileSize: 100,
+        lastModified: '2026-01-01T00:00:00Z',
+        preset: null,
+        createdAt: null,
+        backend: 'sqlite-legacy',
+        hasCompatibilityArtifact: false,
+      },
+      {
+        name: 'snapshot',
+        path: '/tmp/snapshot',
+        fileSize: 200,
+        lastModified: '2026-01-02T00:00:00Z',
+        preset: 'primeMarket',
+        createdAt: '2026-01-02T00:00:00Z',
+        backend: 'duckdb-parquet',
+        hasCompatibilityArtifact: false,
+      },
+    ]);
+  });
 });
 
 describe('useDatasetInfo', () => {
@@ -93,6 +139,14 @@ describe('useDatasetInfo', () => {
       path: '/tmp/modern.db',
       fileSize: 200,
       lastModified: '2026-01-02T00:00:00Z',
+      storage: {
+        backend: 'duckdb-parquet',
+        primaryPath: '/tmp/modern/dataset.duckdb',
+        duckdbPath: '/tmp/modern/dataset.duckdb',
+        compatibilityDbPath: '/tmp/modern/dataset.db',
+        manifestPath: '/tmp/modern/manifest.v1.json',
+        hasCompatibilityArtifact: true,
+      },
       snapshot: {
         preset: 'primeMarket',
         createdAt: '2026-01-01T00:00:00Z',
@@ -130,6 +184,55 @@ describe('useDatasetInfo', () => {
     expect(result.current.data).toEqual(modern);
   });
 
+  it('fills inferred storage when modern dataset info omits storage', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      name: 'snapshot',
+      path: '/tmp/snapshot',
+      fileSize: 200,
+      lastModified: '2026-01-02T00:00:00Z',
+      snapshot: {
+        preset: 'primeMarket',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      stats: {
+        totalStocks: 20,
+        totalQuotes: 100,
+        dateRange: { from: '2025-01-01', to: '2025-12-31' },
+        hasMarginData: true,
+        hasTOPIXData: true,
+        hasSectorData: true,
+        hasStatementsData: true,
+        statementsFieldCoverage: null,
+      },
+      validation: {
+        isValid: true,
+        errors: [],
+        warnings: [],
+        details: {
+          dataCoverage: {
+            totalStocks: 20,
+            stocksWithQuotes: 20,
+            stocksWithStatements: 20,
+            stocksWithMargin: 20,
+          },
+        },
+      },
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetInfo('snapshot'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.storage).toEqual({
+      backend: 'duckdb-parquet',
+      primaryPath: '/tmp/snapshot',
+      duckdbPath: null,
+      compatibilityDbPath: null,
+      manifestPath: null,
+      hasCompatibilityArtifact: false,
+    });
+  });
+
   it('normalizes legacy response defaults when optional fields are missing', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({
       name: 'legacy.db',
@@ -145,6 +248,7 @@ describe('useDatasetInfo', () => {
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.stats.dateRange.from).toBe('-');
     expect(result.current.data?.stats.dateRange.to).toBe('-');
+    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
     expect(result.current.data?.stats.hasTOPIXData).toBe(true);
     expect(result.current.data?.validation.isValid).toBe(true);
     expect(result.current.data?.validation.details?.dataCoverage?.totalStocks).toBe(0);
@@ -172,6 +276,7 @@ describe('useDatasetInfo', () => {
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
     expect(result.current.data?.stats.hasTOPIXData).toBe(false);
+    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
   });
 
   it('does not fetch when name is null', () => {

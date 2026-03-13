@@ -139,8 +139,11 @@ describe('DatasetCreateForm', () => {
   it('renders default values and preset information', () => {
     render(<DatasetCreateForm />);
 
-    expect(screen.getByDisplayValue('quickTesting.db')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('quickTesting')).toBeInTheDocument();
     expect(screen.getByText(/テスト用小規模データセット/)).toBeInTheDocument();
+    expect(screen.getAllByText(/dataset\.duckdb/i).length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText(/market\.duckdb/)).toBeInTheDocument();
+    expect(screen.getByText(/J-Quants へは fetch しません/)).toBeInTheDocument();
     expect(screen.getByText('Dataset Job Progress')).toBeInTheDocument();
   });
 
@@ -149,7 +152,7 @@ describe('DatasetCreateForm', () => {
     render(<DatasetCreateForm />);
 
     await user.click(screen.getByRole('button', { name: 'TOPIX 100' }));
-    expect(screen.getByDisplayValue('topix100.db')).toBeInTheDocument();
+    expect(screen.getByDisplayValue('topix100')).toBeInTheDocument();
   });
 
   it('creates dataset and stores active job id on success', async () => {
@@ -164,7 +167,7 @@ describe('DatasetCreateForm', () => {
 
     expect(mockCreateMutate).toHaveBeenCalledWith(
       {
-        name: 'quickTesting.db',
+        name: 'quickTesting',
         preset: 'quickTesting',
         overwrite: false,
         timeoutMinutes: 35,
@@ -186,7 +189,7 @@ describe('DatasetCreateForm', () => {
 
     expect(mockResumeMutate).toHaveBeenCalledWith(
       {
-        name: 'quickTesting.db',
+        name: 'quickTesting',
         preset: 'quickTesting',
         timeoutMinutes: 35,
       },

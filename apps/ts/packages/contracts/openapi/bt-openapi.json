@@ -1708,7 +1708,7 @@
       "DatasetCreateRequest": {
         "properties": {
           "name": {
-            "description": "Dataset filename (e.g. 'prime.db')",
+            "description": "Dataset snapshot name (e.g. 'primeMarket'; '.db' suffix accepted for compatibility)",
             "maxLength": 255,
             "minLength": 1,
             "title": "Name",
@@ -1874,6 +1874,9 @@
           "stats": {
             "$ref": "#/components/schemas/DatasetStats"
           },
+          "storage": {
+            "$ref": "#/components/schemas/DatasetStorageInfo"
+          },
           "validation": {
             "$ref": "#/components/schemas/DatasetValidation"
           }
@@ -1883,6 +1886,7 @@
           "path",
           "fileSize",
           "lastModified",
+          "storage",
           "snapshot",
           "stats",
           "validation"
@@ -2025,6 +2029,16 @@
       },
       "DatasetListItem": {
         "properties": {
+          "backend": {
+            "description": "Resolved storage backend",
+            "enum": [
+              "duckdb-parquet",
+              "sqlite-compatibility",
+              "sqlite-legacy"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
           "createdAt": {
             "anyOf": [
               {
@@ -2041,6 +2055,12 @@
             "description": "File size in bytes",
             "title": "Filesize",
             "type": "integer"
+          },
+          "hasCompatibilityArtifact": {
+            "default": false,
+            "description": "Whether dataset.db compatibility artifact is present",
+            "title": "Hascompatibilityartifact",
+            "type": "boolean"
           },
           "lastModified": {
             "description": "Last modified ISO datetime",
@@ -2074,7 +2094,8 @@
           "name",
           "path",
           "fileSize",
-          "lastModified"
+          "lastModified",
+          "backend"
         ],
         "title": "DatasetListItem",
         "type": "object"
@@ -2440,6 +2461,73 @@
           }
         },
         "title": "DatasetStockCountValidation",
+        "type": "object"
+      },
+      "DatasetStorageInfo": {
+        "properties": {
+          "backend": {
+            "description": "Resolved dataset storage backend",
+            "enum": [
+              "duckdb-parquet",
+              "sqlite-compatibility",
+              "sqlite-legacy"
+            ],
+            "title": "Backend",
+            "type": "string"
+          },
+          "compatibilityDbPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "SQLite compatibility artifact path when present",
+            "title": "Compatibilitydbpath"
+          },
+          "duckdbPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "DuckDB snapshot path",
+            "title": "Duckdbpath"
+          },
+          "hasCompatibilityArtifact": {
+            "default": false,
+            "description": "Whether a compatibility SQLite artifact is present",
+            "title": "Hascompatibilityartifact",
+            "type": "boolean"
+          },
+          "manifestPath": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Dataset snapshot manifest path",
+            "title": "Manifestpath"
+          },
+          "primaryPath": {
+            "description": "Primary artifact path for the dataset",
+            "title": "Primarypath",
+            "type": "string"
+          }
+        },
+        "required": [
+          "backend",
+          "primaryPath"
+        ],
+        "title": "DatasetStorageInfo",
         "type": "object"
       },
       "DatasetValidation": {

@@ -10,14 +10,50 @@ import { formatBytes } from '@/utils/formatters';
 import { DatasetDeleteDialog } from './DatasetDeleteDialog';
 import { DatasetInfoDialog } from './DatasetInfoDialog';
 
-type SortKey = 'name' | 'preset' | 'fileSize' | 'lastModified';
+type SortKey = 'name' | 'backend' | 'preset' | 'fileSize' | 'lastModified';
 type SortDir = 'asc' | 'desc';
+
+function storageLabel(item: DatasetListItem): string {
+  switch (item.backend) {
+    case 'duckdb-parquet':
+      return item.hasCompatibilityArtifact ? 'DuckDB + compat' : 'DuckDB';
+    case 'sqlite-compatibility':
+      return 'SQLite snapshot';
+    case 'sqlite-legacy':
+      return 'Legacy SQLite';
+  }
+}
+
+function storageDetail(item: DatasetListItem): string {
+  switch (item.backend) {
+    case 'duckdb-parquet':
+      return 'dataset.duckdb + parquet/';
+    case 'sqlite-compatibility':
+      return 'dataset.db only';
+    case 'sqlite-legacy':
+      return 'single .db file';
+  }
+}
+
+function storageClass(item: DatasetListItem): string {
+  switch (item.backend) {
+    case 'duckdb-parquet':
+      return 'bg-emerald-500/10 text-emerald-600';
+    case 'sqlite-compatibility':
+      return 'bg-amber-500/10 text-amber-600';
+    case 'sqlite-legacy':
+      return 'bg-slate-500/10 text-slate-600';
+  }
+}
 
 function compareItems(a: DatasetListItem, b: DatasetListItem, key: SortKey, dir: SortDir): number {
   let cmp: number;
   switch (key) {
     case 'name':
       cmp = a.name.localeCompare(b.name);
+      break;
+    case 'backend':
+      cmp = storageLabel(a).localeCompare(storageLabel(b));
       break;
     case 'preset':
       cmp = (a.preset ?? '').localeCompare(b.preset ?? '');
@@ -59,7 +95,7 @@ export function DatasetList() {
       setSortDir((d) => (d === 'asc' ? 'desc' : 'asc'));
     } else {
       setSortKey(key);
-      setSortDir(key === 'name' || key === 'preset' ? 'asc' : 'desc');
+      setSortDir(key === 'name' || key === 'backend' || key === 'preset' ? 'asc' : 'desc');
     }
   };
 
@@ -109,6 +145,12 @@ export function DatasetList() {
                       <SortIcon column="name" sortKey={sortKey} sortDir={sortDir} />
                     </span>
                   </TableHead>
+                  <TableHead className={headerClass} onClick={() => toggleSort('backend')}>
+                    <span className="inline-flex items-center">
+                      Storage
+                      <SortIcon column="backend" sortKey={sortKey} sortDir={sortDir} />
+                    </span>
+                  </TableHead>
                   <TableHead className={headerClass} onClick={() => toggleSort('preset')}>
                     <span className="inline-flex items-center">
                       Preset
@@ -133,7 +175,20 @@ export function DatasetList() {
               <TableBody>
                 {sortedDatasets.map((item) => (
                   <TableRow key={item.name}>
-                    <TableCell className="font-medium">{item.name}</TableCell>
+                    <TableCell className="font-medium">
+                      <div>{item.name}</div>
+                      {item.hasCompatibilityArtifact && item.backend === 'duckdb-parquet' && (
+                        <div className="text-xs text-muted-foreground">SQLite compatibility available</div>
+                      )}
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex flex-col gap-1">
+                        <span className={`inline-flex w-fit rounded px-2 py-0.5 text-xs font-medium ${storageClass(item)}`}>
+                          {storageLabel(item)}
+                        </span>
+                        <span className="text-xs text-muted-foreground">{storageDetail(item)}</span>
+                      </div>
+                    </TableCell>
                     <TableCell>{item.preset ?? '-'}</TableCell>
                     <TableCell className="text-right">{formatBytes(item.fileSize)}</TableCell>
                     <TableCell>{new Date(item.lastModified).toLocaleDateString('ja-JP')}</TableCell>

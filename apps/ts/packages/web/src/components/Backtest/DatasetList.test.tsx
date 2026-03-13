@@ -54,18 +54,22 @@ vi.mock('./DatasetDeleteDialog', () => ({
 function createDatasets(): DatasetListItem[] {
   return [
     {
-      name: 'beta.db',
+      name: 'beta',
       preset: null,
       fileSize: 3000,
       lastModified: '2026-01-01T00:00:00.000Z',
       createdAt: '2026-01-01T00:00:00.000Z',
+      backend: 'sqlite-legacy',
+      hasCompatibilityArtifact: false,
     },
     {
-      name: 'alpha.db',
+      name: 'alpha',
       preset: 'primeMarket',
       fileSize: 1000,
       lastModified: '2026-01-02T00:00:00.000Z',
       createdAt: '2026-01-02T00:00:00.000Z',
+      backend: 'duckdb-parquet',
+      hasCompatibilityArtifact: true,
     },
   ];
 }
@@ -139,22 +143,25 @@ describe('DatasetList', () => {
 
     render(<DatasetList />);
 
-    expect(within(getFirstDataRow()).getByText('alpha.db')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('alpha')).toBeInTheDocument();
 
     await user.click(screen.getByText('Name'));
-    expect(within(getFirstDataRow()).getByText('alpha.db')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('alpha')).toBeInTheDocument();
 
     await user.click(screen.getByText('Name'));
-    expect(within(getFirstDataRow()).getByText('beta.db')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('beta')).toBeInTheDocument();
+
+    await user.click(screen.getByText('Storage'));
+    expect(within(getFirstDataRow()).getByText('DuckDB + compat')).toBeInTheDocument();
 
     await user.click(screen.getByText('Preset'));
-    expect(within(getFirstDataRow()).getByText('beta.db')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('beta')).toBeInTheDocument();
 
     await user.click(screen.getByText('Size'));
-    expect(within(getFirstDataRow()).getByText('beta.db')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('beta')).toBeInTheDocument();
 
     await user.click(screen.getByText('Modified'));
-    expect(within(getFirstDataRow()).getByText('alpha.db')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('alpha')).toBeInTheDocument();
   });
 
   it('resumes a resumable dataset and stores returned job id', async () => {
@@ -171,7 +178,7 @@ describe('DatasetList', () => {
 
     expect(mockMutateResume).toHaveBeenCalledWith(
       {
-        name: 'alpha.db',
+        name: 'alpha',
         preset: 'primeMarket',
       },
       expect.objectContaining({
@@ -190,10 +197,12 @@ describe('DatasetList', () => {
     render(<DatasetList />);
 
     expect(screen.getByText('Resume Error: resume failed')).toBeInTheDocument();
+    expect(screen.getByText('Legacy SQLite')).toBeInTheDocument();
+    expect(screen.getByText('DuckDB + compat')).toBeInTheDocument();
     await user.click(getFirstByTitle('詳細'));
-    expect(screen.getByText('info:alpha.db')).toBeInTheDocument();
+    expect(screen.getByText('info:alpha')).toBeInTheDocument();
 
     await user.click(getFirstByTitle('削除'));
-    expect(screen.getByText('delete:alpha.db')).toBeInTheDocument();
+    expect(screen.getByText('delete:alpha')).toBeInTheDocument();
   });
 });

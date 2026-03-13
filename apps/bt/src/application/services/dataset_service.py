@@ -27,6 +27,7 @@ from src.entrypoints.http.schemas.dataset import (
     DatasetSnapshotValidation,
     DatasetStats,
     DatasetStatsDateRange,
+    DatasetStorageInfo,
     DatasetStockCountValidation,
     DatasetValidation,
     DatasetValidationDetails,
@@ -59,6 +60,45 @@ def _read_dataset_metadata(db: DatasetReadable | None) -> tuple[str | None, str 
     return metadata.get("preset"), metadata.get("created_at")
 
 
+def _resolve_dataset_storage(resolver: DatasetResolver, name: str) -> DatasetStorageInfo:
+    duckdb_path = resolver.get_duckdb_path(name)
+    compatibility_db_path = resolver.get_db_path(name)
+    manifest_path = resolver.get_manifest_path(name)
+    legacy_db_path = resolver.get_legacy_db_path(name)
+
+    has_duckdb = os.path.exists(duckdb_path)
+    has_compatibility_db = os.path.exists(compatibility_db_path)
+    has_manifest = os.path.exists(manifest_path)
+
+    if has_duckdb:
+        return DatasetStorageInfo(
+            backend="duckdb-parquet",
+            primaryPath=duckdb_path,
+            duckdbPath=duckdb_path,
+            compatibilityDbPath=compatibility_db_path if has_compatibility_db else None,
+            manifestPath=manifest_path if has_manifest else None,
+            hasCompatibilityArtifact=has_compatibility_db,
+        )
+
+    if has_compatibility_db:
+        return DatasetStorageInfo(
+            backend="sqlite-compatibility",
+            primaryPath=compatibility_db_path,
+            compatibilityDbPath=compatibility_db_path,
+            manifestPath=manifest_path if has_manifest else None,
+            hasCompatibilityArtifact=True,
+        )
+
+    if os.path.exists(legacy_db_path):
+        return DatasetStorageInfo(
+            backend="sqlite-legacy",
+            primaryPath=legacy_db_path,
+            hasCompatibilityArtifact=False,
+        )
+
+    raise FileNotFoundError(f"Dataset storage not found: {name}")
+
+
 def list_datasets(resolver: DatasetResolver) -> list[DatasetListItem]:
     """利用可能なデータセット一覧を取得"""
     items: list[DatasetListItem] = []
@@ -67,6 +107,7 @@ def list_datasets(resolver: DatasetResolver) -> list[DatasetListItem]:
         try:
             last_modified = _resolve_last_modified(dataset_path)
             preset, created_at = _read_dataset_metadata(resolver.resolve(name))
+            storage = _resolve_dataset_storage(resolver, name)
 
             items.append(
                 DatasetListItem(
@@ -76,6 +117,8 @@ def list_datasets(resolver: DatasetResolver) -> list[DatasetListItem]:
                     lastModified=datetime.fromtimestamp(last_modified).isoformat(),
                     preset=preset,
                     createdAt=created_at,
+                    backend=storage.backend,
+                    hasCompatibilityArtifact=storage.hasCompatibilityArtifact,
                 )
             )
         except OSError:
@@ -100,6 +143,7 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
 
     dataset_path = resolver.get_dataset_path(name)
     last_modified = _resolve_last_modified(dataset_path)
+    storage = _resolve_dataset_storage(resolver, name)
 
     info = db.get_dataset_info()
     table_counts = db.get_table_counts()
@@ -183,6 +227,7 @@ def get_dataset_info(resolver: DatasetResolver, name: str) -> DatasetInfoRespons
         path=dataset_path,
         fileSize=_resolve_path_size(dataset_path),
         lastModified=datetime.fromtimestamp(last_modified).isoformat(),
+        storage=storage,
         snapshot=DatasetSnapshot(
             preset=preset_name,
             createdAt=info.get("created_at"),

@@ -12,7 +12,7 @@ import { DatasetJobProgress } from './DatasetJobProgress';
 
 export function DatasetCreateForm() {
   const [selectedPreset, setSelectedPreset] = useState('quickTesting');
-  const [filename, setFilename] = useState('quickTesting.db');
+  const [datasetName, setDatasetName] = useState('quickTesting');
   const [overwrite, setOverwrite] = useState(false);
   const [timeoutMinutes, setTimeoutMinutes] = useState(35);
 
@@ -22,16 +22,18 @@ export function DatasetCreateForm() {
 
   const isJobActive = !!activeDatasetJobId;
 
-  // Update filename when preset changes
+  // Keep the default dataset name aligned with the selected preset.
   useEffect(() => {
-    setFilename(`${selectedPreset}.db`);
+    setDatasetName(selectedPreset);
   }, [selectedPreset]);
 
   const presetInfo = DATASET_PRESETS.find((p) => p.value === selectedPreset);
 
+  const normalizedDatasetName = datasetName.trim().replace(/\.db$/i, '');
+
   const handleCreate = () => {
     createDataset.mutate(
-      { name: filename, preset: selectedPreset, overwrite, timeoutMinutes },
+      { name: normalizedDatasetName, preset: selectedPreset, overwrite, timeoutMinutes },
       {
         onSuccess: (data) => {
           setActiveDatasetJobId(data.jobId);
@@ -42,7 +44,7 @@ export function DatasetCreateForm() {
 
   const handleResume = () => {
     resumeDataset.mutate(
-      { name: filename, preset: selectedPreset, timeoutMinutes },
+      { name: normalizedDatasetName, preset: selectedPreset, timeoutMinutes },
       {
         onSuccess: (data) => {
           setActiveDatasetJobId(data.jobId);
@@ -54,9 +56,18 @@ export function DatasetCreateForm() {
   return (
     <Card>
       <CardHeader className="pb-3">
-        <CardTitle className="text-base">データセット作成</CardTitle>
+        <CardTitle className="text-base">DuckDB データセット作成</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
+        <p className="text-xs text-muted-foreground">
+          新規 dataset は snapshot として保存されます。出力は <code>dataset.duckdb</code> と
+          <code>parquet/</code> が正本で、<code>dataset.db</code> は互換用です。
+        </p>
+        <p className="text-xs text-amber-700">
+          <code>作成</code> と <code>レジューム</code> は <code>market.duckdb</code> を source of truth として
+          dataset snapshot を作成します。J-Quants へは fetch しません。
+        </p>
+
         <div className="space-y-2">
           <Label htmlFor="preset">プリセット</Label>
           <Select value={selectedPreset} onValueChange={setSelectedPreset}>
@@ -79,13 +90,17 @@ export function DatasetCreateForm() {
         </div>
 
         <div className="space-y-2">
-          <Label htmlFor="filename">ファイル名</Label>
+          <Label htmlFor="dataset-name">データセット名</Label>
           <Input
-            id="filename"
-            value={filename}
-            onChange={(e) => setFilename(e.target.value)}
-            placeholder="dataset.db"
+            id="dataset-name"
+            value={datasetName}
+            onChange={(e) => setDatasetName(e.target.value)}
+            placeholder="quickTesting"
           />
+          <p className="text-xs text-muted-foreground">
+            出力先: <code>{normalizedDatasetName || '<name>'}/dataset.duckdb</code> と
+            <code>{normalizedDatasetName || '<name>'}/parquet/</code>
+          </p>
         </div>
 
         <div className="space-y-2">
@@ -106,7 +121,7 @@ export function DatasetCreateForm() {
         </label>
 
         <div className="flex gap-2">
-          <Button onClick={handleCreate} disabled={isJobActive || createDataset.isPending || !filename}>
+          <Button onClick={handleCreate} disabled={isJobActive || createDataset.isPending || !normalizedDatasetName}>
             {createDataset.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
@@ -117,7 +132,7 @@ export function DatasetCreateForm() {
           <Button
             variant="outline"
             onClick={handleResume}
-            disabled={isJobActive || resumeDataset.isPending || !filename}
+            disabled={isJobActive || resumeDataset.isPending || !normalizedDatasetName}
           >
             {resumeDataset.isPending ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />

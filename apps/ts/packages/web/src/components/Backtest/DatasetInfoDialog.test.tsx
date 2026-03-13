@@ -73,6 +73,14 @@ describe('DatasetInfoDialog', () => {
     const user = userEvent.setup();
     const onOpenChange = vi.fn();
     mockState.data = {
+      storage: {
+        backend: 'duckdb-parquet',
+        primaryPath: '/tmp/quickTesting/dataset.duckdb',
+        duckdbPath: '/tmp/quickTesting/dataset.duckdb',
+        compatibilityDbPath: '/tmp/quickTesting/dataset.db',
+        manifestPath: '/tmp/quickTesting/manifest.v1.json',
+        hasCompatibilityArtifact: true,
+      },
       snapshot: {
         preset: 'quickTesting',
         createdAt: '2026-01-01T00:00:00Z',
@@ -110,6 +118,9 @@ describe('DatasetInfoDialog', () => {
     render(<DatasetInfoDialog open={true} onOpenChange={onOpenChange} datasetName="quickTesting.db" />);
 
     expect(screen.getByText('quickTesting')).toBeInTheDocument();
+    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getByText('dataset.db compatibility')).toBeInTheDocument();
+    expect(screen.getAllByText('/tmp/quickTesting/dataset.duckdb').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Quotes')).toBeInTheDocument();
     expect(screen.getByText('90 / 100')).toBeInTheDocument();
     expect(screen.getAllByText('Statements').length).toBeGreaterThanOrEqual(1);
@@ -125,6 +136,14 @@ describe('DatasetInfoDialog', () => {
 
   it('renders validation errors and warnings', () => {
     mockState.data = {
+      storage: {
+        backend: 'sqlite-legacy',
+        primaryPath: '/tmp/legacy.db',
+        duckdbPath: null,
+        compatibilityDbPath: null,
+        manifestPath: null,
+        hasCompatibilityArtifact: false,
+      },
       snapshot: {
         preset: null,
         createdAt: null,
@@ -165,6 +184,7 @@ describe('DatasetInfoDialog', () => {
 
     render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting.db" />);
 
+    expect(screen.getAllByText('Legacy SQLite').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('missing quotes')).toBeInTheDocument();
     expect(screen.getByText('partial update')).toBeInTheDocument();
     expect(screen.getByText('Date gaps')).toBeInTheDocument();

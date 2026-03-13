@@ -28,8 +28,8 @@ def client() -> TestClient:
     resolver.list_datasets.return_value = []
     app.state.dataset_resolver = resolver
 
-    # Mock JQuants client
-    app.state.jquants_client = AsyncMock()
+    # Mock market reader
+    app.state.market_reader = MagicMock()
 
     return TestClient(app)
 
@@ -50,6 +50,14 @@ def test_create_dataset_existing_no_overwrite(client: TestClient) -> None:
     resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
     assert resp.status_code == 409
     assert "already exists" in resp.json()["message"]
+
+
+def test_create_dataset_requires_market_reader(client: TestClient) -> None:
+    client.app.state.market_reader = None
+
+    resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
+    assert resp.status_code == 422
+    assert "Market database not initialized" in resp.json()["message"]
 
 
 def test_create_dataset_success(client: TestClient) -> None:
@@ -95,6 +103,16 @@ def test_resume_dataset_not_found(client: TestClient) -> None:
 
     resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
     assert resp.status_code == 404
+
+
+def test_resume_dataset_requires_market_reader(client: TestClient) -> None:
+    resolver = _dataset_resolver(client)
+    resolver.exists.return_value = True
+    client.app.state.market_reader = None
+
+    resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
+    assert resp.status_code == 422
+    assert "Market database not initialized" in resp.json()["message"]
 
 
 def test_resume_dataset_success(client: TestClient) -> None:

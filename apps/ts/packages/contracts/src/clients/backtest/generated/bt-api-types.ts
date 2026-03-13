@@ -3401,7 +3401,7 @@ export interface components {
         DatasetCreateRequest: {
             /**
              * Name
-             * @description Dataset filename (e.g. 'prime.db')
+             * @description Dataset snapshot name (e.g. 'primeMarket'; '.db' suffix accepted for compatibility)
              */
             name: string;
             /**
@@ -3497,6 +3497,7 @@ export interface components {
             path: string;
             snapshot: components["schemas"]["DatasetSnapshot"];
             stats: components["schemas"]["DatasetStats"];
+            storage: components["schemas"]["DatasetStorageInfo"];
             validation: components["schemas"]["DatasetValidation"];
         };
         /** DatasetJobResponse */
@@ -3548,6 +3549,12 @@ export interface components {
         /** DatasetListItem */
         DatasetListItem: {
             /**
+             * Backend
+             * @description Resolved storage backend
+             * @enum {string}
+             */
+            backend: "duckdb-parquet" | "sqlite-compatibility" | "sqlite-legacy";
+            /**
              * Createdat
              * @description Created datetime stored in dataset_info
              */
@@ -3557,6 +3564,12 @@ export interface components {
              * @description File size in bytes
              */
             fileSize: number;
+            /**
+             * Hascompatibilityartifact
+             * @description Whether dataset.db compatibility artifact is present
+             * @default false
+             */
+            hasCompatibilityArtifact: boolean;
             /**
              * Lastmodified
              * @description Last modified ISO datetime
@@ -3804,6 +3817,41 @@ export interface components {
             isWithinRange: boolean;
             /** Preset */
             preset?: string | null;
+        };
+        /** DatasetStorageInfo */
+        DatasetStorageInfo: {
+            /**
+             * Backend
+             * @description Resolved dataset storage backend
+             * @enum {string}
+             */
+            backend: "duckdb-parquet" | "sqlite-compatibility" | "sqlite-legacy";
+            /**
+             * Compatibilitydbpath
+             * @description SQLite compatibility artifact path when present
+             */
+            compatibilityDbPath?: string | null;
+            /**
+             * Duckdbpath
+             * @description DuckDB snapshot path
+             */
+            duckdbPath?: string | null;
+            /**
+             * Hascompatibilityartifact
+             * @description Whether a compatibility SQLite artifact is present
+             * @default false
+             */
+            hasCompatibilityArtifact: boolean;
+            /**
+             * Manifestpath
+             * @description Dataset snapshot manifest path
+             */
+            manifestPath?: string | null;
+            /**
+             * Primarypath
+             * @description Primary artifact path for the dataset
+             */
+            primaryPath: string;
         };
         /** DatasetValidation */
         DatasetValidation: {
