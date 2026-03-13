@@ -447,6 +447,25 @@ class TestResampleAPIErrors:
             })
 
             assert response.status_code == 404
+            assert response.json()["details"] == [
+                {"field": "reason", "message": "stock_not_found"},
+            ]
+
+    def test_api_not_found_with_dataset_source_and_topix_does_not_misclassify_topix(self, client):
+        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
+            mock_service = MockService.return_value
+            mock_service.load_ohlcv.side_effect = APINotFoundError("Resource not found: Stock not found")
+
+            response = client.post("/api/ohlcv/resample", json={
+                "stock_code": "9999",
+                "source": "primeExTopix500",
+                "timeframe": "weekly",
+                "benchmark_code": "topix",
+            })
+
+            assert response.status_code == 404
+            assert response.json()["message"] == "Resource not found: Stock not found"
+            assert response.json().get("details") is None
 
     def test_api_error_returns_status_code(self, client):
         """APIError が適切なステータスコードで返ること"""

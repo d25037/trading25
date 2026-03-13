@@ -6,12 +6,16 @@ Indicator/Signal で source=market を扱う際の重複実装を避ける。
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Protocol
 
 import pandas as pd
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
+
+
+class MarketReaderLookup(Protocol):
+    def query_one(self, sql: str, params: tuple[str, ...] = ()) -> Any: ...
 
 
 def _rows_to_dataframe(rows: list[Any]) -> pd.DataFrame:
@@ -74,19 +78,23 @@ def load_stock_ohlcv_df(
     return df
 
 
-def stock_exists_in_reader(reader: MarketDbReader, stock_code: str) -> bool:
-    """Return whether the stocks master contains the given code (4/5 digit tolerant)."""
+def stock_exists_in_reader(reader: MarketReaderLookup, stock_code: str) -> bool:
+    """Return whether the snapshot contains the given code in stocks or stock_data."""
     candidates = stock_code_candidates(stock_code)
     if not candidates:
         return False
 
     placeholders = ",".join("?" for _ in candidates)
-    row = reader.query_one(
-        f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
-        "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
-        tuple(candidates),
-    )
-    return row is not None
+    for table in ("stocks", "stock_data"):
+        row = reader.query_one(
+            f"SELECT code FROM {table} WHERE code IN ({placeholders}) "
+            "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
+            tuple(candidates),
+        )
+        if row is not None:
+            return True
+
+    return False
 
 
 def load_topix_df(

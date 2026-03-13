@@ -7,8 +7,8 @@ from typing import Any, Protocol
 from fastapi import HTTPException
 
 from src.application.services.market_data_errors import MarketDataError
+from src.application.services.market_ohlcv_loader import stock_exists_in_reader
 from src.entrypoints.http.schemas.error import ErrorDetail
-from src.infrastructure.db.market.query_helpers import stock_code_candidates
 
 LOCAL_STOCK_DATA_MISSING = "local_stock_data_missing"
 STOCK_NOT_FOUND = "stock_not_found"
@@ -80,7 +80,7 @@ def classify_market_data_http_exception(
     benchmark_code: str | None = None,
     force_lookup: bool = False,
 ) -> HTTPException | None:
-    if benchmark_code == "topix" and (_is_topix_missing_message(raw_message) or force_lookup):
+    if benchmark_code == "topix" and _is_topix_missing_message(raw_message):
         return build_structured_http_exception(
             404,
             raw_message,
@@ -113,14 +113,7 @@ def stock_exists_in_market_snapshot(
     if market_reader is None:
         return False
 
-    candidates = stock_code_candidates(stock_code)
-    placeholders = ",".join("?" for _ in candidates)
-    row = market_reader.query_one(
-        f"SELECT code FROM stocks WHERE code IN ({placeholders}) "
-        "ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END LIMIT 1",
-        tuple(candidates),
-    )
-    return row is not None
+    return stock_exists_in_reader(market_reader, stock_code)
 
 
 def _is_topix_missing_message(raw_message: str) -> bool:
