@@ -181,10 +181,6 @@ function createDataset(request: DatasetCreateRequest): Promise<DatasetCreateJobR
   return apiPost<DatasetCreateJobResponse>('/api/dataset', request);
 }
 
-function resumeDataset(request: DatasetCreateRequest): Promise<DatasetCreateJobResponse> {
-  return apiPost<DatasetCreateJobResponse>('/api/dataset/resume', request);
-}
-
 function deleteDataset(name: string): Promise<DatasetDeleteResponse> {
   return apiDelete<DatasetDeleteResponse>(`/api/dataset/${encodeURIComponent(name)}`);
 }
@@ -246,21 +242,6 @@ export function useCreateDataset() {
     },
     onError: (error) => {
       logger.error('Failed to create dataset', { error: error.message });
-    },
-  });
-}
-
-export function useResumeDataset() {
-  const queryClient = useQueryClient();
-
-  return useMutation({
-    mutationFn: resumeDataset,
-    onSuccess: (data) => {
-      logger.debug('Dataset resume started', { jobId: data.jobId });
-      queryClient.invalidateQueries({ queryKey: datasetKeys.list() });
-    },
-    onError: (error) => {
-      logger.error('Failed to resume dataset', { error: error.message });
     },
   });
 }

@@ -174,10 +174,3 @@ def test_dataset_result_with_data() -> None:
 def test_dataset_job_data() -> None:
     d = DatasetJobData(name="test", preset="quickTesting")
     assert d.overwrite is False
-    assert d.resume is False
-    assert d.timeout_minutes == 35
-
-
-def test_dataset_job_data_resume() -> None:
-    d = DatasetJobData(name="test", preset="quickTesting", resume=True)
-    assert d.resume is True

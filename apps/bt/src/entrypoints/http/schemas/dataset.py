@@ -186,6 +186,8 @@ class DatasetSearchResponse(BaseModel):
 
 
 class DatasetCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     name: str = Field(
         min_length=1,
         max_length=255,
@@ -193,7 +195,6 @@ class DatasetCreateRequest(BaseModel):
     )
     preset: str = Field(description="Preset config name")
     overwrite: bool = Field(default=False, description="Overwrite existing dataset")
-    timeoutMinutes: int = Field(default=35, ge=1, le=120, description="Build timeout in minutes")
 
 
 class DatasetCreateResponse(BaseModel):

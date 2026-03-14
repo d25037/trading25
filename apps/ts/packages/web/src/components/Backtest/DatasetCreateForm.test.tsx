@@ -6,7 +6,6 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { DatasetCreateForm } from './DatasetCreateForm';
 
 const mockCreateMutate = vi.fn();
-const mockResumeMutate = vi.fn();
 const mockSetActiveDatasetJobId = vi.fn();
 
 const mockStore = {
@@ -15,11 +14,6 @@ const mockStore = {
 
 const mockState = {
   create: {
-    isPending: false,
-    isError: false,
-    error: null as Error | null,
-  },
-  resume: {
     isPending: false,
     isError: false,
     error: null as Error | null,
@@ -39,12 +33,6 @@ vi.mock('@/hooks/useDataset', () => ({
     isPending: mockState.create.isPending,
     isError: mockState.create.isError,
     error: mockState.create.error,
-  }),
-  useResumeDataset: () => ({
-    mutate: mockResumeMutate,
-    isPending: mockState.resume.isPending,
-    isError: mockState.resume.isError,
-    error: mockState.resume.error,
   }),
 }));
 
@@ -131,9 +119,6 @@ describe('DatasetCreateForm', () => {
     mockState.create.isPending = false;
     mockState.create.isError = false;
     mockState.create.error = null;
-    mockState.resume.isPending = false;
-    mockState.resume.isError = false;
-    mockState.resume.error = null;
   });
 
   it('renders default values and preset information', () => {
@@ -143,6 +128,7 @@ describe('DatasetCreateForm', () => {
     expect(screen.getByText(/テスト用小規模データセット/)).toBeInTheDocument();
     expect(screen.getAllByText(/dataset\.duckdb/i).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/market\.duckdb/)).toBeInTheDocument();
+    expect(screen.getByText(/batch copy/)).toBeInTheDocument();
     expect(screen.getByText(/J-Quants へは fetch しません/)).toBeInTheDocument();
     expect(screen.getByText('Dataset Job Progress')).toBeInTheDocument();
   });
@@ -153,6 +139,31 @@ describe('DatasetCreateForm', () => {
 
     await user.click(screen.getByRole('button', { name: 'TOPIX 100' }));
     expect(screen.getByDisplayValue('topix100')).toBeInTheDocument();
+  });
+
+  it('shows placeholder output path when dataset name is blank and sends overwrite=true when checked', async () => {
+    const user = userEvent.setup();
+    mockCreateMutate.mockImplementation((_payload, options) => {
+      options?.onSuccess?.({ jobId: 'dataset-job-overwrite' });
+    });
+
+    render(<DatasetCreateForm />);
+
+    await user.clear(screen.getByLabelText('データセット名'));
+    expect(screen.getByText(/<name>\/dataset\.duckdb/)).toBeInTheDocument();
+
+    await user.click(screen.getByLabelText('既存 dataset を上書きして作り直す'));
+    await user.type(screen.getByLabelText('データセット名'), 'custom');
+    await user.click(screen.getByRole('button', { name: '作成' }));
+
+    expect(mockCreateMutate).toHaveBeenCalledWith(
+      {
+        name: 'custom',
+        preset: 'quickTesting',
+        overwrite: true,
+      },
+      expect.any(Object)
+    );
   });
 
   it('creates dataset and stores active job id on success', async () => {
@@ -170,32 +181,10 @@ describe('DatasetCreateForm', () => {
         name: 'quickTesting',
         preset: 'quickTesting',
         overwrite: false,
-        timeoutMinutes: 35,
       },
       expect.any(Object)
     );
     expect(mockSetActiveDatasetJobId).toHaveBeenCalledWith('dataset-job-1');
-  });
-
-  it('resumes dataset and stores active job id on success', async () => {
-    const user = userEvent.setup();
-    mockResumeMutate.mockImplementation((_payload, options) => {
-      options?.onSuccess?.({ jobId: 'dataset-job-2' });
-    });
-
-    render(<DatasetCreateForm />);
-
-    await user.click(screen.getByRole('button', { name: 'レジューム' }));
-
-    expect(mockResumeMutate).toHaveBeenCalledWith(
-      {
-        name: 'quickTesting',
-        preset: 'quickTesting',
-        timeoutMinutes: 35,
-      },
-      expect.any(Object)
-    );
-    expect(mockSetActiveDatasetJobId).toHaveBeenCalledWith('dataset-job-2');
   });
 
   it('disables actions when a dataset job is active', () => {
@@ -204,18 +193,14 @@ describe('DatasetCreateForm', () => {
     render(<DatasetCreateForm />);
 
     expect(screen.getByRole('button', { name: '作成' })).toBeDisabled();
-    expect(screen.getByRole('button', { name: 'レジューム' })).toBeDisabled();
   });
 
-  it('shows create and resume errors', () => {
+  it('shows create errors', () => {
     mockState.create.isError = true;
     mockState.create.error = new Error('create failed');
-    mockState.resume.isError = true;
-    mockState.resume.error = new Error('resume failed');
 
     render(<DatasetCreateForm />);
 
     expect(screen.getByText('Error: create failed')).toBeInTheDocument();
-    expect(screen.getByText('Error: resume failed')).toBeInTheDocument();
   });
 });

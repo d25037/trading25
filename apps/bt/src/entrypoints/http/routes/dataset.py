@@ -7,7 +7,6 @@ GET    /api/dataset/{name}/sample      — ランダムサンプル
 GET    /api/dataset/{name}/search      — 銘柄検索
 DELETE /api/dataset/{name}             — データセット削除
 POST   /api/dataset                    — データセット作成（バックグラウンド）
-POST   /api/dataset/resume             — 再開（バックグラウンド）
 GET    /api/dataset/jobs/{jobId}       — ジョブ状態
 DELETE /api/dataset/jobs/{jobId}       — ジョブキャンセル
 """
@@ -234,7 +233,6 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
         name=name_stem,
         preset=body.preset,
         overwrite=body.overwrite,
-        timeout_minutes=body.timeoutMinutes,
     )
     job = await start_dataset_build(data, resolver, market_reader)
     if job is None:
@@ -249,54 +247,6 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
             preset=body.preset,
             message="Dataset creation job started",
             estimatedTime=_estimate_time(body.preset),
-        ).model_dump(),
-    )
-
-
-# --- Resume ---
-
-
-@router.post(
-    "/api/dataset/resume",
-    response_model=DatasetCreateResponse,
-    status_code=202,
-    summary="Resume an incomplete dataset build",
-)
-async def resume_dataset(request: Request, body: DatasetCreateRequest) -> JSONResponse:
-    resolver = _get_resolver(request)
-    market_reader = _get_market_reader(request)
-
-    # Validate preset
-    if get_preset(body.preset) is None:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unknown preset: {body.preset}. Available: {', '.join(list_presets())}",
-        )
-
-    # Check dataset exists
-    name_stem = body.name.removesuffix(".db")
-    if not resolver.exists(name_stem):
-        raise HTTPException(status_code=404, detail=f'Dataset "{name_stem}" not found')
-
-    data = DatasetJobData(
-        name=name_stem,
-        preset=body.preset,
-        resume=True,
-        timeout_minutes=body.timeoutMinutes,
-    )
-    job = await start_dataset_build(data, resolver, market_reader)
-    if job is None:
-        raise HTTPException(status_code=409, detail="Another dataset build job is already running")
-
-    return JSONResponse(
-        status_code=202,
-        content=DatasetCreateResponse(
-            jobId=job.job_id,
-            status="pending",
-            name=name_stem,
-            preset=body.preset,
-            message="Dataset resume job started",
-            estimatedTime="Depends on missing data",
         ).model_dump(),
     )
 

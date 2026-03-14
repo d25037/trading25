@@ -1,4 +1,4 @@
-"""Tests for dataset management routes (create, resume, jobs)."""
+"""Tests for dataset management routes (create and jobs)."""
 
 from __future__ import annotations
 
@@ -69,17 +69,25 @@ def test_create_dataset_success(client: TestClient) -> None:
 
     with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = mock_job
-        resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting", "timeoutMinutes": 90})
+        resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
 
     assert resp.status_code == 202
     mock_start.assert_awaited_once()
     data_arg: DatasetJobData = mock_start.await_args.args[0]
-    assert data_arg.timeout_minutes == 90
+    assert data_arg == DatasetJobData(name="test", preset="quickTesting", overwrite=False)
     data = resp.json()
     assert data["jobId"] == "test-job-id"
     assert data["status"] == "pending"
     assert data["preset"] == "quickTesting"
     assert data["message"] == "Dataset creation job started"
+
+
+def test_create_dataset_rejects_removed_timeout_minutes(client: TestClient) -> None:
+    resolver = _dataset_resolver(client)
+    resolver.exists.return_value = False
+
+    resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting", "timeoutMinutes": 90})
+    assert resp.status_code == 422
 
 
 def test_create_dataset_conflict(client: TestClient) -> None:
@@ -92,51 +100,6 @@ def test_create_dataset_conflict(client: TestClient) -> None:
 
     assert resp.status_code == 409
     assert "already running" in resp.json()["message"]
-
-
-# --- Resume ---
-
-
-def test_resume_dataset_not_found(client: TestClient) -> None:
-    resolver = _dataset_resolver(client)
-    resolver.exists.return_value = False
-
-    resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
-    assert resp.status_code == 404
-
-
-def test_resume_dataset_requires_market_reader(client: TestClient) -> None:
-    resolver = _dataset_resolver(client)
-    resolver.exists.return_value = True
-    client.app.state.market_reader = None
-
-    resp = client.post("/api/dataset/resume", json={"name": "test", "preset": "quickTesting"})
-    assert resp.status_code == 422
-    assert "Market database not initialized" in resp.json()["message"]
-
-
-def test_resume_dataset_success(client: TestClient) -> None:
-    resolver = _dataset_resolver(client)
-    resolver.exists.return_value = True
-
-    mock_job = MagicMock()
-    mock_job.job_id = "resume-job-id"
-
-    with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
-        mock_start.return_value = mock_job
-        resp = client.post(
-            "/api/dataset/resume",
-            json={"name": "test", "preset": "quickTesting", "timeoutMinutes": 90},
-        )
-
-    assert resp.status_code == 202
-    mock_start.assert_awaited_once()
-    data_arg: DatasetJobData = mock_start.await_args.args[0]
-    assert data_arg.resume is True
-    assert data_arg.timeout_minutes == 90
-    data = resp.json()
-    assert data["jobId"] == "resume-job-id"
-    assert data["message"] == "Dataset resume job started"
 
 
 # --- Get Job ---
