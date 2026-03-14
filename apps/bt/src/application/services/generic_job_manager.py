@@ -115,8 +115,8 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         job.completed_at = datetime.now(UTC)
         job.cancelled.set()
         if job.task is not None:
-            job.task.cancel()
             if wait:
+                job.task.cancel()
                 with suppress(asyncio.CancelledError):
                     await job.task
             else:

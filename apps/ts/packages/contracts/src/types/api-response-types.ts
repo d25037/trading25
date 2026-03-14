@@ -272,7 +272,8 @@ export interface DatasetListItem {
   lastModified: string;
   preset: string | null;
   createdAt: string | null;
-  backend: 'duckdb-parquet';
+  backend: 'duckdb-parquet' | 'sqlite-compatibility' | 'sqlite-legacy';
+  hasCompatibilityArtifact: boolean;
 }
 
 export type DatasetListResponse = DatasetListItem[];
@@ -331,10 +332,12 @@ export interface DatasetInfoResponse {
   fileSize: number;
   lastModified: string;
   storage: {
-    backend: 'duckdb-parquet';
+    backend: 'duckdb-parquet' | 'sqlite-compatibility' | 'sqlite-legacy';
     primaryPath: string;
     duckdbPath: string | null;
+    compatibilityDbPath: string | null;
     manifestPath: string | null;
+    hasCompatibilityArtifact: boolean;
   };
   snapshot: {
     preset: string | null;

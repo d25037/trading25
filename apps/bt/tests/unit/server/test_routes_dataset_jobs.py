@@ -26,6 +26,7 @@ def client() -> TestClient:
     resolver = MagicMock()
     resolver.resolve.return_value = None
     resolver.list_datasets.return_value = []
+    resolver.exists.return_value = False
     resolver.get_artifact_paths.return_value = []
     app.state.dataset_resolver = resolver
 
@@ -46,11 +47,23 @@ def test_create_dataset_invalid_preset(client: TestClient) -> None:
 
 def test_create_dataset_existing_no_overwrite(client: TestClient) -> None:
     resolver = _dataset_resolver(client)
+    resolver.exists.return_value = True
     resolver.get_artifact_paths.return_value = ["/tmp/test"]
 
     resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
     assert resp.status_code == 409
     assert "already exists" in resp.json()["message"]
+
+
+def test_create_dataset_hidden_artifacts_require_overwrite(client: TestClient) -> None:
+    resolver = _dataset_resolver(client)
+    resolver.exists.return_value = False
+    resolver.get_artifact_paths.return_value = ["/tmp/test.db"]
+
+    resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
+    assert resp.status_code == 409
+    assert "unsupported or partial artifacts" in resp.json()["message"]
+    assert "overwrite=true" in resp.json()["message"]
 
 
 def test_create_dataset_requires_market_reader(client: TestClient) -> None:

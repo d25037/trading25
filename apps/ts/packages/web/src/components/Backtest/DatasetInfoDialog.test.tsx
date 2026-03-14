@@ -75,9 +75,11 @@ describe('DatasetInfoDialog', () => {
     mockState.data = {
       storage: {
         backend: 'duckdb-parquet',
-        primaryPath: '/tmp/quickTesting',
+        primaryPath: '/tmp/quickTesting/dataset.duckdb',
         duckdbPath: '/tmp/quickTesting/dataset.duckdb',
+        compatibilityDbPath: null,
         manifestPath: '/tmp/quickTesting/manifest.v2.json',
+        hasCompatibilityArtifact: false,
       },
       snapshot: {
         preset: 'quickTesting',
@@ -135,9 +137,11 @@ describe('DatasetInfoDialog', () => {
     mockState.data = {
       storage: {
         backend: 'duckdb-parquet',
-        primaryPath: '/tmp/quickTesting',
+        primaryPath: '/tmp/quickTesting/dataset.duckdb',
         duckdbPath: '/tmp/quickTesting/dataset.duckdb',
+        compatibilityDbPath: null,
         manifestPath: '/tmp/quickTesting/manifest.v2.json',
+        hasCompatibilityArtifact: false,
       },
       snapshot: {
         preset: null,

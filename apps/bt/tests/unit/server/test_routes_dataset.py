@@ -164,7 +164,7 @@ class TestDatasetManagementRoutes:
         assert data["stats"]["dateRange"]["from"] == "2024-01-04"
         assert data["stats"]["dateRange"]["to"] == "2024-01-04"
         assert data["storage"]["backend"] == "duckdb-parquet"
-        assert data["storage"]["primaryPath"].endswith("/test-market")
+        assert data["storage"]["primaryPath"].endswith("/test-market/dataset.duckdb")
         assert data["storage"]["duckdbPath"].endswith("/test-market/dataset.duckdb")
         assert data["storage"]["manifestPath"].endswith("/test-market/manifest.v2.json")
         assert data["validation"]["details"]["dataCoverage"]["stocksWithQuotes"] == 2

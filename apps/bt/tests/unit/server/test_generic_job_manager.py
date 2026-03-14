@@ -112,21 +112,20 @@ class TestGenericJobManager:
     @pytest.mark.asyncio
     async def test_cancel_wait_false_blocks_new_job_until_task_finishes(self, manager) -> None:
         job = await manager.create_job("data")
-        cancellation_seen = asyncio.Event()
+        graceful_cancel_seen = asyncio.Event()
         allow_finish = asyncio.Event()
 
         async def slow_cleanup_task() -> None:
-            try:
-                await asyncio.sleep(100)
-            except asyncio.CancelledError:
-                cancellation_seen.set()
-                await allow_finish.wait()
+            while not job.cancelled.is_set():
+                await asyncio.sleep(0.01)
+            graceful_cancel_seen.set()
+            await allow_finish.wait()
 
         job.task = asyncio.create_task(slow_cleanup_task())
         await asyncio.sleep(0.01)
 
         assert await manager.cancel_job(job.job_id, wait=False) is True
-        await cancellation_seen.wait()
+        await graceful_cancel_seen.wait()
         assert await manager.create_job("next") is None
 
         allow_finish.set()

@@ -27,7 +27,7 @@ export function DatasetCreateForm() {
 
   const presetInfo = DATASET_PRESETS.find((p) => p.value === selectedPreset);
 
-  const normalizedDatasetName = datasetName.trim();
+  const normalizedDatasetName = datasetName.trim().replace(/\.db$/i, '');
 
   const handleCreate = () => {
     createDataset.mutate(

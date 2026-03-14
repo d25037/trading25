@@ -209,7 +209,7 @@ def test_get_dataset_info_with_sparse_data_returns_errors_and_warnings(tmp_path:
     assert info.stats.dateRange.to == "-"
     assert info.snapshot.createdAt == "2026-01-01T00:00:00+00:00"
     assert info.storage.backend == "duckdb-parquet"
-    assert info.storage.primaryPath.endswith("/sparse")
+    assert info.storage.primaryPath.endswith("/sparse/dataset.duckdb")
 
 
 def test_get_dataset_info_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path) -> None:

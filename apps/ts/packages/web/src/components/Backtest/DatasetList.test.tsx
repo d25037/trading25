@@ -59,6 +59,7 @@ function createDatasets(): DatasetListItem[] {
       lastModified: '2026-01-01T00:00:00.000Z',
       createdAt: '2026-01-01T00:00:00.000Z',
       backend: 'duckdb-parquet',
+      hasCompatibilityArtifact: false,
     },
     {
       name: 'alpha',
@@ -67,6 +68,7 @@ function createDatasets(): DatasetListItem[] {
       lastModified: '2026-01-02T00:00:00.000Z',
       createdAt: '2026-01-02T00:00:00.000Z',
       backend: 'duckdb-parquet',
+      hasCompatibilityArtifact: false,
     },
   ];
 }

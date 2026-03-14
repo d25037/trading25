@@ -69,7 +69,7 @@ def _resolve_dataset_storage(resolver: DatasetResolver, name: str) -> DatasetSto
     if has_duckdb and has_manifest:
         return DatasetStorageInfo(
             backend="duckdb-parquet",
-            primaryPath=resolver.get_dataset_path(name),
+            primaryPath=duckdb_path,
             duckdbPath=duckdb_path,
             manifestPath=manifest_path,
         )

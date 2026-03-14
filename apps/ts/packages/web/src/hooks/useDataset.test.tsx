@@ -55,6 +55,7 @@ describe('useDatasets', () => {
         preset: 'primeMarket',
         createdAt: '2026-01-02T00:00:00Z',
         backend: 'duckdb-parquet',
+        hasCompatibilityArtifact: false,
       },
     ]);
 
@@ -72,6 +73,35 @@ describe('useDatasets', () => {
         preset: 'primeMarket',
         createdAt: '2026-01-02T00:00:00Z',
         backend: 'duckdb-parquet',
+        hasCompatibilityArtifact: false,
+      },
+    ]);
+  });
+
+  it('normalizes legacy dataset list items', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce([
+      {
+        name: 'legacy',
+        path: '/tmp/legacy.db',
+        fileSize: 10,
+        lastModified: '2026-01-03T00:00:00Z',
+      },
+    ]);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasets(), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data).toEqual([
+      {
+        name: 'legacy',
+        path: '/tmp/legacy.db',
+        fileSize: 10,
+        lastModified: '2026-01-03T00:00:00Z',
+        preset: null,
+        createdAt: null,
+        backend: 'sqlite-legacy',
+        hasCompatibilityArtifact: false,
       },
     ]);
   });
@@ -88,7 +118,9 @@ describe('useDatasetInfo', () => {
         backend: 'duckdb-parquet',
         primaryPath: '/tmp/prime',
         duckdbPath: '/tmp/prime/dataset.duckdb',
+        compatibilityDbPath: null,
         manifestPath: '/tmp/prime/manifest.v2.json',
+        hasCompatibilityArtifact: false,
       },
       snapshot: {
         preset: 'primeMarket',
@@ -128,6 +160,39 @@ describe('useDatasetInfo', () => {
     expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
     expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(9);
     expect(result.current.data?.storage.manifestPath).toBe('/tmp/prime/manifest.v2.json');
+  });
+
+  it('normalizes legacy dataset info payloads', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      name: 'legacy',
+      path: '/tmp/legacy.db',
+      fileSize: 100,
+      lastModified: '2026-01-01T00:00:00Z',
+      snapshot: {
+        preset: 'quickTesting',
+        createdAt: '2026-01-01T00:00:00Z',
+        totalStocks: 3,
+        stocksWithQuotes: 2,
+        dateRange: { min: '2025-01-01', max: '2025-01-31' },
+        validation: {
+          isValid: true,
+          errors: [],
+          warnings: ['No TOPIX data'],
+        },
+      },
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetInfo('legacy'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
+    expect(result.current.data?.storage.primaryPath).toBe('/tmp/legacy.db');
+    expect(result.current.data?.storage.hasCompatibilityArtifact).toBe(false);
+    expect(result.current.data?.stats.totalStocks).toBe(3);
+    expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
+    expect(result.current.data?.stats.hasTOPIXData).toBe(false);
+    expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(2);
   });
 
   it('does not fetch when name is null', () => {

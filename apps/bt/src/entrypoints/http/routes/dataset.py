@@ -223,11 +223,16 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
 
     # Check existing dataset
     name_stem = body.name.removesuffix(".db")
-    if resolver.get_artifact_paths(name_stem) and not body.overwrite:
-        raise HTTPException(
-            status_code=409,
-            detail=f'Dataset "{name_stem}" already exists. Use overwrite=true to replace.',
-        )
+    existing_artifacts = resolver.get_artifact_paths(name_stem)
+    if existing_artifacts and not body.overwrite:
+        if resolver.exists(name_stem):
+            detail = f'Dataset "{name_stem}" already exists. Use overwrite=true to replace.'
+        else:
+            detail = (
+                f'Dataset "{name_stem}" has unsupported or partial artifacts on disk. '
+                "Use overwrite=true to clean them up and rebuild."
+            )
+        raise HTTPException(status_code=409, detail=detail)
 
     data = DatasetJobData(
         name=name_stem,
