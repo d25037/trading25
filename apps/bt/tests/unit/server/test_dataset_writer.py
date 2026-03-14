@@ -1,14 +1,19 @@
 """Tests for DatasetWriter."""
 
 from collections.abc import Generator
+import importlib
 import os
 import shutil
 import tempfile
 
 import pytest
-from sqlalchemy import text
 
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+
+
+def _connect_duckdb(writer: DatasetWriter):
+    duckdb = importlib.import_module("duckdb")
+    return duckdb.connect(str(writer.duckdb_path))
 
 
 @pytest.fixture
@@ -25,8 +30,11 @@ def writer() -> Generator[DatasetWriter, None, None]:
 
 def test_ensure_schema(writer: DatasetWriter) -> None:
     """Schema tables are created on init."""
-    with writer.engine.connect() as conn:
-        tables = [r[0] for r in conn.execute(text("SELECT name FROM sqlite_master WHERE type='table'")).fetchall()]
+    conn = _connect_duckdb(writer)
+    try:
+        tables = [r[0] for r in conn.execute("SHOW TABLES").fetchall()]
+    finally:
+        conn.close()
     assert "stocks" in tables
     assert "stock_data" in tables
     assert "dataset_info" in tables
@@ -80,8 +88,11 @@ def test_upsert_statements(writer: DatasetWriter) -> None:
 
 def test_set_dataset_info(writer: DatasetWriter) -> None:
     writer.set_dataset_info("preset", "quickTesting")
-    with writer.engine.connect() as conn:
-        row = conn.execute(text("SELECT value FROM dataset_info WHERE key = 'preset'")).fetchone()
+    conn = _connect_duckdb(writer)
+    try:
+        row = conn.execute("SELECT value FROM dataset_info WHERE key = 'preset'").fetchone()
+    finally:
+        conn.close()
     assert row is not None
     assert row[0] == "quickTesting"
 
@@ -164,7 +175,7 @@ def test_existing_code_helpers_and_topix_presence(writer: DatasetWriter) -> None
     assert writer.get_existing_statement_codes() == {"7203"}
 
 
-def test_close_exports_parquet_and_compatibility_artifact() -> None:
+def test_close_exports_parquet_bundle() -> None:
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     writer = DatasetWriter(path)
@@ -196,7 +207,6 @@ def test_close_exports_parquet_and_compatibility_artifact() -> None:
             }
         ])
         writer.close()
-        assert writer.compatibility_db_path.exists() is True
         assert writer.duckdb_path.exists() is True
         assert (writer.parquet_dir / "stocks.parquet").exists() is True
         assert (writer.parquet_dir / "stock_data.parquet").exists() is True

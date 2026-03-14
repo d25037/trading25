@@ -26,6 +26,7 @@ def client() -> TestClient:
     resolver = MagicMock()
     resolver.resolve.return_value = None
     resolver.list_datasets.return_value = []
+    resolver.get_artifact_paths.return_value = []
     app.state.dataset_resolver = resolver
 
     # Mock market reader
@@ -45,7 +46,7 @@ def test_create_dataset_invalid_preset(client: TestClient) -> None:
 
 def test_create_dataset_existing_no_overwrite(client: TestClient) -> None:
     resolver = _dataset_resolver(client)
-    resolver.exists.return_value = True
+    resolver.get_artifact_paths.return_value = ["/tmp/test"]
 
     resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
     assert resp.status_code == 409
@@ -62,7 +63,7 @@ def test_create_dataset_requires_market_reader(client: TestClient) -> None:
 
 def test_create_dataset_success(client: TestClient) -> None:
     resolver = _dataset_resolver(client)
-    resolver.exists.return_value = False
+    resolver.get_artifact_paths.return_value = []
 
     mock_job = MagicMock()
     mock_job.job_id = "test-job-id"
@@ -84,7 +85,7 @@ def test_create_dataset_success(client: TestClient) -> None:
 
 def test_create_dataset_rejects_removed_timeout_minutes(client: TestClient) -> None:
     resolver = _dataset_resolver(client)
-    resolver.exists.return_value = False
+    resolver.get_artifact_paths.return_value = []
 
     resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting", "timeoutMinutes": 90})
     assert resp.status_code == 422
@@ -92,7 +93,7 @@ def test_create_dataset_rejects_removed_timeout_minutes(client: TestClient) -> N
 
 def test_create_dataset_conflict(client: TestClient) -> None:
     resolver = _dataset_resolver(client)
-    resolver.exists.return_value = False
+    resolver.get_artifact_paths.return_value = []
 
     with patch("src.entrypoints.http.routes.dataset.start_dataset_build", new_callable=AsyncMock) as mock_start:
         mock_start.return_value = None

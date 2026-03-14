@@ -1,7 +1,7 @@
 """Mode-aware data clients for loader paths.
 
 HTTP mode uses existing API clients.
-Direct mode bypasses internal HTTP and reads local DBs via DatasetDb/MarketDbReader.
+Direct mode bypasses internal HTTP and reads local DuckDB snapshots directly.
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ from typing import Any, Literal
 
 import pandas as pd
 
-from src.infrastructure.db.market.dataset_db import DatasetDb
 from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
@@ -31,7 +30,7 @@ from src.shared.utils.snapshot_ids import (
 
 from .mode import should_use_direct_db
 
-_dataset_db_cache: dict[str, DatasetDb | DatasetSnapshotReader] = {}
+_dataset_db_cache: dict[str, DatasetSnapshotReader] = {}
 _dataset_db_lock = threading.Lock()
 
 _market_reader_cache: dict[str, MarketDbReader] = {}
@@ -72,9 +71,7 @@ def _rows_to_records(
     ]
 
 
-def _resolve_dataset_artifact(
-    dataset_name: str,
-) -> tuple[Literal["duckdb-parquet", "sqlite-compatibility", "sqlite-legacy"], str, str]:
+def _resolve_dataset_artifact(dataset_name: str) -> tuple[Literal["duckdb-parquet"], str, str]:
     normalized_dataset_name = normalize_dataset_snapshot_name(dataset_name)
     if normalized_dataset_name is None:
         raise FileNotFoundError(f"Dataset not found: {dataset_name}")
@@ -83,37 +80,21 @@ def _resolve_dataset_artifact(
     dataset_root = Path(str(getattr(settings, "dataset_base_path", "") or "")).resolve()
     snapshot_root = dataset_root / normalized_dataset_name
     duckdb_path = snapshot_root / "dataset.duckdb"
-    compatibility_db_path = snapshot_root / "dataset.db"
-    legacy_db_path = dataset_root / f"{normalized_dataset_name}.db"
+    manifest_path = snapshot_root / "manifest.v2.json"
 
-    if duckdb_path.exists():
+    if duckdb_path.exists() and manifest_path.exists():
         return "duckdb-parquet", str(snapshot_root.resolve()), str(duckdb_path.resolve())
-    if compatibility_db_path.exists():
-        return (
-            "sqlite-compatibility",
-            str(snapshot_root.resolve()),
-            str(compatibility_db_path.resolve()),
-        )
-    if legacy_db_path.exists():
-        return (
-            "sqlite-legacy",
-            str(legacy_db_path.parent.resolve()),
-            str(legacy_db_path.resolve()),
-        )
 
     raise FileNotFoundError(f"Dataset not found: {dataset_name}")
 
 
-def _resolve_dataset_db(dataset_name: str) -> DatasetDb | DatasetSnapshotReader:
-    backend, snapshot_root, primary_path = _resolve_dataset_artifact(dataset_name)
+def _resolve_dataset_db(dataset_name: str) -> DatasetSnapshotReader:
+    _backend, snapshot_root, primary_path = _resolve_dataset_artifact(dataset_name)
     cache_key = primary_path
     with _dataset_db_lock:
         db = _dataset_db_cache.get(cache_key)
         if db is None:
-            if backend == "duckdb-parquet":
-                db = DatasetSnapshotReader(snapshot_root)
-            else:
-                db = DatasetDb(primary_path)
+            db = DatasetSnapshotReader(snapshot_root)
             _dataset_db_cache[cache_key] = db
         return db
 
@@ -215,7 +196,7 @@ def _to_statements_df(rows: list[Any]) -> pd.DataFrame:
 
 
 class DirectDatasetClient:
-    """Dataset client backed by DatasetDb (no HTTP)."""
+    """Dataset client backed by DatasetSnapshotReader (no HTTP)."""
 
     def __init__(self, dataset_name: str) -> None:
         normalized_dataset_name = normalize_dataset_snapshot_name(dataset_name)

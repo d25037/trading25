@@ -30,17 +30,14 @@ class DummyResolver:
     def get_snapshot_dir(self, name: str) -> str:
         return str(self._base_dir / name)
 
-    def get_db_path(self, name: str) -> str:
-        return str(Path(self.get_snapshot_dir(name)) / "dataset.db")
-
     def get_duckdb_path(self, name: str) -> str:
         return str(Path(self.get_snapshot_dir(name)) / "dataset.duckdb")
 
     def get_manifest_path(self, name: str) -> str:
-        return str(Path(self.get_snapshot_dir(name)) / "manifest.v1.json")
+        return str(Path(self.get_snapshot_dir(name)) / "manifest.v2.json")
 
     def get_dataset_path(self, name: str) -> str:
-        return self._path_by_name.get(name, self.get_legacy_db_path(name))
+        return self._path_by_name.get(name, self.get_snapshot_dir(name))
 
     def get_legacy_db_path(self, name: str) -> str:
         return str(self._base_dir / f"{name}.db")
@@ -114,8 +111,11 @@ class DummyDb:
 
 
 def test_list_datasets_skips_missing_files_and_handles_optional_metadata(tmp_path: Path) -> None:
-    (tmp_path / "a.db").write_text("", encoding="utf-8")
-    (tmp_path / "b.db").write_text("", encoding="utf-8")
+    for name in ["a", "b"]:
+        snapshot_dir = tmp_path / name
+        snapshot_dir.mkdir()
+        (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+        (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     class MetadataErrorDb:
         def get_dataset_info(self) -> dict[str, str]:
@@ -135,10 +135,8 @@ def test_list_datasets_skips_missing_files_and_handles_optional_metadata(tmp_pat
     assert [item.name for item in items] == ["a", "b"]
     assert items[0].preset is None and items[0].createdAt is None
     assert items[1].preset is None and items[1].createdAt is None
-    assert items[0].backend == "sqlite-legacy"
-    assert items[1].backend == "sqlite-legacy"
-    assert items[0].hasCompatibilityArtifact is False
-    assert items[1].hasCompatibilityArtifact is False
+    assert items[0].backend == "duckdb-parquet"
+    assert items[1].backend == "duckdb-parquet"
 
 
 def test_list_datasets_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path) -> None:
@@ -146,11 +144,13 @@ def test_list_datasets_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path) -
     snapshot_dir.mkdir()
     latest_file = snapshot_dir / "dataset.duckdb"
     latest_file.write_text("", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     dir_mtime = 1_700_000_000
     file_mtime = 1_700_000_500
     os.utime(snapshot_dir, (dir_mtime, dir_mtime))
     os.utime(latest_file, (file_mtime, file_mtime))
+    os.utime(snapshot_dir / "manifest.v2.json", (dir_mtime, dir_mtime))
 
     resolver = DummyResolver(
         base_dir=tmp_path,
@@ -163,12 +163,13 @@ def test_list_datasets_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path) -
 
     assert items[0].lastModified == datetime.fromtimestamp(file_mtime).isoformat()
     assert items[0].backend == "duckdb-parquet"
-    assert items[0].hasCompatibilityArtifact is False
 
 
 def test_get_dataset_info_with_sparse_data_returns_errors_and_warnings(tmp_path: Path) -> None:
-    db_path = tmp_path / "sparse.db"
-    db_path.write_text("", encoding="utf-8")
+    snapshot_dir = tmp_path / "sparse"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     db = DummyDb(
         info={"preset": "primeMarket", "stock_count": "oops", "created_at": "2026-01-01T00:00:00+00:00"},
@@ -207,8 +208,8 @@ def test_get_dataset_info_with_sparse_data_returns_errors_and_warnings(tmp_path:
     assert info.stats.dateRange.from_ == "-"
     assert info.stats.dateRange.to == "-"
     assert info.snapshot.createdAt == "2026-01-01T00:00:00+00:00"
-    assert info.storage.backend == "sqlite-legacy"
-    assert info.storage.primaryPath.endswith("/sparse.db")
+    assert info.storage.backend == "duckdb-parquet"
+    assert info.storage.primaryPath.endswith("/sparse")
 
 
 def test_get_dataset_info_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path) -> None:
@@ -216,7 +217,7 @@ def test_get_dataset_info_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path
     snapshot_dir.mkdir()
     duckdb_file = snapshot_dir / "dataset.duckdb"
     duckdb_file.write_text("", encoding="utf-8")
-    latest_file = snapshot_dir / "manifest.v1.json"
+    latest_file = snapshot_dir / "manifest.v2.json"
     latest_file.write_text("{}", encoding="utf-8")
 
     dir_mtime = 1_700_001_000
@@ -259,8 +260,10 @@ def test_get_dataset_info_uses_latest_file_mtime_for_snapshot_dir(tmp_path: Path
 
 
 def test_get_dataset_info_with_healthy_data_has_no_warnings(tmp_path: Path) -> None:
-    db_path = tmp_path / "healthy.db"
-    db_path.write_text("", encoding="utf-8")
+    snapshot_dir = tmp_path / "healthy"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     db = DummyDb(
         info={"preset": "primeMarket", "stock_count": "2"},
@@ -295,12 +298,14 @@ def test_get_dataset_info_with_healthy_data_has_no_warnings(tmp_path: Path) -> N
     assert info.stats.hasTOPIXData is True
     assert info.stats.hasSectorData is True
     assert info.stats.hasStatementsData is True
-    assert info.storage.backend == "sqlite-legacy"
+    assert info.storage.backend == "duckdb-parquet"
 
 
 def test_get_dataset_info_without_stock_count_metadata_uses_none_expected(tmp_path: Path) -> None:
-    db_path = tmp_path / "nostockcount.db"
-    db_path.write_text("", encoding="utf-8")
+    snapshot_dir = tmp_path / "nostockcount"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     db = DummyDb(
         info={},
@@ -327,7 +332,7 @@ def test_get_dataset_info_without_stock_count_metadata_uses_none_expected(tmp_pa
     assert info.validation.details.stockCountValidation is not None
     assert info.validation.details.stockCountValidation.expected is None
     assert "No TOPIX data" in info.validation.warnings
-    assert info.storage.backend == "sqlite-legacy"
+    assert info.storage.backend == "duckdb-parquet"
 
 
 def test_search_dataset_deduplicates_exact_and_partial_results() -> None:
@@ -352,7 +357,8 @@ def test_search_dataset_deduplicates_exact_and_partial_results() -> None:
 def test_delete_dataset_removes_snapshot_and_legacy_artifacts(tmp_path: Path) -> None:
     snapshot_dir = tmp_path / "sample"
     snapshot_dir.mkdir()
-    (snapshot_dir / "dataset.db").write_text("", encoding="utf-8")
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
     legacy_db = tmp_path / "sample.db"
     conn = sqlite3.connect(legacy_db)
     conn.execute("CREATE TABLE IF NOT EXISTS dataset_info (key TEXT PRIMARY KEY, value TEXT)")

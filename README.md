@@ -7,7 +7,8 @@ FastAPI バックエンド（`apps/bt`）と TypeScript クライアント（`ap
 ```
 JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
                      │               ├─ DuckDB + Parquet (market time-series)
-                     │               └─ SQLite (portfolio/jobs/datasets metadata)
+                     │               ├─ DuckDB + Parquet (dataset snapshots)
+                     │               └─ SQLite (portfolio/jobs metadata)
                      ↓
                   ts/web (:5173, /api proxy)
 ```
@@ -15,7 +16,8 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - バックエンドは `apps/bt` の FastAPI に一本化済み
 - financial-analysis のロジック SoT は `apps/bt`（ts 側は API consumer / proxy）
 - 旧 `apps/ts/packages/api`（Hono 互換 API レイヤー）は削除済み
-- Backtest 実行パスは `apps/bt` 内で dataset/market DB を直接参照し、内部HTTP self-call を回避
+- Dataset snapshot の正規形は `dataset.duckdb + parquet/ + manifest.v2.json`
+- Backtest 実行パスは `apps/bt` 内で dataset/market DuckDB reader を直接参照し、内部HTTP self-call を回避
 
 ## Repository Layout
 

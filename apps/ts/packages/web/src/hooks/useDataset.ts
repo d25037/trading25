@@ -6,7 +6,6 @@ import type {
   DatasetCreateRequest,
   DatasetDeleteResponse,
   DatasetInfoResponse,
-  DatasetListItem,
   DatasetJobResponse,
   DatasetListResponse,
 } from '@/types/dataset';
@@ -19,158 +18,12 @@ export const datasetKeys = {
   job: (jobId: string) => [...datasetKeys.all, 'job', jobId] as const,
 };
 
-interface LegacyDatasetInfoResponse {
-  name: string;
-  path: string;
-  fileSize: number;
-  lastModified: string;
-  snapshot: {
-    preset?: string | null;
-    createdAt?: string | null;
-    totalStocks?: number;
-    stocksWithQuotes?: number;
-    dateRange?: {
-      from?: string;
-      to?: string;
-      min?: string;
-      max?: string;
-    } | null;
-    validation?: {
-      isValid?: boolean;
-      errors?: string[];
-      warnings?: string[];
-    };
-  };
-}
-
-interface LegacyDatasetListItem {
-  name: string;
-  path?: string;
-  fileSize: number;
-  lastModified: string;
-  preset?: string | null;
-  createdAt?: string | null;
-  backend?: DatasetListItem['backend'];
-  hasCompatibilityArtifact?: boolean;
-}
-
-type DatasetStorage = DatasetInfoResponse['storage'];
-type LegacySnapshot = LegacyDatasetInfoResponse['snapshot'];
-type LegacyValidation = NonNullable<LegacySnapshot['validation']>;
-
-function inferLegacyStorage(path: string) {
-  const isLegacySqlite = path.endsWith('.db');
-  return {
-    backend: (isLegacySqlite ? 'sqlite-legacy' : 'duckdb-parquet') as
-      | 'duckdb-parquet'
-      | 'sqlite-compatibility'
-      | 'sqlite-legacy',
-    primaryPath: path,
-    duckdbPath: null,
-    compatibilityDbPath: null,
-    manifestPath: null,
-    hasCompatibilityArtifact: false,
-  };
-}
-
-function isDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): value is DatasetInfoResponse {
-  return 'stats' in value && 'validation' in value;
-}
-
-function normalizeStorage(
-  path: string,
-  storage: DatasetStorage | null | undefined
-): DatasetStorage {
-  return storage ?? inferLegacyStorage(path);
-}
-
-function normalizeLegacyValidation(snapshot: LegacySnapshot): LegacyValidation {
-  return snapshot.validation ?? {
-    isValid: true,
-    errors: [],
-    warnings: [],
-  };
-}
-
-function normalizeLegacyDatasetInfoResponse(value: LegacyDatasetInfoResponse): DatasetInfoResponse {
-  const snapshot = value.snapshot ?? {};
-  const validation = normalizeLegacyValidation(snapshot);
-  const dateRange = snapshot.dateRange ?? {};
-  const totalStocks = snapshot.totalStocks ?? 0;
-  const stocksWithQuotes = snapshot.stocksWithQuotes ?? 0;
-
-  return {
-    name: value.name,
-    path: value.path,
-    fileSize: value.fileSize,
-    lastModified: value.lastModified,
-    storage: inferLegacyStorage(value.path),
-    snapshot: {
-      preset: snapshot.preset ?? null,
-      createdAt: snapshot.createdAt ?? null,
-    },
-    stats: {
-      totalStocks,
-      totalQuotes: 0,
-      dateRange: {
-        from: dateRange.from ?? dateRange.min ?? '-',
-        to: dateRange.to ?? dateRange.max ?? '-',
-      },
-      hasMarginData: false,
-      hasTOPIXData: !(validation.warnings ?? []).includes('No TOPIX data'),
-      hasSectorData: false,
-      hasStatementsData: false,
-      statementsFieldCoverage: null,
-    },
-    validation: {
-      isValid: validation.isValid ?? true,
-      errors: validation.errors ?? [],
-      warnings: validation.warnings ?? [],
-      details: {
-        dataCoverage: {
-          totalStocks,
-          stocksWithQuotes,
-          stocksWithStatements: 0,
-          stocksWithMargin: 0,
-        },
-      },
-    },
-  };
-}
-
-function normalizeDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoResponse): DatasetInfoResponse {
-  if (isDatasetInfoResponse(value)) {
-    return {
-      ...value,
-      storage: normalizeStorage(value.path, value.storage),
-    };
-  }
-
-  return normalizeLegacyDatasetInfoResponse(value);
-}
-
-function normalizeDatasetListItem(value: DatasetListItem | LegacyDatasetListItem): DatasetListItem {
-  const legacyPath = 'path' in value ? value.path : undefined;
-  const inferredStorage = inferLegacyStorage(legacyPath ?? value.name);
-  return {
-    ...value,
-    preset: value.preset ?? null,
-    createdAt: value.createdAt ?? null,
-    backend: value.backend ?? inferredStorage.backend,
-    hasCompatibilityArtifact: value.hasCompatibilityArtifact ?? inferredStorage.hasCompatibilityArtifact,
-  };
-}
-
 function fetchDatasets(): Promise<DatasetListResponse> {
-  return apiGet<DatasetListResponse | LegacyDatasetListItem[]>('/api/dataset').then((items) =>
-    items.map(normalizeDatasetListItem)
-  );
+  return apiGet<DatasetListResponse>('/api/dataset');
 }
 
 function fetchDatasetInfo(name: string): Promise<DatasetInfoResponse> {
-  return apiGet<DatasetInfoResponse | LegacyDatasetInfoResponse>(`/api/dataset/${encodeURIComponent(name)}/info`).then(
-    normalizeDatasetInfoResponse
-  );
+  return apiGet<DatasetInfoResponse>(`/api/dataset/${encodeURIComponent(name)}/info`);
 }
 
 function fetchJobStatus(jobId: string): Promise<DatasetJobResponse> {

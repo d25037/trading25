@@ -1,21 +1,20 @@
-"""Dataset snapshot resolver with compatibility fallback."""
+"""DuckDB-only dataset snapshot resolver."""
 
 from __future__ import annotations
 
 import os
 import threading
 
-from src.infrastructure.db.market.dataset_db import DatasetDb
 from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.shared.utils.snapshot_ids import normalize_dataset_snapshot_name
 
 
 class DatasetResolver:
-    """Dataset 名から DatasetDb インスタンスを解決（キャッシュ付き）"""
+    """Resolve dataset snapshots backed by `dataset.duckdb + manifest.v2.json`."""
 
     def __init__(self, base_path: str) -> None:
         self._base_path = os.path.realpath(base_path)
-        self._cache: dict[str, DatasetDb | DatasetSnapshotReader] = {}
+        self._cache: dict[str, DatasetSnapshotReader] = {}
         self._locks: dict[str, threading.Lock] = {}
         self._global_lock = threading.Lock()
 
@@ -24,7 +23,6 @@ class DatasetResolver:
         return self._base_path
 
     def _validate_name(self, name: str) -> str:
-        """名前検証 + パストラバーサル防御。正規化された dataset 名を返す。"""
         stem = normalize_dataset_snapshot_name(name)
         if stem is None:
             raise ValueError(f"Invalid dataset name: {name}")
@@ -37,36 +35,26 @@ class DatasetResolver:
         normalized = self._validate_name(name)
         return os.path.join(self._base_path, normalized)
 
-    def get_db_path(self, name: str) -> str:
-        """新 snapshot layout での compatibility dataset.db パス。"""
-        return os.path.join(self.get_snapshot_dir(name), "dataset.db")
-
     def get_duckdb_path(self, name: str) -> str:
         return os.path.join(self.get_snapshot_dir(name), "dataset.duckdb")
 
     def get_manifest_path(self, name: str) -> str:
-        return os.path.join(self.get_snapshot_dir(name), "manifest.v1.json")
+        return os.path.join(self.get_snapshot_dir(name), "manifest.v2.json")
+
+    def get_dataset_path(self, name: str) -> str:
+        return self.get_snapshot_dir(name)
 
     def get_legacy_db_path(self, name: str) -> str:
         normalized = self._validate_name(name)
         return os.path.join(self._base_path, f"{normalized}.db")
 
-    def _snapshot_has_supported_artifacts(self, snapshot_dir: str) -> bool:
-        return os.path.exists(os.path.join(snapshot_dir, "dataset.duckdb")) or os.path.exists(
-            os.path.join(snapshot_dir, "dataset.db")
+    def _snapshot_is_supported(self, snapshot_dir: str) -> bool:
+        return os.path.exists(os.path.join(snapshot_dir, "dataset.duckdb")) and os.path.exists(
+            os.path.join(snapshot_dir, "manifest.v2.json")
         )
-
-    def get_dataset_path(self, name: str) -> str:
-        snapshot_dir = self.get_snapshot_dir(name)
-        if self._snapshot_has_supported_artifacts(snapshot_dir):
-            return snapshot_dir
-        return self.get_legacy_db_path(name)
 
     def exists(self, name: str) -> bool:
-        snapshot_dir = self.get_snapshot_dir(name)
-        return self._snapshot_has_supported_artifacts(snapshot_dir) or os.path.exists(
-            self.get_legacy_db_path(name)
-        )
+        return self._snapshot_is_supported(self.get_snapshot_dir(name))
 
     def get_artifact_paths(self, name: str) -> list[str]:
         normalized = self._validate_name(name)
@@ -80,60 +68,36 @@ class DatasetResolver:
             paths.append(legacy_db)
         return paths
 
-    def resolve(self, name: str) -> DatasetDb | DatasetSnapshotReader | None:
-        """名前から snapshot reader を解決。存在しない場合は None。"""
+    def resolve(self, name: str) -> DatasetSnapshotReader | None:
         normalized = self._validate_name(name)
         snapshot_dir = self.get_snapshot_dir(normalized)
-        snapshot_duckdb = self.get_duckdb_path(normalized)
-        snapshot_db = self.get_db_path(normalized)
-        legacy_db = self.get_legacy_db_path(normalized)
-        has_snapshot = self._snapshot_has_supported_artifacts(snapshot_dir)
-        if not has_snapshot and not os.path.exists(legacy_db):
+        if not self._snapshot_is_supported(snapshot_dir):
             return None
         with self._global_lock:
             if normalized not in self._cache:
-                if os.path.exists(snapshot_duckdb):
-                    self._cache[normalized] = DatasetSnapshotReader(snapshot_dir)
-                elif os.path.exists(snapshot_db):
-                    self._cache[normalized] = DatasetDb(snapshot_db)
-                else:
-                    self._cache[normalized] = DatasetDb(legacy_db)
+                self._cache[normalized] = DatasetSnapshotReader(snapshot_dir)
                 self._locks[normalized] = threading.Lock()
         return self._cache[normalized]
 
     def list_datasets(self) -> list[str]:
-        """利用可能なデータセット名一覧を返す。snapshot directory を優先する。"""
         if not os.path.isdir(self._base_path):
             return []
         names: list[str] = []
-        seen: set[str] = set()
         for entry in sorted(os.listdir(self._base_path)):
             path = os.path.join(self._base_path, entry)
-            if os.path.isdir(path):
-                try:
-                    normalized = normalize_dataset_snapshot_name(entry)
-                except ValueError:
-                    normalized = None
-                if normalized is None:
-                    continue
-                if self._snapshot_has_supported_artifacts(path):
-                    names.append(normalized)
-                    seen.add(normalized)
+            if not os.path.isdir(path):
                 continue
-            if entry.endswith(".db"):
-                try:
-                    stem = normalize_dataset_snapshot_name(entry)
-                except ValueError:
-                    stem = None
-                if stem is None:
-                    continue
-                if stem in seen:
-                    continue
-                names.append(stem)
+            try:
+                normalized = normalize_dataset_snapshot_name(entry)
+            except ValueError:
+                normalized = None
+            if normalized is None:
+                continue
+            if self._snapshot_is_supported(path):
+                names.append(normalized)
         return names
 
     def evict(self, name: str) -> None:
-        """DELETE 時: キャッシュから削除してクローズ。"""
         normalized = self._validate_name(name)
         with self._global_lock:
             lock = self._locks.get(normalized)
@@ -145,7 +109,6 @@ class DatasetResolver:
                 db.close()
 
     def close_all(self) -> None:
-        """lifespan shutdown 時: 全キャッシュをクローズ。"""
         with self._global_lock:
             for db in self._cache.values():
                 db.close()

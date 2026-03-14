@@ -1,4 +1,4 @@
-"""Dataset snapshot reader for `dataset.duckdb + parquet + manifest` snapshots."""
+"""Dataset snapshot reader for `dataset.duckdb + parquet + manifest.v2.json` snapshots."""
 
 from __future__ import annotations
 
@@ -14,8 +14,8 @@ from typing import Any, Literal, cast
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from src.infrastructure.db.market.dataset_db import _resolve_period_filter_values
 from src.infrastructure.db.market.query_helpers import normalize_stock_code
+from src.shared.models.types import normalize_period_type
 
 _ACTUAL_ONLY_COLUMNS = (
     "earnings_per_share",
@@ -65,7 +65,6 @@ class DatasetSnapshotSource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     backend: Literal["duckdb-parquet"] = "duckdb-parquet"
-    compatibilityArtifact: str | None = None
 
 
 class DatasetSnapshotDescriptor(BaseModel):
@@ -74,7 +73,6 @@ class DatasetSnapshotDescriptor(BaseModel):
     name: str = Field(min_length=1)
     preset: str = Field(min_length=1)
     duckdbFile: str = "dataset.duckdb"
-    compatibilityDbFile: str | None = "dataset.db"
     parquetDir: str = "parquet"
 
 
@@ -83,7 +81,6 @@ class DatasetSnapshotChecksums(BaseModel):
 
     duckdbSha256: str = Field(min_length=1)
     logicalSha256: str = Field(min_length=1)
-    compatibilityDbSha256: str | None = None
     parquet: dict[str, str] = Field(default_factory=dict)
 
 
@@ -118,7 +115,7 @@ class DatasetSnapshotDateRange(BaseModel):
 class DatasetSnapshotManifest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    schemaVersion: Literal[1] = 1
+    schemaVersion: Literal[2] = 2
     generatedAt: str = Field(min_length=1)
     dataset: DatasetSnapshotDescriptor
     source: DatasetSnapshotSource
@@ -126,6 +123,25 @@ class DatasetSnapshotManifest(BaseModel):
     coverage: DatasetSnapshotCoverage
     checksums: DatasetSnapshotChecksums
     dateRange: DatasetSnapshotDateRange | None = None
+
+
+_LEGACY_PERIOD_TYPE_MAP = {
+    "1Q": "Q1",
+    "2Q": "Q2",
+    "3Q": "Q3",
+}
+
+
+def _resolve_period_filter_values(period_type: str) -> list[str] | None:
+    normalized_period = normalize_period_type(period_type)
+    if normalized_period is None or normalized_period == "all":
+        return None
+
+    values = [normalized_period]
+    legacy_value = _LEGACY_PERIOD_TYPE_MAP.get(normalized_period)
+    if legacy_value is not None:
+        values.append(legacy_value)
+    return values
 
 
 def _sha256_of_file(path: Path) -> str:
@@ -192,7 +208,7 @@ def inspect_dataset_snapshot_duckdb(duckdb_path: str | Path) -> DatasetSnapshotI
 
 
 def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetSnapshotManifest:
-    manifest_path = Path(snapshot_dir) / "manifest.v1.json"
+    manifest_path = Path(snapshot_dir) / "manifest.v2.json"
     payload = json.loads(manifest_path.read_text(encoding="utf-8"))
     return DatasetSnapshotManifest.model_validate(payload)
 
@@ -200,7 +216,7 @@ def read_dataset_snapshot_manifest(snapshot_dir: str | Path) -> DatasetSnapshotM
 def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetSnapshotManifest:
     snapshot_root = Path(snapshot_dir)
     manifest = read_dataset_snapshot_manifest(snapshot_root)
-    if manifest.schemaVersion != 1:
+    if manifest.schemaVersion != 2:
         raise RuntimeError(f"Unsupported dataset snapshot schemaVersion: {manifest.schemaVersion}")
 
     duckdb_path = snapshot_root / manifest.dataset.duckdbFile
@@ -208,15 +224,6 @@ def validate_dataset_snapshot(snapshot_dir: str | Path) -> DatasetSnapshotManife
         raise FileNotFoundError(f"dataset.duckdb not found: {duckdb_path}")
     if _sha256_of_file(duckdb_path) != manifest.checksums.duckdbSha256:
         raise RuntimeError(f"dataset.duckdb checksum mismatch: {duckdb_path}")
-
-    compatibility_db = manifest.dataset.compatibilityDbFile
-    compatibility_sha = manifest.checksums.compatibilityDbSha256
-    if compatibility_db and compatibility_sha:
-        compatibility_path = snapshot_root / compatibility_db
-        if not compatibility_path.exists():
-            raise FileNotFoundError(f"dataset.db compatibility artifact not found: {compatibility_path}")
-        if _sha256_of_file(compatibility_path) != compatibility_sha:
-            raise RuntimeError(f"dataset.db checksum mismatch: {compatibility_path}")
 
     parquet_dir = snapshot_root / manifest.dataset.parquetDir
     if not parquet_dir.exists():
@@ -252,13 +259,6 @@ class DatasetSnapshotReader:
     def __init__(self, snapshot_dir: str) -> None:
         self._snapshot_dir = Path(snapshot_dir)
         self._manifest = validate_dataset_snapshot(self._snapshot_dir)
-        compatibility_name = self._manifest.dataset.compatibilityDbFile
-        if not compatibility_name:
-            raise RuntimeError("Dataset snapshot compatibility artifact is not configured")
-        compatibility_path = self._snapshot_dir / compatibility_name
-        if not compatibility_path.exists():
-            raise FileNotFoundError(f"Dataset snapshot compatibility artifact not found: {compatibility_path}")
-
         self._duckdb_path = self._snapshot_dir / self._manifest.dataset.duckdbFile
         self._conns: dict[int, Any] = {}
         self._conn_lock = threading.Lock()

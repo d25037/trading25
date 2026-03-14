@@ -45,10 +45,23 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         self._lock = asyncio.Lock()
         self._max_completed = max_completed
 
+    def _get_inflight_job(self) -> JobInfo[TData, TProgress, TResult] | None:
+        for job in self._jobs.values():
+            if job.status in (JobStatus.PENDING, JobStatus.RUNNING):
+                return job
+            if job.task is not None and not job.task.done():
+                return job
+        return None
+
+    @staticmethod
+    def _consume_task_result(task: asyncio.Task[None]) -> None:
+        with suppress(asyncio.CancelledError):
+            task.result()
+
     async def create_job(self, data: TData) -> JobInfo[TData, TProgress, TResult] | None:
         """ジョブを作成。アクティブジョブがある場合は None を返す。"""
         async with self._lock:
-            if self.get_active_job() is not None:
+            if self._get_inflight_job() is not None:
                 return None
             job_id = str(uuid.uuid4())
             job = JobInfo(
@@ -91,7 +104,7 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
             job.error = error
             job.completed_at = datetime.now(UTC)
 
-    async def cancel_job(self, job_id: str) -> bool:
+    async def cancel_job(self, job_id: str, *, wait: bool = True) -> bool:
         """ジョブをキャンセル。キャンセルできた場合 True。"""
         job = self._jobs.get(job_id)
         if job is None:
@@ -103,8 +116,11 @@ class GenericJobManager(Generic[TData, TProgress, TResult]):
         job.cancelled.set()
         if job.task is not None:
             job.task.cancel()
-            with suppress(asyncio.CancelledError):
-                await job.task
+            if wait:
+                with suppress(asyncio.CancelledError):
+                    await job.task
+            else:
+                job.task.add_done_callback(self._consume_task_result)
         return True
 
     def is_cancelled(self, job_id: str) -> bool:

@@ -62,38 +62,16 @@ def _read_dataset_metadata(db: DatasetReadable | None) -> tuple[str | None, str 
 
 def _resolve_dataset_storage(resolver: DatasetResolver, name: str) -> DatasetStorageInfo:
     duckdb_path = resolver.get_duckdb_path(name)
-    compatibility_db_path = resolver.get_db_path(name)
     manifest_path = resolver.get_manifest_path(name)
-    legacy_db_path = resolver.get_legacy_db_path(name)
-
     has_duckdb = os.path.exists(duckdb_path)
-    has_compatibility_db = os.path.exists(compatibility_db_path)
     has_manifest = os.path.exists(manifest_path)
 
-    if has_duckdb:
+    if has_duckdb and has_manifest:
         return DatasetStorageInfo(
             backend="duckdb-parquet",
-            primaryPath=duckdb_path,
+            primaryPath=resolver.get_dataset_path(name),
             duckdbPath=duckdb_path,
-            compatibilityDbPath=compatibility_db_path if has_compatibility_db else None,
-            manifestPath=manifest_path if has_manifest else None,
-            hasCompatibilityArtifact=has_compatibility_db,
-        )
-
-    if has_compatibility_db:
-        return DatasetStorageInfo(
-            backend="sqlite-compatibility",
-            primaryPath=compatibility_db_path,
-            compatibilityDbPath=compatibility_db_path,
-            manifestPath=manifest_path if has_manifest else None,
-            hasCompatibilityArtifact=True,
-        )
-
-    if os.path.exists(legacy_db_path):
-        return DatasetStorageInfo(
-            backend="sqlite-legacy",
-            primaryPath=legacy_db_path,
-            hasCompatibilityArtifact=False,
+            manifestPath=manifest_path,
         )
 
     raise FileNotFoundError(f"Dataset storage not found: {name}")
@@ -118,7 +96,6 @@ def list_datasets(resolver: DatasetResolver) -> list[DatasetListItem]:
                     preset=preset,
                     createdAt=created_at,
                     backend=storage.backend,
-                    hasCompatibilityArtifact=storage.hasCompatibilityArtifact,
                 )
             )
         except OSError:

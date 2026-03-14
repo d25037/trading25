@@ -110,6 +110,46 @@ class TestGenericJobManager:
         assert cancelled_flag.is_set()
 
     @pytest.mark.asyncio
+    async def test_cancel_wait_false_blocks_new_job_until_task_finishes(self, manager) -> None:
+        job = await manager.create_job("data")
+        cancellation_seen = asyncio.Event()
+        allow_finish = asyncio.Event()
+
+        async def slow_cleanup_task() -> None:
+            try:
+                await asyncio.sleep(100)
+            except asyncio.CancelledError:
+                cancellation_seen.set()
+                await allow_finish.wait()
+
+        job.task = asyncio.create_task(slow_cleanup_task())
+        await asyncio.sleep(0.01)
+
+        assert await manager.cancel_job(job.job_id, wait=False) is True
+        await cancellation_seen.wait()
+        assert await manager.create_job("next") is None
+
+        allow_finish.set()
+        await asyncio.sleep(0.01)
+
+        next_job = await manager.create_job("next")
+        assert next_job is not None
+
+    @pytest.mark.asyncio
+    async def test_cancel_job_returns_false_for_missing_job(self, manager) -> None:
+        assert await manager.cancel_job("missing") is False
+
+    @pytest.mark.asyncio
+    async def test_update_progress_ignores_terminal_job(self, manager) -> None:
+        job = await manager.create_job("data")
+        manager.complete_job(job.job_id, "done")
+
+        manager.update_progress(job.job_id, "late")
+
+        assert job.progress is None
+        assert job.status == JobStatus.COMPLETED
+
+    @pytest.mark.asyncio
     async def test_cleanup_old(self, manager) -> None:
         # Create 5 completed jobs (max is 3)
         for i in range(5):

@@ -78,15 +78,18 @@ def test_resolve_dataset_db_uses_cache(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
-    (tmp_path / "sample.db").write_text("", encoding="utf-8")
+    snapshot_dir = tmp_path / "sample"
+    snapshot_dir.mkdir()
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     init_calls: list[str] = []
 
-    class _FakeDatasetDb:
-        def __init__(self, db_path: str) -> None:
-            init_calls.append(db_path)
+    class _FakeSnapshotReader:
+        def __init__(self, snapshot_path: str) -> None:
+            init_calls.append(snapshot_path)
 
-    monkeypatch.setattr(clients, "DatasetDb", _FakeDatasetDb)
+    monkeypatch.setattr(clients, "DatasetSnapshotReader", _FakeSnapshotReader)
 
     first = clients._resolve_dataset_db("sample")
     second = clients._resolve_dataset_db("sample.db")
@@ -102,6 +105,7 @@ def test_resolve_dataset_db_prefers_snapshot_reader(
     snapshot_dir = tmp_path / "sample"
     snapshot_dir.mkdir()
     (snapshot_dir / "dataset.duckdb").write_text("duckdb", encoding="utf-8")
+    (snapshot_dir / "manifest.v2.json").write_text("{}", encoding="utf-8")
 
     init_calls: list[str] = []
 
@@ -117,27 +121,16 @@ def test_resolve_dataset_db_prefers_snapshot_reader(
     assert init_calls == [str(snapshot_dir)]
 
 
-def test_resolve_dataset_db_uses_snapshot_compatibility_db_when_duckdb_missing(
+def test_resolve_dataset_db_rejects_snapshot_without_manifest_v2(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
     _patch_settings(monkeypatch, tmp_path)
     snapshot_dir = tmp_path / "sample"
     snapshot_dir.mkdir()
-    compatibility_db_path = snapshot_dir / "dataset.db"
-    compatibility_db_path.write_text("", encoding="utf-8")
+    (snapshot_dir / "dataset.duckdb").write_text("", encoding="utf-8")
 
-    init_calls: list[str] = []
-
-    class _FakeDatasetDb:
-        def __init__(self, db_path: str) -> None:
-            init_calls.append(db_path)
-
-    monkeypatch.setattr(clients, "DatasetDb", _FakeDatasetDb)
-
-    resolved = clients._resolve_dataset_db("sample")
-
-    assert isinstance(resolved, _FakeDatasetDb)
-    assert init_calls == [str(compatibility_db_path)]
+    with pytest.raises(FileNotFoundError, match="Dataset not found"):
+        clients._resolve_dataset_db("sample")
 
 
 def test_resolve_market_reader_raises_when_missing(

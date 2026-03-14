@@ -11,22 +11,14 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field
 
 
-DatasetStorageBackend = Literal["duckdb-parquet", "sqlite-compatibility", "sqlite-legacy"]
+DatasetStorageBackend = Literal["duckdb-parquet"]
 
 
 class DatasetStorageInfo(BaseModel):
     backend: DatasetStorageBackend = Field(description="Resolved dataset storage backend")
     primaryPath: str = Field(description="Primary artifact path for the dataset")
     duckdbPath: str | None = Field(default=None, description="DuckDB snapshot path")
-    compatibilityDbPath: str | None = Field(
-        default=None,
-        description="SQLite compatibility artifact path when present",
-    )
     manifestPath: str | None = Field(default=None, description="Dataset snapshot manifest path")
-    hasCompatibilityArtifact: bool = Field(
-        default=False,
-        description="Whether a compatibility SQLite artifact is present",
-    )
 
 
 # --- List ---
@@ -40,10 +32,6 @@ class DatasetListItem(BaseModel):
     preset: str | None = Field(default=None, description="Preset name used to create dataset")
     createdAt: str | None = Field(default=None, description="Created datetime stored in dataset_info")
     backend: DatasetStorageBackend = Field(description="Resolved storage backend")
-    hasCompatibilityArtifact: bool = Field(
-        default=False,
-        description="Whether dataset.db compatibility artifact is present",
-    )
 
 
 # --- Info ---
@@ -191,7 +179,7 @@ class DatasetCreateRequest(BaseModel):
     name: str = Field(
         min_length=1,
         max_length=255,
-        description="Dataset snapshot name (e.g. 'primeMarket'; '.db' suffix accepted for compatibility)",
+        description="Dataset snapshot name (e.g. 'primeMarket')",
     )
     preset: str = Field(description="Preset config name")
     overwrite: bool = Field(default=False, description="Overwrite existing dataset")

@@ -28,7 +28,6 @@ from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.entrypoints.http.schemas.job import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
-    compatibility_db_path_for_path,
     duckdb_path_for_path,
     parquet_dir_for_path,
     snapshot_dir_for_path,
@@ -114,8 +113,8 @@ def _merge_prefer_existing(target: dict[str, Any], incoming: Mapping[str, Any]) 
     return target
 
 
-def _manifest_path_for_db(db_path: str) -> Path:
-    return snapshot_dir_for_path(db_path) / "manifest.v1.json"
+def _manifest_path_for_snapshot(snapshot_path: str) -> Path:
+    return snapshot_dir_for_path(snapshot_path) / "manifest.v2.json"
 
 
 def _delete_dataset_artifacts(resolver: DatasetResolver, name: str) -> None:
@@ -137,16 +136,13 @@ def _sha256_of_file(path: Path) -> str:
 
 def _write_dataset_manifest(
     *,
-    db_path: str,
+    snapshot_path: str,
     dataset_name: str,
     preset_name: str,
     manifest_path: Path | None = None,
 ) -> str:
-    compatibility_db = compatibility_db_path_for_path(db_path)
-    duckdb_path = duckdb_path_for_path(db_path)
-    parquet_dir = parquet_dir_for_path(db_path)
-    if not compatibility_db.exists():
-        raise FileNotFoundError(f"dataset db not found: {compatibility_db}")
+    duckdb_path = duckdb_path_for_path(snapshot_path)
+    parquet_dir = parquet_dir_for_path(snapshot_path)
     if not duckdb_path.exists():
         raise FileNotFoundError(f"dataset.duckdb not found: {duckdb_path}")
 
@@ -156,24 +152,21 @@ def _write_dataset_manifest(
     date_range = inspection.date_range.model_dump() if inspection.date_range is not None else None
 
     manifest = {
-        "schemaVersion": 1,
+        "schemaVersion": 2,
         "generatedAt": datetime.now(UTC).isoformat(),
         "dataset": {
             "name": dataset_name,
             "preset": preset_name,
             "duckdbFile": duckdb_path.name,
-            "compatibilityDbFile": compatibility_db.name,
             "parquetDir": parquet_dir.name,
         },
         "source": {
             "backend": "duckdb-parquet",
-            "compatibilityArtifact": "dataset.db",
         },
         "counts": counts,
         "coverage": coverage,
         "checksums": {
             "duckdbSha256": _sha256_of_file(duckdb_path),
-            "compatibilityDbSha256": _sha256_of_file(compatibility_db),
             "logicalSha256": build_dataset_snapshot_logical_checksum(
                 counts=inspection.counts,
                 coverage=inspection.coverage,
@@ -191,7 +184,7 @@ def _write_dataset_manifest(
             "max": date_range.get("max"),
         }
 
-    output_path = manifest_path or _manifest_path_for_db(db_path)
+    output_path = manifest_path or _manifest_path_for_snapshot(snapshot_path)
     output_path.write_text(json.dumps(manifest, ensure_ascii=False, indent=2), encoding="utf-8")
     return str(output_path)
 
@@ -216,6 +209,8 @@ async def start_dataset_build(
                 return
             dataset_job_manager.complete_job(job.job_id, result)
         except asyncio.TimeoutError:
+            if dataset_job_manager.is_cancelled(job.job_id):
+                return
             dataset_job_manager.fail_job(
                 job.job_id,
                 f"Dataset build timed out after {DATASET_BUILD_TIMEOUT_MINUTES} minutes",
@@ -223,6 +218,8 @@ async def start_dataset_build(
         except asyncio.CancelledError:
             pass
         except Exception as e:
+            if dataset_job_manager.is_cancelled(job.job_id):
+                return
             logger.exception(f"Dataset build {job.job_id} failed: {e}")
             dataset_job_manager.fail_job(job.job_id, str(e))
 
@@ -239,8 +236,8 @@ async def _build_dataset(
     """データセットをビルドする実際のロジック"""
     name = job.data.name
     preset_name = job.data.preset
-    db_path = resolver.get_db_path(name)
-    snapshot_dir = snapshot_dir_for_path(db_path)
+    snapshot_path = resolver.get_dataset_path(name)
+    snapshot_dir = snapshot_dir_for_path(snapshot_path)
     warnings: list[str] = []
     errors: list[str] = []
 
@@ -271,9 +268,9 @@ async def _build_dataset(
 
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
-    writer = DatasetWriter(db_path)
+    writer = DatasetWriter(snapshot_path)
     success_result: DatasetResult | None = None
-    manifest_path = _manifest_path_for_db(db_path)
+    manifest_path = _manifest_path_for_snapshot(snapshot_path)
 
     try:
         # 銘柄データ書き込み
@@ -458,7 +455,7 @@ async def _build_dataset(
                 )
 
         writer.set_dataset_info("manifest_path", str(manifest_path))
-        writer.set_dataset_info("manifest_schema_version", "1")
+        writer.set_dataset_info("manifest_schema_version", "2")
         success_result = DatasetResult(
             success=True,
             totalStocks=len(filtered),
@@ -472,9 +469,18 @@ async def _build_dataset(
 
     if success_result is None:
         raise RuntimeError("dataset build result was not prepared")
+    if job.cancelled.is_set():
+        return DatasetResult(
+            success=False,
+            totalStocks=success_result.totalStocks,
+            processedStocks=success_result.processedStocks,
+            warnings=success_result.warnings,
+            errors=["Cancelled"],
+            outputPath=str(snapshot_dir),
+        )
 
     _write_dataset_manifest(
-        db_path=db_path,
+        snapshot_path=snapshot_path,
         dataset_name=name,
         preset_name=preset_name,
         manifest_path=manifest_path,

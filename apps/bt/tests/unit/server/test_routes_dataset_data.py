@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import hashlib
+import json
 from pathlib import Path
 
 import pytest
@@ -11,10 +13,51 @@ from src.entrypoints.http.routes import dataset_data as dataset_data_routes
 from src.entrypoints.http.app import create_app
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.dataset_io.dataset_writer import DatasetWriter
+from src.infrastructure.db.market.dataset_snapshot_reader import (
+    build_dataset_snapshot_logical_checksum,
+    inspect_dataset_snapshot_duckdb,
+)
+
+
+def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
+    duckdb_path = snapshot_dir / "dataset.duckdb"
+    parquet_dir = snapshot_dir / "parquet"
+    inspection = inspect_dataset_snapshot_duckdb(duckdb_path)
+    manifest = {
+        "schemaVersion": 2,
+        "generatedAt": "2026-03-14T00:00:00+00:00",
+        "dataset": {
+            "name": name,
+            "preset": "primeMarket",
+            "duckdbFile": "dataset.duckdb",
+            "parquetDir": "parquet",
+        },
+        "source": {
+            "backend": "duckdb-parquet",
+        },
+        "counts": inspection.counts.model_dump(),
+        "coverage": inspection.coverage.model_dump(),
+        "checksums": {
+            "duckdbSha256": hashlib.sha256(duckdb_path.read_bytes()).hexdigest(),
+            "logicalSha256": build_dataset_snapshot_logical_checksum(
+                counts=inspection.counts,
+                coverage=inspection.coverage,
+                date_range=inspection.date_range,
+            ),
+            "parquet": {
+                parquet_file.name: hashlib.sha256(parquet_file.read_bytes()).hexdigest()
+                for parquet_file in sorted(parquet_dir.glob("*.parquet"))
+            },
+        },
+    }
+    if inspection.date_range is not None:
+        manifest["dateRange"] = inspection.date_range.model_dump()
+    (snapshot_dir / "manifest.v2.json").write_text(json.dumps(manifest), encoding="utf-8")
 
 
 def _build_snapshot(base_dir: Path, name: str) -> None:
-    writer = DatasetWriter(str(base_dir / f"{name}.db"))
+    snapshot_dir = base_dir / name
+    writer = DatasetWriter(str(snapshot_dir))
     writer.upsert_stocks([
         {
             "code": "7203",
@@ -205,62 +248,19 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
     ])
     writer.set_dataset_info("preset", "primeMarket")
     writer.close()
+    _write_manifest_v2(snapshot_dir, name)
 
 
 @pytest.fixture
 def test_dataset_dir(tmp_path):
-    """テスト用のデータセットディレクトリ + .db ファイル"""
+    """テスト用の DuckDB snapshot ディレクトリ"""
     _build_snapshot(Path(tmp_path), "test-market")
     return str(tmp_path)
 
 
 @pytest.fixture
-def client(test_dataset_dir: str, monkeypatch: pytest.MonkeyPatch):
+def client(test_dataset_dir: str):
     """テスト用 FastAPI クライアント"""
-    from src.infrastructure.db.market import dataset_snapshot_reader as reader_module
-
-    def _fake_validate(snapshot_dir: str | Path):
-        snapshot_path = Path(snapshot_dir)
-        return reader_module.DatasetSnapshotManifest.model_validate(
-            {
-                "schemaVersion": 1,
-                "generatedAt": "2026-03-09T00:00:00+00:00",
-                "dataset": {
-                    "name": snapshot_path.name,
-                    "preset": "primeMarket",
-                    "duckdbFile": "dataset.duckdb",
-                    "compatibilityDbFile": "dataset.db",
-                    "parquetDir": "parquet",
-                },
-                "source": {
-                    "backend": "duckdb-parquet",
-                    "compatibilityArtifact": "dataset.db",
-                },
-                "counts": {
-                    "stocks": 2,
-                    "stock_data": 3,
-                    "topix_data": 1,
-                    "indices_data": 1,
-                    "margin_data": 2,
-                    "statements": 2,
-                    "dataset_info": 2,
-                },
-                "coverage": {
-                    "totalStocks": 2,
-                    "stocksWithQuotes": 2,
-                    "stocksWithStatements": 2,
-                    "stocksWithMargin": 2,
-                },
-                "checksums": {
-                    "duckdbSha256": "x",
-                    "compatibilityDbSha256": "y",
-                    "logicalSha256": "z",
-                    "parquet": {},
-                },
-            }
-        )
-
-    monkeypatch.setattr(reader_module, "validate_dataset_snapshot", _fake_validate)
     app = create_app()
     app.state.dataset_resolver = DatasetResolver(test_dataset_dir)
     return TestClient(app, raise_server_exceptions=False)

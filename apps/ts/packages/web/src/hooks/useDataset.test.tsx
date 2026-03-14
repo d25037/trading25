@@ -39,55 +39,14 @@ describe('datasetKeys', () => {
   it('generates correct query keys', () => {
     expect(datasetKeys.all).toEqual(['dataset']);
     expect(datasetKeys.list()).toEqual(['dataset', 'list']);
-    expect(datasetKeys.info('prime.db')).toEqual(['dataset', 'info', 'prime.db']);
+    expect(datasetKeys.info('prime')).toEqual(['dataset', 'info', 'prime']);
     expect(datasetKeys.job('job-1')).toEqual(['dataset', 'job', 'job-1']);
   });
 });
 
 describe('useDatasets', () => {
   it('fetches datasets list', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce([]);
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasets(), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/dataset');
-  });
-
-  it('normalizes legacy dataset list items for mixed deploy compatibility', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce([
-      {
-        name: 'legacy',
-        path: '/tmp/legacy.db',
-        fileSize: 100,
-        lastModified: '2026-01-01T00:00:00Z',
-      },
-      {
-        name: 'snapshot',
-        path: '/tmp/snapshot',
-        fileSize: 200,
-        lastModified: '2026-01-02T00:00:00Z',
-        preset: 'primeMarket',
-        createdAt: '2026-01-02T00:00:00Z',
-      },
-    ]);
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasets(), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual([
-      {
-        name: 'legacy',
-        path: '/tmp/legacy.db',
-        fileSize: 100,
-        lastModified: '2026-01-01T00:00:00Z',
-        preset: null,
-        createdAt: null,
-        backend: 'sqlite-legacy',
-        hasCompatibilityArtifact: false,
-      },
       {
         name: 'snapshot',
         path: '/tmp/snapshot',
@@ -96,7 +55,23 @@ describe('useDatasets', () => {
         preset: 'primeMarket',
         createdAt: '2026-01-02T00:00:00Z',
         backend: 'duckdb-parquet',
-        hasCompatibilityArtifact: false,
+      },
+    ]);
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasets(), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(apiGet).toHaveBeenCalledWith('/api/dataset');
+    expect(result.current.data).toEqual([
+      {
+        name: 'snapshot',
+        path: '/tmp/snapshot',
+        fileSize: 200,
+        lastModified: '2026-01-02T00:00:00Z',
+        preset: 'primeMarket',
+        createdAt: '2026-01-02T00:00:00Z',
+        backend: 'duckdb-parquet',
       },
     ]);
   });
@@ -105,177 +80,54 @@ describe('useDatasets', () => {
 describe('useDatasetInfo', () => {
   it('fetches dataset info when name is provided', async () => {
     vi.mocked(apiGet).mockResolvedValueOnce({
-      name: 'prime.db',
-      path: '/tmp/prime.db',
+      name: 'prime',
+      path: '/tmp/prime',
       fileSize: 100,
       lastModified: '2026-01-01T00:00:00Z',
+      storage: {
+        backend: 'duckdb-parquet',
+        primaryPath: '/tmp/prime',
+        duckdbPath: '/tmp/prime/dataset.duckdb',
+        manifestPath: '/tmp/prime/manifest.v2.json',
+      },
       snapshot: {
         preset: 'primeMarket',
+        createdAt: '2026-01-01T00:00:00Z',
+      },
+      stats: {
         totalStocks: 10,
-        stocksWithQuotes: 9,
-        dateRange: { min: '2025-01-01', max: '2025-12-31' },
-        validation: {
-          isValid: true,
-          errors: [],
-          warnings: [],
+        totalQuotes: 9,
+        dateRange: { from: '2025-01-01', to: '2025-12-31' },
+        hasMarginData: false,
+        hasTOPIXData: true,
+        hasSectorData: false,
+        hasStatementsData: false,
+        statementsFieldCoverage: null,
+      },
+      validation: {
+        isValid: true,
+        errors: [],
+        warnings: [],
+        details: {
+          dataCoverage: {
+            totalStocks: 10,
+            stocksWithQuotes: 9,
+            stocksWithStatements: 0,
+            stocksWithMargin: 0,
+          },
         },
       },
     });
 
     const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasetInfo('prime.db'), { wrapper });
+    const { result } = renderHook(() => useDatasetInfo('prime'), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/dataset/prime.db/info');
+    expect(apiGet).toHaveBeenCalledWith('/api/dataset/prime/info');
     expect(result.current.data?.stats.totalStocks).toBe(10);
     expect(result.current.data?.stats.dateRange.from).toBe('2025-01-01');
     expect(result.current.data?.validation.details?.dataCoverage?.stocksWithQuotes).toBe(9);
-  });
-
-  it('passes through modern dataset info response', async () => {
-    const modern = {
-      name: 'modern.db',
-      path: '/tmp/modern.db',
-      fileSize: 200,
-      lastModified: '2026-01-02T00:00:00Z',
-      storage: {
-        backend: 'duckdb-parquet',
-        primaryPath: '/tmp/modern/dataset.duckdb',
-        duckdbPath: '/tmp/modern/dataset.duckdb',
-        compatibilityDbPath: '/tmp/modern/dataset.db',
-        manifestPath: '/tmp/modern/manifest.v1.json',
-        hasCompatibilityArtifact: true,
-      },
-      snapshot: {
-        preset: 'primeMarket',
-        createdAt: '2026-01-01T00:00:00Z',
-      },
-      stats: {
-        totalStocks: 20,
-        totalQuotes: 100,
-        dateRange: { from: '2025-01-01', to: '2025-12-31' },
-        hasMarginData: true,
-        hasTOPIXData: true,
-        hasSectorData: true,
-        hasStatementsData: true,
-        statementsFieldCoverage: null,
-      },
-      validation: {
-        isValid: true,
-        errors: [],
-        warnings: [],
-        details: {
-          dataCoverage: {
-            totalStocks: 20,
-            stocksWithQuotes: 20,
-            stocksWithStatements: 20,
-            stocksWithMargin: 20,
-          },
-        },
-      },
-    };
-    vi.mocked(apiGet).mockResolvedValueOnce(modern);
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasetInfo('modern.db'), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data).toEqual(modern);
-  });
-
-  it('fills inferred storage when modern dataset info omits storage', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({
-      name: 'snapshot',
-      path: '/tmp/snapshot',
-      fileSize: 200,
-      lastModified: '2026-01-02T00:00:00Z',
-      snapshot: {
-        preset: 'primeMarket',
-        createdAt: '2026-01-01T00:00:00Z',
-      },
-      stats: {
-        totalStocks: 20,
-        totalQuotes: 100,
-        dateRange: { from: '2025-01-01', to: '2025-12-31' },
-        hasMarginData: true,
-        hasTOPIXData: true,
-        hasSectorData: true,
-        hasStatementsData: true,
-        statementsFieldCoverage: null,
-      },
-      validation: {
-        isValid: true,
-        errors: [],
-        warnings: [],
-        details: {
-          dataCoverage: {
-            totalStocks: 20,
-            stocksWithQuotes: 20,
-            stocksWithStatements: 20,
-            stocksWithMargin: 20,
-          },
-        },
-      },
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasetInfo('snapshot'), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.storage).toEqual({
-      backend: 'duckdb-parquet',
-      primaryPath: '/tmp/snapshot',
-      duckdbPath: null,
-      compatibilityDbPath: null,
-      manifestPath: null,
-      hasCompatibilityArtifact: false,
-    });
-  });
-
-  it('normalizes legacy response defaults when optional fields are missing', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({
-      name: 'legacy.db',
-      path: '/tmp/legacy.db',
-      fileSize: 300,
-      lastModified: '2026-01-03T00:00:00Z',
-      snapshot: {},
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasetInfo('legacy.db'), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.stats.dateRange.from).toBe('-');
-    expect(result.current.data?.stats.dateRange.to).toBe('-');
-    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
-    expect(result.current.data?.stats.hasTOPIXData).toBe(true);
-    expect(result.current.data?.validation.isValid).toBe(true);
-    expect(result.current.data?.validation.details?.dataCoverage?.totalStocks).toBe(0);
-  });
-
-  it('maps legacy TOPIX warning to hasTOPIXData=false', async () => {
-    vi.mocked(apiGet).mockResolvedValueOnce({
-      name: 'legacy-topix.db',
-      path: '/tmp/legacy-topix.db',
-      fileSize: 400,
-      lastModified: '2026-01-04T00:00:00Z',
-      snapshot: {
-        totalStocks: 5,
-        stocksWithQuotes: 5,
-        validation: {
-          isValid: true,
-          errors: [],
-          warnings: ['No TOPIX data'],
-        },
-      },
-    });
-
-    const { wrapper } = createWrapper();
-    const { result } = renderHook(() => useDatasetInfo('legacy-topix.db'), { wrapper });
-
-    await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(result.current.data?.stats.hasTOPIXData).toBe(false);
-    expect(result.current.data?.storage.backend).toBe('sqlite-legacy');
+    expect(result.current.data?.storage.manifestPath).toBe('/tmp/prime/manifest.v2.json');
   });
 
   it('does not fetch when name is null', () => {
@@ -328,7 +180,7 @@ describe('useCreateDataset', () => {
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useCreateDataset(), { wrapper });
 
-    const request: DatasetCreateRequest = { name: 'prime.db', preset: 'primeMarket' };
+    const request: DatasetCreateRequest = { name: 'prime', preset: 'primeMarket' };
 
     await act(async () => {
       await result.current.mutateAsync(request);
@@ -346,7 +198,7 @@ describe('useCreateDataset', () => {
 
     await act(async () => {
       try {
-        await result.current.mutateAsync({ name: 'fail.db', preset: 'primeMarket' });
+        await result.current.mutateAsync({ name: 'fail', preset: 'primeMarket' });
       } catch {
         // expected
       }
@@ -359,17 +211,17 @@ describe('useCreateDataset', () => {
 
 describe('useDeleteDataset', () => {
   it('deletes dataset and invalidates list', async () => {
-    vi.mocked(apiDelete).mockResolvedValueOnce({ name: 'prime.db' });
+    vi.mocked(apiDelete).mockResolvedValueOnce({ name: 'prime' });
 
     const { queryClient, wrapper } = createWrapper();
     const invalidateSpy = vi.spyOn(queryClient, 'invalidateQueries');
     const { result } = renderHook(() => useDeleteDataset(), { wrapper });
 
     await act(async () => {
-      await result.current.mutateAsync('prime.db');
+      await result.current.mutateAsync('prime');
     });
 
-    expect(apiDelete).toHaveBeenCalledWith('/api/dataset/prime.db');
+    expect(apiDelete).toHaveBeenCalledWith('/api/dataset/prime');
     expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: datasetKeys.list() });
   });
 
@@ -381,7 +233,7 @@ describe('useDeleteDataset', () => {
 
     await act(async () => {
       try {
-        await result.current.mutateAsync('fail.db');
+        await result.current.mutateAsync('fail');
       } catch {
         // expected
       }

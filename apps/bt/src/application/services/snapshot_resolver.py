@@ -1,4 +1,4 @@
-"""Unified snapshot resolver for market and dataset planes."""
+"""Unified snapshot resolver for market and DuckDB dataset planes."""
 
 from __future__ import annotations
 
@@ -26,8 +26,6 @@ class SnapshotBackend(str, Enum):
     """Physical backend used by a resolved snapshot."""
 
     DUCKDB_PARQUET = "duckdb-parquet"
-    SQLITE_COMPATIBILITY = "sqlite-compatibility"
-    SQLITE_LEGACY = "sqlite-legacy"
 
 
 @dataclass(frozen=True, slots=True)
@@ -41,7 +39,6 @@ class ResolvedSnapshot:
     root_path: str
     primary_path: str
     duckdb_path: str | None = None
-    compatibility_db_path: str | None = None
     manifest_path: str | None = None
 
     @property
@@ -90,55 +87,25 @@ class SnapshotResolver:
 
         snapshot_dir = Path(self._dataset_resolver.get_snapshot_dir(normalized_name))
         duckdb_path = Path(self._dataset_resolver.get_duckdb_path(normalized_name))
-        compatibility_db_path = Path(self._dataset_resolver.get_db_path(normalized_name))
         manifest_path = Path(self._dataset_resolver.get_manifest_path(normalized_name))
-        legacy_db_path = Path(self._dataset_resolver.get_legacy_db_path(normalized_name))
+
+        if not duckdb_path.exists() or not manifest_path.exists():
+            return None
 
         resolved_snapshot_dir = str(snapshot_dir.resolve())
-        resolved_duckdb_path = str(duckdb_path.resolve()) if duckdb_path.exists() else None
-        resolved_compatibility_db_path = (
-            str(compatibility_db_path.resolve()) if compatibility_db_path.exists() else None
+        resolved_duckdb_path = str(duckdb_path.resolve())
+        resolved_manifest_path = str(manifest_path.resolve())
+
+        return ResolvedSnapshot(
+            plane=SnapshotPlane.DATASET,
+            snapshot_id=normalized_name,
+            requested_id=dataset_name,
+            backend=SnapshotBackend.DUCKDB_PARQUET,
+            root_path=resolved_snapshot_dir,
+            primary_path=resolved_duckdb_path,
+            duckdb_path=resolved_duckdb_path,
+            manifest_path=resolved_manifest_path,
         )
-        resolved_manifest_path = str(manifest_path.resolve()) if manifest_path.exists() else None
-
-        if resolved_duckdb_path is not None:
-            return ResolvedSnapshot(
-                plane=SnapshotPlane.DATASET,
-                snapshot_id=normalized_name,
-                requested_id=dataset_name,
-                backend=SnapshotBackend.DUCKDB_PARQUET,
-                root_path=resolved_snapshot_dir,
-                primary_path=resolved_duckdb_path,
-                duckdb_path=resolved_duckdb_path,
-                compatibility_db_path=resolved_compatibility_db_path,
-                manifest_path=resolved_manifest_path,
-            )
-
-        if resolved_compatibility_db_path is not None:
-            return ResolvedSnapshot(
-                plane=SnapshotPlane.DATASET,
-                snapshot_id=normalized_name,
-                requested_id=dataset_name,
-                backend=SnapshotBackend.SQLITE_COMPATIBILITY,
-                root_path=resolved_snapshot_dir,
-                primary_path=resolved_compatibility_db_path,
-                compatibility_db_path=resolved_compatibility_db_path,
-                manifest_path=resolved_manifest_path,
-            )
-
-        if legacy_db_path.exists():
-            resolved_legacy_db_path = str(legacy_db_path.resolve())
-            return ResolvedSnapshot(
-                plane=SnapshotPlane.DATASET,
-                snapshot_id=normalized_name,
-                requested_id=dataset_name,
-                backend=SnapshotBackend.SQLITE_LEGACY,
-                root_path=str(legacy_db_path.parent.resolve()),
-                primary_path=resolved_legacy_db_path,
-                compatibility_db_path=resolved_legacy_db_path,
-            )
-
-        return None
 
     def require_dataset(self, dataset_name: str) -> ResolvedSnapshot:
         resolved = self.resolve_dataset(dataset_name)

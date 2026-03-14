@@ -58,8 +58,7 @@ function createDatasets(): DatasetListItem[] {
       fileSize: 3000,
       lastModified: '2026-01-01T00:00:00.000Z',
       createdAt: '2026-01-01T00:00:00.000Z',
-      backend: 'sqlite-legacy',
-      hasCompatibilityArtifact: false,
+      backend: 'duckdb-parquet',
     },
     {
       name: 'alpha',
@@ -68,7 +67,6 @@ function createDatasets(): DatasetListItem[] {
       lastModified: '2026-01-02T00:00:00.000Z',
       createdAt: '2026-01-02T00:00:00.000Z',
       backend: 'duckdb-parquet',
-      hasCompatibilityArtifact: true,
     },
   ];
 }
@@ -148,7 +146,7 @@ describe('DatasetList', () => {
     expect(within(getFirstDataRow()).getByText('beta')).toBeInTheDocument();
 
     await user.click(screen.getByText('Storage'));
-    expect(within(getFirstDataRow()).getByText('DuckDB + compat')).toBeInTheDocument();
+    expect(within(getFirstDataRow()).getByText('DuckDB snapshot')).toBeInTheDocument();
 
     await user.click(screen.getByText('Preset'));
     expect(within(getFirstDataRow()).getByText('beta')).toBeInTheDocument();
@@ -166,8 +164,7 @@ describe('DatasetList', () => {
 
     render(<DatasetList />);
 
-    expect(screen.getByText('Legacy SQLite')).toBeInTheDocument();
-    expect(screen.getByText('DuckDB + compat')).toBeInTheDocument();
+    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
     await user.click(getFirstByTitle('詳細'));
     expect(screen.getByText('info:alpha')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'close-info' }));

@@ -28,12 +28,8 @@ class SnapshotResolveResponse(BaseModel):
         default=None,
         description="要求時の snapshot identifier",
     )
-    backend: str = Field(description="resolved storage backend")
+    backend: Literal["duckdb-parquet"] = Field(description="resolved storage backend")
     root_path: str = Field(description="snapshot root path")
     primary_path: str = Field(description="primary readable artifact path")
     duckdb_path: str | None = Field(default=None, description="DuckDB path")
-    compatibility_db_path: str | None = Field(
-        default=None,
-        description="compatibility SQLite path",
-    )
     manifest_path: str | None = Field(default=None, description="manifest path")

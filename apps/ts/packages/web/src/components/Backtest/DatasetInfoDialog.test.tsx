@@ -75,11 +75,9 @@ describe('DatasetInfoDialog', () => {
     mockState.data = {
       storage: {
         backend: 'duckdb-parquet',
-        primaryPath: '/tmp/quickTesting/dataset.duckdb',
+        primaryPath: '/tmp/quickTesting',
         duckdbPath: '/tmp/quickTesting/dataset.duckdb',
-        compatibilityDbPath: '/tmp/quickTesting/dataset.db',
-        manifestPath: '/tmp/quickTesting/manifest.v1.json',
-        hasCompatibilityArtifact: true,
+        manifestPath: '/tmp/quickTesting/manifest.v2.json',
       },
       snapshot: {
         preset: 'quickTesting',
@@ -119,7 +117,6 @@ describe('DatasetInfoDialog', () => {
 
     expect(screen.getByText('quickTesting')).toBeInTheDocument();
     expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
-    expect(screen.getByText('dataset.db compatibility')).toBeInTheDocument();
     expect(screen.getAllByText('/tmp/quickTesting/dataset.duckdb').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('Quotes')).toBeInTheDocument();
     expect(screen.getByText('90 / 100')).toBeInTheDocument();
@@ -137,12 +134,10 @@ describe('DatasetInfoDialog', () => {
   it('renders validation errors and warnings', () => {
     mockState.data = {
       storage: {
-        backend: 'sqlite-legacy',
-        primaryPath: '/tmp/legacy.db',
-        duckdbPath: null,
-        compatibilityDbPath: null,
-        manifestPath: null,
-        hasCompatibilityArtifact: false,
+        backend: 'duckdb-parquet',
+        primaryPath: '/tmp/quickTesting',
+        duckdbPath: '/tmp/quickTesting/dataset.duckdb',
+        manifestPath: '/tmp/quickTesting/manifest.v2.json',
       },
       snapshot: {
         preset: null,
@@ -184,7 +179,7 @@ describe('DatasetInfoDialog', () => {
 
     render(<DatasetInfoDialog open={true} onOpenChange={vi.fn()} datasetName="quickTesting.db" />);
 
-    expect(screen.getAllByText('Legacy SQLite').length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText('DuckDB snapshot').length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText('missing quotes')).toBeInTheDocument();
     expect(screen.getByText('partial update')).toBeInTheDocument();
     expect(screen.getByText('Date gaps')).toBeInTheDocument();

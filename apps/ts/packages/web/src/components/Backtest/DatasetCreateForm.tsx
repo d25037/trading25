@@ -27,7 +27,7 @@ export function DatasetCreateForm() {
 
   const presetInfo = DATASET_PRESETS.find((p) => p.value === selectedPreset);
 
-  const normalizedDatasetName = datasetName.trim().replace(/\.db$/i, '');
+  const normalizedDatasetName = datasetName.trim();
 
   const handleCreate = () => {
     createDataset.mutate(
@@ -47,8 +47,8 @@ export function DatasetCreateForm() {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-xs text-muted-foreground">
-          新規 dataset は snapshot として保存されます。出力は <code>dataset.duckdb</code> と
-          <code>parquet/</code> が正本で、<code>dataset.db</code> は互換用です。
+          新規 dataset は snapshot として保存されます。出力は <code>dataset.duckdb</code>、
+          <code>parquet/</code>、<code>manifest.v2.json</code> です。
         </p>
         <p className="text-xs text-amber-700">
           <code>作成</code> は <code>market.duckdb</code> を source of truth とした batch copy で dataset
@@ -86,7 +86,8 @@ export function DatasetCreateForm() {
           />
           <p className="text-xs text-muted-foreground">
             出力先: <code>{normalizedDatasetName || '<name>'}/dataset.duckdb</code> と
-            <code>{normalizedDatasetName || '<name>'}/parquet/</code>
+            <code>{normalizedDatasetName || '<name>'}/parquet/</code>、
+            <code>{normalizedDatasetName || '<name>'}/manifest.v2.json</code>
           </p>
         </div>
 

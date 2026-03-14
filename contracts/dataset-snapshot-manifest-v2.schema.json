@@ -1,0 +1,190 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://trading25.dev/contracts/dataset-snapshot-manifest-v2.schema.json",
+  "title": "Dataset Snapshot Manifest v2",
+  "description": "Schema for DuckDB-only dataset snapshot bundles emitted by apps/bt.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "generatedAt",
+    "dataset",
+    "source",
+    "counts",
+    "coverage",
+    "checksums"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 2
+    },
+    "generatedAt": {
+      "type": "string",
+      "minLength": 1
+    },
+    "dataset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "preset",
+        "duckdbFile",
+        "parquetDir"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preset": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duckdbFile": {
+          "type": "string",
+          "const": "dataset.duckdb"
+        },
+        "parquetDir": {
+          "type": "string",
+          "const": "parquet"
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "backend"
+      ],
+      "properties": {
+        "backend": {
+          "type": "string",
+          "const": "duckdb-parquet"
+        }
+      }
+    },
+    "counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stocks",
+        "stock_data",
+        "topix_data",
+        "indices_data",
+        "margin_data",
+        "statements",
+        "dataset_info"
+      ],
+      "properties": {
+        "stocks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stock_data": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "topix_data": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "indices_data": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "margin_data": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "statements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "dataset_info": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "totalStocks",
+        "stocksWithQuotes",
+        "stocksWithStatements",
+        "stocksWithMargin"
+      ],
+      "properties": {
+        "totalStocks": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stocksWithQuotes": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stocksWithStatements": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "stocksWithMargin": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "checksums": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "duckdbSha256",
+        "logicalSha256",
+        "parquet"
+      ],
+      "properties": {
+        "duckdbSha256": {
+          "type": "string",
+          "minLength": 1
+        },
+        "logicalSha256": {
+          "type": "string",
+          "minLength": 1
+        },
+        "parquet": {
+          "type": "object",
+          "additionalProperties": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "dateRange": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "min",
+            "max"
+          ],
+          "properties": {
+            "min": {
+              "type": "string",
+              "minLength": 1
+            },
+            "max": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

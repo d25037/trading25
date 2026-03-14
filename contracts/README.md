@@ -53,8 +53,9 @@ bun run --filter @trading25/contracts bt:sync
 | File | Status | Description |
 |---|---|---|
 | `dataset-schema.json` | **Deprecated** | Minimal dataset snapshot schema (legacy v1). Do not use for new work. |
-| `dataset-snapshot-manifest-v1.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v1.json`. |
-| `dataset-db-schema-v2.json` | **Active** | Dataset DB schema contract aligned with `apps/ts` Drizzle tables (395 lines). Use this for all new development. |
+| `dataset-snapshot-manifest-v2.schema.json` | **Active** | Dataset snapshot manifest contract for `dataset.duckdb + parquet + manifest.v2.json`. |
+| `dataset-snapshot-manifest-v1.schema.json` | **Historical** | Legacy manifest contract used during the dataset.db compatibility transition. Unsupported for new runtime paths. |
+| `dataset-db-schema-v2.json` | **Historical** | Legacy SQLite dataset schema contract retained for archive/reference only. Unsupported for new runtime paths. |
 | `market-db-schema-v2.json` | **Active** | Market DB schema contract with `statements` and `margin_data` tables for DuckDB sync/screening (v2 minor update). |
 | `backtest-run-manifest-v1.schema.json` | **Active** | Backtest run manifest emitted by `apps/bt`. |
 | `strategy-config-v1.schema.json` | **Deprecated** | Legacy strategy YAML schema before `baseline_*` signal split. |
@@ -89,11 +90,11 @@ bun run --filter @trading25/contracts bt:sync
 
 ## Dataset Note
 
-`dataset-db-schema-v2.json` が現行の authoritative contract です。  
-新規実装は v2 基準で整合を取ってください。
+dataset runtime の SoT は `dataset.duckdb + parquet + manifest.v2.json` のみです。  
+`dataset-snapshot-manifest-v2.schema.json` が現行 contract で、manifest は必須です。
 
-dataset snapshot の artifact contract は `dataset-snapshot-manifest-v1.schema.json` が current です。  
-`dataset.db` は migration window の compatibility artifact であり、SoT ではありません。
+`dataset.db` と `dataset-db-schema-v2.json` は historical reference 扱いです。  
+新規実装・runtime 解決・backtest 実行では使用しません。
 
-- `schemaVersion=1` の間は additive 変更のみ許可する。
-- manifest reader は `duckdbSha256` / `compatibilityDbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `counts` / `coverage` / `dateRange` / `logicalSha256` を検証する。
+- `schemaVersion=2` の間は additive 変更のみ許可する。
+- manifest reader は `duckdbSha256` / `parquet.*` に加えて、DuckDB inspection から導いた `counts` / `coverage` / `dateRange` / `logicalSha256` を検証する。

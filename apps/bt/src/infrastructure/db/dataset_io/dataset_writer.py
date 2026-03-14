@@ -1,9 +1,4 @@
-"""
-Dataset snapshot writer.
-
-Write the new dataset snapshot SoT (`dataset.duckdb + parquet`) while keeping
-`dataset.db` as a compatibility artifact during the migration window.
-"""
+"""DuckDB-only dataset snapshot writer."""
 
 from __future__ import annotations
 
@@ -12,20 +7,6 @@ import importlib
 from pathlib import Path
 from threading import RLock
 from typing import Any, cast
-
-from sqlalchemy import func, insert, select, text
-
-from src.infrastructure.db.market.base import BaseDbAccess
-from src.infrastructure.db.market.tables import (
-    dataset_info,
-    dataset_meta,
-    ds_indices_data,
-    ds_stock_data,
-    ds_stocks,
-    ds_topix_data,
-    margin_data,
-    statements,
-)
 
 _PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
     ("stocks", "stocks.parquet", "code"),
@@ -39,20 +20,11 @@ _PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
 
 def snapshot_dir_for_path(path: str) -> Path:
     source = Path(path)
-    if source.suffix == ".db":
-        if source.name == "dataset.db":
-            return source.parent
+    if source.name in {"dataset.duckdb", "dataset.db"}:
+        return source.parent
+    if source.suffix in {".db", ".duckdb"}:
         return source.with_suffix("")
     return source
-
-
-def compatibility_db_path_for_path(path: str) -> Path:
-    source = Path(path)
-    if source.suffix == ".db":
-        if source.name == "dataset.db":
-            return source
-        return snapshot_dir_for_path(path) / "dataset.db"
-    return snapshot_dir_for_path(path) / "dataset.db"
 
 
 def duckdb_path_for_path(path: str) -> Path:
@@ -63,133 +35,7 @@ def parquet_dir_for_path(path: str) -> Path:
     return snapshot_dir_for_path(path) / "parquet"
 
 
-class _LegacyDatasetWriter(BaseDbAccess):
-    """Compatibility writer for the legacy dataset.db artifact."""
-
-    def __init__(self, db_path: str) -> None:
-        super().__init__(db_path, read_only=False)
-        self._ensure_schema()
-
-    def _ensure_schema(self) -> None:
-        dataset_meta.create_all(self.engine, checkfirst=True)
-        self._ensure_statements_columns()
-
-    def _ensure_statements_columns(self) -> None:
-        additional_columns: tuple[tuple[str, str], ...] = (
-            ("forecast_dividend_fy", "REAL"),
-            ("next_year_forecast_dividend_fy", "REAL"),
-            ("payout_ratio", "REAL"),
-            ("forecast_payout_ratio", "REAL"),
-            ("next_year_forecast_payout_ratio", "REAL"),
-        )
-        with self.engine.begin() as conn:
-            existing_columns = {
-                row[1]
-                for row in conn.execute(text("PRAGMA table_info(statements)")).fetchall()
-                if len(row) > 1
-            }
-            for column_name, column_type in additional_columns:
-                if column_name in existing_columns:
-                    continue
-                conn.execute(
-                    text(
-                        f"ALTER TABLE statements ADD COLUMN {column_name} {column_type}"  # noqa: S608
-                    )
-                )
-
-    def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(insert(ds_stocks).values(row).prefix_with("OR REPLACE"))
-        return len(rows)
-
-    def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(insert(ds_stock_data).values(row).prefix_with("OR REPLACE"))
-        return len(rows)
-
-    def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(insert(ds_topix_data).values(row).prefix_with("OR REPLACE"))
-        return len(rows)
-
-    def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(insert(ds_indices_data).values(row).prefix_with("OR REPLACE"))
-        return len(rows)
-
-    def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(insert(margin_data).values(row).prefix_with("OR REPLACE"))
-        return len(rows)
-
-    def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
-        if not rows:
-            return 0
-        with self.engine.begin() as conn:
-            for row in rows:
-                conn.execute(insert(statements).values(row).prefix_with("OR REPLACE"))
-        return len(rows)
-
-    def set_dataset_info(self, key: str, value: str) -> None:
-        with self.engine.begin() as conn:
-            conn.execute(
-                insert(dataset_info)
-                .values(key=key, value=value, updated_at=datetime.now(UTC).isoformat())
-                .prefix_with("OR REPLACE")
-            )
-
-    def get_stock_count(self) -> int:
-        with self.engine.connect() as conn:
-            return conn.execute(select(func.count()).select_from(ds_stocks)).scalar() or 0
-
-    def get_stock_data_count(self) -> int:
-        with self.engine.connect() as conn:
-            return conn.execute(select(func.count()).select_from(ds_stock_data)).scalar() or 0
-
-    def get_existing_stock_data_codes(self) -> set[str]:
-        with self.engine.connect() as conn:
-            rows = conn.execute(select(ds_stock_data.c.code).distinct()).fetchall()
-        return {str(row[0]) for row in rows if row and row[0] is not None}
-
-    def has_topix_data(self) -> bool:
-        with self.engine.connect() as conn:
-            count = conn.execute(select(func.count()).select_from(ds_topix_data)).scalar() or 0
-        return count > 0
-
-    def get_existing_index_codes(self) -> set[str]:
-        with self.engine.connect() as conn:
-            rows = conn.execute(select(ds_indices_data.c.code).distinct()).fetchall()
-        return {str(row[0]) for row in rows if row and row[0] is not None}
-
-    def get_existing_margin_codes(self) -> set[str]:
-        with self.engine.connect() as conn:
-            rows = conn.execute(select(margin_data.c.code).distinct()).fetchall()
-        return {str(row[0]) for row in rows if row and row[0] is not None}
-
-    def get_existing_statement_codes(self) -> set[str]:
-        with self.engine.connect() as conn:
-            rows = conn.execute(select(statements.c.code).distinct()).fetchall()
-        return {str(row[0]) for row in rows if row and row[0] is not None}
-
-
 class _DatasetDuckDbStore:
-    """DuckDB + Parquet dataset snapshot store."""
-
     _STATEMENT_COLUMNS: tuple[str, ...] = (
         "code",
         "disclosed_date",
@@ -229,6 +75,7 @@ class _DatasetDuckDbStore:
         self._conn = cast(Any, duckdb).connect(str(self._duckdb_path))
         self._lock = RLock()
         self._dirty_tables: set[str] = set()
+        self._closed = False
         self._ensure_schema()
 
     def _ensure_schema(self) -> None:
@@ -348,6 +195,16 @@ class _DatasetDuckDbStore:
                 )
                 """
             )
+
+    def _query_scalar_int(self, sql: str, params: tuple[Any, ...] = ()) -> int:
+        row = self._conn.execute(sql, params).fetchone()
+        if row is None or row[0] is None:
+            return 0
+        return int(row[0])
+
+    def _query_distinct_values(self, sql: str, params: tuple[Any, ...] = ()) -> set[str]:
+        rows = self._conn.execute(sql, params).fetchall()
+        return {str(row[0]) for row in rows if row and row[0] is not None}
 
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
@@ -571,8 +428,38 @@ class _DatasetDuckDbStore:
                 [key, value, datetime.now(UTC).isoformat()],
             )
 
+    def get_stock_count(self) -> int:
+        with self._lock:
+            return self._query_scalar_int("SELECT COUNT(*) FROM stocks")
+
+    def get_stock_data_count(self) -> int:
+        with self._lock:
+            return self._query_scalar_int("SELECT COUNT(*) FROM stock_data")
+
+    def get_existing_stock_data_codes(self) -> set[str]:
+        with self._lock:
+            return self._query_distinct_values("SELECT DISTINCT code FROM stock_data")
+
+    def has_topix_data(self) -> bool:
+        with self._lock:
+            return self._query_scalar_int("SELECT COUNT(*) FROM topix_data") > 0
+
+    def get_existing_index_codes(self) -> set[str]:
+        with self._lock:
+            return self._query_distinct_values("SELECT DISTINCT code FROM indices_data")
+
+    def get_existing_margin_codes(self) -> set[str]:
+        with self._lock:
+            return self._query_distinct_values("SELECT DISTINCT code FROM margin_data")
+
+    def get_existing_statement_codes(self) -> set[str]:
+        with self._lock:
+            return self._query_distinct_values("SELECT DISTINCT code FROM statements")
+
     def close(self) -> None:
         with self._lock:
+            if self._closed:
+                return
             for table_name, parquet_name, order_by in _PARQUET_EXPORTS:
                 if table_name not in self._dirty_tables:
                     continue
@@ -587,83 +474,63 @@ class _DatasetDuckDbStore:
                 self._conn.execute(f"COPY {source_sql} TO '{escaped}' (FORMAT PARQUET)")
             self._dirty_tables.clear()
             self._conn.close()
+            self._closed = True
 
 
 class DatasetWriter:
-    """Dataset snapshot writer with DuckDB SoT and SQLite compatibility artifact."""
+    """Dataset snapshot writer backed only by DuckDB + parquet."""
 
     def __init__(self, path: str) -> None:
         self.snapshot_dir = snapshot_dir_for_path(path)
         self.snapshot_dir.mkdir(parents=True, exist_ok=True)
-        self.compatibility_db_path = compatibility_db_path_for_path(path)
         self.duckdb_path = duckdb_path_for_path(path)
         self.parquet_dir = parquet_dir_for_path(path)
-
-        self._legacy_writer = _LegacyDatasetWriter(str(self.compatibility_db_path))
         self._duckdb_store = _DatasetDuckDbStore(
             duckdb_path=str(self.duckdb_path),
             parquet_dir=str(self.parquet_dir),
         )
 
-    @property
-    def engine(self):  # noqa: ANN201
-        return self._legacy_writer.engine
-
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> int:
-        count = self._duckdb_store.upsert_stocks(rows)
-        self._legacy_writer.upsert_stocks(rows)
-        return count
+        return self._duckdb_store.upsert_stocks(rows)
 
     def upsert_stock_data(self, rows: list[dict[str, Any]]) -> int:
-        count = self._duckdb_store.upsert_stock_data(rows)
-        self._legacy_writer.upsert_stock_data(rows)
-        return count
+        return self._duckdb_store.upsert_stock_data(rows)
 
     def upsert_topix_data(self, rows: list[dict[str, Any]]) -> int:
-        count = self._duckdb_store.upsert_topix_data(rows)
-        self._legacy_writer.upsert_topix_data(rows)
-        return count
+        return self._duckdb_store.upsert_topix_data(rows)
 
     def upsert_indices_data(self, rows: list[dict[str, Any]]) -> int:
-        count = self._duckdb_store.upsert_indices_data(rows)
-        self._legacy_writer.upsert_indices_data(rows)
-        return count
+        return self._duckdb_store.upsert_indices_data(rows)
 
     def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
-        count = self._duckdb_store.upsert_margin_data(rows)
-        self._legacy_writer.upsert_margin_data(rows)
-        return count
+        return self._duckdb_store.upsert_margin_data(rows)
 
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
-        count = self._duckdb_store.upsert_statements(rows)
-        self._legacy_writer.upsert_statements(rows)
-        return count
+        return self._duckdb_store.upsert_statements(rows)
 
     def set_dataset_info(self, key: str, value: str) -> None:
         self._duckdb_store.set_dataset_info(key, value)
-        self._legacy_writer.set_dataset_info(key, value)
 
     def get_stock_count(self) -> int:
-        return self._legacy_writer.get_stock_count()
+        return self._duckdb_store.get_stock_count()
 
     def get_stock_data_count(self) -> int:
-        return self._legacy_writer.get_stock_data_count()
+        return self._duckdb_store.get_stock_data_count()
 
     def get_existing_stock_data_codes(self) -> set[str]:
-        return self._legacy_writer.get_existing_stock_data_codes()
+        return self._duckdb_store.get_existing_stock_data_codes()
 
     def has_topix_data(self) -> bool:
-        return self._legacy_writer.has_topix_data()
+        return self._duckdb_store.has_topix_data()
 
     def get_existing_index_codes(self) -> set[str]:
-        return self._legacy_writer.get_existing_index_codes()
+        return self._duckdb_store.get_existing_index_codes()
 
     def get_existing_margin_codes(self) -> set[str]:
-        return self._legacy_writer.get_existing_margin_codes()
+        return self._duckdb_store.get_existing_margin_codes()
 
     def get_existing_statement_codes(self) -> set[str]:
-        return self._legacy_writer.get_existing_statement_codes()
+        return self._duckdb_store.get_existing_statement_codes()
 
     def close(self) -> None:
         self._duckdb_store.close()
-        self._legacy_writer.close()

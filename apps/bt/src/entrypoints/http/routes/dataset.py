@@ -186,7 +186,7 @@ async def cancel_dataset_job(jobId: str) -> CancelJobResponse:
             status_code=400,
             detail=f"Job {jobId} cannot be cancelled (status: {job.status.value})",
         )
-    await dataset_job_manager.cancel_job(jobId)
+    await dataset_job_manager.cancel_job(jobId, wait=False)
     return CancelJobResponse(success=True, jobId=jobId, message="Job cancelled")
 
 
@@ -223,7 +223,7 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
 
     # Check existing dataset
     name_stem = body.name.removesuffix(".db")
-    if resolver.exists(name_stem) and not body.overwrite:
+    if resolver.get_artifact_paths(name_stem) and not body.overwrite:
         raise HTTPException(
             status_code=409,
             detail=f'Dataset "{name_stem}" already exists. Use overwrite=true to replace.',

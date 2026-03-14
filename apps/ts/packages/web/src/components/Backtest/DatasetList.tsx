@@ -13,36 +13,17 @@ type SortKey = 'name' | 'backend' | 'preset' | 'fileSize' | 'lastModified';
 type SortDir = 'asc' | 'desc';
 
 function storageLabel(item: DatasetListItem): string {
-  switch (item.backend) {
-    case 'duckdb-parquet':
-      return item.hasCompatibilityArtifact ? 'DuckDB + compat' : 'DuckDB';
-    case 'sqlite-compatibility':
-      return 'SQLite snapshot';
-    case 'sqlite-legacy':
-      return 'Legacy SQLite';
-  }
+  return item.backend === 'duckdb-parquet' ? 'DuckDB snapshot' : item.backend;
 }
 
 function storageDetail(item: DatasetListItem): string {
-  switch (item.backend) {
-    case 'duckdb-parquet':
-      return 'dataset.duckdb + parquet/';
-    case 'sqlite-compatibility':
-      return 'dataset.db only';
-    case 'sqlite-legacy':
-      return 'single .db file';
-  }
+  return item.backend === 'duckdb-parquet'
+    ? 'dataset.duckdb + parquet/ + manifest.v2.json'
+    : item.backend;
 }
 
 function storageClass(item: DatasetListItem): string {
-  switch (item.backend) {
-    case 'duckdb-parquet':
-      return 'bg-emerald-500/10 text-emerald-600';
-    case 'sqlite-compatibility':
-      return 'bg-amber-500/10 text-amber-600';
-    case 'sqlite-legacy':
-      return 'bg-slate-500/10 text-slate-600';
-  }
+  return item.backend === 'duckdb-parquet' ? 'bg-emerald-500/10 text-emerald-600' : 'bg-slate-500/10 text-slate-600';
 }
 
 function compareItems(a: DatasetListItem, b: DatasetListItem, key: SortKey, dir: SortDir): number {
@@ -162,9 +143,6 @@ export function DatasetList() {
                   <TableRow key={item.name}>
                     <TableCell className="font-medium">
                       <div>{item.name}</div>
-                      {item.hasCompatibilityArtifact && item.backend === 'duckdb-parquet' && (
-                        <div className="text-xs text-muted-foreground">SQLite compatibility available</div>
-                      )}
                     </TableCell>
                     <TableCell>
                       <div className="flex flex-col gap-1">

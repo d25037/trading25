@@ -60,8 +60,7 @@ def test_resolve_dataset_snapshot() -> None:
         root_path="/tmp/datasets/primeExTopix500",
         primary_path="/tmp/datasets/primeExTopix500/dataset.duckdb",
         duckdb_path="/tmp/datasets/primeExTopix500/dataset.duckdb",
-        compatibility_db_path="/tmp/datasets/primeExTopix500/dataset.db",
-        manifest_path="/tmp/datasets/primeExTopix500/manifest.v1.json",
+        manifest_path="/tmp/datasets/primeExTopix500/manifest.v2.json",
     )
 
     with patch(
@@ -77,7 +76,7 @@ def test_resolve_dataset_snapshot() -> None:
     data = response.json()
     assert data["plane"] == "dataset"
     assert data["snapshot_id"] == "primeExTopix500"
-    assert data["manifest_path"].endswith("manifest.v1.json")
+    assert data["manifest_path"].endswith("manifest.v2.json")
 
 
 def test_resolve_dataset_snapshot_requires_id() -> None:

@@ -54,6 +54,5 @@ async def resolve_snapshot(
         root_path=resolved.root_path,
         primary_path=resolved.primary_path,
         duckdb_path=resolved.duckdb_path,
-        compatibility_db_path=resolved.compatibility_db_path,
         manifest_path=resolved.manifest_path,
     )
