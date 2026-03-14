@@ -198,6 +198,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 ## CI
 
 `.github/workflows/ci.yml` により全ブランチ push / PR で自動実行。
+- push 前のローカル確認 SoT は `scripts/prepush-ci.sh`。`finish` を使う場合も script が存在すればこれを優先し、default は core CI mirror、`--full` は security audit + web e2e まで含める
 - **skills**: audit（stale検知 / frontmatter検証 / legacy変更検知）
 - **ts**: lint → 型生成 → build → typecheck → test + coverage
 - **web e2e**: Playwright Chromium smoke（bt server :3002 を起動して実行）

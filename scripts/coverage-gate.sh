@@ -28,7 +28,10 @@ echo "[coverage] Run TypeScript coverage suites"
 
 echo "[coverage] Run bt coverage suite"
 if [[ -n "${BT_COVERAGE_INPUT_DIR:-}" ]]; then
-  mapfile -t bt_coverage_files < <(find "${BT_COVERAGE_INPUT_DIR}" -type f -name '.coverage*' | sort)
+  bt_coverage_files=()
+  while IFS= read -r coverage_file; do
+    bt_coverage_files+=("${coverage_file}")
+  done < <(find "${BT_COVERAGE_INPUT_DIR}" -type f -name '.coverage*' | sort)
   if [[ ${#bt_coverage_files[@]} -eq 0 ]]; then
     echo "[coverage] ERROR: no bt coverage files found in ${BT_COVERAGE_INPUT_DIR}" >&2
     exit 1
