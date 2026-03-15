@@ -11,7 +11,8 @@ def extract_dataset_name(dataset: str) -> str:
     """データセット名を抽出する.
 
     Args:
-        dataset: データセット名 (e.g., "sampleA") または旧形式パス (e.g., "dataset/sampleA.db")
+        dataset: データセット名 (e.g., "sampleA") または
+            legacy 互換パス表現 (e.g., "dataset/sampleA.db")
 
     Returns:
         str: データセット名 (e.g., "sampleA")

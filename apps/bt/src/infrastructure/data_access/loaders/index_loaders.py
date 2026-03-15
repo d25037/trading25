@@ -5,7 +5,7 @@
 VectorBTで使用できる形式に変換します。
 
 TOPIXデータの二重ロードパス:
-    1. load_topix_data() — dataset.db の topix テーブルからロード（バックテスト専用）
+    1. load_topix_data() — resolved dataset snapshot の TOPIX データをロード（バックテスト専用）
        長期間の過去データを使用するバックテストシミュレーション向け。
     2. load_topix_data_from_market_db() — DuckDB の topix_data テーブルからロード
        日次更新の直近データを使用する ScreeningService の市場分析・
@@ -31,13 +31,13 @@ def load_topix_data(
     dataset: str, start_date: Optional[str] = None, end_date: Optional[str] = None
 ) -> pd.DataFrame:
     """
-    TOPIXデータをdataset.dbのtopixテーブルから読み込み（バックテスト専用）
+    TOPIXデータを resolved dataset snapshot から読み込み（バックテスト専用）
 
     長期間の過去データを使用するバックテストシミュレーション向け。
-    dataset.db は J-Quants API から取得した過去データを格納。
+    現行 runtime では `dataset.duckdb + parquet + manifest.v2.json` を解決して利用する。
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
 
@@ -85,9 +85,9 @@ def load_topix_data_from_market_db(
         ValueError: TOPIXデータが見つからない場合
 
     Note:
-        - DuckDB は topix_data テーブルを使用（dataset/*.dbの topix とは異なる）
+        - market DuckDB は topix_data テーブルを使用
         - 直近1年間の市場データ（日次更新）
-        - バックテスト用のload_topix_data()とはテーブル名・データソースが異なる
+        - バックテスト用の load_topix_data() とは data plane が異なる
     """
     with MarketAPIClient() as client:
         df = client.get_topix(start_date, end_date)
@@ -113,7 +113,7 @@ def load_index_data(
     API経由でインデックスデータを読み込み（VectorBT用）
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         index_code: インデックスコード
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -145,7 +145,7 @@ def get_index_list(dataset: str, min_records: int = 100) -> list[str]:
     データベースから利用可能なインデックスコードリストを取得
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         min_records: 最小レコード数
 
     Returns:
@@ -167,7 +167,7 @@ def get_available_indices(dataset: str, min_records: int = 100) -> pd.DataFrame:
     利用可能なインデックス一覧を取得（VectorBT用）
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         min_records: 最小レコード数
 
     Returns:

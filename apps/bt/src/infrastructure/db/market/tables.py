@@ -5,7 +5,7 @@ Drizzle スキーマ（apps/ts）を正（Single Source of Truth）として、
 21 テーブルを 3 つの MetaData に分離定義する。
 
 - market_meta: market DuckDB（8 テーブル定義）
-- dataset_meta: dataset.db（7 テーブル — stocks 等は market と共通定義を再利用）
+- dataset_meta: historical dataset.db contract（7 テーブル — tests/reference 用）
 - portfolio_meta: portfolio.db（6 テーブル）
 
 銘柄コード: DB 内は 4桁統一（Drizzle stockCode() と同一ルール）。
@@ -178,7 +178,8 @@ index_master = Table(
 )
 
 # ===========================================================================
-# dataset.db (7 tables)
+# historical dataset.db contract (7 tables)
+# DuckDB-only runtime では未使用。SQLite legacy contract / tests 用に保持する。
 # 共通テーブル（stocks, stock_data, topix_data, indices_data）は
 # dataset_meta に再定義する。
 # ===========================================================================

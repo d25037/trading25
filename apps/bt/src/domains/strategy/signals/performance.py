@@ -93,10 +93,10 @@ def create_relative_performance_signal_from_db(
     performance_multiplier: float = 2.0,
 ) -> pd.Series:
     """
-    データベースからベンチマークデータを読み込んで相対パフォーマンスシグナルを作成
+    データセット snapshot からベンチマークデータを読み込んで相対パフォーマンスシグナルを作成
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_price_data: 個別銘柄の価格データ
         benchmark_table: ベンチマークテーブル名（'topix'または特定のインデックスコード）
         start_date: 開始日 (YYYY-MM-DD)

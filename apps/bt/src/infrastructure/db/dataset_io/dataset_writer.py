@@ -19,6 +19,7 @@ _PARQUET_EXPORTS: tuple[tuple[str, str, str | None], ...] = (
 
 
 def snapshot_dir_for_path(path: str) -> Path:
+    """Resolve snapshot directory from current or legacy dataset path representations."""
     source = Path(path)
     if source.name in {"dataset.duckdb", "dataset.db"}:
         return source.parent

@@ -49,7 +49,7 @@ def load_margin_data(
     API経由で信用残高データを読み込み（VectorBT用）
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_code: 銘柄コード
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -103,7 +103,7 @@ def get_margin_available_stocks(dataset: str, min_records: int = 10) -> pd.DataF
     信用残高データがある銘柄一覧を取得（VectorBT用）
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         min_records: 最小レコード数
 
     Returns:

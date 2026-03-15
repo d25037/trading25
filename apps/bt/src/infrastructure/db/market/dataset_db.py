@@ -1,8 +1,10 @@
 """
 Dataset Database Access (SQLAlchemy Core)
 
-dataset.db（各スナップショット）の読み取り操作を提供する。
-Phase 3D（/api/dataset/{name}/* エンドポイント）の基盤。
+Historical SQLite dataset reader kept for tests / migration reference.
+
+DuckDB-only runtime は DatasetSnapshotReader を使用する。
+この module は legacy `dataset.db` snapshot の読み取り互換を検証する用途で保持する。
 """
 
 from __future__ import annotations
@@ -52,7 +54,7 @@ def _resolve_period_filter_values(period_type: str) -> list[str] | None:
 
 
 class DatasetDb(BaseDbAccess):
-    """dataset.db 読み取り（各スナップショット）"""
+    """Historical `dataset.db` 読み取り互換."""
 
     def __init__(self, db_path: str) -> None:
         super().__init__(db_path, read_only=True)
@@ -83,7 +85,7 @@ class DatasetDb(BaseDbAccess):
         """
         statements の選択列を動的構築する。
 
-        旧 dataset.db で未追加の列は NULL を同名 alias で補完し、
+        historical dataset.db で未追加の列は NULL を同名 alias で補完し、
         呼び出し側の列マッピングを壊さない。
         """
         existing = self._get_statements_columns()

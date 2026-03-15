@@ -142,7 +142,7 @@ def prepare_data(
     VectorBT用のデータを準備する統合関数
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_code: 銘柄コード（'all'の場合は全銘柄対象）
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -229,7 +229,7 @@ def prepare_multi_data(
     複数銘柄のデータを一括でバッチ取得する関数
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_codes: 銘柄コードのリスト
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)

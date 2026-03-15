@@ -362,7 +362,7 @@ def load_statements_data(
     次の決算発表まで継続することでフィルター計算を可能にします。
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_code: 銘柄コード
         daily_index: 株価データと同期するための日次インデックス（必須）
         start_date: 開始日 (YYYY-MM-DD)

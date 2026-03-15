@@ -15,9 +15,9 @@ type SortDir = 'asc' | 'desc';
 function storageLabel(item: DatasetListItem): string {
   switch (item.backend) {
     case 'duckdb-parquet':
-      return item.hasCompatibilityArtifact ? 'DuckDB + compat' : 'DuckDB snapshot';
+      return item.hasCompatibilityArtifact ? 'DuckDB snapshot + legacy compat' : 'DuckDB snapshot';
     case 'sqlite-compatibility':
-      return 'SQLite snapshot';
+      return 'Legacy SQLite snapshot';
     case 'sqlite-legacy':
       return 'Legacy SQLite';
   }
@@ -27,13 +27,13 @@ function storageDetail(item: DatasetListItem): string {
   switch (item.backend) {
     case 'duckdb-parquet':
       if (item.hasCompatibilityArtifact) {
-        return 'dataset.duckdb + parquet/ + dataset.db';
+        return 'dataset.duckdb + parquet/ + manifest.v2.json + legacy dataset.db';
       }
       return 'dataset.duckdb + parquet/ + manifest.v2.json';
     case 'sqlite-compatibility':
-      return 'dataset.db only';
+      return 'legacy dataset.db snapshot';
     case 'sqlite-legacy':
-      return 'single .db file';
+      return 'historical single .db file';
   }
 }
 
@@ -166,7 +166,7 @@ export function DatasetList() {
                     <TableCell className="font-medium">
                       <div>{item.name}</div>
                       {item.hasCompatibilityArtifact && item.backend === 'duckdb-parquet' && (
-                        <div className="text-xs text-muted-foreground">SQLite compatibility available</div>
+                        <div className="text-xs text-muted-foreground">Legacy dataset.db compatibility</div>
                       )}
                     </TableCell>
                     <TableCell>

@@ -166,9 +166,9 @@ function ValidationSection({ info }: { info: DatasetInfoResponse }) {
 function storageLabel(info: DatasetInfoResponse): string {
   switch (info.storage.backend) {
     case 'duckdb-parquet':
-      return info.storage.hasCompatibilityArtifact ? 'DuckDB + compat' : 'DuckDB snapshot';
+      return info.storage.hasCompatibilityArtifact ? 'DuckDB snapshot + legacy compat' : 'DuckDB snapshot';
     case 'sqlite-compatibility':
-      return 'SQLite snapshot';
+      return 'Legacy SQLite snapshot';
     case 'sqlite-legacy':
       return 'Legacy SQLite';
   }
@@ -193,7 +193,7 @@ function StorageSection({ info }: { info: DatasetInfoResponse }) {
         <div className="flex flex-wrap items-center gap-2">
           <span className={`rounded px-2 py-0.5 text-xs font-medium ${storageClass(info)}`}>{storageLabel(info)}</span>
           {info.storage.hasCompatibilityArtifact && (
-            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">dataset.db compatibility</span>
+            <span className="rounded bg-muted px-2 py-0.5 text-xs text-muted-foreground">legacy dataset.db compatibility</span>
           )}
         </div>
         <div className="grid grid-cols-2 gap-2 text-xs">
@@ -207,7 +207,7 @@ function StorageSection({ info }: { info: DatasetInfoResponse }) {
           )}
           {info.storage.compatibilityDbPath && (
             <>
-              <div className="text-muted-foreground">SQLite compat</div>
+              <div className="text-muted-foreground">Legacy SQLite compat</div>
               <div className="break-all font-mono">{info.storage.compatibilityDbPath}</div>
             </>
           )}

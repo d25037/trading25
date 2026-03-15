@@ -41,7 +41,7 @@ def load_multiple_stocks(
     複数銘柄のデータを同時に読み込み（VectorBT用）
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_codes: 銘柄コードのリスト
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -105,7 +105,7 @@ def load_multiple_indices(
     複数インデックスのデータを同時に読み込み（VectorBT用）
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         index_codes: インデックスコードのリスト
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -153,7 +153,7 @@ def load_multiple_margin_data(
     バッチAPI失敗時は個別取得にフォールバックします。
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_codes: 銘柄コードのリスト
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -219,7 +219,7 @@ def load_multiple_statements_data(
     バッチAPI失敗時は個別取得にフォールバックします。
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         stock_codes: 銘柄コードのリスト
         daily_index: 日次インデックス（株価データと同じにするため、必須）
         start_date: 開始日 (YYYY-MM-DD)

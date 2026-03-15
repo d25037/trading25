@@ -27,7 +27,7 @@ def get_sector_mapping(dataset: str) -> pd.DataFrame:
     セクター対応関係を取得
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
 
     Returns:
         pandas.DataFrame: セクター対応関係
@@ -54,7 +54,7 @@ def prepare_sector_data(
     セクター別データを準備する関数
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         sector_name: セクター名（例: "化学", "医薬品"）
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
@@ -104,7 +104,7 @@ def load_all_sector_indices(
     全33セクターインデックスのOHLCデータを一括取得
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
         start_date: 開始日 (YYYY-MM-DD)
         end_date: 終了日 (YYYY-MM-DD)
 
@@ -158,7 +158,7 @@ def get_stock_sector_mapping(dataset: str) -> dict[str, str]:
     全銘柄のセクター名マッピングを取得
 
     Args:
-        dataset: データベースファイルパス
+        dataset: データセット名または legacy 互換パス表現
 
     Returns:
         dict[str, str]: {stock_code: sector_name} マッピング

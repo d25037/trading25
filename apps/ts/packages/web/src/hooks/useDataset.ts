@@ -75,6 +75,7 @@ function isDatasetInfoResponse(value: DatasetInfoResponse | LegacyDatasetInfoRes
 }
 
 function normalizeStorage(path: string, storage: DatasetStorage | null | undefined): DatasetStorage {
+  // Keep web resilient during rolling deploys and when viewing historical dataset payloads.
   const fallback = inferLegacyStorage(path);
   return {
     ...fallback,
