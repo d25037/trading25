@@ -5,6 +5,7 @@ import importlib
 import inspect
 import json
 import sqlite3
+import threading
 from collections.abc import Awaitable, Callable
 from pathlib import Path
 from typing import cast
@@ -436,6 +437,73 @@ def test_convert_stocks_maps_jquants_fields():
 
 
 @pytest.mark.asyncio
+async def test_dataset_writer_worker_close_without_writer_is_noop():
+    worker = dataset_builder_service._DatasetWriterWorker("/tmp/unused-dataset-writer")
+
+    await worker.close()
+
+
+def test_normalize_index_code_handles_empty_and_short_numeric_values():
+    assert dataset_builder_service._normalize_index_code(None) == ""
+    assert dataset_builder_service._normalize_index_code("40") == "0040"
+
+
+@pytest.mark.asyncio
+async def test_query_market_rows_awaits_coroutine_results():
+    class _CoroutineReader:
+        def query(self, sql: str, params: tuple[object, ...] = ()):
+            del sql, params
+
+            async def _rows():
+                return [{"value": 1}]
+
+            return _rows()
+
+    rows = await dataset_builder_service._query_market_rows(_CoroutineReader(), "SELECT 1")
+
+    assert rows == [{"value": 1}]
+
+
+@pytest.mark.asyncio
+async def test_load_market_index_data_batch_returns_empty_when_no_codes():
+    rows = await dataset_builder_service._load_market_index_data_batch(_StaticRowsMarketReader([]), [])
+
+    assert rows == {}
+
+
+@pytest.mark.asyncio
+async def test_load_market_index_data_batch_skips_rows_without_date_or_code():
+    reader = _StaticRowsMarketReader(
+        [
+            {
+                "code": "0040",
+                "date": "",
+                "open": 1,
+                "high": 1,
+                "low": 1,
+                "close": 1,
+                "sector_name": "Sector",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+            {
+                "code": None,
+                "date": "2026-01-01",
+                "open": 1,
+                "high": 1,
+                "low": 1,
+                "close": 1,
+                "sector_name": "Sector",
+                "created_at": "2026-01-01T00:00:00+00:00",
+            },
+        ]
+    )
+
+    rows = await dataset_builder_service._load_market_index_data_batch(reader, ["0040"])
+
+    assert rows == {}
+
+
+@pytest.mark.asyncio
 async def test_load_market_stock_data_batch_merges_alias_rows_before_validation():
     reader = _StaticRowsMarketReader(
         [
@@ -779,6 +847,67 @@ async def test_build_dataset_returns_partial_result_when_cancelled_during_stock_
     assert result.processedStocks == 0
     assert result.errors == ["Cancelled"]
     assert DummyWriter.instances[-1].closed is True
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_keeps_dataset_writer_on_one_worker_thread(
+    monkeypatch,
+    isolated_dataset_manager,
+):
+    job = await _create_job(isolated_dataset_manager, preset="quick")
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = "/tmp/thread-affinity.db"
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=False,
+        include_statements=False,
+        include_margin=False,
+        include_sector_indices=False,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    main_thread_id = threading.get_ident()
+    thread_ids: list[int] = []
+
+    class DummyWriter:
+        def __init__(self, db_path: str):
+            del db_path
+            thread_ids.append(threading.get_ident())
+
+        def upsert_stocks(self, rows):
+            thread_ids.append(threading.get_ident())
+            return len(rows)
+
+        def set_dataset_info(self, key: str, value: str):
+            del key, value
+            thread_ids.append(threading.get_ident())
+            return None
+
+        def upsert_stock_data(self, rows):
+            thread_ids.append(threading.get_ident())
+            return len(rows)
+
+        def close(self):
+            thread_ids.append(threading.get_ident())
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
+
+    async def fake_get_paginated(path: str, params=None):
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        if path == "/equities/bars/daily":
+            return [_daily_bar_row()]
+        return []
+
+    reader = _reader_from_fetch(fake_get_paginated)
+
+    result = await _build_dataset(job, resolver, reader)
+
+    assert result.success is True
+    assert thread_ids
+    assert len(set(thread_ids)) == 1
+    assert thread_ids[0] != main_thread_id
 
 
 @pytest.mark.asyncio
