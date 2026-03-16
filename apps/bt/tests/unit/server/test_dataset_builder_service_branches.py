@@ -712,7 +712,7 @@ async def test_build_dataset_success_copies_all_enabled_tables(monkeypatch, isol
     assert result.totalStocks == 2
     assert result.processedStocks == 2
     assert result.outputPath == "/tmp/full"
-    assert result.warnings is None
+    assert result.warnings == []
 
     writer = DummyWriter.instances[-1]
     assert "stocks" in writer.calls
