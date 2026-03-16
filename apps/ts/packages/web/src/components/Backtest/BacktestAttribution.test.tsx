@@ -5,12 +5,11 @@ import { BacktestAttribution } from './BacktestAttribution';
 
 const mockRunMutateAsync = vi.fn();
 const mockCancelMutate = vi.fn();
-const mockSetSelectedStrategy = vi.fn();
+const mockOnSelectedStrategyChange = vi.fn();
 const mockSetActiveAttributionJobId = vi.fn();
+let selectedStrategy: string | null = 'strategy.yml';
 
 const mockStore = {
-  selectedStrategy: 'strategy.yml' as string | null,
-  setSelectedStrategy: mockSetSelectedStrategy,
   activeAttributionJobId: null as string | null,
   setActiveAttributionJobId: mockSetActiveAttributionJobId,
 };
@@ -76,10 +75,19 @@ vi.mock('./AttributionArtifactBrowser', () => ({
   AttributionArtifactBrowser: () => <div>Attribution History Panel</div>,
 }));
 
+function renderBacktestAttribution() {
+  return render(
+    <BacktestAttribution
+      selectedStrategy={selectedStrategy}
+      onSelectedStrategyChange={mockOnSelectedStrategyChange}
+    />
+  );
+}
+
 describe('BacktestAttribution', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStore.selectedStrategy = 'strategy.yml';
+    selectedStrategy = 'strategy.yml';
     mockStore.activeAttributionJobId = null;
     mockHookState.run.isPending = false;
     mockHookState.run.isError = false;
@@ -97,7 +105,7 @@ describe('BacktestAttribution', () => {
   it('sends advanced parameters when running attribution', async () => {
     const user = userEvent.setup();
 
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     await user.click(screen.getByRole('button', { name: /Advanced Parameters/i }));
     await user.clear(screen.getByLabelText('Shapley Top N'));
@@ -132,7 +140,7 @@ describe('BacktestAttribution', () => {
       result_data: null,
     };
 
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     expect(screen.getByText('Job ID: attr-running')).toBeInTheDocument();
     expect(screen.getByText('50.0%')).toBeInTheDocument();
@@ -155,7 +163,7 @@ describe('BacktestAttribution', () => {
       result_data: null,
     };
 
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     expect(screen.getByText('Tracking...')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
@@ -175,7 +183,7 @@ describe('BacktestAttribution', () => {
       result_data: null,
     };
 
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     expect(screen.getByText('100.0%')).toBeInTheDocument();
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
@@ -247,7 +255,7 @@ describe('BacktestAttribution', () => {
       },
     };
 
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     const row = screen.getByText('entry.signal_b').closest('tr');
     expect(row).not.toBeNull();
@@ -256,7 +264,7 @@ describe('BacktestAttribution', () => {
 
   it('shows validation error and skips submit for non-integer random seed', async () => {
     const user = userEvent.setup();
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     await user.click(screen.getByRole('button', { name: /Advanced Parameters/i }));
     await user.type(screen.getByLabelText('Random Seed (optional)'), '1.5');
@@ -286,7 +294,7 @@ describe('BacktestAttribution', () => {
     mockHookState.result.isError = true;
     mockHookState.result.error = new Error('result failed');
 
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     expect(screen.getByText('run failed')).toBeInTheDocument();
     expect(screen.getByText('cancel failed')).toBeInTheDocument();
@@ -295,7 +303,7 @@ describe('BacktestAttribution', () => {
 
   it('switches to history tab', async () => {
     const user = userEvent.setup();
-    render(<BacktestAttribution />);
+    renderBacktestAttribution();
 
     await user.click(screen.getByRole('button', { name: 'History' }));
     expect(screen.getByText('Attribution History Panel')).toBeInTheDocument();

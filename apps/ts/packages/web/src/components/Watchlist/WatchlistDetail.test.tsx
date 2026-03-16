@@ -5,7 +5,6 @@ import type { WatchlistWithItems } from '@/types/watchlist';
 import { WatchlistDetail } from './WatchlistDetail';
 
 const mockNavigate = vi.fn();
-const mockSetSelectedSymbol = vi.fn();
 
 const mockUseWatchlistPrices = vi.fn();
 const mockUseAddWatchlistItem = vi.fn();
@@ -18,12 +17,6 @@ const mockRemoveItemMutate = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
-}));
-
-vi.mock('@/stores/chartStore', () => ({
-  useChartStore: () => ({
-    setSelectedSymbol: mockSetSelectedSymbol,
-  }),
 }));
 
 vi.mock('@/hooks/useWatchlist', () => ({
@@ -93,8 +86,7 @@ describe('WatchlistDetail', () => {
 
     await user.click(screen.getByRole('button', { name: 'View chart for Toyota Motor' }));
 
-    expect(mockSetSelectedSymbol).toHaveBeenCalledWith('7203');
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
   });
 
   it('submits add stock dialog with trimmed values', async () => {

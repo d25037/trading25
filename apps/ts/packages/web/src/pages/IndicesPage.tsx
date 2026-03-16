@@ -4,11 +4,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { StockChart } from '@/components/Chart/StockChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { useIndicesRouteState, useMigrateIndicesRouteState } from '@/hooks/usePageRouteState';
 import { useIndexData, useIndicesList } from '@/hooks/useIndices';
 import { type SectorStockItem, useSectorStocks } from '@/hooks/useSectorStocks';
 import { cn } from '@/lib/utils';
-import { useChartStore } from '@/stores/chartStore';
-import { useUiStore } from '@/stores/uiStore';
 import type { IndexItem } from '@/types/indices';
 
 type SortField = 'tradingValue' | 'changePercentage' | 'code';
@@ -462,18 +461,17 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
 }
 
 export function IndicesPage() {
+  useMigrateIndicesRouteState();
   const navigate = useNavigate();
-  const { selectedIndexCode, setSelectedIndexCode } = useUiStore();
-  const { setSelectedSymbol } = useChartStore();
+  const { selectedIndexCode, setSelectedIndexCode } = useIndicesRouteState();
   const { data: indicesData, isLoading: indicesLoading, error: indicesError } = useIndicesList();
   const listContainerRef = useRef<HTMLDivElement>(null);
 
   const handleStockClick = useCallback(
     (code: string) => {
-      setSelectedSymbol(code);
-      void navigate({ to: '/charts' });
+      void navigate({ to: '/charts', search: { symbol: code } });
     },
-    [setSelectedSymbol, navigate]
+    [navigate]
   );
 
   // Get the currently selected index info

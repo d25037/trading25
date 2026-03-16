@@ -63,6 +63,10 @@ const TASKS: Record<string, TaskDefinition> = {
       { command: ['run', '--filter', '@trading25/api-clients', 'test'] },
     ],
   },
+  'quality:deps:audit': {
+    description: 'Audit declared TS dependencies against imports, scripts, and root overrides',
+    steps: [{ command: ['scripts/dependency-audit.ts'] }],
+  },
   'quality:check:fix': {
     description: 'Run biome check with auto-fix',
     steps: [{ command: ['x', 'biome', 'check', '.', '--write'] }],
@@ -86,6 +90,7 @@ const TASKS: Record<string, TaskDefinition> = {
       { task: 'quality:typecheck:root' },
       { command: ['run', '--filter', '@trading25/api-clients', 'typecheck'] },
       { task: 'quality:typecheck:web' },
+      { task: 'quality:deps:audit' },
     ],
   },
   'quality:typecheck:root': {
@@ -95,6 +100,10 @@ const TASKS: Record<string, TaskDefinition> = {
   'quality:typecheck:web': {
     description: 'Run web TypeScript typecheck',
     steps: [{ command: ['run', '--filter', '@trading25/web', 'typecheck'] }],
+  },
+  'root:test': {
+    description: 'Run root script tests',
+    steps: [{ command: ['test', 'scripts/dependency-audit.test.ts', 'scripts/dependency-audit.coverage.test.ts'] }],
   },
   'utils:build': {
     description: 'Build utils package',
@@ -146,7 +155,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'workspace:test': {
     description: 'Run all workspace tests',
-    steps: [{ task: 'packages:test' }, { task: 'apps:test' }],
+    steps: [{ task: 'root:test' }, { task: 'packages:test' }, { task: 'apps:test' }],
   },
   'workspace:test:coverage': {
     description: 'Run all workspace coverage tests',

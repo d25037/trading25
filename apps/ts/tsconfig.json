@@ -39,6 +39,7 @@
     }
   },
   "include": [
+    "scripts/**/*.ts",
     "packages/contracts/src/**/*",
     "packages/utils/src/**/*",
     "node_modules/bun-types/**/*.d.ts"

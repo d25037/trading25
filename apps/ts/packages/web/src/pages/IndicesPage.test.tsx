@@ -26,27 +26,20 @@ const mockSetSelectedIndexCode = vi.fn((code: string | null) => {
 });
 const mockNavigate = vi.fn();
 
-const mockSetSelectedSymbol = vi.fn();
-
 const mockUseIndicesList = vi.fn();
 const mockUseIndexData = vi.fn();
 const mockUseSectorStocks = vi.fn();
 
-vi.mock('@/stores/uiStore', () => ({
-  useUiStore: () => ({
+vi.mock('@/hooks/usePageRouteState', () => ({
+  useIndicesRouteState: () => ({
     selectedIndexCode,
     setSelectedIndexCode: mockSetSelectedIndexCode,
   }),
+  useMigrateIndicesRouteState: () => {},
 }));
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
-}));
-
-vi.mock('@/stores/chartStore', () => ({
-  useChartStore: () => ({
-    setSelectedSymbol: mockSetSelectedSymbol,
-  }),
 }));
 
 vi.mock('@/hooks/useIndices', () => ({
@@ -168,8 +161,7 @@ describe('IndicesPage', () => {
     expect(screen.getByRole('button', { name: 'Select TOPIX-33 Energy' })).toBeInTheDocument();
     await user.click(screen.getByText('Sample Energy'));
 
-    expect(mockSetSelectedSymbol).toHaveBeenCalledWith('1301');
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '1301' } });
   });
 
   it('renders empty state and chart placeholder when no index is selected', () => {

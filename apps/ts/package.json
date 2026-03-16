@@ -16,6 +16,7 @@
     "contracts:sync:bt": "bun scripts/tasks.ts contracts:sync:bt",
     "coverage:check": "bun scripts/tasks.ts coverage:check",
     "packages:test": "bun scripts/tasks.ts packages:test",
+    "quality:deps:audit": "bun scripts/tasks.ts quality:deps:audit",
     "quality:check:fix": "bun scripts/tasks.ts quality:check:fix",
     "quality:format": "bun scripts/tasks.ts quality:format",
     "quality:lint": "bun scripts/tasks.ts quality:lint",
@@ -23,6 +24,7 @@
     "quality:typecheck": "bun scripts/tasks.ts quality:typecheck",
     "quality:typecheck:root": "bun scripts/tasks.ts quality:typecheck:root",
     "quality:typecheck:web": "bun scripts/tasks.ts quality:typecheck:web",
+    "root:test": "bun scripts/tasks.ts root:test",
     "utils:build": "bun scripts/tasks.ts utils:build",
     "web:build": "bun scripts/tasks.ts web:build",
     "web:dev": "bun scripts/tasks.ts web:dev",
@@ -37,7 +39,6 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.7",
     "bun-types": "^1.3.10",
-    "tsx": "^4.19.1",
     "typescript": "^5.9.2"
   },
   "overrides": {

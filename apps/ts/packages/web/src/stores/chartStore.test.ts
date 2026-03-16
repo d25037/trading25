@@ -3,7 +3,6 @@ import { defaultSettings, useChartStore } from './chartStore';
 
 const resetChartStore = () => {
   useChartStore.setState({
-    selectedSymbol: null,
     settings: structuredClone(defaultSettings),
     presets: [],
     activePresetId: null,
@@ -25,14 +24,6 @@ describe('chartStore', () => {
   afterEach(() => {
     useChartStore.persist?.clearStorage?.();
     vi.unstubAllGlobals();
-  });
-
-  it('sets selected symbol', () => {
-    const { setSelectedSymbol } = useChartStore.getState();
-
-    setSelectedSymbol('7203');
-
-    expect(useChartStore.getState().selectedSymbol).toBe('7203');
   });
 
   it('updates settings and toggles indicators', () => {
@@ -270,7 +261,7 @@ describe('chartStore', () => {
     await useChartStore.persist?.rehydrate();
 
     const state = useChartStore.getState();
-    expect(state.selectedSymbol).toBe('7203');
+    expect('selectedSymbol' in state).toBe(false);
     expect(state.settings.displayTimeframe).toBe('weekly');
     expect(state.settings.indicators.sma.enabled).toBe(true);
     expect(state.settings.indicators.sma.period).toBe(50);
@@ -324,7 +315,7 @@ describe('chartStore', () => {
     await useChartStore.persist?.rehydrate();
 
     const state = useChartStore.getState();
-    expect(state.selectedSymbol).toBeNull();
+    expect('selectedSymbol' in state).toBe(false);
     expect(state.settings.displayTimeframe).toBe(defaultSettings.displayTimeframe);
     expect(state.settings.chartType).toBe(defaultSettings.chartType);
     expect(state.settings.showPPOChart).toBe(defaultSettings.showPPOChart);

@@ -2,17 +2,18 @@ import { CheckCircle2, Loader2, RefreshCw, Server, XCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { useBacktestHealth, useJobs } from '@/hooks/useBacktest';
-import { useBacktestStore } from '@/stores/backtestStore';
 import { JobsTable } from './JobsTable';
 
-export function BacktestStatus() {
-  const { setActiveSubTab, setSelectedResultJobId } = useBacktestStore();
+interface BacktestStatusProps {
+  onViewJob: (jobId: string) => void;
+}
+
+export function BacktestStatus({ onViewJob }: BacktestStatusProps) {
   const { data: health, isLoading: isLoadingHealth, refetch: refetchHealth } = useBacktestHealth();
   const { data: jobs, isLoading: isLoadingJobs, refetch: refetchJobs } = useJobs(20);
 
   const handleViewJob = (jobId: string) => {
-    setSelectedResultJobId(jobId);
-    setActiveSubTab('results');
+    onViewJob(jobId);
   };
 
   const handleRefresh = () => {

@@ -4,13 +4,27 @@ import tailwindcss from '@tailwindcss/vite';
 import { defineConfig, type PluginOption } from 'vite';
 
 const WEB_PORT = 5173;
+const MANUAL_CHUNK_GROUPS = [
+	{ name: 'react-vendor', packages: ['react', 'react-dom'] },
+	{ name: 'charts', packages: ['lightweight-charts'] },
+	{
+		name: 'ui-vendor',
+		packages: ['@radix-ui/react-select', '@radix-ui/react-slot', '@radix-ui/react-switch'],
+	},
+	{ name: 'state-vendor', packages: ['@tanstack/react-query', 'zustand'] },
+] as const;
 
 function killPortPlugin(): PluginOption {
+	let resolvedPort = WEB_PORT;
+
 	return {
 		name: 'kill-port-plugin',
 		apply: 'serve',
+		configResolved(config) {
+			resolvedPort = config.server.port ?? WEB_PORT;
+		},
 		async buildStart() {
-			await killPortProcess(WEB_PORT);
+			await killPortProcess(resolvedPort);
 		},
 	};
 }
@@ -23,13 +37,32 @@ async function killPortProcess(port: number): Promise<void> {
 			const pids = trimmed.split('\n').filter((pid) => pid.trim());
 			if (pids.length > 0) {
 				console.log(`[vite] Killing processes using port ${port}: ${pids.join(', ')}`);
-				await $`kill -9 ${pids.join(' ')}`;
-				await Bun.sleep(1000);
+				const proc = Bun.spawn({
+					cmd: ['kill', '-9', ...pids],
+					stdout: 'ignore',
+					stderr: 'ignore',
+				});
+				await proc.exited;
+				await Bun.sleep(300);
 			}
 		}
 	} catch {
 		// No processes found using the port
 	}
+}
+
+function resolveManualChunk(id: string): string | undefined {
+	if (!id.includes('node_modules')) {
+		return undefined;
+	}
+
+	for (const group of MANUAL_CHUNK_GROUPS) {
+		if (group.packages.some((packageName) => id.includes(`node_modules/${packageName}/`))) {
+			return group.name;
+		}
+	}
+
+	return undefined;
 }
 
 export default defineConfig({
@@ -66,16 +99,7 @@ export default defineConfig({
 		chunkSizeWarningLimit: 800,
 		rollupOptions: {
 			output: {
-				manualChunks: {
-					'react-vendor': ['react', 'react-dom'],
-					charts: ['lightweight-charts'],
-					'ui-vendor': [
-						'@radix-ui/react-slot',
-						'@radix-ui/react-select',
-						'@radix-ui/react-switch',
-					],
-					'state-vendor': ['zustand', '@tanstack/react-query'],
-				},
+				manualChunks: resolveManualChunk,
 			},
 		},
 	},

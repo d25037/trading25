@@ -8,8 +8,8 @@ import {
   DatasetManager,
 } from '@/components/Backtest';
 import { LabPanel } from '@/components/Lab';
+import { useBacktestRouteState, useMigrateBacktestRouteState } from '@/hooks/usePageRouteState';
 import { cn } from '@/lib/utils';
-import { useBacktestStore } from '@/stores/backtestStore';
 import type { BacktestSubTab } from '@/types/backtest';
 
 const subTabs: { id: BacktestSubTab; label: string; icon: typeof Play }[] = [
@@ -23,7 +23,16 @@ const subTabs: { id: BacktestSubTab; label: string; icon: typeof Play }[] = [
 ];
 
 export function BacktestPage() {
-  const { activeSubTab, setActiveSubTab } = useBacktestStore();
+  useMigrateBacktestRouteState();
+  const {
+    activeSubTab,
+    setActiveSubTab,
+    selectedStrategy,
+    setSelectedStrategy,
+    setSelectedResultJobId,
+    activeLabType,
+    setActiveLabType,
+  } = useBacktestRouteState();
 
   return (
     <div className="flex">
@@ -57,15 +66,31 @@ export function BacktestPage() {
       <div className="flex-1 p-6">
         {activeSubTab === 'runner' && (
           <div className="max-w-xl">
-            <BacktestRunner />
+            <BacktestRunner selectedStrategy={selectedStrategy} onSelectedStrategyChange={setSelectedStrategy} />
           </div>
         )}
         {activeSubTab === 'results' && <BacktestResults />}
-        {activeSubTab === 'attribution' && <BacktestAttribution />}
+        {activeSubTab === 'attribution' && (
+          <BacktestAttribution selectedStrategy={selectedStrategy} onSelectedStrategyChange={setSelectedStrategy} />
+        )}
         {activeSubTab === 'strategies' && <BacktestStrategies />}
-        {activeSubTab === 'status' && <BacktestStatus />}
+        {activeSubTab === 'status' && (
+          <BacktestStatus
+            onViewJob={(jobId) => {
+              setSelectedResultJobId(jobId);
+              setActiveSubTab('results');
+            }}
+          />
+        )}
         {activeSubTab === 'dataset' && <DatasetManager />}
-        {activeSubTab === 'lab' && <LabPanel />}
+        {activeSubTab === 'lab' && (
+          <LabPanel
+            selectedStrategy={selectedStrategy}
+            onSelectedStrategyChange={setSelectedStrategy}
+            operation={activeLabType ?? 'generate'}
+            onOperationChange={setActiveLabType}
+          />
+        )}
       </div>
     </div>
   );

@@ -14,6 +14,7 @@ import { ScreeningSummary } from '@/components/Screening/ScreeningSummary';
 import { ScreeningTable } from '@/components/Screening/ScreeningTable';
 import { Button } from '@/components/ui/button';
 import { useStrategies } from '@/hooks/useBacktest';
+import { useAnalysisRouteState, useMigrateAnalysisRouteState } from '@/hooks/usePageRouteState';
 import { useFundamentalRanking } from '@/hooks/useFundamentalRanking';
 import { useRanking } from '@/hooks/useRanking';
 import {
@@ -27,7 +28,6 @@ import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import type { AnalysisSubTab } from '@/stores/analysisStore';
 import { useAnalysisStore } from '@/stores/analysisStore';
-import { useChartStore } from '@/stores/chartStore';
 import type { StrategyMetadata } from '@/types/backtest';
 import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from '@/types/fundamentalRanking';
 import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
@@ -459,22 +459,25 @@ function useScreeningModeController({
 }
 
 export function AnalysisPage() {
-  const activeSubTab = useAnalysisStore((state) => state.activeSubTab);
-  const screeningParams = useAnalysisStore((state) => state.screeningParams);
-  const oracleScreeningParams = useAnalysisStore((state) => state.oracleScreeningParams);
-  const rankingParams = useAnalysisStore((state) => state.rankingParams);
-  const fundamentalRankingParams = useAnalysisStore((state) => state.fundamentalRankingParams);
+  useMigrateAnalysisRouteState();
+  const {
+    activeSubTab,
+    screeningParams,
+    oracleScreeningParams,
+    rankingParams,
+    fundamentalRankingParams,
+    setActiveSubTab,
+    setScreeningParams,
+    setOracleScreeningParams,
+    setRankingParams,
+    setFundamentalRankingParams,
+  } = useAnalysisRouteState();
   const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
   const activeOracleScreeningJobId = useAnalysisStore((state) => state.activeOracleScreeningJobId);
   const screeningResult = useAnalysisStore((state) => state.screeningResult);
   const oracleScreeningResult = useAnalysisStore((state) => state.oracleScreeningResult);
   const screeningJobHistory = useAnalysisStore((state) => state.screeningJobHistory);
   const oracleScreeningJobHistory = useAnalysisStore((state) => state.oracleScreeningJobHistory);
-  const setActiveSubTab = useAnalysisStore((state) => state.setActiveSubTab);
-  const setScreeningParams = useAnalysisStore((state) => state.setScreeningParams);
-  const setOracleScreeningParams = useAnalysisStore((state) => state.setOracleScreeningParams);
-  const setRankingParams = useAnalysisStore((state) => state.setRankingParams);
-  const setFundamentalRankingParams = useAnalysisStore((state) => state.setFundamentalRankingParams);
   const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
   const setActiveOracleScreeningJobId = useAnalysisStore((state) => state.setActiveOracleScreeningJobId);
   const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
@@ -483,7 +486,6 @@ export function AnalysisPage() {
   const upsertOracleScreeningJobHistory = useAnalysisStore((state) => state.upsertOracleScreeningJobHistory);
 
   const navigate = useNavigate();
-  const { setSelectedSymbol } = useChartStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
   const [screeningJobHistoryVisibility, setScreeningJobHistoryVisibility] = useState<Record<ScreeningMode, boolean>>({
     standard: true,
@@ -529,10 +531,9 @@ export function AnalysisPage() {
 
   const handleStockClick = useCallback(
     (code: string) => {
-      setSelectedSymbol(code);
-      void navigate({ to: '/charts' });
+      void navigate({ to: '/charts', search: { symbol: code } });
     },
-    [setSelectedSymbol, navigate]
+    [navigate]
   );
   const handleScreeningHistoryVisibilityChange = useCallback(
     (showHistory: boolean) => {

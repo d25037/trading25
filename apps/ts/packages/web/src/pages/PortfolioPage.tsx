@@ -1,14 +1,14 @@
 import { Briefcase, Eye } from 'lucide-react';
 import { useCallback } from 'react';
+import { useMigratePortfolioRouteState, usePortfolioRouteState } from '@/hooks/usePageRouteState';
 import { PortfolioDetail, PortfolioList } from '@/components/Portfolio';
 import { WatchlistDetail, WatchlistList } from '@/components/Watchlist';
 import { usePortfolios, usePortfolioWithItems } from '@/hooks/usePortfolio';
 import { useWatchlists, useWatchlistWithItems } from '@/hooks/useWatchlist';
 import { cn } from '@/lib/utils';
-import { useUiStore } from '@/stores/uiStore';
 
 function PortfolioContent() {
-  const { selectedPortfolioId, setSelectedPortfolioId } = useUiStore();
+  const { selectedPortfolioId, setSelectedPortfolioId } = usePortfolioRouteState();
 
   const { data: portfoliosData, isLoading: portfoliosLoading, error: portfoliosError } = usePortfolios();
   const {
@@ -49,7 +49,7 @@ function PortfolioContent() {
 }
 
 function WatchlistContent() {
-  const { selectedWatchlistId, setSelectedWatchlistId } = useUiStore();
+  const { selectedWatchlistId, setSelectedWatchlistId } = usePortfolioRouteState();
 
   const { data: watchlistsData, isLoading: watchlistsLoading, error: watchlistsError } = useWatchlists();
   const {
@@ -90,7 +90,8 @@ function WatchlistContent() {
 }
 
 export function PortfolioPage() {
-  const { portfolioSubTab, setPortfolioSubTab } = useUiStore();
+  useMigratePortfolioRouteState();
+  const { portfolioSubTab, setPortfolioSubTab } = usePortfolioRouteState();
 
   const tabs = [
     { key: 'portfolios' as const, label: 'Portfolios', icon: Briefcase },

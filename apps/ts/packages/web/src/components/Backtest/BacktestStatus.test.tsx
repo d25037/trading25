@@ -4,8 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import type { BacktestJobResponse, HealthResponse } from '@/types/backtest';
 import { BacktestStatus } from './BacktestStatus';
 
-const mockSetActiveSubTab = vi.fn();
-const mockSetSelectedResultJobId = vi.fn();
+const mockOnViewJob = vi.fn();
 const mockRefetchHealth = vi.fn();
 const mockRefetchJobs = vi.fn();
 
@@ -26,13 +25,6 @@ const mockUseJobs = vi.fn((_limit?: number) => ({
   data: mockQueryState.jobs,
   isLoading: mockQueryState.isLoadingJobs,
   refetch: mockRefetchJobs,
-}));
-
-vi.mock('@/stores/backtestStore', () => ({
-  useBacktestStore: () => ({
-    setActiveSubTab: mockSetActiveSubTab,
-    setSelectedResultJobId: mockSetSelectedResultJobId,
-  }),
 }));
 
 vi.mock('@/hooks/useBacktest', () => ({
@@ -60,6 +52,10 @@ vi.mock('./JobsTable', () => ({
   ),
 }));
 
+function renderBacktestStatus() {
+  return render(<BacktestStatus onViewJob={mockOnViewJob} />);
+}
+
 describe('BacktestStatus', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -72,7 +68,7 @@ describe('BacktestStatus', () => {
   it('renders loading state while health check is in progress', () => {
     mockQueryState.isLoadingHealth = true;
 
-    render(<BacktestStatus />);
+    renderBacktestStatus();
 
     expect(screen.getByText('Checking...')).toBeInTheDocument();
     expect(screen.queryByText('Connected')).not.toBeInTheDocument();
@@ -86,7 +82,7 @@ describe('BacktestStatus', () => {
       status: 'ok',
     } as HealthResponse;
 
-    render(<BacktestStatus />);
+    renderBacktestStatus();
 
     expect(screen.getByText('Connected')).toBeInTheDocument();
     expect(screen.getByText('trading25-bt')).toBeInTheDocument();
@@ -95,7 +91,7 @@ describe('BacktestStatus', () => {
   });
 
   it('renders disconnected state when health is unavailable', () => {
-    render(<BacktestStatus />);
+    renderBacktestStatus();
 
     expect(screen.getByText('Disconnected')).toBeInTheDocument();
     expect(screen.getByText('Make sure bt server is running on port 3002')).toBeInTheDocument();
@@ -103,7 +99,7 @@ describe('BacktestStatus', () => {
 
   it('refreshes health and jobs when Refresh is clicked', async () => {
     const user = userEvent.setup();
-    render(<BacktestStatus />);
+    renderBacktestStatus();
 
     await user.click(screen.getByRole('button', { name: 'Refresh' }));
 
@@ -124,7 +120,7 @@ describe('BacktestStatus', () => {
     ];
     mockQueryState.isLoadingJobs = true;
 
-    render(<BacktestStatus />);
+    renderBacktestStatus();
 
     expect(mockUseJobs).toHaveBeenCalledWith(20);
     expect(screen.getByText('jobs-count:2')).toBeInTheDocument();
@@ -133,11 +129,10 @@ describe('BacktestStatus', () => {
 
   it('moves to results tab when selecting a job from JobsTable', async () => {
     const user = userEvent.setup();
-    render(<BacktestStatus />);
+    renderBacktestStatus();
 
     await user.click(screen.getByRole('button', { name: 'Select Job' }));
 
-    expect(mockSetSelectedResultJobId).toHaveBeenCalledWith('selected-job-id');
-    expect(mockSetActiveSubTab).toHaveBeenCalledWith('results');
+    expect(mockOnViewJob).toHaveBeenCalledWith('selected-job-id');
   });
 });
