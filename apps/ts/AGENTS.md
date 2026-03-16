@@ -115,7 +115,7 @@ Project-specific skills are defined in `../../.codex/skills/*/SKILL.md`. Refer t
 
 ### API エンドポイント参照
 
-APIエンドポイントの確認・デバッグ時は **`api-endpoints` skill** を使用すること。`curl` でAPIを叩く際のパス確認に必須。Swagger UI (`http://localhost:3002/doc`) も利用可能。
+APIエンドポイントの確認・デバッグ時は正式名の **`ts-api-endpoints` skill** を使用すること。shorthand として **`api-endpoints`** も許可する。`curl` でAPIを叩く際のパス確認に必須。Swagger UI (`http://localhost:3002/doc`) も利用可能。
 
 ### User-Level Skills
 

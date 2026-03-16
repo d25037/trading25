@@ -1,48 +1,36 @@
 ---
 name: bt-market-sync-strategies
-description: bt の market 同期（initial/incremental/indices-only）と J-Quants fetch 戦略を扱うスキル。`/api/db/sync`、`sync_service`、`sync_strategies`、watermark/failed_dates の実装変更・レビュー時に使用する。
+description: bt の market 同期（initial、incremental、indices-only）と J-Quants fetch 戦略を扱うスキル。`/api/db/sync`、`sync_service`、`sync_strategies` を変更するときに使用する。
 ---
 
 # bt-market-sync-strategies
 
+## When to use
+
+- `initial` / `incremental` / `indices-only` の sync 戦略や fetch planner を変更するとき。
+- `/api/db/sync`、watermark、failed_dates、bulk/rest fallback を見直すとき。
+
 ## Source of Truth
 
-- API route: `apps/bt/src/entrypoints/http/routes/db.py`
-- Job orchestration: `apps/bt/src/application/services/sync_service.py`
-- Sync logic: `apps/bt/src/application/services/sync_strategies.py`
-- Metadata keys / persistence: `apps/bt/src/infrastructure/db/market/market_db.py`
-- OHLCV row normalization: `apps/bt/src/application/services/stock_data_row_builder.py`
-- Tests: `apps/bt/tests/unit/server/services/test_sync_strategies.py`
+- `apps/bt/src/entrypoints/http/routes/db.py`
+- `apps/bt/src/application/services/sync_service.py`
+- `apps/bt/src/application/services/sync_strategies.py`
+- `apps/bt/src/application/services/stock_data_row_builder.py`
+- `apps/bt/src/infrastructure/db/market/market_db.py`
 
-## Mode Semantics
+## Workflow
 
-1. `initial`
-   - `topix` 全量 -> `equities/master` -> listed-market fundamentals（code指定） -> `stock_data`（topix取引日ごと日付指定） -> `indices` -> metadata更新。
-2. `incremental`
-   - `last_sync_date` が必須。アンカーは `latest_stock_data_date` 優先（なければ `latest_trading_date`）。
-   - `topix` を `from=anchor` で取得し、`new_dates` のみ `equities/bars/daily?date=...` を取得。
-   - `indices` は code指定増分 + date指定補完で新規コードを回収。
-   - fundamentals は `disclosed_date` 増分 + missing listed-market code backfill。
-3. `indices-only`
-   - index master catalog seed + 各 index code の時系列同期のみ実施。
-
-## J-Quants Fetch Rules
-
-- OHLCV bulk fetch は `equities/bars/daily` の **date 指定**を基本にする（codeループで置き換えない）。
-- 取引日カレンダーは `indices/bars/daily/topix` を SoT として扱う。
-- `/fins/summary` は pagination を前提にし、date 指定と code 指定を使い分ける。
-- OHLCV 欠損行は `build_stock_data_row` で skip し、warning を集約する。
-- stage ごとに `Bulk+REST hybrid` を動的選択し、予測外部request数の小さい手法を採用する（bulk 失敗時は stage 単位で REST fallback）。
-- `totalApiCalls` は pagination 内部ページ数に加えて `/bulk/list`・`/bulk/get`・signed URL download を実カウントする。
-- `incremental` で DuckDB inspection が空（topix/stock/indices）かつアンカー不在のときは cold-start bootstrap を選ぶ。
+1. mode ごとの解決規則（`initial` / `incremental` / `indices-only`）を確認する。
+2. `incremental` では anchor、cold-start bootstrap、new date 抽出の順で判断する。
+3. fetch planner は date 指定 bulk を基本にし、bulk/rest fallback の理由を残す。
+4. OHLCV 欠損行、placeholder backfill、metadata 更新規約を確認する。
 
 ## Guardrails
 
-- 冪等性を壊さない（同日再取得で重複/欠落を作らない）。
-- `last_sync_date` / `failed_dates` / fundamentals 系 metadata の更新規約を維持する。
+- 冪等性を壊さない（同日再取得で重複や欠落を作らない）。
+- `last_sync_date`、`failed_dates`、fundamentals 系 metadata の更新規約を維持する。
 - `auto` mode の解決規則（`last_sync_date` 有無で `initial|incremental`）を変更しない。
 - `indices_data` は master 補完（placeholder backfill）前提を維持する。
-- 変更時は `/api/db/sync` 契約と進捗ステージ名の互換性を確認する。
 
 ## Verification
 

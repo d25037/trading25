@@ -1,48 +1,39 @@
 ---
 name: bt-database-management
-description: bt 側の SQLite 管理を扱うスキル。`apps/bt/src/lib/market_db` と `dataset_io`、`/api/db*` の実装変更・レビュー時に使用する。
+description: bt 側の DuckDB + dataset bundle + portfolio SQLite 管理を扱うスキル。market DB、dataset IO、`/api/db*` を変更するときに使用する。
 ---
 
 # bt-database-management
 
+## When to use
+
+- market.duckdb、dataset bundle、portfolio.db、`/api/db*` の実装や検証を変更するとき。
+- DB SoT、path safety、stats/validate/sync 周りの責務を見直すとき。
+
 ## Source of Truth
 
-- `apps/bt/src/lib/market_db/base.py`
-- `apps/bt/src/lib/market_db/tables.py`
-- `apps/bt/src/lib/market_db/query_helpers.py`
-- `apps/bt/src/lib/market_db/market_db.py`
-- `apps/bt/src/lib/market_db/portfolio_db.py`
-- `apps/bt/src/lib/market_db/dataset_db.py`
-- `apps/bt/src/lib/market_db/market_reader.py`
-- `apps/bt/src/lib/dataset_io/dataset_writer.py`
-- `apps/bt/src/server/services/dataset_resolver.py`
-- `apps/bt/src/server/services/market_code_alias.py`
-- `apps/bt/src/server/routes/db.py`
-- `apps/bt/src/server/services/db_stats_service.py`
-- `apps/bt/src/server/services/db_validation_service.py`
-- Contracts: `contracts/market-db-schema-v1.schema.json`, `contracts/dataset-db-schema-v2.schema.json`, `contracts/portfolio-db-schema-v1.schema.json`
+- `apps/bt/src/infrastructure/db/market`
+- `apps/bt/src/infrastructure/db/dataset_io`
+- `apps/bt/src/application/services`
+- `apps/bt/src/entrypoints/http/routes/db.py`
+- `contracts`
 
-## Operational Rules
+## Workflow
+
+1. 変更対象が market.duckdb、dataset bundle、portfolio.db のどこに属するかを切り分ける。
+2. route -> service -> infrastructure の境界と、DuckDB/SQLite の SoT を確認する。
+3. dataset 名や path を触る場合は `DatasetResolver` と XDG 配下制約を確認する。
+4. schema や API を変える場合は contracts と db route の整合を見直す。
+
+## Guardrails
 
 - DB 管理の単一実装は `apps/bt`。`apps/ts` は FastAPI (`:3002`) 経由のみ。
-- SQLite アクセスは SQLAlchemy Core (`Table`, `select`, `insert`, `update`) を維持し、ORM セッションを導入しない。
-- 役割分離を維持する。
-  - `market-timeseries/market.duckdb`: 市場データ読み書き
-  - `portfolio.db`: portfolio / watchlist CRUD
-  - `datasets/*/dataset.db`: `DatasetDb` が読み取り、`dataset_writer` が書き込みを担当
-- dataset 名・パスは `DatasetResolver` で検証し、絶対パス・`..` を許可しない。
+- SQLite アクセスは SQLAlchemy Core を維持し、ORM セッションを導入しない。
+- `market-timeseries/market.duckdb`、`portfolio.db`、`datasets/*` の役割分離を崩さない。
 - 市場コードフィルタは legacy (`prime/standard/growth`) と current (`0111/0112/0113`) の同義性を維持する。
-- スキーマ変更時は `contracts/` と `apps/bt/tests/unit/server/db/test_tables.py` を必ず同時更新する。
-
-## Change Checklist
-
-1. テーブル定義を変えたか: `tables.py` / DB クラス / 対応 contract / `test_tables.py` を更新。
-2. クエリ条件や型を変えたか: `query_helpers.py` と対応ユニットテストを更新。
-3. API 影響があるか: `routes/db.py` と OpenAPI 差分を確認し、必要なら `bun run --filter @trading25/contracts bt:sync` を実行。
-4. ライフサイクル影響があるか: `apps/bt/src/server/app.py` で初期化・`close()`・`close_all()` を確認。
 
 ## Verification
 
-- `uv run ruff check apps/bt/src/lib/market_db apps/bt/src/lib/dataset_io apps/bt/src/server/services apps/bt/src/server/routes/db.py`
-- `uv run pyright apps/bt/src/lib/market_db apps/bt/src/server`
-- `uv run pytest apps/bt/tests/unit/server/db apps/bt/tests/unit/server/test_routes_db.py apps/bt/tests/unit/server/test_dataset_resolver.py`
+- `uv run --project apps/bt pytest tests/unit/server/db tests/unit/server/test_routes_db.py tests/unit/server/test_routes_db_sync.py`
+- `uv run --project apps/bt pytest tests/unit/server/services/test_db_stats_service.py tests/unit/server/services/test_db_validation_service.py`
+- `uv run --project apps/bt ruff check src/infrastructure/db src/application/services/db_stats_service.py src/application/services/db_validation_service.py src/entrypoints/http/routes/db.py`

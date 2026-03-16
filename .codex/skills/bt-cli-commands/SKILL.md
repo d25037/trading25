@@ -5,15 +5,33 @@ description: bt Typer CLI 実装を扱うスキル。コマンド追加、オプ
 
 # bt-cli-commands
 
+## When to use
+
+- `bt` / `bt lab` のサブコマンド、オプション、help 文、CLI テストを変更するとき。
+
 ## Source of Truth
 
 - `apps/bt/src/entrypoints/cli/__init__.py`
 - `apps/bt/src/entrypoints/cli/lab.py`
-- Generated reference: `references/bt-cli-commands.md`
+- `apps/bt/tests/unit/cli`
+- `apps/bt/tests/unit/cli_bt`
+- `references/bt-cli-commands.md`
 
-## Rules
+## Workflow
 
-- 既存サブコマンド体系（`bt`, `bt lab`）を維持する。
-- ポートフォリオ操作は `apps/ts/packages/web` の Portfolio UI を前提にする。
+1. 既存サブコマンド体系（`bt`, `bt lab`）への追加か変更かを先に決める。
+2. help 文、option 名、実行エントリを Typer 定義と一致させる。
+3. 生成済みコマンド一覧と CLI テストを同時更新する。
+4. Portfolio 操作は web UI 前提のままにし、廃止済み CLI を戻さない。
+
+## Guardrails
+
 - API 依存コマンドは FastAPI `:3002` 前提のヘルプを保つ。
 - 新規オプション追加時はテストケースも同時更新する。
+- `bt` 直下と `bt lab` 配下の責務を混在させない。
+
+## Verification
+
+- `python3 scripts/skills/refresh_skill_references.py --check`
+- `uv run --project apps/bt pytest tests/unit/cli tests/unit/cli_bt`
+- `uv run --project apps/bt ruff check src/entrypoints/cli`
