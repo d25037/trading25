@@ -103,7 +103,7 @@ const TASKS: Record<string, TaskDefinition> = {
   },
   'root:test': {
     description: 'Run root script tests',
-    steps: [{ command: ['test', 'scripts/dependency-audit.test.ts'] }],
+    steps: [{ command: ['test', 'scripts/dependency-audit.test.ts', 'scripts/dependency-audit.coverage.test.ts'] }],
   },
   'utils:build': {
     description: 'Build utils package',
