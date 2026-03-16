@@ -48,8 +48,8 @@ Compute fundamental analysis metrics for a stock symbol.
 - **Forecast**: Forecast EPS, Forecast Change Rate
 
 **Data Sources**:
-- Financial statements: JQuants API via apps/ts/api proxy
-- Stock prices: market.duckdb via apps/ts/api proxy
+- Financial statements: local `market.duckdb`
+- Stock prices: local `market.duckdb`
 
 **Response includes**:
 - `data`: Array of fundamental data points sorted by date (descending)

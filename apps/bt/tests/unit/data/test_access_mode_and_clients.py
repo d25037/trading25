@@ -534,6 +534,47 @@ def test_direct_market_client_get_stock_ohlcv(monkeypatch: pytest.MonkeyPatch) -
     assert captured["params"] == ("7203", "72030", "2024-01-01", "2024-12-31")
 
 
+def test_direct_market_client_get_statements(monkeypatch: pytest.MonkeyPatch) -> None:
+    captured: dict[str, Any] = {}
+
+    class _FakeMarketReader:
+        def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[SimpleNamespace]:
+            captured["sql"] = sql
+            captured["params"] = params
+            return [
+                _ns(
+                    code="7203",
+                    disclosed_date="2024-03-31",
+                    earnings_per_share=10.0,
+                    profit=1000.0,
+                    equity=5000.0,
+                    type_of_current_period="1Q",
+                    type_of_document="四半期報告書・連結",
+                    next_year_forecast_earnings_per_share=12.0,
+                    forecast_eps=11.0,
+                )
+            ]
+
+    monkeypatch.setattr(clients, "_resolve_market_reader", lambda _snapshot_id=None: _FakeMarketReader())
+
+    market_client = clients.DirectMarketClient()
+    df = market_client.get_statements("7203", "2024-01-01", "2024-12-31", period_type="1Q")
+
+    assert "forecastEps" in df.columns
+    assert "FROM statements" in captured["sql"]
+    assert "PARTITION BY disclosed_date" in captured["sql"]
+    assert "type_of_current_period IN (?,?)" in captured["sql"]
+    assert "earnings_per_share IS NOT NULL" in captured["sql"]
+    assert captured["params"] == (
+        "7203",
+        "72030",
+        "2024-01-01",
+        "2024-12-31",
+        "1Q",
+        "Q1",
+    )
+
+
 def test_direct_market_client_get_topix_empty(monkeypatch: pytest.MonkeyPatch) -> None:
     class _FakeMarketReader:
         def query(self, _sql: str, _params: tuple[Any, ...] = ()) -> list[dict[str, Any]]:

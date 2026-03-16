@@ -24,6 +24,52 @@ from src.application.services.fundamentals_service import (
 )
 
 
+def _market_statements_df(statements: list[JQuantsStatement]) -> pd.DataFrame:
+    records: list[dict[str, object | None]] = []
+    for stmt in statements:
+        records.append(
+            {
+                "code": stmt.Code,
+                "earningsPerShare": stmt.EPS,
+                "profit": stmt.NP,
+                "equity": stmt.Eq,
+                "typeOfCurrentPeriod": stmt.CurPerType,
+                "typeOfDocument": stmt.DocType,
+                "nextYearForecastEarningsPerShare": stmt.NxFEPS,
+                "bps": stmt.BPS,
+                "sales": stmt.Sales,
+                "operatingProfit": stmt.OP,
+                "ordinaryProfit": stmt.OdP,
+                "operatingCashFlow": stmt.CFO,
+                "dividendFY": stmt.DivAnn if stmt.DivAnn is not None else stmt.DivFY,
+                "forecastDividendFY": stmt.FDivAnn if stmt.FDivAnn is not None else stmt.FDivFY,
+                "nextYearForecastDividendFY": (
+                    stmt.NxFDivAnn if stmt.NxFDivAnn is not None else stmt.NxFDivFY
+                ),
+                "payoutRatio": stmt.PayoutRatioAnn,
+                "forecastPayoutRatio": stmt.FPayoutRatioAnn,
+                "nextYearForecastPayoutRatio": stmt.NxFPayoutRatioAnn,
+                "forecastEps": stmt.FEPS,
+                "investingCashFlow": stmt.CFI,
+                "financingCashFlow": stmt.CFF,
+                "cashAndEquivalents": stmt.CashEq,
+                "totalAssets": stmt.TA,
+                "sharesOutstanding": stmt.ShOutFY,
+                "treasuryShares": stmt.TrShFY,
+                "periodEnd": stmt.CurPerEn,
+                "disclosedDate": stmt.DiscDate,
+            }
+        )
+
+    if not records:
+        return pd.DataFrame()
+
+    df = pd.DataFrame(records)
+    df["disclosedDate"] = pd.to_datetime(df["disclosedDate"])
+    df.set_index("disclosedDate", inplace=True)
+    return df
+
+
 class TestFundamentalsServiceInit:
     """FundamentalsService 初期化テスト"""
 
@@ -37,11 +83,11 @@ class TestFundamentalsServiceInit:
         """遅延初期化でクライアントが生成される"""
         service = FundamentalsService()
         with patch(
-            "src.application.services.fundamentals_service.JQuantsAPIClient"
-        ) as mock_jquants:
-            mock_jquants.return_value = MagicMock()
-            _ = service.jquants_client
-            mock_jquants.assert_called_once()
+            "src.application.services.fundamentals_service.MarketDataClient"
+        ) as mock_market_client:
+            mock_market_client.return_value = MagicMock()
+            _ = service.market_client
+            mock_market_client.assert_called_once()
 
     def test_close_clients(self):
         """close()でクライアントがクローズされる"""
@@ -965,11 +1011,9 @@ class TestComputeFundamentals:
 
     def test_no_statements(self, service: FundamentalsService):
         """財務諸表が見つからない場合"""
-        mock_jquants = MagicMock()
-        mock_jquants.get_statements.return_value = []
-
-        service._jquants_client = mock_jquants
-        service._market_client = MagicMock()
+        mock_market = MagicMock()
+        mock_market.get_statements.return_value = pd.DataFrame()
+        service._market_client = mock_market
 
         request = FundamentalsComputeRequest(symbol="9999")
         result = service.compute_fundamentals(request)
@@ -1054,14 +1098,12 @@ class TestComputeFundamentals:
             index=pd.to_datetime(["2024-05-14", "2024-05-15", "2024-05-16"]),
         )
 
-        mock_jquants = MagicMock()
-        mock_jquants.get_statements.return_value = statements
-        mock_jquants.get_stock_info.return_value = mock_stock_info
-
         mock_market = MagicMock()
+        mock_market.get_statements.return_value = _market_statements_df(statements)
+        mock_market.get_stock_info.return_value = mock_stock_info
         mock_market.get_stock_ohlcv.return_value = mock_prices_df
 
-        service._jquants_client = mock_jquants
+        service._jquants_client = MagicMock()
         service._market_client = mock_market
 
         request = FundamentalsComputeRequest(symbol="7203", trading_value_period=2)
@@ -1080,6 +1122,7 @@ class TestComputeFundamentals:
         assert result.data[0].tradingValueToMarketCapRatio is not None
         assert result.latestMetrics is not None
         assert result.latestMetrics.tradingValueToMarketCapRatio is not None
+        service._jquants_client.get_statements.assert_not_called()
 
     def test_share_adjusted_metrics(self, service: FundamentalsService):
         """発行済株式数でEPS/BPS/予想EPSを調整する"""
@@ -1155,14 +1198,11 @@ class TestComputeFundamentals:
             index=pd.to_datetime(["2024-05-14", "2024-05-15", "2024-05-16"]),
         )
 
-        mock_jquants = MagicMock()
-        mock_jquants.get_statements.return_value = statements
-        mock_jquants.get_stock_info.return_value = None
-
         mock_market = MagicMock()
+        mock_market.get_statements.return_value = _market_statements_df(statements)
+        mock_market.get_stock_info.return_value = None
         mock_market.get_stock_ohlcv.return_value = mock_prices_df
 
-        service._jquants_client = mock_jquants
         service._market_client = mock_market
 
         request = FundamentalsComputeRequest(symbol="7203", period_type="FY")
@@ -2672,9 +2712,9 @@ class TestGetStockInfo:
 
     def test_get_stock_info_error_handling(self, service: FundamentalsService):
         """エラー時はNoneを返す"""
-        mock_jquants = MagicMock()
-        mock_jquants.get_stock_info.side_effect = Exception("Test error")
-        service._jquants_client = mock_jquants
+        mock_market = MagicMock()
+        mock_market.get_stock_info.side_effect = Exception("Test error")
+        service._market_client = mock_market
 
         result = service._get_stock_info("7203")
         assert result is None

@@ -173,6 +173,30 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         assert bool(result.exits.any()) is False
 
+    def test_generate_signals_fails_closed_when_required_fundamental_data_is_missing(
+        self,
+    ) -> None:
+        params = SignalParams()
+        params.fundamental.enabled = True
+        params.fundamental.forward_eps_growth.enabled = True
+
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(),
+            entry_filter_params=params,
+        )
+        data = _ohlcv()
+        statements = pd.DataFrame(
+            {
+                "EPS": [10.0, 11.0, 12.0, 13.0],
+            },
+            index=data.index,
+        )
+
+        result = strategy.generate_signals(data, statements_data=statements)
+
+        expected_entries = pd.Series(False, index=data.index, dtype=bool)
+        pd.testing.assert_series_equal(result.entries, expected_entries)
+
     def test_generate_multi_signals_restores_stock_code_on_success(
         self,
         monkeypatch: pytest.MonkeyPatch,
