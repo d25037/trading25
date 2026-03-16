@@ -165,8 +165,8 @@ def test_dataset_result_defaults() -> None:
     r = DatasetResult(success=True)
     assert r.totalStocks == 0
     assert r.processedStocks == 0
-    assert r.warnings is None
-    assert r.errors is None
+    assert r.warnings == []
+    assert r.errors == []
     assert r.outputPath == ""
 
 

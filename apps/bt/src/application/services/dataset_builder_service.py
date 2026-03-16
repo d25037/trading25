@@ -576,8 +576,8 @@ async def _build_dataset(
             success=True,
             totalStocks=len(filtered),
             processedStocks=processed,
-            warnings=warnings if warnings else None,
-            errors=errors if errors else None,
+            warnings=warnings,
+            errors=errors,
             outputPath=str(snapshot_dir),
         )
     finally:
