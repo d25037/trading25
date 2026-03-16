@@ -13,6 +13,8 @@ DELETE /api/dataset/jobs/{jobId}       — ジョブキャンセル
 
 from __future__ import annotations
 
+from pathlib import Path
+
 from fastapi import APIRouter, HTTPException, Query, Request
 from fastapi.responses import JSONResponse
 
@@ -36,6 +38,7 @@ from src.application.services.dataset_builder_service import (
 from src.application.services.dataset_presets import get_preset, list_presets
 from src.application.services.dataset_resolver import DatasetResolver
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.shared.config.settings import get_settings
 
 router = APIRouter(tags=["Dataset"])
 
@@ -52,6 +55,11 @@ def _get_market_reader(request: Request) -> MarketDbReader:
     if reader is None:
         raise HTTPException(status_code=422, detail="Market database not initialized")
     return reader
+
+
+def _get_market_duckdb_path() -> str:
+    settings = get_settings()
+    return str(Path(settings.market_timeseries_dir) / "market.duckdb")
 
 
 # --- List ---
@@ -213,6 +221,7 @@ def _estimate_time(preset_name: str) -> str:
 async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONResponse:
     resolver = _get_resolver(request)
     market_reader = _get_market_reader(request)
+    market_duckdb_path = _get_market_duckdb_path()
 
     # Validate preset
     if get_preset(body.preset) is None:
@@ -239,7 +248,7 @@ async def create_dataset(request: Request, body: DatasetCreateRequest) -> JSONRe
         preset=body.preset,
         overwrite=body.overwrite,
     )
-    job = await start_dataset_build(data, resolver, market_reader)
+    job = await start_dataset_build(data, resolver, market_reader, market_duckdb_path)
     if job is None:
         raise HTTPException(status_code=409, detail="Another dataset build job is already running")
 

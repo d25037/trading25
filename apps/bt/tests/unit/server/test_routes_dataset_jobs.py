@@ -14,8 +14,12 @@ from src.application.services.dataset_builder_service import DatasetJobData, Dat
 from src.application.services.generic_job_manager import JobInfo
 
 
+def _app_state(client: TestClient) -> Any:
+    return cast(Any, client.app).state
+
+
 def _dataset_resolver(client: TestClient) -> Any:
-    return cast(Any, client.app.state).dataset_resolver
+    return _app_state(client).dataset_resolver
 
 
 @pytest.fixture
@@ -67,7 +71,7 @@ def test_create_dataset_hidden_artifacts_require_overwrite(client: TestClient) -
 
 
 def test_create_dataset_requires_market_reader(client: TestClient) -> None:
-    client.app.state.market_reader = None
+    _app_state(client).market_reader = None
 
     resp = client.post("/api/dataset", json={"name": "test", "preset": "quickTesting"})
     assert resp.status_code == 422
@@ -89,6 +93,7 @@ def test_create_dataset_success(client: TestClient) -> None:
     mock_start.assert_awaited_once()
     data_arg: DatasetJobData = mock_start.await_args.args[0]
     assert data_arg == DatasetJobData(name="test", preset="quickTesting", overwrite=False)
+    assert mock_start.await_args.args[3].endswith("market.duckdb")
     data = resp.json()
     assert data["jobId"] == "test-job-id"
     assert data["status"] == "pending"

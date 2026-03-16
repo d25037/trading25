@@ -31,7 +31,7 @@ Phase 6 のリリースゲートとして、以下を実装した。
 測定方法:
 - warmup 1 回 + 本計測 3 回
 - screening/backtest/build は deterministic な unit-test workload
-- build throughput は `build_stock_data_row` の synthetic benchmark（50,000 rows/run）
+- dataset build throughput は当時 `build_stock_data_row` の synthetic benchmark（50,000 rows/run）を使っていた
 
 結果:
 
@@ -52,6 +52,7 @@ Phase 6 のリリースゲートとして、以下を実装した。
 
 備考:
 - 上記は「回帰比較用 baseline」であり、本番相当データ量の SLA 判定値とは区別する。
+- 現在の `scripts/collect-production-smoke-baseline.py` は synthetic throughput ではなく end-to-end `POST /api/dataset` を計測する。post-direct-copy の比較には JSON / report の再生成が必要。
 
 ## 3. Migration Completion
 

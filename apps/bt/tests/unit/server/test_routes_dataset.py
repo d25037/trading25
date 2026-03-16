@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import importlib
 import hashlib
 import json
 from pathlib import Path
+import time
+from typing import Any, cast
 
 import pytest
 from fastapi.testclient import TestClient
@@ -16,6 +19,7 @@ from src.infrastructure.db.market.dataset_snapshot_reader import (
     build_dataset_snapshot_logical_checksum,
     inspect_dataset_snapshot_duckdb,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 def _write_manifest_v2(snapshot_dir: Path, name: str) -> None:
@@ -111,6 +115,159 @@ def _build_snapshot(base_dir: Path, name: str) -> None:
     writer.set_dataset_info("stock_count", "2")
     writer.close()
     _write_manifest_v2(base_dir / name, name)
+
+
+def _create_market_source_duckdb(base_dir: Path) -> Path:
+    duckdb = importlib.import_module("duckdb")
+    source_path = base_dir / "market.duckdb"
+    conn = duckdb.connect(str(source_path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE stocks (
+                code TEXT PRIMARY KEY,
+                company_name TEXT NOT NULL,
+                company_name_english TEXT,
+                market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL,
+                sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL,
+                sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL,
+                scale_category TEXT,
+                listed_date TEXT NOT NULL,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE stock_data (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                volume BIGINT,
+                adjustment_factor DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE topix_data (
+                date TEXT PRIMARY KEY,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                created_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE indices_data (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                sector_name TEXT,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE margin_data (
+                code TEXT,
+                date TEXT,
+                long_margin_volume DOUBLE,
+                short_margin_volume DOUBLE,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE statements (
+                code TEXT,
+                disclosed_date TEXT,
+                earnings_per_share DOUBLE,
+                profit DOUBLE,
+                equity DOUBLE,
+                type_of_current_period TEXT,
+                type_of_document TEXT,
+                next_year_forecast_earnings_per_share DOUBLE,
+                bps DOUBLE,
+                sales DOUBLE,
+                operating_profit DOUBLE,
+                ordinary_profit DOUBLE,
+                operating_cash_flow DOUBLE,
+                dividend_fy DOUBLE,
+                forecast_dividend_fy DOUBLE,
+                next_year_forecast_dividend_fy DOUBLE,
+                payout_ratio DOUBLE,
+                forecast_payout_ratio DOUBLE,
+                next_year_forecast_payout_ratio DOUBLE,
+                forecast_eps DOUBLE,
+                investing_cash_flow DOUBLE,
+                financing_cash_flow DOUBLE,
+                cash_and_equivalents DOUBLE,
+                total_assets DOUBLE,
+                shares_outstanding DOUBLE,
+                treasury_shares DOUBLE,
+                PRIMARY KEY (code, disclosed_date)
+            )
+            """
+        )
+
+        conn.executemany(
+            "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("1111", "Alpha", "ALPHA", "0111", "プライム", "7", "輸送用機器", "3050", "輸送用機器", "TOPIX Core30", "2001-01-01", None, None),
+                ("2222", "Beta", "BETA", "0111", "プライム", "9", "情報・通信業", "5250", "情報・通信業", "TOPIX Large70", "2002-02-02", None, None),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("1111", "2026-01-01", 10.0, 12.0, 9.0, 11.0, 1000, 1.0, "2026-01-01T00:00:00+00:00"),
+                ("2222", "2026-01-01", 20.0, None, 19.0, 20.5, 2000, 1.0, "2026-01-01T00:00:00+00:00"),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
+            ("2026-01-01", 2000.0, 2010.0, 1990.0, 2005.0, "2026-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("0040", "2026-01-01", 500.0, 510.0, 495.0, 505.0, "Sector 40", "2026-01-01T00:00:00+00:00"),
+        )
+        conn.executemany(
+            "INSERT INTO margin_data VALUES (?, ?, ?, ?)",
+            [
+                ("1111", "2026-01-01", 1000.0, 500.0),
+                ("2222", "2026-01-01", 300.0, 200.0),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO statements VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("1111", "2026-01-31", 10.0, 500.0, None, "FY", "AnnualReport", None, None, None, None, None, None, None, None, None, None, None, None, 12.0, None, None, None, None, None, None),
+                ("2222", "2026-01-31", 20.0, 600.0, None, "FY", "AnnualReport", None, None, None, None, None, None, None, None, None, None, None, None, 21.0, None, None, None, None, None, None),
+            ],
+        )
+    finally:
+        conn.close()
+    return source_path
 
 
 @pytest.fixture
@@ -217,3 +374,47 @@ class TestDatasetManagementRoutes:
     def test_delete_nonexistent(self, client: TestClient) -> None:
         resp = client.delete("/api/dataset/nonexistent")
         assert resp.status_code == 404
+
+    def test_create_dataset_route_builds_valid_snapshot(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        dataset_root = tmp_path / "datasets"
+        dataset_root.mkdir(parents=True, exist_ok=True)
+        source_path = _create_market_source_duckdb(tmp_path)
+
+        app = create_app()
+        with TestClient(app) as client:
+            app.state.dataset_resolver = DatasetResolver(str(dataset_root))
+            market_reader = MarketDbReader(str(source_path))
+            app.state.market_reader = market_reader
+            monkeypatch.setattr(
+                "src.entrypoints.http.routes.dataset._get_market_duckdb_path",
+                lambda: str(source_path),
+            )
+
+            create_resp = client.post(
+                "/api/dataset",
+                json={"name": "created-direct", "preset": "quickTesting", "overwrite": True},
+            )
+            assert create_resp.status_code == 202
+            job_id = create_resp.json()["jobId"]
+
+            job_payload: dict[str, Any] | None = None
+            for _ in range(100):
+                job_resp = client.get(f"/api/dataset/jobs/{job_id}")
+                assert job_resp.status_code == 200
+                job_payload = cast(dict[str, Any], job_resp.json())
+                if job_payload["status"] in {"completed", "failed", "cancelled"}:
+                    break
+                time.sleep(0.02)
+
+            assert job_payload is not None
+            assert job_payload["status"] == "completed"
+            result = cast(dict[str, Any], job_payload["result"])
+            assert result["success"] is True
+
+            info_resp = client.get("/api/dataset/created-direct/info")
+            assert info_resp.status_code == 200
+            info = info_resp.json()
+            assert info["validation"]["isValid"] is True
+            assert info["stats"]["totalStocks"] == 2
+            assert info["stats"]["totalQuotes"] == 1
+            market_reader.close()
