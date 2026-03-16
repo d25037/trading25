@@ -1,8 +1,15 @@
 ---
 name: api-endpoints
-description: Compatibility alias for ts-api-endpoints. Use when the legacy skill name api-endpoints is referenced.
+description: Supported shorthand for ts-api-endpoints. Use this short name for FastAPI (:3002) endpoint lookup and ts-side API integration tasks.
 ---
 
-# compatibility alias
+# api-endpoints
 
-Use `../ts-api-endpoints/SKILL.md` as the source of truth.
+## Canonical skill
+
+- Use `../ts-api-endpoints/SKILL.md` as the source of truth.
+
+## Usage
+
+- Prefer `ts-api-endpoints` in docs and prompts.
+- `api-endpoints` remains as the only supported shorthand alias.

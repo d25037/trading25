@@ -5,20 +5,32 @@ description: ts/web の UI 実装を Web Interface Guidelines 観点で監査す
 
 # ts-web-design-guidelines
 
-## Scope
+## When to use
 
-- Primary target: `apps/ts/packages/web/src/**`
-- Secondary target: UI を呼び出す hooks/types (`apps/ts/packages/web/src/hooks/**`, `src/types/**`)
+- ts/web の UI 実装を guideline 観点でレビューするとき。
+- アクセシビリティ、視覚設計、操作性、情報設計の監査を求められたとき。
 
-## Guidelines Source
+## Source of Truth
 
+- `apps/ts/packages/web/src`
+- `apps/ts/packages/web/AGENTS.md`
+- `apps/ts/AGENTS.md`
 - `https://raw.githubusercontent.com/vercel-labs/web-interface-guidelines/main/command.md`
 
 ## Workflow
 
-1. 最新 guideline を取得する。
-2. 指定された UI ファイルを読む（指定なしなら `packages/web/src/components/**` を優先）。
-3. guideline 全項目で監査し、`file:line` 形式で指摘を出す。
-4. プロジェクト既存のデザインシステム（Tailwind v4 + shadcn/ui）との整合を保つ。
+1. guideline を確認し、対象 UI のファイル範囲を決める。
+2. 指定された UI ファイルを読み、必要なら関連 hook と type も確認する。
+3. guideline 観点で監査し、`file:line` 形式で指摘を出す。
+4. Tailwind v4 と既存デザインシステムとの整合を保つ。
 
-ファイル指定がない場合は、対象パス（例: `packages/web/src/components/**`）を確認してから監査する。
+## Guardrails
+
+- guideline を機械的に押し付けず、既存パターンとの整合を優先する。
+- file:line 付きの具体的指摘を優先し、抽象的な感想で埋めない。
+- ファイル指定がない場合は対象パスを特定してから監査する。
+
+## Verification
+
+- `bun run quality:typecheck`
+- `bun run workspace:test`

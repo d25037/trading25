@@ -1,48 +1,39 @@
 ---
 name: bt-financial-analysis
-description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE/ranking/screening/factor regression/portfolio factor regression/fundamentals/margin/sector-stocks のロジック変更・契約更新・テスト時に使用する。
+description: bt FastAPI 側の financial-analysis 実装を扱うスキル。ROE、ranking、screening、factor regression、fundamentals、margin analytics のロジック変更・契約更新・テスト時に使用する。
 ---
 
 # bt-financial-analysis
 
-financial-analysis の実装責務は `apps/bt` に集約する。
+## When to use
 
-## Scope
-
-- `/api/analytics/roe`
-- `/api/analytics/ranking`
-- `/api/analytics/screening`
-- `/api/analytics/factor-regression/{symbol}`
-- `/api/analytics/portfolio-factor-regression/{portfolioId}`
-- `/api/analytics/fundamentals/{symbol}`
-- `/api/analytics/stocks/{symbol}/margin-pressure`
-- `/api/analytics/stocks/{symbol}/margin-ratio`
-- `/api/analytics/sector-stocks`
+- ranking、screening、fundamentals、factor regression、margin analytics の計算や API 契約を変更するとき。
+- `apps/bt` 側の分析ロジックを見直し、ts 側 consumer ではなく backend SoT を触るとき。
 
 ## Source of Truth
 
-- Route wiring: `apps/bt/src/server/app.py`
-- Analytics routes: `apps/bt/src/server/routes/analytics_complex.py`, `analytics_jquants.py`, `chart.py`
-- Core services: `apps/bt/src/server/services/ranking_service.py`, `screening_service.py`, `factor_regression_service.py`, `portfolio_factor_regression_service.py`, `roe_service.py`, `fundamentals_service.py`, `margin_analytics_service.py`
-- Schemas: `apps/bt/src/server/schemas/`
+- `apps/bt/src/domains/analytics`
+- `apps/bt/src/domains/fundamentals`
+- `apps/bt/src/application/services`
+- `apps/bt/src/entrypoints/http/routes`
+- `apps/bt/src/entrypoints/http/schemas`
 
 ## Workflow
 
-1. 変更対象 endpoint の route → service → schema を特定する。
-2. service で計算ロジックを実装/修正する（route には集約しない）。
-3. response schema と OpenAPI を整合させる。
-4. 統一エラーフォーマットと correlation ID 伝播を維持する。
-5. 必要な pytest を実行して回帰を確認する。
-6. 契約変更があれば ts 側で `bt:sync` が必要なことを明示する。
+1. 変更対象 endpoint の route -> service -> domain -> schema を特定する。
+2. 計算ロジックは `domains/*` と `application/services/*` に寄せ、route には I/O だけを残す。
+3. screening job など async SoT を壊さないか確認する。
+4. response schema、OpenAPI、ts 側の `bt:sync` 要否を同時に確認する。
 
 ## Guardrails
 
+- financial-analysis の実装責務は `apps/bt` に集約する。
 - financial-analysis ロジックを `apps/ts` に戻さない。
 - 既存の統一エラーレスポンス形式を崩さない。
 - market filter は legacy (`prime/standard/growth`) と current (`0111/0112/0113`) を同義として扱う。
-- `/doc` を正とした OpenAPI 契約を維持する。
 
 ## Verification
 
-- 変更箇所に対応する unit/integration テストを優先実行する。
-- 最低限 `apps/bt` で型・lint・テストのいずれかを回し、未実行項目は明記する。
+- `uv run --project apps/bt pytest tests/unit/server/routes/test_routes_analytics_fundamentals.py tests/unit/server/services`
+- `uv run --project apps/bt ruff check src/domains/analytics src/domains/fundamentals src/application/services src/entrypoints/http/routes`
+- `uv run --project apps/bt pyright src/domains/analytics src/domains/fundamentals src/application/services`
