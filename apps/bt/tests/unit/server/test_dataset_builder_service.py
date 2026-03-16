@@ -12,7 +12,7 @@ from src.application.services.dataset_builder_service import (
     start_dataset_build,
     dataset_job_manager,
 )
-from src.application.services.dataset_presets import PresetConfig
+from src.application.services.dataset_presets import PresetConfig, get_preset
 
 
 # --- _filter_stocks ---
@@ -76,6 +76,21 @@ def test_filter_stocks_multi_market() -> None:
     preset = PresetConfig(markets=["prime", "growth"])
     result = _filter_stocks(stocks, preset)
     assert len(result) == 2
+
+
+def test_filter_stocks_topix500_includes_standard_when_scale_matches() -> None:
+    stocks = [
+        {"Code": "72030", "MktNm": "プライム", "ScaleCat": "TOPIX Core30"},
+        {"Code": "47160", "MktNm": "スタンダード", "ScaleCat": "TOPIX Mid400"},
+        {"Code": "85720", "MktNm": "スタンダード", "ScaleCat": "TOPIX Mid400"},
+        {"Code": "99990", "MktNm": "グロース", "ScaleCat": ""},
+    ]
+    preset = get_preset("topix500")
+    assert preset is not None
+
+    result = _filter_stocks(stocks, preset)
+
+    assert [row["Code"] for row in result] == ["72030", "47160", "85720"]
 
 
 # --- start_dataset_build ---
@@ -150,8 +165,8 @@ def test_dataset_result_defaults() -> None:
     r = DatasetResult(success=True)
     assert r.totalStocks == 0
     assert r.processedStocks == 0
-    assert r.warnings is None
-    assert r.errors is None
+    assert r.warnings == []
+    assert r.errors == []
     assert r.outputPath == ""
 
 

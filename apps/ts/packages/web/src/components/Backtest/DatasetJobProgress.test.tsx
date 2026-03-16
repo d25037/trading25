@@ -1,5 +1,6 @@
-import { act, fireEvent, render, screen } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { ApiError } from '@/lib/api-client';
 import type { DatasetJobResponse } from '@/types/dataset';
 import { DatasetJobProgress } from './DatasetJobProgress';
 
@@ -13,6 +14,7 @@ const mockStoreState = {
 
 const mockHookState = {
   job: null as DatasetJobResponse | null,
+  error: null as Error | null,
   cancelIsPending: false,
 };
 
@@ -57,6 +59,7 @@ vi.mock('@/hooks/useDataset', () => ({
   },
   useDatasetJobStatus: () => ({
     data: mockHookState.job,
+    error: mockHookState.error,
   }),
   useCancelDatasetJob: () => ({
     mutate: (...args: unknown[]) => mockCancelMutate(...args),
@@ -70,6 +73,7 @@ describe('DatasetJobProgress', () => {
     vi.useRealTimers();
     mockStoreState.activeDatasetJobId = null;
     mockHookState.job = null;
+    mockHookState.error = null;
     mockHookState.cancelIsPending = false;
   });
 
@@ -191,5 +195,15 @@ describe('DatasetJobProgress', () => {
 
     expect(screen.getByText('failed')).toBeInTheDocument();
     expect(screen.getByText('dataset creation failed')).toBeInTheDocument();
+  });
+
+  it('clears stale active job id when status endpoint returns 404', async () => {
+    mockStoreState.activeDatasetJobId = 'job-missing';
+    mockHookState.job = null;
+    mockHookState.error = new ApiError('Job not found', 404);
+
+    render(<DatasetJobProgress />);
+
+    await waitFor(() => expect(mockSetActiveDatasetJobId).toHaveBeenCalledWith(null));
   });
 });
