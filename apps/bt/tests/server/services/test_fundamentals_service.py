@@ -2598,7 +2598,7 @@ class TestCalculateDailyValuation:
     def test_daily_valuation_without_per_uses_pbr_and_market_cap(
         self, service: FundamentalsService
     ):
-        """EPS=0時はPERなし、BPSと時価総額は計算する"""
+        """EPS=0時はPERなし、BPSと両方の時価総額を計算する"""
         base = self._statement_base()
         statements = [
             JQuantsStatement(
@@ -2608,6 +2608,7 @@ class TestCalculateDailyValuation:
                     "CurPerType": "1Q",
                     "CurPerEn": "2024-06-30",
                     "ShOutFY": 1000,
+                    "TrShFY": 100,
                 }
             ),
             JQuantsStatement(
@@ -2631,6 +2632,7 @@ class TestCalculateDailyValuation:
         assert result[0].per is None
         assert result[0].pbr == 0.5
         assert result[0].marketCap == 500000.0
+        assert result[0].freeFloatMarketCap == 450000.0
 
     def test_daily_valuation_without_pbr_or_market_cap(
         self, service: FundamentalsService

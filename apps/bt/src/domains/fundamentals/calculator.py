@@ -26,6 +26,14 @@ from .models import (
 class FundamentalsCalculator:
     """Pure(ish) fundamentals computation logic."""
 
+    @staticmethod
+    def _is_valid_share_metric(value: float | None, *, allow_zero: bool = False) -> bool:
+        if value is None or not math.isfinite(value):
+            return False
+        if allow_zero:
+            return value >= 0
+        return value > 0
+
     def _build_shares_map(
         self, statements: list[JQuantsStatement]
     ) -> dict[tuple[str, str, str | None], float | None]:
@@ -50,6 +58,35 @@ class FundamentalsCalculator:
     ) -> float | None:
         snapshots = [(stmt.CurPerType, stmt.DiscDate, stmt.ShOutFY) for stmt in statements]
         return resolve_latest_quarterly_baseline_shares(snapshots)
+
+    def _resolve_latest_treasury_shares_from_latest_quarter(
+        self, statements: list[JQuantsStatement]
+    ) -> float | None:
+        latest_quarter_key: str | None = None
+        latest_quarter_treasury: float | None = None
+        latest_any_key: str | None = None
+        latest_any_treasury: float | None = None
+
+        for stmt in statements:
+            treasury_shares = stmt.TrShFY
+            if not self._is_valid_share_metric(treasury_shares, allow_zero=True):
+                continue
+            assert treasury_shares is not None
+
+            disclosed_key = str(stmt.DiscDate) if stmt.DiscDate is not None else ""
+            treasury_value = float(treasury_shares)
+            normalized_period = normalize_period_type(stmt.CurPerType)
+
+            if normalized_period in {"1Q", "2Q", "3Q"}:
+                if latest_quarter_key is None or disclosed_key > latest_quarter_key:
+                    latest_quarter_key = disclosed_key
+                    latest_quarter_treasury = treasury_value
+
+            if latest_any_key is None or disclosed_key > latest_any_key:
+                latest_any_key = disclosed_key
+                latest_any_treasury = treasury_value
+
+        return latest_quarter_treasury if latest_quarter_treasury is not None else latest_any_treasury
 
     def _compute_adjusted_value(
         self,
@@ -648,6 +685,7 @@ class FundamentalsCalculator:
             return []
 
         baseline_shares = self._resolve_baseline_shares_from_latest_quarter(statements)
+        baseline_treasury_shares = self._resolve_latest_treasury_shares_from_latest_quarter(statements)
         fy_data_points = self._get_applicable_fy_data(statements, prefer_consolidated, baseline_shares)
         if not fy_data_points:
             return []
@@ -663,15 +701,28 @@ class FundamentalsCalculator:
             per = None
             pbr = None
             market_cap = None
+            free_float_market_cap = None
 
             if applicable_fy.eps is not None and applicable_fy.eps != 0:
                 per = round(close / applicable_fy.eps, 2)
             if applicable_fy.bps is not None and applicable_fy.bps > 0:
                 pbr = round(close / applicable_fy.bps, 2)
             if baseline_shares is not None and baseline_shares != 0:
-                market_cap = self._round_or_none(calc_market_cap_scalar(close, baseline_shares))
+                market_cap = self._round_or_none(calc_market_cap_scalar(close, baseline_shares, 0.0))
+                free_float_market_cap = self._round_or_none(
+                    calc_market_cap_scalar(close, baseline_shares, baseline_treasury_shares)
+                )
 
-            result.append(DailyValuationDataPoint(date=date_str, close=close, per=per, pbr=pbr, marketCap=market_cap))
+            result.append(
+                DailyValuationDataPoint(
+                    date=date_str,
+                    close=close,
+                    per=per,
+                    pbr=pbr,
+                    marketCap=market_cap,
+                    freeFloatMarketCap=free_float_market_cap,
+                )
+            )
         return result
 
     def _get_applicable_fy_data(

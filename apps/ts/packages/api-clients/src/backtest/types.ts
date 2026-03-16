@@ -921,6 +921,7 @@ export interface DailyValuationDataPoint {
   per: number | null;
   pbr: number | null;
   marketCap: number | null;
+  freeFloatMarketCap?: number | null;
 }
 
 export interface FundamentalsComputeResponse {

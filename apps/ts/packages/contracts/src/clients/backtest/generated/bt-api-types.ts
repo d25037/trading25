@@ -3365,8 +3365,13 @@ export interface components {
              */
             date: string;
             /**
+             * Freefloatmarketcap
+             * @description Market cap at this date using free-float shares (JPY)
+             */
+            freeFloatMarketCap?: number | null;
+            /**
              * Marketcap
-             * @description Market cap at this date (JPY)
+             * @description Market cap at this date using shares outstanding (JPY)
              */
             marketCap?: number | null;
             /**

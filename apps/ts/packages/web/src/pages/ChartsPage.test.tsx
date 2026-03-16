@@ -451,7 +451,7 @@ describe('ChartsPage', () => {
     expect(screen.getAllByText('Margin Pressure Chart')).toHaveLength(3);
     expect(screen.getByText('Test Co')).toBeInTheDocument();
     expect(screen.getByText(/7203/)).toBeInTheDocument();
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       symbol: '7203',
       enabled: false,
@@ -559,9 +559,10 @@ describe('ChartsPage', () => {
     expect(screen.queryByText('FY History Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('Factor Regression Panel')).not.toBeInTheDocument();
     expect(screen.queryByText('信用圧力指標')).not.toBeInTheDocument();
-    expect(screen.queryByText(/時価総額/)).not.toBeInTheDocument();
+    expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
+    expect(screen.getByText('時価総額 (発行済み株式数)')).toBeInTheDocument();
 
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
     expect(mockFactorRegressionPanelProps).not.toHaveBeenCalled();
   });
@@ -659,7 +660,7 @@ describe('ChartsPage', () => {
 
     renderChartsPage();
 
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 1 });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 1 });
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       symbol: '7203',
       tradingValuePeriod: 1,
@@ -774,10 +775,14 @@ describe('ChartsPage', () => {
       isLoading: false,
       error: null,
     });
-    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+    mockUseStockInfo.mockReturnValue({
+      data: { companyName: 'Test Co', sector17Name: '自動車・輸送機', sector33Name: '輸送用機器' },
+    });
     mockUseFundamentals.mockImplementation(
       (_symbol: string, options?: { enabled?: boolean; tradingValuePeriod?: number }) => ({
-        data: options?.enabled ? { dailyValuation: [{ marketCap: 1000000000 }] } : null,
+        data: options?.enabled
+          ? { dailyValuation: [{ marketCap: 1000000000, freeFloatMarketCap: 800000000 }] }
+          : null,
       })
     );
 
@@ -787,7 +792,12 @@ describe('ChartsPage', () => {
       MockIntersectionObserver.triggerAll(true);
     });
 
-    expect(screen.getByText(/時価総額/)).toBeInTheDocument();
+    expect(screen.getByText('セクター17')).toBeInTheDocument();
+    expect(screen.getByText('自動車・輸送機')).toBeInTheDocument();
+    expect(screen.getByText('セクター33')).toBeInTheDocument();
+    expect(screen.getByText('輸送用機器')).toBeInTheDocument();
+    expect(screen.getByText('時価総額 (Free Float)')).toBeInTheDocument();
+    expect(screen.getByText('時価総額 (発行済み株式数)')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: /四季報/i }));
     fireEvent.click(screen.getByRole('button', { name: /B\.C\./i }));
@@ -853,7 +863,7 @@ describe('ChartsPage', () => {
     renderChartsPage();
 
     expect(mockUseBtMarginIndicators).toHaveBeenCalledWith('7203', { enabled: false });
-    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockUseFundamentals).toHaveBeenCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
     expect(mockFundamentalsPanelProps.mock.calls.at(-1)?.[0]).toMatchObject({
       symbol: '7203',
       enabled: false,
@@ -909,7 +919,7 @@ describe('ChartsPage', () => {
     const { rerender } = renderChartsPage();
 
     expect(mockUseBtMarginIndicators).toHaveBeenLastCalledWith('7203', { enabled: false });
-    expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: false, tradingValuePeriod: 15 });
+    expect(mockUseFundamentals).toHaveBeenLastCalledWith('7203', { enabled: true, tradingValuePeriod: 15 });
 
     chartState = {
       chartData: {

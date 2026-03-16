@@ -1661,6 +1661,18 @@
             "title": "Date",
             "type": "string"
           },
+          "freeFloatMarketCap": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Market cap at this date using free-float shares (JPY)",
+            "title": "Freefloatmarketcap"
+          },
           "marketCap": {
             "anyOf": [
               {
@@ -1670,7 +1682,7 @@
                 "type": "null"
               }
             ],
-            "description": "Market cap at this date (JPY)",
+            "description": "Market cap at this date using shares outstanding (JPY)",
             "title": "Marketcap"
           },
           "pbr": {
