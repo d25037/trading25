@@ -15,6 +15,7 @@ from collections.abc import Iterable, Iterator, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
+from time import perf_counter
 from typing import Any, Protocol
 
 from loguru import logger
@@ -28,6 +29,7 @@ from src.application.services.stock_data_row_builder import build_stock_data_row
 from src.entrypoints.http.schemas.job import JobProgress
 from src.infrastructure.db.dataset_io.dataset_writer import (
     DatasetWriter,
+    StockDataCopyResult,
     duckdb_path_for_path,
     parquet_dir_for_path,
     snapshot_dir_for_path,
@@ -193,6 +195,7 @@ async def start_dataset_build(
     data: DatasetJobData,
     resolver: DatasetResolver,
     market_reader: MarketDatasetSource,
+    source_duckdb_path: str | None = None,
 ) -> JobInfo[DatasetJobData, JobProgress, DatasetResult] | None:
     """データセットビルドジョブを作成して開始"""
     job = await dataset_job_manager.create_job(data)
@@ -202,7 +205,12 @@ async def start_dataset_build(
     async def _run() -> None:
         try:
             result = await asyncio.wait_for(
-                _build_dataset(job, resolver, market_reader),
+                _build_dataset(
+                    job,
+                    resolver,
+                    market_reader,
+                    source_duckdb_path=source_duckdb_path,
+                ),
                 timeout=DATASET_BUILD_TIMEOUT_MINUTES * 60,
             )
             if dataset_job_manager.is_cancelled(job.job_id):
@@ -232,6 +240,8 @@ async def _build_dataset(
     job: JobInfo[DatasetJobData, JobProgress, DatasetResult],
     resolver: DatasetResolver,
     market_reader: MarketDatasetSource,
+    *,
+    source_duckdb_path: str | None = None,
 ) -> DatasetResult:
     """データセットをビルドする実際のロジック"""
     name = job.data.name
@@ -248,6 +258,9 @@ async def _build_dataset(
     if job.data.overwrite:
         _delete_dataset_artifacts(resolver, name)
 
+    if source_duckdb_path is not None and not Path(source_duckdb_path).exists():
+        raise FileNotFoundError(f"market.duckdb not found: {source_duckdb_path}")
+
     def progress(stage: str, current: int, total: int, message: str) -> None:
         pct = (current / total * 100) if total > 0 else 0
         dataset_job_manager.update_progress(
@@ -255,13 +268,34 @@ async def _build_dataset(
             JobProgress(stage=stage, current=current, total=total, percentage=pct, message=message),
         )
 
+    def log_stage_elapsed(
+        stage: str,
+        started_at: float,
+        *,
+        mode: str,
+        target_count: int | None = None,
+        inserted_rows: int | None = None,
+    ) -> None:
+        logger.bind(
+            event="dataset_build_stage_complete",
+            stage=stage,
+            mode=mode,
+            elapsedSeconds=round(perf_counter() - started_at, 4),
+            targetCount=target_count,
+            insertedRows=inserted_rows,
+            jobId=job.job_id,
+            dataset=name,
+        ).info("Dataset build stage complete")
+
     # Step 1: 銘柄マスタ取得
+    master_started = perf_counter()
     progress("master", 0, _TOTAL_STAGES, "Loading stock master from market.duckdb...")
     if job.cancelled.is_set():
         return DatasetResult(success=False, errors=["Cancelled"])
 
     stocks_data = await _load_market_stock_master(market_reader)
     filtered = _filter_stocks(stocks_data, preset)
+    log_stage_elapsed("master", master_started, mode="legacy-query", target_count=len(filtered))
 
     if not filtered:
         return DatasetResult(success=False, errors=["No stocks matched the preset filters"])
@@ -269,6 +303,8 @@ async def _build_dataset(
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
     writer = DatasetWriter(snapshot_path)
+    direct_copy_enabled = source_duckdb_path is not None
+    copy_mode = "duckdb-direct" if direct_copy_enabled else "legacy-query"
     success_result: DatasetResult | None = None
     manifest_path = _manifest_path_for_snapshot(snapshot_path)
 
@@ -281,6 +317,7 @@ async def _build_dataset(
         writer.set_dataset_info("stock_count", str(len(filtered)))
 
         # Step 3: 株価データ取得
+        stock_data_started = perf_counter()
         progress(
             "stock_data",
             2,
@@ -295,38 +332,51 @@ async def _build_dataset(
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
 
             batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-            batch_data = await _load_market_stock_data_batch(market_reader, batch_codes)
-            if job.cancelled.is_set():
-                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+            if direct_copy_enabled and source_duckdb_path is not None:
+                copy_result = await asyncio.to_thread(
+                    writer.copy_stock_data_from_source,
+                    source_duckdb_path=source_duckdb_path,
+                    normalized_codes=batch_codes,
+                )
+                _collect_stock_copy_warnings(
+                    batch_codes=batch_codes,
+                    copy_result=copy_result,
+                    empty_ohlcv_codes=empty_ohlcv_codes,
+                    incomplete_ohlcv_codes=incomplete_ohlcv_codes,
+                )
+            else:
+                batch_data = await _load_market_stock_data_batch(market_reader, batch_codes)
+                if job.cancelled.is_set():
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
 
-            rows_to_write: list[dict[str, Any]] = []
-            for stock in batch:
-                code4 = normalize_stock_code(stock.get("Code", ""))
-                data = batch_data.get(code4, [])
-                rows: list[dict[str, Any]] = []
-                skipped_rows = 0
-                for quote in data:
-                    if not isinstance(quote, dict):
-                        skipped_rows += 1
-                        continue
-                    created_at = quote.get("created_at")
-                    row = build_stock_data_row(
-                        quote,
-                        normalized_code=code4,
-                        created_at=str(created_at) if created_at is not None else None,
-                    )
-                    if row is None:
-                        skipped_rows += 1
-                        continue
-                    rows.append(row)
-                if skipped_rows > 0:
-                    incomplete_ohlcv_codes.append((code4, skipped_rows, len(data)))
-                if rows:
-                    rows_to_write.extend(rows)
-                else:
-                    empty_ohlcv_codes.append(code4)
-            if rows_to_write:
-                await asyncio.to_thread(writer.upsert_stock_data, rows_to_write)
+                rows_to_write: list[dict[str, Any]] = []
+                for stock in batch:
+                    code4 = normalize_stock_code(stock.get("Code", ""))
+                    data = batch_data.get(code4, [])
+                    rows: list[dict[str, Any]] = []
+                    skipped_rows = 0
+                    for quote in data:
+                        if not isinstance(quote, dict):
+                            skipped_rows += 1
+                            continue
+                        created_at = quote.get("created_at")
+                        row = build_stock_data_row(
+                            quote,
+                            normalized_code=code4,
+                            created_at=str(created_at) if created_at is not None else None,
+                        )
+                        if row is None:
+                            skipped_rows += 1
+                            continue
+                        rows.append(row)
+                    if skipped_rows > 0:
+                        incomplete_ohlcv_codes.append((code4, skipped_rows, len(data)))
+                    if rows:
+                        rows_to_write.extend(rows)
+                    else:
+                        empty_ohlcv_codes.append(code4)
+                if rows_to_write:
+                    await asyncio.to_thread(writer.upsert_stock_data, rows_to_write)
             processed += len(batch)
             progress(
                 "stock_data",
@@ -351,9 +401,16 @@ async def _build_dataset(
                 f"{len(incomplete_ohlcv_codes)} stocks "
                 f"(sample: {', '.join(warning_samples)})"
             )
+        log_stage_elapsed(
+            "stock_data",
+            stock_data_started,
+            mode=copy_mode,
+            target_count=len(filtered),
+        )
 
         # Step 4: TOPIX
         if preset.include_topix:
+            topix_started = perf_counter()
             progress(
                 "topix",
                 3,
@@ -362,14 +419,29 @@ async def _build_dataset(
             )
             if job.cancelled.is_set():
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            topix_rows = await _load_market_topix_data(market_reader)
-            if job.cancelled.is_set():
-                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            if topix_rows:
-                await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
+            inserted_rows = 0
+            if direct_copy_enabled and source_duckdb_path is not None:
+                inserted_rows = await asyncio.to_thread(
+                    writer.copy_topix_data_from_source,
+                    source_duckdb_path=source_duckdb_path,
+                )
+            else:
+                topix_rows = await _load_market_topix_data(market_reader)
+                if job.cancelled.is_set():
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                if topix_rows:
+                    inserted_rows = len(topix_rows)
+                    await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
+            log_stage_elapsed(
+                "topix",
+                topix_started,
+                mode=copy_mode,
+                inserted_rows=inserted_rows,
+            )
 
         # Step 5: セクター指数
         if preset.include_sector_indices:
+            indices_started = perf_counter()
             target_index_codes = sorted(
                 code for code in get_index_catalog_codes() if _is_sector_index_code(code)
             )
@@ -381,19 +453,36 @@ async def _build_dataset(
             )
             if job.cancelled.is_set():
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            index_rows = await _load_market_index_data_batch(market_reader, target_index_codes)
-            if job.cancelled.is_set():
-                return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-            rows_to_write = [
-                row
-                for code in target_index_codes
-                for row in index_rows.get(_normalize_index_code(code), [])
-            ]
-            if rows_to_write:
-                await asyncio.to_thread(writer.upsert_indices_data, rows_to_write)
+            inserted_rows = 0
+            if direct_copy_enabled and source_duckdb_path is not None:
+                inserted_rows = await asyncio.to_thread(
+                    writer.copy_indices_data_from_source,
+                    source_duckdb_path=source_duckdb_path,
+                    normalized_codes=target_index_codes,
+                )
+            else:
+                index_rows = await _load_market_index_data_batch(market_reader, target_index_codes)
+                if job.cancelled.is_set():
+                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                rows_to_write = [
+                    row
+                    for code in target_index_codes
+                    for row in index_rows.get(_normalize_index_code(code), [])
+                ]
+                if rows_to_write:
+                    inserted_rows = len(rows_to_write)
+                    await asyncio.to_thread(writer.upsert_indices_data, rows_to_write)
+            log_stage_elapsed(
+                "indices",
+                indices_started,
+                mode=copy_mode,
+                target_count=len(target_index_codes),
+                inserted_rows=inserted_rows,
+            )
 
         # Step 6: 財務諸表
         if preset.include_statements:
+            statements_started = perf_counter()
             progress(
                 "statements",
                 5,
@@ -405,16 +494,23 @@ async def _build_dataset(
                 if job.cancelled.is_set():
                     return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
                 batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-                statement_rows = await _load_market_statements_batch(market_reader, batch_codes)
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                rows_to_write = [
-                    row
-                    for stock in batch
-                    for row in statement_rows.get(normalize_stock_code(stock.get("Code", "")), [])
-                ]
-                if rows_to_write:
-                    await asyncio.to_thread(writer.upsert_statements, rows_to_write)
+                if direct_copy_enabled and source_duckdb_path is not None:
+                    await asyncio.to_thread(
+                        writer.copy_statements_from_source,
+                        source_duckdb_path=source_duckdb_path,
+                        normalized_codes=batch_codes,
+                    )
+                else:
+                    statement_rows = await _load_market_statements_batch(market_reader, batch_codes)
+                    if job.cancelled.is_set():
+                        return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                    rows_to_write = [
+                        row
+                        for stock in batch
+                        for row in statement_rows.get(normalize_stock_code(stock.get("Code", "")), [])
+                    ]
+                    if rows_to_write:
+                        await asyncio.to_thread(writer.upsert_statements, rows_to_write)
                 statements_processed += len(batch)
                 progress(
                     "statements",
@@ -422,9 +518,16 @@ async def _build_dataset(
                     _TOTAL_STAGES,
                     f"Financial statements from market.duckdb: {statements_processed}/{len(filtered)}",
                 )
+            log_stage_elapsed(
+                "statements",
+                statements_started,
+                mode=copy_mode,
+                target_count=len(filtered),
+            )
 
         # Step 7: 信用取引
         if preset.include_margin:
+            margin_started = perf_counter()
             progress(
                 "margin",
                 6,
@@ -436,16 +539,23 @@ async def _build_dataset(
                 if job.cancelled.is_set():
                     return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
                 batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
-                margin_rows = await _load_market_margin_data_batch(market_reader, batch_codes)
-                if job.cancelled.is_set():
-                    return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
-                rows_to_write = [
-                    row
-                    for stock in batch
-                    for row in margin_rows.get(normalize_stock_code(stock.get("Code", "")), [])
-                ]
-                if rows_to_write:
-                    await asyncio.to_thread(writer.upsert_margin_data, rows_to_write)
+                if direct_copy_enabled and source_duckdb_path is not None:
+                    await asyncio.to_thread(
+                        writer.copy_margin_data_from_source,
+                        source_duckdb_path=source_duckdb_path,
+                        normalized_codes=batch_codes,
+                    )
+                else:
+                    margin_rows = await _load_market_margin_data_batch(market_reader, batch_codes)
+                    if job.cancelled.is_set():
+                        return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
+                    rows_to_write = [
+                        row
+                        for stock in batch
+                        for row in margin_rows.get(normalize_stock_code(stock.get("Code", "")), [])
+                    ]
+                    if rows_to_write:
+                        await asyncio.to_thread(writer.upsert_margin_data, rows_to_write)
                 margin_processed += len(batch)
                 progress(
                     "margin",
@@ -453,6 +563,12 @@ async def _build_dataset(
                     _TOTAL_STAGES,
                     f"Margin data from market.duckdb: {margin_processed}/{len(filtered)}",
                 )
+            log_stage_elapsed(
+                "margin",
+                margin_started,
+                mode=copy_mode,
+                target_count=len(filtered),
+            )
 
         writer.set_dataset_info("manifest_path", str(manifest_path))
         writer.set_dataset_info("manifest_schema_version", "2")
@@ -493,6 +609,24 @@ def _sample_text(values: list[str]) -> str:
     sample = values[:_WARNING_SAMPLE_SIZE]
     suffix = ", ..." if len(values) > _WARNING_SAMPLE_SIZE else ""
     return ", ".join(sample) + suffix
+
+
+def _collect_stock_copy_warnings(
+    *,
+    batch_codes: Sequence[str],
+    copy_result: StockDataCopyResult,
+    empty_ohlcv_codes: list[str],
+    incomplete_ohlcv_codes: list[tuple[str, int, int]],
+) -> None:
+    for code in batch_codes:
+        stats = copy_result.code_stats.get(code)
+        if stats is None:
+            empty_ohlcv_codes.append(code)
+            continue
+        if stats.skipped_rows > 0:
+            incomplete_ohlcv_codes.append((code, stats.skipped_rows, stats.total_rows))
+        if stats.valid_rows == 0:
+            empty_ohlcv_codes.append(code)
 
 
 def _normalize_index_code(value: Any) -> str:

@@ -1,6 +1,6 @@
 # Phase 6 Production-Scale Smoke Report
 
-更新日: 2026-03-03
+更新日: 2026-03-16
 
 ## 固定条件
 
@@ -19,9 +19,9 @@
   - `limit=200`
 - backtest:
   - `strategy=production/range_break_v15`
-- dataset build throughput:
-  - `build_stock_data_row` synthetic benchmark
-  - `rowsPerRun=50,000`
+- dataset build:
+  - current collector は end-to-end `POST /api/dataset` を計測する
+  - historical JSON / table below is the pre-change synthetic throughput baseline (`build_stock_data_row`, `rowsPerRun=50,000`)
 - run count:
   - warmup なし、連続 3 run（同一条件）
 - runtime artifact:
@@ -49,3 +49,4 @@ uv run --project apps/bt python scripts/collect-production-smoke-baseline.py \
 注記:
 - backtest は marimo export 実行時にローカル socket を利用する。
 - 制限環境では実行権限が必要な場合がある。
+- `scripts/collect-production-smoke-baseline.py` は現在 `--dataset-preset topix100` を使った end-to-end dataset build を出力する。下記の throughput 数値を current baseline として使う場合は JSON を再生成すること。

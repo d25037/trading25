@@ -114,10 +114,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--recent-days", type=int, default=20, help="Screening recentDays (default: 20)")
     parser.add_argument("--limit", type=int, default=200, help="Screening result limit (default: 200)")
     parser.add_argument(
-        "--throughput-rows",
-        type=int,
-        default=50000,
-        help="Synthetic throughput rows for build_stock_data_row benchmark (default: 50000)",
+        "--dataset-preset",
+        type=str,
+        default="topix100",
+        help="Dataset preset for end-to-end dataset build benchmark (default: topix100)",
     )
     parser.add_argument(
         "--poll-timeout-seconds",
@@ -130,7 +130,7 @@ def parse_args() -> argparse.Namespace:
 
 def prepare_runtime_dirs(runtime_root: Path) -> None:
     for rel in (
-        "market-timeseries",
+        "datasets",
         "backtest/results",
         "backtest/attribution",
         "optimization",
@@ -139,11 +139,24 @@ def prepare_runtime_dirs(runtime_root: Path) -> None:
         (runtime_root / rel).mkdir(parents=True, exist_ok=True)
 
 
+def mirror_source_datasets(data_root: Path, runtime_root: Path) -> None:
+    source_datasets_dir = data_root / "datasets"
+    runtime_datasets_dir = runtime_root / "datasets"
+    if not source_datasets_dir.exists():
+        return
+
+    for source_entry in source_datasets_dir.iterdir():
+        target_entry = runtime_datasets_dir / source_entry.name
+        if target_entry.exists() or target_entry.is_symlink():
+            continue
+        target_entry.symlink_to(source_entry, target_is_directory=source_entry.is_dir())
+
+
 def set_runtime_env(data_root: Path, runtime_root: Path) -> None:
     os.environ["MARKET_DB_PATH"] = str(data_root / "market-timeseries" / "market.duckdb")
-    os.environ["DATASET_BASE_PATH"] = str(data_root / "datasets")
+    os.environ["DATASET_BASE_PATH"] = str(runtime_root / "datasets")
     os.environ["PORTFOLIO_DB_PATH"] = str(runtime_root / "portfolio.db")
-    os.environ["MARKET_TIMESERIES_DIR"] = str(runtime_root / "market-timeseries")
+    os.environ["MARKET_TIMESERIES_DIR"] = str(data_root / "market-timeseries")
     os.environ["MARKET_TIMESERIES_BACKEND"] = "duckdb-parquet"
     os.environ["TRADING25_STRATEGIES_DIR"] = str(data_root / "strategies")
     os.environ["TRADING25_BACKTEST_DIR"] = str(runtime_root / "backtest")
@@ -154,7 +167,7 @@ def set_runtime_env(data_root: Path, runtime_root: Path) -> None:
 def query_counts(db_path: Path) -> dict[str, int]:
     duckdb = importlib.import_module("duckdb")
 
-    tables = ("stocks", "stock_data", "topix_data", "indices_data", "statements")
+    tables = ("stocks", "stock_data", "topix_data", "indices_data", "margin_data", "statements")
     counts: dict[str, int] = {}
     conn = cast(Any, duckdb).connect(str(db_path), read_only=True)
     try:
@@ -195,6 +208,7 @@ def run_smoke_cycle(
     markets: str,
     recent_days: int,
     limit: int,
+    dataset_preset: str,
     timeout_seconds: int,
 ) -> tuple[dict[str, Any], list[RunFailure]]:
     failures: list[RunFailure] = []
@@ -299,32 +313,87 @@ def run_smoke_cycle(
         "statusPayload": backtest_status_payload,
     }
 
-    return cycle, failures
+    dataset_name = f"smoke-{dataset_preset}-run-{run_index}"
+    dataset_payload = {
+        "name": dataset_name,
+        "preset": dataset_preset,
+        "overwrite": True,
+    }
+    dataset_started = time.perf_counter()
+    dataset_create = client.post("/api/dataset", json=dataset_payload)
+    dataset_create.raise_for_status()
+    dataset_job_id = dataset_create.json()["jobId"]
 
+    dataset_status_payload_raw = poll_job_status(
+        client,
+        f"/api/dataset/jobs/{dataset_job_id}",
+        terminal_statuses={"completed", "failed", "cancelled"},
+        sleep_seconds=1.0,
+        timeout_seconds=timeout_seconds,
+    )
+    dataset_elapsed = time.perf_counter() - dataset_started
+    dataset_status = str(dataset_status_payload_raw.get("status"))
+    dataset_status_payload = redact_local_paths_in_payload(dataset_status_payload_raw)
 
-def measure_throughput(rows: int) -> dict[str, float]:
-    from src.application.services.stock_data_row_builder import build_stock_data_row
+    dataset_summary: dict[str, Any] = {}
+    if dataset_status == "completed":
+        raw_result = dataset_status_payload_raw.get("result") or {}
+        output_path = Path(str(raw_result.get("outputPath", "")))
+        manifest_path = output_path / "manifest.v2.json"
+        if not manifest_path.exists():
+            failures.append(
+                RunFailure(
+                    run=run_index,
+                    workload="dataset_build",
+                    detail={
+                        "jobId": dataset_job_id,
+                        "status": dataset_status,
+                        "error": f"manifest.v2.json not found: {manifest_path}",
+                    },
+                )
+            )
+        else:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            dataset_info = client.get(f"/api/dataset/{dataset_name}/info")
+            dataset_info.raise_for_status()
+            dataset_info_payload = redact_local_paths_in_payload(dataset_info.json())
+            stock_data_rows = int(manifest.get("counts", {}).get("stock_data", 0))
+            stock_data_rows_per_minute = (
+                round4(stock_data_rows / (dataset_elapsed / 60.0))
+                if dataset_elapsed > 0
+                else 0.0
+            )
+            dataset_summary = {
+                "preset": dataset_preset,
+                "stockDataRows": stock_data_rows,
+                "stockDataRowsPerMinute": stock_data_rows_per_minute,
+                "manifestCounts": manifest.get("counts", {}),
+                "validation": dataset_info_payload.get("validation"),
+            }
+    else:
+        failures.append(
+            RunFailure(
+                run=run_index,
+                workload="dataset_build",
+                detail={
+                    "jobId": dataset_job_id,
+                    "status": dataset_status,
+                    "payload": dataset_status_payload,
+                },
+            )
+        )
 
-    quote = {
-        "Code": "13010",
-        "Date": "2026-01-05",
-        "Open": 1000.0,
-        "High": 1010.0,
-        "Low": 990.0,
-        "Close": 1005.0,
-        "Volume": 1000000,
+    cycle["datasetBuild"] = {
+        "jobId": dataset_job_id,
+        "name": dataset_name,
+        "preset": dataset_preset,
+        "status": dataset_status,
+        "elapsedSeconds": round4(dataset_elapsed),
+        "summary": dataset_summary,
+        "statusPayload": dataset_status_payload,
     }
 
-    started = time.perf_counter()
-    for _ in range(rows):
-        build_stock_data_row(
-            quote,
-            normalized_code="1301",
-            created_at="2026-01-05T09:00:00+00:00",
-        )
-    elapsed = time.perf_counter() - started
-    rows_per_min = rows / (elapsed / 60.0)
-    return {"elapsedSeconds": round4(elapsed), "rowsPerMinute": round4(rows_per_min)}
+    return cycle, failures
 
 
 def main() -> int:
@@ -339,6 +408,7 @@ def main() -> int:
     data_root = args.data_root.expanduser().resolve()
     runtime_root = args.runtime_root.resolve()
     prepare_runtime_dirs(runtime_root)
+    mirror_source_datasets(data_root, runtime_root)
     set_runtime_env(data_root, runtime_root)
 
     market_db = data_root / "market-timeseries" / "market.duckdb"
@@ -379,18 +449,12 @@ def main() -> int:
                 markets=args.markets,
                 recent_days=args.recent_days,
                 limit=args.limit,
+                dataset_preset=args.dataset_preset,
                 timeout_seconds=args.poll_timeout_seconds,
             )
             cycle["healthStatus"] = health.status_code
             cycles.append(cycle)
             failures.extend(run_failures)
-
-    throughput_samples: list[float] = []
-    throughput_runs: list[dict[str, float]] = []
-    for _ in range(args.runs):
-        sample = measure_throughput(args.throughput_rows)
-        throughput_runs.append(sample)
-        throughput_samples.append(sample["rowsPerMinute"])
 
     screening_samples = [
         float(c["screening"]["elapsedSeconds"])
@@ -401,6 +465,17 @@ def main() -> int:
         float(c["backtest"]["elapsedSeconds"])
         for c in cycles
         if c.get("backtest", {}).get("status") == "completed"
+    ]
+    dataset_elapsed_samples = [
+        float(c["datasetBuild"]["elapsedSeconds"])
+        for c in cycles
+        if c.get("datasetBuild", {}).get("status") == "completed"
+    ]
+    dataset_rows_per_minute_samples = [
+        float(c["datasetBuild"]["summary"]["stockDataRowsPerMinute"])
+        for c in cycles
+        if c.get("datasetBuild", {}).get("status") == "completed"
+        and "stockDataRowsPerMinute" in c.get("datasetBuild", {}).get("summary", {})
     ]
 
     output = {
@@ -418,8 +493,9 @@ def main() -> int:
             "backtest": {
                 "strategy": args.strategy,
             },
-            "datasetBuildThroughput": {
-                "rowsPerRun": args.throughput_rows,
+            "datasetBuild": {
+                "preset": args.dataset_preset,
+                "datasetBasePath": redact_local_path(runtime_root / "datasets"),
             },
             "dataSnapshot": data_snapshot,
             "runtimeRoot": redact_local_path(runtime_root),
@@ -436,17 +512,28 @@ def main() -> int:
                 "medianSeconds": round4(statistics.median(backtest_samples)) if backtest_samples else 0.0,
                 "p95Seconds": round4(p95(backtest_samples)) if backtest_samples else 0.0,
             },
-            "datasetBuildThroughputRowsPerMinute": {
-                "samples": [round4(v) for v in throughput_samples],
-                "median": round4(statistics.median(throughput_samples)) if throughput_samples else 0.0,
-                "p95": round4(p95(throughput_samples)) if throughput_samples else 0.0,
+            "datasetBuild": {
+                "samplesSeconds": [round4(v) for v in dataset_elapsed_samples],
+                "medianSeconds": round4(statistics.median(dataset_elapsed_samples)) if dataset_elapsed_samples else 0.0,
+                "p95Seconds": round4(p95(dataset_elapsed_samples)) if dataset_elapsed_samples else 0.0,
+                "samplesStockDataRowsPerMinute": [round4(v) for v in dataset_rows_per_minute_samples],
+                "medianStockDataRowsPerMinute": (
+                    round4(statistics.median(dataset_rows_per_minute_samples))
+                    if dataset_rows_per_minute_samples
+                    else 0.0
+                ),
+                "p95StockDataRowsPerMinute": (
+                    round4(p95(dataset_rows_per_minute_samples))
+                    if dataset_rows_per_minute_samples
+                    else 0.0
+                ),
             },
         },
         "failures": [asdict(f) for f in failures],
         "notes": [
             "Screening/backtest are measured via in-process FastAPI job endpoints using market.duckdb + production strategy config.",
-            "Backtest artifacts are written under runtimeRoot to avoid mutating the source data directory.",
-            "datasetBuildThroughputRowsPerMinute is synthetic build_stock_data_row throughput.",
+            "Backtest artifacts and dataset snapshots are written under runtimeRoot to avoid mutating the source data directory.",
+            "datasetBuild measures end-to-end POST /api/dataset execution using an isolated DATASET_BASE_PATH.",
         ],
     }
 

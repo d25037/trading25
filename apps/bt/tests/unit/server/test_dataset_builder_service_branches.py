@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import asyncio
+import importlib
 import inspect
 import json
 import sqlite3
 from collections.abc import Awaitable, Callable
+from pathlib import Path
+from typing import cast
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -20,6 +23,7 @@ from src.application.services.dataset_builder_service import (
 from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
 from src.entrypoints.http.schemas.job import JobStatus
+from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
 
@@ -37,6 +41,7 @@ def stub_manifest_writer_for_dummy_db_paths(monkeypatch, request):
         "test_build_dataset_writes_manifest_v2",
         "test_build_dataset_rerun_keeps_logical_checksum_reproducible",
         "test_build_dataset_manifest_uses_duckdb_state_as_sot",
+        "test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings",
     }:
         return
 
@@ -200,6 +205,202 @@ def _reader_from_fetch(fetcher) -> _LegacyEndpointMarketReader:
 
 async def _await_rows(result: Awaitable[list[dict[str, object]]]) -> list[dict[str, object]]:
     return await result
+
+
+def _statement_payload(
+    code: str,
+    disclosed_date: str,
+    **values: object,
+) -> tuple[object, ...]:
+    payload: dict[str, object | None] = {
+        column: None for column in dataset_builder_service._STATEMENT_COLUMNS
+    }
+    payload["code"] = code
+    payload["disclosed_date"] = disclosed_date
+    payload.update(values)
+    return tuple(payload[column] for column in dataset_builder_service._STATEMENT_COLUMNS)
+
+
+def _create_market_source_duckdb(base_dir: Path) -> Path:
+    duckdb = importlib.import_module("duckdb")
+    source_path = base_dir / "market.duckdb"
+    conn = duckdb.connect(str(source_path))
+    try:
+        conn.execute(
+            """
+            CREATE TABLE stocks (
+                code TEXT PRIMARY KEY,
+                company_name TEXT NOT NULL,
+                company_name_english TEXT,
+                market_code TEXT NOT NULL,
+                market_name TEXT NOT NULL,
+                sector_17_code TEXT NOT NULL,
+                sector_17_name TEXT NOT NULL,
+                sector_33_code TEXT NOT NULL,
+                sector_33_name TEXT NOT NULL,
+                scale_category TEXT,
+                listed_date TEXT NOT NULL,
+                created_at TEXT,
+                updated_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE stock_data (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                volume BIGINT,
+                adjustment_factor DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE topix_data (
+                date TEXT PRIMARY KEY,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                created_at TEXT
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE indices_data (
+                code TEXT,
+                date TEXT,
+                open DOUBLE,
+                high DOUBLE,
+                low DOUBLE,
+                close DOUBLE,
+                sector_name TEXT,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            """
+            CREATE TABLE margin_data (
+                code TEXT,
+                date TEXT,
+                long_margin_volume DOUBLE,
+                short_margin_volume DOUBLE,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        conn.execute(
+            f"""
+            CREATE TABLE statements (
+                {", ".join(
+                    f"{column} {'TEXT' if column in ('code', 'disclosed_date', 'type_of_current_period', 'type_of_document') else 'DOUBLE'}"
+                    for column in dataset_builder_service._STATEMENT_COLUMNS
+                )},
+                PRIMARY KEY (code, disclosed_date)
+            )
+            """
+        )
+
+        conn.executemany(
+            "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                (
+                    "1111",
+                    "Alpha",
+                    "ALPHA",
+                    "0111",
+                    "プライム",
+                    "7",
+                    "輸送用機器",
+                    "3050",
+                    "輸送用機器",
+                    "TOPIX Core30",
+                    "2001-01-01",
+                    None,
+                    None,
+                ),
+                (
+                    "2222",
+                    "Beta",
+                    "BETA",
+                    "0111",
+                    "プライム",
+                    "9",
+                    "情報・通信業",
+                    "5250",
+                    "情報・通信業",
+                    "TOPIX Large70",
+                    "2002-02-02",
+                    None,
+                    None,
+                ),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO stock_data VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("1111", "2026-01-01", 10.0, 12.0, 9.0, 11.0, 1000, 1.0, "2026-01-01T00:00:00+00:00"),
+                ("1111", "2026-01-02", 11.0, 13.0, 10.0, 12.0, None, 1.0, "2026-01-02T00:00:00+00:00"),
+                ("11110", "2026-01-02", None, None, None, None, 1100, 1.1, "2026-01-02T01:00:00+00:00"),
+                ("2222", "2026-01-01", 20.0, None, 19.0, 20.5, 2000, 1.0, "2026-01-01T00:00:00+00:00"),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO topix_data VALUES (?, ?, ?, ?, ?, ?)",
+            ("2026-01-01", 2000.0, 2010.0, 1990.0, 2005.0, "2026-01-01T00:00:00+00:00"),
+        )
+        conn.execute(
+            "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("0040", "2026-01-01", 500.0, 510.0, 495.0, 505.0, "Sector 40", "2026-01-01T00:00:00+00:00"),
+        )
+        conn.executemany(
+            "INSERT INTO margin_data VALUES (?, ?, ?, ?)",
+            [
+                ("1111", "2026-01-01", 1000.0, None),
+                ("11110", "2026-01-01", 9999.0, 500.0),
+                ("22220", "2026-01-01", 300.0, 200.0),
+            ],
+        )
+        conn.executemany(
+            f"INSERT INTO statements VALUES ({', '.join('?' for _ in dataset_builder_service._STATEMENT_COLUMNS)})",
+            [
+                _statement_payload(
+                    "1111",
+                    "2026-01-31",
+                    earnings_per_share=10.0,
+                    profit=None,
+                    type_of_current_period="FY",
+                    type_of_document="AnnualReport",
+                ),
+                _statement_payload(
+                    "11110",
+                    "2026-01-31",
+                    earnings_per_share=99.0,
+                    profit=500.0,
+                    forecast_eps=12.0,
+                ),
+                _statement_payload(
+                    "22220",
+                    "2026-01-31",
+                    earnings_per_share=20.0,
+                    profit=600.0,
+                    forecast_eps=21.0,
+                ),
+            ],
+        )
+    finally:
+        conn.close()
+    return source_path
 
 
 class _StaticRowsMarketReader:
@@ -860,15 +1061,18 @@ async def test_build_dataset_queries_stock_data_per_batch(monkeypatch, isolated_
     monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
     monkeypatch.setattr(dataset_builder_service, "_BATCH_COPY_SIZE", 2)
 
-    async def fake_get_paginated(path: str, params=None):
+    async def fake_get_paginated(path: str, params=None) -> list[dict[str, object]]:
         if path == "/equities/master":
-            return [
-                _master_row("11110", "A"),
-                _master_row("22220", "B"),
-                _master_row("33330", "C"),
-            ]
+            return cast(
+                list[dict[str, object]],
+                [
+                    _master_row("11110", "A"),
+                    _master_row("22220", "B"),
+                    _master_row("33330", "C"),
+                ],
+            )
         if path == "/equities/bars/daily":
-            return [_daily_bar_row()]
+            return cast(list[dict[str, object]], [_daily_bar_row()])
         return []
 
     class CountingReader(_LegacyEndpointMarketReader):
@@ -882,7 +1086,15 @@ async def test_build_dataset_queries_stock_data_per_batch(monkeypatch, isolated_
                 self.stock_data_query_count += 1
             return super().query(sql, params)
 
-    reader = CountingReader(fake_get_paginated)
+    reader = CountingReader(
+        cast(
+            Callable[
+                [str, dict[str, str] | None],
+                list[dict[str, object]] | Awaitable[list[dict[str, object]]],
+            ],
+            fake_get_paginated,
+        )
+    )
 
     result = await _build_dataset(job, resolver, reader)
     assert result.success is True
@@ -1178,6 +1390,69 @@ async def test_build_dataset_skips_incomplete_ohlcv_rows_without_failing_stock(m
 
 
 @pytest.mark.asyncio
+async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(isolated_dataset_manager, name="direct-copy", preset="quickTesting")
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = str(tmp_path / "direct-copy.db")
+    source_duckdb_path = _create_market_source_duckdb(tmp_path)
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=True,
+        include_statements=True,
+        include_margin=True,
+        include_sector_indices=True,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+
+    class TrackingMarketReader(MarketDbReader):
+        def __init__(self, db_path: str) -> None:
+            super().__init__(db_path)
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+            super().close()
+
+    reader = TrackingMarketReader(str(source_duckdb_path))
+    try:
+        result = await _build_dataset(
+            job,
+            resolver,
+            reader,
+            source_duckdb_path=str(source_duckdb_path),
+        )
+        assert reader.close_calls == 0
+    finally:
+        reader.close()
+
+    assert result.success is True
+    assert result.totalStocks == 2
+    assert result.processedStocks == 2
+    assert result.warnings is not None
+    assert any("No valid OHLCV rows for 1 stocks" in warning for warning in result.warnings)
+    assert any("Skipped incomplete OHLCV rows for 1 stocks" in warning for warning in result.warnings)
+
+    snapshot_dir = tmp_path / "direct-copy"
+    manifest = validate_dataset_snapshot(snapshot_dir)
+    assert manifest.dataset.name == "direct-copy"
+    assert manifest.counts.stocks == 2
+    assert manifest.counts.stock_data == 2
+    assert manifest.counts.topix_data == 1
+    assert manifest.counts.indices_data == 1
+    assert manifest.counts.margin_data == 2
+    assert manifest.counts.statements == 2
+    assert manifest.coverage.totalStocks == 2
+    assert manifest.coverage.stocksWithQuotes == 1
+    assert manifest.coverage.stocksWithMargin == 2
+    assert manifest.coverage.stocksWithStatements == 2
+
+
+@pytest.mark.asyncio
 async def test_build_dataset_statements_handles_empty_rows_and_cancel_break(monkeypatch, isolated_dataset_manager):
     job = await _create_job(isolated_dataset_manager, preset="statements")
     resolver = MagicMock()
@@ -1400,7 +1675,8 @@ async def test_start_dataset_build_skips_complete_when_job_cancelled(monkeypatch
     resolver = MagicMock()
     client = AsyncMock()
 
-    async def fake_build(job, resolver, client):
+    async def fake_build(job, resolver, client, *, source_duckdb_path=None):
+        del resolver, client, source_duckdb_path
         job.cancelled.set()
         return DatasetResult(success=True, totalStocks=1, processedStocks=1)
 
@@ -1423,7 +1699,8 @@ async def test_start_dataset_build_completes_when_not_cancelled(monkeypatch, iso
     resolver = MagicMock()
     client = AsyncMock()
 
-    async def fake_build(job, resolver, client):
+    async def fake_build(job, resolver, client, *, source_duckdb_path=None):
+        del job, resolver, client, source_duckdb_path
         return DatasetResult(success=True, totalStocks=1, processedStocks=1, outputPath="/tmp/completed.db")
 
     monkeypatch.setattr(dataset_builder_service, "_build_dataset", fake_build)
