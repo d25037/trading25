@@ -1409,7 +1409,16 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
     )
     monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
 
-    reader = MarketDbReader(str(source_duckdb_path))
+    class TrackingMarketReader(MarketDbReader):
+        def __init__(self, db_path: str) -> None:
+            super().__init__(db_path)
+            self.close_calls = 0
+
+        def close(self) -> None:
+            self.close_calls += 1
+            super().close()
+
+    reader = TrackingMarketReader(str(source_duckdb_path))
     try:
         result = await _build_dataset(
             job,
@@ -1417,6 +1426,7 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
             reader,
             source_duckdb_path=str(source_duckdb_path),
         )
+        assert reader.close_calls == 0
     finally:
         reader.close()
 

@@ -191,12 +191,6 @@ def _write_dataset_manifest(
     return str(output_path)
 
 
-def _close_market_reader_connections(market_reader: MarketDatasetSource) -> None:
-    close = getattr(market_reader, "close", None)
-    if callable(close):
-        close()
-
-
 async def start_dataset_build(
     data: DatasetJobData,
     resolver: DatasetResolver,
@@ -305,10 +299,6 @@ async def _build_dataset(
 
     if not filtered:
         return DatasetResult(success=False, errors=["No stocks matched the preset filters"])
-
-    if source_duckdb_path is not None:
-        # Release the market.duckdb handle before ATTACH-ing the same file from DatasetWriter.
-        _close_market_reader_connections(market_reader)
 
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
