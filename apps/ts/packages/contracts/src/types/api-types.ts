@@ -145,8 +145,10 @@ export interface ApiDailyValuationDataPoint {
   per: number | null;
   /** Price to Book Ratio using FY BPS (倍) */
   pbr: number | null;
-  /** Market capitalization (円) */
+  /** Market capitalization using shares outstanding (円) */
   marketCap: number | null;
+  /** Market capitalization using free-float shares (円) */
+  freeFloatMarketCap?: number | null;
 }
 
 /**

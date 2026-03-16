@@ -20,7 +20,7 @@ import { useChartsRouteState, useMigrateChartsRouteState } from '@/hooks/usePage
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
-import { stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
+import { type StockInfoResponse, stockInfoKeys, useStockInfo } from '@/hooks/useStockInfo';
 import { ApiError } from '@/lib/api-client';
 import { cn } from '@/lib/utils';
 import { type FundamentalsPanelId, useChartStore } from '@/stores/chartStore';
@@ -57,6 +57,43 @@ interface ChartErrorContext {
 interface ChartRefreshFeedback {
   tone: 'success' | 'error';
   message: string;
+}
+
+interface ChartHeaderMarketCaps {
+  freeFloat: number | null;
+  issuedShares: number | null;
+}
+
+function resolveLatestMarketCaps(
+  dailyValuation:
+    | Array<{
+        freeFloatMarketCap?: number | null;
+        marketCap?: number | null;
+      }>
+    | null
+    | undefined
+): ChartHeaderMarketCaps {
+  if (!dailyValuation || dailyValuation.length === 0) {
+    return {
+      freeFloat: null,
+      issuedShares: null,
+    };
+  }
+
+  const latest = dailyValuation[dailyValuation.length - 1];
+  return {
+    freeFloat: latest?.freeFloatMarketCap ?? null,
+    issuedShares: latest?.marketCap ?? null,
+  };
+}
+
+function ChartHeaderInfoField({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0 rounded-lg border border-border/40 bg-background/60 px-3 py-2">
+      <div className="text-[11px] font-medium text-muted-foreground">{label}</div>
+      <div className="truncate text-sm font-semibold text-foreground">{value}</div>
+    </div>
+  );
 }
 
 // Helper component for margin pressure indicators section
@@ -515,15 +552,15 @@ function ChartHeader({
   settings,
   selectedSymbol,
   stockInfo,
-  latestMarketCap,
+  latestMarketCaps,
   refreshFeedback,
   isRefreshing,
   onRefresh,
 }: {
   settings: ChartSettings;
   selectedSymbol: string;
-  stockInfo: { companyName?: string | null } | undefined;
-  latestMarketCap: number | null;
+  stockInfo: StockInfoResponse | undefined;
+  latestMarketCaps: ChartHeaderMarketCaps;
   refreshFeedback: ChartRefreshFeedback | null;
   isRefreshing: boolean;
   onRefresh: () => void;
@@ -540,9 +577,6 @@ function ChartHeader({
               <h2 className="text-2xl font-bold text-white">
                 {selectedSymbol}
                 {stockInfo?.companyName && <span className="ml-2 font-medium text-white/90">{stockInfo.companyName}</span>}
-                {latestMarketCap != null && (
-                  <span className="ml-3 text-sm font-medium text-white/80">時価総額 {formatMarketCap(latestMarketCap)}</span>
-                )}
                 {settings.relativeMode && <span className="font-medium text-white/70"> / TOPIX</span>}
               </h2>
             </div>
@@ -567,27 +601,44 @@ function ChartHeader({
                 </>
               )}
             </Button>
+            <TimeframeSelector />
+          </div>
+        </div>
+      </div>
+
+      <div className="rounded-xl glass-panel px-6 py-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+          <div className="grid flex-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
+            <ChartHeaderInfoField label="セクター17" value={stockInfo?.sector17Name || '-'} />
+            <ChartHeaderInfoField label="セクター33" value={stockInfo?.sector33Name || '-'} />
+            <ChartHeaderInfoField
+              label="時価総額 (Free Float)"
+              value={formatMarketCap(latestMarketCaps.freeFloat)}
+            />
+            <ChartHeaderInfoField
+              label="時価総額 (発行済み株式数)"
+              value={formatMarketCap(latestMarketCaps.issuedShares)}
+            />
+          </div>
+          <div className="flex flex-wrap items-center gap-2 lg:justify-end">
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={() => openCompanyPage('https://shikiho.toyokeizai.net/stocks/', selectedSymbol)}
-              className="text-white/80 hover:bg-white/10 hover:text-white"
               title="四季報を開く"
             >
               <BookOpen className="mr-1 h-4 w-4" />
               四季報
             </Button>
             <Button
-              variant="ghost"
+              variant="outline"
               size="sm"
               onClick={() => openCompanyPage('https://www.buffett-code.com/company/', selectedSymbol, '/')}
-              className="text-white/80 hover:bg-white/10 hover:text-white"
               title="Buffett Codeを開く"
             >
               <Wallet className="mr-1 h-4 w-4" />
               B.C.
             </Button>
-            <TimeframeSelector />
           </div>
         </div>
       </div>
@@ -782,9 +833,7 @@ export function ChartsPage() {
   const refreshStocks = useRefreshStocks();
   const [refreshFeedback, setRefreshFeedback] = useState<ChartRefreshFeedback | null>(null);
   const shouldFetchMarginPressure = settings.showMarginPressurePanel && marginSection.isVisible;
-  const shouldFetchFundamentals =
-    (settings.showFundamentalsPanel && fundamentalsPanelSection.isVisible) ||
-    (settings.showFundamentalsHistoryPanel && fundamentalsHistorySection.isVisible);
+  const shouldFetchFundamentals = selectedSymbol != null;
   const {
     data: marginPressureData,
     isLoading: marginPressureLoading,
@@ -807,15 +856,16 @@ export function ChartsPage() {
   });
 
   useEffect(() => {
+    if (selectedSymbol == null) {
+      setRefreshFeedback(null);
+      return;
+    }
     setRefreshFeedback(null);
   }, [selectedSymbol]);
 
-  const latestMarketCap = useMemo(() => {
-    if (!settings.showFundamentalsPanel && !settings.showFundamentalsHistoryPanel) return null;
-    const daily = fundamentalsData?.dailyValuation;
-    if (!daily || daily.length === 0) return null;
-    return daily[daily.length - 1]?.marketCap ?? null;
-  }, [fundamentalsData, settings.showFundamentalsHistoryPanel, settings.showFundamentalsPanel]);
+  const latestMarketCaps = useMemo<ChartHeaderMarketCaps>(() => {
+    return resolveLatestMarketCaps(fundamentalsData?.dailyValuation);
+  }, [fundamentalsData?.dailyValuation]);
   const visibleFundamentalMetricCount = useMemo(
     () => countVisibleFundamentalMetrics(settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility),
     [settings.fundamentalsMetricOrder, settings.fundamentalsMetricVisibility]
@@ -865,7 +915,7 @@ export function ChartsPage() {
             settings={settings}
             selectedSymbol={selectedSymbol}
             stockInfo={stockInfo}
-            latestMarketCap={latestMarketCap}
+            latestMarketCaps={latestMarketCaps}
             refreshFeedback={refreshFeedback}
             isRefreshing={refreshStocks.isPending}
             onRefresh={handleRefresh}

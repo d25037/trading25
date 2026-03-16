@@ -174,7 +174,14 @@ class DailyValuationDataPoint(BaseModel):
     close: float = Field(..., description="Closing price")
     per: float | None = Field(None, description="PER at this date")
     pbr: float | None = Field(None, description="PBR at this date")
-    marketCap: float | None = Field(None, description="Market cap at this date (JPY)")
+    marketCap: float | None = Field(
+        None,
+        description="Market cap at this date using shares outstanding (JPY)",
+    )
+    freeFloatMarketCap: float | None = Field(
+        None,
+        description="Market cap at this date using free-float shares (JPY)",
+    )
 
 
 class FundamentalsComputeResponse(BaseModel):

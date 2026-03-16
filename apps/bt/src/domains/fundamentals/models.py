@@ -85,6 +85,7 @@ class DailyValuationDataPoint(BaseModel):
     per: float | None = None
     pbr: float | None = None
     marketCap: float | None = None
+    freeFloatMarketCap: float | None = None
 
 
 @dataclass
