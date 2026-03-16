@@ -3,17 +3,24 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 import { PortfolioPage } from './PortfolioPage';
 
-const mockUiStore = {
+const mockRouteState = {
   portfolioSubTab: 'portfolios' as string,
-  setPortfolioSubTab: vi.fn(),
-  selectedPortfolioId: 1,
-  setSelectedPortfolioId: vi.fn(),
-  selectedWatchlistId: 2,
-  setSelectedWatchlistId: vi.fn(),
+  setPortfolioSubTab: vi.fn((tab: string) => {
+    mockRouteState.portfolioSubTab = tab;
+  }),
+  selectedPortfolioId: 1 as number | null,
+  setSelectedPortfolioId: vi.fn((id: number | null) => {
+    mockRouteState.selectedPortfolioId = id;
+  }),
+  selectedWatchlistId: 2 as number | null,
+  setSelectedWatchlistId: vi.fn((id: number | null) => {
+    mockRouteState.selectedWatchlistId = id;
+  }),
 };
 
-vi.mock('@/stores/uiStore', () => ({
-  useUiStore: () => mockUiStore,
+vi.mock('@/hooks/usePageRouteState', () => ({
+  usePortfolioRouteState: () => mockRouteState,
+  useMigratePortfolioRouteState: () => {},
 }));
 
 vi.mock('@/hooks/usePortfolio', () => ({
@@ -47,13 +54,13 @@ vi.mock('@/components/Watchlist', () => ({
 describe('PortfolioPage', () => {
   it('renders portfolio tab and handles delete', async () => {
     const user = userEvent.setup();
-    mockUiStore.portfolioSubTab = 'portfolios';
+    mockRouteState.portfolioSubTab = 'portfolios';
 
     render(<PortfolioPage />);
     expect(screen.getByText('Portfolio List')).toBeInTheDocument();
 
     await user.click(screen.getByText('Delete Portfolio'));
-    expect(mockUiStore.setSelectedPortfolioId).toHaveBeenCalledWith(null);
+    expect(mockRouteState.setSelectedPortfolioId).toHaveBeenCalledWith(null);
   });
 
   it('switches to watchlist tab and handles delete', async () => {
@@ -61,14 +68,14 @@ describe('PortfolioPage', () => {
     const { rerender } = render(<PortfolioPage />);
 
     await user.click(screen.getByRole('button', { name: /Watchlists/i }));
-    expect(mockUiStore.setPortfolioSubTab).toHaveBeenCalledWith('watchlists');
+    expect(mockRouteState.setPortfolioSubTab).toHaveBeenCalledWith('watchlists');
 
-    mockUiStore.portfolioSubTab = 'watchlists';
+    mockRouteState.portfolioSubTab = 'watchlists';
     rerender(<PortfolioPage />);
 
     expect(screen.getByText('Watchlist List')).toBeInTheDocument();
 
     await user.click(screen.getByText('Delete Watchlist'));
-    expect(mockUiStore.setSelectedWatchlistId).toHaveBeenCalledWith(null);
+    expect(mockRouteState.setSelectedWatchlistId).toHaveBeenCalledWith(null);
   });
 });

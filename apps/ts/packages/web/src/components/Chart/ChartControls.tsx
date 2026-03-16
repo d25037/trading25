@@ -9,7 +9,7 @@ import {
   Settings as SettingsIcon,
   TrendingUp,
 } from 'lucide-react';
-import { useCallback, useId, useMemo, useState } from 'react';
+import { useCallback, useId, useMemo, useState, type ComponentType, type FormEvent } from 'react';
 import { StockSearchInput } from '@/components/Stock/StockSearchInput';
 import { Button } from '@/components/ui/button';
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from '@/components/ui/dialog';
@@ -113,7 +113,7 @@ interface SettingDialogDefinition {
   id: SettingDialogId;
   title: string;
   description: string;
-  icon: React.ComponentType<{ className?: string }>;
+  icon: ComponentType<{ className?: string }>;
 }
 
 const SETTING_DIALOGS: SettingDialogDefinition[] = [
@@ -165,17 +165,14 @@ function formatPanelSignalMeta(requirements: string[], signalTypes: string[]): s
   return `Signal req: ${requirements.join(', ')} | Signals: ${signalTypes.join(', ')}`;
 }
 
-export function ChartControls() {
-  const {
-    selectedSymbol,
-    settings,
-    setSelectedSymbol,
-    updateSettings,
-    toggleRelativeMode,
-    updateIndicatorSettings,
-    updateVolumeComparison,
-    updateTradingValueMA,
-  } = useChartStore();
+interface ChartControlsProps {
+  selectedSymbol: string | null;
+  onSelectSymbol: (symbol: string) => void;
+}
+
+export function ChartControls({ selectedSymbol, onSelectSymbol }: ChartControlsProps) {
+  const { settings, updateSettings, toggleRelativeMode, updateIndicatorSettings, updateVolumeComparison, updateTradingValueMA } =
+    useChartStore();
 
   const [symbolInput, setSymbolInput] = useState('');
   const [openDialogId, setOpenDialogId] = useState<SettingDialogId | null>(null);
@@ -209,18 +206,18 @@ export function ChartControls() {
   const handleSelectStock = useCallback(
     (stock: StockSearchResultItem) => {
       logger.debug('Stock selected from search', { code: stock.code, companyName: stock.companyName });
-      setSelectedSymbol(stock.code);
+      onSelectSymbol(stock.code);
       setSymbolInput('');
     },
-    [setSelectedSymbol]
+    [onSelectSymbol]
   );
 
-  const handleSymbolSubmit = (e: React.FormEvent<HTMLFormElement>) => {
+  const handleSymbolSubmit = (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
     if (symbolInput.trim()) {
       const symbol = symbolInput.trim().toUpperCase();
       logger.debug('Setting selected symbol', { symbol });
-      setSelectedSymbol(symbol);
+      onSelectSymbol(symbol);
       setSymbolInput('');
     }
   };

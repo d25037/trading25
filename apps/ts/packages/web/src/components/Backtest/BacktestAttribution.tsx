@@ -409,7 +409,15 @@ function AttributionResultCards({
   );
 }
 
-export function BacktestAttribution() {
+interface BacktestAttributionProps {
+  selectedStrategy: string | null;
+  onSelectedStrategyChange: (strategy: string | null) => void;
+}
+
+export function BacktestAttribution({
+  selectedStrategy,
+  onSelectedStrategyChange,
+}: BacktestAttributionProps) {
   const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
   const [advancedOpen, setAdvancedOpen] = useState(false);
   const [topN, setTopN] = useState(String(DEFAULT_TOP_N));
@@ -418,8 +426,7 @@ export function BacktestAttribution() {
   const [validationError, setValidationError] = useState<string | null>(null);
 
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
-  const { selectedStrategy, setSelectedStrategy, activeAttributionJobId, setActiveAttributionJobId } =
-    useBacktestStore();
+  const { activeAttributionJobId, setActiveAttributionJobId } = useBacktestStore();
   const runSignalAttribution = useRunSignalAttribution();
   const cancelSignalAttribution = useCancelSignalAttribution();
   const jobStatus = useSignalAttributionJobStatus(activeAttributionJobId);
@@ -511,7 +518,7 @@ export function BacktestAttribution() {
             randomSeed={randomSeed}
             validationError={validationError}
             runErrorMessage={runErrorMessage}
-            onStrategyChange={setSelectedStrategy}
+            onStrategyChange={onSelectedStrategyChange}
             onToggleAdvanced={() => setAdvancedOpen((value) => !value)}
             onTopNChange={setTopN}
             onPermutationsChange={setPermutations}

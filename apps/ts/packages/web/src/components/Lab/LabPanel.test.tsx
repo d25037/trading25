@@ -3,22 +3,21 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { LabPanel } from './LabPanel';
 
-const mockSetSelectedStrategy = vi.fn();
+const mockOnSelectedStrategyChange = vi.fn();
+const mockOnOperationChange = vi.fn();
 const mockSetActiveLabJobId = vi.fn();
-const mockSetActiveLabType = vi.fn();
 const mockGenerateMutateAsync = vi.fn();
 const mockEvolveMutateAsync = vi.fn();
 const mockOptimizeMutateAsync = vi.fn();
 const mockImproveMutateAsync = vi.fn();
 const mockCancelMutate = vi.fn();
 const mockRefetchLabJobs = vi.fn();
+let selectedStrategy: string | null = 'strategy.yml';
+let operation: 'generate' | 'evolve' | 'optimize' | 'improve' = 'generate';
 
 const mockStore = {
-  selectedStrategy: 'strategy.yml' as string | null,
-  setSelectedStrategy: mockSetSelectedStrategy,
   activeLabJobId: null as string | null,
   setActiveLabJobId: mockSetActiveLabJobId,
-  setActiveLabType: mockSetActiveLabType,
 };
 
 const mockHookState = {
@@ -190,10 +189,22 @@ vi.mock('./LabResultSection', () => ({
   LabResultSection: () => <div>Result Section</div>,
 }));
 
+function renderLabPanel() {
+  return render(
+    <LabPanel
+      selectedStrategy={selectedStrategy}
+      onSelectedStrategyChange={mockOnSelectedStrategyChange}
+      operation={operation}
+      onOperationChange={mockOnOperationChange}
+    />
+  );
+}
+
 describe('LabPanel', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStore.selectedStrategy = 'strategy.yml';
+    selectedStrategy = 'strategy.yml';
+    operation = 'generate';
     mockStore.activeLabJobId = null;
 
     mockHookState.labJobs.data = [];
@@ -223,13 +234,13 @@ describe('LabPanel', () => {
   it('starts generate job and updates active lab state', async () => {
     const user = userEvent.setup();
 
-    render(<LabPanel />);
+    renderLabPanel();
 
     await user.click(screen.getByRole('button', { name: 'Run Generate' }));
 
     await waitFor(() => expect(mockGenerateMutateAsync).toHaveBeenCalledWith({ count: 1 }));
     expect(mockSetActiveLabJobId).toHaveBeenCalledWith('lab-gen-1');
-    expect(mockSetActiveLabType).toHaveBeenCalledWith('generate');
+    expect(mockOnOperationChange).toHaveBeenCalledWith('generate');
   });
 
   it('shows history tab and applies selected history job type', async () => {
@@ -244,7 +255,7 @@ describe('LabPanel', () => {
       },
     ];
 
-    render(<LabPanel />);
+    const view = renderLabPanel();
 
     await user.click(screen.getByRole('button', { name: 'History' }));
     expect(screen.getByText('History Table')).toBeInTheDocument();
@@ -254,7 +265,17 @@ describe('LabPanel', () => {
 
     await user.click(screen.getByRole('button', { name: 'History Select' }));
     expect(mockSetActiveLabJobId).toHaveBeenCalledWith('hist-1');
-    expect(mockSetActiveLabType).toHaveBeenCalledWith('optimize');
+    expect(mockOnOperationChange).toHaveBeenCalledWith('optimize');
+
+    operation = 'optimize';
+    view.rerender(
+      <LabPanel
+        selectedStrategy={selectedStrategy}
+        onSelectedStrategyChange={mockOnSelectedStrategyChange}
+        operation={operation}
+        onOperationChange={mockOnOperationChange}
+      />
+    );
 
     await user.click(screen.getByRole('button', { name: 'Run' }));
     expect(screen.getByText('Operation:optimize')).toBeInTheDocument();
@@ -275,7 +296,7 @@ describe('LabPanel', () => {
       result_data: null,
     };
 
-    render(<LabPanel />);
+    renderLabPanel();
 
     expect(screen.getByText('Progress:running')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Cancel Job' }));
@@ -299,7 +320,7 @@ describe('LabPanel', () => {
       },
     };
 
-    render(<LabPanel />);
+    renderLabPanel();
 
     expect(screen.getByText('generate failed')).toBeInTheDocument();
     expect(screen.getByText('Result Section')).toBeInTheDocument();

@@ -24,7 +24,6 @@ import {
   useWatchlistPrices,
 } from '@/hooks/useWatchlist';
 import type { StockSearchResultItem } from '@/hooks/useStockSearch';
-import { useChartStore } from '@/stores/chartStore';
 import type { WatchlistItem, WatchlistStockPrice, WatchlistWithItems } from '@/types/watchlist';
 import { getPositiveNegativeColor } from '@/utils/color-schemes';
 
@@ -330,7 +329,6 @@ function WatchlistDetailContent({
   onWatchlistDeleted?: () => void;
 }) {
   const navigate = useNavigate();
-  const { setSelectedSymbol } = useChartStore();
   const { data: pricesData } = useWatchlistPrices(watchlist.id);
 
   const priceMap = useMemo(() => {
@@ -344,8 +342,7 @@ function WatchlistDetailContent({
   }, [pricesData]);
 
   const handleNavigateToChart = (code: string) => {
-    setSelectedSymbol(code);
-    void navigate({ to: '/charts' });
+    void navigate({ to: '/charts', search: { symbol: code } });
   };
 
   return (

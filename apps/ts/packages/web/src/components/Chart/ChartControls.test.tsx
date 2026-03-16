@@ -12,6 +12,8 @@ import {
   DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
 } from '@/constants/fundamentalsHistoryMetrics';
 import { ChartControls } from './ChartControls';
+let selectedSymbol: string | null = null;
+const mockOnSelectSymbol = vi.fn();
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -36,7 +38,6 @@ const SEARCH_RESULT = {
 };
 
 const mockChartStore = {
-  selectedSymbol: null as string | null,
   settings: {
     timeframe: '1D' as const,
     displayTimeframe: 'daily' as const,
@@ -105,7 +106,6 @@ const mockChartStore = {
   loadPreset: vi.fn(),
   renamePreset: vi.fn(),
   duplicatePreset: vi.fn(),
-  setSelectedSymbol: vi.fn(),
   updateSettings: vi.fn(),
   toggleIndicator: vi.fn(),
   toggleRelativeMode: vi.fn(),
@@ -127,10 +127,17 @@ vi.mock('@/hooks/useStockSearch', () => ({
   useStockSearch: (...args: unknown[]) => mockUseStockSearch(...args),
 }));
 
+function renderChartControls() {
+  return render(<ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={mockOnSelectSymbol} />, {
+    wrapper: TestWrapper,
+  });
+}
+
 describe('ChartControls', () => {
   beforeEach(() => {
     vi.useRealTimers();
-    mockChartStore.selectedSymbol = null;
+    selectedSymbol = null;
+    mockOnSelectSymbol.mockReset();
     mockChartStore.settings.showFundamentalsPanel = true;
     mockChartStore.settings.showFundamentalsHistoryPanel = true;
     mockChartStore.settings.showMarginPressurePanel = true;
@@ -148,7 +155,6 @@ describe('ChartControls', () => {
       ...DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     };
     mockChartStore.settings.signalOverlay.signals = [];
-    mockChartStore.setSelectedSymbol = vi.fn();
     mockChartStore.updateSettings = vi.fn();
     mockChartStore.toggleRelativeMode = vi.fn();
     mockUseSignalReference.mockReturnValue({ data: undefined, error: null });
@@ -159,14 +165,14 @@ describe('ChartControls', () => {
   });
 
   it('renders symbol search input and search button', () => {
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     expect(screen.getByPlaceholderText('銘柄コードまたは会社名で検索...')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /検索/i })).toBeInTheDocument();
   });
 
   it('uses non-password-search input attributes for symbol search', () => {
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     const form = input.closest('form');
@@ -184,21 +190,20 @@ describe('ChartControls', () => {
 
   it('submits symbol when form is submitted', async () => {
     const user = userEvent.setup();
-    mockChartStore.setSelectedSymbol = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     await user.type(input, '7203');
     await user.click(screen.getByRole('button', { name: /検索/i }));
 
-    expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
+    expect(mockOnSelectSymbol).toHaveBeenCalledWith('7203');
   });
 
   it('shows current symbol when selected', () => {
-    mockChartStore.selectedSymbol = '7203';
+    selectedSymbol = '7203';
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     expect(screen.getByText('選択中: 7203')).toBeInTheDocument();
   });
@@ -207,7 +212,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
     await user.click(screen.getByRole('switch', { name: /show volume/i }));
@@ -219,7 +224,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.toggleRelativeMode = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
     await user.click(screen.getByRole('switch', { name: /relative to topix/i }));
@@ -230,7 +235,7 @@ describe('ChartControls', () => {
   it('opens chart settings dialog and renders visible bars control', async () => {
     const user = userEvent.setup();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Chart Settings' }));
     expect(screen.getByText('Visible Bars')).toBeInTheDocument();
@@ -240,7 +245,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     await user.click(screen.getByRole('switch', { name: /^Fundamentals$/i }));
@@ -252,7 +257,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Panel Layout' }));
     const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
@@ -269,7 +274,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Fundamental Metrics' }));
     await user.click(screen.getByRole('switch', { name: /^PER$/i }));
@@ -286,7 +291,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Fundamental Metrics' }));
     const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
@@ -303,7 +308,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
     await user.click(screen.getByRole('switch', { name: /^EPS$/i }));
@@ -320,7 +325,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'FY History Metrics' }));
     const [firstDownButton] = screen.getAllByRole('button', { name: /^Down$/ });
@@ -341,7 +346,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
     await user.click(screen.getByRole('switch', { name: /risk adjusted return/i }));
@@ -353,7 +358,7 @@ describe('ChartControls', () => {
     const user = userEvent.setup();
     mockChartStore.updateIndicatorSettings = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Overlay Indicators' }));
     await user.click(screen.getByRole('switch', { name: /vwema/i }));
@@ -387,7 +392,7 @@ describe('ChartControls', () => {
       error: null,
     });
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
     expect(screen.getAllByText('Signal req: volume | Signals: volume_ratio_above').length).toBeGreaterThan(0);
@@ -403,7 +408,7 @@ describe('ChartControls', () => {
       error: new Error('failed to load'),
     });
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     await user.click(screen.getByRole('button', { name: 'Sub-Chart Indicators' }));
     expect(screen.queryByText(/Signal req:/i)).not.toBeInTheDocument();
@@ -411,23 +416,21 @@ describe('ChartControls', () => {
 
   it('renders search suggestions and selects stock by click', async () => {
     const user = userEvent.setup();
-    mockChartStore.setSelectedSymbol = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     await user.type(input, '7203');
     expect(await screen.findByText('Toyota Motor')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: /Toyota Motor/i }));
 
-    expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
+    expect(mockOnSelectSymbol).toHaveBeenCalledWith('7203');
   });
 
   it('supports keyboard navigation in search suggestions', async () => {
     const user = userEvent.setup();
-    mockChartStore.setSelectedSymbol = vi.fn();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     await user.type(input, '7');
@@ -436,13 +439,13 @@ describe('ChartControls', () => {
     fireEvent.keyDown(input, { key: 'ArrowDown' });
     fireEvent.keyDown(input, { key: 'Enter' });
 
-    expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
+    expect(mockOnSelectSymbol).toHaveBeenCalledWith('7203');
   });
 
   it('closes search suggestions on escape and outside click', async () => {
     const user = userEvent.setup();
 
-    render(<ChartControls />, { wrapper: TestWrapper });
+    renderChartControls();
 
     const input = screen.getByPlaceholderText('銘柄コードまたは会社名で検索...');
     await user.type(input, '7');

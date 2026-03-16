@@ -6,10 +6,16 @@ import { BacktestPage } from './BacktestPage';
 const mockBacktestState = {
   activeSubTab: 'runner' as string,
   setActiveSubTab: vi.fn(),
+  selectedStrategy: null as string | null,
+  setSelectedStrategy: vi.fn(),
+  setSelectedResultJobId: vi.fn(),
+  activeLabType: null as 'generate' | 'evolve' | 'optimize' | 'improve' | null,
+  setActiveLabType: vi.fn(),
 };
 
-vi.mock('@/stores/backtestStore', () => ({
-  useBacktestStore: () => mockBacktestState,
+vi.mock('@/hooks/usePageRouteState', () => ({
+  useBacktestRouteState: () => mockBacktestState,
+  useMigrateBacktestRouteState: () => {},
 }));
 
 vi.mock('@/components/Backtest', () => ({

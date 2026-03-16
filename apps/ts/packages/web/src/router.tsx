@@ -1,4 +1,11 @@
 import { createRootRoute, createRoute, createRouter, Link, Outlet, redirect } from '@tanstack/react-router';
+import {
+  validateAnalysisSearch,
+  validateBacktestSearch,
+  validateChartsSearch,
+  validateIndicesSearch,
+  validatePortfolioSearch,
+} from '@/lib/routeSearch';
 import { MainLayout } from '@/components/Layout/MainLayout';
 import { AnalysisPage } from '@/pages/AnalysisPage';
 import { BacktestPage } from '@/pages/BacktestPage';
@@ -55,33 +62,38 @@ const indexRoute = createRoute({
   component: LegacyTabMigrationPage,
 });
 
-const chartsRoute = createRoute({
+export const chartsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/charts',
+  validateSearch: validateChartsSearch,
   component: ChartsPage,
 });
 
-const portfolioRoute = createRoute({
+export const portfolioRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/portfolio',
+  validateSearch: validatePortfolioSearch,
   component: PortfolioPage,
 });
 
-const indicesRoute = createRoute({
+export const indicesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/indices',
+  validateSearch: validateIndicesSearch,
   component: IndicesPage,
 });
 
-const analysisRoute = createRoute({
+export const analysisRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/analysis',
+  validateSearch: validateAnalysisSearch,
   component: AnalysisPage,
 });
 
-const backtestRoute = createRoute({
+export const backtestRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/backtest',
+  validateSearch: validateBacktestSearch,
   component: BacktestPage,
 });
 

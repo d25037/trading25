@@ -5,17 +5,10 @@ import type { PortfolioWithItems } from '@/types/portfolio';
 import { PortfolioDetail } from './PortfolioDetail';
 
 const mockNavigate = vi.fn();
-const mockSetSelectedSymbol = vi.fn();
 const mockUsePortfolioPerformance = vi.fn();
 
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
-}));
-
-vi.mock('@/stores/chartStore', () => ({
-  useChartStore: () => ({
-    setSelectedSymbol: mockSetSelectedSymbol,
-  }),
 }));
 
 vi.mock('@/hooks/usePortfolioPerformance', () => ({
@@ -135,8 +128,7 @@ describe('PortfolioDetail', () => {
 
     await user.click(screen.getByRole('button', { name: 'View chart for 7203 Toyota Motor' }));
 
-    expect(mockSetSelectedSymbol).toHaveBeenCalledWith('7203');
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
   });
 
   it('renders performance sections when performance data is available', async () => {

@@ -39,22 +39,12 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 };
 
 interface AnalysisState {
-  activeSubTab: AnalysisSubTab;
-  screeningParams: ScreeningParams;
-  oracleScreeningParams: ScreeningParams;
-  rankingParams: RankingParams;
-  fundamentalRankingParams: FundamentalRankingParams;
   activeScreeningJobId: string | null;
   activeOracleScreeningJobId: string | null;
   screeningResult: MarketScreeningResponse | null;
   oracleScreeningResult: MarketScreeningResponse | null;
   screeningJobHistory: ScreeningJobResponse[];
   oracleScreeningJobHistory: ScreeningJobResponse[];
-  setActiveSubTab: (tab: AnalysisSubTab) => void;
-  setScreeningParams: (params: ScreeningParams) => void;
-  setOracleScreeningParams: (params: ScreeningParams) => void;
-  setRankingParams: (params: RankingParams) => void;
-  setFundamentalRankingParams: (params: FundamentalRankingParams) => void;
   setActiveScreeningJobId: (jobId: string | null) => void;
   setActiveOracleScreeningJobId: (jobId: string | null) => void;
   setScreeningResult: (result: MarketScreeningResponse | null) => void;
@@ -65,11 +55,6 @@ interface AnalysisState {
 
 export type AnalysisPersistedState = Pick<
   AnalysisState,
-  | 'activeSubTab'
-  | 'screeningParams'
-  | 'oracleScreeningParams'
-  | 'rankingParams'
-  | 'fundamentalRankingParams'
   | 'activeScreeningJobId'
   | 'activeOracleScreeningJobId'
   | 'screeningResult'
@@ -79,11 +64,6 @@ export type AnalysisPersistedState = Pick<
 >;
 
 export const createInitialAnalysisState = (): AnalysisPersistedState => ({
-  activeSubTab: 'screening',
-  screeningParams: DEFAULT_SCREENING_PARAMS,
-  oracleScreeningParams: DEFAULT_ORACLE_SCREENING_PARAMS,
-  rankingParams: DEFAULT_RANKING_PARAMS,
-  fundamentalRankingParams: DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   activeScreeningJobId: null,
   activeOracleScreeningJobId: null,
   screeningResult: null,
@@ -102,11 +82,6 @@ export const useAnalysisStore = create<AnalysisState>()(
   persist(
     (set) => ({
       ...createInitialAnalysisState(),
-      setActiveSubTab: (tab) => set({ activeSubTab: tab }),
-      setScreeningParams: (params) => set({ screeningParams: params }),
-      setOracleScreeningParams: (params) => set({ oracleScreeningParams: params }),
-      setRankingParams: (params) => set({ rankingParams: params }),
-      setFundamentalRankingParams: (params) => set({ fundamentalRankingParams: params }),
       setActiveScreeningJobId: (jobId) => set({ activeScreeningJobId: jobId }),
       setActiveOracleScreeningJobId: (jobId) => set({ activeOracleScreeningJobId: jobId }),
       setScreeningResult: (result) => set({ screeningResult: result }),
@@ -132,11 +107,6 @@ export const useAnalysisStore = create<AnalysisState>()(
       name: 'trading25-analysis-store',
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
-        activeSubTab: state.activeSubTab,
-        screeningParams: state.screeningParams,
-        oracleScreeningParams: state.oracleScreeningParams,
-        rankingParams: state.rankingParams,
-        fundamentalRankingParams: state.fundamentalRankingParams,
         activeScreeningJobId: state.activeScreeningJobId,
         activeOracleScreeningJobId: state.activeOracleScreeningJobId,
         screeningResult: state.screeningResult,

@@ -1,12 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import {
-  createInitialAnalysisState,
-  DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_ORACLE_SCREENING_PARAMS,
-  DEFAULT_RANKING_PARAMS,
-  DEFAULT_SCREENING_PARAMS,
-  useAnalysisStore,
-} from './analysisStore';
+import { createInitialAnalysisState, useAnalysisStore } from './analysisStore';
 
 const resetAnalysisStore = () => {
   useAnalysisStore.setState(createInitialAnalysisState());
@@ -19,15 +12,8 @@ describe('analysisStore', () => {
   });
 
   it('updates screening state', () => {
-    const { setActiveSubTab, setScreeningParams, setActiveScreeningJobId, setScreeningResult } =
-      useAnalysisStore.getState();
+    const { setActiveScreeningJobId, setScreeningResult } = useAnalysisStore.getState();
 
-    setActiveSubTab('ranking');
-    setScreeningParams({
-      ...DEFAULT_SCREENING_PARAMS,
-      markets: 'growth',
-      limit: 100,
-    });
     setActiveScreeningJobId('job-1');
     setScreeningResult({
       summary: {
@@ -65,22 +51,13 @@ describe('analysisStore', () => {
     });
 
     const state = useAnalysisStore.getState();
-    expect(state.activeSubTab).toBe('ranking');
-    expect(state.screeningParams.mode).toBe('standard');
-    expect(state.screeningParams.markets).toBe('growth');
-    expect(state.screeningParams.limit).toBe(100);
     expect(state.activeScreeningJobId).toBe('job-1');
     expect(state.screeningResult?.results[0]?.stockCode).toBe('7203');
   });
 
   it('updates oracle screening state independently', () => {
-    const { setOracleScreeningParams, setActiveOracleScreeningJobId, setOracleScreeningResult } =
-      useAnalysisStore.getState();
+    const { setActiveOracleScreeningJobId, setOracleScreeningResult } = useAnalysisStore.getState();
 
-    setOracleScreeningParams({
-      ...DEFAULT_ORACLE_SCREENING_PARAMS,
-      strategies: 'production/topix_gap_down_intraday_oracle',
-    });
     setActiveOracleScreeningJobId('oracle-job-1');
     setOracleScreeningResult({
       mode: 'oracle',
@@ -103,40 +80,8 @@ describe('analysisStore', () => {
     });
 
     const state = useAnalysisStore.getState();
-    expect(state.oracleScreeningParams.mode).toBe('oracle');
-    expect(state.oracleScreeningParams.strategies).toBe('production/topix_gap_down_intraday_oracle');
     expect(state.activeOracleScreeningJobId).toBe('oracle-job-1');
     expect(state.oracleScreeningResult?.mode).toBe('oracle');
-  });
-
-  it('updates ranking params', () => {
-    const { setRankingParams } = useAnalysisStore.getState();
-    setRankingParams({
-      ...DEFAULT_RANKING_PARAMS,
-      markets: 'growth',
-      lookbackDays: 5,
-    });
-
-    const state = useAnalysisStore.getState();
-    expect(state.rankingParams.markets).toBe('growth');
-    expect(state.rankingParams.lookbackDays).toBe(5);
-  });
-
-  it('updates fundamental ranking params', () => {
-    const { setFundamentalRankingParams } = useAnalysisStore.getState();
-    setFundamentalRankingParams({
-      ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-      markets: 'prime,standard',
-      limit: 50,
-      forecastAboveRecentFyActuals: true,
-      forecastLookbackFyCount: 5,
-    });
-
-    const state = useAnalysisStore.getState();
-    expect(state.fundamentalRankingParams.markets).toBe('prime,standard');
-    expect(state.fundamentalRankingParams.limit).toBe(50);
-    expect(state.fundamentalRankingParams.forecastAboveRecentFyActuals).toBe(true);
-    expect(state.fundamentalRankingParams.forecastLookbackFyCount).toBe(5);
   });
 
   it('upserts screening job history and keeps latest first', () => {

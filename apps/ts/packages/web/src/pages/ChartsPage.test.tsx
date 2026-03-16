@@ -24,9 +24,18 @@ const mockUseFundamentals = vi.fn();
 const mockWindowOpen = vi.fn();
 const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
+const mockChartsRouteState = {
+  selectedSymbol: '7203' as string | null,
+  setSelectedSymbol: vi.fn(),
+};
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
   useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
+}));
+
+vi.mock('@/hooks/usePageRouteState', () => ({
+  useChartsRouteState: () => mockChartsRouteState,
+  useMigrateChartsRouteState: () => {},
 }));
 
 vi.mock('@/hooks/useBtMarginIndicators', () => ({
@@ -227,6 +236,8 @@ describe('ChartsPage', () => {
     mockFundamentalsPanelProps.mockReset();
     mockFundamentalsHistoryPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
+    mockChartsRouteState.selectedSymbol = '7203';
+    mockChartsRouteState.setSelectedSymbol.mockReset();
 
     mockSettings.showPPOChart = true;
     mockSettings.showVolumeComparison = true;
@@ -368,6 +379,7 @@ describe('ChartsPage', () => {
   });
 
   it('renders empty state when no symbol selected', () => {
+    mockChartsRouteState.selectedSymbol = null;
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
       isLoading: false,

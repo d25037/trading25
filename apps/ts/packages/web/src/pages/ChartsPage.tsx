@@ -16,6 +16,7 @@ import { VolumeComparisonChart } from '@/components/Chart/VolumeComparisonChart'
 import { ErrorBoundary } from '@/components/ErrorBoundary';
 import { Button } from '@/components/ui/button';
 import { countVisibleFundamentalMetrics, resolveFundamentalsPanelHeightPx } from '@/constants/fundamentalMetrics';
+import { useChartsRouteState, useMigrateChartsRouteState } from '@/hooks/usePageRouteState';
 import { useBtMarginIndicators } from '@/hooks/useBtMarginIndicators';
 import { useRefreshStocks } from '@/hooks/useDbSync';
 import { useFundamentals } from '@/hooks/useFundamentals';
@@ -768,13 +769,15 @@ function ChartsPanelsContent({
 }
 
 export function ChartsPage() {
+  useMigrateChartsRouteState();
   const queryClient = useQueryClient();
   const marginSection = useLazySectionVisibility();
   const fundamentalsPanelSection = useLazySectionVisibility();
   const fundamentalsHistorySection = useLazySectionVisibility();
   const factorSection = useLazySectionVisibility();
+  const { selectedSymbol, setSelectedSymbol } = useChartsRouteState();
 
-  const { chartData, signalMarkers, isLoading, error, selectedSymbol } = useMultiTimeframeChart();
+  const { chartData, signalMarkers, isLoading, error } = useMultiTimeframeChart(selectedSymbol);
   const { settings } = useChartStore();
   const refreshStocks = useRefreshStocks();
   const [refreshFeedback, setRefreshFeedback] = useState<ChartRefreshFeedback | null>(null);
@@ -851,7 +854,7 @@ export function ChartsPage() {
       {/* Chart Controls Sidebar */}
       <div className={cn('w-72 shrink-0 border-r border-border/30', 'glass-panel')}>
         <ErrorBoundary>
-          <ChartControls />
+          <ChartControls selectedSymbol={selectedSymbol} onSelectSymbol={(symbol) => setSelectedSymbol(symbol)} />
         </ErrorBoundary>
       </div>
 

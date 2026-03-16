@@ -267,18 +267,16 @@ function OptimizationSection({
   );
 }
 
-export function BacktestRunner() {
+interface BacktestRunnerProps {
+  selectedStrategy: string | null;
+  onSelectedStrategyChange: (strategy: string | null) => void;
+}
+
+export function BacktestRunner({ selectedStrategy, onSelectedStrategyChange }: BacktestRunnerProps) {
   const [defaultConfigOpen, setDefaultConfigOpen] = useState(false);
   const [enginePolicyMode, setEnginePolicyMode] = useState<EnginePolicyMode>('fast_only');
   const [optimizationVerificationTopK, setOptimizationVerificationTopK] = useState('5');
-  const {
-    selectedStrategy,
-    setSelectedStrategy,
-    activeJobId,
-    setActiveJobId,
-    activeOptimizationJobId,
-    setActiveOptimizationJobId,
-  } = useBacktestStore();
+  const { activeJobId, setActiveJobId, activeOptimizationJobId, setActiveOptimizationJobId } = useBacktestStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
   const { data: strategyDetail } = useStrategy(selectedStrategy);
   const { data: jobStatus, isLoading: isLoadingJob } = useJobStatus(activeJobId);
@@ -327,7 +325,7 @@ export function BacktestRunner() {
           strategies={strategiesData?.strategies}
           isLoading={isLoadingStrategies}
           value={selectedStrategy}
-          onChange={setSelectedStrategy}
+          onChange={onSelectedStrategyChange}
           disabled={isRunning || isOptRunning}
         />
       </div>

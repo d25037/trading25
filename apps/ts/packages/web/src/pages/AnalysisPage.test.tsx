@@ -2,14 +2,44 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
-import { createInitialAnalysisState, useAnalysisStore } from '@/stores/analysisStore';
+import {
+  createInitialAnalysisState,
+  DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
+  DEFAULT_ORACLE_SCREENING_PARAMS,
+  DEFAULT_RANKING_PARAMS,
+  DEFAULT_SCREENING_PARAMS,
+  useAnalysisStore,
+} from '@/stores/analysisStore';
 import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
 import { AnalysisPage } from './AnalysisPage';
 
 const mockNavigate = vi.fn();
-
-const mockChartStore = {
-  setSelectedSymbol: vi.fn(),
+const mockSetActiveSubTab = vi.fn((tab: string) => {
+  mockRouteState.activeSubTab = tab;
+});
+const mockSetScreeningParams = vi.fn((params: typeof DEFAULT_SCREENING_PARAMS) => {
+  mockRouteState.screeningParams = params;
+});
+const mockSetOracleScreeningParams = vi.fn((params: typeof DEFAULT_ORACLE_SCREENING_PARAMS) => {
+  mockRouteState.oracleScreeningParams = params;
+});
+const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
+  mockRouteState.rankingParams = params;
+});
+const mockSetFundamentalRankingParams = vi.fn((params: typeof DEFAULT_FUNDAMENTAL_RANKING_PARAMS) => {
+  mockRouteState.fundamentalRankingParams = params;
+});
+const mockRouteState = {
+  activeSubTab: 'screening' as string,
+  setActiveSubTab: mockSetActiveSubTab,
+  screeningParams: { ...DEFAULT_SCREENING_PARAMS },
+  setScreeningParams: mockSetScreeningParams,
+  oracleScreeningParams: { ...DEFAULT_ORACLE_SCREENING_PARAMS },
+  setOracleScreeningParams: mockSetOracleScreeningParams,
+  rankingParams: { ...DEFAULT_RANKING_PARAMS },
+  setRankingParams: mockSetRankingParams,
+  fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS },
+  setFundamentalRankingParams: mockSetFundamentalRankingParams,
 };
 
 const mockScreeningFilters = vi.fn((_props: unknown) => <div>Screening Filters</div>);
@@ -86,12 +116,13 @@ function createScreeningJob(overrides: Partial<ScreeningJobResponse> = {}): Scre
   };
 }
 
-vi.mock('@/stores/chartStore', () => ({
-  useChartStore: () => mockChartStore,
-}));
-
 vi.mock('@tanstack/react-router', () => ({
   useNavigate: () => mockNavigate,
+}));
+
+vi.mock('@/hooks/usePageRouteState', () => ({
+  useAnalysisRouteState: () => mockRouteState,
+  useMigrateAnalysisRouteState: () => {},
 }));
 
 vi.mock('@/hooks/useScreening', () => ({
@@ -186,8 +217,17 @@ describe('AnalysisPage', () => {
     };
     useAnalysisStore.persist?.clearStorage?.();
     useAnalysisStore.setState(createInitialAnalysisState());
+    mockRouteState.activeSubTab = 'screening';
+    mockRouteState.screeningParams = { ...DEFAULT_SCREENING_PARAMS };
+    mockRouteState.oracleScreeningParams = { ...DEFAULT_ORACLE_SCREENING_PARAMS };
+    mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
+    mockRouteState.fundamentalRankingParams = { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS };
     mockNavigate.mockReset();
-    mockChartStore.setSelectedSymbol.mockReset();
+    mockSetActiveSubTab.mockClear();
+    mockSetScreeningParams.mockClear();
+    mockSetOracleScreeningParams.mockClear();
+    mockSetRankingParams.mockClear();
+    mockSetFundamentalRankingParams.mockClear();
     mockScreeningFilters.mockClear();
     mockScreeningTable.mockClear();
     mockUseScreeningJobSSE.mockReset();
@@ -222,9 +262,10 @@ describe('AnalysisPage', () => {
 
   it('shows oracle-only strategies in oracle screening', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    const view = render(<AnalysisPage />);
 
     await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    view.rerender(<AnalysisPage />);
 
     expect(mockScreeningFilters).toHaveBeenLastCalledWith(
       expect.objectContaining({
@@ -235,16 +276,14 @@ describe('AnalysisPage', () => {
   });
 
   it('preserves saved strategy selections until the strategy catalog is loaded, then sanitizes invalid names', async () => {
-    useAnalysisStore.setState({
-      screeningParams: {
-        ...useAnalysisStore.getState().screeningParams,
-        strategies: 'production/range_break_v15,production/missing_standard',
-      },
-      oracleScreeningParams: {
-        ...useAnalysisStore.getState().oracleScreeningParams,
-        strategies: 'production/topix_gap_down_intraday_oracle,production/missing_oracle',
-      },
-    });
+    mockRouteState.screeningParams = {
+      ...mockRouteState.screeningParams,
+      strategies: 'production/range_break_v15,production/missing_standard',
+    };
+    mockRouteState.oracleScreeningParams = {
+      ...mockRouteState.oracleScreeningParams,
+      strategies: 'production/topix_gap_down_intraday_oracle,production/missing_oracle',
+    };
     mockStrategiesQueryResult = {
       data: null,
       isLoading: true,
@@ -253,10 +292,8 @@ describe('AnalysisPage', () => {
 
     const { rerender } = render(<AnalysisPage />);
 
-    expect(useAnalysisStore.getState().screeningParams.strategies).toBe(
-      'production/range_break_v15,production/missing_standard'
-    );
-    expect(useAnalysisStore.getState().oracleScreeningParams.strategies).toBe(
+    expect(mockRouteState.screeningParams.strategies).toBe('production/range_break_v15,production/missing_standard');
+    expect(mockRouteState.oracleScreeningParams.strategies).toBe(
       'production/topix_gap_down_intraday_oracle,production/missing_oracle'
     );
 
@@ -277,10 +314,8 @@ describe('AnalysisPage', () => {
     rerender(<AnalysisPage />);
 
     await waitFor(() => {
-      expect(useAnalysisStore.getState().screeningParams.strategies).toBe('production/range_break_v15');
-      expect(useAnalysisStore.getState().oracleScreeningParams.strategies).toBe(
-        'production/topix_gap_down_intraday_oracle'
-      );
+      expect(mockRouteState.screeningParams.strategies).toBe('production/range_break_v15');
+      expect(mockRouteState.oracleScreeningParams.strategies).toBe('production/topix_gap_down_intraday_oracle');
     });
   });
 
@@ -301,9 +336,10 @@ describe('AnalysisPage', () => {
 
   it('runs oracle screening with oracle mode', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    const view = render(<AnalysisPage />);
 
     await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    view.rerender(<AnalysisPage />);
     await user.click(screen.getByRole('button', { name: 'Run Oracle Screening' }));
 
     expect(mockRunScreeningJob).toHaveBeenCalledWith(
@@ -315,27 +351,30 @@ describe('AnalysisPage', () => {
 
   it('renders screening view by default and switches to daily ranking', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    const view = render(<AnalysisPage />);
 
     expect(screen.getByText('Screening Filters')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Daily Ranking' }));
+    view.rerender(<AnalysisPage />);
     expect(screen.getByText('Ranking Filters')).toBeInTheDocument();
   });
 
   it('switches to fundamental ranking tab', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    const view = render(<AnalysisPage />);
 
     await user.click(screen.getByRole('button', { name: 'Fundamental Ranking' }));
+    view.rerender(<AnalysisPage />);
     expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
   });
 
   it('switches to oracle screening tab', async () => {
     const user = userEvent.setup();
-    render(<AnalysisPage />);
+    const view = render(<AnalysisPage />);
 
     await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    view.rerender(<AnalysisPage />);
     expect(screen.getByRole('button', { name: 'Run Oracle Screening' })).toBeInTheDocument();
   });
 
@@ -344,8 +383,7 @@ describe('AnalysisPage', () => {
     render(<AnalysisPage />);
 
     await user.click(screen.getByText('Screening Row'));
-    expect(mockChartStore.setSelectedSymbol).toHaveBeenCalledWith('7203');
-    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts' });
+    expect(mockNavigate).toHaveBeenCalledWith({ to: '/charts', search: { symbol: '7203' } });
   });
 
   it('restores cached screening result after remount', () => {
@@ -413,7 +451,7 @@ describe('AnalysisPage', () => {
       oracleScreeningJobHistory: [createScreeningJob({ job_id: 'oracle-job', mode: 'oracle' })],
     });
 
-    render(<AnalysisPage />);
+    const view = render(<AnalysisPage />);
 
     const standardToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(standardToggle).toBeChecked();
@@ -421,12 +459,14 @@ describe('AnalysisPage', () => {
     expect(standardToggle).not.toBeChecked();
 
     await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    view.rerender(<AnalysisPage />);
 
     const oracleToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(oracleToggle).toBeChecked();
     expect(screen.getByText('oracle-j...')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Screening' }));
+    view.rerender(<AnalysisPage />);
 
     const restoredStandardToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(restoredStandardToggle).not.toBeChecked();

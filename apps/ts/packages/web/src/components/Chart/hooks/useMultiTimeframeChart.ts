@@ -26,8 +26,8 @@ export interface MultiTimeframeSignalMarkers {
   monthly: SignalMarker[];
 }
 
-export function useMultiTimeframeChart() {
-  const { selectedSymbol, settings } = useChartStore();
+export function useMultiTimeframeChart(selectedSymbol: string | null) {
+  const { settings } = useChartStore();
 
   logger.debug('useMultiTimeframeChart called', { selectedSymbol, relativeMode: settings.relativeMode });
 

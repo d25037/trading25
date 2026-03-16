@@ -84,11 +84,21 @@ function LabOperationForm({
   }
 }
 
-export function LabPanel() {
+interface LabPanelProps {
+  selectedStrategy: string | null;
+  onSelectedStrategyChange: (strategy: string | null) => void;
+  operation: LabType;
+  onOperationChange: (operation: LabType) => void;
+}
+
+export function LabPanel({
+  selectedStrategy,
+  onSelectedStrategyChange,
+  operation,
+  onOperationChange,
+}: LabPanelProps) {
   const [activeTab, setActiveTab] = useState<'run' | 'history'>('run');
-  const [operation, setOperation] = useState<LabType>('generate');
-  const { selectedStrategy, setSelectedStrategy, activeLabJobId, setActiveLabJobId, setActiveLabType } =
-    useBacktestStore();
+  const { activeLabJobId, setActiveLabJobId } = useBacktestStore();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
   const {
     data: labJobs,
@@ -126,15 +136,14 @@ export function LabPanel() {
 
   const handleJobStart = (jobId: string, type: LabType) => {
     setActiveLabJobId(jobId);
-    setActiveLabType(type);
+    onOperationChange(type);
     setActiveTab('run');
   };
 
   const handleSelectHistoryJob = (jobId: string, type: LabType | null) => {
     setActiveLabJobId(jobId);
-    setActiveLabType(type);
     if (type) {
-      setOperation(type);
+      onOperationChange(type);
     }
   };
 
@@ -187,7 +196,7 @@ export function LabPanel() {
 
       {activeTab === 'run' ? (
         <>
-          <LabOperationSelector value={operation} onChange={setOperation} disabled={isJobActive} />
+          <LabOperationSelector value={operation} onChange={onOperationChange} disabled={isJobActive} />
 
           {needsStrategy && (
             <div className="space-y-1.5">
@@ -196,7 +205,7 @@ export function LabPanel() {
                 strategies={strategiesData?.strategies}
                 isLoading={isLoadingStrategies}
                 value={selectedStrategy}
-                onChange={setSelectedStrategy}
+                onChange={onSelectedStrategyChange}
                 disabled={isJobActive}
               />
             </div>

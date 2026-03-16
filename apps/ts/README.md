@@ -46,6 +46,7 @@ bun run workspace:dev:sync   # bt:sync + web:dev
 bun run quality:lint
 bun run quality:check:fix
 bun run quality:typecheck
+bun run quality:deps:audit
 
 # Tests
 bun run workspace:test
@@ -59,6 +60,17 @@ bun run workspace:build
 ```
 
 `bun run api:hint` は FastAPI 起動コマンドへの案内表示のみで、API サーバー起動には使用しません。
+
+## Dependency Policy
+
+`apps/ts` の依存は「削ること」より「責務が明確で drift しないこと」を優先します。宣言の棚卸しは `bun run quality:deps:audit` で行い、未使用依存、import と manifest の不整合、root override と package 宣言の version drift を検査します。
+
+- `runtime keep`: `react`, `react-dom`, `@tanstack/react-query`, `@tanstack/react-router`, `zustand`, `lucide-react`, `lightweight-charts`, `@monaco-editor/react`, `monaco-editor`
+- `tooling keep`: `vite`, `vitest`, `@playwright/test`, `@biomejs/biome`, `typescript`, `bun-types`
+- `transitive pin`: root `overrides` の `@redocly/openapi-core`, `rollup`, `minimatch`, `flatted`, `monaco-editor`
+- `remove`: `@radix-ui/react-label`, `tsx`
+
+`zustand` は完全撤去ではなく縮小方針です。URL と相性の良い page selection state は TanStack Router search params を SoT にし、`zustand` は chart preset / panel visibility / active job tracking のような session-local state に限定します。
 
 ## API / Type Sync
 

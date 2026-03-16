@@ -4,16 +4,15 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { BacktestRunner } from './BacktestRunner';
 
 const mockInvalidateQueries = vi.fn();
-const mockSetSelectedStrategy = vi.fn();
+const mockOnSelectedStrategyChange = vi.fn();
 const mockSetActiveJobId = vi.fn();
 const mockSetActiveOptimizationJobId = vi.fn();
 const mockRunBacktestMutateAsync = vi.fn();
 const mockCancelBacktestMutate = vi.fn();
 const mockRunOptimizationMutateAsync = vi.fn();
+let selectedStrategy: string | null = 'production/alpha';
 
 const mockStore = {
-  selectedStrategy: 'production/alpha' as string | null,
-  setSelectedStrategy: mockSetSelectedStrategy,
   activeJobId: null as string | null,
   setActiveJobId: mockSetActiveJobId,
   activeOptimizationJobId: null as string | null,
@@ -182,10 +181,16 @@ vi.mock('./OptimizationJobProgressCard', () => ({
   ),
 }));
 
+function renderBacktestRunner() {
+  return render(
+    <BacktestRunner selectedStrategy={selectedStrategy} onSelectedStrategyChange={mockOnSelectedStrategyChange} />
+  );
+}
+
 describe('BacktestRunner', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    mockStore.selectedStrategy = 'production/alpha';
+    selectedStrategy = 'production/alpha';
     mockStore.activeJobId = null;
     mockStore.activeOptimizationJobId = null;
 
@@ -216,7 +221,7 @@ describe('BacktestRunner', () => {
       description: 'Alpha description',
     };
 
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     expect(screen.getByText('strategy-value:production/alpha')).toBeInTheDocument();
     expect(screen.getByText('Alpha Strategy')).toBeInTheDocument();
@@ -228,7 +233,7 @@ describe('BacktestRunner', () => {
 
   it('opens default config editor when button is clicked', async () => {
     const user = userEvent.setup();
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     expect(screen.getByText('default-config-open:false')).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: 'Default Config' }));
@@ -238,7 +243,7 @@ describe('BacktestRunner', () => {
 
   it('runs backtest and stores active job id', async () => {
     const user = userEvent.setup();
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     await user.click(screen.getByRole('button', { name: 'Run Backtest' }));
 
@@ -252,8 +257,8 @@ describe('BacktestRunner', () => {
   });
 
   it('disables backtest run when strategy is not selected', () => {
-    mockStore.selectedStrategy = null;
-    render(<BacktestRunner />);
+    selectedStrategy = null;
+    renderBacktestRunner();
 
     expect(screen.getByRole('button', { name: 'Run Backtest' })).toBeDisabled();
   });
@@ -263,7 +268,7 @@ describe('BacktestRunner', () => {
     mockStore.activeJobId = 'job-running';
     mockHookState.jobStatus.data = { status: 'running' };
 
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     expect(screen.getByRole('button', { name: 'Running...' })).toBeDisabled();
     expect(screen.getByText('strategy-disabled:true')).toBeInTheDocument();
@@ -276,7 +281,7 @@ describe('BacktestRunner', () => {
     mockHookState.runBacktest.error = new Error('backtest failed');
     mockHookState.jobStatus.data = { status: 'completed' };
 
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     expect(screen.getByText('backtest failed')).toBeInTheDocument();
     expect(mockInvalidateQueries).toHaveBeenCalledWith({ queryKey: ['backtest', 'html-files'] });
@@ -294,7 +299,7 @@ describe('BacktestRunner', () => {
       { path: 'exit_trigger_params.signal_b', values: ['x', 'y'] },
     ];
 
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     expect(screen.getByText('Grid config: 2 params, 12 combinations')).toBeInTheDocument();
     expect(screen.getByText('entry_filter_params.signal_a: [1, 2]')).toBeInTheDocument();
@@ -323,7 +328,7 @@ describe('BacktestRunner', () => {
     mockHookState.runOptimization.error = new Error('optimization failed');
     mockHookState.optimizationJobStatus.data = { status: 'failed' };
 
-    render(<BacktestRunner />);
+    renderBacktestRunner();
 
     expect(screen.getByRole('button', { name: 'Optimizing...' })).toBeDisabled();
     expect(screen.getByText('strategy-disabled:true')).toBeInTheDocument();

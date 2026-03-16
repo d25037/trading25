@@ -103,16 +103,11 @@ type IndicatorName = keyof ChartSettings['indicators'];
 type IndicatorSettings<T extends IndicatorName> = Partial<ChartSettings['indicators'][T]>;
 
 interface ChartState {
-  // Current state
-  selectedSymbol: string | null;
   settings: ChartSettings;
 
   // Preset management
   presets: ChartPreset[];
   activePresetId: string | null;
-
-  // Symbol actions
-  setSelectedSymbol: (symbol: string) => void;
 
   // Settings actions
   updateSettings: (settings: Partial<ChartSettings>) => void;
@@ -197,7 +192,6 @@ function generateId(): string {
 }
 
 type PersistedChartStoreState = Partial<{
-  selectedSymbol: string | null;
   settings: Partial<ChartSettings>;
   presets: ChartPreset[];
   activePresetId: string | null;
@@ -463,7 +457,6 @@ function mergePersistedChartStoreState(persistedState: unknown, currentState: Ch
 
   return {
     ...currentState,
-    selectedSymbol: typeof persisted.selectedSymbol === 'string' ? persisted.selectedSymbol : null,
     settings: normalizeSettings(persisted.settings),
     presets,
     activePresetId,
@@ -473,12 +466,9 @@ function mergePersistedChartStoreState(persistedState: unknown, currentState: Ch
 export const useChartStore = create<ChartState>()(
   persist(
     (set, get) => ({
-      selectedSymbol: null,
       settings: defaultSettings,
       presets: [],
       activePresetId: null,
-
-      setSelectedSymbol: (symbol) => set({ selectedSymbol: symbol }),
 
       updateSettings: (newSettings) =>
         set((state) => ({
@@ -694,7 +684,6 @@ export const useChartStore = create<ChartState>()(
       name: 'trading25-chart-store',
       merge: mergePersistedChartStoreState,
       partialize: (state) => ({
-        selectedSymbol: state.selectedSymbol,
         settings: state.settings,
         presets: state.presets,
         activePresetId: state.activePresetId,
