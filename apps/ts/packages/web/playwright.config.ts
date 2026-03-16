@@ -4,7 +4,9 @@ import { fileURLToPath } from 'node:url';
 const isCI = !!process.env.CI;
 const webCwd = fileURLToPath(new URL('.', import.meta.url));
 const webPort = Number(process.env.PLAYWRIGHT_WEB_PORT ?? '4173');
-const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://localhost:${webPort}`;
+const webHost = process.env.PLAYWRIGHT_WEB_HOST ?? '127.0.0.1';
+const webServerTimeout = Number(process.env.PLAYWRIGHT_WEB_SERVER_TIMEOUT_MS ?? (isCI ? '180000' : '120000'));
+const baseURL = process.env.PLAYWRIGHT_BASE_URL ?? `http://${webHost}:${webPort}`;
 const skipWebServer = process.env.PLAYWRIGHT_SKIP_WEBSERVER === '1';
 
 export default defineConfig({
@@ -28,11 +30,11 @@ export default defineConfig({
     ? {}
     : {
         webServer: {
-          command: `bunx --bun vite --configLoader native --port ${webPort}`,
+          command: 'bun run playwright:web-server',
           url: baseURL,
           reuseExistingServer: !isCI,
           cwd: webCwd,
-          timeout: 120_000,
+          timeout: webServerTimeout + 10_000,
         },
       }),
   projects: [
