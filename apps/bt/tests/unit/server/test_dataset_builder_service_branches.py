@@ -24,6 +24,7 @@ from src.application.services.dataset_builder_service import (
 from src.application.services.dataset_presets import PresetConfig
 from src.application.services.generic_job_manager import GenericJobManager
 from src.entrypoints.http.schemas.job import JobStatus
+from src.infrastructure.db.dataset_io.dataset_writer import StockDataCopyCodeStats
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.dataset_snapshot_reader import validate_dataset_snapshot
 from src.infrastructure.db.market.query_helpers import expand_stock_code, normalize_stock_code
@@ -1579,6 +1580,126 @@ async def test_build_dataset_direct_copy_generates_valid_snapshot_and_warnings(
     assert manifest.coverage.stocksWithQuotes == 1
     assert manifest.coverage.stocksWithMargin == 2
     assert manifest.coverage.stocksWithStatements == 2
+
+
+@pytest.mark.asyncio
+async def test_build_dataset_direct_copy_reopens_writer_after_stock_metadata(
+    monkeypatch,
+    isolated_dataset_manager,
+    tmp_path,
+):
+    job = await _create_job(isolated_dataset_manager, name="direct-copy-reopen", preset="quickTesting")
+    resolver = MagicMock()
+    resolver.get_dataset_path.return_value = "/tmp/direct-copy-reopen.db"
+
+    preset = PresetConfig(
+        markets=["prime"],
+        include_topix=True,
+        include_statements=True,
+        include_margin=True,
+        include_sector_indices=True,
+    )
+    monkeypatch.setattr(dataset_builder_service, "get_preset", lambda _name: preset)
+    monkeypatch.setattr(dataset_builder_service, "get_index_catalog_codes", lambda: {"0040"})
+
+    class DummyWriter:
+        instances: list["DummyWriter"] = []
+
+        def __init__(self, db_path: str):
+            self.calls: list[tuple[str, object]] = []
+            self.closed = False
+            DummyWriter.instances.append(self)
+
+        def upsert_stocks(self, rows):
+            self.calls.append(("upsert_stocks", len(rows)))
+            return len(rows)
+
+        def set_dataset_info(self, key: str, value: str):
+            self.calls.append(("set_dataset_info", key))
+            return None
+
+        def copy_stock_data_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
+            del source_duckdb_path
+            self.calls.append(("copy_stock_data_from_source", tuple(normalized_codes)))
+            return dataset_builder_service.StockDataCopyResult(
+                inserted_rows=len(normalized_codes),
+                code_stats={
+                    code: StockDataCopyCodeStats(
+                        total_rows=1,
+                        valid_rows=1,
+                        skipped_rows=0,
+                    )
+                    for code in normalized_codes
+                },
+            )
+
+        def copy_topix_data_from_source(self, *, source_duckdb_path: str):
+            del source_duckdb_path
+            self.calls.append(("copy_topix_data_from_source", None))
+            return 1
+
+        def copy_indices_data_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
+            del source_duckdb_path
+            self.calls.append(("copy_indices_data_from_source", tuple(normalized_codes)))
+            return len(normalized_codes)
+
+        def copy_statements_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
+            del source_duckdb_path
+            self.calls.append(("copy_statements_from_source", tuple(normalized_codes)))
+            return len(normalized_codes)
+
+        def copy_margin_data_from_source(self, *, source_duckdb_path: str, normalized_codes: list[str]):
+            del source_duckdb_path
+            self.calls.append(("copy_margin_data_from_source", tuple(normalized_codes)))
+            return len(normalized_codes)
+
+        def close(self):
+            self.closed = True
+            self.calls.append(("close", None))
+            return None
+
+    monkeypatch.setattr(dataset_builder_service, "DatasetWriter", DummyWriter)
+    source_duckdb_path = tmp_path / "source-market.duckdb"
+    source_duckdb_path.write_text("", encoding="utf-8")
+
+    async def fake_get_paginated(path: str, params=None):
+        del params
+        if path == "/equities/master":
+            return [_master_row("11110", "A")]
+        raise AssertionError(f"Unexpected legacy fetch: {path}")
+
+    reader = _reader_from_fetch(fake_get_paginated)
+
+    result = await _build_dataset(
+        job,
+        resolver,
+        reader,
+        source_duckdb_path=str(source_duckdb_path),
+    )
+
+    assert result.success is True
+    assert len(DummyWriter.instances) == 2
+
+    metadata_writer, copy_writer = DummyWriter.instances
+    assert metadata_writer.closed is True
+    assert copy_writer.closed is True
+    assert [call[0] for call in metadata_writer.calls] == [
+        "upsert_stocks",
+        "set_dataset_info",
+        "set_dataset_info",
+        "set_dataset_info",
+        "close",
+    ]
+    assert [call[0] for call in copy_writer.calls] == [
+        "copy_stock_data_from_source",
+        "copy_topix_data_from_source",
+        "copy_indices_data_from_source",
+        "copy_statements_from_source",
+        "copy_margin_data_from_source",
+        "set_dataset_info",
+        "set_dataset_info",
+        "close",
+    ]
 
 
 @pytest.mark.asyncio

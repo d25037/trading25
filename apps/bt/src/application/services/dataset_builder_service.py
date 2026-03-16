@@ -356,6 +356,11 @@ async def _build_dataset(
         await writer_worker.call("set_dataset_info", "preset", preset_name)
         await writer_worker.call("set_dataset_info", "created_at", datetime.now(UTC).isoformat())
         await writer_worker.call("set_dataset_info", "stock_count", str(len(filtered)))
+        if direct_copy_enabled:
+            # DuckDB can abort when stocks metadata writes and direct index copies
+            # share one destination connection. Reopen before direct-copy stages.
+            await writer_worker.close()
+            writer_worker = _DatasetWriterWorker(snapshot_path)
 
         # Step 3: 株価データ取得
         stock_data_started = perf_counter()
