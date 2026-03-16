@@ -12,8 +12,10 @@ import hashlib
 import json
 import shutil
 from collections.abc import Iterable, Iterator, Mapping, Sequence
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from functools import partial
 from pathlib import Path
 from time import perf_counter
 from typing import Any, Protocol
@@ -102,6 +104,45 @@ class MarketDatasetSource(Protocol):
     def query(self, sql: str, params: tuple[Any, ...] = ()) -> list[Any]:
         """Read-only DuckDB query interface."""
         ...
+
+
+class _DatasetWriterWorker:
+    """Keep DuckDB-backed DatasetWriter calls on one dedicated thread."""
+
+    def __init__(self, snapshot_path: str) -> None:
+        self._snapshot_path = snapshot_path
+        self._executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="dataset-writer")
+        self._writer: DatasetWriter | None = None
+
+    def _get_writer(self) -> DatasetWriter:
+        if self._writer is None:
+            self._writer = DatasetWriter(self._snapshot_path)
+        return self._writer
+
+    def _call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        writer = self._get_writer()
+        method = getattr(writer, method_name)
+        return method(*args, **kwargs)
+
+    def _close(self) -> None:
+        if self._writer is None:
+            return
+        self._writer.close()
+        self._writer = None
+
+    async def call(self, method_name: str, *args: Any, **kwargs: Any) -> Any:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._executor,
+            partial(self._call, method_name, *args, **kwargs),
+        )
+
+    async def close(self) -> None:
+        loop = asyncio.get_running_loop()
+        try:
+            await loop.run_in_executor(self._executor, self._close)
+        finally:
+            self._executor.shutdown(wait=True)
 
 
 def _is_missing_value(value: Any) -> bool:
@@ -302,7 +343,7 @@ async def _build_dataset(
 
     # Step 2: Writer 作成
     progress("init", 1, _TOTAL_STAGES, f"Creating dataset with {len(filtered)} stocks...")
-    writer = DatasetWriter(snapshot_path)
+    writer_worker = _DatasetWriterWorker(snapshot_path)
     direct_copy_enabled = source_duckdb_path is not None
     copy_mode = "duckdb-direct" if direct_copy_enabled else "legacy-query"
     success_result: DatasetResult | None = None
@@ -311,10 +352,10 @@ async def _build_dataset(
     try:
         # 銘柄データ書き込み
         stock_rows = _convert_stocks(filtered)
-        await asyncio.to_thread(writer.upsert_stocks, stock_rows)
-        writer.set_dataset_info("preset", preset_name)
-        writer.set_dataset_info("created_at", datetime.now(UTC).isoformat())
-        writer.set_dataset_info("stock_count", str(len(filtered)))
+        await writer_worker.call("upsert_stocks", stock_rows)
+        await writer_worker.call("set_dataset_info", "preset", preset_name)
+        await writer_worker.call("set_dataset_info", "created_at", datetime.now(UTC).isoformat())
+        await writer_worker.call("set_dataset_info", "stock_count", str(len(filtered)))
 
         # Step 3: 株価データ取得
         stock_data_started = perf_counter()
@@ -333,8 +374,8 @@ async def _build_dataset(
 
             batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
             if direct_copy_enabled and source_duckdb_path is not None:
-                copy_result = await asyncio.to_thread(
-                    writer.copy_stock_data_from_source,
+                copy_result = await writer_worker.call(
+                    "copy_stock_data_from_source",
                     source_duckdb_path=source_duckdb_path,
                     normalized_codes=batch_codes,
                 )
@@ -376,7 +417,7 @@ async def _build_dataset(
                     else:
                         empty_ohlcv_codes.append(code4)
                 if rows_to_write:
-                    await asyncio.to_thread(writer.upsert_stock_data, rows_to_write)
+                    await writer_worker.call("upsert_stock_data", rows_to_write)
             processed += len(batch)
             progress(
                 "stock_data",
@@ -421,8 +462,8 @@ async def _build_dataset(
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
             inserted_rows = 0
             if direct_copy_enabled and source_duckdb_path is not None:
-                inserted_rows = await asyncio.to_thread(
-                    writer.copy_topix_data_from_source,
+                inserted_rows = await writer_worker.call(
+                    "copy_topix_data_from_source",
                     source_duckdb_path=source_duckdb_path,
                 )
             else:
@@ -431,7 +472,7 @@ async def _build_dataset(
                     return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
                 if topix_rows:
                     inserted_rows = len(topix_rows)
-                    await asyncio.to_thread(writer.upsert_topix_data, topix_rows)
+                    await writer_worker.call("upsert_topix_data", topix_rows)
             log_stage_elapsed(
                 "topix",
                 topix_started,
@@ -455,8 +496,8 @@ async def _build_dataset(
                 return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
             inserted_rows = 0
             if direct_copy_enabled and source_duckdb_path is not None:
-                inserted_rows = await asyncio.to_thread(
-                    writer.copy_indices_data_from_source,
+                inserted_rows = await writer_worker.call(
+                    "copy_indices_data_from_source",
                     source_duckdb_path=source_duckdb_path,
                     normalized_codes=target_index_codes,
                 )
@@ -471,7 +512,7 @@ async def _build_dataset(
                 ]
                 if rows_to_write:
                     inserted_rows = len(rows_to_write)
-                    await asyncio.to_thread(writer.upsert_indices_data, rows_to_write)
+                    await writer_worker.call("upsert_indices_data", rows_to_write)
             log_stage_elapsed(
                 "indices",
                 indices_started,
@@ -495,8 +536,8 @@ async def _build_dataset(
                     return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
                 batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
                 if direct_copy_enabled and source_duckdb_path is not None:
-                    await asyncio.to_thread(
-                        writer.copy_statements_from_source,
+                    await writer_worker.call(
+                        "copy_statements_from_source",
                         source_duckdb_path=source_duckdb_path,
                         normalized_codes=batch_codes,
                     )
@@ -510,7 +551,7 @@ async def _build_dataset(
                         for row in statement_rows.get(normalize_stock_code(stock.get("Code", "")), [])
                     ]
                     if rows_to_write:
-                        await asyncio.to_thread(writer.upsert_statements, rows_to_write)
+                        await writer_worker.call("upsert_statements", rows_to_write)
                 statements_processed += len(batch)
                 progress(
                     "statements",
@@ -540,8 +581,8 @@ async def _build_dataset(
                     return DatasetResult(success=False, processedStocks=processed, errors=["Cancelled"])
                 batch_codes = [normalize_stock_code(stock.get("Code", "")) for stock in batch]
                 if direct_copy_enabled and source_duckdb_path is not None:
-                    await asyncio.to_thread(
-                        writer.copy_margin_data_from_source,
+                    await writer_worker.call(
+                        "copy_margin_data_from_source",
                         source_duckdb_path=source_duckdb_path,
                         normalized_codes=batch_codes,
                     )
@@ -555,7 +596,7 @@ async def _build_dataset(
                         for row in margin_rows.get(normalize_stock_code(stock.get("Code", "")), [])
                     ]
                     if rows_to_write:
-                        await asyncio.to_thread(writer.upsert_margin_data, rows_to_write)
+                        await writer_worker.call("upsert_margin_data", rows_to_write)
                 margin_processed += len(batch)
                 progress(
                     "margin",
@@ -570,8 +611,8 @@ async def _build_dataset(
                 target_count=len(filtered),
             )
 
-        writer.set_dataset_info("manifest_path", str(manifest_path))
-        writer.set_dataset_info("manifest_schema_version", "2")
+        await writer_worker.call("set_dataset_info", "manifest_path", str(manifest_path))
+        await writer_worker.call("set_dataset_info", "manifest_schema_version", "2")
         success_result = DatasetResult(
             success=True,
             totalStocks=len(filtered),
@@ -581,7 +622,7 @@ async def _build_dataset(
             outputPath=str(snapshot_dir),
         )
     finally:
-        writer.close()
+        await writer_worker.close()
 
     if success_result is None:
         raise RuntimeError("dataset build result was not prepared")
