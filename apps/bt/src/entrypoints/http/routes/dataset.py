@@ -162,8 +162,8 @@ def get_dataset_job(jobId: str) -> DatasetJobResponse:
             success=job.result.success,
             totalStocks=job.result.totalStocks,
             processedStocks=job.result.processedStocks,
-            warnings=job.result.warnings,
-            errors=job.result.errors,
+            warnings=job.result.warnings or [],
+            errors=job.result.errors or [],
             outputPath=job.result.outputPath,
         )
 

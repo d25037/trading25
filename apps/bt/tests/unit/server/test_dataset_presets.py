@@ -40,6 +40,13 @@ def test_topix100_preset() -> None:
     assert p.scale_categories == ["TOPIX Core30", "TOPIX Large70"]
 
 
+def test_topix500_preset_is_not_prime_only() -> None:
+    p = get_preset("topix500")
+    assert p is not None
+    assert p.markets == ["prime", "standard", "growth"]
+    assert p.scale_categories == ["TOPIX Core30", "TOPIX Large70", "TOPIX Mid400"]
+
+
 def test_prime_ex_topix500_preset() -> None:
     p = get_preset("primeExTopix500")
     assert p is not None

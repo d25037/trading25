@@ -1,6 +1,6 @@
 import { act, renderHook, waitFor } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
-import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
+import { ApiError, apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import { createQueryWrapper, createTestQueryClient } from '@/test-utils';
 import type { DatasetCreateRequest } from '@/types/dataset';
 import {
@@ -13,12 +13,16 @@ import {
   useDeleteDataset,
 } from './useDataset';
 
-vi.mock('@/lib/api-client', () => ({
-  apiGet: vi.fn(),
-  apiPost: vi.fn(),
-  apiPut: vi.fn(),
-  apiDelete: vi.fn(),
-}));
+vi.mock('@/lib/api-client', async () => {
+  const actual = await vi.importActual<typeof import('@/lib/api-client')>('@/lib/api-client');
+  return {
+    ...actual,
+    apiGet: vi.fn(),
+    apiPost: vi.fn(),
+    apiPut: vi.fn(),
+    apiDelete: vi.fn(),
+  };
+});
 
 vi.mock('@/utils/logger', () => ({
   logger: {
@@ -214,6 +218,31 @@ describe('useDatasetJobStatus', () => {
     expect(apiGet).toHaveBeenCalledWith('/api/dataset/jobs/job-1');
   });
 
+  it('normalizes null warnings and errors in job result payloads', async () => {
+    vi.mocked(apiGet).mockResolvedValueOnce({
+      jobId: 'job-1',
+      status: 'completed',
+      preset: 'quickTesting',
+      name: 'quickTesting_404',
+      startedAt: '2026-03-16T00:00:00Z',
+      result: {
+        success: true,
+        totalStocks: 3,
+        processedStocks: 3,
+        warnings: null,
+        errors: null,
+        outputPath: '/tmp/quickTesting_404',
+      },
+    });
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetJobStatus('job-1'), { wrapper });
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+    expect(result.current.data?.result?.warnings).toEqual([]);
+    expect(result.current.data?.result?.errors).toEqual([]);
+  });
+
   it('does not fetch when jobId is null', () => {
     const { wrapper } = createWrapper();
     const { result } = renderHook(() => useDatasetJobStatus(null), { wrapper });
@@ -235,6 +264,17 @@ describe('useDatasetJobStatus', () => {
 
     await waitFor(() => expect(apiGet).toHaveBeenCalledTimes(2), { timeout: 3500 });
   }, 8000);
+
+  it('does not retry when job status returns 404', async () => {
+    vi.mocked(apiGet).mockRejectedValue(new ApiError('Job not found', 404));
+
+    const { wrapper } = createWrapper();
+    const { result } = renderHook(() => useDatasetJobStatus('missing-job'), { wrapper });
+
+    await waitFor(() => expect(result.current.isError).toBe(true));
+    expect(result.current.error).toBeInstanceOf(ApiError);
+    expect((result.current.error as ApiError).status).toBe(404);
+  });
 });
 
 describe('useCreateDataset', () => {

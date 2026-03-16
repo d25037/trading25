@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { datasetKeys, useCancelDatasetJob, useDatasetJobStatus } from '@/hooks/useDataset';
+import { ApiError } from '@/lib/api-client';
 import { useBacktestStore } from '@/stores/backtestStore';
 
 function formatElapsed(seconds: number): string {
@@ -14,7 +15,7 @@ function formatElapsed(seconds: number): string {
 
 export function DatasetJobProgress() {
   const { activeDatasetJobId, setActiveDatasetJobId } = useBacktestStore();
-  const { data: job } = useDatasetJobStatus(activeDatasetJobId);
+  const { data: job, error: jobError } = useDatasetJobStatus(activeDatasetJobId);
   const cancelJob = useCancelDatasetJob();
   const queryClient = useQueryClient();
 
@@ -47,6 +48,12 @@ export function DatasetJobProgress() {
       return () => clearTimeout(timer);
     }
   }, [isTerminal, activeDatasetJobId, setActiveDatasetJobId, queryClient]);
+
+  useEffect(() => {
+    if (!activeDatasetJobId) return;
+    if (!(jobError instanceof ApiError) || jobError.status !== 404) return;
+    setActiveDatasetJobId(null);
+  }, [jobError, activeDatasetJobId, setActiveDatasetJobId]);
 
   if (!activeDatasetJobId || !job) return null;
 

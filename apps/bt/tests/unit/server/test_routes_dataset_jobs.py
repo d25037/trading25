@@ -169,6 +169,8 @@ def test_get_job_completed(client: TestClient) -> None:
     assert data["status"] == "completed"
     assert data["result"]["success"] is True
     assert data["result"]["totalStocks"] == 3
+    assert data["result"]["warnings"] == []
+    assert data["result"]["errors"] == []
 
 
 # --- Cancel Job ---

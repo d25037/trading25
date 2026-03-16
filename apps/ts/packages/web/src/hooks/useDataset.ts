@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { apiDelete, apiGet, apiPost } from '@/lib/api-client';
+import { ApiError, apiDelete, apiGet, apiPost } from '@/lib/api-client';
 import type {
   CancelDatasetJobResponse,
   DatasetCreateJobResponse,
@@ -57,6 +57,13 @@ interface LegacyDatasetListItem {
 type DatasetStorage = DatasetInfoResponse['storage'];
 type LegacySnapshot = LegacyDatasetInfoResponse['snapshot'];
 type LegacyValidation = NonNullable<LegacySnapshot['validation']>;
+type DatasetJobResultPayload = NonNullable<DatasetJobResponse['result']> & {
+  warnings?: string[] | null;
+  errors?: string[] | null;
+};
+type DatasetJobResponsePayload = Omit<DatasetJobResponse, 'result'> & {
+  result?: DatasetJobResultPayload | null;
+};
 
 function inferLegacyStorage(path: string): DatasetStorage {
   const isLegacySqlite = path.endsWith('.db');
@@ -163,6 +170,22 @@ function normalizeDatasetListItem(value: DatasetListItem | LegacyDatasetListItem
   };
 }
 
+function normalizeDatasetJobResponse(value: DatasetJobResponsePayload): DatasetJobResponse {
+  if (value.result == null) {
+    const { result: _result, ...rest } = value;
+    return rest;
+  }
+
+  return {
+    ...value,
+    result: {
+      ...value.result,
+      warnings: value.result.warnings ?? [],
+      errors: value.result.errors ?? [],
+    },
+  };
+}
+
 function fetchDatasets(): Promise<DatasetListResponse> {
   return apiGet<DatasetListResponse | LegacyDatasetListItem[]>('/api/dataset').then((items) =>
     items.map(normalizeDatasetListItem)
@@ -176,7 +199,9 @@ function fetchDatasetInfo(name: string): Promise<DatasetInfoResponse> {
 }
 
 function fetchJobStatus(jobId: string): Promise<DatasetJobResponse> {
-  return apiGet<DatasetJobResponse>(`/api/dataset/jobs/${encodeURIComponent(jobId)}`);
+  return apiGet<DatasetJobResponsePayload>(`/api/dataset/jobs/${encodeURIComponent(jobId)}`).then(
+    normalizeDatasetJobResponse
+  );
 }
 
 function createDataset(request: DatasetCreateRequest): Promise<DatasetCreateJobResponse> {
@@ -228,6 +253,10 @@ export function useDatasetJobStatus(jobId: string | null) {
       const status = query.state.data?.status;
       if (status === 'running' || status === 'pending') return 2000;
       return false;
+    },
+    retry: (failureCount, error) => {
+      if (error instanceof ApiError && error.status === 404) return false;
+      return failureCount < 2;
     },
     staleTime: 0,
   });

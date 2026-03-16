@@ -12,7 +12,7 @@ import hashlib
 import json
 import shutil
 from collections.abc import Iterable, Iterator, Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from time import perf_counter
@@ -58,8 +58,8 @@ class DatasetResult:
     success: bool
     totalStocks: int = 0
     processedStocks: int = 0
-    warnings: list[str] | None = None
-    errors: list[str] | None = None
+    warnings: list[str] = field(default_factory=list)
+    errors: list[str] = field(default_factory=list)
     outputPath: str = ""
 
 

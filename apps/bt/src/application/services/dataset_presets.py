@@ -32,7 +32,7 @@ PRESETS: dict[str, PresetConfig] = {
         scale_categories=["TOPIX Core30", "TOPIX Large70"],
     ),
     "topix500": PresetConfig(
-        markets=["prime"],
+        markets=["prime", "standard", "growth"],
         scale_categories=["TOPIX Core30", "TOPIX Large70", "TOPIX Mid400"],
     ),
     "mid400": PresetConfig(
