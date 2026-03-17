@@ -10,7 +10,7 @@ interface ScreeningTableProps {
   isLoading: boolean;
   isFetching?: boolean;
   error: Error | null;
-  onStockClick: (code: string) => void;
+  onStockClick: (code: string, strategy?: string, matchedDate?: string) => void;
 }
 
 const VIRTUALIZATION_THRESHOLD = 120;
@@ -71,7 +71,13 @@ export function ScreeningTable({ results, isLoading, isFetching = false, error, 
                 <tr
                   key={`${result.stockCode}-${result.matchedDate}-${virtual.startIndex + offset}`}
                   className="border-b border-border/30 hover:bg-accent/30 cursor-pointer transition-colors"
-                  onClick={() => onStockClick(result.stockCode)}
+                  onClick={() =>
+                    onStockClick(
+                      result.stockCode,
+                      result.bestStrategyName,
+                      result.matchedDate
+                    )
+                  }
                 >
                   <td className="p-2 text-muted-foreground tabular-nums">{formatDateShort(result.matchedDate)}</td>
                   <td className="p-2 font-medium">{result.stockCode}</td>

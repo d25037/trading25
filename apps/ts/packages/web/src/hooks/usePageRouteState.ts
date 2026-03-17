@@ -64,24 +64,28 @@ function useLegacySearchMigration<TSearch extends object>(params: {
 
 export function useChartsRouteState(): {
   selectedSymbol: string | null;
+  strategyName: string | null;
+  matchedDate: string | null;
   setSelectedSymbol: (symbol: string | null, options?: { replace?: boolean }) => void;
 } {
   const navigate = useNavigate();
   const search = chartsRoute.useSearch();
   const selectedSymbol = search.symbol ?? null;
+  const strategyName = search.strategy ?? null;
+  const matchedDate = search.matchedDate ?? null;
 
   const setSelectedSymbol = useCallback(
     (symbol: string | null, options?: { replace?: boolean }) => {
       void navigate({
         to: '/charts',
         replace: options?.replace ?? false,
-        search: serializeChartsSearch(symbol),
+        search: serializeChartsSearch({ symbol }),
       });
     },
     [navigate]
   );
 
-  return { selectedSymbol, setSelectedSymbol };
+  return { selectedSymbol, strategyName, matchedDate, setSelectedSymbol };
 }
 
 export function useMigrateChartsRouteState(): void {
@@ -90,7 +94,7 @@ export function useMigrateChartsRouteState(): void {
     storageType: 'local',
     storageKey: 'trading25-chart-store',
     pruneFields: ['selectedSymbol'],
-    hasManagedSearchValues: Boolean(search.symbol),
+    hasManagedSearchValues: Boolean(search.symbol) || Boolean(search.strategy) || Boolean(search.matchedDate),
     extractLegacySearch: extractLegacyChartsSearch,
     to: '/charts',
   });

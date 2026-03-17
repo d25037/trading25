@@ -9,6 +9,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator
 
+from src.entrypoints.http.schemas.analytics_common import (
+    DataProvenance,
+    ResponseDiagnostics,
+)
+
 # Phase 1対象シグナル（OHLCV系のみ）
 PHASE1_SIGNAL_TYPES = Literal[
     # oscillator
@@ -92,23 +97,56 @@ class SignalComputeRequest(BaseModel):
         min_length=1, max_length=10, description="銘柄コード"
     )
     source: str = Field(
-        default="market", description="データソース ('market' or dataset名)"
+        default="market", description="データソース ('market' only)"
     )
     timeframe: Literal["daily", "weekly", "monthly"] = Field(
         default="daily", description="時間枠"
     )
+    strategy_name: str | None = Field(
+        default=None,
+        description="chart検算用の戦略名。指定時は signals を省略する",
+    )
     signals: list[SignalSpec] = Field(
         default_factory=list,
         max_length=5,
-        description="計算するシグナル一覧（最大5個）",
+        description="計算するシグナル一覧（strategy_name 未指定時のみ、最大5個）",
     )
     start_date: date | None = Field(default=None, description="開始日")
     end_date: date | None = Field(default=None, description="終了日")
+
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, value: str) -> str:
+        normalized = value.strip()
+        if normalized != "market":
+            raise ValueError("source='market' のみ対応しています")
+        return normalized
+
+    @field_validator("strategy_name")
+    @classmethod
+    def normalize_strategy_name(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        normalized = value.strip()
+        return normalized or None
+
+    @field_validator("signals")
+    @classmethod
+    def validate_signals_when_present(cls, value: list[SignalSpec]) -> list[SignalSpec]:
+        return value
+
+    def model_post_init(self, __context: Any) -> None:
+        if self.strategy_name is None and not self.signals:
+            raise ValueError("strategy_name または signals のいずれかが必要です")
+        if self.strategy_name is not None and self.signals:
+            raise ValueError("strategy_name と signals は同時指定できません")
 
 
 class SignalResult(BaseModel):
     """単一シグナルの計算結果"""
 
+    label: str | None = Field(default=None, description="表示用ラベル")
+    mode: Literal["entry", "exit"] | None = Field(default=None, description="シグナルモード")
     trigger_dates: list[str] = Field(
         description="シグナル発火日リスト (YYYY-MM-DD)"
     )
@@ -116,6 +154,7 @@ class SignalResult(BaseModel):
     error: str | None = Field(
         default=None, description="エラーメッセージ（計算失敗時）"
     )
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
 
 
 class SignalComputeResponse(BaseModel):
@@ -123,6 +162,17 @@ class SignalComputeResponse(BaseModel):
 
     stock_code: str = Field(description="銘柄コード")
     timeframe: str = Field(description="時間枠")
+    strategy_name: str | None = Field(default=None, description="検算対象戦略")
     signals: dict[str, SignalResult] = Field(
         description="シグナル結果 {signal_type: SignalResult}"
     )
+    combined_entry: SignalResult | None = Field(
+        default=None,
+        description="strategy_name 指定時の合成 entry シグナル",
+    )
+    combined_exit: SignalResult | None = Field(
+        default=None,
+        description="strategy_name 指定時の合成 exit シグナル",
+    )
+    provenance: DataProvenance
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)

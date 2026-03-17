@@ -41,10 +41,23 @@ class SignalFieldSchema(BaseModel):
     constraints: FieldConstraints | None = None
 
 
+class SignalChartCapability(BaseModel):
+    """Chart overlay capability metadata."""
+
+    supported: bool = True
+    supported_modes: list[str] = Field(default_factory=list)
+    supports_relative_mode: bool = True
+    requires_benchmark: bool = False
+    requires_sector_data: bool = False
+    requires_margin_data: bool = False
+    requires_statements_data: bool = False
+
+
 class SignalReferenceSchema(BaseModel):
     """シグナル定義"""
 
     key: str = Field(description="param_keyベースの安定スラッグ")
+    signal_type: str = Field(description="chart/signal API で使用する signal type")
     name: str
     category: str
     description: str
@@ -54,6 +67,7 @@ class SignalReferenceSchema(BaseModel):
     exit_disabled: bool = False
     data_requirements: list[str] = Field(default_factory=list)
     availability_profiles: list["SignalAvailabilityProfile"] = Field(default_factory=list)
+    chart: SignalChartCapability = Field(default_factory=SignalChartCapability)
 
 
 class SignalAvailabilityProfile(BaseModel):

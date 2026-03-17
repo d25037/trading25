@@ -36,6 +36,13 @@ CATEGORY_LABELS: dict[str, str] = {
     "sector": "セクター",
 }
 
+_RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES = {
+    "volume_ratio_above",
+    "volume_ratio_below",
+    "trading_value",
+    "trading_value_range",
+}
+
 
 def _get_param_model(param_key: str) -> type[BaseModel] | None:
     """param_keyからPydanticモデルクラスを取得
@@ -352,6 +359,27 @@ def _build_availability_profiles(signal_def: Any) -> list[dict[str, Any]]:
     return profiles
 
 
+def _derive_signal_type(param_key: str) -> str:
+    return param_key.split(".")[-1]
+
+
+def _build_chart_capability(signal_def: Any) -> dict[str, Any]:
+    signal_type = _derive_signal_type(signal_def.param_key)
+    requirement_bases = {
+        requirement.split(":", 1)[0]
+        for requirement in signal_def.data_requirements
+    }
+    return {
+        "supported": True,
+        "supported_modes": ["entry"] if signal_def.exit_disabled else ["entry", "exit"],
+        "supports_relative_mode": signal_type not in _RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES,
+        "requires_benchmark": "benchmark" in requirement_bases,
+        "requires_sector_data": "sector" in requirement_bases,
+        "requires_margin_data": "margin" in requirement_bases,
+        "requires_statements_data": "statements" in requirement_bases,
+    }
+
+
 def build_signal_reference() -> dict[str, Any]:
     """全シグナルのリファレンスデータを構築
 
@@ -386,6 +414,7 @@ def build_signal_reference() -> dict[str, Any]:
 
         signal_data = {
             "key": signal_def.param_key.replace(".", "_"),  # param_keyベースの安定スラッグ
+            "signal_type": _derive_signal_type(signal_def.param_key),
             "name": signal_def.name,
             "category": signal_def.category,
             "description": signal_def.description,
@@ -395,6 +424,7 @@ def build_signal_reference() -> dict[str, Any]:
             "exit_disabled": signal_def.exit_disabled,
             "data_requirements": signal_def.data_requirements,
             "availability_profiles": _build_availability_profiles(signal_def),
+            "chart": _build_chart_capability(signal_def),
         }
         signals.append(signal_data)
 

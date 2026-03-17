@@ -437,6 +437,16 @@ describe('useScreeningResult', () => {
       sortBy: 'matchedDate',
       order: 'desc',
       lastUpdated: '2026-01-01T00:00:00Z',
+      provenance: {
+        source_kind: 'market',
+        loaded_domains: ['stock_data'],
+        reference_date: '2026-01-01',
+      },
+      diagnostics: {
+        missing_required_data: [],
+        used_fields: [],
+        warnings: [],
+      },
     });
 
     const { wrapper } = createTestWrapper();

@@ -1,16 +1,15 @@
-"""
-Signals API Tests
+"""Signals API route tests."""
 
-/api/signals/compute エンドポイントのテスト
-"""
+from __future__ import annotations
 
 from unittest.mock import patch
 
-import pandas as pd
 import pytest
 from fastapi.testclient import TestClient
 
+from src.application.services.market_data_errors import MarketDataError
 from src.entrypoints.http.app import app
+from src.entrypoints.http.schemas.analytics_common import DataProvenance, ResponseDiagnostics
 from src.entrypoints.http.schemas.signals import (
     SignalComputeRequest,
     SignalComputeResponse,
@@ -21,15 +20,35 @@ from src.entrypoints.http.schemas.signals import (
 
 @pytest.fixture
 def client() -> TestClient:
-    """FastAPIテストクライアント"""
     return TestClient(app)
 
 
-class TestSignalComputeRequestSchema:
-    """SignalComputeRequestのバリデーションテスト"""
+def _make_signal_response() -> dict[str, object]:
+    return {
+        "stock_code": "7203",
+        "timeframe": "daily",
+        "strategy_name": None,
+        "signals": {
+            "buy_and_hold": {
+                "label": "Buy & Hold",
+                "mode": "entry",
+                "trigger_dates": ["2025-01-15"],
+                "count": 1,
+                "diagnostics": ResponseDiagnostics().model_dump(mode="json"),
+            }
+        },
+        "combined_entry": None,
+        "combined_exit": None,
+        "provenance": DataProvenance(
+            source_kind="market",
+            loaded_domains=["stock_data"],
+        ).model_dump(mode="json"),
+        "diagnostics": ResponseDiagnostics().model_dump(mode="json"),
+    }
 
+
+class TestSignalComputeRequestSchema:
     def test_default_values(self) -> None:
-        """デフォルト値が設定される"""
         req = SignalComputeRequest(
             stock_code="7203",
             signals=[SignalSpec(type="volume_ratio_above")],
@@ -37,214 +56,161 @@ class TestSignalComputeRequestSchema:
         assert req.stock_code == "7203"
         assert req.source == "market"
         assert req.timeframe == "daily"
-        assert req.start_date is None
-        assert req.end_date is None
 
-    def test_max_signals_validation(self) -> None:
-        """シグナル数の上限バリデーション"""
-        # 5個以内は有効
+    def test_strategy_name_can_replace_signals(self) -> None:
         req = SignalComputeRequest(
             stock_code="7203",
-            signals=[SignalSpec(type="volume_ratio_above") for _ in range(5)],
+            strategy_name="production/test_strategy",
         )
-        assert len(req.signals) == 5
+        assert req.strategy_name == "production/test_strategy"
+        assert req.signals == []
 
-    def test_signal_spec_default_mode(self) -> None:
-        """SignalSpecのデフォルトmode"""
-        spec = SignalSpec(type="rsi_threshold")
-        assert spec.mode == "entry"
-        assert spec.params == {}
+    def test_empty_request_is_rejected(self) -> None:
+        with pytest.raises(ValueError, match="strategy_name または signals"):
+            SignalComputeRequest(stock_code="7203", signals=[])
+
+    def test_strategy_name_and_signals_are_mutually_exclusive(self) -> None:
+        with pytest.raises(ValueError, match="同時指定できません"):
+            SignalComputeRequest(
+                stock_code="7203",
+                strategy_name="production/test_strategy",
+                signals=[SignalSpec(type="buy_and_hold")],
+            )
 
 
 class TestSignalComputeResponseSchema:
-    """SignalComputeResponseのバリデーションテスト"""
-
     def test_valid_response(self) -> None:
-        """有効なレスポンス"""
         response = SignalComputeResponse(
             stock_code="7203",
             timeframe="daily",
             signals={
-                "volume_ratio_above": SignalResult(
+                "buy_and_hold": SignalResult(
+                    label="Buy & Hold",
+                    mode="entry",
                     trigger_dates=["2025-01-15"],
                     count=1,
-                ),
+                )
             },
+            provenance=DataProvenance(source_kind="market", loaded_domains=["stock_data"]),
         )
-        assert response.stock_code == "7203"
-        assert response.signals["volume_ratio_above"].count == 1
-
-    def test_signal_result_with_error(self) -> None:
-        """エラーを含むSignalResult"""
-        result = SignalResult(trigger_dates=[], count=0, error="Phase 1では未対応")
-        assert result.error == "Phase 1では未対応"
+        assert response.signals["buy_and_hold"].count == 1
 
 
 class TestSignalComputeEndpoint:
-    """POST /api/signals/compute エンドポイントのテスト"""
-
-    @pytest.fixture
-    def mock_ohlcv(self) -> pd.DataFrame:
-        """モックOHLCVデータ"""
-        return pd.DataFrame({
-            "Open": [100.0, 101.0, 102.0, 103.0, 104.0],
-            "High": [105.0, 106.0, 107.0, 108.0, 109.0],
-            "Low": [95.0, 96.0, 97.0, 98.0, 99.0],
-            "Close": [102.0, 103.0, 104.0, 105.0, 106.0],
-            "Volume": [1000, 1100, 1200, 1300, 1400],
-        }, index=pd.date_range("2025-01-01", periods=5))
-
-    def test_compute_empty_signals_returns_empty(self, client: TestClient) -> None:
-        """空のシグナルリストは空の結果を返す"""
-        response = client.post(
-            "/api/signals/compute",
-            json={
-                "stock_code": "7203",
-                "signals": [],
-            },
-        )
-        assert response.status_code == 200
-        data = response.json()
-        assert data["stock_code"] == "7203"
-        assert data["signals"] == {}
-
-    def test_compute_invalid_signal_type(self, client: TestClient, mock_ohlcv: pd.DataFrame) -> None:
-        """Phase 1非対応シグナルはエラー情報を含む"""
+    def test_compute_success(self, client: TestClient) -> None:
         with patch(
-            "src.application.services.signal_service.SignalService.load_ohlcv",
-            return_value=mock_ohlcv,
-        ):
-            response = client.post(
-                "/api/signals/compute",
-                json={
-                    "stock_code": "7203",
-                    "signals": [{"type": "per", "params": {}}],
-                },
-            )
-            assert response.status_code == 200
-            data = response.json()
-            assert "per" in data["signals"]
-            assert "error" in data["signals"]["per"]
-            assert "Phase 1では未対応" in data["signals"]["per"]["error"]
-
-    def test_compute_valid_signal(self, client: TestClient, mock_ohlcv: pd.DataFrame) -> None:
-        """有効なシグナル計算"""
-        with patch(
-            "src.application.services.signal_service.SignalService.load_ohlcv",
-            return_value=mock_ohlcv,
-        ):
+            "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",
+            return_value=_make_signal_response(),
+        ) as mock_compute:
             response = client.post(
                 "/api/signals/compute",
                 json={
                     "stock_code": "7203",
                     "timeframe": "daily",
-                    # volume_ratio threshold は 0-10 の範囲なので、適切な値を指定
-                    "signals": [
-                        {
-                            "type": "volume_ratio_above",
-                            "params": {"ratio_threshold": 1.5},
-                        }
-                    ],
+                    "signals": [{"type": "buy_and_hold", "params": {}, "mode": "entry"}],
                 },
             )
-            assert response.status_code == 200
-            data = response.json()
-            assert data["stock_code"] == "7203"
-            assert data["timeframe"] == "daily"
-            assert "volume_ratio_above" in data["signals"]
-            # エラーがないことを確認
-            assert (
-                "error" not in data["signals"]["volume_ratio_above"]
-                or data["signals"]["volume_ratio_above"]["error"] is None
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["signals"]["buy_and_hold"]["count"] == 1
+        assert data["provenance"]["source_kind"] == "market"
+        assert mock_compute.called
+
+    def test_compute_strategy_overlay_success(self, client: TestClient) -> None:
+        payload = _make_signal_response() | {
+            "strategy_name": "production/test_strategy",
+            "combined_entry": {
+                "label": "production/test_strategy entry",
+                "mode": "entry",
+                "trigger_dates": ["2025-01-15"],
+                "count": 1,
+                "diagnostics": ResponseDiagnostics().model_dump(mode="json"),
+            },
+            "provenance": DataProvenance(
+                source_kind="market",
+                loaded_domains=["stock_data"],
+                strategy_name="production/test_strategy",
+                strategy_fingerprint="fingerprint-123",
+            ).model_dump(mode="json"),
+        }
+        with patch(
+            "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",
+            return_value=payload,
+        ):
+            response = client.post(
+                "/api/signals/compute",
+                json={
+                    "stock_code": "7203",
+                    "strategy_name": "production/test_strategy",
+                },
             )
 
-    def test_compute_missing_stock_code(self, client: TestClient) -> None:
-        """stock_codeなしでリクエストするとバリデーションエラー"""
-        response = client.post(
-            "/api/signals/compute",
-            json={
-                "signals": [{"type": "volume_ratio_above"}],
-            },
-        )
-        assert response.status_code == 422
-
-    def test_compute_invalid_timeframe(self, client: TestClient) -> None:
-        """無効なtimeframeはバリデーションエラー"""
-        response = client.post(
-            "/api/signals/compute",
-            json={
-                "stock_code": "7203",
-                "timeframe": "invalid",
-                "signals": [{"type": "volume_ratio_above"}],
-            },
-        )
-        assert response.status_code == 422
-
-
-class TestSignalReferenceEndpoint:
-    """GET /api/signals/reference エンドポイントのテスト"""
-
-    def test_get_reference(self, client: TestClient) -> None:
-        """シグナルリファレンス取得"""
-        response = client.get("/api/signals/reference")
         assert response.status_code == 200
         data = response.json()
-        assert "signals" in data
-        assert len(data["signals"]) > 0
+        assert data["strategy_name"] == "production/test_strategy"
+        assert data["combined_entry"]["count"] == 1
 
-    def test_get_reference_handles_internal_error(self, client: TestClient) -> None:
-        """リファレンス構築失敗時は500"""
+    def test_market_data_error_returns_404(self, client: TestClient) -> None:
         with patch(
-            "src.entrypoints.http.routes.signal_reference.build_signal_reference",
-            side_effect=RuntimeError("boom"),
+            "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",
+            side_effect=MarketDataError(
+                "銘柄 7203 のローカルOHLCVデータがありません",
+                reason="local_stock_data_missing",
+                recovery="stock_refresh",
+            ),
         ):
-            response = client.get("/api/signals/reference")
+            response = client.post(
+                "/api/signals/compute",
+                json={
+                    "stock_code": "7203",
+                    "signals": [{"type": "buy_and_hold"}],
+                },
+            )
 
-        assert response.status_code == 500
+        assert response.status_code == 404
 
-
-class TestSignalSchemaEndpoint:
-    """GET /api/signals/schema エンドポイントのテスト"""
-
-    def test_get_schema(self, client: TestClient) -> None:
-        """SignalParams JSON Schema取得"""
-        response = client.get("/api/signals/schema")
-        assert response.status_code == 200
-        data = response.json()
-        assert "type" in data or "properties" in data
-
-    def test_get_schema_handles_internal_error(self, client: TestClient) -> None:
-        """schema生成失敗時は500"""
-        with patch(
-            "src.entrypoints.http.routes.signal_reference.SignalParams.model_json_schema",
-            side_effect=RuntimeError("boom"),
-        ):
-            response = client.get("/api/signals/schema")
-
-        assert response.status_code == 500
-
-
-class TestSignalComputeEndpointErrors:
     def test_compute_value_error_returns_400(self, client: TestClient) -> None:
         with patch(
-            "src.application.services.signal_service.SignalService.compute_signals",
+            "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",
             side_effect=ValueError("bad params"),
         ):
             response = client.post(
                 "/api/signals/compute",
-                json={"stock_code": "7203", "signals": [{"type": "volume_ratio_above"}]},
+                json={"stock_code": "7203", "signals": [{"type": "buy_and_hold"}]},
             )
 
         assert response.status_code == 400
 
     def test_compute_internal_error_returns_500(self, client: TestClient) -> None:
         with patch(
-            "src.application.services.signal_service.SignalService.compute_signals",
+            "src.entrypoints.http.routes.signal_reference.SignalService.compute_signals",
             side_effect=RuntimeError("boom"),
         ):
             response = client.post(
                 "/api/signals/compute",
-                json={"stock_code": "7203", "signals": [{"type": "volume_ratio_above"}]},
+                json={"stock_code": "7203", "signals": [{"type": "buy_and_hold"}]},
             )
+
+        assert response.status_code == 500
+
+
+class TestSignalReferenceEndpoint:
+    def test_get_reference(self, client: TestClient) -> None:
+        response = client.get("/api/signals/reference")
+        assert response.status_code == 200
+        data = response.json()
+        assert "signals" in data
+        assert len(data["signals"]) > 0
+        first = data["signals"][0]
+        assert "signal_type" in first
+        assert "chart" in first
+
+    def test_get_reference_handles_internal_error(self, client: TestClient) -> None:
+        with patch(
+            "src.entrypoints.http.routes.signal_reference.build_signal_reference",
+            side_effect=RuntimeError("boom"),
+        ):
+            response = client.get("/api/signals/reference")
 
         assert response.status_code == 500

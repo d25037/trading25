@@ -27,6 +27,7 @@ const baseSignalData = {
   signals: [
     {
       key: 'breakout.close_gt_sma',
+      signal_type: 'close_gt_sma',
       category: 'breakout',
       name: 'Close > SMA',
       description: 'Close price is above moving average',
@@ -47,20 +48,44 @@ const baseSignalData = {
       fields: [
         {
           name: 'period',
+          type: 'number',
           description: 'SMA period',
           options: ['5', '10'],
           constraints: { gt: 0, le: 50 },
         },
       ],
+      exit_disabled: false,
+      data_requirements: ['ohlc'],
+      chart: {
+        supported: true,
+        supported_modes: ['entry', 'exit'],
+        supports_relative_mode: true,
+        requires_benchmark: false,
+        requires_sector_data: false,
+        requires_margin_data: false,
+        requires_statements_data: false,
+      },
     },
     {
       key: 'trend.unknown',
+      signal_type: 'unknown',
       category: 'not-defined',
       name: 'Unknown category signal',
       description: 'should trigger warn log',
       usage_hint: 'N/A',
       yaml_snippet: 'exit_trigger: {}',
       fields: [],
+      exit_disabled: false,
+      data_requirements: [],
+      chart: {
+        supported: true,
+        supported_modes: ['entry', 'exit'],
+        supports_relative_mode: true,
+        requires_benchmark: false,
+        requires_sector_data: false,
+        requires_margin_data: false,
+        requires_statements_data: false,
+      },
     },
   ],
 } as SignalReferenceResponse;

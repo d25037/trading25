@@ -530,8 +530,15 @@ export function AnalysisPage() {
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeScreeningMode];
 
   const handleStockClick = useCallback(
-    (code: string) => {
-      void navigate({ to: '/charts', search: { symbol: code } });
+    (code: string, strategy?: string, matchedDate?: string) => {
+      void navigate({
+        to: '/charts',
+        search: {
+          symbol: code,
+          ...(strategy ? { strategy } : {}),
+          ...(matchedDate ? { matchedDate } : {}),
+        },
+      });
     },
     [navigate]
   );

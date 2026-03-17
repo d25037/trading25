@@ -14,6 +14,7 @@ import {
 } from '@/constants/fundamentalsHistoryMetrics';
 import { ApiError } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
+import { logger } from '@/utils/logger';
 import { ChartsPage } from './ChartsPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
@@ -379,6 +380,7 @@ describe('ChartsPage', () => {
   });
 
   it('renders empty state when no symbol selected', () => {
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
     mockChartsRouteState.selectedSymbol = null;
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
@@ -395,9 +397,12 @@ describe('ChartsPage', () => {
 
     renderChartsPage();
     expect(screen.getByText(/Start Trading Analysis/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '7203' }));
+    expect(debugSpy).toHaveBeenCalledWith('Symbol selected from popular list', { symbol: '7203' });
   });
 
   it('renders generic error message when error is not an Error instance', () => {
+    const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
       isLoading: false,
@@ -413,6 +418,8 @@ describe('ChartsPage', () => {
 
     renderChartsPage();
     expect(screen.getByText('An unexpected error occurred while fetching market data')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Try Again/i }));
+    expect(reloadSpy).toHaveBeenCalledOnce();
   });
 
   it('renders chart panels when data is available', () => {
@@ -524,6 +531,45 @@ describe('ChartsPage', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-validation'] });
     });
+  });
+
+  it('shows refresh error feedback when stock refresh fails', async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn((_request, options) => {
+      options?.onError?.(new Error('refresh failed'));
+    });
+    mockUseRefreshStocks.mockReturnValue({
+      mutate,
+      isPending: false,
+      error: null,
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+    await user.click(screen.getByRole('button', { name: /Stock Refresh/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { codes: ['7203'] },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      })
+    );
+    expect(await screen.findByText('refresh failed')).toBeInTheDocument();
   });
 
   it('hides panel sections and disables related queries when panel flags are off', () => {

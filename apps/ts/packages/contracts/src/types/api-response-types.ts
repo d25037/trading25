@@ -4,6 +4,8 @@
  * Single source of truth for API response types shared between packages/web and packages/api-clients.
  */
 
+import type { DataProvenance, ResponseDiagnostics } from './api-types';
+
 // ===== RANKING TYPES =====
 
 export interface RankingItem {
@@ -117,6 +119,8 @@ export interface MarketScreeningResponse {
   sortBy: ScreeningSortBy;
   order: SortOrder;
   lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
 }
 
 export interface ScreeningJobRequest {

@@ -8,11 +8,13 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from src.application.services.analytics_provenance import build_market_provenance
 from src.domains.fundamentals import (
     DailyValuationDataPoint as DomainDailyValuationDataPoint,
     FundamentalDataPoint as DomainFundamentalDataPoint,
     FundamentalsCalculator,
 )
+from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 from src.entrypoints.http.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
@@ -221,6 +223,14 @@ class FundamentalsService:
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
+                provenance=build_market_provenance(
+                    loaded_domains=("statements", "stock_data", "stocks"),
+                ),
+                diagnostics=ResponseDiagnostics(
+                    missing_required_data=["statements"],
+                    used_fields=["statements"],
+                    effective_period_type=request.period_type,
+                ),
             )
 
         stock_info = self._get_stock_info(request.symbol)
@@ -253,6 +263,14 @@ class FundamentalsService:
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
+                provenance=build_market_provenance(
+                    loaded_domains=("statements", "stock_data", "stocks"),
+                ),
+                diagnostics=ResponseDiagnostics(
+                    missing_required_data=["filtered_statements"],
+                    used_fields=["statements", "stock_data.close"],
+                    effective_period_type=request.period_type,
+                ),
             )
 
         price_map = self._calculator._get_stock_prices_for_statements(
@@ -344,6 +362,19 @@ class FundamentalsService:
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
             lastUpdated=datetime.now().isoformat(),
+            provenance=build_market_provenance(
+                loaded_domains=("statements", "stock_data", "stocks"),
+            ),
+            diagnostics=ResponseDiagnostics(
+                missing_required_data=[],
+                used_fields=[
+                    "statements.earnings_per_share",
+                    "statements.forecast_eps",
+                    "statements.equity",
+                    "stock_data.close",
+                ],
+                effective_period_type=request.period_type,
+            ),
         )
 
 

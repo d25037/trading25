@@ -24,7 +24,7 @@ from src.entrypoints.http.middleware.request_logger import RequestLoggerMiddlewa
 from src.entrypoints.http.error_utils import extract_http_exception_detail
 from src.entrypoints.http.openapi_config import customize_openapi, get_openapi_config
 from src.entrypoints.http.routes import backtest, fundamentals, health, indicators, lab, ohlcv, optimize, signal_reference, snapshots, strategies
-from src.entrypoints.http.routes import analytics_complex, analytics_jquants, chart, jquants_proxy, market_data
+from src.entrypoints.http.routes import analytics_complex, analytics_market, chart, jquants_proxy, market_data
 from src.entrypoints.http.routes import dataset, dataset_data, db, portfolio, watchlist
 from src.entrypoints.http.schemas.error import ErrorDetail, ErrorResponse
 from sqlalchemy.exc import SQLAlchemyError
@@ -42,11 +42,11 @@ from src.application.services.job_manager import job_manager
 from src.application.services.jquants_proxy_service import JQuantsProxyService
 from src.application.services.lab_service import lab_service
 from src.application.services.chart_service import ChartService
-from src.application.services.margin_analytics_service import MarginAnalyticsService
+from src.application.services.margin_analytics_service import create_market_margin_analytics_service
 from src.application.services.market_data_service import MarketDataService
 from src.application.services.optimization_service import optimization_service
 from src.application.services.dataset_resolver import DatasetResolver
-from src.application.services.roe_service import ROEService
+from src.application.services.roe_service import create_market_roe_service
 from src.application.services.screening_job_service import (
     screening_job_manager,
     screening_job_service,
@@ -106,8 +106,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     )
     app.state.jquants_client = jquants_client
     app.state.jquants_proxy_service = JQuantsProxyService(jquants_client)
-    app.state.roe_service = ROEService(jquants_client)
-    app.state.margin_analytics_service = MarginAnalyticsService(jquants_client)
 
     # Market time-series reader (DuckDB SoT)
     market_reader: MarketDbReader | None = None
@@ -126,6 +124,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     # Phase 3B-3: market_reader を直接公開（ranking/factor-regression/screening 用）
     app.state.market_reader = market_reader
+    app.state.roe_service = create_market_roe_service(market_reader)
+    app.state.margin_analytics_service = create_market_margin_analytics_service(market_reader)
 
     # Chart service — DuckDB reader only
     app.state.chart_service = ChartService(market_reader)
@@ -247,6 +247,7 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         indicators._executor,
         ohlcv._executor,
         fundamentals._executor,
+        analytics_market._executor,
     ]:
         if not bool(getattr(executor, "_broken", False)) and not bool(getattr(executor, "_shutdown", False)):
             executor.shutdown(wait=True)
@@ -255,6 +256,16 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     from src.application.services.fundamentals_service import fundamentals_service
 
     fundamentals_service.close()
+    roe_service = getattr(app.state, "roe_service", None)
+    if roe_service is not None:
+        close = getattr(roe_service, "close", None)
+        if callable(close):
+            close()
+    margin_analytics_service = getattr(app.state, "margin_analytics_service", None)
+    if margin_analytics_service is not None:
+        close = getattr(margin_analytics_service, "close", None)
+        if callable(close):
+            close()
 
     logger.info("trading25-bt API サーバーをシャットダウンしています...")
 
@@ -357,7 +368,7 @@ def create_app() -> FastAPI:
     app.include_router(fundamentals.router)
     # Phase 3B-1: JQuants Proxy + Analytics
     app.include_router(jquants_proxy.router)
-    app.include_router(analytics_jquants.router)
+    app.include_router(analytics_market.router)
     # Phase 3B-2a: Market Data (DuckDB)
     app.include_router(market_data.router)
     # Phase 3B-2b: Chart + Sector Stocks

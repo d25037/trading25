@@ -569,6 +569,48 @@ class DirectMarketClient:
         rows = reader.query(sql, tuple(params))
         return _to_statements_df(rows)
 
+    def get_margin(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        reader = _resolve_market_reader()
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return pd.DataFrame()
+
+        placeholders = ",".join("?" for _ in candidates)
+        params: list[str] = list(candidates)
+        where_conditions = [f"code IN ({placeholders})"]
+        if start_date:
+            where_conditions.append("date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("date <= ?")
+            params.append(end_date)
+
+        sql = f"""
+            WITH ranked AS (
+                SELECT
+                    date,
+                    long_margin_volume,
+                    short_margin_volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM margin_data
+                WHERE {" AND ".join(where_conditions)}
+            )
+            SELECT date, long_margin_volume, short_margin_volume
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY date
+        """
+        rows = reader.query(sql, tuple(params))
+        return _to_margin_df(rows)
+
     def get_stock_ohlcv(
         self,
         stock_code: str,

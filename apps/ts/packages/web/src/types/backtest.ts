@@ -87,6 +87,7 @@ export type {
   SignalAttributionTopNSelection,
   SignalAvailabilityProfile,
   SignalCategory,
+  SignalChartCapability,
   SignalDefinition,
   SignalExecutionSemantics,
   SignalFieldDefinition,

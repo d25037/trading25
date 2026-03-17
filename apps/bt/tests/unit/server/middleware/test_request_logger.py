@@ -194,6 +194,25 @@ class TestRequestLoggerErrorResponse:
 
         assert response.headers.get("x-correlation-id") is None
 
+    def test_build_error_response_escapes_loguru_braces(self) -> None:
+        middleware = RequestLoggerMiddleware(FastAPI())
+        brace_message = "Unhandled exception: {'stock_code': '7203'}"
+
+        with patch("src.entrypoints.http.middleware.request_logger.logger") as mock_logger:
+            middleware._build_error_response(
+                method="POST",
+                path="/api/indicators/margin",
+                start=time.monotonic(),
+                status_code=500,
+                error="Internal Server Error",
+                message="Internal server error",
+                log_suffix=brace_message,
+            )
+
+        mock_logger.exception.assert_called_once()
+        log_msg = mock_logger.exception.call_args[0][0]
+        assert "{{'stock_code': '7203'}}" in log_msg
+
 
 
 def test_extract_job_id_from_path() -> None:

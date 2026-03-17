@@ -1,4 +1,5 @@
 import { useQueryClient } from '@tanstack/react-query';
+import type { DataProvenance, ResponseDiagnostics } from '@trading25/contracts/types/api-types';
 import { AlertCircle, BookOpen, Loader2, RotateCcw, TrendingUp, Wallet } from 'lucide-react';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ChartControls } from '@/components/Chart/ChartControls';
@@ -94,6 +95,43 @@ function ChartHeaderInfoField({ label, value }: { label: string; value: string }
       <div className="truncate text-sm font-semibold text-foreground">{value}</div>
     </div>
   );
+}
+
+function ChartHeaderMetaChip({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-full border border-border/40 bg-background/70 px-3 py-1 text-xs">
+      <span className="text-muted-foreground">{label}: </span>
+      <span className="font-medium text-foreground">{value}</span>
+    </div>
+  );
+}
+
+function formatOptionalDate(value: string | null | undefined): string {
+  if (!value) return '-';
+  return value;
+}
+
+function formatList(values: string[] | null | undefined): string {
+  if (!values || values.length === 0) return '-';
+  return values.join(', ');
+}
+
+function mergeUniqueStrings(...groups: Array<string[] | null | undefined>): string[] {
+  const seen = new Set<string>();
+  for (const group of groups) {
+    for (const value of group ?? []) {
+      if (value) {
+        seen.add(value);
+      }
+    }
+  }
+  return [...seen];
+}
+
+function mergeWarnings(
+  ...groups: Array<ResponseDiagnostics | DataProvenance | null | undefined>
+): string[] {
+  return mergeUniqueStrings(...groups.map((group) => group?.warnings));
 }
 
 // Helper component for margin pressure indicators section
@@ -553,6 +591,11 @@ function ChartHeader({
   selectedSymbol,
   stockInfo,
   latestMarketCaps,
+  strategyName,
+  matchedDate,
+  signalProvenance,
+  signalDiagnostics,
+  fundamentalsProvenance,
   refreshFeedback,
   isRefreshing,
   onRefresh,
@@ -561,10 +604,31 @@ function ChartHeader({
   selectedSymbol: string;
   stockInfo: StockInfoResponse | undefined;
   latestMarketCaps: ChartHeaderMarketCaps;
+  strategyName: string | null;
+  matchedDate: string | null;
+  signalProvenance: DataProvenance | null | undefined;
+  signalDiagnostics: ResponseDiagnostics | null | undefined;
+  fundamentalsProvenance: DataProvenance | null | undefined;
   refreshFeedback: ChartRefreshFeedback | null;
   isRefreshing: boolean;
   onRefresh: () => void;
 }) {
+  const mergedLoadedDomains = mergeUniqueStrings(
+    signalProvenance?.loaded_domains,
+    fundamentalsProvenance?.loaded_domains
+  );
+  const warnings = mergeWarnings(signalProvenance, fundamentalsProvenance, signalDiagnostics);
+  const marketSnapshotId =
+    signalProvenance?.market_snapshot_id ??
+    fundamentalsProvenance?.market_snapshot_id ??
+    '-';
+  let overlayLabel = '-';
+  if (strategyName) {
+    overlayLabel = `${strategyName} (strategy)`;
+  } else if (settings.signalOverlay?.enabled) {
+    overlayLabel = 'ad hoc signal overlay';
+  }
+
   return (
     <div className="space-y-3">
       <div className="px-6 py-4 gradient-primary rounded-xl">
@@ -604,6 +668,12 @@ function ChartHeader({
             <TimeframeSelector />
           </div>
         </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <ChartHeaderMetaChip label="Overlay" value={overlayLabel} />
+          <ChartHeaderMetaChip label="Matched Date" value={formatOptionalDate(matchedDate)} />
+          <ChartHeaderMetaChip label="Market Snapshot" value={marketSnapshotId} />
+          <ChartHeaderMetaChip label="Signal Domains" value={formatList(mergedLoadedDomains)} />
+        </div>
       </div>
 
       <div className="rounded-xl glass-panel px-6 py-4">
@@ -641,6 +711,21 @@ function ChartHeader({
             </Button>
           </div>
         </div>
+        {(signalProvenance?.reference_date || fundamentalsProvenance?.reference_date || warnings.length > 0) && (
+          <div className="mt-4 space-y-1 border-t border-border/30 pt-4 text-xs text-muted-foreground">
+            <div>
+              Reference Date:{' '}
+              <span className="font-medium text-foreground">
+                {signalProvenance?.reference_date ?? fundamentalsProvenance?.reference_date ?? '-'}
+              </span>
+            </div>
+            {warnings.length > 0 && (
+              <div>
+                Warnings: <span className="font-medium text-foreground">{warnings.join(' | ')}</span>
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       {refreshFeedback && <ChartRefreshFeedbackBanner feedback={refreshFeedback} />}
@@ -826,9 +911,12 @@ export function ChartsPage() {
   const fundamentalsPanelSection = useLazySectionVisibility();
   const fundamentalsHistorySection = useLazySectionVisibility();
   const factorSection = useLazySectionVisibility();
-  const { selectedSymbol, setSelectedSymbol } = useChartsRouteState();
+  const { selectedSymbol, strategyName, matchedDate, setSelectedSymbol } = useChartsRouteState();
 
-  const { chartData, signalMarkers, isLoading, error } = useMultiTimeframeChart(selectedSymbol);
+  const { chartData, signalMarkers, signalResponse, isLoading, error } = useMultiTimeframeChart(
+    selectedSymbol,
+    strategyName
+  );
   const { settings } = useChartStore();
   const refreshStocks = useRefreshStocks();
   const [refreshFeedback, setRefreshFeedback] = useState<ChartRefreshFeedback | null>(null);
@@ -916,6 +1004,11 @@ export function ChartsPage() {
             selectedSymbol={selectedSymbol}
             stockInfo={stockInfo}
             latestMarketCaps={latestMarketCaps}
+            strategyName={strategyName}
+            matchedDate={matchedDate}
+            signalProvenance={signalResponse?.provenance}
+            signalDiagnostics={signalResponse?.diagnostics}
+            fundamentalsProvenance={fundamentalsData?.provenance}
             refreshFeedback={refreshFeedback}
             isRefreshing={refreshStocks.isPending}
             onRefresh={handleRefresh}
