@@ -11,6 +11,14 @@ import pandas as pd
 from unittest.mock import patch
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
+from src.domains.strategy.runtime.compiler import (
+    CompiledAvailabilityPoint,
+    CompiledExecutionSession,
+    CompiledSignalAvailability,
+    CompiledSignalIR,
+    CompiledSignalScope,
+    CompiledStrategyIR,
+)
 from src.domains.strategy.signals.registry import SignalDefinition
 from src.shared.models.config import SharedConfig
 from src.domains.strategy.signals.processor import SignalProcessor
@@ -48,6 +56,46 @@ def _signal_definition(
     )
 
 
+def _compiled_strategy_for_signal_ids(*signal_ids: str) -> CompiledStrategyIR:
+    signals: list[CompiledSignalIR] = []
+    for signal_id in signal_ids:
+        scope_name, _, param_key = signal_id.partition(".")
+        scope = (
+            CompiledSignalScope.ENTRY
+            if scope_name == "entry"
+            else CompiledSignalScope.EXIT
+        )
+        signals.append(
+            CompiledSignalIR(
+                signal_id=signal_id,
+                scope=scope,
+                param_key=param_key,
+                signal_name=param_key,
+                category="test",
+                description="",
+                data_requirements=[],
+                availability=CompiledSignalAvailability(
+                    observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE,
+                    available_at=CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE,
+                    decision_cutoff=CompiledAvailabilityPoint.NEXT_SESSION_OPEN,
+                    execution_session=CompiledExecutionSession.NEXT_SESSION,
+                ),
+            )
+        )
+
+    return CompiledStrategyIR(
+        strategy_name="test",
+        execution_semantics="standard",
+        dataset_name="sample",
+        timeframe="daily",
+        signals=signals,
+        signal_ids=[signal.signal_id for signal in signals],
+        required_data_domains=[],
+        required_features=[],
+        required_fundamental_fields=[],
+    )
+
+
 class TestSignalProcessor:
     """SignalProcessor テストクラス"""
 
@@ -70,6 +118,19 @@ class TestSignalProcessor:
             [True, False, True, False, True], index=self.test_data.index
         )
         self.signal_params = SignalParams()
+        self.standard_compiled_strategy = compile_runtime_strategy(
+            strategy_name="demo",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "execution_policy": {"mode": "standard"},
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=self.signal_params,
+            exit_signal_params=self.signal_params,
+        )
 
     def test_processor_initialization(self):
         """プロセッサー初期化テスト"""
@@ -82,6 +143,7 @@ class TestSignalProcessor:
             base_signal=self.base_signal,
             ohlc_data=self.test_data,
             signal_params=self.signal_params,
+            compiled_strategy=self.standard_compiled_strategy,
         )
 
         assert isinstance(result, pd.Series)
@@ -94,6 +156,7 @@ class TestSignalProcessor:
             base_exits=self.base_signal,
             data=self.test_data,
             signal_params=self.signal_params,
+            compiled_strategy=self.standard_compiled_strategy,
         )
 
         assert isinstance(result, pd.Series)
@@ -108,6 +171,7 @@ class TestSignalProcessor:
             ohlc_data=self.test_data,
             entry_signal_params=self.signal_params,
             exit_signal_params=self.signal_params,
+            compiled_strategy=self.standard_compiled_strategy,
         )
 
         assert isinstance(result, Signals)
@@ -123,6 +187,7 @@ class TestSignalProcessor:
             signal_type="entry",
             ohlc_data=self.test_data,
             signal_params=self.signal_params,
+            compiled_strategy=self.standard_compiled_strategy,
         )
 
         assert isinstance(result, pd.Series)
@@ -135,6 +200,7 @@ class TestSignalProcessor:
             signal_type="exit",
             ohlc_data=self.test_data,
             signal_params=self.signal_params,
+            compiled_strategy=self.standard_compiled_strategy,
         )
 
         assert isinstance(result, pd.Series)
@@ -148,6 +214,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=None,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
     def test_missing_required_columns_validation(self):
@@ -160,6 +227,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=invalid_data,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
     def test_error_handling_in_signal_processing(self):
@@ -180,6 +248,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=self.test_data,
                 signal_params=params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
             assert isinstance(result, pd.Series)
@@ -216,6 +285,7 @@ class TestSignalProcessor:
             statements_data=statements_data,
             benchmark_data=benchmark_data,
             margin_data=margin_data,
+            compiled_strategy=self.standard_compiled_strategy,
         )
 
         assert isinstance(result, pd.Series)
@@ -233,6 +303,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=self.test_data,
                 signal_params=params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
             # ログが呼ばれたことを確認
@@ -254,6 +325,19 @@ class TestSignalProcessor:
         params.trading_value.period = 1
         params.trading_value.threshold_value = 1.0  # 1e-8 << 1.0 => Falseになる
         params.trading_value.direction = "above"
+        compiled_strategy = compile_runtime_strategy(
+            strategy_name="demo",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "execution_policy": {"mode": "standard"},
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=params,
+            exit_signal_params=SignalParams(),
+        )
 
         # 通常モード: シグナルが適用され、全てFalseになる
         result_normal = self.processor.apply_signals(
@@ -262,6 +346,7 @@ class TestSignalProcessor:
             ohlc_data=data,
             signal_params=params,
             relative_mode=False,
+            compiled_strategy=compiled_strategy,
         )
         assert result_normal.sum() == 0
 
@@ -272,6 +357,7 @@ class TestSignalProcessor:
             ohlc_data=data,
             signal_params=params,
             relative_mode=True,
+            compiled_strategy=compiled_strategy,
         )
         assert result_relative.equals(base_signal)
 
@@ -294,6 +380,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=self.test_data,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         warning_messages = [call.args[0] for call in mock_logger.warning.call_args_list]
@@ -316,6 +403,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=self.test_data,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         assert result.dtype == bool
@@ -337,6 +425,7 @@ class TestSignalProcessor:
                 signal_type="exit",
                 ohlc_data=self.test_data,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         pd.testing.assert_series_equal(result, self.base_signal)
@@ -350,6 +439,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=data,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
     def test_apply_signals_warns_when_volume_all_nan(self):
@@ -361,6 +451,7 @@ class TestSignalProcessor:
                 signal_type="entry",
                 ohlc_data=data,
                 signal_params=self.signal_params,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         assert result.dtype == bool
@@ -383,7 +474,7 @@ class TestSignalProcessor:
             "volume": self.test_data["Volume"],
         }
 
-        assert self.processor._is_requirement_satisfied("benchmark", sources)  # noqa: SLF001
+        assert self.processor._is_requirement_satisfied("benchmark_close", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("statements", sources)  # noqa: SLF001
         assert self.processor._is_requirement_satisfied("statements:EPS", sources)  # noqa: SLF001
         assert not self.processor._is_requirement_satisfied("statements:ForwardForecastEPS", sources)  # noqa: SLF001
@@ -428,6 +519,7 @@ class TestSignalProcessor:
                 signal_params=self.signal_params,
                 base_signal=self.base_signal,
                 data_sources={"is_relative_mode": False},
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         assert len(signal_conditions) == 1
@@ -444,6 +536,7 @@ class TestSignalProcessor:
         )
 
         signal_conditions = [self.base_signal]
+        compiled_strategy = _compiled_strategy_for_signal_ids("entry.test")
         with patch("src.domains.strategy.signals.processor.logger") as mock_logger:
             self.processor._apply_unified_signal(  # noqa: SLF001
                 signal_def=dummy_signal,
@@ -452,6 +545,7 @@ class TestSignalProcessor:
                 signal_params=self.signal_params,
                 base_signal=self.base_signal,
                 data_sources={"is_relative_mode": False},
+                compiled_strategy=compiled_strategy,
             )
 
         assert len(signal_conditions) == 2
@@ -460,7 +554,7 @@ class TestSignalProcessor:
         assert aligned.isna().sum() == 2
         assert any("日付不一致" in str(call.args[0]) for call in mock_logger.warning.call_args_list)
 
-    def test_apply_unified_signal_lags_non_oracle_entry_in_current_session_oracle(self):
+    def test_apply_unified_signal_lags_non_same_day_entry_in_current_session_round_trip(self):
         dummy_signal = _signal_definition(
             name="RSI",
             signal_func=lambda **_kwargs: pd.Series(
@@ -479,7 +573,7 @@ class TestSignalProcessor:
                 {
                     "dataset": "sample",
                     "stock_codes": ["1111"],
-                    "current_session_round_trip_oracle": True,
+                    "execution_policy": {"mode": "current_session_round_trip"},
                 },
                 context={"resolve_stock_codes": False},
             ),
@@ -504,22 +598,22 @@ class TestSignalProcessor:
         )
         pd.testing.assert_series_equal(signal_conditions[-1], expected)
 
-    def test_apply_signals_current_session_oracle_preserves_only_gap_signal_same_day(self):
+    def test_apply_signals_current_session_round_trip_preserves_only_gap_signal_same_day(self):
         base_signal = pd.Series([True, True, True, True, True], index=self.test_data.index)
         params = SignalParams()
-        params.oracle_index_open_gap_regime.enabled = True
+        params.index_open_gap_regime.enabled = True
         params.rsi_threshold.enabled = True
 
-        oracle_signal = _signal_definition(
-            name="TOPIX Gap Oracle",
+        same_day_signal = _signal_definition(
+            name="TOPIX Gap Same-Day",
             signal_func=lambda **_kwargs: pd.Series(
                 [False, True, True, False, True],
                 index=self.test_data.index,
             ),
-            enabled_checker=lambda signal_params: signal_params.oracle_index_open_gap_regime.enabled,
+            enabled_checker=lambda signal_params: signal_params.index_open_gap_regime.enabled,
             entry_purpose="entry",
             exit_purpose="exit",
-            param_key="oracle_index_open_gap_regime",
+            param_key="index_open_gap_regime",
         )
         technical_signal = _signal_definition(
             name="RSI",
@@ -539,7 +633,7 @@ class TestSignalProcessor:
                 {
                     "dataset": "sample",
                     "stock_codes": ["1111"],
-                    "current_session_round_trip_oracle": True,
+                    "execution_policy": {"mode": "current_session_round_trip"},
                 },
                 context={"resolve_stock_codes": False},
             ),
@@ -548,7 +642,7 @@ class TestSignalProcessor:
 
         with patch(
             "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
-            [oracle_signal, technical_signal],
+            [same_day_signal, technical_signal],
         ):
             result = self.processor.apply_signals(
                 base_signal=base_signal,
@@ -568,7 +662,7 @@ class TestSignalProcessor:
     def test_apply_signals_uses_compiled_strategy_availability_without_boolean_flag(self):
         base_signal = pd.Series([True, True, True, True, True], index=self.test_data.index)
         params = SignalParams()
-        params.oracle_index_open_gap_regime.enabled = True
+        params.index_open_gap_regime.enabled = True
         params.rsi_threshold.enabled = True
 
         compiled_strategy = compile_runtime_strategy(
@@ -577,23 +671,23 @@ class TestSignalProcessor:
                 {
                     "dataset": "sample",
                     "stock_codes": ["1111"],
-                    "current_session_round_trip_oracle": True,
+                    "execution_policy": {"mode": "current_session_round_trip"},
                 },
                 context={"resolve_stock_codes": False},
             ),
             entry_signal_params=params,
         )
 
-        oracle_signal = _signal_definition(
-            name="TOPIX Gap Oracle",
+        same_day_signal = _signal_definition(
+            name="TOPIX Gap Same-Day",
             signal_func=lambda **_kwargs: pd.Series(
                 [False, True, True, False, True],
                 index=self.test_data.index,
             ),
-            enabled_checker=lambda signal_params: signal_params.oracle_index_open_gap_regime.enabled,
+            enabled_checker=lambda signal_params: signal_params.index_open_gap_regime.enabled,
             entry_purpose="entry",
             exit_purpose="exit",
-            param_key="oracle_index_open_gap_regime",
+            param_key="index_open_gap_regime",
         )
         technical_signal = _signal_definition(
             name="RSI",
@@ -609,7 +703,7 @@ class TestSignalProcessor:
 
         with patch(
             "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
-            [oracle_signal, technical_signal],
+            [same_day_signal, technical_signal],
         ):
             result = self.processor.apply_signals(
                 base_signal=base_signal,
@@ -643,6 +737,7 @@ class TestSignalProcessor:
                 signal_params=self.signal_params,
                 base_signal=self.base_signal,
                 data_sources={"is_relative_mode": False},
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
     def test_apply_unified_signal_value_and_unknown_errors_are_swallowed(self):
@@ -670,6 +765,7 @@ class TestSignalProcessor:
                 signal_params=self.signal_params,
                 base_signal=self.base_signal,
                 data_sources={"is_relative_mode": False},
+                compiled_strategy=self.standard_compiled_strategy,
             )
             self.processor._apply_unified_signal(  # noqa: SLF001
                 signal_def=unexpected_error_signal,
@@ -678,6 +774,7 @@ class TestSignalProcessor:
                 signal_params=self.signal_params,
                 base_signal=self.base_signal,
                 data_sources={"is_relative_mode": False},
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         assert len(signal_conditions) == 1
@@ -717,12 +814,17 @@ class TestSignalProcessor:
             "src.domains.strategy.signals.processor.SIGNAL_REGISTRY",
             [first_signal, second_signal],
         ):
+            compiled_strategy = _compiled_strategy_for_signal_ids(
+                "entry.test.first",
+                "entry.test.second",
+            )
             result = self.processor.apply_signals(
                 base_signal=base_signal,
                 signal_type="entry",
                 ohlc_data=self.test_data,
                 signal_params=self.signal_params,
                 entry_recent_days_for_early_stop=2,
+                compiled_strategy=compiled_strategy,
             )
 
         assert second_called["value"] is False
@@ -748,6 +850,7 @@ class TestSignalProcessor:
                 exit_signal_params=self.signal_params,
                 screening_recent_days=2,
                 skip_exit_when_no_recent_entry=True,
+                compiled_strategy=self.standard_compiled_strategy,
             )
 
         assert mock_entry.called

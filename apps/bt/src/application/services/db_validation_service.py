@@ -16,6 +16,7 @@ from src.application.services.listed_market_targets import (
     normalize_frontier_date,
     resolve_frontier_cache_codes,
 )
+from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
@@ -462,27 +463,29 @@ def _collect_missing_signal_requirements(inspection: TimeSeriesInspection) -> li
     missing: list[str] = []
 
     for requirement in _SIGNAL_REQUIREMENTS:
-        if requirement in {"ohlc", "volume"}:
+        domain = resolve_feature_requirement_spec(requirement).data_domain
+
+        if domain == "market":
             if inspection.stock_count <= 0:
                 missing.append(requirement)
             continue
 
-        if requirement == "margin":
+        if domain == "margin":
             if inspection.margin_count <= 0:
                 missing.append(requirement)
             continue
 
-        if requirement == "benchmark":
+        if domain == "benchmark":
             if inspection.topix_count <= 0:
                 missing.append(requirement)
             continue
 
-        if requirement == "sector":
+        if domain == "sector":
             if inspection.indices_count <= 0:
                 missing.append(requirement)
             continue
 
-        if requirement.startswith("statements:"):
+        if domain == "statements":
             metric = requirement.split(":", 1)[1]
             if not _is_statement_requirement_satisfied(
                 metric,

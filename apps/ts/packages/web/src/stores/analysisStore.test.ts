@@ -65,18 +65,18 @@ describe('analysisStore', () => {
     expect(state.screeningResult?.results[0]?.stockCode).toBe('7203');
   });
 
-  it('updates oracle screening state independently', () => {
-    const { setActiveOracleScreeningJobId, setOracleScreeningResult } = useAnalysisStore.getState();
+  it('updates same-day screening state independently', () => {
+    const { setActiveSameDayScreeningJobId, setSameDayScreeningResult } = useAnalysisStore.getState();
 
-    setActiveOracleScreeningJobId('oracle-job-1');
-    setOracleScreeningResult({
-      mode: 'oracle',
+    setActiveSameDayScreeningJobId('same-day-job-1');
+    setSameDayScreeningResult({
+      mode: 'same_day',
       summary: {
         totalStocksScreened: 1,
         matchCount: 1,
         skippedCount: 0,
-        byStrategy: { 'production/topix_gap_down_intraday_oracle': 1 },
-        strategiesEvaluated: ['production/topix_gap_down_intraday_oracle'],
+        byStrategy: { 'production/topix_gap_down_intraday_same_day': 1 },
+        strategiesEvaluated: ['production/topix_gap_down_intraday_same_day'],
         strategiesWithoutBacktestMetrics: [],
         warnings: [],
       },
@@ -100,8 +100,8 @@ describe('analysisStore', () => {
     });
 
     const state = useAnalysisStore.getState();
-    expect(state.activeOracleScreeningJobId).toBe('oracle-job-1');
-    expect(state.oracleScreeningResult?.mode).toBe('oracle');
+    expect(state.activeSameDayScreeningJobId).toBe('same-day-job-1');
+    expect(state.sameDayScreeningResult?.mode).toBe('same_day');
   });
 
   it('upserts screening job history and keeps latest first', () => {

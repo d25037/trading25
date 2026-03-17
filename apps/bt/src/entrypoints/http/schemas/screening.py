@@ -15,7 +15,7 @@ from src.entrypoints.http.schemas.analytics_common import (
     ResponseDiagnostics,
 )
 
-ScreeningMode = Literal["standard", "oracle"]
+ScreeningMode = Literal["standard", "same_day"]
 ScreeningSortBy = Literal[
     "bestStrategyScore",
     "matchedDate",

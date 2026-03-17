@@ -80,7 +80,7 @@ class TestStrategyFactoryHelpers:
             {
                 "dataset": "sample",
                 "stock_codes": ["1111"],
-                "next_session_round_trip": False,
+                "execution_policy": {"mode": "standard"},
             },
             context={"resolve_stock_codes": False},
         )
@@ -105,7 +105,7 @@ class TestStrategyFactoryHelpers:
             {
                 "dataset": "sample",
                 "stock_codes": ["1111"],
-                "next_session_round_trip": True,
+                "execution_policy": {"mode": "next_session_round_trip"},
             },
             context={"resolve_stock_codes": False},
         )
@@ -136,7 +136,7 @@ class TestStrategyFactoryHelpers:
             shared_config={
                 "dataset": "sample",
                 "stock_codes": ["1111"],
-                "next_session_round_trip": True,
+                "execution_policy": {"mode": "next_session_round_trip"},
             },
             entry_filter_params={"volume_ratio_above": {"enabled": True}},
             exit_trigger_params={},
@@ -146,7 +146,7 @@ class TestStrategyFactoryHelpers:
         assert created["shared_config"].next_session_round_trip is True
         assert created["exit_trigger_params"] is None
 
-    def test_create_strategy_rejects_exit_trigger_for_current_session_round_trip_oracle(
+    def test_create_strategy_rejects_exit_trigger_for_current_session_round_trip(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -159,7 +159,7 @@ class TestStrategyFactoryHelpers:
             {
                 "dataset": "sample",
                 "stock_codes": ["1111"],
-                "current_session_round_trip_oracle": True,
+                "execution_policy": {"mode": "current_session_round_trip"},
             },
             context={"resolve_stock_codes": False},
         )
@@ -171,7 +171,7 @@ class TestStrategyFactoryHelpers:
                 exit_trigger_params={"volume_ratio_below": {"enabled": True}},
             )
 
-    def test_create_strategy_accepts_empty_exit_trigger_for_current_session_round_trip_oracle(
+    def test_create_strategy_accepts_empty_exit_trigger_for_current_session_round_trip(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -190,17 +190,17 @@ class TestStrategyFactoryHelpers:
             shared_config={
                 "dataset": "sample",
                 "stock_codes": ["1111"],
-                "current_session_round_trip_oracle": True,
+                "execution_policy": {"mode": "current_session_round_trip"},
             },
             entry_filter_params={"volume_ratio_above": {"enabled": True}},
             exit_trigger_params={},
         )
 
         assert strategy is not None
-        assert created["shared_config"].current_session_round_trip_oracle is True
+        assert created["shared_config"].current_session_round_trip is True
         assert created["exit_trigger_params"] is None
 
-    def test_create_strategy_allows_same_day_oracle_signal_with_exit_triggers_when_round_trip_flag_is_off(
+    def test_create_strategy_allows_same_day_signal_with_exit_triggers_when_round_trip_flag_is_off(
         self,
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
@@ -220,7 +220,7 @@ class TestStrategyFactoryHelpers:
                 "dataset": "sample",
                 "stock_codes": ["1111"],
             },
-            entry_filter_params={"oracle_index_open_gap_regime": {"enabled": True}},
+            entry_filter_params={"index_open_gap_regime": {"enabled": True}},
             exit_trigger_params={"volume_ratio_below": {"enabled": True}},
         )
 

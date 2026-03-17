@@ -41,7 +41,7 @@ class StrategyLike(Protocol):
         ...
 
     @property
-    def compiled_strategy(self) -> "CompiledStrategyIR | None":
+    def compiled_strategy(self) -> "CompiledStrategyIR":
         ...
 
 
@@ -165,16 +165,8 @@ def build_strategy_signal_cache_token(strategy: StrategyLike) -> str:
         "entry": strategy.entry_params.model_dump(mode="json"),
         "exit": strategy.exit_params.model_dump(mode="json"),
         "screening_mode": strategy.screening_mode,
-        "compiled_execution_semantics": (
-            strategy.compiled_strategy.execution_semantics
-            if strategy.compiled_strategy is not None
-            else None
-        ),
-        "compiled_signal_ids": (
-            strategy.compiled_strategy.signal_ids
-            if strategy.compiled_strategy is not None
-            else []
-        ),
+        "compiled_execution_semantics": strategy.compiled_strategy.execution_semantics,
+        "compiled_signal_ids": strategy.compiled_strategy.signal_ids,
     }
     return json.dumps(payload, sort_keys=True, ensure_ascii=False, separators=(",", ":"))
 

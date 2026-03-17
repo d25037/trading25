@@ -6,6 +6,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.baseline import (
     baseline_cross_signal,
     baseline_deviation_signal,
@@ -15,6 +16,7 @@ from src.domains.strategy.signals.baseline import (
     position_signal,
 )
 from src.domains.strategy.signals.processor import SignalProcessor
+from src.shared.models.config import SharedConfig
 from src.shared.models.signals import BaselineCrossSignalParams, SignalParams
 
 
@@ -280,6 +282,19 @@ class TestBaselineCrossSignal:
             base_signal=base_signal,
             ohlc_data=ohlc,
             signal_params=signal_params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="baseline-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=signal_params,
+                exit_signal_params=SignalParams(),
+            ),
         )
 
         assert isinstance(result, pd.Series)

@@ -323,7 +323,7 @@ export interface AttributionArtifactContentResponse {
   artifact: Record<string, unknown>;
 }
 
-export type StrategyScreeningMode = 'standard' | 'oracle' | 'unsupported';
+export type StrategyScreeningMode = 'standard' | 'same_day' | 'unsupported';
 
 export interface StrategyMetadata {
   name: string;
@@ -623,7 +623,7 @@ export interface SignalChartCapability {
 export type SignalExecutionSemantics =
   | 'standard'
   | 'next_session_round_trip'
-  | 'current_session_round_trip_oracle';
+  | 'current_session_round_trip';
 
 export interface SignalAvailabilityProfile {
   scope: CompiledSignalScope;

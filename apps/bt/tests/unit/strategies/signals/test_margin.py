@@ -8,8 +8,10 @@ import pytest
 import pandas as pd
 import numpy as np
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.margin import margin_balance_percentile_signal
-from src.shared.models.signals import MarginSignalParams
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import MarginSignalParams, SignalParams
 
 
 class TestMarginBalancePercentileSignal:
@@ -164,7 +166,6 @@ class TestMarginSignalIntegration:
     def test_margin_signal_with_signal_processor(self):
         """SignalProcessorでマージンシグナルを使用"""
         from src.domains.strategy.signals.processor import SignalProcessor
-        from src.shared.models.signals import SignalParams
 
         dates = pd.date_range("2023-01-01", periods=200)
         ohlc_data = pd.DataFrame(
@@ -198,6 +199,19 @@ class TestMarginSignalIntegration:
             ohlc_data=ohlc_data,
             signal_params=params,
             margin_data=margin_data,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="margin-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=params,
+                exit_signal_params=SignalParams(),
+            ),
         )
 
         assert isinstance(result, pd.Series)

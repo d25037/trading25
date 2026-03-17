@@ -9,7 +9,9 @@ import pandas as pd
 import numpy as np
 from pydantic import ValidationError
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.trading_value_range import trading_value_range_signal
+from src.shared.models.config import SharedConfig
 from src.shared.models.signals import TradingValueRangeSignalParams, SignalParams
 from src.domains.strategy.signals.processor import SignalProcessor
 
@@ -262,6 +264,19 @@ class TestTradingValueRangeSignalIntegration:
             signal_type="entry",
             ohlc_data=self.ohlc_data,
             signal_params=signal_params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="trading-value-range-entry-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=signal_params,
+                exit_signal_params=SignalParams(),
+            ),
         )
 
         # AND条件なので、True数が減少またはベースシグナルと同じ
@@ -293,6 +308,19 @@ class TestTradingValueRangeSignalIntegration:
             signal_type="exit",
             ohlc_data=self.ohlc_data,
             signal_params=signal_params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="trading-value-range-exit-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=SignalParams(),
+                exit_signal_params=signal_params,
+            ),
         )
 
         # OR条件なので、True数が増加またはベースシグナルと同じ

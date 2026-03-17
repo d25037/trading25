@@ -1,10 +1,10 @@
-"""oracle 指数寄り付きギャップレジームシグナルのテスト."""
+"""指数寄り付きギャップレジームシグナルのテスト."""
 
 import pandas as pd
 import pytest
 
-from src.domains.strategy.signals.oracle_index_open_gap_regime import (
-    oracle_index_open_gap_regime_signal,
+from src.domains.strategy.signals.index_open_gap_regime import (
+    index_open_gap_regime_signal,
 )
 
 
@@ -21,7 +21,7 @@ def sample_index_data() -> pd.DataFrame:
 
 
 def test_down_large(sample_index_data: pd.DataFrame) -> None:
-    signal = oracle_index_open_gap_regime_signal(
+    signal = index_open_gap_regime_signal(
         sample_index_data,
         gap_threshold_1_pct=1.0,
         gap_threshold_2_pct=2.0,
@@ -31,7 +31,7 @@ def test_down_large(sample_index_data: pd.DataFrame) -> None:
 
 
 def test_down_medium(sample_index_data: pd.DataFrame) -> None:
-    signal = oracle_index_open_gap_regime_signal(
+    signal = index_open_gap_regime_signal(
         sample_index_data,
         gap_threshold_1_pct=1.0,
         gap_threshold_2_pct=2.0,
@@ -41,7 +41,7 @@ def test_down_medium(sample_index_data: pd.DataFrame) -> None:
 
 
 def test_flat(sample_index_data: pd.DataFrame) -> None:
-    signal = oracle_index_open_gap_regime_signal(
+    signal = index_open_gap_regime_signal(
         sample_index_data,
         gap_threshold_1_pct=1.0,
         gap_threshold_2_pct=2.0,
@@ -51,7 +51,7 @@ def test_flat(sample_index_data: pd.DataFrame) -> None:
 
 
 def test_up_medium(sample_index_data: pd.DataFrame) -> None:
-    signal = oracle_index_open_gap_regime_signal(
+    signal = index_open_gap_regime_signal(
         sample_index_data,
         gap_threshold_1_pct=1.0,
         gap_threshold_2_pct=2.0,
@@ -61,7 +61,7 @@ def test_up_medium(sample_index_data: pd.DataFrame) -> None:
 
 
 def test_up_large(sample_index_data: pd.DataFrame) -> None:
-    signal = oracle_index_open_gap_regime_signal(
+    signal = index_open_gap_regime_signal(
         sample_index_data,
         gap_threshold_1_pct=1.0,
         gap_threshold_2_pct=2.0,
@@ -74,17 +74,17 @@ def test_missing_required_column_raises_error() -> None:
     invalid_df = pd.DataFrame({"Close": [100.0, 101.0]})
 
     with pytest.raises(ValueError, match="'Open' と 'Close'"):
-        oracle_index_open_gap_regime_signal(invalid_df)
+        index_open_gap_regime_signal(invalid_df)
 
 
 def test_empty_dataframe_raises_error() -> None:
     with pytest.raises(ValueError, match="index_data が空またはNoneです"):
-        oracle_index_open_gap_regime_signal(pd.DataFrame())
+        index_open_gap_regime_signal(pd.DataFrame())
 
 
 def test_invalid_regime_raises_error(sample_index_data: pd.DataFrame) -> None:
     with pytest.raises(ValueError, match="regime が不正です"):
-        oracle_index_open_gap_regime_signal(
+        index_open_gap_regime_signal(
             sample_index_data,
             regime="invalid_regime",  # type: ignore[arg-type]
         )
@@ -100,7 +100,7 @@ def test_zero_prev_close_is_treated_as_false() -> None:
         index=index,
     )
 
-    signal = oracle_index_open_gap_regime_signal(
+    signal = index_open_gap_regime_signal(
         data,
         regime="down_medium",
     )

@@ -81,13 +81,13 @@ class TestBuildSignalReference:
         signal = next(
             item
             for item in result["signals"]
-            if item["key"] == "oracle_index_open_gap_regime"
+            if item["key"] == "index_open_gap_regime"
         )
         oracle_entry = next(
             profile
             for profile in signal["availability_profiles"]
             if profile["scope"] == "entry"
-            and profile["execution_semantics"] == "current_session_round_trip_oracle"
+            and profile["execution_semantics"] == "current_session_round_trip"
         )
         assert oracle_entry["availability"]["observation_time"] == "current_session_open"
         assert oracle_entry["availability"]["execution_session"] == "current_session"
@@ -101,7 +101,7 @@ class TestBuildSignalReference:
             profile
             for profile in signal["availability_profiles"]
             if profile["scope"] == "entry"
-            and profile["execution_semantics"] == "current_session_round_trip_oracle"
+            and profile["execution_semantics"] == "current_session_round_trip"
         )
         assert oracle_entry["availability"]["observation_time"] == "prior_session_close"
         assert oracle_entry["availability"]["decision_cutoff"] == "current_session_open"

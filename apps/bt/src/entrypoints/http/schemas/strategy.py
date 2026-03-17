@@ -9,7 +9,7 @@ from pydantic import BaseModel, Field
 
 from src.domains.strategy.runtime.compiler import CompiledStrategyIR
 
-StrategyScreeningMode = Literal["standard", "oracle", "unsupported"]
+StrategyScreeningMode = Literal["standard", "same_day", "unsupported"]
 
 
 class StrategyMetadataResponse(BaseModel):

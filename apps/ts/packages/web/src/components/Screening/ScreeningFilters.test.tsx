@@ -205,18 +205,18 @@ describe('ScreeningFilters', () => {
 
     rerender(
       <ScreeningFilters
-        mode="oracle"
-        params={{ ...defaultParams, mode: 'oracle' }}
+        mode="same_day"
+        params={{ ...defaultParams, mode: 'same_day' }}
         onChange={vi.fn()}
         strategyOptions={[]}
         strategiesLoading={false}
       />
     );
 
-    expect(screen.getByRole('button', { name: 'All oracle production' })).toBeInTheDocument();
-    expect(screen.getByText('No oracle production strategies available')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All same-day production' })).toBeInTheDocument();
+    expect(screen.getByText('No same-day production strategies available')).toBeInTheDocument();
     expect(
-      screen.getByText('No explicit selection: all oracle production strategies are evaluated.')
+      screen.getByText('No explicit selection: all same-day production strategies are evaluated.')
     ).toBeInTheDocument();
   });
 

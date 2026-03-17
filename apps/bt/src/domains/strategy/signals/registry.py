@@ -9,6 +9,10 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from src.shared.models.signals import SignalParams
+from .feature_registry import (
+    SignalAvailabilityPolicy,
+    resolve_signal_availability_policy,
+)
 
 # シグナル関数のimport
 from .beta import beta_range_signal
@@ -56,7 +60,7 @@ from .fundamental import (
 )
 from .index_daily_change import index_daily_change_signal
 from .index_macd_histogram import index_macd_histogram_signal
-from .oracle_index_open_gap_regime import oracle_index_open_gap_regime_signal
+from .index_open_gap_regime import index_open_gap_regime_signal
 from .margin import margin_balance_percentile_signal
 from .rsi_spread import rsi_spread_signal
 from .risk_adjusted import risk_adjusted_return_signal
@@ -109,6 +113,16 @@ class SignalDefinition:
     data_checker: Callable[[dict], bool] | None = None
     exit_disabled: bool = False  # デフォルトはExit可能
     data_requirements: list[str] = field(default_factory=list)
+    availability_policy: SignalAvailabilityPolicy | None = None
+
+    def resolve_availability_policy(self) -> SignalAvailabilityPolicy:
+        if self.availability_policy is not None:
+            return self.availability_policy
+        return resolve_signal_availability_policy(self.data_requirements)
+
+    @property
+    def feature_requirements(self) -> list[str]:
+        return self.data_requirements
 
 
 # ===== データチェックヘルパー関数 =====
@@ -485,7 +499,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         description="ベンチマーク対比のベータ値判定",
         param_key="beta",
         data_checker=_has_benchmark_data,
-        data_requirements=["benchmark"],
+        data_requirements=["benchmark_close"],
     ),
     # 7. 信用残高シグナル
     SignalDefinition(
@@ -870,7 +884,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         description="ベンチマーク指数の前日比変化率判定",
         param_key="index_daily_change",
         data_checker=_has_benchmark_data,
-        data_requirements=["benchmark"],
+        data_requirements=["benchmark_close"],
     ),
     # 20. INDEXヒストグラムシグナル（市場モメンタム強弱判定）
     SignalDefinition(
@@ -891,27 +905,27 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         description="指数MACDヒストグラムの正負判定",
         param_key="index_macd_histogram",
         data_checker=_has_benchmark_data,
-        data_requirements=["benchmark"],
+        data_requirements=["benchmark_close"],
     ),
-    # 21. Same-session oracle 指数寄り付きギャップレジームシグナル
+    # 21. Same-day 指数寄り付きギャップレジームシグナル
     SignalDefinition(
-        name="Oracle指数寄り付きギャップレジーム",
-        signal_func=oracle_index_open_gap_regime_signal,
-        enabled_checker=lambda p: hasattr(p, "oracle_index_open_gap_regime")
-        and p.oracle_index_open_gap_regime.enabled,
+        name="指数寄り付きギャップレジーム",
+        signal_func=index_open_gap_regime_signal,
+        enabled_checker=lambda p: hasattr(p, "index_open_gap_regime")
+        and p.index_open_gap_regime.enabled,
         param_builder=lambda p, d: {
             "index_data": d["benchmark_data"],
-            "gap_threshold_1_pct": p.oracle_index_open_gap_regime.gap_threshold_1_pct,
-            "gap_threshold_2_pct": p.oracle_index_open_gap_regime.gap_threshold_2_pct,
-            "regime": p.oracle_index_open_gap_regime.regime,
+            "gap_threshold_1_pct": p.index_open_gap_regime.gap_threshold_1_pct,
+            "gap_threshold_2_pct": p.index_open_gap_regime.gap_threshold_2_pct,
+            "regime": p.index_open_gap_regime.regime,
         },
-        entry_purpose="Future leak前提の指数寄り付きギャップレジーム判定",
-        exit_purpose="Future leak前提の指数寄り付きギャップレジーム判定",
+        entry_purpose="same-day 指数寄り付きギャップレジーム判定",
+        exit_purpose="same-day 指数寄り付きギャップレジーム判定",
         category="macro",
-        description="ベンチマーク指数の当日寄り付き gap を oracle 前提で判定",
-        param_key="oracle_index_open_gap_regime",
+        description="ベンチマーク指数の当日寄り付き gap を same-day 判定",
+        param_key="index_open_gap_regime",
         data_checker=_has_benchmark_open_and_close_data,
-        data_requirements=["benchmark"],
+        data_requirements=["benchmark_open_gap"],
     ),
     # 22. リスク調整リターンシグナル（シャープ/ソルティノレシオベース）
     SignalDefinition(
@@ -1468,7 +1482,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         description="セクター強度ランキングによるフィルタリング（上位/下位N選択）",
         param_key="sector_strength_ranking",
         data_checker=_has_sector_data_and_benchmark,
-        data_requirements=["sector", "benchmark"],
+        data_requirements=["sector", "benchmark_close"],
     ),
     # 33. セクターローテーション位相シグナル
     SignalDefinition(
@@ -1488,7 +1502,7 @@ SIGNAL_REGISTRY: list[SignalDefinition] = [
         description="RRG的4象限分類によるセクターローテーション位相判定",
         param_key="sector_rotation_phase",
         data_checker=_has_stock_sector_close_and_benchmark,
-        data_requirements=["sector", "benchmark"],
+        data_requirements=["sector", "benchmark_close"],
     ),
     # 34. セクターボラティリティレジームシグナル
     SignalDefinition(

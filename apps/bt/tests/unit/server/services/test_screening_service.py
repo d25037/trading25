@@ -226,7 +226,9 @@ class TestStrategyResolution:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
-                "shared_config": {"next_session_round_trip": True},
+                "shared_config": {
+                    "execution_policy": {"mode": "next_session_round_trip"}
+                },
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {},
             },
@@ -240,7 +242,7 @@ class TestStrategyResolution:
         with pytest.raises(ValueError, match="No production strategies found for standard screening"):
             service._resolve_strategies(None, mode="standard")
 
-    def test_rejects_current_session_round_trip_oracle_strategy(
+    def test_rejects_current_session_round_trip_strategy(
         self,
         service,
         monkeypatch,
@@ -262,7 +264,9 @@ class TestStrategyResolution:
             service._config_loader,
             "load_strategy_config",
             lambda _name: {
-                "shared_config": {"current_session_round_trip_oracle": True},
+                "shared_config": {
+                    "execution_policy": {"mode": "current_session_round_trip"}
+                },
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {},
             },
@@ -273,22 +277,22 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        oracle = service._resolve_strategies(None, mode="oracle")
-        assert [s.name for s in oracle] == ["production/current_session_demo"]
-        assert oracle[0].compiled_strategy.execution_semantics == (
-            "current_session_round_trip_oracle"
+        same_day = service._resolve_strategies(None, mode="same_day")
+        assert [s.name for s in same_day] == ["production/current_session_demo"]
+        assert same_day[0].compiled_strategy.execution_semantics == (
+            "current_session_round_trip"
         )
 
-    def test_exit_only_oracle_filter_remains_standard_screening(
+    def test_exit_only_same_day_filter_remains_standard_screening(
         self,
         service,
         monkeypatch,
         tmp_path,
     ):
         production = StrategyMetadata(
-            name="production/exit_only_oracle",
+            name="production/exit_only_same_day",
             category="production",
-            path=Path(tmp_path / "production/exit_only_oracle.yaml"),
+            path=Path(tmp_path / "production/exit_only_same_day.yaml"),
             mtime=datetime.now(),
         )
 
@@ -303,7 +307,7 @@ class TestStrategyResolution:
             lambda _name: {
                 "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                 "exit_trigger_params": {
-                    "oracle_index_open_gap_regime": {"enabled": True},
+                    "index_open_gap_regime": {"enabled": True},
                 },
             },
         )
@@ -314,7 +318,7 @@ class TestStrategyResolution:
         )
 
         resolved = service._resolve_strategies(None, mode="standard")
-        assert [s.name for s in resolved] == ["production/exit_only_oracle"]
+        assert [s.name for s in resolved] == ["production/exit_only_same_day"]
         assert resolved[0].compiled_strategy.execution_semantics == "standard"
 
     def test_broken_production_strategy_config_fails_loudly(
@@ -409,16 +413,16 @@ class TestStrategyResolution:
         with pytest.raises(ValueError, match="Invalid strategies"):
             service._resolve_strategies("experimental/test_strategy", mode="standard")
 
-    def test_resolves_oracle_only_for_oracle_mode(
+    def test_resolves_same_day_only_for_same_day_mode(
         self,
         service,
         monkeypatch,
         tmp_path,
     ):
-        oracle = StrategyMetadata(
-            name="production/topix_gap_down_intraday_oracle",
+        same_day = StrategyMetadata(
+            name="production/topix_gap_down_intraday_same_day",
             category="production",
-            path=Path(tmp_path / "production/topix_gap_down_intraday_oracle.yaml"),
+            path=Path(tmp_path / "production/topix_gap_down_intraday_same_day.yaml"),
             mtime=datetime.now(),
         )
         standard = StrategyMetadata(
@@ -431,18 +435,24 @@ class TestStrategyResolution:
         monkeypatch.setattr(
             service._config_loader,
             "get_strategy_metadata",
-            lambda: [oracle, standard],
+            lambda: [same_day, standard],
         )
         monkeypatch.setattr(
             service._config_loader,
             "load_strategy_config",
             lambda name: {
                 "shared_config": {
-                    "current_session_round_trip_oracle": name == "production/topix_gap_down_intraday_oracle"
+                    "execution_policy": {
+                        "mode": (
+                            "current_session_round_trip"
+                            if name == "production/topix_gap_down_intraday_same_day"
+                            else "standard"
+                        )
+                    }
                 },
                 "entry_filter_params": {
-                    "oracle_index_open_gap_regime": {
-                        "enabled": name == "production/topix_gap_down_intraday_oracle"
+                    "index_open_gap_regime": {
+                        "enabled": name == "production/topix_gap_down_intraday_same_day"
                     }
                 },
                 "exit_trigger_params": {},
@@ -454,8 +464,8 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        resolved = service._resolve_strategies(None, mode="oracle")
-        assert [s.name for s in resolved] == ["production/topix_gap_down_intraday_oracle"]
+        resolved = service._resolve_strategies(None, mode="same_day")
+        assert [s.name for s in resolved] == ["production/topix_gap_down_intraday_same_day"]
 
 
 class TestAggregationAndSorting:

@@ -4,7 +4,7 @@ import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { MarketScreeningResponse, ScreeningJobResponse, ScreeningParams } from '@/types/screening';
 
-export type AnalysisSubTab = 'screening' | 'oracleScreening' | 'ranking' | 'fundamentalRanking';
+export type AnalysisSubTab = 'screening' | 'sameDayScreening' | 'ranking' | 'fundamentalRanking';
 
 export const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
   mode: 'standard',
@@ -15,8 +15,8 @@ export const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
   limit: 50,
 };
 
-export const DEFAULT_ORACLE_SCREENING_PARAMS: ScreeningParams = {
-  mode: 'oracle',
+export const DEFAULT_SAME_DAY_SCREENING_PARAMS: ScreeningParams = {
+  mode: 'same_day',
   markets: 'prime',
   recentDays: 10,
   sortBy: 'matchedDate',
@@ -40,36 +40,36 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 
 interface AnalysisState {
   activeScreeningJobId: string | null;
-  activeOracleScreeningJobId: string | null;
+  activeSameDayScreeningJobId: string | null;
   screeningResult: MarketScreeningResponse | null;
-  oracleScreeningResult: MarketScreeningResponse | null;
+  sameDayScreeningResult: MarketScreeningResponse | null;
   screeningJobHistory: ScreeningJobResponse[];
-  oracleScreeningJobHistory: ScreeningJobResponse[];
+  sameDayScreeningJobHistory: ScreeningJobResponse[];
   setActiveScreeningJobId: (jobId: string | null) => void;
-  setActiveOracleScreeningJobId: (jobId: string | null) => void;
+  setActiveSameDayScreeningJobId: (jobId: string | null) => void;
   setScreeningResult: (result: MarketScreeningResponse | null) => void;
-  setOracleScreeningResult: (result: MarketScreeningResponse | null) => void;
+  setSameDayScreeningResult: (result: MarketScreeningResponse | null) => void;
   upsertScreeningJobHistory: (job: ScreeningJobResponse) => void;
-  upsertOracleScreeningJobHistory: (job: ScreeningJobResponse) => void;
+  upsertSameDayScreeningJobHistory: (job: ScreeningJobResponse) => void;
 }
 
 export type AnalysisPersistedState = Pick<
   AnalysisState,
   | 'activeScreeningJobId'
-  | 'activeOracleScreeningJobId'
+  | 'activeSameDayScreeningJobId'
   | 'screeningResult'
-  | 'oracleScreeningResult'
+  | 'sameDayScreeningResult'
   | 'screeningJobHistory'
-  | 'oracleScreeningJobHistory'
+  | 'sameDayScreeningJobHistory'
 >;
 
 export const createInitialAnalysisState = (): AnalysisPersistedState => ({
   activeScreeningJobId: null,
-  activeOracleScreeningJobId: null,
+  activeSameDayScreeningJobId: null,
   screeningResult: null,
-  oracleScreeningResult: null,
+  sameDayScreeningResult: null,
   screeningJobHistory: [],
-  oracleScreeningJobHistory: [],
+  sameDayScreeningJobHistory: [],
 });
 
 const MAX_SCREENING_JOB_HISTORY = 30;
@@ -83,9 +83,9 @@ export const useAnalysisStore = create<AnalysisState>()(
     (set) => ({
       ...createInitialAnalysisState(),
       setActiveScreeningJobId: (jobId) => set({ activeScreeningJobId: jobId }),
-      setActiveOracleScreeningJobId: (jobId) => set({ activeOracleScreeningJobId: jobId }),
+      setActiveSameDayScreeningJobId: (jobId) => set({ activeSameDayScreeningJobId: jobId }),
       setScreeningResult: (result) => set({ screeningResult: result }),
-      setOracleScreeningResult: (result) => set({ oracleScreeningResult: result }),
+      setSameDayScreeningResult: (result) => set({ sameDayScreeningResult: result }),
       upsertScreeningJobHistory: (job) =>
         set((state) => {
           const withoutCurrent = state.screeningJobHistory.filter((item) => item.job_id !== job.job_id);
@@ -94,12 +94,12 @@ export const useAnalysisStore = create<AnalysisState>()(
             screeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
           };
         }),
-      upsertOracleScreeningJobHistory: (job) =>
+      upsertSameDayScreeningJobHistory: (job) =>
         set((state) => {
-          const withoutCurrent = state.oracleScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
+          const withoutCurrent = state.sameDayScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
           const merged = [job, ...withoutCurrent].sort(sortByCreatedAtDesc);
           return {
-            oracleScreeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
+            sameDayScreeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
           };
         }),
     }),
@@ -108,11 +108,11 @@ export const useAnalysisStore = create<AnalysisState>()(
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         activeScreeningJobId: state.activeScreeningJobId,
-        activeOracleScreeningJobId: state.activeOracleScreeningJobId,
+        activeSameDayScreeningJobId: state.activeSameDayScreeningJobId,
         screeningResult: state.screeningResult,
-        oracleScreeningResult: state.oracleScreeningResult,
+        sameDayScreeningResult: state.sameDayScreeningResult,
         screeningJobHistory: state.screeningJobHistory,
-        oracleScreeningJobHistory: state.oracleScreeningJobHistory,
+        sameDayScreeningJobHistory: state.sameDayScreeningJobHistory,
       }),
     }
   )

@@ -92,9 +92,9 @@ class TestParamBuilder:
         assert result.volume_ratio_above.ratio_threshold == 2.5
         assert result.volume_ratio_above.ma_type == "ema"
 
-    def test_build_signal_params_preserves_oracle_index_open_gap_regime(self) -> None:
+    def test_build_signal_params_preserves_index_open_gap_regime(self) -> None:
         base_params = SignalParams(
-            oracle_index_open_gap_regime=OracleIndexOpenGapRegimeSignalParams(
+            index_open_gap_regime=OracleIndexOpenGapRegimeSignalParams(
                 enabled=True,
                 gap_threshold_1_pct=1.0,
                 gap_threshold_2_pct=2.0,
@@ -103,17 +103,17 @@ class TestParamBuilder:
         )
 
         grid_params = {
-            "entry_filter_params.oracle_index_open_gap_regime.gap_threshold_1_pct": 0.8,
-            "entry_filter_params.oracle_index_open_gap_regime.regime": "down_large",
+            "entry_filter_params.index_open_gap_regime.gap_threshold_1_pct": 0.8,
+            "entry_filter_params.index_open_gap_regime.regime": "down_large",
         }
 
         result = build_signal_params(grid_params, "entry_filter_params", base_params)
 
-        assert result.oracle_index_open_gap_regime is not None
-        assert result.oracle_index_open_gap_regime.enabled is True
-        assert result.oracle_index_open_gap_regime.gap_threshold_1_pct == 0.8
-        assert result.oracle_index_open_gap_regime.gap_threshold_2_pct == 2.0
-        assert result.oracle_index_open_gap_regime.regime == "down_large"
+        assert result.index_open_gap_regime is not None
+        assert result.index_open_gap_regime.enabled is True
+        assert result.index_open_gap_regime.gap_threshold_1_pct == 0.8
+        assert result.index_open_gap_regime.gap_threshold_2_pct == 2.0
+        assert result.index_open_gap_regime.regime == "down_large"
 
     def test_build_signal_params_empty_grid(self) -> None:
         base_params = SignalParams(

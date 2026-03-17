@@ -16,7 +16,10 @@ from src.domains.strategy.runtime.models import (
     validate_strategy_config_dict,
 )
 from src.domains.strategy.runtime.parameter_extractor import _deep_merge_dict
-from src.domains.strategy.signals.processor import SignalProcessor
+from src.domains.strategy.signals.feature_registry import (
+    FeatureObservationPoint,
+    resolve_feature_requirement_spec,
+)
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
@@ -100,10 +103,10 @@ class CompiledStrategyIR(BaseModel):
     )
 
 
-def uses_current_session_oracle_execution(
+def uses_same_day_execution(
     compiled_strategy: CompiledStrategyIR,
 ) -> bool:
-    if compiled_strategy.execution_semantics == "current_session_round_trip_oracle":
+    if compiled_strategy.execution_semantics == "current_session_round_trip":
         return True
 
     return any(
@@ -119,7 +122,7 @@ def resolve_round_trip_execution_mode_name(
 ) -> str | None:
     if compiled_strategy.execution_semantics in (
         "next_session_round_trip",
-        "current_session_round_trip_oracle",
+        "current_session_round_trip",
     ):
         return compiled_strategy.execution_semantics
     return None
@@ -139,16 +142,17 @@ def _dedupe_preserve_order(values: list[str]) -> list[str]:
 def resolve_signal_availability(
     *,
     scope: CompiledSignalScope,
-    param_key: str,
+    signal_def: Any,
     shared_config: SharedConfig,
 ) -> CompiledSignalAvailability:
-    same_day_oracle_signal = (
+    same_day_signal = (
         scope == CompiledSignalScope.ENTRY
-        and param_key in SignalProcessor._CURRENT_SESSION_ORACLE_SAME_DAY_ENTRY_ALLOWLIST
+        and signal_def.resolve_availability_policy().observation_time
+        == FeatureObservationPoint.CURRENT_SESSION_OPEN
     )
 
-    if shared_config.current_session_round_trip_oracle:
-        if same_day_oracle_signal:
+    if shared_config.current_session_round_trip:
+        if same_day_signal:
             return CompiledSignalAvailability(
                 observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
                 available_at=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
@@ -162,7 +166,7 @@ def resolve_signal_availability(
             execution_session=CompiledExecutionSession.CURRENT_SESSION,
         )
 
-    if same_day_oracle_signal:
+    if same_day_signal:
         return CompiledSignalAvailability(
             observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
             available_at=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
@@ -198,7 +202,7 @@ def _iter_enabled_signals(
                     data_requirements=list(signal_def.data_requirements),
                     availability=resolve_signal_availability(
                         scope=CompiledSignalScope.ENTRY,
-                        param_key=signal_def.param_key,
+                        signal_def=signal_def,
                         shared_config=shared_config,
                     ),
                 )
@@ -218,7 +222,7 @@ def _iter_enabled_signals(
                 data_requirements=list(signal_def.data_requirements),
                 availability=resolve_signal_availability(
                     scope=CompiledSignalScope.EXIT,
-                    param_key=signal_def.param_key,
+                    signal_def=signal_def,
                     shared_config=shared_config,
                 ),
             )
@@ -254,12 +258,12 @@ def _resolve_required_data_domains(signals: list[CompiledSignalIR]) -> list[str]
     domains: list[str] = []
     for signal in signals:
         for requirement in signal.data_requirements:
-            base = requirement.partition(":")[0]
-            if base in {"ohlc", "volume", "benchmark", "sector"}:
+            spec = resolve_feature_requirement_spec(requirement)
+            if spec.data_domain in {"market", "benchmark", "sector"}:
                 domains.append("market")
-            elif base == "statements":
+            elif spec.data_domain == "statements":
                 domains.append("statements")
-            elif base == "margin":
+            elif spec.data_domain == "margin":
                 domains.append("margin")
     return _dedupe_preserve_order(domains)
 
@@ -303,7 +307,7 @@ def _validate_round_trip_exit_rules(
     if _has_configured_exit_signal_params(exit_signal_params):
         raise ValueError(
             "exit_trigger_params must be empty when "
-            f"shared_config.{mode_name} is true"
+            f"shared_config.execution_policy.mode is '{mode_name}'"
         )
 
 

@@ -145,7 +145,7 @@ class TestValidateStrategy:
             "dataset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
-            "next_session_round_trip": True,
+            "execution_policy": {"mode": "next_session_round_trip"},
         }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
@@ -155,7 +155,9 @@ class TestValidateStrategy:
                 "/api/strategies/test/validate",
                 json={
                     "config": {
-                        "shared_config": {"next_session_round_trip": True},
+                        "shared_config": {
+                            "execution_policy": {"mode": "next_session_round_trip"}
+                        },
                         "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
                         "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
                     }
@@ -166,12 +168,12 @@ class TestValidateStrategy:
         assert data["valid"] is False
         assert any("exit_trigger_params" in e for e in data["errors"])
 
-    def test_current_session_round_trip_oracle_compiles_allowlisted_signal(self, client, mock_config_loader):
+    def test_current_session_round_trip_compiles_allowlisted_signal(self, client, mock_config_loader):
         mock_config_loader.merge_shared_config.return_value = {
             "dataset": "primeExTopix500",
             "direction": "longonly",
             "timeframe": "daily",
-            "current_session_round_trip_oracle": True,
+            "execution_policy": {"mode": "current_session_round_trip"},
         }
         with patch("src.domains.backtest.core.runner.BacktestRunner") as mock_runner_cls:
             mock_runner = MagicMock()
@@ -181,9 +183,11 @@ class TestValidateStrategy:
                 "/api/strategies/test/validate",
                 json={
                     "config": {
-                        "shared_config": {"current_session_round_trip_oracle": True},
+                        "shared_config": {
+                            "execution_policy": {"mode": "current_session_round_trip"}
+                        },
                         "entry_filter_params": {
-                            "oracle_index_open_gap_regime": {"enabled": True},
+                            "index_open_gap_regime": {"enabled": True},
                             "volume_ratio_above": {"enabled": True},
                         },
                     }
@@ -197,7 +201,7 @@ class TestValidateStrategy:
             for item in data["compiled_strategy"]["signals"]
         }
         assert (
-            by_signal["entry.oracle_index_open_gap_regime"]["availability"]["observation_time"]
+            by_signal["entry.index_open_gap_regime"]["availability"]["observation_time"]
             == "current_session_open"
         )
         assert (
@@ -457,16 +461,18 @@ class TestListStrategies:
         mock_config_loader.load_strategy_config.side_effect = [
             {"entry_filter_params": {}, "exit_trigger_params": {}},
             {
-                "shared_config": {"current_session_round_trip_oracle": True},
+                "shared_config": {
+                    "execution_policy": {"mode": "current_session_round_trip"}
+                },
                 "entry_filter_params": {
-                    "oracle_index_open_gap_regime": {"enabled": True},
+                    "index_open_gap_regime": {"enabled": True},
                 },
                 "exit_trigger_params": {},
             },
         ]
         mock_config_loader.merge_shared_config.side_effect = [
             {"dataset": "primeExTopix500"},
-            {"current_session_round_trip_oracle": True},
+            {"execution_policy": {"mode": "current_session_round_trip"}},
         ]
 
         resp = client.get("/api/strategies")
@@ -476,13 +482,13 @@ class TestListStrategies:
         assert data["strategies"][0]["name"] == "production/range_break_v16"
         assert data["strategies"][0]["screening_mode"] == "standard"
         assert data["strategies"][0]["screening_error"] is None
-        assert data["strategies"][1]["screening_mode"] == "oracle"
+        assert data["strategies"][1]["screening_mode"] == "same_day"
         assert data["strategies"][1]["screening_error"] is None
 
-    def test_exit_only_oracle_filter_stays_standard(self, client, mock_config_loader):
+    def test_exit_only_same_day_filter_stays_standard(self, client, mock_config_loader):
         mock_config_loader.get_strategy_metadata.return_value = [
             SimpleNamespace(
-                name="production/exit_only_oracle",
+                name="production/exit_only_same_day",
                 category="production",
                 mtime=datetime(2026, 2, 17),
             ),
@@ -490,7 +496,7 @@ class TestListStrategies:
         mock_config_loader.load_strategy_config.return_value = {
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {
-                "oracle_index_open_gap_regime": {"enabled": True},
+                "index_open_gap_regime": {"enabled": True},
             },
         }
         mock_config_loader.merge_shared_config.return_value = {"dataset": "primeExTopix500"}

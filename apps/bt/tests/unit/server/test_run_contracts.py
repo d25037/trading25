@@ -282,7 +282,11 @@ class TestRunSpecBuilders:
         run_spec = build_strategy_run_spec(
             "backtest",
             "demo-strategy",
-            config_override={"shared_config": {"next_session_round_trip": True}},
+            config_override={
+                "shared_config": {
+                    "execution_policy": {"mode": "next_session_round_trip"}
+                }
+            },
             config_loader=_StubConfigLoader(),
         )
 

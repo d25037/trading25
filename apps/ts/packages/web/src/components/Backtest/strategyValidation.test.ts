@@ -106,12 +106,16 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain('shared_config.kelly_fraction must be between 0 and 2');
   });
 
-  it('accepts next_session_round_trip when companion constraints are satisfied', () => {
+  it('accepts next_session_round_trip execution_policy when companion constraints are satisfied', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: {},
-        shared_config: { kelly_fraction: 2, next_session_round_trip: true, timeframe: 'daily' },
+        shared_config: {
+          kelly_fraction: 2,
+          timeframe: 'daily',
+          execution_policy: { mode: 'next_session_round_trip' },
+        },
       },
       signalDefs
     );
@@ -120,27 +124,30 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('rejects non-empty exit_trigger_params for next_session_round_trip', () => {
+  it('rejects non-empty exit_trigger_params for next_session_round_trip execution_policy', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
-        shared_config: { next_session_round_trip: true },
+        shared_config: { execution_policy: { mode: 'next_session_round_trip' } },
       },
       signalDefs
     );
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain(
-      'exit_trigger_params must be empty when shared_config.next_session_round_trip is true'
+      "exit_trigger_params must be empty when shared_config.execution_policy.mode is 'next_session_round_trip'"
     );
   });
 
-  it('rejects non-daily timeframe for next_session_round_trip', () => {
+  it('rejects non-daily timeframe for next_session_round_trip execution_policy', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
-        shared_config: { next_session_round_trip: true, timeframe: 'weekly' },
+        shared_config: {
+          timeframe: 'weekly',
+          execution_policy: { mode: 'next_session_round_trip' },
+        },
       },
       signalDefs
     );
@@ -149,12 +156,15 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain("next_session_round_trip requires timeframe='daily'");
   });
 
-  it('accepts current_session_round_trip_oracle when companion constraints are satisfied', () => {
+  it('accepts current_session_round_trip execution_policy when companion constraints are satisfied', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: {},
-        shared_config: { current_session_round_trip_oracle: true, timeframe: 'daily' },
+        shared_config: {
+          timeframe: 'daily',
+          execution_policy: { mode: 'current_session_round_trip' },
+        },
       },
       signalDefs
     );
@@ -163,42 +173,45 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toHaveLength(0);
   });
 
-  it('rejects non-empty exit_trigger_params for current_session_round_trip_oracle', () => {
+  it('rejects non-empty exit_trigger_params for current_session_round_trip execution_policy', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         exit_trigger_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
-        shared_config: { current_session_round_trip_oracle: true },
+        shared_config: { execution_policy: { mode: 'current_session_round_trip' } },
       },
       signalDefs
     );
 
     expect(result.valid).toBe(false);
     expect(result.errors).toContain(
-      'exit_trigger_params must be empty when shared_config.current_session_round_trip_oracle is true'
+      "exit_trigger_params must be empty when shared_config.execution_policy.mode is 'current_session_round_trip'"
     );
   });
 
-  it('rejects non-daily timeframe for current_session_round_trip_oracle', () => {
+  it('rejects non-daily timeframe for current_session_round_trip execution_policy', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
-        shared_config: { current_session_round_trip_oracle: true, timeframe: 'weekly' },
+        shared_config: {
+          timeframe: 'weekly',
+          execution_policy: { mode: 'current_session_round_trip' },
+        },
       },
       signalDefs
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain("current_session_round_trip_oracle requires timeframe='daily'");
+    expect(result.errors).toContain("current_session_round_trip requires timeframe='daily'");
   });
 
-  it('rejects enabling both round trip execution modes at once', () => {
+  it('rejects legacy round trip booleans', () => {
     const result = validateStrategyConfigLocally(
       {
         entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
         shared_config: {
           next_session_round_trip: true,
-          current_session_round_trip_oracle: true,
+          current_session_round_trip: true,
           timeframe: 'daily',
         },
       },
@@ -206,9 +219,8 @@ describe('validateStrategyConfigLocally', () => {
     );
 
     expect(result.valid).toBe(false);
-    expect(result.errors).toContain(
-      'next_session_round_trip and current_session_round_trip_oracle cannot both be true'
-    );
+    expect(result.errors).toContain('shared_config.next_session_round_trip is not a valid parameter name');
+    expect(result.errors).toContain('shared_config.current_session_round_trip is not a valid parameter name');
   });
 
   it('ignores null numeric constraints from signal reference payload', () => {

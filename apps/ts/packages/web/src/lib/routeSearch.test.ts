@@ -70,13 +70,13 @@ describe('routeSearch', () => {
 
   it('roundtrips analysis search state with defaults', () => {
     const search = validateAnalysisSearch({
-      tab: 'oracleScreening',
-      oracleMarkets: '0113',
-      oracleStrategies: 'production/oracle',
-      oracleRecentDays: '5',
-      oracleSortBy: 'matchStrategyCount',
-      oracleOrder: 'asc',
-      oracleLimit: '60',
+      tab: 'sameDayScreening',
+      sameDayMarkets: '0113',
+      sameDayStrategies: 'production/same_day_strategy',
+      sameDayRecentDays: '5',
+      sameDaySortBy: 'matchStrategyCount',
+      sameDayOrder: 'asc',
+      sameDayLimit: '60',
       rankingLimit: '25',
       fundamentalLimit: '30',
       forecastAboveRecentFyActuals: 'true',
@@ -84,19 +84,19 @@ describe('routeSearch', () => {
 
     const state = getAnalysisStateFromSearch(search);
 
-    expect(state.activeSubTab).toBe('oracleScreening');
+    expect(state.activeSubTab).toBe('sameDayScreening');
     expect(state.screeningParams.mode).toBe('standard');
-    expect(state.oracleScreeningParams.mode).toBe('oracle');
-    expect(state.oracleScreeningParams.sortBy).toBe('matchStrategyCount');
+    expect(state.sameDayScreeningParams.mode).toBe('same_day');
+    expect(state.sameDayScreeningParams.sortBy).toBe('matchStrategyCount');
 
     expect(serializeAnalysisSearch(state)).toEqual({
-      tab: 'oracleScreening',
-      oracleMarkets: '0113',
-      oracleStrategies: 'production/oracle',
-      oracleRecentDays: 5,
-      oracleSortBy: 'matchStrategyCount',
-      oracleOrder: 'asc',
-      oracleLimit: 60,
+      tab: 'sameDayScreening',
+      sameDayMarkets: '0113',
+      sameDayStrategies: 'production/same_day_strategy',
+      sameDayRecentDays: 5,
+      sameDaySortBy: 'matchStrategyCount',
+      sameDayOrder: 'asc',
+      sameDayLimit: 60,
       rankingLimit: 25,
       fundamentalLimit: 30,
       forecastAboveRecentFyActuals: true,
@@ -106,14 +106,14 @@ describe('routeSearch', () => {
       extractLegacyAnalysisSearch({
         activeSubTab: 'fundamentalRanking',
         screeningParams: { strategies: 'production/a' },
-        oracleScreeningParams: { strategies: 'production/b' },
+        sameDayScreeningParams: { strategies: 'production/b' },
         rankingParams: { lookbackDays: 5 },
         fundamentalRankingParams: { forecastLookbackFyCount: 5 },
       })
     ).toEqual({
       tab: 'fundamentalRanking',
       screeningStrategies: 'production/a',
-      oracleStrategies: 'production/b',
+      sameDayStrategies: 'production/b',
       rankingLookbackDays: 5,
       forecastLookbackFyCount: 5,
     });
@@ -281,7 +281,7 @@ describe('routeSearch', () => {
       extractLegacyAnalysisSearch({
         activeSubTab: 'not-a-tab',
         screeningParams: 'bad',
-        oracleScreeningParams: null,
+        sameDayScreeningParams: null,
         rankingParams: 1,
         fundamentalRankingParams: false,
       })

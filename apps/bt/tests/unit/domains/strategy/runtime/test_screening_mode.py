@@ -5,7 +5,7 @@ from typing import Any
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.runtime.screening_mode import (
     load_strategy_screening_config,
-    resolve_current_session_round_trip_oracle,
+    resolve_same_day_screening_mode,
     resolve_strategy_screening_mode,
 )
 from src.shared.models.config import SharedConfig
@@ -27,44 +27,48 @@ def test_resolve_strategy_screening_mode_standard() -> None:
         shared_config=_shared_config(),
     )
 
-    assert resolve_current_session_round_trip_oracle(compiled_strategy) is False
+    assert resolve_same_day_screening_mode(compiled_strategy) is False
     assert resolve_strategy_screening_mode(compiled_strategy) == "standard"
 
 
 def test_resolve_strategy_screening_mode_rejects_next_session_round_trip() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
-        shared_config=_shared_config(next_session_round_trip=True),
+        shared_config=_shared_config(
+            execution_policy={"mode": "next_session_round_trip"}
+        ),
     )
 
-    assert resolve_current_session_round_trip_oracle(compiled_strategy) is False
+    assert resolve_same_day_screening_mode(compiled_strategy) is False
     assert resolve_strategy_screening_mode(compiled_strategy) == "unsupported"
 
 
-def test_resolve_strategy_screening_mode_accepts_oracle_signal_without_shared_flag() -> None:
+def test_resolve_strategy_screening_mode_accepts_same_day_signal_without_shared_flag() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
         shared_config=_shared_config(),
         entry_signal_params=SignalParams.model_validate(
-            {"oracle_index_open_gap_regime": {"enabled": True}}
+            {"index_open_gap_regime": {"enabled": True}}
         ),
     )
 
-    assert resolve_current_session_round_trip_oracle(compiled_strategy) is True
-    assert resolve_strategy_screening_mode(compiled_strategy) == "oracle"
+    assert resolve_same_day_screening_mode(compiled_strategy) is True
+    assert resolve_strategy_screening_mode(compiled_strategy) == "same_day"
 
 
-def test_resolve_strategy_screening_mode_accepts_current_session_oracle_semantics() -> None:
+def test_resolve_strategy_screening_mode_accepts_current_session_round_trip() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
-        shared_config=_shared_config(current_session_round_trip_oracle=True),
+        shared_config=_shared_config(
+            execution_policy={"mode": "current_session_round_trip"}
+        ),
         entry_signal_params=SignalParams.model_validate(
             {"volume_ratio_above": {"enabled": True}}
         ),
     )
 
-    assert resolve_current_session_round_trip_oracle(compiled_strategy) is True
-    assert resolve_strategy_screening_mode(compiled_strategy) == "oracle"
+    assert resolve_same_day_screening_mode(compiled_strategy) is True
+    assert resolve_strategy_screening_mode(compiled_strategy) == "same_day"
 
 
 def test_load_strategy_screening_config_uses_compiled_strategy_availability() -> None:
@@ -83,7 +87,7 @@ def test_load_strategy_screening_config_uses_compiled_strategy_availability() ->
         {
             "shared_config": {"dataset": "primeExTopix500"},
             "entry_filter_params": {
-                "oracle_index_open_gap_regime": {"enabled": True}
+                "index_open_gap_regime": {"enabled": True}
             },
             "exit_trigger_params": {},
         }
@@ -91,5 +95,5 @@ def test_load_strategy_screening_config_uses_compiled_strategy_availability() ->
 
     loaded = load_strategy_screening_config(config_loader, "production/demo")
 
-    assert loaded.screening_mode == "oracle"
-    assert loaded.entry_params.oracle_index_open_gap_regime.enabled is True
+    assert loaded.screening_mode == "same_day"
+    assert loaded.entry_params.index_open_gap_regime.enabled is True

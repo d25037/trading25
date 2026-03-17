@@ -141,7 +141,7 @@ export interface FundamentalRankingParams {
 
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
 export type SortOrder = 'asc' | 'desc';
-export type ScreeningMode = 'standard' | 'oracle';
+export type ScreeningMode = 'standard' | 'same_day';
 
 export interface MatchedStrategyItem {
   strategyName: string;

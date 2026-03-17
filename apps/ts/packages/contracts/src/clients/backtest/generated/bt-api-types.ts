@@ -6006,7 +6006,7 @@ export interface components {
              * @default standard
              * @enum {string}
              */
-            mode: "standard" | "oracle";
+            mode: "standard" | "same_day";
             /**
              * Order
              * @enum {string}
@@ -7186,7 +7186,7 @@ export interface components {
              * @default standard
              * @enum {string}
              */
-            mode: "standard" | "oracle";
+            mode: "standard" | "same_day";
             /**
              * Order
              * @default desc
@@ -7256,7 +7256,7 @@ export interface components {
              * @default standard
              * @enum {string}
              */
-            mode: "standard" | "oracle";
+            mode: "standard" | "same_day";
             /**
              * Order
              * @description 並び順
@@ -7769,7 +7769,7 @@ export interface components {
              * Execution Semantics
              * @enum {string}
              */
-            execution_semantics: "standard" | "next_session_round_trip" | "current_session_round_trip_oracle";
+            execution_semantics: "standard" | "next_session_round_trip" | "current_session_round_trip";
             scope: components["schemas"]["CompiledSignalScope"];
         };
         /**
@@ -8670,7 +8670,7 @@ export interface components {
              * @default unsupported
              * @enum {string}
              */
-            screening_mode: "standard" | "oracle" | "unsupported";
+            screening_mode: "standard" | "same_day" | "unsupported";
         };
         /**
          * StrategyMoveRequest

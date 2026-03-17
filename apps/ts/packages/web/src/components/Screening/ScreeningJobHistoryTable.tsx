@@ -43,7 +43,7 @@ export function ScreeningJobHistoryTable({
   onSelectJob,
 }: ScreeningJobHistoryTableProps) {
   const switchId = useId();
-  const allStrategiesLabel = mode === 'oracle' ? '(all oracle production)' : '(all standard production)';
+  const allStrategiesLabel = mode === 'same_day' ? '(all same-day production)' : '(all standard production)';
 
   const columns: JobHistoryColumn<ScreeningJobResponse>[] = [
     {

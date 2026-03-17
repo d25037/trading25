@@ -5,7 +5,7 @@ import { ApiError } from '@/lib/api-client';
 import {
   createInitialAnalysisState,
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_ORACLE_SCREENING_PARAMS,
+  DEFAULT_SAME_DAY_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
   DEFAULT_SCREENING_PARAMS,
   useAnalysisStore,
@@ -20,8 +20,8 @@ const mockSetActiveSubTab = vi.fn((tab: string) => {
 const mockSetScreeningParams = vi.fn((params: typeof DEFAULT_SCREENING_PARAMS) => {
   mockRouteState.screeningParams = params;
 });
-const mockSetOracleScreeningParams = vi.fn((params: typeof DEFAULT_ORACLE_SCREENING_PARAMS) => {
-  mockRouteState.oracleScreeningParams = params;
+const mockSetSameDayScreeningParams = vi.fn((params: typeof DEFAULT_SAME_DAY_SCREENING_PARAMS) => {
+  mockRouteState.sameDayScreeningParams = params;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
@@ -34,8 +34,8 @@ const mockRouteState = {
   setActiveSubTab: mockSetActiveSubTab,
   screeningParams: { ...DEFAULT_SCREENING_PARAMS },
   setScreeningParams: mockSetScreeningParams,
-  oracleScreeningParams: { ...DEFAULT_ORACLE_SCREENING_PARAMS },
-  setOracleScreeningParams: mockSetOracleScreeningParams,
+  sameDayScreeningParams: { ...DEFAULT_SAME_DAY_SCREENING_PARAMS },
+  setSameDayScreeningParams: mockSetSameDayScreeningParams,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
   fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS },
@@ -58,7 +58,7 @@ const mockUseScreeningResult = vi.fn();
 const mockCancelScreeningJob = vi.fn();
 let mockStrategiesQueryResult: {
   data: {
-    strategies: Array<{ name: string; category: string; screening_mode: 'standard' | 'oracle' | 'unsupported' }>;
+    strategies: Array<{ name: string; category: string; screening_mode: 'standard' | 'same_day' | 'unsupported' }>;
   } | null;
   isLoading: boolean;
   error: Error | null;
@@ -216,9 +216,9 @@ describe('AnalysisPage', () => {
           { name: 'production/range_break_v15', category: 'production', screening_mode: 'standard' },
           { name: 'production/forward_eps_driven', category: 'production', screening_mode: 'standard' },
           {
-            name: 'production/topix_gap_down_intraday_oracle',
+            name: 'production/topix_gap_down_intraday_same_day',
             category: 'production',
-            screening_mode: 'oracle',
+            screening_mode: 'same_day',
           },
         ],
       },
@@ -229,13 +229,13 @@ describe('AnalysisPage', () => {
     useAnalysisStore.setState(createInitialAnalysisState());
     mockRouteState.activeSubTab = 'screening';
     mockRouteState.screeningParams = { ...DEFAULT_SCREENING_PARAMS };
-    mockRouteState.oracleScreeningParams = { ...DEFAULT_ORACLE_SCREENING_PARAMS };
+    mockRouteState.sameDayScreeningParams = { ...DEFAULT_SAME_DAY_SCREENING_PARAMS };
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
     mockRouteState.fundamentalRankingParams = { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS };
     mockNavigate.mockReset();
     mockSetActiveSubTab.mockClear();
     mockSetScreeningParams.mockClear();
-    mockSetOracleScreeningParams.mockClear();
+    mockSetSameDayScreeningParams.mockClear();
     mockSetRankingParams.mockClear();
     mockSetFundamentalRankingParams.mockClear();
     mockScreeningFilters.mockClear();
@@ -270,17 +270,17 @@ describe('AnalysisPage', () => {
     );
   });
 
-  it('shows oracle-only strategies in oracle screening', async () => {
+  it('shows same-day-only strategies in same-day screening', async () => {
     const user = userEvent.setup();
     const view = render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
     view.rerender(<AnalysisPage />);
 
     expect(mockScreeningFilters).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        mode: 'oracle',
-        strategyOptions: ['production/topix_gap_down_intraday_oracle'],
+        mode: 'same_day',
+        strategyOptions: ['production/topix_gap_down_intraday_same_day'],
       })
     );
   });
@@ -290,9 +290,9 @@ describe('AnalysisPage', () => {
       ...mockRouteState.screeningParams,
       strategies: 'production/range_break_v15,production/missing_standard',
     };
-    mockRouteState.oracleScreeningParams = {
-      ...mockRouteState.oracleScreeningParams,
-      strategies: 'production/topix_gap_down_intraday_oracle,production/missing_oracle',
+    mockRouteState.sameDayScreeningParams = {
+      ...mockRouteState.sameDayScreeningParams,
+      strategies: 'production/topix_gap_down_intraday_same_day,production/missing_same_day',
     };
     mockStrategiesQueryResult = {
       data: null,
@@ -303,8 +303,8 @@ describe('AnalysisPage', () => {
     const { rerender } = render(<AnalysisPage />);
 
     expect(mockRouteState.screeningParams.strategies).toBe('production/range_break_v15,production/missing_standard');
-    expect(mockRouteState.oracleScreeningParams.strategies).toBe(
-      'production/topix_gap_down_intraday_oracle,production/missing_oracle'
+    expect(mockRouteState.sameDayScreeningParams.strategies).toBe(
+      'production/topix_gap_down_intraday_same_day,production/missing_same_day'
     );
 
     mockStrategiesQueryResult = {
@@ -312,9 +312,9 @@ describe('AnalysisPage', () => {
         strategies: [
           { name: 'production/range_break_v15', category: 'production', screening_mode: 'standard' },
           {
-            name: 'production/topix_gap_down_intraday_oracle',
+            name: 'production/topix_gap_down_intraday_same_day',
             category: 'production',
-            screening_mode: 'oracle',
+            screening_mode: 'same_day',
           },
         ],
       },
@@ -325,7 +325,7 @@ describe('AnalysisPage', () => {
 
     await waitFor(() => {
       expect(mockRouteState.screeningParams.strategies).toBe('production/range_break_v15');
-      expect(mockRouteState.oracleScreeningParams.strategies).toBe('production/topix_gap_down_intraday_oracle');
+      expect(mockRouteState.sameDayScreeningParams.strategies).toBe('production/topix_gap_down_intraday_same_day');
     });
   });
 
@@ -344,17 +344,17 @@ describe('AnalysisPage', () => {
     );
   });
 
-  it('runs oracle screening with oracle mode', async () => {
+  it('runs same-day screening with same-day mode', async () => {
     const user = userEvent.setup();
     const view = render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
     view.rerender(<AnalysisPage />);
-    await user.click(screen.getByRole('button', { name: 'Run Oracle Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Run Same-Day Screening' }));
 
     expect(mockRunScreeningJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: 'oracle',
+        mode: 'same_day',
       })
     );
   });
@@ -379,13 +379,13 @@ describe('AnalysisPage', () => {
     expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
   });
 
-  it('switches to oracle screening tab', async () => {
+  it('switches to same-day screening tab', async () => {
     const user = userEvent.setup();
     const view = render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
     view.rerender(<AnalysisPage />);
-    expect(screen.getByRole('button', { name: 'Run Oracle Screening' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run Same-Day Screening' })).toBeInTheDocument();
   });
 
   it('navigates to chart when a stock is selected', async () => {
@@ -454,11 +454,11 @@ describe('AnalysisPage', () => {
     expect(screen.queryByText('Screening Job Progress')).not.toBeInTheDocument();
   });
 
-  it('keeps screening history visibility separate for standard and oracle tabs', async () => {
+  it('keeps screening history visibility separate for standard and same-day tabs', async () => {
     const user = userEvent.setup();
     useAnalysisStore.setState({
       screeningJobHistory: [createScreeningJob({ job_id: 'standard-job' })],
-      oracleScreeningJobHistory: [createScreeningJob({ job_id: 'oracle-job', mode: 'oracle' })],
+      sameDayScreeningJobHistory: [createScreeningJob({ job_id: 'same-day-job', mode: 'same_day' })],
     });
 
     const view = render(<AnalysisPage />);
@@ -468,12 +468,12 @@ describe('AnalysisPage', () => {
     await user.click(standardToggle);
     expect(standardToggle).not.toBeChecked();
 
-    await user.click(screen.getByRole('button', { name: 'Oracle Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
     view.rerender(<AnalysisPage />);
 
-    const oracleToggle = screen.getByRole('switch', { name: 'Show History' });
-    expect(oracleToggle).toBeChecked();
-    expect(screen.getByText('oracle-j...')).toBeInTheDocument();
+    const sameDayToggle = screen.getByRole('switch', { name: 'Show History' });
+    expect(sameDayToggle).toBeChecked();
+    expect(screen.getByText('same-day...')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: 'Screening' }));
     view.rerender(<AnalysisPage />);

@@ -16,12 +16,12 @@ parent: bt-037
 
 ## 目的
 - YAML を authoring format に留め、実行時 SoT を `CompiledStrategyIR` へ移す。
-- `current_session_round_trip_oracle` のような例外フラグ増殖を止め、availability model で no-lookahead を統一管理する。
+- `execution_policy.mode=current_session_round_trip` のような例外フラグ増殖を止め、availability model で no-lookahead を統一管理する。
 
 ## 受け入れ条件
 - [x] strategy validation 後に `CompiledStrategyIR` を生成できる。
 - [x] signal / feature に `observation_time`, `available_at`, `decision_cutoff`, `execution_session` を持てる。
-- [x] same-day oracle と prior-day signal を同じルールで評価できる。
+- [x] same-day signal と prior-day signal を同じルールで評価できる。
 - [x] 既存 signal system の主要ケースに回帰テストがある。
 
 ## 実施内容
@@ -36,12 +36,12 @@ parent: bt-037
 - `run_spec.compiled_strategy_requirements` は compiled IR 由来で埋めるようにした。
 - `YamlConfigurableStrategy` / `SignalProcessor` / `BacktestExecutorMixin` は compiled availability / execution semantics を優先参照するようにした。
 - `/api/signals/reference` と web `SignalReferencePanel` で execution semantics ごとの availability profile を表示できるようにした。
-- screening strategy の `standard/oracle/unsupported` 判定も compiled availability 起点に寄せた。
+- screening strategy の `standard/same_day/unsupported` 判定も compiled availability 起点に寄せた。
 - screening evaluator / `YamlConfigurableStrategy` は `SignalProcessor` へ compiled strategy を直接渡すようにし、主要 path の boolean fallback を減らした。
-- `SignalProcessor` の public API から `current_session_round_trip_oracle` 引数を外し、timing 判定は compiled availability を SoT にした。
-- screening runtime の内部 dataclass から派生 boolean を外し、`compiled_strategy.execution_semantics` / availability だけで oracle 判定できるようにした。
+- `SignalProcessor` の public API から旧 round-trip boolean 引数を外し、timing 判定は compiled availability を SoT にした。
+- screening runtime の内部 dataclass から派生 boolean を外し、`compiled_strategy.execution_semantics` / availability だけで same-day 判定できるようにした。
 - `StrategyFactory` / `BacktestRunner` / `BacktestExecutorMixin` の round-trip 判定は compiler helper を共有し、validation と execution path の重複を減らした。
-- signal 起因の same-day oracle は screening oracle として扱いつつ、backtest の round-trip execution とは分離した。
+- signal 起因の same-day availability は screening `same_day` として扱いつつ、backtest の round-trip execution とは分離した。
 
 ## 補足
 - 参照: `docs/backtest-greenfield-rebuild.md` Section 5.1, 5.2

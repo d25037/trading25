@@ -123,11 +123,7 @@ def _dedupe(messages: list[str]) -> list[str]:
 
 
 def resolve_execution_semantics(shared_config: SharedConfig) -> str:
-    if shared_config.next_session_round_trip:
-        return "next_session_round_trip"
-    if shared_config.current_session_round_trip_oracle:
-        return "current_session_round_trip_oracle"
-    return "standard"
+    return shared_config.execution_policy.mode.value
 
 
 def _validate_round_trip_rules(
@@ -144,7 +140,7 @@ def _validate_round_trip_rules(
     if exit_trigger_params not in (None, {}):
         return [
             "exit_trigger_params must be empty when "
-            f"shared_config.{mode_name} is true"
+            f"shared_config.execution_policy.mode is '{mode_name}'"
         ]
     return []
 
@@ -162,7 +158,10 @@ def _build_strict_validation_errors(config: dict[str, Any]) -> tuple[StrategyCon
     errors.extend(_validate_round_trip_rules(config, validated))
 
     unknown_paths = _collect_unknown_paths(config, StrategyConfig)
-    errors.extend(f"{path} is not a valid parameter name" for path in unknown_paths)
+    errors.extend(
+        f"{path} is not a valid parameter name"
+        for path in unknown_paths
+    )
 
     return validated, _dedupe(errors)
 

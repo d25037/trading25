@@ -1,10 +1,10 @@
-"""指数寄り付きギャップを same-session oracle 前提で判定するシグナル."""
+"""Index open-gap regime signal for same-day availability-aware strategies."""
 
 from typing import Literal, cast
 
 import pandas as pd
 
-OracleIndexOpenGapRegime = Literal[
+IndexOpenGapRegime = Literal[
     "down_large",
     "down_medium",
     "flat",
@@ -13,22 +13,20 @@ OracleIndexOpenGapRegime = Literal[
 ]
 
 
-def oracle_index_open_gap_regime_signal(
+def index_open_gap_regime_signal(
     index_data: pd.DataFrame,
     gap_threshold_1_pct: float = 1.0,
     gap_threshold_2_pct: float = 2.0,
-    regime: OracleIndexOpenGapRegime = "down_medium",
+    regime: IndexOpenGapRegime = "down_medium",
 ) -> pd.Series:
-    """指数の当日寄り付き gap をレジーム化して boolean signal を返す。"""
+    """Return a boolean signal for the current-session benchmark open-gap regime."""
     if index_data is None or index_data.empty:
         raise ValueError("index_data が空またはNoneです")
 
     required_columns = {"Open", "Close"}
     missing_columns = required_columns - set(index_data.columns)
     if missing_columns:
-        raise ValueError(
-            "index_data に 'Open' と 'Close' カラムが必要です"
-        )
+        raise ValueError("index_data に 'Open' と 'Close' カラムが必要です")
 
     open_prices = index_data["Open"]
     prev_close = index_data["Close"].shift(1)

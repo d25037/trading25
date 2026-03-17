@@ -19,6 +19,7 @@ from src.domains.strategy.runtime.compiler import (
     CompiledSignalScope,
     resolve_signal_availability,
 )
+from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.shared.models.signals import SignalParams
 from src.entrypoints.http.schemas.signal_reference import SignalFieldTypeValue
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
@@ -316,7 +317,7 @@ def _build_usage_hint(entry_purpose: str, exit_purpose: str) -> str:
 _REFERENCE_EXECUTION_SEMANTICS = (
     "standard",
     "next_session_round_trip",
-    "current_session_round_trip_oracle",
+    "current_session_round_trip",
 )
 
 
@@ -326,10 +327,7 @@ def _build_shared_config_for_execution_semantics(
     return SharedConfig.model_validate(
         {
             "timeframe": "daily",
-            "next_session_round_trip": execution_semantics
-            == "next_session_round_trip",
-            "current_session_round_trip_oracle": execution_semantics
-            == "current_session_round_trip_oracle",
+            "execution_policy": {"mode": execution_semantics},
         },
         context={"resolve_stock_codes": False},
     )
@@ -351,7 +349,7 @@ def _build_availability_profiles(signal_def: Any) -> list[dict[str, Any]]:
                     "execution_semantics": execution_semantics,
                     "availability": resolve_signal_availability(
                         scope=scope,
-                        param_key=signal_def.param_key,
+                        signal_def=signal_def,
                         shared_config=shared_config,
                     ).model_dump(mode="json"),
                 }
@@ -365,18 +363,18 @@ def _derive_signal_type(param_key: str) -> str:
 
 def _build_chart_capability(signal_def: Any) -> dict[str, Any]:
     signal_type = _derive_signal_type(signal_def.param_key)
-    requirement_bases = {
-        requirement.split(":", 1)[0]
+    requirement_domains = {
+        resolve_feature_requirement_spec(requirement).data_domain
         for requirement in signal_def.data_requirements
     }
     return {
         "supported": True,
         "supported_modes": ["entry"] if signal_def.exit_disabled else ["entry", "exit"],
         "supports_relative_mode": signal_type not in _RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES,
-        "requires_benchmark": "benchmark" in requirement_bases,
-        "requires_sector_data": "sector" in requirement_bases,
-        "requires_margin_data": "margin" in requirement_bases,
-        "requires_statements_data": "statements" in requirement_bases,
+        "requires_benchmark": "benchmark" in requirement_domains,
+        "requires_sector_data": "sector" in requirement_domains,
+        "requires_margin_data": "margin" in requirement_domains,
+        "requires_statements_data": "statements" in requirement_domains,
     }
 
 

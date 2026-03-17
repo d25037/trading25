@@ -224,15 +224,15 @@ class TestSignalRegistry:
         assert "statements:EPS" in sig.data_requirements
         assert "statements:NextYearForecastEPS" not in sig.data_requirements
 
-    def test_oracle_index_open_gap_regime_registered(self) -> None:
+    def test_index_open_gap_regime_registered(self) -> None:
         matches = [
-            s for s in SIGNAL_REGISTRY if s.param_key == "oracle_index_open_gap_regime"
+            s for s in SIGNAL_REGISTRY if s.param_key == "index_open_gap_regime"
         ]
         assert len(matches) == 1
         sig = matches[0]
-        assert sig.name == "Oracle指数寄り付きギャップレジーム"
+        assert sig.name == "指数寄り付きギャップレジーム"
         assert sig.category == "macro"
-        assert sig.data_requirements == ["benchmark"]
+        assert sig.data_requirements == ["benchmark_open_gap"]
 
     def test_forward_dividend_growth_registered(self) -> None:
         matches = [s for s in SIGNAL_REGISTRY if s.param_key == "fundamental.forward_dividend_growth"]

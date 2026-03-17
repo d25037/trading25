@@ -57,7 +57,7 @@ export function ScreeningFilters({
   };
 
   const selectedStrategies = parseSelectedStrategies(params.strategies);
-  const strategyGroupLabel = mode === 'oracle' ? 'oracle production' : 'standard production';
+  const strategyGroupLabel = mode === 'same_day' ? 'same-day production' : 'standard production';
 
   const toggleStrategy = (strategyName: string) => {
     const selected = new Set(selectedStrategies);

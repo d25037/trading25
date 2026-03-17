@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Literal, Protocol
 from collections.abc import Callable, Sequence
 
+from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 from src.shared.models.types import StatementsPeriodType as APIPeriodType
@@ -66,7 +67,10 @@ def needs_data_requirement(
 ) -> bool:
     """Return True when any enabled signal needs the target requirement."""
     for signal_def in signal_registry:
-        if not any(req == requirement or req.startswith(f"{requirement}:") for req in signal_def.data_requirements):
+        if not any(
+            resolve_feature_requirement_spec(req).data_domain == requirement
+            for req in signal_def.data_requirements
+        ):
             continue
 
         if signal_def.enabled_checker(entry_params):

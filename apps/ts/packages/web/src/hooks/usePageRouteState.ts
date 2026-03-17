@@ -222,8 +222,8 @@ export function useAnalysisRouteState(): {
   setActiveSubTab: (tab: AnalysisSubTab) => void;
   screeningParams: ScreeningParams;
   setScreeningParams: (params: ScreeningParams) => void;
-  oracleScreeningParams: ScreeningParams;
-  setOracleScreeningParams: (params: ScreeningParams) => void;
+  sameDayScreeningParams: ScreeningParams;
+  setSameDayScreeningParams: (params: ScreeningParams) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
   fundamentalRankingParams: FundamentalRankingParams;
@@ -238,13 +238,13 @@ export function useAnalysisRouteState(): {
       updater: (currentState: {
         activeSubTab: AnalysisSubTab;
         screeningParams: ScreeningParams;
-        oracleScreeningParams: ScreeningParams;
+        sameDayScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }) => {
         activeSubTab: AnalysisSubTab;
         screeningParams: ScreeningParams;
-        oracleScreeningParams: ScreeningParams;
+        sameDayScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }
@@ -264,8 +264,8 @@ export function useAnalysisRouteState(): {
     ...state,
     setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
     setScreeningParams: (params) => updateSearch((currentState) => ({ ...currentState, screeningParams: params })),
-    setOracleScreeningParams: (params) =>
-      updateSearch((currentState) => ({ ...currentState, oracleScreeningParams: params })),
+    setSameDayScreeningParams: (params) =>
+      updateSearch((currentState) => ({ ...currentState, sameDayScreeningParams: params })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
     setFundamentalRankingParams: (params) =>
       updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
@@ -282,7 +282,7 @@ export function useMigrateAnalysisRouteState(): void {
     pruneFields: [
       'activeSubTab',
       'screeningParams',
-      'oracleScreeningParams',
+      'sameDayScreeningParams',
       'rankingParams',
       'fundamentalRankingParams',
     ],

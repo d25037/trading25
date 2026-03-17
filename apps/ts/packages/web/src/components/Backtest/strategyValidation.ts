@@ -7,7 +7,7 @@ export interface StrategyValidationResult {
   warnings: string[];
 }
 
-type RoundTripModeName = 'next_session_round_trip' | 'current_session_round_trip_oracle';
+type ExecutionPolicyMode = 'standard' | 'next_session_round_trip' | 'current_session_round_trip';
 
 const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'initial_cash',
@@ -35,8 +35,7 @@ const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'parameter_optimization',
   'walk_forward',
   'timeframe',
-  'next_session_round_trip',
-  'current_session_round_trip_oracle',
+  'execution_policy',
 ]);
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -322,6 +321,48 @@ function validateSharedConfig(sharedConfig: unknown, errors: string[]): void {
   }
 }
 
+function resolveExecutionPolicyMode(
+  sharedConfig: Record<string, unknown>,
+  errors: string[]
+): ExecutionPolicyMode | null {
+  const executionPolicy = sharedConfig.execution_policy;
+  if (executionPolicy === undefined) {
+    return 'standard';
+  }
+  if (!isPlainObject(executionPolicy)) {
+    errors.push('shared_config.execution_policy must be an object');
+    return null;
+  }
+
+  for (const key of Object.keys(executionPolicy)) {
+    if (key !== 'mode') {
+      errors.push(`shared_config.execution_policy.${key} is not a valid parameter name`);
+    }
+  }
+
+  const mode = executionPolicy.mode;
+  if (mode === undefined) {
+    return 'standard';
+  }
+  if (typeof mode !== 'string') {
+    errors.push('shared_config.execution_policy.mode must be a string');
+    return null;
+  }
+
+  if (
+    mode !== 'standard' &&
+    mode !== 'next_session_round_trip' &&
+    mode !== 'current_session_round_trip'
+  ) {
+    errors.push(
+      "shared_config.execution_policy.mode must be one of: standard, next_session_round_trip, current_session_round_trip"
+    );
+    return null;
+  }
+
+  return mode;
+}
+
 function hasConfiguredExitTriggerParams(exitTrigger: unknown): boolean {
   if (exitTrigger === undefined) {
     return false;
@@ -330,19 +371,6 @@ function hasConfiguredExitTriggerParams(exitTrigger: unknown): boolean {
     return true;
   }
   return Object.keys(exitTrigger).length > 0;
-}
-
-function getActiveRoundTripModes(sharedConfig: Record<string, unknown>): RoundTripModeName[] {
-  const activeModes: RoundTripModeName[] = [];
-
-  if (sharedConfig.next_session_round_trip === true) {
-    activeModes.push('next_session_round_trip');
-  }
-  if (sharedConfig.current_session_round_trip_oracle === true) {
-    activeModes.push('current_session_round_trip_oracle');
-  }
-
-  return activeModes;
 }
 
 function validateRoundTripRules(
@@ -354,24 +382,17 @@ function validateRoundTripRules(
     return;
   }
 
-  const activeModes = getActiveRoundTripModes(sharedConfig);
-
-  if (activeModes.length === 0) {
+  const mode = resolveExecutionPolicyMode(sharedConfig, errors);
+  if (mode === null || mode === 'standard') {
     return;
   }
 
-  if (activeModes.length > 1) {
-    errors.push('next_session_round_trip and current_session_round_trip_oracle cannot both be true');
+  if (sharedConfig.timeframe !== undefined && sharedConfig.timeframe !== 'daily') {
+    errors.push(`${mode} requires timeframe='daily'`);
   }
 
-  for (const modeName of activeModes) {
-    if (sharedConfig.timeframe !== undefined && sharedConfig.timeframe !== 'daily') {
-      errors.push(`${modeName} requires timeframe='daily'`);
-    }
-
-    if (hasConfiguredExitTriggerParams(config.exit_trigger_params)) {
-      errors.push(`exit_trigger_params must be empty when shared_config.${modeName} is true`);
-    }
+  if (hasConfiguredExitTriggerParams(config.exit_trigger_params)) {
+    errors.push(`exit_trigger_params must be empty when shared_config.execution_policy.mode is '${mode}'`);
   }
 }
 

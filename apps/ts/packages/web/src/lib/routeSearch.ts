@@ -1,7 +1,7 @@
 import type { ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 import {
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_ORACLE_SCREENING_PARAMS,
+  DEFAULT_SAME_DAY_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
   DEFAULT_SCREENING_PARAMS,
   type AnalysisSubTab,
@@ -38,13 +38,13 @@ export interface AnalysisRouteSearch {
   screeningSortBy?: ScreeningSortBy;
   screeningOrder?: SortOrder;
   screeningLimit?: number;
-  oracleMarkets?: string;
-  oracleStrategies?: string;
-  oracleRecentDays?: number;
-  oracleDate?: string;
-  oracleSortBy?: ScreeningSortBy;
-  oracleOrder?: SortOrder;
-  oracleLimit?: number;
+  sameDayMarkets?: string;
+  sameDayStrategies?: string;
+  sameDayRecentDays?: number;
+  sameDayDate?: string;
+  sameDaySortBy?: ScreeningSortBy;
+  sameDayOrder?: SortOrder;
+  sameDayLimit?: number;
   rankingDate?: string;
   rankingLimit?: number;
   rankingMarkets?: string;
@@ -69,7 +69,7 @@ interface PersistedContainer {
   version?: number;
 }
 
-const ANALYSIS_SUB_TABS: AnalysisSubTab[] = ['screening', 'oracleScreening', 'ranking', 'fundamentalRanking'];
+const ANALYSIS_SUB_TABS: AnalysisSubTab[] = ['screening', 'sameDayScreening', 'ranking', 'fundamentalRanking'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = ['runner', 'results', 'attribution', 'strategies', 'status', 'dataset', 'lab'];
 const LAB_TYPES: LabType[] = ['generate', 'evolve', 'optimize', 'improve'];
@@ -221,13 +221,13 @@ export function validateAnalysisSearch(search: Record<string, unknown>): Analysi
   assignIfDefined(next, 'screeningSortBy', normalizeEnum(search.screeningSortBy, SCREENING_SORT_VALUES));
   assignIfDefined(next, 'screeningOrder', normalizeEnum(search.screeningOrder, SORT_ORDER_VALUES));
   assignIfDefined(next, 'screeningLimit', normalizePositiveInt(search.screeningLimit));
-  assignIfDefined(next, 'oracleMarkets', normalizeString(search.oracleMarkets));
-  assignIfDefined(next, 'oracleStrategies', normalizeString(search.oracleStrategies));
-  assignIfDefined(next, 'oracleRecentDays', normalizePositiveInt(search.oracleRecentDays));
-  assignIfDefined(next, 'oracleDate', normalizeString(search.oracleDate));
-  assignIfDefined(next, 'oracleSortBy', normalizeEnum(search.oracleSortBy, SCREENING_SORT_VALUES));
-  assignIfDefined(next, 'oracleOrder', normalizeEnum(search.oracleOrder, SORT_ORDER_VALUES));
-  assignIfDefined(next, 'oracleLimit', normalizePositiveInt(search.oracleLimit));
+  assignIfDefined(next, 'sameDayMarkets', normalizeString(search.sameDayMarkets));
+  assignIfDefined(next, 'sameDayStrategies', normalizeString(search.sameDayStrategies));
+  assignIfDefined(next, 'sameDayRecentDays', normalizePositiveInt(search.sameDayRecentDays));
+  assignIfDefined(next, 'sameDayDate', normalizeString(search.sameDayDate));
+  assignIfDefined(next, 'sameDaySortBy', normalizeEnum(search.sameDaySortBy, SCREENING_SORT_VALUES));
+  assignIfDefined(next, 'sameDayOrder', normalizeEnum(search.sameDayOrder, SORT_ORDER_VALUES));
+  assignIfDefined(next, 'sameDayLimit', normalizePositiveInt(search.sameDayLimit));
   assignIfDefined(next, 'rankingDate', normalizeString(search.rankingDate));
   assignIfDefined(next, 'rankingLimit', normalizePositiveInt(search.rankingLimit));
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
@@ -244,7 +244,7 @@ export function validateAnalysisSearch(search: Record<string, unknown>): Analysi
 export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
   activeSubTab: AnalysisSubTab;
   screeningParams: ScreeningParams;
-  oracleScreeningParams: ScreeningParams;
+  sameDayScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 } {
@@ -262,16 +262,16 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
         ['limit', search.screeningLimit],
       ]
     ),
-    oracleScreeningParams: assignAnalysisSearchParams(
-      { ...DEFAULT_ORACLE_SCREENING_PARAMS, mode: 'oracle' },
+    sameDayScreeningParams: assignAnalysisSearchParams(
+      { ...DEFAULT_SAME_DAY_SCREENING_PARAMS, mode: 'same_day' },
       [
-        ['markets', search.oracleMarkets],
-        ['strategies', search.oracleStrategies],
-        ['recentDays', search.oracleRecentDays],
-        ['date', search.oracleDate],
-        ['sortBy', search.oracleSortBy],
-        ['order', search.oracleOrder],
-        ['limit', search.oracleLimit],
+        ['markets', search.sameDayMarkets],
+        ['strategies', search.sameDayStrategies],
+        ['recentDays', search.sameDayRecentDays],
+        ['date', search.sameDayDate],
+        ['sortBy', search.sameDaySortBy],
+        ['order', search.sameDayOrder],
+        ['limit', search.sameDayLimit],
       ]
     ),
     rankingParams: assignAnalysisSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
@@ -293,7 +293,7 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
 export function serializeAnalysisSearch(state: {
   activeSubTab: AnalysisSubTab;
   screeningParams: ScreeningParams;
-  oracleScreeningParams: ScreeningParams;
+  sameDayScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 }): AnalysisRouteSearch {
@@ -325,35 +325,35 @@ export function serializeAnalysisSearch(state: {
 
   assignIfDefinedAndNotDefault(
     next,
-    'oracleMarkets',
-    normalizeString(state.oracleScreeningParams.markets),
-    DEFAULT_ORACLE_SCREENING_PARAMS.markets
+    'sameDayMarkets',
+    normalizeString(state.sameDayScreeningParams.markets),
+    DEFAULT_SAME_DAY_SCREENING_PARAMS.markets
   );
-  assignIfDefined(next, 'oracleStrategies', normalizeString(state.oracleScreeningParams.strategies));
+  assignIfDefined(next, 'sameDayStrategies', normalizeString(state.sameDayScreeningParams.strategies));
   assignIfDefinedAndNotDefault(
     next,
-    'oracleRecentDays',
-    typeof state.oracleScreeningParams.recentDays === 'number' ? state.oracleScreeningParams.recentDays : undefined,
-    DEFAULT_ORACLE_SCREENING_PARAMS.recentDays
+    'sameDayRecentDays',
+    typeof state.sameDayScreeningParams.recentDays === 'number' ? state.sameDayScreeningParams.recentDays : undefined,
+    DEFAULT_SAME_DAY_SCREENING_PARAMS.recentDays
   );
-  assignIfDefined(next, 'oracleDate', normalizeString(state.oracleScreeningParams.date));
+  assignIfDefined(next, 'sameDayDate', normalizeString(state.sameDayScreeningParams.date));
   assignIfDefinedAndNotDefault(
     next,
-    'oracleSortBy',
-    state.oracleScreeningParams.sortBy,
-    DEFAULT_ORACLE_SCREENING_PARAMS.sortBy
-  );
-  assignIfDefinedAndNotDefault(
-    next,
-    'oracleOrder',
-    state.oracleScreeningParams.order,
-    DEFAULT_ORACLE_SCREENING_PARAMS.order
+    'sameDaySortBy',
+    state.sameDayScreeningParams.sortBy,
+    DEFAULT_SAME_DAY_SCREENING_PARAMS.sortBy
   );
   assignIfDefinedAndNotDefault(
     next,
-    'oracleLimit',
-    typeof state.oracleScreeningParams.limit === 'number' ? state.oracleScreeningParams.limit : undefined,
-    DEFAULT_ORACLE_SCREENING_PARAMS.limit
+    'sameDayOrder',
+    state.sameDayScreeningParams.order,
+    DEFAULT_SAME_DAY_SCREENING_PARAMS.order
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'sameDayLimit',
+    typeof state.sameDayScreeningParams.limit === 'number' ? state.sameDayScreeningParams.limit : undefined,
+    DEFAULT_SAME_DAY_SCREENING_PARAMS.limit
   );
 
   assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
@@ -508,9 +508,9 @@ export function extractLegacyIndicesSearch(state: Record<string, unknown>): Indi
 
 export function extractLegacyAnalysisSearch(state: Record<string, unknown>): AnalysisRouteSearch {
   const screeningParams = isRecord(state.screeningParams) ? (state.screeningParams as ScreeningParams) : DEFAULT_SCREENING_PARAMS;
-  const oracleScreeningParams = isRecord(state.oracleScreeningParams)
-    ? (state.oracleScreeningParams as ScreeningParams)
-    : DEFAULT_ORACLE_SCREENING_PARAMS;
+  const sameDayScreeningParams = isRecord(state.sameDayScreeningParams)
+    ? (state.sameDayScreeningParams as ScreeningParams)
+    : DEFAULT_SAME_DAY_SCREENING_PARAMS;
   const rankingParams = isRecord(state.rankingParams) ? (state.rankingParams as RankingParams) : DEFAULT_RANKING_PARAMS;
   const fundamentalRankingParams = isRecord(state.fundamentalRankingParams)
     ? (state.fundamentalRankingParams as FundamentalRankingParams)
@@ -519,7 +519,7 @@ export function extractLegacyAnalysisSearch(state: Record<string, unknown>): Ana
   return serializeAnalysisSearch({
     activeSubTab: normalizeEnum(state.activeSubTab, ANALYSIS_SUB_TABS) ?? 'screening',
     screeningParams: { ...DEFAULT_SCREENING_PARAMS, ...screeningParams, mode: 'standard' },
-    oracleScreeningParams: { ...DEFAULT_ORACLE_SCREENING_PARAMS, ...oracleScreeningParams, mode: 'oracle' },
+    sameDayScreeningParams: { ...DEFAULT_SAME_DAY_SCREENING_PARAMS, ...sameDayScreeningParams, mode: 'same_day' },
     rankingParams: { ...DEFAULT_RANKING_PARAMS, ...rankingParams },
     fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS, ...fundamentalRankingParams },
   });

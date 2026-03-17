@@ -6,13 +6,13 @@ from typing import Any, Literal
 from src.domains.strategy.runtime.compiler import (
     CompiledStrategyIR,
     compile_runtime_strategy,
-    uses_current_session_oracle_execution,
+    uses_same_day_execution,
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 
-StrategyScreeningMode = Literal["standard", "oracle", "unsupported"]
+StrategyScreeningMode = Literal["standard", "same_day", "unsupported"]
 
 
 @dataclass(frozen=True)
@@ -25,10 +25,10 @@ class LoadedStrategyScreeningConfig:
     screening_mode: StrategyScreeningMode
 
 
-def resolve_current_session_round_trip_oracle(
+def resolve_same_day_screening_mode(
     compiled_strategy: CompiledStrategyIR,
 ) -> bool:
-    return uses_current_session_oracle_execution(compiled_strategy)
+    return uses_same_day_execution(compiled_strategy)
 
 
 def resolve_strategy_screening_mode(
@@ -36,8 +36,8 @@ def resolve_strategy_screening_mode(
 ) -> StrategyScreeningMode:
     if compiled_strategy.execution_semantics == "next_session_round_trip":
         return "unsupported"
-    if resolve_current_session_round_trip_oracle(compiled_strategy):
-        return "oracle"
+    if resolve_same_day_screening_mode(compiled_strategy):
+        return "same_day"
     return "standard"
 
 

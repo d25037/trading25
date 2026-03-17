@@ -19,8 +19,7 @@ default:
       stock_codes: ["all"] # 実行対象銘柄リスト
       start_date: ""
       end_date: ""
-      dataset: "primeExTopix500" # "primeExTopix500" or "topix500"
-      optimize_params: false
+      dataset: "primeExTopix500_20260316" # "primeExTopix500" or "topix500"
       include_margin_data: true # 信用残高データを含めるか
       include_statements_data: true # 財務諸表データを含めるか（PERフィルター等で使用）
       relative_mode: false # 相対価格モード（個別銘柄OHLC ÷ ベンチマークOHLC）
@@ -29,8 +28,8 @@ default:
       cash_sharing: true # VectorBT資金共有設定（複数銘柄間で資金を共有する）
       direction: "longonly" # VectorBT取引方向設定 ('longonly', 'shortonly', 'both')
       timeframe: "daily" # データの時間軸 ('daily'=日足, 'weekly'=週足)
-      next_session_round_trip: false # 翌営業日Openで建てて同日Closeで閉じるセッション往復モード
-      current_session_round_trip_oracle: false # Research-only: 当日TOPIX寄り値を使う same-session Open->Close（future leak）
+      execution_policy:
+        mode: "standard" # 'standard' | 'next_session_round_trip' | 'current_session_round_trip'
       printlog: false # ログ出力設定
 
       # Portfolio Optimization Settings (Kelly Criterion Only)

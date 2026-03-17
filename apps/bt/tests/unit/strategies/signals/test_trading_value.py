@@ -8,7 +8,9 @@ import pytest
 import pandas as pd
 import numpy as np
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.trading_value import trading_value_signal
+from src.shared.models.config import SharedConfig
 
 
 class TestTradingValueSignal:
@@ -312,6 +314,19 @@ class TestTradingValueSignalIntegration:
             signal_type="entry",
             ohlc_data=ohlc_data,
             signal_params=params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="trading-value-entry-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=params,
+                exit_signal_params=SignalParams(),
+            ),
         )
 
         assert isinstance(result, pd.Series)
@@ -352,6 +367,19 @@ class TestTradingValueSignalIntegration:
             signal_type="exit",
             ohlc_data=ohlc_data,
             signal_params=params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="trading-value-exit-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=SignalParams(),
+                exit_signal_params=params,
+            ),
         )
 
         assert isinstance(result, pd.Series)

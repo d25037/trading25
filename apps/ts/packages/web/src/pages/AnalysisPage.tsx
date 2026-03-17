@@ -41,13 +41,13 @@ import type {
 
 const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
   { id: 'screening', label: 'Screening', icon: Filter },
-  { id: 'oracleScreening', label: 'Oracle Screening', icon: Filter },
+  { id: 'sameDayScreening', label: 'Same-Day Screening', icon: Filter },
   { id: 'ranking', label: 'Daily Ranking', icon: BarChart3 },
   { id: 'fundamentalRanking', label: 'Fundamental Ranking', icon: BarChart3 },
 ];
 
-function isScreeningSubTab(tab: AnalysisSubTab): tab is 'screening' | 'oracleScreening' {
-  return tab === 'screening' || tab === 'oracleScreening';
+function isScreeningSubTab(tab: AnalysisSubTab): tab is 'screening' | 'sameDayScreening' {
+  return tab === 'screening' || tab === 'sameDayScreening';
 }
 
 function sanitizeStrategies(
@@ -94,8 +94,8 @@ function isStandardScreeningStrategy(strategy: StrategyMetadata): boolean {
   return strategy.category === 'production' && (strategy.screening_mode ?? 'standard') === 'standard';
 }
 
-function isOracleScreeningStrategy(strategy: StrategyMetadata): boolean {
-  return strategy.category === 'production' && strategy.screening_mode === 'oracle';
+function isSameDayScreeningStrategy(strategy: StrategyMetadata): boolean {
+  return strategy.category === 'production' && strategy.screening_mode === 'same_day';
 }
 
 function selectStrategyNames(
@@ -233,7 +233,7 @@ function AnalysisMainContent({
 }: AnalysisMainContentProps) {
   if (isScreeningSubTab(activeSubTab)) {
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
-    const runButtonLabel = screeningMode === 'oracle' ? 'Run Oracle Screening' : 'Run Screening';
+    const runButtonLabel = screeningMode === 'same_day' ? 'Run Same-Day Screening' : 'Run Screening';
 
     return (
       <>
@@ -463,33 +463,33 @@ export function AnalysisPage() {
   const {
     activeSubTab,
     screeningParams,
-    oracleScreeningParams,
+    sameDayScreeningParams,
     rankingParams,
     fundamentalRankingParams,
     setActiveSubTab,
     setScreeningParams,
-    setOracleScreeningParams,
+    setSameDayScreeningParams,
     setRankingParams,
     setFundamentalRankingParams,
   } = useAnalysisRouteState();
   const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
-  const activeOracleScreeningJobId = useAnalysisStore((state) => state.activeOracleScreeningJobId);
+  const activeSameDayScreeningJobId = useAnalysisStore((state) => state.activeSameDayScreeningJobId);
   const screeningResult = useAnalysisStore((state) => state.screeningResult);
-  const oracleScreeningResult = useAnalysisStore((state) => state.oracleScreeningResult);
+  const sameDayScreeningResult = useAnalysisStore((state) => state.sameDayScreeningResult);
   const screeningJobHistory = useAnalysisStore((state) => state.screeningJobHistory);
-  const oracleScreeningJobHistory = useAnalysisStore((state) => state.oracleScreeningJobHistory);
+  const sameDayScreeningJobHistory = useAnalysisStore((state) => state.sameDayScreeningJobHistory);
   const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
-  const setActiveOracleScreeningJobId = useAnalysisStore((state) => state.setActiveOracleScreeningJobId);
+  const setActiveSameDayScreeningJobId = useAnalysisStore((state) => state.setActiveSameDayScreeningJobId);
   const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
-  const setOracleScreeningResult = useAnalysisStore((state) => state.setOracleScreeningResult);
+  const setSameDayScreeningResult = useAnalysisStore((state) => state.setSameDayScreeningResult);
   const upsertScreeningJobHistory = useAnalysisStore((state) => state.upsertScreeningJobHistory);
-  const upsertOracleScreeningJobHistory = useAnalysisStore((state) => state.upsertOracleScreeningJobHistory);
+  const upsertSameDayScreeningJobHistory = useAnalysisStore((state) => state.upsertSameDayScreeningJobHistory);
 
   const navigate = useNavigate();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
   const [screeningJobHistoryVisibility, setScreeningJobHistoryVisibility] = useState<Record<ScreeningMode, boolean>>({
     standard: true,
-    oracle: true,
+    same_day: true,
   });
 
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
@@ -500,8 +500,8 @@ export function AnalysisPage() {
 
   const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
   const standardProductionStrategies = selectStrategyNames(productionStrategies, isStandardScreeningStrategy);
-  const oracleProductionStrategies = selectStrategyNames(productionStrategies, isOracleScreeningStrategy);
-  const activeScreeningMode: ScreeningMode = activeSubTab === 'oracleScreening' ? 'oracle' : 'standard';
+  const sameDayProductionStrategies = selectStrategyNames(productionStrategies, isSameDayScreeningStrategy);
+  const activeScreeningMode: ScreeningMode = activeSubTab === 'sameDayScreening' ? 'same_day' : 'standard';
   const standardScreening = useScreeningModeController({
     mode: 'standard',
     params: screeningParams,
@@ -514,19 +514,19 @@ export function AnalysisPage() {
     history: screeningJobHistory,
     upsertHistory: upsertScreeningJobHistory,
   });
-  const oracleScreening = useScreeningModeController({
-    mode: 'oracle',
-    params: oracleScreeningParams,
-    setParams: setOracleScreeningParams,
-    allowedStrategies: oracleProductionStrategies,
-    activeJobId: activeOracleScreeningJobId,
-    setActiveJobId: setActiveOracleScreeningJobId,
-    result: oracleScreeningResult,
-    setResult: setOracleScreeningResult,
-    history: oracleScreeningJobHistory,
-    upsertHistory: upsertOracleScreeningJobHistory,
+  const sameDayScreening = useScreeningModeController({
+    mode: 'same_day',
+    params: sameDayScreeningParams,
+    setParams: setSameDayScreeningParams,
+    allowedStrategies: sameDayProductionStrategies,
+    activeJobId: activeSameDayScreeningJobId,
+    setActiveJobId: setActiveSameDayScreeningJobId,
+    result: sameDayScreeningResult,
+    setResult: setSameDayScreeningResult,
+    history: sameDayScreeningJobHistory,
+    upsertHistory: upsertSameDayScreeningJobHistory,
   });
-  const activeScreening = activeScreeningMode === 'oracle' ? oracleScreening : standardScreening;
+  const activeScreening = activeScreeningMode === 'same_day' ? sameDayScreening : standardScreening;
   const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeScreeningMode];
 
   const handleStockClick = useCallback(

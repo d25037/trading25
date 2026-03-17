@@ -21,6 +21,7 @@ from src.application.services.screening_market_loader import (
     load_market_topix_data,
 )
 from src.domains.analytics.screening_requirements import build_strategy_data_requirements
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
 from src.domains.strategy.signals.processor import SignalProcessor
@@ -445,7 +446,7 @@ class SignalService:
         mode: Literal["entry", "exit"],
         signal_params: SignalParams,
         data: dict[str, Any],
-        compiled_strategy: Any | None = None,
+        compiled_strategy: Any,
     ) -> dict[str, Any]:
         sig_def = _get_signal_definition(signal_type)
         if sig_def is None:
@@ -538,7 +539,7 @@ class SignalService:
         mode: Literal["entry", "exit"],
         params: dict[str, Any],
         data: dict[str, Any],
-        compiled_strategy: Any | None = None,
+        compiled_strategy: Any,
     ) -> dict[str, Any]:
         signal_params = self._build_signal_params(signal_type, params, mode)
         return self._compute_signal_result_from_params(
@@ -599,10 +600,15 @@ class SignalService:
         else:
             entry_params, exit_params = self._build_ad_hoc_param_sets(signals)
             shared_config = SharedConfig.model_validate(
-                {"timeframe": "daily"},
+                {"timeframe": "daily", "execution_policy": {"mode": "standard"}},
                 context={"resolve_stock_codes": False},
             )
-            compiled_strategy = None
+            compiled_strategy = compile_runtime_strategy(
+                strategy_name="ad_hoc_signal_request",
+                shared_config=shared_config,
+                entry_signal_params=entry_params,
+                exit_signal_params=exit_params,
+            )
             strategy_context = None
 
         loaded = self._load_signal_data(
@@ -691,7 +697,7 @@ class SignalService:
                 mode=spec.get("mode", "entry"),
                 params=spec.get("params", {}),
                 data=data,
-                compiled_strategy=None,
+                compiled_strategy=compiled_strategy,
             )
             for spec in signals
         }

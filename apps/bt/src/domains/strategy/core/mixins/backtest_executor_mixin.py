@@ -16,6 +16,7 @@ from src.domains.backtest.vectorbt_adapter import (
     VectorbtAdapter,
     _round_trip_order_func_nb as _vectorbt_round_trip_order_func_nb,
 )
+from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
 from src.domains.strategy.runtime.compiler import resolve_round_trip_execution_mode_name
 from src.shared.models.allocation import AllocationInfo
 
@@ -37,7 +38,7 @@ _BENCHMARK_SIGNALS = (
     "beta",
     "index_daily_change",
     "index_macd_histogram",
-    "oracle_index_open_gap_regime",
+    "index_open_gap_regime",
     "sector_strength_ranking",
     "sector_rotation_phase",
 )
@@ -88,7 +89,7 @@ class BacktestExecutorMixin:
 
         for signal_def in SIGNAL_REGISTRY:
             if not any(
-                req == requirement or req.startswith(f"{requirement}:")
+                resolve_feature_requirement_spec(req).data_domain == requirement
                 for req in signal_def.data_requirements
             ):
                 continue
@@ -224,8 +225,8 @@ class BacktestExecutorMixin:
                 return mode_name
         if getattr(self, "next_session_round_trip", False):
             return "next_session_round_trip"
-        if getattr(self, "current_session_round_trip_oracle", False):
-            return "current_session_round_trip_oracle"
+        if getattr(self, "current_session_round_trip", False):
+            return "current_session_round_trip"
         return None
 
     def _uses_round_trip_execution(self: "StrategyProtocol") -> bool:

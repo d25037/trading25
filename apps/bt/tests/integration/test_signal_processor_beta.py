@@ -8,7 +8,9 @@ import unittest
 import pandas as pd
 import numpy as np
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.processor import SignalProcessor
+from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, BetaSignalParams
 
 
@@ -90,6 +92,22 @@ class TestSignalProcessorBeta(unittest.TestCase):
         # 基本エントリーシグナル（全日程True）
         self.base_signal = pd.Series(True, index=dates)
 
+    @staticmethod
+    def _compiled_strategy(signal_params: SignalParams) -> object:
+        return compile_runtime_strategy(
+            strategy_name="beta-integration",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "execution_policy": {"mode": "standard"},
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=signal_params,
+            exit_signal_params=SignalParams(),
+        )
+
     def test_beta_signal_integration_enabled(self):
         """β値シグナル有効化時の統合テスト"""
         # SignalParams作成（β値シグナル有効化）
@@ -110,6 +128,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
             signal_params=signal_params,
             benchmark_data=self.benchmark_data,
             execution_data=self.ohlc_data,  # 実価格データ（相対価格モードではない）
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
 
         # 結果の基本検証
@@ -139,6 +158,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
             ohlc_data=self.ohlc_data,
             signal_params=signal_params,
             benchmark_data=self.benchmark_data,
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
 
         # β値シグナルが無効化されている（全日程True）
@@ -162,6 +182,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
             ohlc_data=self.ohlc_data,
             signal_params=signal_params,
             benchmark_data=None,  # ベンチマークデータなし
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
 
         # 必須データ不足は fail-closed で False 扱い
@@ -187,6 +208,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
             signal_params=signal_params,
             benchmark_data=self.benchmark_data,
             execution_data=self.ohlc_data,  # 実価格データ（相対価格モードではない）
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
 
         # 狭い範囲でフィルター効果が強い
@@ -211,6 +233,7 @@ class TestSignalProcessorBeta(unittest.TestCase):
             ohlc_data=self.ohlc_data,
             signal_params=signal_params,
             benchmark_data=self.benchmark_data,
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
 
         # 複数シグナルのAND条件適用（β値 AND 出来高）

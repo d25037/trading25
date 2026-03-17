@@ -2,7 +2,7 @@
 統合シグナルパラメータ（SignalParams）
 """
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from .breakout import (
     BaselineCrossSignalParams,
@@ -18,9 +18,9 @@ from .fundamental import FundamentalSignalParams
 from .macro import (
     BetaSignalParams,
     IndexDailyChangeSignalParams,
+    IndexOpenGapRegimeSignalParams,
     IndexMACDHistogramSignalParams,
     MarginSignalParams,
-    OracleIndexOpenGapRegimeSignalParams,
 )
 from .oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from .trend import (
@@ -54,6 +54,8 @@ class SignalParams(BaseModel):
 
     エントリー・エグジット両方のシグナルパラメータを統一管理
     """
+
+    model_config = ConfigDict(extra="forbid")
 
     volume_ratio_above: VolumeRatioAboveSignalParams = Field(
         default_factory=VolumeRatioAboveSignalParams,
@@ -153,9 +155,9 @@ class SignalParams(BaseModel):
         default_factory=IndexMACDHistogramSignalParams,
         description="INDEXヒストグラムシグナル（市場モメンタム強弱判定）",
     )
-    oracle_index_open_gap_regime: OracleIndexOpenGapRegimeSignalParams = Field(
-        default_factory=OracleIndexOpenGapRegimeSignalParams,
-        description="Future leak 前提の指数寄り付きギャップレジームシグナル",
+    index_open_gap_regime: IndexOpenGapRegimeSignalParams = Field(
+        default_factory=IndexOpenGapRegimeSignalParams,
+        description="指数寄り付きギャップレジームシグナル",
     )
     risk_adjusted_return: RiskAdjustedReturnSignalParams = Field(
         default_factory=RiskAdjustedReturnSignalParams,

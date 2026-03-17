@@ -137,12 +137,12 @@ describe('useRunScreeningJob', () => {
     expect(logger.error).toHaveBeenCalledWith('Failed to start screening job', { error: 'network' });
   });
 
-  it('passes oracle mode through to the job request', async () => {
+  it('passes same-day mode through to the job request', async () => {
     vi.mocked(analyticsClient.createScreeningJob).mockResolvedValueOnce({
-      job_id: 'job-oracle',
+      job_id: 'job-same-day',
       status: 'pending',
       created_at: '2026-02-01T00:00:00Z',
-      mode: 'oracle',
+      mode: 'same_day',
       markets: 'prime',
       recentDays: 10,
       sortBy: 'matchedDate',
@@ -154,7 +154,7 @@ describe('useRunScreeningJob', () => {
 
     await act(async () => {
       await result.current.mutateAsync({
-        mode: 'oracle',
+        mode: 'same_day',
         markets: 'prime',
         recentDays: 10,
       });
@@ -162,7 +162,7 @@ describe('useRunScreeningJob', () => {
 
     expect(analyticsClient.createScreeningJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: 'oracle',
+        mode: 'same_day',
       })
     );
   });

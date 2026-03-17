@@ -31,7 +31,7 @@ _OPEN_EVENT_TIME = time(9, 0)
 _CLOSE_EVENT_TIME = time(15, 0)
 _SUPPORTED_EXECUTION_MODES = {
     "next_session_round_trip",
-    "current_session_round_trip_oracle",
+    "current_session_round_trip",
 }
 
 

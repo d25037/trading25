@@ -889,7 +889,9 @@ class TestBuildParametersConfigOverride:
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
         }
         config_override: dict[str, Any] = {
-            "shared_config": {"next_session_round_trip": True},
+            "shared_config": {
+                "execution_policy": {"mode": "next_session_round_trip"}
+            },
             "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
         }
 
@@ -909,7 +911,7 @@ class TestBuildParametersConfigOverride:
         }
         config_override: dict[str, Any] = {
             "shared_config": {
-                "next_session_round_trip": True,
+                "execution_policy": {"mode": "next_session_round_trip"},
                 "timeframe": "weekly",
             },
         }
@@ -917,26 +919,7 @@ class TestBuildParametersConfigOverride:
         with pytest.raises(ValueError, match="Invalid shared_config after config merge"):
             runner._build_parameters(strategy_config, config_override)
 
-    def test_current_session_round_trip_oracle_rejects_non_empty_exit_trigger_params(
-        self,
-        monkeypatch: Any,
-    ):
-        import pytest
-
-        runner = self._make_runner_with_defaults(monkeypatch)
-        strategy_config: dict[str, Any] = {
-            "shared_config": {"dataset": "sample"},
-            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
-        }
-        config_override: dict[str, Any] = {
-            "shared_config": {"current_session_round_trip_oracle": True},
-            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
-        }
-
-        with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
-            runner._build_parameters(strategy_config, config_override)
-
-    def test_current_session_round_trip_oracle_rejects_invalid_shared_config_after_merge(
+    def test_current_session_round_trip_rejects_non_empty_exit_trigger_params(
         self,
         monkeypatch: Any,
     ):
@@ -949,7 +932,28 @@ class TestBuildParametersConfigOverride:
         }
         config_override: dict[str, Any] = {
             "shared_config": {
-                "current_session_round_trip_oracle": True,
+                "execution_policy": {"mode": "current_session_round_trip"}
+            },
+            "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
+        }
+
+        with pytest.raises(ValueError, match="exit_trigger_params must be empty"):
+            runner._build_parameters(strategy_config, config_override)
+
+    def test_current_session_round_trip_rejects_invalid_shared_config_after_merge(
+        self,
+        monkeypatch: Any,
+    ):
+        import pytest
+
+        runner = self._make_runner_with_defaults(monkeypatch)
+        strategy_config: dict[str, Any] = {
+            "shared_config": {"dataset": "sample"},
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+        }
+        config_override: dict[str, Any] = {
+            "shared_config": {
+                "execution_policy": {"mode": "current_session_round_trip"},
                 "timeframe": "weekly",
             },
         }
@@ -957,7 +961,7 @@ class TestBuildParametersConfigOverride:
         with pytest.raises(ValueError, match="Invalid shared_config after config merge"):
             runner._build_parameters(strategy_config, config_override)
 
-    def test_same_day_oracle_signal_keeps_exit_trigger_params_when_round_trip_flag_is_off(
+    def test_same_day_signal_keeps_exit_trigger_params_when_round_trip_flag_is_off(
         self,
         monkeypatch: Any,
     ):
@@ -965,7 +969,7 @@ class TestBuildParametersConfigOverride:
         strategy_config: dict[str, Any] = {
             "shared_config": {"dataset": "sample"},
             "entry_filter_params": {
-                "oracle_index_open_gap_regime": {"enabled": True}
+                "index_open_gap_regime": {"enabled": True}
             },
             "exit_trigger_params": {"volume_ratio_below": {"enabled": True}},
         }

@@ -2,6 +2,7 @@
 
 import pytest
 from pydantic import ValidationError
+from unittest.mock import patch
 
 from src.shared.models.config import ParameterOptimizationConfig, SharedConfig, WalkForwardConfig
 
@@ -60,7 +61,7 @@ class TestSharedConfig:
         assert cfg.timeframe == "daily"
         assert cfg.kelly_fraction == 1.0
         assert cfg.next_session_round_trip is False
-        assert cfg.current_session_round_trip_oracle is False
+        assert cfg.current_session_round_trip is False
 
     def test_valid_directions(self):
         for d in ["longonly", "shortonly", "both"]:
@@ -157,19 +158,32 @@ class TestSharedConfig:
 
     def test_next_session_round_trip_requires_daily_timeframe(self):
         with pytest.raises(ValidationError, match="next_session_round_trip"):
-            self._make(next_session_round_trip=True, timeframe="weekly")
+            self._make(
+                execution_policy={"mode": "next_session_round_trip"},
+                timeframe="weekly",
+            )
 
-    def test_current_session_round_trip_oracle_requires_daily_timeframe(self):
-        with pytest.raises(
-            ValidationError, match="current_session_round_trip_oracle"
-        ):
-            self._make(current_session_round_trip_oracle=True, timeframe="weekly")
+    def test_current_session_round_trip_requires_daily_timeframe(self):
+        with pytest.raises(ValidationError, match="current_session_round_trip"):
+            self._make(
+                execution_policy={"mode": "current_session_round_trip"},
+                timeframe="weekly",
+            )
 
-    def test_round_trip_modes_are_mutually_exclusive(self):
-        with pytest.raises(ValidationError, match="cannot both be true"):
+    def test_legacy_round_trip_keys_are_rejected(self):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
             self._make(
                 next_session_round_trip=True,
-                current_session_round_trip_oracle=True,
+                current_session_round_trip=True,
+            )
+
+    def test_execution_policy_extra_keys_are_rejected(self):
+        with pytest.raises(ValidationError, match="Extra inputs are not permitted"):
+            self._make(
+                execution_policy={
+                    "mode": "standard",
+                    "legacy_flag": True,
+                }
             )
 
     def test_nested_parameter_optimization(self):
@@ -188,3 +202,26 @@ class TestSharedConfig:
     def test_specific_stock_codes(self):
         cfg = self._make(stock_codes=["7203", "6758"])
         assert cfg.stock_codes == ["7203", "6758"]
+
+    def test_resolve_stock_codes_keeps_explicit_codes_without_context_override(self):
+        cfg = SharedConfig.model_validate({"stock_codes": ["7203"]})
+        assert cfg.stock_codes == ["7203"]
+
+    def test_resolve_stock_codes_loads_all_codes(self):
+        with patch("src.infrastructure.data_access.loaders.get_stock_list", return_value=["7203", "6758"]):
+            cfg = SharedConfig.model_validate({"stock_codes": ["all"], "dataset": "sample"})
+        assert cfg.stock_codes == ["7203", "6758"]
+
+    def test_resolve_stock_codes_raises_when_loader_returns_empty(self):
+        with patch("src.infrastructure.data_access.loaders.get_stock_list", return_value=[]):
+            with pytest.raises(ValidationError, match="銘柄が見つかりませんでした"):
+                SharedConfig.model_validate({"stock_codes": ["all"], "dataset": "sample"})
+
+    def test_resolve_stock_codes_raises_when_loader_errors(self):
+        with patch("src.infrastructure.data_access.loaders.get_stock_list", side_effect=RuntimeError("boom")):
+            with pytest.raises(ValidationError, match="銘柄リストの取得に失敗しました"):
+                SharedConfig.model_validate({"stock_codes": ["all"], "dataset": "sample"})
+
+    def test_validator_methods_accept_valid_values_directly(self):
+        assert SharedConfig.validate_initial_cash(1.0) == 1.0
+        assert SharedConfig.validate_costs(0.1) == 0.1

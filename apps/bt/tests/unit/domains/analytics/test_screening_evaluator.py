@@ -32,7 +32,9 @@ class _Strategy:
     entry_params: SignalParams
     exit_params: SignalParams
     screening_mode: str = "standard"
-    compiled_strategy: CompiledStrategyIR | None = None
+    compiled_strategy: CompiledStrategyIR = field(
+        default_factory=lambda: _compiled_strategy()
+    )
 
 
 @dataclass
@@ -67,13 +69,13 @@ def _signals(index: pd.DatetimeIndex) -> Signals:
 def _compiled_strategy(
     *,
     entry_params: SignalParams | None = None,
-    current_session_round_trip_oracle: bool = False,
+    execution_policy: dict[str, str] | None = None,
 ) -> CompiledStrategyIR:
     shared_config = SharedConfig.model_validate(
         {
             "dataset": "primeExTopix500",
             "timeframe": "daily",
-            "current_session_round_trip_oracle": current_session_round_trip_oracle,
+            "execution_policy": execution_policy or {"mode": "standard"},
         },
         context={"resolve_stock_codes": False},
     )
@@ -124,16 +126,16 @@ def test_evaluate_stock_reuses_per_stock_signal_cache() -> None:
     assert outcome.matched_dates_by_strategy == {"s1": "2026-01-02", "s2": "2026-01-02"}
 
 
-def test_evaluate_stock_passes_oracle_mode_to_signal_generation() -> None:
+def test_evaluate_stock_passes_same_day_mode_to_signal_generation() -> None:
     index = pd.to_datetime(["2026-01-01", "2026-01-02"])
     daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
     strategy = _Strategy(
-        "oracle",
+        "same_day",
         SignalParams(),
         SignalParams(),
-        screening_mode="oracle",
+        screening_mode="same_day",
         compiled_strategy=_compiled_strategy(
-            current_session_round_trip_oracle=True
+            execution_policy={"mode": "current_session_round_trip"}
         ),
     )
     stock = _Stock("1001")
@@ -156,21 +158,21 @@ def test_evaluate_stock_passes_oracle_mode_to_signal_generation() -> None:
         find_recent_match_date=lambda _signals, _recent_days: "2026-01-02",
     )
 
-    assert outcome.matched_dates_by_strategy == {"oracle": "2026-01-02"}
+    assert outcome.matched_dates_by_strategy == {"same_day": "2026-01-02"}
     assert captured["compiled_strategy"].execution_semantics == (
-        "current_session_round_trip_oracle"
+        "current_session_round_trip"
     )
-    assert "current_session_round_trip_oracle" not in captured
+    assert "current_session_round_trip" not in captured
 
 
-def test_evaluate_stock_does_not_infer_oracle_from_screening_label_alone() -> None:
+def test_evaluate_stock_does_not_infer_same_day_from_screening_label_alone() -> None:
     index = pd.to_datetime(["2026-01-01", "2026-01-02"])
     daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
     strategy = _Strategy(
-        "oracle-ish",
+        "same-day-ish",
         SignalParams(),
         SignalParams(),
-        screening_mode="oracle",
+        screening_mode="same_day",
         compiled_strategy=_compiled_strategy(),
     )
     stock = _Stock("1001")
@@ -194,7 +196,7 @@ def test_evaluate_stock_does_not_infer_oracle_from_screening_label_alone() -> No
     )
 
     assert captured["compiled_strategy"].execution_semantics == "standard"
-    assert "current_session_round_trip_oracle" not in captured
+    assert "current_session_round_trip" not in captured
 
 
 def test_evaluate_stock_converts_unexpected_matcher_error_to_warning() -> None:

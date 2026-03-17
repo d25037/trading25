@@ -94,9 +94,7 @@ class YamlConfigurableStrategy(
         self.cash_sharing = shared_config.cash_sharing
         self.direction = shared_config.direction
         self.next_session_round_trip = shared_config.next_session_round_trip
-        self.current_session_round_trip_oracle = (
-            shared_config.current_session_round_trip_oracle
-        )
+        self.current_session_round_trip = shared_config.current_session_round_trip
 
         # Timeframe設定
         self.timeframe = shared_config.timeframe
@@ -139,8 +137,8 @@ class YamlConfigurableStrategy(
             self.compiled_strategy
         )
         self.next_session_round_trip = round_trip_mode_name == "next_session_round_trip"
-        self.current_session_round_trip_oracle = (
-            round_trip_mode_name == "current_session_round_trip_oracle"
+        self.current_session_round_trip = (
+            round_trip_mode_name == "current_session_round_trip"
         )
 
         # 統合シグナルプロセッサー（Filter + Trigger統合）

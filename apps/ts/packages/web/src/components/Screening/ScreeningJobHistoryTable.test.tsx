@@ -108,12 +108,12 @@ describe('ScreeningJobHistoryTable', () => {
     expect(screen.getByRole('button', { name: 'View' })).toBeInTheDocument();
   });
 
-  it('shows oracle fallback label when strategies are omitted', () => {
-    const job = createJob({ job_id: 'job-oracle', strategies: null });
+  it('shows same-day fallback label when strategies are omitted', () => {
+    const job = createJob({ job_id: 'job-same-day', strategies: null });
 
     render(
       <ScreeningJobHistoryTable
-        mode="oracle"
+        mode="same_day"
         jobs={[job]}
         isLoading={false}
         showHistory
@@ -123,6 +123,6 @@ describe('ScreeningJobHistoryTable', () => {
       />
     );
 
-    expect(screen.getByText('(all oracle production)')).toBeInTheDocument();
+    expect(screen.getByText('(all same-day production)')).toBeInTheDocument();
   });
 });

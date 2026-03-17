@@ -72,8 +72,8 @@ class IndexMACDHistogramSignalParams(BaseSignalParams):
         )
 
 
-class OracleIndexOpenGapRegimeSignalParams(BaseSignalParams):
-    """指数寄り付きギャップを same-session oracle 前提で判定するシグナル."""
+class IndexOpenGapRegimeSignalParams(BaseSignalParams):
+    """指数寄り付きギャップを same-day レジームとして判定するシグナル."""
 
     gap_threshold_1_pct: float = Field(
         default=1.0,

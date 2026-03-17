@@ -9,8 +9,10 @@
 #   fees: 0.0005  # 取引手数料を変更
 #   min_allocation: 0.02  # 最小配分率を変更
 #   max_allocation: 0.4  # 最大配分率を変更
-#   next_session_round_trip: true  # 翌営業日Openで建て、同日Closeで閉じる
-#   current_session_round_trip_oracle: true  # Research-only: 当日TOPIX寄り値を使う same-session Open->Close
+#   execution_policy:
+#     mode: "next_session_round_trip"  # 翌営業日Openで建て、同日Closeで閉じる
+#   execution_policy:
+#     mode: "current_session_round_trip"  # 当日寄りで建て、当日Closeで閉じる same-day 実行
 #
 # 注意:
 # - shared_config セクションを省略した場合は、default.yaml の設定が使用されます

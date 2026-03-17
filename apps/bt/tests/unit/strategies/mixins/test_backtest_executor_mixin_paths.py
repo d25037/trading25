@@ -69,7 +69,7 @@ class _RuntimeStrategy(BacktestExecutorMixin):
         self.group_by = True
         self.direction = "longonly"
         self.next_session_round_trip = False
-        self.current_session_round_trip_oracle = False
+        self.current_session_round_trip = False
         self.printlog = False
         self.relative_mode = False
         self.dataset = "primeExTopix500"
@@ -610,13 +610,13 @@ class TestBacktestExecutorMixinPaths:
         assert len(portfolio.trades.records_readable) == 0
         assert any("Open/Close was missing" in message for _level, message in strategy.logs)
 
-    def test_run_multi_backtest_current_session_round_trip_oracle_executes_same_bar(
+    def test_run_multi_backtest_current_session_round_trip_executes_same_bar(
         self,
     ) -> None:
         strategy = _RuntimeStrategy()
         strategy.group_by = False
         strategy.stock_codes = ["1111"]
-        strategy.current_session_round_trip_oracle = True
+        strategy.current_session_round_trip = True
         stock_data = _ohlcv_df()
         strategy._mock_multi_data = {"1111": {"daily": stock_data}}
         strategy._next_signals = {
@@ -636,13 +636,13 @@ class TestBacktestExecutorMixinPaths:
         assert trades.iloc[0]["Avg Entry Price"] == pytest.approx(10.0)
         assert trades.iloc[0]["Avg Exit Price"] == pytest.approx(10.5)
 
-    def test_run_multi_backtest_current_session_round_trip_oracle_keeps_last_bar_signal(
+    def test_run_multi_backtest_current_session_round_trip_keeps_last_bar_signal(
         self,
     ) -> None:
         strategy = _RuntimeStrategy()
         strategy.group_by = False
         strategy.stock_codes = ["1111"]
-        strategy.current_session_round_trip_oracle = True
+        strategy.current_session_round_trip = True
         stock_data = _ohlcv_df()
         strategy._mock_multi_data = {"1111": {"daily": stock_data}}
         strategy._next_signals = {
@@ -660,13 +660,13 @@ class TestBacktestExecutorMixinPaths:
         assert str(trades.iloc[0]["Exit Timestamp"]).startswith("2020-01-04")
         assert not any("next session is unavailable" in message for _level, message in strategy.logs)
 
-    def test_run_multi_backtest_current_session_round_trip_oracle_missing_execution_prices_logs_warning(
+    def test_run_multi_backtest_current_session_round_trip_missing_execution_prices_logs_warning(
         self,
     ) -> None:
         strategy = _RuntimeStrategy()
         strategy.group_by = False
         strategy.stock_codes = ["1111"]
-        strategy.current_session_round_trip_oracle = True
+        strategy.current_session_round_trip = True
         stock_data = _ohlcv_df()
         stock_data.loc[stock_data.index[0], "Open"] = float("nan")
         strategy._mock_multi_data = {"1111": {"daily": stock_data}}
@@ -684,14 +684,14 @@ class TestBacktestExecutorMixinPaths:
     def test_round_trip_mode_name_prefers_compiled_strategy_semantics(self) -> None:
         strategy = _RuntimeStrategy()
         strategy.next_session_round_trip = False
-        strategy.current_session_round_trip_oracle = False
+        strategy.current_session_round_trip = False
         strategy.compiled_strategy = compile_runtime_strategy(
             strategy_name="runtime",
             shared_config=SharedConfig.model_validate(
                 {
                     "dataset": "sample",
                     "stock_codes": ["1111"],
-                    "next_session_round_trip": True,
+                    "execution_policy": {"mode": "next_session_round_trip"},
                 },
                 context={"resolve_stock_codes": False},
             ),
@@ -700,10 +700,10 @@ class TestBacktestExecutorMixinPaths:
 
         assert strategy._get_round_trip_mode_name() == "next_session_round_trip"
 
-    def test_round_trip_mode_name_does_not_treat_same_day_oracle_signal_as_round_trip_mode(self) -> None:
+    def test_round_trip_mode_name_does_not_treat_same_day_signal_as_round_trip_mode(self) -> None:
         strategy = _RuntimeStrategy()
         strategy.next_session_round_trip = False
-        strategy.current_session_round_trip_oracle = False
+        strategy.current_session_round_trip = False
         strategy.compiled_strategy = compile_runtime_strategy(
             strategy_name="runtime",
             shared_config=SharedConfig.model_validate(
@@ -714,7 +714,7 @@ class TestBacktestExecutorMixinPaths:
                 context={"resolve_stock_codes": False},
             ),
             entry_signal_params=SignalParams.model_validate(
-                {"oracle_index_open_gap_regime": {"enabled": True}}
+                {"index_open_gap_regime": {"enabled": True}}
             ),
         )
 

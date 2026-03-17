@@ -36,7 +36,7 @@ const baseSignalData = {
       availability_profiles: [
         {
           scope: 'entry',
-          execution_semantics: 'current_session_round_trip_oracle',
+          execution_semantics: 'current_session_round_trip',
           availability: {
             observation_time: 'prior_session_close',
             available_at: 'prior_session_close',
@@ -152,7 +152,7 @@ describe('SignalReferencePanel', () => {
     fireEvent.click(signalHeaderButton as HTMLButtonElement);
     expect(screen.getByText('Use this for trend confirmation')).toBeInTheDocument();
     expect(screen.getByText('[>0, <=50]')).toBeInTheDocument();
-    expect(screen.getByText('Current Session Oracle')).toBeInTheDocument();
+    expect(screen.getByText('Current Session Round Trip')).toBeInTheDocument();
     expect(screen.getByText('Observe: Prior Close')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
@@ -165,7 +165,7 @@ describe('SignalReferencePanel', () => {
     expect(screen.queryByText('Copied!')).not.toBeInTheDocument();
 
     const searchInput = screen.getByPlaceholderText('Search signals...');
-    fireEvent.change(searchInput, { target: { value: 'oracle' } });
+    fireEvent.change(searchInput, { target: { value: 'current session round trip' } });
     expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
     expect(screen.getByText('Breakout')).toBeInTheDocument();
 

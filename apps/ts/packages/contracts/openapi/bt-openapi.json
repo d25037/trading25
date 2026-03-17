@@ -6846,7 +6846,7 @@
             "default": "standard",
             "enum": [
               "standard",
-              "oracle"
+              "same_day"
             ],
             "title": "Mode",
             "type": "string"
@@ -9792,7 +9792,7 @@
             "default": "standard",
             "enum": [
               "standard",
-              "oracle"
+              "same_day"
             ],
             "title": "Mode",
             "type": "string"
@@ -9923,7 +9923,7 @@
             "description": "screening mode",
             "enum": [
               "standard",
-              "oracle"
+              "same_day"
             ],
             "title": "Mode",
             "type": "string"
@@ -11012,7 +11012,7 @@
             "enum": [
               "standard",
               "next_session_round_trip",
-              "current_session_round_trip_oracle"
+              "current_session_round_trip"
             ],
             "title": "Execution Semantics",
             "type": "string"
@@ -12901,7 +12901,7 @@
             "description": "screening availability for analysis UI",
             "enum": [
               "standard",
-              "oracle",
+              "same_day",
               "unsupported"
             ],
             "title": "Screening Mode",

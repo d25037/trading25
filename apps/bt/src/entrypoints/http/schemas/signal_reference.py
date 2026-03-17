@@ -17,7 +17,7 @@ SignalFieldTypeValue = Literal["boolean", "number", "string", "select"]
 SignalExecutionSemantics = Literal[
     "standard",
     "next_session_round_trip",
-    "current_session_round_trip_oracle",
+    "current_session_round_trip",
 ]
 
 

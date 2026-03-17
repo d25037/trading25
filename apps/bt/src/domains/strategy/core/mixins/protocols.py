@@ -43,7 +43,7 @@ class StrategyProtocol(Protocol):
     end_date: str | None
     timeframe: Literal["daily", "weekly"]
     next_session_round_trip: bool
-    current_session_round_trip_oracle: bool
+    current_session_round_trip: bool
 
     # Strategy name
     strategy_name: str

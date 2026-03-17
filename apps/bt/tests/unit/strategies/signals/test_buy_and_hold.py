@@ -5,8 +5,10 @@ Buy&Holdシグナル ユニットテスト
 import numpy as np
 import pandas as pd
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.buy_and_hold import generate_buy_and_hold_signals
 from src.domains.strategy.signals.processor import SignalProcessor
+from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, BuyAndHoldSignalParams
 
 
@@ -66,6 +68,22 @@ class TestBuyAndHoldExitDisabled:
         )
         self.base_signal = pd.Series(False, index=self.dates)  # 基本Exit無し
 
+    @staticmethod
+    def _compiled_strategy(signal_params: SignalParams) -> object:
+        return compile_runtime_strategy(
+            strategy_name="buy-and-hold-test",
+            shared_config=SharedConfig.model_validate(
+                {
+                    "dataset": "sample",
+                    "stock_codes": ["1111"],
+                    "execution_policy": {"mode": "standard"},
+                },
+                context={"resolve_stock_codes": False},
+            ),
+            entry_signal_params=signal_params,
+            exit_signal_params=signal_params,
+        )
+
     def test_buy_and_hold_entry_enabled(self):
         """Entry用途では正常動作"""
         signal_params = SignalParams(
@@ -77,6 +95,7 @@ class TestBuyAndHoldExitDisabled:
             base_signal=base_entry,
             ohlc_data=self.ohlc_data,
             signal_params=signal_params,
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
         # Entry用途では全日程True（AND条件なのでbase_entryと同じ）
         assert result.all()
@@ -92,6 +111,7 @@ class TestBuyAndHoldExitDisabled:
             base_exits=base_exit,
             data=self.ohlc_data,
             signal_params=signal_params,
+            compiled_strategy=self._compiled_strategy(signal_params),
         )
         # Exit用途ではBuy&Holdはスキップされ、base_exitがそのまま返る
         assert (result == base_exit).all()

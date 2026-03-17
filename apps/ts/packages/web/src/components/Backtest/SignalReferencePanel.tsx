@@ -22,7 +22,7 @@ interface SignalItemProps {
 const executionSemanticsLabels: Record<string, string> = {
   standard: 'Standard',
   next_session_round_trip: 'Next Session Round Trip',
-  current_session_round_trip_oracle: 'Current Session Oracle',
+  current_session_round_trip: 'Current Session Round Trip',
 };
 
 const timingLabels: Record<string, string> = {

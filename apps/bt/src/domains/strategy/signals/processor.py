@@ -16,6 +16,7 @@ from src.shared.models.signals import SignalParams, Signals
 
 # データ駆動設計: シグナルレジストリからの動的処理
 from .registry import SIGNAL_REGISTRY
+from .scheduler import SignalDecisionScheduler
 
 if TYPE_CHECKING:
     from src.domains.strategy.runtime.compiler import (
@@ -52,9 +53,6 @@ class SignalProcessor:
     """
 
     _REQUIRES_EXECUTION_DATA = {"β値", "売買代金", "売買代金範囲"}
-    _CURRENT_SESSION_ORACLE_SAME_DAY_ENTRY_ALLOWLIST = {
-        "oracle_index_open_gap_regime"
-    }
 
     def __init__(self):
         """
@@ -62,13 +60,15 @@ class SignalProcessor:
 
         外部依存なしの純粋な関数型シグナルプロセッサー
         """
-        pass
+        self._scheduler = SignalDecisionScheduler()
 
     def apply_entry_signals(
         self,
         base_signal: pd.Series,
         ohlc_data: pd.DataFrame,
         signal_params: SignalParams,
+        *,
+        compiled_strategy: CompiledStrategyIR,
         margin_data: Optional[pd.DataFrame] = None,
         statements_data: Optional[pd.DataFrame] = None,
         benchmark_data: Optional[pd.DataFrame] = None,
@@ -78,7 +78,6 @@ class SignalProcessor:
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         screening_recent_days: int | None = None,
-        compiled_strategy: CompiledStrategyIR | None = None,
     ) -> pd.Series:
         """
         エントリーシグナル適用（統一シグナル処理システム使用）
@@ -121,6 +120,8 @@ class SignalProcessor:
         base_exits: pd.Series,
         data: pd.DataFrame,
         signal_params: SignalParams,
+        *,
+        compiled_strategy: CompiledStrategyIR,
         execution_data: Optional[pd.DataFrame] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
@@ -150,6 +151,7 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            compiled_strategy=compiled_strategy,
             **optional_data,  # オプショナルデータを渡す
         )
 
@@ -160,13 +162,14 @@ class SignalProcessor:
         ohlc_data: pd.DataFrame,
         entry_signal_params: SignalParams,
         exit_signal_params: SignalParams,
+        *,
+        compiled_strategy: CompiledStrategyIR,
         execution_data: Optional[pd.DataFrame] = None,
         relative_mode: bool = False,
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         screening_recent_days: int | None = None,
         skip_exit_when_no_recent_entry: bool = False,
-        compiled_strategy: CompiledStrategyIR | None = None,
         **optional_data,
     ) -> Signals:
         """
@@ -237,6 +240,7 @@ class SignalProcessor:
             relative_mode=relative_mode,
             sector_data=sector_data,
             stock_sector_name=stock_sector_name,
+            compiled_strategy=compiled_strategy,
             **optional_data,  # オプショナルデータ（benchmark_data等）を渡す
         )
 
@@ -284,6 +288,8 @@ class SignalProcessor:
         signal_type: Literal["entry", "exit"],
         ohlc_data: pd.DataFrame | None,
         signal_params: SignalParams,
+        *,
+        compiled_strategy: CompiledStrategyIR,
         margin_data: Optional[pd.DataFrame] = None,
         statements_data: Optional[pd.DataFrame] = None,
         benchmark_data: Optional[pd.DataFrame] = None,
@@ -292,7 +298,6 @@ class SignalProcessor:
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         entry_recent_days_for_early_stop: int | None = None,
-        compiled_strategy: CompiledStrategyIR | None = None,
     ) -> pd.Series:
         """
         統一シグナル処理システム
@@ -423,6 +428,8 @@ class SignalProcessor:
         close: pd.Series,
         volume: pd.Series,
         ohlc_data: pd.DataFrame,
+        *,
+        compiled_strategy: CompiledStrategyIR,
         margin_data: Optional[pd.DataFrame] = None,
         statements_data: Optional[pd.DataFrame] = None,
         benchmark_data: Optional[pd.DataFrame] = None,
@@ -431,7 +438,6 @@ class SignalProcessor:
         sector_data: Optional[dict] = None,
         stock_sector_name: Optional[str] = None,
         entry_recent_days_for_early_stop: int | None = None,
-        compiled_strategy: CompiledStrategyIR | None = None,
     ) -> bool:
         """
         データ駆動型シグナル適用処理（統一レジストリベース）
@@ -505,48 +511,28 @@ class SignalProcessor:
     @classmethod
     def _get_compiled_signal_availability(
         cls,
-        compiled_strategy: CompiledStrategyIR | None,
+        compiled_strategy: CompiledStrategyIR,
         *,
         signal_type: Literal["entry", "exit"],
         signal_def: SignalDefinitionLike,
-    ) -> CompiledSignalAvailability | None:
-        if compiled_strategy is None:
-            return None
-
+    ) -> CompiledSignalAvailability:
         scope = "entry" if signal_type == "entry" else "exit"
         signal_id = f"{scope}.{signal_def.param_key}"
         for compiled_signal in compiled_strategy.signals:
             if compiled_signal.signal_id == signal_id:
                 return compiled_signal.availability
-        return None
-
-    @classmethod
-    def _should_lag_entry_signal_for_current_session_oracle(
-        cls,
-        signal_type: Literal["entry", "exit"],
-        signal_def: SignalDefinitionLike,
-        compiled_strategy: CompiledStrategyIR | None = None,
-    ) -> bool:
-        availability = cls._get_compiled_signal_availability(
-            compiled_strategy,
-            signal_type=signal_type,
-            signal_def=signal_def,
-        )
-        return (
-            availability is not None
-            and signal_type == "entry"
-            and availability.execution_session == "current_session"
-            and availability.observation_time == "prior_session_close"
-        )
+        raise ValueError(f"Compiled availability not found for signal_id='{signal_id}'")
 
     def _is_requirement_satisfied(self, requirement: str, data_sources: dict) -> bool:
         base, _, detail = requirement.partition(":")
 
-        if base == "benchmark":
+        if requirement in {"benchmark_close", "benchmark_open_gap"}:
             benchmark = data_sources.get("benchmark_data")
             if not isinstance(benchmark, pd.DataFrame) or benchmark.empty:
                 return False
             if "Close" not in benchmark.columns:
+                return False
+            if requirement == "benchmark_open_gap" and "Open" not in benchmark.columns:
                 return False
             return bool(benchmark["Close"].notna().any())
 
@@ -610,7 +596,7 @@ class SignalProcessor:
         signal_params: SignalParams,
         base_signal: pd.Series,
         data_sources: dict,
-        compiled_strategy: CompiledStrategyIR | None = None,
+        compiled_strategy: CompiledStrategyIR,
     ):
         """統一シグナル適用（Entry/Exit両用）"""
         try:
@@ -681,16 +667,18 @@ class SignalProcessor:
                 # - Exit (OR): NaNはFalse扱い（発火しない）
                 result = result.reindex(base_signal.index)  # fill_value省略でNaN
 
-            if self._should_lag_entry_signal_for_current_session_oracle(
+            availability = self._get_compiled_signal_availability(
+                compiled_strategy,
                 signal_type=signal_type,
                 signal_def=signal_def,
-                compiled_strategy=compiled_strategy,
-            ):
-                result = result.shift(1, fill_value=False)
+            )
+            projected = self._scheduler.project(result, availability=availability)
+            if not projected.equals(result):
                 logger.debug(
-                    f"{signal_def.name}シグナル: current_session_round_trip_oracle "
-                    "では前営業日までの情報に固定するため 1 日ラグを適用"
+                    f"{signal_def.name}シグナル: compiled availability に基づき "
+                    "decision window へ再投影"
                 )
+            result = projected
 
             # 7. ロギング＋条件追加
             self._log_signal_effect(

@@ -8,6 +8,7 @@ import pytest
 import pandas as pd
 import numpy as np
 
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.signals.volatility import (
     bollinger_bands_signal,
     bollinger_cross_signal,
@@ -17,6 +18,7 @@ from src.domains.strategy.signals.volatility import (
     volatility_percentile_signal,
     low_volatility_stock_screen_signal,
 )
+from src.shared.models.config import SharedConfig
 
 
 class TestVolatilityRelativeSignal:
@@ -460,6 +462,19 @@ class TestVolatilitySignalIntegration:
             signal_type="entry",
             ohlc_data=ohlc_data,
             signal_params=params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="volatility-percentile-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=params,
+                exit_signal_params=SignalParams(),
+            ),
         )
 
         assert isinstance(result, pd.Series)
@@ -499,6 +514,19 @@ class TestVolatilitySignalIntegration:
             signal_type="entry",
             ohlc_data=ohlc_data,
             signal_params=params,
+            compiled_strategy=compile_runtime_strategy(
+                strategy_name="bollinger-position-test",
+                shared_config=SharedConfig.model_validate(
+                    {
+                        "dataset": "sample",
+                        "stock_codes": ["1111"],
+                        "execution_policy": {"mode": "standard"},
+                    },
+                    context={"resolve_stock_codes": False},
+                ),
+                entry_signal_params=params,
+                exit_signal_params=SignalParams(),
+            ),
         )
 
         assert isinstance(result, pd.Series)

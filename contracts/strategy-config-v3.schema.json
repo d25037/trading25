@@ -119,6 +119,16 @@
           "type": "string",
           "enum": ["longonly", "shortonly", "both"]
         },
+        "execution_policy": {
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["standard", "next_session_round_trip", "current_session_round_trip"]
+            }
+          }
+        },
         "kelly_fraction": {
           "type": "number"
         },
@@ -192,7 +202,7 @@
         "baseline_cross": {"$ref": "#/$defs/signal_object"},
         "index_daily_change": {"$ref": "#/$defs/signal_object"},
         "index_macd_histogram": {"$ref": "#/$defs/signal_object"},
-        "oracle_index_open_gap_regime": {"$ref": "#/$defs/signal_object"},
+        "index_open_gap_regime": {"$ref": "#/$defs/signal_object"},
         "risk_adjusted_return": {"$ref": "#/$defs/signal_object"},
         "sector_strength_ranking": {"$ref": "#/$defs/signal_object"},
         "sector_rotation_phase": {"$ref": "#/$defs/signal_object"},
