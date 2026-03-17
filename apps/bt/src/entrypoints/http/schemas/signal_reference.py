@@ -18,6 +18,7 @@ SignalExecutionSemantics = Literal[
     "standard",
     "next_session_round_trip",
     "current_session_round_trip",
+    "overnight_round_trip",
 ]
 
 

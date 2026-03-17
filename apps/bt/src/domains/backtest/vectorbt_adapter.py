@@ -153,6 +153,7 @@ class ExecutionAdapterProtocol(Protocol):
         open_data: pd.DataFrame,
         close_data: pd.DataFrame,
         entries_data: pd.DataFrame,
+        execution_mode: str,
         entry_size: float,
         entry_size_type: int,
         direction: int,
@@ -221,6 +222,59 @@ def _round_trip_order_func_nb(
             direction=exit_direction,
             fees=fees,
             slippage=slippage,
+        )
+
+    return -1, portfolio_nb.order_nothing_nb()
+
+
+@njit
+def _overnight_round_trip_order_func_nb(
+    c,
+    entry_mask: np.ndarray,
+    open_prices: np.ndarray,
+    close_prices: np.ndarray,
+    entry_size: float,
+    entry_size_type: int,
+    entry_direction: int,
+    fees: float,
+    slippage: float,
+    max_size: float,
+):
+    group_len = c.to_col - c.from_col
+
+    if c.call_idx < group_len:
+        col = c.from_col + c.call_idx
+        if c.i == 0 or not entry_mask[c.i - 1, col]:
+            return col, portfolio_nb.order_nothing_nb()
+        position_now = c.last_position[col]
+        if position_now == 0:
+            return col, portfolio_nb.order_nothing_nb()
+        exit_size = -position_now
+        exit_direction = entry_direction
+        if position_now < 0:
+            exit_size = abs(position_now)
+            exit_direction = Direction.Both
+        return col, portfolio_nb.order_nb(
+            size=exit_size,
+            price=float(open_prices[c.i, col]),
+            size_type=SizeType.Amount,
+            direction=exit_direction,
+            fees=fees,
+            slippage=slippage,
+        )
+
+    if c.call_idx < group_len * 2:
+        col = c.from_col + (c.call_idx - group_len)
+        if c.i >= len(entry_mask) - 1 or not entry_mask[c.i, col]:
+            return col, portfolio_nb.order_nothing_nb()
+        return col, portfolio_nb.order_nb(
+            size=entry_size,
+            price=float(close_prices[c.i, col]),
+            size_type=entry_size_type,
+            direction=entry_direction,
+            fees=fees,
+            slippage=slippage,
+            max_size=max_size,
         )
 
     return -1, portfolio_nb.order_nothing_nb()
@@ -350,6 +404,7 @@ class VectorbtAdapter:
         open_data: pd.DataFrame,
         close_data: pd.DataFrame,
         entries_data: pd.DataFrame,
+        execution_mode: str,
         entry_size: float,
         entry_size_type: int,
         direction: int,
@@ -362,6 +417,9 @@ class VectorbtAdapter:
         freq: str = "D",
     ) -> ExecutionPortfolioProtocol:
         normalized_entries = entries_data.fillna(False).infer_objects(copy=False).astype(bool)
+        order_func = _round_trip_order_func_nb
+        if execution_mode == "overnight_round_trip":
+            order_func = _overnight_round_trip_order_func_nb
         max_orders = max(
             1,
             int(normalized_entries.to_numpy(dtype=np.bool_).sum()) * 2
@@ -371,7 +429,7 @@ class VectorbtAdapter:
         return ensure_execution_portfolio(
             vbt.Portfolio.from_order_func(
                 close_data.astype(float),
-                cast(Any, _round_trip_order_func_nb),
+                cast(Any, order_func),
                 normalized_entries.to_numpy(dtype=np.bool_),
                 open_data.astype(float).to_numpy(dtype=np.float64),
                 close_data.astype(float).to_numpy(dtype=np.float64),

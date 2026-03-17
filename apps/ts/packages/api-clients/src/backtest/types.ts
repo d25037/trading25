@@ -323,7 +323,8 @@ export interface AttributionArtifactContentResponse {
   artifact: Record<string, unknown>;
 }
 
-export type StrategyScreeningMode = 'standard' | 'same_day' | 'unsupported';
+export type EntryDecidability = 'pre_open_decidable' | 'requires_same_session_observation';
+export type ScreeningSupport = 'supported' | 'unsupported';
 
 export interface StrategyMetadata {
   name: string;
@@ -331,7 +332,8 @@ export interface StrategyMetadata {
   display_name: string | null;
   description: string | null;
   last_modified: string | null;
-  screening_mode?: StrategyScreeningMode;
+  screening_support?: ScreeningSupport;
+  entry_decidability?: EntryDecidability | null;
   screening_error?: string | null;
 }
 
@@ -623,7 +625,8 @@ export interface SignalChartCapability {
 export type SignalExecutionSemantics =
   | 'standard'
   | 'next_session_round_trip'
-  | 'current_session_round_trip';
+  | 'current_session_round_trip'
+  | 'overnight_round_trip';
 
 export interface SignalAvailabilityProfile {
   scope: CompiledSignalScope;

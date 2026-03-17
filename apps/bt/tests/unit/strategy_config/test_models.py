@@ -68,6 +68,18 @@ class TestStrictValidation:
         assert result.shared_config is not None
         assert result.shared_config.current_session_round_trip is True
 
+    def test_strict_valid_overnight_round_trip_config(self) -> None:
+        config = {
+            "shared_config": {
+                "execution_policy": {"mode": "overnight_round_trip"}
+            },
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            "exit_trigger_params": {},
+        }
+        result = validate_strategy_config_dict_strict(config)
+        assert result.shared_config is not None
+        assert result.shared_config.overnight_round_trip is True
+
     def test_strict_valid_shared_config_without_round_trip_allows_exit_params(self) -> None:
         config = {
             "shared_config": {"execution_policy": {"mode": "standard"}},
@@ -126,6 +138,20 @@ class TestStrictValidation:
         config = {
             "shared_config": {
                 "execution_policy": {"mode": "current_session_round_trip"}
+            },
+            "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
+            "exit_trigger_params": {"rsi_threshold": {"enabled": True}},
+        }
+
+        with pytest.raises(StrategyConfigStrictValidationError, match="exit_trigger_params"):
+            validate_strategy_config_dict_strict(config)
+
+    def test_strict_overnight_round_trip_rejects_non_empty_exit_params(
+        self,
+    ) -> None:
+        config = {
+            "shared_config": {
+                "execution_policy": {"mode": "overnight_round_trip"}
             },
             "entry_filter_params": {"volume_ratio_above": {"enabled": True}},
             "exit_trigger_params": {"rsi_threshold": {"enabled": True}},

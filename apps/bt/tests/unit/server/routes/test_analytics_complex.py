@@ -470,7 +470,7 @@ class TestScreening:
         data = resp.json()
         assert data["job_id"] == "job-1"
         assert data["status"] == "pending"
-        assert data["mode"] == "standard"
+        assert data["entry_decidability"] == "pre_open_decidable"
         assert data["sortBy"] == "matchedDate"
         assert data["order"] == "desc"
 
@@ -478,6 +478,13 @@ class TestScreening:
         resp = analytics_client.post(
             "/api/analytics/screening/jobs",
             json={"backtestMetric": "sharpe_ratio"},
+        )
+        assert resp.status_code == 422
+
+    def test_rejects_removed_same_day_mode(self, analytics_client):
+        resp = analytics_client.post(
+            "/api/analytics/screening/jobs",
+            json={"mode": "same_day"},
         )
         assert resp.status_code == 422
 
@@ -500,7 +507,7 @@ class TestScreening:
         data = resp.json()
         assert data["job_id"] == "job-2"
         assert data["status"] == "running"
-        assert data["mode"] == "standard"
+        assert data["entry_decidability"] == "pre_open_decidable"
         assert data["recentDays"] == 5
         assert data["markets"] == "prime,standard"
 
@@ -562,6 +569,7 @@ class TestScreening:
                     "warnings": [],
                 },
                 "markets": ["prime"],
+                "entry_decidability": "pre_open_decidable",
                 "recentDays": 10,
                 "referenceDate": None,
                 "sortBy": "matchedDate",
@@ -587,6 +595,7 @@ class TestScreening:
 
         assert resp.status_code == 200
         data = resp.json()
+        assert data["entry_decidability"] == "pre_open_decidable"
         assert data["sortBy"] == "matchedDate"
         assert "backtestMetric" not in data
 

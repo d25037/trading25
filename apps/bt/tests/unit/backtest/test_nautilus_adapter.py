@@ -270,6 +270,7 @@ def test_prepare_portfolio_inputs_captures_round_trip_inputs(monkeypatch) -> Non
                 open_data=pd.DataFrame({"1301": [100.0], "1332": [50.0]}, index=index),
                 close_data=pd.DataFrame({"1301": [102.0], "1332": [52.0]}, index=index),
                 entries_data=pd.DataFrame({"1301": [True], "1332": [0]}, index=index),
+                execution_mode="next_session_round_trip",
                 entry_size=0.5,
                 entry_size_type=1,
                 direction=1,
@@ -307,6 +308,47 @@ def test_prepare_portfolio_inputs_captures_round_trip_inputs(monkeypatch) -> Non
     assert prepared.entries_data.dtypes.tolist() == [bool, bool]
     assert prepared.effective_fees == 0.001
     assert prepared.effective_slippage == 0.002
+
+
+def test_build_verification_plan_computes_metrics_for_overnight_round_trip() -> None:
+    prepared = _PreparedPortfolioInputs(
+        strategy_name="demo",
+        dataset_name="sample",
+        shared_config=SharedConfig(
+            dataset="sample",
+            stock_codes=["1301"],
+            initial_cash=1_000_000,
+            timeframe="daily",
+            direction="longonly",
+            group_by=True,
+            cash_sharing=True,
+        ),
+        compiled_strategy=None,
+        open_data=pd.DataFrame(
+            {"1301": [100.0, 103.0]},
+            index=pd.to_datetime(["2024-01-04", "2024-01-05"]),
+        ),
+        close_data=pd.DataFrame(
+            {"1301": [101.0, 104.0]},
+            index=pd.to_datetime(["2024-01-04", "2024-01-05"]),
+        ),
+        entries_data=pd.DataFrame(
+            {"1301": [True, False]},
+            index=pd.to_datetime(["2024-01-04", "2024-01-05"]),
+        ),
+        execution_mode="overnight_round_trip",
+        effective_fees=0.0,
+        effective_slippage=0.0,
+        allocation_per_asset=1.0,
+    )
+
+    plan = _build_verification_plan(prepared)
+
+    assert plan.summary_metrics.trade_count == 1
+    assert plan.trade_records[0]["trade_date"] == "2024-01-04"
+    assert plan.trade_records[0]["exit_date"] == "2024-01-05"
+    assert plan.trade_records[0]["open_price"] == pytest.approx(101.0)
+    assert plan.trade_records[0]["close_price"] == pytest.approx(103.0)
 
 
 @pytest.mark.parametrize(
@@ -364,6 +406,7 @@ def test_prepare_portfolio_inputs_rejects_unsupported_config(
                 open_data=pd.DataFrame({"1301": [100.0]}, index=index),
                 close_data=pd.DataFrame({"1301": [102.0]}, index=index),
                 entries_data=pd.DataFrame({"1301": [True]}, index=index),
+                execution_mode=execution_mode,
                 entry_size=1.0,
                 entry_size_type=1,
                 direction=1,
@@ -482,7 +525,10 @@ def test_nautilus_helper_functions_cover_edge_cases(monkeypatch, tmp_path: Path)
     )
     assert payload == {"items": [1, None], "nested": [None, {"value": 3.0}]}
     assert adapter._coerce_signal_params(None) is None  # noqa: SLF001
-    assert isinstance(adapter._coerce_signal_params({"enabled": True}), object)  # noqa: SLF001
+    assert isinstance(
+        adapter._coerce_signal_params({"volume_ratio_above": {"enabled": True}}),
+        SignalParams,
+    )  # noqa: SLF001
     marker = object()
     assert adapter._coerce_signal_params(marker) is marker  # noqa: SLF001
     assert adapter._CapturedExecutionAdapter().build_summary_metrics(object()) is None  # noqa: SLF001
@@ -560,7 +606,7 @@ def test_nautilus_helper_functions_cover_edge_cases(monkeypatch, tmp_path: Path)
 
 
 def test_nautilus_low_level_helper_fallbacks(monkeypatch) -> None:
-    signal_params = SignalParams(enabled=True)
+    signal_params = SignalParams(volume_ratio_above={"enabled": True})
     assert adapter._module_attr(  # noqa: SLF001
         primary=SimpleNamespace(name="primary"),
         fallback=SimpleNamespace(name="fallback"),
@@ -573,7 +619,10 @@ def test_nautilus_low_level_helper_fallbacks(monkeypatch) -> None:
     ) == "fallback"
     assert adapter._coerce_signal_params(None) is None  # noqa: SLF001
     assert adapter._coerce_signal_params(signal_params) is signal_params  # noqa: SLF001
-    assert isinstance(adapter._coerce_signal_params({"enabled": True}), SignalParams)  # noqa: SLF001
+    assert isinstance(
+        adapter._coerce_signal_params({"volume_ratio_above": {"enabled": True}}),
+        SignalParams,
+    )  # noqa: SLF001
     passthrough = object()
     assert adapter._coerce_signal_params(passthrough) is passthrough  # noqa: SLF001
 

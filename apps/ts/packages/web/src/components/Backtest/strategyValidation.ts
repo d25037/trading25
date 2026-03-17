@@ -7,7 +7,11 @@ export interface StrategyValidationResult {
   warnings: string[];
 }
 
-type ExecutionPolicyMode = 'standard' | 'next_session_round_trip' | 'current_session_round_trip';
+type ExecutionPolicyMode =
+  | 'standard'
+  | 'next_session_round_trip'
+  | 'current_session_round_trip'
+  | 'overnight_round_trip';
 
 const ALLOWED_SHARED_CONFIG_KEYS = new Set([
   'initial_cash',
@@ -352,10 +356,11 @@ function resolveExecutionPolicyMode(
   if (
     mode !== 'standard' &&
     mode !== 'next_session_round_trip' &&
-    mode !== 'current_session_round_trip'
+    mode !== 'current_session_round_trip' &&
+    mode !== 'overnight_round_trip'
   ) {
     errors.push(
-      "shared_config.execution_policy.mode must be one of: standard, next_session_round_trip, current_session_round_trip"
+      "shared_config.execution_policy.mode must be one of: standard, next_session_round_trip, current_session_round_trip, overnight_round_trip"
     );
     return null;
   }

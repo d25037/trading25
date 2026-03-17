@@ -36,11 +36,11 @@ const baseSignalData = {
       availability_profiles: [
         {
           scope: 'entry',
-          execution_semantics: 'current_session_round_trip',
+          execution_semantics: 'overnight_round_trip',
           availability: {
-            observation_time: 'prior_session_close',
-            available_at: 'prior_session_close',
-            decision_cutoff: 'current_session_open',
+            observation_time: 'current_session_close',
+            available_at: 'current_session_close',
+            decision_cutoff: 'current_session_close',
             execution_session: 'current_session',
           },
         },
@@ -152,8 +152,8 @@ describe('SignalReferencePanel', () => {
     fireEvent.click(signalHeaderButton as HTMLButtonElement);
     expect(screen.getByText('Use this for trend confirmation')).toBeInTheDocument();
     expect(screen.getByText('[>0, <=50]')).toBeInTheDocument();
-    expect(screen.getByText('Current Session Round Trip')).toBeInTheDocument();
-    expect(screen.getByText('Observe: Prior Close')).toBeInTheDocument();
+    expect(screen.getByText('Overnight Round Trip')).toBeInTheDocument();
+    expect(screen.getByText('Observe: Current Close')).toBeInTheDocument();
 
     fireEvent.click(screen.getByRole('button', { name: 'Copy' }));
     expect(onCopySnippet).toHaveBeenCalledWith('entry_filter:\n  breakout.close_gt_sma:\n    enabled: true');
@@ -165,11 +165,11 @@ describe('SignalReferencePanel', () => {
     expect(screen.queryByText('Copied!')).not.toBeInTheDocument();
 
     const searchInput = screen.getByPlaceholderText('Search signals...');
-    fireEvent.change(searchInput, { target: { value: 'current session round trip' } });
+    fireEvent.change(searchInput, { target: { value: 'overnight round trip' } });
     expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
     expect(screen.getByText('Breakout')).toBeInTheDocument();
 
-    fireEvent.change(searchInput, { target: { value: 'prior close' } });
+    fireEvent.change(searchInput, { target: { value: 'current close' } });
     expect(screen.queryByText('No signals found')).not.toBeInTheDocument();
     expect(screen.getByText('Breakout')).toBeInTheDocument();
 

@@ -103,26 +103,13 @@ class CompiledStrategyIR(BaseModel):
     )
 
 
-def uses_same_day_execution(
-    compiled_strategy: CompiledStrategyIR,
-) -> bool:
-    if compiled_strategy.execution_semantics == "current_session_round_trip":
-        return True
-
-    return any(
-        signal.scope == CompiledSignalScope.ENTRY
-        and signal.availability.observation_time
-        == CompiledAvailabilityPoint.CURRENT_SESSION_OPEN
-        for signal in compiled_strategy.signals
-    )
-
-
 def resolve_round_trip_execution_mode_name(
     compiled_strategy: CompiledStrategyIR,
 ) -> str | None:
     if compiled_strategy.execution_semantics in (
         "next_session_round_trip",
         "current_session_round_trip",
+        "overnight_round_trip",
     ):
         return compiled_strategy.execution_semantics
     return None
@@ -145,14 +132,14 @@ def resolve_signal_availability(
     signal_def: Any,
     shared_config: SharedConfig,
 ) -> CompiledSignalAvailability:
-    same_day_signal = (
+    current_session_open_entry_signal = (
         scope == CompiledSignalScope.ENTRY
         and signal_def.resolve_availability_policy().observation_time
         == FeatureObservationPoint.CURRENT_SESSION_OPEN
     )
 
     if shared_config.current_session_round_trip:
-        if same_day_signal:
+        if current_session_open_entry_signal:
             return CompiledSignalAvailability(
                 observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
                 available_at=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
@@ -166,7 +153,22 @@ def resolve_signal_availability(
             execution_session=CompiledExecutionSession.CURRENT_SESSION,
         )
 
-    if same_day_signal:
+    if shared_config.overnight_round_trip:
+        if current_session_open_entry_signal:
+            return CompiledSignalAvailability(
+                observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
+                available_at=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
+                decision_cutoff=CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE,
+                execution_session=CompiledExecutionSession.CURRENT_SESSION,
+            )
+        return CompiledSignalAvailability(
+            observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE,
+            available_at=CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE,
+            decision_cutoff=CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE,
+            execution_session=CompiledExecutionSession.CURRENT_SESSION,
+        )
+
+    if current_session_open_entry_signal:
         return CompiledSignalAvailability(
             observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
             available_at=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,

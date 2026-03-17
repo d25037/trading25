@@ -134,6 +134,26 @@ class TestYamlConfigurableStrategyRoundTrip:
 
         assert bool(result.exits.iloc[-1]) is False
 
+    def test_generate_signals_skips_forced_exit_in_overnight_round_trip(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(
+                execution_policy={"mode": "overnight_round_trip"}
+            )
+        )
+        data = _ohlcv()
+        monkeypatch.setattr(
+            strategy.signal_processor,
+            "generate_signals",
+            lambda **kwargs: _signals(cast(pd.DatetimeIndex, data.index)),
+        )
+
+        result = strategy.generate_signals(data)
+
+        assert bool(result.exits.iloc[-1]) is False
+
     def test_generate_signals_passes_compiled_strategy_to_processor(
         self,
         monkeypatch: pytest.MonkeyPatch,
@@ -278,6 +298,16 @@ class TestYamlConfigurableStrategyRoundTrip:
         )
 
         assert strategy.compiled_strategy.execution_semantics == "next_session_round_trip"
+
+    def test_initialization_compiles_overnight_round_trip_semantics(self) -> None:
+        strategy = YamlConfigurableStrategy(
+            shared_config=_shared_config(
+                execution_policy={"mode": "overnight_round_trip"}
+            )
+        )
+
+        assert strategy.overnight_round_trip is True
+        assert strategy.compiled_strategy.execution_semantics == "overnight_round_trip"
 
     def test_initialization_keeps_round_trip_flag_off_when_only_same_day_signal_is_enabled(self) -> None:
         strategy = YamlConfigurableStrategy(

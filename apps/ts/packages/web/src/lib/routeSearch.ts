@@ -1,9 +1,9 @@
 import type { ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
 import {
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_SAME_DAY_SCREENING_PARAMS,
+  DEFAULT_IN_SESSION_SCREENING_PARAMS,
+  DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
-  DEFAULT_SCREENING_PARAMS,
   type AnalysisSubTab,
 } from '@/stores/analysisStore';
 import type { BacktestSubTab, LabType } from '@/types/backtest';
@@ -31,20 +31,20 @@ export interface IndicesRouteSearch {
 
 export interface AnalysisRouteSearch {
   tab?: AnalysisSubTab;
-  screeningMarkets?: string;
-  screeningStrategies?: string;
-  screeningRecentDays?: number;
-  screeningDate?: string;
-  screeningSortBy?: ScreeningSortBy;
-  screeningOrder?: SortOrder;
-  screeningLimit?: number;
-  sameDayMarkets?: string;
-  sameDayStrategies?: string;
-  sameDayRecentDays?: number;
-  sameDayDate?: string;
-  sameDaySortBy?: ScreeningSortBy;
-  sameDayOrder?: SortOrder;
-  sameDayLimit?: number;
+  preOpenMarkets?: string;
+  preOpenStrategies?: string;
+  preOpenRecentDays?: number;
+  preOpenDate?: string;
+  preOpenSortBy?: ScreeningSortBy;
+  preOpenOrder?: SortOrder;
+  preOpenLimit?: number;
+  inSessionMarkets?: string;
+  inSessionStrategies?: string;
+  inSessionRecentDays?: number;
+  inSessionDate?: string;
+  inSessionSortBy?: ScreeningSortBy;
+  inSessionOrder?: SortOrder;
+  inSessionLimit?: number;
   rankingDate?: string;
   rankingLimit?: number;
   rankingMarkets?: string;
@@ -69,7 +69,7 @@ interface PersistedContainer {
   version?: number;
 }
 
-const ANALYSIS_SUB_TABS: AnalysisSubTab[] = ['screening', 'sameDayScreening', 'ranking', 'fundamentalRanking'];
+const ANALYSIS_SUB_TABS: AnalysisSubTab[] = ['preOpenScreening', 'inSessionScreening', 'ranking', 'fundamentalRanking'];
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = ['runner', 'results', 'attribution', 'strategies', 'status', 'dataset', 'lab'];
 const LAB_TYPES: LabType[] = ['generate', 'evolve', 'optimize', 'improve'];
@@ -106,6 +106,17 @@ function normalizePositiveInt(value: unknown): number | undefined {
 
 function normalizeEnum<T extends string>(value: unknown, values: readonly T[]): T | undefined {
   return typeof value === 'string' && values.includes(value as T) ? (value as T) : undefined;
+}
+
+function normalizeAnalysisSubTab(value: unknown): AnalysisSubTab | undefined {
+  const tab = normalizeString(value);
+  if (tab === 'screening') {
+    return 'preOpenScreening';
+  }
+  if (tab === 'sameDayScreening') {
+    return 'inSessionScreening';
+  }
+  return normalizeEnum(tab, ANALYSIS_SUB_TABS);
 }
 
 function isEmptyObject(value: Record<string, unknown>): boolean {
@@ -212,22 +223,67 @@ export function serializeIndicesSearch(code: string | null | undefined): Indices
 
 export function validateAnalysisSearch(search: Record<string, unknown>): AnalysisRouteSearch {
   const next: AnalysisRouteSearch = {};
+  const normalizedTab = normalizeAnalysisSubTab(search.tab);
 
-  assignIfDefined(next, 'tab', normalizeEnum(search.tab, ANALYSIS_SUB_TABS));
-  assignIfDefined(next, 'screeningMarkets', normalizeString(search.screeningMarkets));
-  assignIfDefined(next, 'screeningStrategies', normalizeString(search.screeningStrategies));
-  assignIfDefined(next, 'screeningRecentDays', normalizePositiveInt(search.screeningRecentDays));
-  assignIfDefined(next, 'screeningDate', normalizeString(search.screeningDate));
-  assignIfDefined(next, 'screeningSortBy', normalizeEnum(search.screeningSortBy, SCREENING_SORT_VALUES));
-  assignIfDefined(next, 'screeningOrder', normalizeEnum(search.screeningOrder, SORT_ORDER_VALUES));
-  assignIfDefined(next, 'screeningLimit', normalizePositiveInt(search.screeningLimit));
-  assignIfDefined(next, 'sameDayMarkets', normalizeString(search.sameDayMarkets));
-  assignIfDefined(next, 'sameDayStrategies', normalizeString(search.sameDayStrategies));
-  assignIfDefined(next, 'sameDayRecentDays', normalizePositiveInt(search.sameDayRecentDays));
-  assignIfDefined(next, 'sameDayDate', normalizeString(search.sameDayDate));
-  assignIfDefined(next, 'sameDaySortBy', normalizeEnum(search.sameDaySortBy, SCREENING_SORT_VALUES));
-  assignIfDefined(next, 'sameDayOrder', normalizeEnum(search.sameDayOrder, SORT_ORDER_VALUES));
-  assignIfDefined(next, 'sameDayLimit', normalizePositiveInt(search.sameDayLimit));
+  assignIfDefined(next, 'tab', normalizedTab);
+  assignIfDefined(next, 'preOpenMarkets', normalizeString(search.preOpenMarkets) ?? normalizeString(search.screeningMarkets));
+  assignIfDefined(
+    next,
+    'preOpenStrategies',
+    normalizeString(search.preOpenStrategies) ?? normalizeString(search.screeningStrategies)
+  );
+  assignIfDefined(
+    next,
+    'preOpenRecentDays',
+    normalizePositiveInt(search.preOpenRecentDays) ?? normalizePositiveInt(search.screeningRecentDays)
+  );
+  assignIfDefined(next, 'preOpenDate', normalizeString(search.preOpenDate) ?? normalizeString(search.screeningDate));
+  assignIfDefined(
+    next,
+    'preOpenSortBy',
+    normalizeEnum(search.preOpenSortBy, SCREENING_SORT_VALUES) ?? normalizeEnum(search.screeningSortBy, SCREENING_SORT_VALUES)
+  );
+  assignIfDefined(
+    next,
+    'preOpenOrder',
+    normalizeEnum(search.preOpenOrder, SORT_ORDER_VALUES) ?? normalizeEnum(search.screeningOrder, SORT_ORDER_VALUES)
+  );
+  assignIfDefined(
+    next,
+    'preOpenLimit',
+    normalizePositiveInt(search.preOpenLimit) ?? normalizePositiveInt(search.screeningLimit)
+  );
+  assignIfDefined(
+    next,
+    'inSessionMarkets',
+    normalizeString(search.inSessionMarkets) ?? normalizeString(search.sameDayMarkets)
+  );
+  assignIfDefined(
+    next,
+    'inSessionStrategies',
+    normalizeString(search.inSessionStrategies) ?? normalizeString(search.sameDayStrategies)
+  );
+  assignIfDefined(
+    next,
+    'inSessionRecentDays',
+    normalizePositiveInt(search.inSessionRecentDays) ?? normalizePositiveInt(search.sameDayRecentDays)
+  );
+  assignIfDefined(next, 'inSessionDate', normalizeString(search.inSessionDate) ?? normalizeString(search.sameDayDate));
+  assignIfDefined(
+    next,
+    'inSessionSortBy',
+    normalizeEnum(search.inSessionSortBy, SCREENING_SORT_VALUES) ?? normalizeEnum(search.sameDaySortBy, SCREENING_SORT_VALUES)
+  );
+  assignIfDefined(
+    next,
+    'inSessionOrder',
+    normalizeEnum(search.inSessionOrder, SORT_ORDER_VALUES) ?? normalizeEnum(search.sameDayOrder, SORT_ORDER_VALUES)
+  );
+  assignIfDefined(
+    next,
+    'inSessionLimit',
+    normalizePositiveInt(search.inSessionLimit) ?? normalizePositiveInt(search.sameDayLimit)
+  );
   assignIfDefined(next, 'rankingDate', normalizeString(search.rankingDate));
   assignIfDefined(next, 'rankingLimit', normalizePositiveInt(search.rankingLimit));
   assignIfDefined(next, 'rankingMarkets', normalizeString(search.rankingMarkets));
@@ -243,35 +299,35 @@ export function validateAnalysisSearch(search: Record<string, unknown>): Analysi
 
 export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
   activeSubTab: AnalysisSubTab;
-  screeningParams: ScreeningParams;
-  sameDayScreeningParams: ScreeningParams;
+  preOpenScreeningParams: ScreeningParams;
+  inSessionScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 } {
   return {
-    activeSubTab: search.tab ?? 'screening',
-    screeningParams: assignAnalysisSearchParams(
-      { ...DEFAULT_SCREENING_PARAMS, mode: 'standard' },
+    activeSubTab: search.tab ?? 'preOpenScreening',
+    preOpenScreeningParams: assignAnalysisSearchParams(
+      { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS },
       [
-        ['markets', search.screeningMarkets],
-        ['strategies', search.screeningStrategies],
-        ['recentDays', search.screeningRecentDays],
-        ['date', search.screeningDate],
-        ['sortBy', search.screeningSortBy],
-        ['order', search.screeningOrder],
-        ['limit', search.screeningLimit],
+        ['markets', search.preOpenMarkets],
+        ['strategies', search.preOpenStrategies],
+        ['recentDays', search.preOpenRecentDays],
+        ['date', search.preOpenDate],
+        ['sortBy', search.preOpenSortBy],
+        ['order', search.preOpenOrder],
+        ['limit', search.preOpenLimit],
       ]
     ),
-    sameDayScreeningParams: assignAnalysisSearchParams(
-      { ...DEFAULT_SAME_DAY_SCREENING_PARAMS, mode: 'same_day' },
+    inSessionScreeningParams: assignAnalysisSearchParams(
+      { ...DEFAULT_IN_SESSION_SCREENING_PARAMS },
       [
-        ['markets', search.sameDayMarkets],
-        ['strategies', search.sameDayStrategies],
-        ['recentDays', search.sameDayRecentDays],
-        ['date', search.sameDayDate],
-        ['sortBy', search.sameDaySortBy],
-        ['order', search.sameDayOrder],
-        ['limit', search.sameDayLimit],
+        ['markets', search.inSessionMarkets],
+        ['strategies', search.inSessionStrategies],
+        ['recentDays', search.inSessionRecentDays],
+        ['date', search.inSessionDate],
+        ['sortBy', search.inSessionSortBy],
+        ['order', search.inSessionOrder],
+        ['limit', search.inSessionLimit],
       ]
     ),
     rankingParams: assignAnalysisSearchParams({ ...DEFAULT_RANKING_PARAMS }, [
@@ -292,68 +348,80 @@ export function getAnalysisStateFromSearch(search: AnalysisRouteSearch): {
 
 export function serializeAnalysisSearch(state: {
   activeSubTab: AnalysisSubTab;
-  screeningParams: ScreeningParams;
-  sameDayScreeningParams: ScreeningParams;
+  preOpenScreeningParams: ScreeningParams;
+  inSessionScreeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
 }): AnalysisRouteSearch {
   const next: AnalysisRouteSearch = {};
 
-  assignIfDefinedAndNotDefault(next, 'tab', state.activeSubTab, 'screening');
+  assignIfDefinedAndNotDefault(next, 'tab', state.activeSubTab, 'preOpenScreening');
   assignIfDefinedAndNotDefault(
     next,
-    'screeningMarkets',
-    normalizeString(state.screeningParams.markets),
-    DEFAULT_SCREENING_PARAMS.markets
+    'preOpenMarkets',
+    normalizeString(state.preOpenScreeningParams.markets),
+    DEFAULT_PRE_OPEN_SCREENING_PARAMS.markets
   );
-  assignIfDefined(next, 'screeningStrategies', normalizeString(state.screeningParams.strategies));
+  assignIfDefined(next, 'preOpenStrategies', normalizeString(state.preOpenScreeningParams.strategies));
   assignIfDefinedAndNotDefault(
     next,
-    'screeningRecentDays',
-    typeof state.screeningParams.recentDays === 'number' ? state.screeningParams.recentDays : undefined,
-    DEFAULT_SCREENING_PARAMS.recentDays
+    'preOpenRecentDays',
+    typeof state.preOpenScreeningParams.recentDays === 'number' ? state.preOpenScreeningParams.recentDays : undefined,
+    DEFAULT_PRE_OPEN_SCREENING_PARAMS.recentDays
   );
-  assignIfDefined(next, 'screeningDate', normalizeString(state.screeningParams.date));
-  assignIfDefinedAndNotDefault(next, 'screeningSortBy', state.screeningParams.sortBy, DEFAULT_SCREENING_PARAMS.sortBy);
-  assignIfDefinedAndNotDefault(next, 'screeningOrder', state.screeningParams.order, DEFAULT_SCREENING_PARAMS.order);
+  assignIfDefined(next, 'preOpenDate', normalizeString(state.preOpenScreeningParams.date));
   assignIfDefinedAndNotDefault(
     next,
-    'screeningLimit',
-    typeof state.screeningParams.limit === 'number' ? state.screeningParams.limit : undefined,
-    DEFAULT_SCREENING_PARAMS.limit
+    'preOpenSortBy',
+    state.preOpenScreeningParams.sortBy,
+    DEFAULT_PRE_OPEN_SCREENING_PARAMS.sortBy
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'preOpenOrder',
+    state.preOpenScreeningParams.order,
+    DEFAULT_PRE_OPEN_SCREENING_PARAMS.order
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'preOpenLimit',
+    typeof state.preOpenScreeningParams.limit === 'number' ? state.preOpenScreeningParams.limit : undefined,
+    DEFAULT_PRE_OPEN_SCREENING_PARAMS.limit
   );
 
   assignIfDefinedAndNotDefault(
     next,
-    'sameDayMarkets',
-    normalizeString(state.sameDayScreeningParams.markets),
-    DEFAULT_SAME_DAY_SCREENING_PARAMS.markets
+    'inSessionMarkets',
+    normalizeString(state.inSessionScreeningParams.markets),
+    DEFAULT_IN_SESSION_SCREENING_PARAMS.markets
   );
-  assignIfDefined(next, 'sameDayStrategies', normalizeString(state.sameDayScreeningParams.strategies));
+  assignIfDefined(next, 'inSessionStrategies', normalizeString(state.inSessionScreeningParams.strategies));
   assignIfDefinedAndNotDefault(
     next,
-    'sameDayRecentDays',
-    typeof state.sameDayScreeningParams.recentDays === 'number' ? state.sameDayScreeningParams.recentDays : undefined,
-    DEFAULT_SAME_DAY_SCREENING_PARAMS.recentDays
+    'inSessionRecentDays',
+    typeof state.inSessionScreeningParams.recentDays === 'number'
+      ? state.inSessionScreeningParams.recentDays
+      : undefined,
+    DEFAULT_IN_SESSION_SCREENING_PARAMS.recentDays
   );
-  assignIfDefined(next, 'sameDayDate', normalizeString(state.sameDayScreeningParams.date));
+  assignIfDefined(next, 'inSessionDate', normalizeString(state.inSessionScreeningParams.date));
   assignIfDefinedAndNotDefault(
     next,
-    'sameDaySortBy',
-    state.sameDayScreeningParams.sortBy,
-    DEFAULT_SAME_DAY_SCREENING_PARAMS.sortBy
-  );
-  assignIfDefinedAndNotDefault(
-    next,
-    'sameDayOrder',
-    state.sameDayScreeningParams.order,
-    DEFAULT_SAME_DAY_SCREENING_PARAMS.order
+    'inSessionSortBy',
+    state.inSessionScreeningParams.sortBy,
+    DEFAULT_IN_SESSION_SCREENING_PARAMS.sortBy
   );
   assignIfDefinedAndNotDefault(
     next,
-    'sameDayLimit',
-    typeof state.sameDayScreeningParams.limit === 'number' ? state.sameDayScreeningParams.limit : undefined,
-    DEFAULT_SAME_DAY_SCREENING_PARAMS.limit
+    'inSessionOrder',
+    state.inSessionScreeningParams.order,
+    DEFAULT_IN_SESSION_SCREENING_PARAMS.order
+  );
+  assignIfDefinedAndNotDefault(
+    next,
+    'inSessionLimit',
+    typeof state.inSessionScreeningParams.limit === 'number' ? state.inSessionScreeningParams.limit : undefined,
+    DEFAULT_IN_SESSION_SCREENING_PARAMS.limit
   );
 
   assignIfDefined(next, 'rankingDate', normalizeString(state.rankingParams.date));
@@ -507,19 +575,25 @@ export function extractLegacyIndicesSearch(state: Record<string, unknown>): Indi
 }
 
 export function extractLegacyAnalysisSearch(state: Record<string, unknown>): AnalysisRouteSearch {
-  const screeningParams = isRecord(state.screeningParams) ? (state.screeningParams as ScreeningParams) : DEFAULT_SCREENING_PARAMS;
+  const screeningParams = isRecord(state.screeningParams)
+    ? (state.screeningParams as ScreeningParams)
+    : DEFAULT_PRE_OPEN_SCREENING_PARAMS;
   const sameDayScreeningParams = isRecord(state.sameDayScreeningParams)
     ? (state.sameDayScreeningParams as ScreeningParams)
-    : DEFAULT_SAME_DAY_SCREENING_PARAMS;
+    : DEFAULT_IN_SESSION_SCREENING_PARAMS;
   const rankingParams = isRecord(state.rankingParams) ? (state.rankingParams as RankingParams) : DEFAULT_RANKING_PARAMS;
   const fundamentalRankingParams = isRecord(state.fundamentalRankingParams)
     ? (state.fundamentalRankingParams as FundamentalRankingParams)
     : DEFAULT_FUNDAMENTAL_RANKING_PARAMS;
 
   return serializeAnalysisSearch({
-    activeSubTab: normalizeEnum(state.activeSubTab, ANALYSIS_SUB_TABS) ?? 'screening',
-    screeningParams: { ...DEFAULT_SCREENING_PARAMS, ...screeningParams, mode: 'standard' },
-    sameDayScreeningParams: { ...DEFAULT_SAME_DAY_SCREENING_PARAMS, ...sameDayScreeningParams, mode: 'same_day' },
+    activeSubTab: normalizeAnalysisSubTab(state.activeSubTab) ?? 'preOpenScreening',
+    preOpenScreeningParams: { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS, ...screeningParams, entry_decidability: 'pre_open_decidable' },
+    inSessionScreeningParams: {
+      ...DEFAULT_IN_SESSION_SCREENING_PARAMS,
+      ...sameDayScreeningParams,
+      entry_decidability: 'requires_same_session_observation',
+    },
     rankingParams: { ...DEFAULT_RANKING_PARAMS, ...rankingParams },
     fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS, ...fundamentalRankingParams },
   });

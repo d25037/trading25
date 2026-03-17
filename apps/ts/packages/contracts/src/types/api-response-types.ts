@@ -79,7 +79,8 @@ export interface MarketFundamentalRankingResponse {
 export type ScreeningSortBy = 'bestStrategyScore' | 'matchedDate' | 'stockCode' | 'matchStrategyCount';
 export type SortOrder = 'asc' | 'desc';
 export type ScreeningDataSource = 'market' | 'dataset';
-export type ScreeningMode = 'standard' | 'same_day';
+export type EntryDecidability = 'pre_open_decidable' | 'requires_same_session_observation';
+export type ScreeningSupport = 'supported' | 'unsupported';
 
 export interface MatchedStrategyItem {
   strategyName: string;
@@ -112,7 +113,7 @@ export interface ScreeningSummary {
 export interface MarketScreeningResponse {
   results: ScreeningResultItem[];
   summary: ScreeningSummary;
-  mode?: ScreeningMode;
+  entry_decidability?: EntryDecidability;
   markets: string[];
   recentDays: number;
   referenceDate?: string;
@@ -124,7 +125,7 @@ export interface MarketScreeningResponse {
 }
 
 export interface ScreeningJobRequest {
-  mode?: ScreeningMode;
+  entry_decidability?: EntryDecidability;
   markets?: string;
   strategies?: string;
   recentDays?: number;
@@ -143,7 +144,7 @@ export interface ScreeningJobResponse {
   started_at?: string | null;
   completed_at?: string | null;
   error?: string | null;
-  mode?: ScreeningMode;
+  entry_decidability?: EntryDecidability;
   markets: string;
   strategies?: string | null;
   recentDays: number;

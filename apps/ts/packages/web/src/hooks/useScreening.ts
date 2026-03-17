@@ -45,7 +45,7 @@ function cancelScreeningJob(jobId: string): Promise<ScreeningJobResponse> {
 
 function toJobRequest(params: ScreeningParams): ScreeningJobRequest {
   return {
-    mode: params.mode,
+    entry_decidability: params.entry_decidability,
     markets: params.markets,
     strategies: params.strategies,
     recentDays: params.recentDays,

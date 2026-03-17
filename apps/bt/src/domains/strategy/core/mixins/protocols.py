@@ -44,6 +44,7 @@ class StrategyProtocol(Protocol):
     timeframe: Literal["daily", "weekly"]
     next_session_round_trip: bool
     current_session_round_trip: bool
+    overnight_round_trip: bool
 
     # Strategy name
     strategy_name: str

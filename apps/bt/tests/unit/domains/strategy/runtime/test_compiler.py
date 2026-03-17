@@ -19,7 +19,6 @@ from src.domains.strategy.runtime.compiler import (
     compile_strategy_config,
     compile_strategy_requirements,
     resolve_round_trip_execution_mode_name,
-    uses_same_day_execution,
 )
 from src.domains.strategy.signals.registry import SignalDefinition
 from src.shared.models.config import SharedConfig
@@ -130,70 +129,6 @@ def test_compile_strategy_requirements_maps_from_compiled_strategy() -> None:
     assert requirements.signal_ids == ["entry.volume_ratio_above"]
 
 
-def test_uses_same_day_execution_detects_current_session_round_trip() -> None:
-    compiled = CompiledStrategyIR(
-        strategy_name="demo",
-        execution_semantics="current_session_round_trip",
-        dataset_name="sample",
-        timeframe="daily",
-        signals=[],
-        signal_ids=[],
-        required_data_domains=[],
-        required_features=[],
-        required_fundamental_fields=[],
-    )
-
-    assert uses_same_day_execution(compiled) is True
-
-
-def test_uses_same_day_execution_detects_same_day_entry_signal_in_standard_mode() -> None:
-    compiled = CompiledStrategyIR(
-        strategy_name="demo",
-        execution_semantics="standard",
-        dataset_name="sample",
-        timeframe="daily",
-        signals=[
-            CompiledSignalIR(
-                signal_id="entry.index_open_gap_regime",
-                scope=CompiledSignalScope.ENTRY,
-                param_key="index_open_gap_regime",
-                signal_name="Index Gap",
-                category="macro",
-                description="",
-                data_requirements=["benchmark_open_gap"],
-                availability=CompiledSignalAvailability(
-                    observation_time=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
-                    available_at=CompiledAvailabilityPoint.CURRENT_SESSION_OPEN,
-                    decision_cutoff=CompiledAvailabilityPoint.NEXT_SESSION_OPEN,
-                    execution_session=CompiledExecutionSession.NEXT_SESSION,
-                ),
-            )
-        ],
-        signal_ids=["entry.index_open_gap_regime"],
-        required_data_domains=["market"],
-        required_features=["benchmark_open_gap"],
-        required_fundamental_fields=[],
-    )
-
-    assert uses_same_day_execution(compiled) is True
-
-
-def test_uses_same_day_execution_returns_false_for_standard_prior_close_signals() -> None:
-    compiled = CompiledStrategyIR(
-        strategy_name="demo",
-        execution_semantics="standard",
-        dataset_name="sample",
-        timeframe="daily",
-        signals=[],
-        signal_ids=[],
-        required_data_domains=[],
-        required_features=[],
-        required_fundamental_fields=[],
-    )
-
-    assert uses_same_day_execution(compiled) is False
-
-
 def test_resolve_round_trip_execution_mode_name_handles_supported_and_standard_modes() -> None:
     standard = CompiledStrategyIR(
         strategy_name="standard",
@@ -207,9 +142,11 @@ def test_resolve_round_trip_execution_mode_name_handles_supported_and_standard_m
         required_fundamental_fields=[],
     )
     next_session = standard.model_copy(update={"execution_semantics": "next_session_round_trip"})
+    overnight = standard.model_copy(update={"execution_semantics": "overnight_round_trip"})
 
     assert resolve_round_trip_execution_mode_name(standard) is None
     assert resolve_round_trip_execution_mode_name(next_session) == "next_session_round_trip"
+    assert resolve_round_trip_execution_mode_name(overnight) == "overnight_round_trip"
 
 
 def test_apply_config_override_merges_nested_dicts_and_replaces_missing_sections() -> None:
@@ -337,3 +274,35 @@ def test_compile_strategy_config_treats_open_plus_disclosure_signal_as_non_same_
     assert signal.availability.observation_time == CompiledAvailabilityPoint.PRIOR_SESSION_CLOSE
     assert signal.availability.available_at == CompiledAvailabilityPoint.PRIOR_SESSION_CLOSE
     assert signal.availability.execution_session == CompiledExecutionSession.CURRENT_SESSION
+
+
+def test_compile_strategy_config_marks_overnight_round_trip_signals_for_current_close_entry() -> None:
+    compiled = compile_strategy_config(
+        "demo-strategy",
+        {
+            "shared_config": {
+                "execution_policy": {"mode": "overnight_round_trip"}
+            },
+            "entry_filter_params": {
+                "index_open_gap_regime": {"enabled": True},
+                "volume_ratio_above": {"enabled": True},
+            },
+        },
+        config_loader=_StubConfigLoader(),
+    )
+
+    signals = {signal.signal_id: signal for signal in compiled.signals}
+
+    assert compiled.execution_semantics == "overnight_round_trip"
+    assert signals["entry.index_open_gap_regime"].availability.observation_time == (
+        CompiledAvailabilityPoint.CURRENT_SESSION_OPEN
+    )
+    assert signals["entry.index_open_gap_regime"].availability.decision_cutoff == (
+        CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE
+    )
+    assert signals["entry.volume_ratio_above"].availability.observation_time == (
+        CompiledAvailabilityPoint.CURRENT_SESSION_CLOSE
+    )
+    assert signals["entry.volume_ratio_above"].availability.execution_session == (
+        CompiledExecutionSession.CURRENT_SESSION
+    )

@@ -37,7 +37,7 @@ class StrategyLike(Protocol):
         ...
 
     @property
-    def screening_mode(self) -> str:
+    def entry_decidability(self) -> str:
         ...
 
     @property
@@ -164,7 +164,7 @@ def build_strategy_signal_cache_token(strategy: StrategyLike) -> str:
     payload = {
         "entry": strategy.entry_params.model_dump(mode="json"),
         "exit": strategy.exit_params.model_dump(mode="json"),
-        "screening_mode": strategy.screening_mode,
+        "entry_decidability": strategy.entry_decidability,
         "compiled_execution_semantics": strategy.compiled_strategy.execution_semantics,
         "compiled_signal_ids": strategy.compiled_strategy.signal_ids,
     }

@@ -56,6 +56,7 @@ class ExecutionPolicyMode(str, Enum):
     STANDARD = "standard"
     NEXT_SESSION_ROUND_TRIP = "next_session_round_trip"
     CURRENT_SESSION_ROUND_TRIP = "current_session_round_trip"
+    OVERNIGHT_ROUND_TRIP = "overnight_round_trip"
 
 
 class ExecutionPolicyConfig(BaseModel):
@@ -67,7 +68,8 @@ class ExecutionPolicyConfig(BaseModel):
         default=ExecutionPolicyMode.STANDARD,
         description=(
             "Execution timing policy "
-            "('standard', 'next_session_round_trip', 'current_session_round_trip')"
+            "('standard', 'next_session_round_trip', "
+            "'current_session_round_trip', 'overnight_round_trip')"
         ),
     )
 
@@ -159,6 +161,13 @@ class SharedConfig(BaseModel):
             == ExecutionPolicyMode.CURRENT_SESSION_ROUND_TRIP
         )
 
+    @property
+    def overnight_round_trip(self) -> bool:
+        return (
+            self.execution_policy.mode
+            == ExecutionPolicyMode.OVERNIGHT_ROUND_TRIP
+        )
+
     @model_validator(mode="after")
     def resolve_stock_codes(self, info: ValidationInfo):
         """stock_codes の "all" を動的に解決"""
@@ -239,6 +248,7 @@ class SharedConfig(BaseModel):
         if self.execution_policy.mode in (
             ExecutionPolicyMode.NEXT_SESSION_ROUND_TRIP,
             ExecutionPolicyMode.CURRENT_SESSION_ROUND_TRIP,
+            ExecutionPolicyMode.OVERNIGHT_ROUND_TRIP,
         ) and self.timeframe != "daily":
             raise ValueError(
                 f"{self.execution_policy.mode.value} requires timeframe='daily'"

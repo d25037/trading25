@@ -48,14 +48,14 @@ from src.domains.analytics.screening_results import (
 )
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.compiler import CompiledStrategyIR
-from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
+from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 from src.shared.paths import get_backtest_results_dir
 from src.entrypoints.http.schemas.screening import (
+    EntryDecidability,
     MarketScreeningResponse,
     MatchedStrategyItem,
-    ScreeningMode,
     ScreeningResultItem,
     ScreeningSortBy,
     ScreeningSummary,
@@ -69,6 +69,11 @@ from src.application.services.screening_market_loader import (
     load_market_sector_indices,
     load_market_stock_sector_mapping,
     load_market_topix_data,
+)
+from src.application.services.screening_strategy_selection import (
+    build_strategy_response_names,
+    build_strategy_selection_catalog,
+    resolve_selected_strategy_names,
 )
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY
@@ -103,7 +108,7 @@ class StrategyRuntime:
     exit_params: SignalParams
     shared_config: SharedConfig
     compiled_strategy: CompiledStrategyIR
-    screening_mode: ScreeningMode
+    entry_decidability: EntryDecidability
 
 
 @dataclass
@@ -265,7 +270,7 @@ class ScreeningService:
 
     def run_screening(
         self,
-        mode: ScreeningMode = "standard",
+        entry_decidability: EntryDecidability = "pre_open_decidable",
         markets: str = "prime",
         strategies: str | None = None,
         recent_days: int = 10,
@@ -282,7 +287,10 @@ class ScreeningService:
 
         load_stage_started = perf_counter()
         stock_universe = self._load_stock_universe(query_market_codes)
-        strategy_runtimes = self._resolve_strategies(strategies, mode=mode)
+        strategy_runtimes = self._resolve_strategies(
+            strategies,
+            entry_decidability=entry_decidability,
+        )
         strategy_scores, missing_metric_strategies, metric_warnings = self._load_strategy_scores(
             strategy_runtimes
         )
@@ -384,7 +392,7 @@ class ScreeningService:
         response = MarketScreeningResponse(
             results=sorted_results,
             summary=summary,
-            mode=mode,
+            entry_decidability=entry_decidability,
             markets=requested_market_codes,
             recentDays=recent_days,
             referenceDate=effective_reference_date,
@@ -451,126 +459,50 @@ class ScreeningService:
         self,
         strategies: str | None,
         *,
-        mode: ScreeningMode,
+        entry_decidability: EntryDecidability,
     ) -> list[StrategyRuntime]:
         """対象戦略をproductionカテゴリから解決する。"""
         metadata = [m for m in self._config_loader.get_strategy_metadata() if m.category == "production"]
-        if not metadata:
-            raise ValueError("No production strategies found")
-
-        runtime_payloads: dict[
-            str,
-            tuple[SignalParams, SignalParams, SharedConfig, CompiledStrategyIR, str],
-        ] = {}
-        eligible_metadata: list[Any] = []
-        for m in metadata:
-            try:
-                loaded_config = load_strategy_screening_config(self._config_loader, m.name)
-            except Exception as exc:
-                raise ValueError(
-                    f"Invalid production strategy config for screening: {m.name} ({exc})"
-                ) from exc
-
-            runtime_payloads[m.name] = (
-                loaded_config.entry_params,
-                loaded_config.exit_params,
-                loaded_config.shared_config,
-                loaded_config.compiled_strategy,
-                loaded_config.screening_mode,
-            )
-            if loaded_config.screening_mode == mode:
-                eligible_metadata.append(m)
-
-        if not eligible_metadata:
-            raise ValueError(f"No production strategies found for {mode} screening")
-
-        metadata_by_name = {m.name: m for m in eligible_metadata}
-        basename_map: dict[str, list[str]] = {}
-        for m in eligible_metadata:
-            basename_map.setdefault(m.path.stem, []).append(m.name)
-
-        selected_names: list[str]
-        if strategies is None or not strategies.strip():
-            selected_names = sorted(metadata_by_name.keys())
-        else:
-            requested = [s.strip() for s in strategies.split(",") if s.strip()]
-            selected_names = []
-            invalid: list[str] = []
-
-            for token in requested:
-                resolved = self._resolve_strategy_token(token, metadata_by_name, basename_map)
-                if resolved is None:
-                    invalid.append(token)
-                    continue
-                if resolved not in selected_names:
-                    selected_names.append(resolved)
-
-            if invalid:
-                raise ValueError(
-                    f"Invalid strategies ({mode} production only): "
-                    + ", ".join(sorted(set(invalid)))
-                )
-
-        if not selected_names:
-            raise ValueError(f"No valid {mode} production strategies selected")
-
-        selected_metadata = [metadata_by_name[name] for name in selected_names]
-
-        # basename重複時はフルネームをレスポンス名に使用
-        basename_counts: dict[str, int] = {}
-        for m in selected_metadata:
-            basename_counts[m.path.stem] = basename_counts.get(m.path.stem, 0) + 1
+        catalog = build_strategy_selection_catalog(
+            metadata,
+            load_strategy_config=lambda name: load_strategy_screening_config(
+                self._config_loader,
+                name,
+            ),
+            entry_decidability=entry_decidability,
+        )
+        selected_names = resolve_selected_strategy_names(
+            strategies=strategies,
+            catalog=catalog,
+            entry_decidability=entry_decidability,
+        )
+        response_names = build_strategy_response_names(
+            catalog.metadata_by_name,
+            selected_names,
+        )
 
         runtimes: list[StrategyRuntime] = []
-        for m in selected_metadata:
-            (
-                entry_params,
-                exit_params,
-                shared_config,
-                compiled_strategy,
-                screening_mode,
-            ) = runtime_payloads[m.name]
-
-            response_name = m.path.stem
-            if basename_counts[response_name] > 1:
-                response_name = m.name
+        for name in selected_names:
+            metadata_entry = catalog.metadata_by_name[name]
+            runtime_payload = catalog.runtime_payloads[name]
+            screening_support = runtime_payload.screening_support
+            resolved_entry_decidability = runtime_payload.entry_decidability
+            if screening_support != "supported" or resolved_entry_decidability is None:
+                raise ValueError(f"Unsupported screening strategy selected: {name}")
 
             runtime = StrategyRuntime(
-                name=m.name,
-                response_name=response_name,
-                basename=m.path.stem,
-                entry_params=entry_params,
-                exit_params=exit_params,
-                shared_config=shared_config,
-                compiled_strategy=compiled_strategy,
-                screening_mode=cast(ScreeningMode, screening_mode),
+                name=name,
+                response_name=response_names[name],
+                basename=metadata_entry.path.stem,
+                entry_params=runtime_payload.entry_params,
+                exit_params=runtime_payload.exit_params,
+                shared_config=runtime_payload.shared_config,
+                compiled_strategy=runtime_payload.compiled_strategy,
+                entry_decidability=cast(EntryDecidability, resolved_entry_decidability),
             )
             runtimes.append(runtime)
 
         return runtimes
-
-    def _resolve_strategy_token(
-        self,
-        token: str,
-        metadata_by_name: dict[str, Any],
-        basename_map: dict[str, list[str]],
-    ) -> str | None:
-        """クエリ指定戦略名をproduction戦略へ解決する。"""
-        if token in metadata_by_name:
-            return token
-
-        if token.startswith("production/"):
-            return token if token in metadata_by_name else None
-
-        production_prefixed = f"production/{token}"
-        if production_prefixed in metadata_by_name:
-            return production_prefixed
-
-        candidates = basename_map.get(token, [])
-        if len(candidates) == 1:
-            return candidates[0]
-
-        return None
 
     def _load_strategy_scores(
         self,

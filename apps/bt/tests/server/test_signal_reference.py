@@ -60,7 +60,7 @@ class TestBuildSignalReference:
         signal = next(
             item for item in result["signals"] if item["key"] == "volume_ratio_above"
         )
-        assert len(signal["availability_profiles"]) == 4
+        assert len(signal["availability_profiles"]) == 5
         first = signal["availability_profiles"][0]
         assert set(first.keys()) == {"scope", "execution_semantics", "availability"}
 
@@ -105,6 +105,21 @@ class TestBuildSignalReference:
         )
         assert oracle_entry["availability"]["observation_time"] == "prior_session_close"
         assert oracle_entry["availability"]["decision_cutoff"] == "current_session_open"
+
+    def test_signal_reference_marks_overnight_round_trip_close_cutoff(self):
+        result = build_signal_reference()
+        signal = next(
+            item for item in result["signals"] if item["key"] == "volume_ratio_above"
+        )
+        overnight_entry = next(
+            profile
+            for profile in signal["availability_profiles"]
+            if profile["scope"] == "entry"
+            and profile["execution_semantics"] == "overnight_round_trip"
+        )
+        assert overnight_entry["availability"]["observation_time"] == "current_session_close"
+        assert overnight_entry["availability"]["decision_cutoff"] == "current_session_close"
+        assert overnight_entry["availability"]["execution_session"] == "current_session"
 
     def test_categories_are_valid(self):
         """全カテゴリが有効なカテゴリであること"""

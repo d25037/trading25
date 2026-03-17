@@ -205,6 +205,55 @@ describe('validateStrategyConfigLocally', () => {
     expect(result.errors).toContain("current_session_round_trip requires timeframe='daily'");
   });
 
+  it('accepts overnight_round_trip execution_policy when companion constraints are satisfied', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
+        exit_trigger_params: {},
+        shared_config: {
+          timeframe: 'daily',
+          execution_policy: { mode: 'overnight_round_trip' },
+        },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(true);
+    expect(result.errors).toHaveLength(0);
+  });
+
+  it('rejects non-empty exit_trigger_params for overnight_round_trip execution_policy', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
+        exit_trigger_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.2 } },
+        shared_config: { execution_policy: { mode: 'overnight_round_trip' } },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain(
+      "exit_trigger_params must be empty when shared_config.execution_policy.mode is 'overnight_round_trip'"
+    );
+  });
+
+  it('rejects non-daily timeframe for overnight_round_trip execution_policy', () => {
+    const result = validateStrategyConfigLocally(
+      {
+        entry_filter_params: { volume_ratio_above: { enabled: true, ratio_threshold: 1.1 } },
+        shared_config: {
+          timeframe: 'weekly',
+          execution_policy: { mode: 'overnight_round_trip' },
+        },
+      },
+      signalDefs
+    );
+
+    expect(result.valid).toBe(false);
+    expect(result.errors).toContain("overnight_round_trip requires timeframe='daily'");
+  });
+
   it('rejects legacy round trip booleans', () => {
     const result = validateStrategyConfigLocally(
       {

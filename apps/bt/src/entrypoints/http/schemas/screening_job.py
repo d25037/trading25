@@ -11,13 +11,17 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from src.entrypoints.http.schemas.common import BaseJobResponse
-from src.entrypoints.http.schemas.screening import ScreeningMode, ScreeningSortBy, SortOrder
+from src.entrypoints.http.schemas.screening import (
+    EntryDecidability,
+    ScreeningSortBy,
+    SortOrder,
+)
 
 
 class ScreeningJobRequest(BaseModel):
     """Screening ジョブ作成リクエスト"""
 
-    mode: ScreeningMode = Field(default="standard")
+    entry_decidability: EntryDecidability = Field(default="pre_open_decidable")
     markets: str = Field(default="prime")
     strategies: str | None = Field(default=None)
     recentDays: int = Field(default=10, ge=1, le=90)
@@ -32,7 +36,10 @@ class ScreeningJobRequest(BaseModel):
 class ScreeningJobResponse(BaseJobResponse):
     """Screening ジョブレスポンス"""
 
-    mode: ScreeningMode = Field(default="standard", description="screening mode")
+    entry_decidability: EntryDecidability = Field(
+        default="pre_open_decidable",
+        description="entry decidability classification",
+    )
     markets: str = Field(description="市場コードフィルタ")
     strategies: str | None = Field(default=None, description="対象戦略")
     recentDays: int = Field(description="判定対象の直近日数")

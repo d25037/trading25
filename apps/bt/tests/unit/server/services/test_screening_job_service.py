@@ -92,6 +92,7 @@ async def test_run_job_releases_slot_after_success(monkeypatch: pytest.MonkeyPat
                     "strategiesWithoutBacktestMetrics": [],
                     "warnings": [],
                 },
+                "entry_decidability": "pre_open_decidable",
                 "markets": ["prime"],
                 "recentDays": 10,
                 "referenceDate": None,

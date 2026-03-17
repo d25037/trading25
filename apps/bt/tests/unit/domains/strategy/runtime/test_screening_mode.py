@@ -3,10 +3,10 @@ from __future__ import annotations
 from typing import Any
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
-from src.domains.strategy.runtime.screening_mode import (
+from src.domains.strategy.runtime.screening_profile import (
     load_strategy_screening_config,
-    resolve_same_day_screening_mode,
-    resolve_strategy_screening_mode,
+    resolve_entry_decidability,
+    resolve_screening_profile,
 )
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
@@ -21,17 +21,19 @@ def _shared_config(**overrides: Any) -> SharedConfig:
     )
 
 
-def test_resolve_strategy_screening_mode_standard() -> None:
+def test_resolve_screening_profile_standard_prior_close_strategy() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
         shared_config=_shared_config(),
     )
 
-    assert resolve_same_day_screening_mode(compiled_strategy) is False
-    assert resolve_strategy_screening_mode(compiled_strategy) == "standard"
+    profile = resolve_screening_profile(compiled_strategy)
+
+    assert profile.screening_support == "supported"
+    assert profile.entry_decidability == "pre_open_decidable"
 
 
-def test_resolve_strategy_screening_mode_rejects_next_session_round_trip() -> None:
+def test_resolve_screening_profile_rejects_next_session_round_trip() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
         shared_config=_shared_config(
@@ -39,11 +41,13 @@ def test_resolve_strategy_screening_mode_rejects_next_session_round_trip() -> No
         ),
     )
 
-    assert resolve_same_day_screening_mode(compiled_strategy) is False
-    assert resolve_strategy_screening_mode(compiled_strategy) == "unsupported"
+    profile = resolve_screening_profile(compiled_strategy)
+
+    assert profile.screening_support == "unsupported"
+    assert profile.entry_decidability is None
 
 
-def test_resolve_strategy_screening_mode_accepts_same_day_signal_without_shared_flag() -> None:
+def test_resolve_entry_decidability_treats_standard_open_signal_as_pre_open_decidable() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
         shared_config=_shared_config(),
@@ -52,11 +56,27 @@ def test_resolve_strategy_screening_mode_accepts_same_day_signal_without_shared_
         ),
     )
 
-    assert resolve_same_day_screening_mode(compiled_strategy) is True
-    assert resolve_strategy_screening_mode(compiled_strategy) == "same_day"
+    assert resolve_entry_decidability(compiled_strategy) == "pre_open_decidable"
+    profile = resolve_screening_profile(compiled_strategy)
+    assert profile.screening_support == "supported"
+    assert profile.entry_decidability == "pre_open_decidable"
 
 
-def test_resolve_strategy_screening_mode_accepts_current_session_round_trip() -> None:
+def test_resolve_entry_decidability_treats_current_session_open_signal_as_in_session_required() -> None:
+    compiled_strategy = compile_runtime_strategy(
+        strategy_name="demo",
+        shared_config=_shared_config(
+            execution_policy={"mode": "current_session_round_trip"}
+        ),
+        entry_signal_params=SignalParams.model_validate(
+            {"index_open_gap_regime": {"enabled": True}}
+        ),
+    )
+
+    assert resolve_entry_decidability(compiled_strategy) == "requires_same_session_observation"
+
+
+def test_resolve_entry_decidability_treats_current_session_prior_close_signal_as_pre_open_decidable() -> None:
     compiled_strategy = compile_runtime_strategy(
         strategy_name="demo",
         shared_config=_shared_config(
@@ -67,8 +87,21 @@ def test_resolve_strategy_screening_mode_accepts_current_session_round_trip() ->
         ),
     )
 
-    assert resolve_same_day_screening_mode(compiled_strategy) is True
-    assert resolve_strategy_screening_mode(compiled_strategy) == "same_day"
+    assert resolve_entry_decidability(compiled_strategy) == "pre_open_decidable"
+
+
+def test_resolve_entry_decidability_treats_overnight_close_signal_as_in_session_required() -> None:
+    compiled_strategy = compile_runtime_strategy(
+        strategy_name="demo",
+        shared_config=_shared_config(
+            execution_policy={"mode": "overnight_round_trip"}
+        ),
+        entry_signal_params=SignalParams.model_validate(
+            {"volume_ratio_above": {"enabled": True}}
+        ),
+    )
+
+    assert resolve_entry_decidability(compiled_strategy) == "requires_same_session_observation"
 
 
 def test_load_strategy_screening_config_uses_compiled_strategy_availability() -> None:
@@ -95,5 +128,6 @@ def test_load_strategy_screening_config_uses_compiled_strategy_availability() ->
 
     loaded = load_strategy_screening_config(config_loader, "production/demo")
 
-    assert loaded.screening_mode == "same_day"
+    assert loaded.screening_support == "supported"
+    assert loaded.entry_decidability == "pre_open_decidable"
     assert loaded.entry_params.index_open_gap_regime.enabled is True

@@ -14,6 +14,7 @@ from src.domains.backtest.vectorbt_adapter import (
     PERCENT_SIZE_TYPE,
     ROUND_TRIP_DIRECTION_MAP,
     VectorbtAdapter,
+    _overnight_round_trip_order_func_nb as _vectorbt_overnight_round_trip_order_func_nb,
     _round_trip_order_func_nb as _vectorbt_round_trip_order_func_nb,
 )
 from src.domains.strategy.signals.feature_registry import resolve_feature_requirement_spec
@@ -26,6 +27,7 @@ GroupedPortfolioInputs = tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Data
 # Keep the legacy symbol import path stable for tests while delegating implementation
 # to the VectorBT adapter module.
 _round_trip_order_func_nb = _vectorbt_round_trip_order_func_nb
+_overnight_round_trip_order_func_nb = _vectorbt_overnight_round_trip_order_func_nb
 
 if TYPE_CHECKING:
     from .protocols import StrategyProtocol
@@ -227,6 +229,8 @@ class BacktestExecutorMixin:
             return "next_session_round_trip"
         if getattr(self, "current_session_round_trip", False):
             return "current_session_round_trip"
+        if getattr(self, "overnight_round_trip", False):
+            return "overnight_round_trip"
         return None
 
     def _uses_round_trip_execution(self: "StrategyProtocol") -> bool:
@@ -254,12 +258,16 @@ class BacktestExecutorMixin:
             empty = normalized_entries.copy()
             return empty, empty
 
+        scheduled_entries = normalized_entries
         if mode_name == "next_session_round_trip":
             scheduled_entries = normalized_entries.shift(1, fill_value=False)
-        else:
-            scheduled_entries = normalized_entries
 
-        executable_days = execution_data["Open"].notna() & execution_data["Close"].notna()
+        if mode_name == "overnight_round_trip":
+            executable_days = execution_data["Close"].notna() & execution_data["Open"].shift(
+                -1
+            ).notna()
+        else:
+            executable_days = execution_data["Open"].notna() & execution_data["Close"].notna()
         execution_entries = (scheduled_entries & executable_days).astype(bool)
         execution_exits = pd.Series(False, index=execution_entries.index, dtype=bool)
 
@@ -271,7 +279,9 @@ class BacktestExecutorMixin:
                 "warning",
             )
 
-        if mode_name == "next_session_round_trip" and bool(normalized_entries.iloc[-1]):
+        if mode_name in ("next_session_round_trip", "overnight_round_trip") and bool(
+            normalized_entries.iloc[-1]
+        ):
             self._log(
                 f"{stock_code}: {mode_name} dropped the last-bar signal "
                 "because the next session is unavailable",
@@ -296,6 +306,7 @@ class BacktestExecutorMixin:
             open_data=open_data,
             close_data=close_data,
             entries_data=self._normalize_signal_frame(entries_data),
+            execution_mode=self._get_round_trip_mode_name() or "next_session_round_trip",
             entry_size=float(entry_size),
             entry_size_type=int(entry_size_type),
             direction=self._get_round_trip_direction(),

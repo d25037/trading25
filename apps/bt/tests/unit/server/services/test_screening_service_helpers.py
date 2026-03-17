@@ -13,16 +13,17 @@ import pandas as pd
 import pytest
 
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
-from src.domains.strategy.runtime.screening_mode import (
-    resolve_strategy_screening_mode,
+from src.domains.strategy.runtime.screening_profile import (
+    resolve_screening_profile,
 )
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams, Signals
 from src.entrypoints.http.schemas.screening import (
+    EntryDecidability,
     MatchedStrategyItem,
-    ScreeningMode,
     ScreeningResultItem,
 )
+from src.application.services.screening_strategy_selection import resolve_strategy_token
 from src.application.services.screening_service import (
     MultiDataRequirementKey,
     ScreeningService,
@@ -69,8 +70,9 @@ def _runtime(
         entry_signal_params=resolved_entry_params,
         exit_signal_params=resolved_exit_params,
     )
-    screening_mode = resolve_strategy_screening_mode(compiled_strategy)
-    assert screening_mode != "unsupported"
+    screening_profile = resolve_screening_profile(compiled_strategy)
+    assert screening_profile.screening_support == "supported"
+    assert screening_profile.entry_decidability is not None
 
     return StrategyRuntime(
         name=f"production/{name}",
@@ -80,7 +82,7 @@ def _runtime(
         exit_params=resolved_exit_params,
         shared_config=shared_config,
         compiled_strategy=compiled_strategy,
-        screening_mode=cast(ScreeningMode, screening_mode),
+        entry_decidability=cast(EntryDecidability, screening_profile.entry_decidability),
     )
 
 
@@ -301,7 +303,6 @@ class TestDataLoadingHelpers:
 
 class TestStrategyResolutionHelpers:
     def test_resolve_strategy_token_paths(self):
-        service = ScreeningService(DummyReader())
         metadata_by_name = {
             "production/range_break_v15": object(),
             "production/forward_eps_driven": object(),
@@ -312,15 +313,15 @@ class TestStrategyResolutionHelpers:
         }
 
         assert (
-            service._resolve_strategy_token("production/range_break_v15", metadata_by_name, basename_map)  # noqa: SLF001
+            resolve_strategy_token("production/range_break_v15", metadata_by_name, basename_map)
             == "production/range_break_v15"
         )
         assert (
-            service._resolve_strategy_token("range_break_v15", metadata_by_name, basename_map)  # noqa: SLF001
+            resolve_strategy_token("range_break_v15", metadata_by_name, basename_map)
             == "production/range_break_v15"
         )
-        assert service._resolve_strategy_token("dupe", metadata_by_name, basename_map) is None  # noqa: SLF001
-        assert service._resolve_strategy_token("missing", metadata_by_name, basename_map) is None  # noqa: SLF001
+        assert resolve_strategy_token("dupe", metadata_by_name, basename_map) is None
+        assert resolve_strategy_token("missing", metadata_by_name, basename_map) is None
 
     def test_resolve_strategies_raises_when_no_production(
         self,
@@ -329,7 +330,10 @@ class TestStrategyResolutionHelpers:
         service = ScreeningService(DummyReader())
         monkeypatch.setattr(service._config_loader, "get_strategy_metadata", lambda: [])
         with pytest.raises(ValueError, match="No production strategies found"):
-            service._resolve_strategies(None, mode="standard")  # noqa: SLF001
+            service._resolve_strategies(
+                None,
+                entry_decidability="pre_open_decidable",
+            )  # noqa: SLF001
 
     def test_resolve_strategies_raises_when_requested_list_is_empty(
         self,
@@ -358,8 +362,14 @@ class TestStrategyResolutionHelpers:
             lambda _config: {"dataset": "primeExTopix500"},
         )
 
-        with pytest.raises(ValueError, match="No valid standard production strategies selected"):
-            service._resolve_strategies(",", mode="standard")  # noqa: SLF001
+        with pytest.raises(
+            ValueError,
+            match="No valid pre_open_decidable production strategies selected",
+        ):
+            service._resolve_strategies(
+                ",",
+                entry_decidability="pre_open_decidable",
+            )  # noqa: SLF001
 
 
 class TestRuntimeEvaluationHelpers:
@@ -599,7 +609,7 @@ class TestRuntimeEvaluationHelpers:
 
         registry = [
             SimpleNamespace(
-                data_requirements=["benchmark:topix"],
+                data_requirements=["benchmark_open_gap"],
                 enabled_checker=lambda _params: True,
             ),
             SimpleNamespace(

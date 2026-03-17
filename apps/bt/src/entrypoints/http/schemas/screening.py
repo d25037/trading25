@@ -15,7 +15,11 @@ from src.entrypoints.http.schemas.analytics_common import (
     ResponseDiagnostics,
 )
 
-ScreeningMode = Literal["standard", "same_day"]
+EntryDecidability = Literal[
+    "pre_open_decidable",
+    "requires_same_session_observation",
+]
+ScreeningSupport = Literal["supported", "unsupported"]
 ScreeningSortBy = Literal[
     "bestStrategyScore",
     "matchedDate",
@@ -65,7 +69,7 @@ class MarketScreeningResponse(BaseModel):
 
     results: list[ScreeningResultItem]
     summary: ScreeningSummary
-    mode: ScreeningMode = Field(default="standard")
+    entry_decidability: EntryDecidability = Field(default="pre_open_decidable")
     markets: list[str]
     recentDays: int
     referenceDate: str | None = None

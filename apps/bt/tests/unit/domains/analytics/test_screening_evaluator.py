@@ -31,7 +31,7 @@ class _Strategy:
     response_name: str
     entry_params: SignalParams
     exit_params: SignalParams
-    screening_mode: str = "standard"
+    entry_decidability: str = "pre_open_decidable"
     compiled_strategy: CompiledStrategyIR = field(
         default_factory=lambda: _compiled_strategy()
     )
@@ -126,14 +126,14 @@ def test_evaluate_stock_reuses_per_stock_signal_cache() -> None:
     assert outcome.matched_dates_by_strategy == {"s1": "2026-01-02", "s2": "2026-01-02"}
 
 
-def test_evaluate_stock_passes_same_day_mode_to_signal_generation() -> None:
+def test_evaluate_stock_passes_entry_decidability_without_affecting_signal_generation() -> None:
     index = pd.to_datetime(["2026-01-01", "2026-01-02"])
     daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
     strategy = _Strategy(
         "same_day",
         SignalParams(),
         SignalParams(),
-        screening_mode="same_day",
+        entry_decidability="requires_same_session_observation",
         compiled_strategy=_compiled_strategy(
             execution_policy={"mode": "current_session_round_trip"}
         ),
@@ -165,14 +165,14 @@ def test_evaluate_stock_passes_same_day_mode_to_signal_generation() -> None:
     assert "current_session_round_trip" not in captured
 
 
-def test_evaluate_stock_does_not_infer_same_day_from_screening_label_alone() -> None:
+def test_evaluate_stock_does_not_infer_round_trip_from_decidability_label_alone() -> None:
     index = pd.to_datetime(["2026-01-01", "2026-01-02"])
     daily = pd.DataFrame({"Close": [1.0, 1.1]}, index=index)
     strategy = _Strategy(
         "same-day-ish",
         SignalParams(),
         SignalParams(),
-        screening_mode="same_day",
+        entry_decidability="requires_same_session_observation",
         compiled_strategy=_compiled_strategy(),
     )
     stock = _Stock("1001")

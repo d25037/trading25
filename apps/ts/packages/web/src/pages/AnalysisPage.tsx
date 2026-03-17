@@ -32,22 +32,22 @@ import type { StrategyMetadata } from '@/types/backtest';
 import type { FundamentalRankingParams, MarketFundamentalRankingResponse } from '@/types/fundamentalRanking';
 import type { MarketRankingResponse, RankingParams } from '@/types/ranking';
 import type {
+  EntryDecidability,
   MarketScreeningResponse,
   ScreeningJobResponse,
-  ScreeningMode,
   ScreeningParams,
   ScreeningResultItem,
 } from '@/types/screening';
 
 const subTabs: { id: AnalysisSubTab; label: string; icon: typeof BarChart3 }[] = [
-  { id: 'screening', label: 'Screening', icon: Filter },
-  { id: 'sameDayScreening', label: 'Same-Day Screening', icon: Filter },
+  { id: 'preOpenScreening', label: 'Pre-Open Decidable', icon: Filter },
+  { id: 'inSessionScreening', label: 'Requires In-Session Observation', icon: Filter },
   { id: 'ranking', label: 'Daily Ranking', icon: BarChart3 },
   { id: 'fundamentalRanking', label: 'Fundamental Ranking', icon: BarChart3 },
 ];
 
-function isScreeningSubTab(tab: AnalysisSubTab): tab is 'screening' | 'sameDayScreening' {
-  return tab === 'screening' || tab === 'sameDayScreening';
+function isScreeningSubTab(tab: AnalysisSubTab): tab is 'preOpenScreening' | 'inSessionScreening' {
+  return tab === 'preOpenScreening' || tab === 'inSessionScreening';
 }
 
 function sanitizeStrategies(
@@ -68,18 +68,18 @@ function sanitizeStrategies(
 function sanitizeScreeningParams(
   params: ScreeningParams,
   allowedStrategies: string[] | undefined,
-  mode: ScreeningMode
+  entryDecidability: EntryDecidability
 ): ScreeningParams {
   return {
     ...params,
-    mode,
+    entry_decidability: entryDecidability,
     strategies: sanitizeStrategies(params.strategies, allowedStrategies),
   };
 }
 
 function areScreeningParamsEqual(left: ScreeningParams, right: ScreeningParams): boolean {
   return (
-    left.mode === right.mode &&
+    left.entry_decidability === right.entry_decidability &&
     left.markets === right.markets &&
     left.strategies === right.strategies &&
     left.recentDays === right.recentDays &&
@@ -90,12 +90,20 @@ function areScreeningParamsEqual(left: ScreeningParams, right: ScreeningParams):
   );
 }
 
-function isStandardScreeningStrategy(strategy: StrategyMetadata): boolean {
-  return strategy.category === 'production' && (strategy.screening_mode ?? 'standard') === 'standard';
+function isPreOpenScreeningStrategy(strategy: StrategyMetadata): boolean {
+  return (
+    strategy.category === 'production' &&
+    strategy.screening_support === 'supported' &&
+    (strategy.entry_decidability ?? 'pre_open_decidable') === 'pre_open_decidable'
+  );
 }
 
-function isSameDayScreeningStrategy(strategy: StrategyMetadata): boolean {
-  return strategy.category === 'production' && strategy.screening_mode === 'same_day';
+function isInSessionScreeningStrategy(strategy: StrategyMetadata): boolean {
+  return (
+    strategy.category === 'production' &&
+    strategy.screening_support === 'supported' &&
+    strategy.entry_decidability === 'requires_same_session_observation'
+  );
 }
 
 function selectStrategyNames(
@@ -116,23 +124,23 @@ function useSanitizedScreeningParams(
   params: ScreeningParams,
   setParams: (params: ScreeningParams) => void,
   allowedStrategies: string[] | undefined,
-  mode: ScreeningMode
+  entryDecidability: EntryDecidability
 ): void {
   useEffect(() => {
     if (!allowedStrategies) {
       return;
     }
 
-    const sanitized = sanitizeScreeningParams(params, allowedStrategies, mode);
+    const sanitized = sanitizeScreeningParams(params, allowedStrategies, entryDecidability);
     if (!areScreeningParamsEqual(sanitized, params)) {
       setParams(sanitized);
     }
-  }, [allowedStrategies, mode, params, setParams]);
+  }, [allowedStrategies, entryDecidability, params, setParams]);
 }
 
 interface AnalysisSidebarProps {
   activeSubTab: AnalysisSubTab;
-  screeningMode: ScreeningMode;
+  entryDecidability: EntryDecidability;
   screeningParams: ScreeningParams;
   rankingParams: RankingParams;
   fundamentalRankingParams: FundamentalRankingParams;
@@ -145,7 +153,7 @@ interface AnalysisSidebarProps {
 
 function AnalysisSidebar({
   activeSubTab,
-  screeningMode,
+  entryDecidability,
   screeningParams,
   rankingParams,
   fundamentalRankingParams,
@@ -158,7 +166,7 @@ function AnalysisSidebar({
   if (isScreeningSubTab(activeSubTab)) {
     return (
       <ScreeningFilters
-        mode={screeningMode}
+        entryDecidability={entryDecidability}
         params={screeningParams}
         onChange={setScreeningParams}
         strategyOptions={productionStrategies}
@@ -176,7 +184,7 @@ function AnalysisSidebar({
 
 interface AnalysisMainContentProps {
   activeSubTab: AnalysisSubTab;
-  screeningMode: ScreeningMode;
+  entryDecidability: EntryDecidability;
   handleRunScreening: () => Promise<void>;
   screeningIsRunning: boolean;
   screeningJob: ScreeningJobResponse | null;
@@ -205,7 +213,7 @@ interface AnalysisMainContentProps {
 
 function AnalysisMainContent({
   activeSubTab,
-  screeningMode,
+  entryDecidability,
   handleRunScreening,
   screeningIsRunning,
   screeningJob,
@@ -233,7 +241,10 @@ function AnalysisMainContent({
 }: AnalysisMainContentProps) {
   if (isScreeningSubTab(activeSubTab)) {
     const completedScreeningJob = screeningJob?.status === 'completed' ? screeningJob : null;
-    const runButtonLabel = screeningMode === 'same_day' ? 'Run Same-Day Screening' : 'Run Screening';
+    const runButtonLabel =
+      entryDecidability === 'requires_same_session_observation'
+        ? 'Run In-Session Screening'
+        : 'Run Pre-Open Screening';
 
     return (
       <>
@@ -255,7 +266,7 @@ function AnalysisMainContent({
         )}
 
         <ScreeningJobHistoryTable
-          mode={screeningMode}
+          entryDecidability={entryDecidability}
           jobs={screeningJobHistory}
           isLoading={false}
           showHistory={showScreeningJobHistory}
@@ -309,8 +320,8 @@ function AnalysisMainContent({
   );
 }
 
-interface ScreeningModeControllerArgs {
-  mode: ScreeningMode;
+interface ScreeningControllerArgs {
+  entryDecidability: EntryDecidability;
   params: ScreeningParams;
   setParams: (params: ScreeningParams) => void;
   allowedStrategies: string[] | undefined;
@@ -322,7 +333,7 @@ interface ScreeningModeControllerArgs {
   upsertHistory: (job: ScreeningJobResponse) => void;
 }
 
-interface ScreeningModeController {
+interface ScreeningController {
   allowedStrategies: string[];
   params: ScreeningParams;
   setParams: (params: ScreeningParams) => void;
@@ -386,8 +397,8 @@ function useStaleScreeningJobReset(shouldReset: boolean, setActiveJobId: (jobId:
   }, [setActiveJobId, shouldReset]);
 }
 
-function useScreeningModeController({
-  mode,
+function useScreeningController({
+  entryDecidability,
   params,
   setParams,
   allowedStrategies,
@@ -397,7 +408,7 @@ function useScreeningModeController({
   setResult,
   history,
   upsertHistory,
-}: ScreeningModeControllerArgs): ScreeningModeController {
+}: ScreeningControllerArgs): ScreeningController {
   const runScreeningJob = useRunScreeningJob();
   const cancelScreeningJob = useCancelScreeningJob();
   const screeningSse = useScreeningJobSSE(activeJobId);
@@ -407,7 +418,7 @@ function useScreeningModeController({
   const statusError = screeningJobStatus.error as Error | null;
   const staleJob = isStaleScreeningJobError(statusError);
 
-  useSanitizedScreeningParams(params, setParams, allowedStrategies, mode);
+  useSanitizedScreeningParams(params, setParams, allowedStrategies, entryDecidability);
   useScreeningResultSync(screeningResultQuery.data, setResult);
   useScreeningHistorySync([runScreeningJob.data, screeningJobStatus.data, cancelScreeningJob.data], upsertHistory);
   useStaleScreeningJobReset(Boolean(activeJobId) && staleJob, setActiveJobId);
@@ -423,10 +434,12 @@ function useScreeningModeController({
   );
 
   const handleRun = useCallback(async () => {
-    const job = await runScreeningJob.mutateAsync(sanitizeScreeningParams(params, allowedStrategies, mode));
+    const job = await runScreeningJob.mutateAsync(
+      sanitizeScreeningParams(params, allowedStrategies, entryDecidability)
+    );
     setActiveJobId(job.job_id);
     upsertHistory(job);
-  }, [allowedStrategies, mode, params, runScreeningJob, setActiveJobId, upsertHistory]);
+  }, [allowedStrategies, entryDecidability, params, runScreeningJob, setActiveJobId, upsertHistory]);
 
   const handleSelectJob = useCallback(
     (job: ScreeningJobResponse) => {
@@ -462,34 +475,36 @@ export function AnalysisPage() {
   useMigrateAnalysisRouteState();
   const {
     activeSubTab,
-    screeningParams,
-    sameDayScreeningParams,
+    preOpenScreeningParams,
+    inSessionScreeningParams,
     rankingParams,
     fundamentalRankingParams,
     setActiveSubTab,
-    setScreeningParams,
-    setSameDayScreeningParams,
+    setPreOpenScreeningParams,
+    setInSessionScreeningParams,
     setRankingParams,
     setFundamentalRankingParams,
   } = useAnalysisRouteState();
-  const activeScreeningJobId = useAnalysisStore((state) => state.activeScreeningJobId);
-  const activeSameDayScreeningJobId = useAnalysisStore((state) => state.activeSameDayScreeningJobId);
-  const screeningResult = useAnalysisStore((state) => state.screeningResult);
-  const sameDayScreeningResult = useAnalysisStore((state) => state.sameDayScreeningResult);
-  const screeningJobHistory = useAnalysisStore((state) => state.screeningJobHistory);
-  const sameDayScreeningJobHistory = useAnalysisStore((state) => state.sameDayScreeningJobHistory);
-  const setActiveScreeningJobId = useAnalysisStore((state) => state.setActiveScreeningJobId);
-  const setActiveSameDayScreeningJobId = useAnalysisStore((state) => state.setActiveSameDayScreeningJobId);
-  const setScreeningResult = useAnalysisStore((state) => state.setScreeningResult);
-  const setSameDayScreeningResult = useAnalysisStore((state) => state.setSameDayScreeningResult);
-  const upsertScreeningJobHistory = useAnalysisStore((state) => state.upsertScreeningJobHistory);
-  const upsertSameDayScreeningJobHistory = useAnalysisStore((state) => state.upsertSameDayScreeningJobHistory);
+  const activePreOpenScreeningJobId = useAnalysisStore((state) => state.activePreOpenScreeningJobId);
+  const activeInSessionScreeningJobId = useAnalysisStore((state) => state.activeInSessionScreeningJobId);
+  const preOpenScreeningResult = useAnalysisStore((state) => state.preOpenScreeningResult);
+  const inSessionScreeningResult = useAnalysisStore((state) => state.inSessionScreeningResult);
+  const preOpenScreeningJobHistory = useAnalysisStore((state) => state.preOpenScreeningJobHistory);
+  const inSessionScreeningJobHistory = useAnalysisStore((state) => state.inSessionScreeningJobHistory);
+  const setActivePreOpenScreeningJobId = useAnalysisStore((state) => state.setActivePreOpenScreeningJobId);
+  const setActiveInSessionScreeningJobId = useAnalysisStore((state) => state.setActiveInSessionScreeningJobId);
+  const setPreOpenScreeningResult = useAnalysisStore((state) => state.setPreOpenScreeningResult);
+  const setInSessionScreeningResult = useAnalysisStore((state) => state.setInSessionScreeningResult);
+  const upsertPreOpenScreeningJobHistory = useAnalysisStore((state) => state.upsertPreOpenScreeningJobHistory);
+  const upsertInSessionScreeningJobHistory = useAnalysisStore((state) => state.upsertInSessionScreeningJobHistory);
 
   const navigate = useNavigate();
   const { data: strategiesData, isLoading: isLoadingStrategies } = useStrategies();
-  const [screeningJobHistoryVisibility, setScreeningJobHistoryVisibility] = useState<Record<ScreeningMode, boolean>>({
-    standard: true,
-    same_day: true,
+  const [screeningJobHistoryVisibility, setScreeningJobHistoryVisibility] = useState<
+    Record<EntryDecidability, boolean>
+  >({
+    pre_open_decidable: true,
+    requires_same_session_observation: true,
   });
 
   const rankingQuery = useRanking(rankingParams, activeSubTab === 'ranking');
@@ -499,35 +514,41 @@ export function AnalysisPage() {
   );
 
   const productionStrategies = strategiesData?.strategies?.filter((strategy) => strategy.category === 'production');
-  const standardProductionStrategies = selectStrategyNames(productionStrategies, isStandardScreeningStrategy);
-  const sameDayProductionStrategies = selectStrategyNames(productionStrategies, isSameDayScreeningStrategy);
-  const activeScreeningMode: ScreeningMode = activeSubTab === 'sameDayScreening' ? 'same_day' : 'standard';
-  const standardScreening = useScreeningModeController({
-    mode: 'standard',
-    params: screeningParams,
-    setParams: setScreeningParams,
-    allowedStrategies: standardProductionStrategies,
-    activeJobId: activeScreeningJobId,
-    setActiveJobId: setActiveScreeningJobId,
-    result: screeningResult,
-    setResult: setScreeningResult,
-    history: screeningJobHistory,
-    upsertHistory: upsertScreeningJobHistory,
+  const preOpenProductionStrategies = selectStrategyNames(productionStrategies, isPreOpenScreeningStrategy);
+  const inSessionProductionStrategies = selectStrategyNames(productionStrategies, isInSessionScreeningStrategy);
+  const activeEntryDecidability: EntryDecidability =
+    activeSubTab === 'inSessionScreening'
+      ? 'requires_same_session_observation'
+      : 'pre_open_decidable';
+  const preOpenScreening = useScreeningController({
+    entryDecidability: 'pre_open_decidable',
+    params: preOpenScreeningParams,
+    setParams: setPreOpenScreeningParams,
+    allowedStrategies: preOpenProductionStrategies,
+    activeJobId: activePreOpenScreeningJobId,
+    setActiveJobId: setActivePreOpenScreeningJobId,
+    result: preOpenScreeningResult,
+    setResult: setPreOpenScreeningResult,
+    history: preOpenScreeningJobHistory,
+    upsertHistory: upsertPreOpenScreeningJobHistory,
   });
-  const sameDayScreening = useScreeningModeController({
-    mode: 'same_day',
-    params: sameDayScreeningParams,
-    setParams: setSameDayScreeningParams,
-    allowedStrategies: sameDayProductionStrategies,
-    activeJobId: activeSameDayScreeningJobId,
-    setActiveJobId: setActiveSameDayScreeningJobId,
-    result: sameDayScreeningResult,
-    setResult: setSameDayScreeningResult,
-    history: sameDayScreeningJobHistory,
-    upsertHistory: upsertSameDayScreeningJobHistory,
+  const inSessionScreening = useScreeningController({
+    entryDecidability: 'requires_same_session_observation',
+    params: inSessionScreeningParams,
+    setParams: setInSessionScreeningParams,
+    allowedStrategies: inSessionProductionStrategies,
+    activeJobId: activeInSessionScreeningJobId,
+    setActiveJobId: setActiveInSessionScreeningJobId,
+    result: inSessionScreeningResult,
+    setResult: setInSessionScreeningResult,
+    history: inSessionScreeningJobHistory,
+    upsertHistory: upsertInSessionScreeningJobHistory,
   });
-  const activeScreening = activeScreeningMode === 'same_day' ? sameDayScreening : standardScreening;
-  const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeScreeningMode];
+  const activeScreening =
+    activeEntryDecidability === 'requires_same_session_observation'
+      ? inSessionScreening
+      : preOpenScreening;
+  const activeScreeningJobHistoryVisible = screeningJobHistoryVisibility[activeEntryDecidability];
 
   const handleStockClick = useCallback(
     (code: string, strategy?: string, matchedDate?: string) => {
@@ -546,10 +567,10 @@ export function AnalysisPage() {
     (showHistory: boolean) => {
       setScreeningJobHistoryVisibility((current) => ({
         ...current,
-        [activeScreeningMode]: showHistory,
+        [activeEntryDecidability]: showHistory,
       }));
     },
-    [activeScreeningMode]
+    [activeEntryDecidability]
   );
 
   return (
@@ -580,7 +601,7 @@ export function AnalysisPage() {
         <div className="w-64 flex-shrink-0">
           <AnalysisSidebar
             activeSubTab={activeSubTab}
-            screeningMode={activeScreeningMode}
+            entryDecidability={activeEntryDecidability}
             screeningParams={activeScreening.params}
             rankingParams={rankingParams}
             fundamentalRankingParams={fundamentalRankingParams}
@@ -596,7 +617,7 @@ export function AnalysisPage() {
         <div className="flex-1 flex flex-col min-w-0 min-h-0">
           <AnalysisMainContent
             activeSubTab={activeSubTab}
-            screeningMode={activeScreeningMode}
+            entryDecidability={activeEntryDecidability}
             handleRunScreening={activeScreening.handleRun}
             screeningIsRunning={activeScreening.isRunning}
             screeningJob={activeScreening.job}

@@ -3,7 +3,12 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import type { ScreeningMode, ScreeningParams, ScreeningSortBy, SortOrder } from '@/types/screening';
+import type {
+  EntryDecidability,
+  ScreeningParams,
+  ScreeningSortBy,
+  SortOrder,
+} from '@/types/screening';
 
 const RECENT_DAYS_OPTIONS = [
   { value: 5, label: '5 days' },
@@ -21,7 +26,7 @@ const LIMIT_OPTIONS = [
 ];
 
 interface ScreeningFiltersProps {
-  mode: ScreeningMode;
+  entryDecidability: EntryDecidability;
   params: ScreeningParams;
   onChange: (params: ScreeningParams) => void;
   strategyOptions: string[];
@@ -46,7 +51,7 @@ function stringifyStrategies(strategies: string[]): string | undefined {
 }
 
 export function ScreeningFilters({
-  mode,
+  entryDecidability,
   params,
   onChange,
   strategyOptions,
@@ -57,7 +62,10 @@ export function ScreeningFilters({
   };
 
   const selectedStrategies = parseSelectedStrategies(params.strategies);
-  const strategyGroupLabel = mode === 'same_day' ? 'same-day production' : 'standard production';
+  const strategyGroupLabel =
+    entryDecidability === 'requires_same_session_observation'
+      ? 'in-session production'
+      : 'pre-open production';
 
   const toggleStrategy = (strategyName: string) => {
     const selected = new Set(selectedStrategies);

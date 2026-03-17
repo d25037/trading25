@@ -23,6 +23,7 @@ const executionSemanticsLabels: Record<string, string> = {
   standard: 'Standard',
   next_session_round_trip: 'Next Session Round Trip',
   current_session_round_trip: 'Current Session Round Trip',
+  overnight_round_trip: 'Overnight Round Trip',
 };
 
 const timingLabels: Record<string, string> = {

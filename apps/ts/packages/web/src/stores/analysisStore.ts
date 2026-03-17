@@ -4,10 +4,10 @@ import type { FundamentalRankingParams } from '@/types/fundamentalRanking';
 import type { RankingParams } from '@/types/ranking';
 import type { MarketScreeningResponse, ScreeningJobResponse, ScreeningParams } from '@/types/screening';
 
-export type AnalysisSubTab = 'screening' | 'sameDayScreening' | 'ranking' | 'fundamentalRanking';
+export type AnalysisSubTab = 'preOpenScreening' | 'inSessionScreening' | 'ranking' | 'fundamentalRanking';
 
-export const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
-  mode: 'standard',
+export const DEFAULT_PRE_OPEN_SCREENING_PARAMS: ScreeningParams = {
+  entry_decidability: 'pre_open_decidable',
   markets: 'prime',
   recentDays: 10,
   sortBy: 'matchedDate',
@@ -15,8 +15,8 @@ export const DEFAULT_SCREENING_PARAMS: ScreeningParams = {
   limit: 50,
 };
 
-export const DEFAULT_SAME_DAY_SCREENING_PARAMS: ScreeningParams = {
-  mode: 'same_day',
+export const DEFAULT_IN_SESSION_SCREENING_PARAMS: ScreeningParams = {
+  entry_decidability: 'requires_same_session_observation',
   markets: 'prime',
   recentDays: 10,
   sortBy: 'matchedDate',
@@ -39,37 +39,37 @@ export const DEFAULT_FUNDAMENTAL_RANKING_PARAMS: FundamentalRankingParams = {
 };
 
 interface AnalysisState {
-  activeScreeningJobId: string | null;
-  activeSameDayScreeningJobId: string | null;
-  screeningResult: MarketScreeningResponse | null;
-  sameDayScreeningResult: MarketScreeningResponse | null;
-  screeningJobHistory: ScreeningJobResponse[];
-  sameDayScreeningJobHistory: ScreeningJobResponse[];
-  setActiveScreeningJobId: (jobId: string | null) => void;
-  setActiveSameDayScreeningJobId: (jobId: string | null) => void;
-  setScreeningResult: (result: MarketScreeningResponse | null) => void;
-  setSameDayScreeningResult: (result: MarketScreeningResponse | null) => void;
-  upsertScreeningJobHistory: (job: ScreeningJobResponse) => void;
-  upsertSameDayScreeningJobHistory: (job: ScreeningJobResponse) => void;
+  activePreOpenScreeningJobId: string | null;
+  activeInSessionScreeningJobId: string | null;
+  preOpenScreeningResult: MarketScreeningResponse | null;
+  inSessionScreeningResult: MarketScreeningResponse | null;
+  preOpenScreeningJobHistory: ScreeningJobResponse[];
+  inSessionScreeningJobHistory: ScreeningJobResponse[];
+  setActivePreOpenScreeningJobId: (jobId: string | null) => void;
+  setActiveInSessionScreeningJobId: (jobId: string | null) => void;
+  setPreOpenScreeningResult: (result: MarketScreeningResponse | null) => void;
+  setInSessionScreeningResult: (result: MarketScreeningResponse | null) => void;
+  upsertPreOpenScreeningJobHistory: (job: ScreeningJobResponse) => void;
+  upsertInSessionScreeningJobHistory: (job: ScreeningJobResponse) => void;
 }
 
 export type AnalysisPersistedState = Pick<
   AnalysisState,
-  | 'activeScreeningJobId'
-  | 'activeSameDayScreeningJobId'
-  | 'screeningResult'
-  | 'sameDayScreeningResult'
-  | 'screeningJobHistory'
-  | 'sameDayScreeningJobHistory'
+  | 'activePreOpenScreeningJobId'
+  | 'activeInSessionScreeningJobId'
+  | 'preOpenScreeningResult'
+  | 'inSessionScreeningResult'
+  | 'preOpenScreeningJobHistory'
+  | 'inSessionScreeningJobHistory'
 >;
 
 export const createInitialAnalysisState = (): AnalysisPersistedState => ({
-  activeScreeningJobId: null,
-  activeSameDayScreeningJobId: null,
-  screeningResult: null,
-  sameDayScreeningResult: null,
-  screeningJobHistory: [],
-  sameDayScreeningJobHistory: [],
+  activePreOpenScreeningJobId: null,
+  activeInSessionScreeningJobId: null,
+  preOpenScreeningResult: null,
+  inSessionScreeningResult: null,
+  preOpenScreeningJobHistory: [],
+  inSessionScreeningJobHistory: [],
 });
 
 const MAX_SCREENING_JOB_HISTORY = 30;
@@ -82,24 +82,24 @@ export const useAnalysisStore = create<AnalysisState>()(
   persist(
     (set) => ({
       ...createInitialAnalysisState(),
-      setActiveScreeningJobId: (jobId) => set({ activeScreeningJobId: jobId }),
-      setActiveSameDayScreeningJobId: (jobId) => set({ activeSameDayScreeningJobId: jobId }),
-      setScreeningResult: (result) => set({ screeningResult: result }),
-      setSameDayScreeningResult: (result) => set({ sameDayScreeningResult: result }),
-      upsertScreeningJobHistory: (job) =>
+      setActivePreOpenScreeningJobId: (jobId) => set({ activePreOpenScreeningJobId: jobId }),
+      setActiveInSessionScreeningJobId: (jobId) => set({ activeInSessionScreeningJobId: jobId }),
+      setPreOpenScreeningResult: (result) => set({ preOpenScreeningResult: result }),
+      setInSessionScreeningResult: (result) => set({ inSessionScreeningResult: result }),
+      upsertPreOpenScreeningJobHistory: (job) =>
         set((state) => {
-          const withoutCurrent = state.screeningJobHistory.filter((item) => item.job_id !== job.job_id);
+          const withoutCurrent = state.preOpenScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
           const merged = [job, ...withoutCurrent].sort(sortByCreatedAtDesc);
           return {
-            screeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
+            preOpenScreeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
           };
         }),
-      upsertSameDayScreeningJobHistory: (job) =>
+      upsertInSessionScreeningJobHistory: (job) =>
         set((state) => {
-          const withoutCurrent = state.sameDayScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
+          const withoutCurrent = state.inSessionScreeningJobHistory.filter((item) => item.job_id !== job.job_id);
           const merged = [job, ...withoutCurrent].sort(sortByCreatedAtDesc);
           return {
-            sameDayScreeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
+            inSessionScreeningJobHistory: merged.slice(0, MAX_SCREENING_JOB_HISTORY),
           };
         }),
     }),
@@ -107,12 +107,12 @@ export const useAnalysisStore = create<AnalysisState>()(
       name: 'trading25-analysis-store',
       storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
-        activeScreeningJobId: state.activeScreeningJobId,
-        activeSameDayScreeningJobId: state.activeSameDayScreeningJobId,
-        screeningResult: state.screeningResult,
-        sameDayScreeningResult: state.sameDayScreeningResult,
-        screeningJobHistory: state.screeningJobHistory,
-        sameDayScreeningJobHistory: state.sameDayScreeningJobHistory,
+        activePreOpenScreeningJobId: state.activePreOpenScreeningJobId,
+        activeInSessionScreeningJobId: state.activeInSessionScreeningJobId,
+        preOpenScreeningResult: state.preOpenScreeningResult,
+        inSessionScreeningResult: state.inSessionScreeningResult,
+        preOpenScreeningJobHistory: state.preOpenScreeningJobHistory,
+        inSessionScreeningJobHistory: state.inSessionScreeningJobHistory,
       }),
     }
   )

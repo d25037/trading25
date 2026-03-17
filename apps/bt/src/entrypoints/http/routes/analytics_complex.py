@@ -240,7 +240,7 @@ def _build_screening_job_response(job: JobInfo) -> ScreeningJobResponse:
         error=job.error,
         run_metadata=build_run_metadata(job),
         execution_control=build_job_execution_control(job),
-        mode=params.mode,
+        entry_decidability=params.entry_decidability,
         markets=params.markets,
         strategies=params.strategies,
         recentDays=params.recentDays,

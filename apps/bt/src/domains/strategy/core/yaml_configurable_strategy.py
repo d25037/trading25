@@ -95,6 +95,7 @@ class YamlConfigurableStrategy(
         self.direction = shared_config.direction
         self.next_session_round_trip = shared_config.next_session_round_trip
         self.current_session_round_trip = shared_config.current_session_round_trip
+        self.overnight_round_trip = shared_config.overnight_round_trip
 
         # Timeframe設定
         self.timeframe = shared_config.timeframe
@@ -140,6 +141,7 @@ class YamlConfigurableStrategy(
         self.current_session_round_trip = (
             round_trip_mode_name == "current_session_round_trip"
         )
+        self.overnight_round_trip = round_trip_mode_name == "overnight_round_trip"
 
         # 統合シグナルプロセッサー（Filter + Trigger統合）
         self.signal_processor = SignalProcessor()

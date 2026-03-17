@@ -6831,6 +6831,15 @@
           "diagnostics": {
             "$ref": "#/components/schemas/ResponseDiagnostics"
           },
+          "entry_decidability": {
+            "default": "pre_open_decidable",
+            "enum": [
+              "pre_open_decidable",
+              "requires_same_session_observation"
+            ],
+            "title": "Entry Decidability",
+            "type": "string"
+          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
@@ -6841,15 +6850,6 @@
             },
             "title": "Markets",
             "type": "array"
-          },
-          "mode": {
-            "default": "standard",
-            "enum": [
-              "standard",
-              "same_day"
-            ],
-            "title": "Mode",
-            "type": "string"
           },
           "order": {
             "enum": [
@@ -9771,6 +9771,15 @@
             ],
             "title": "Date"
           },
+          "entry_decidability": {
+            "default": "pre_open_decidable",
+            "enum": [
+              "pre_open_decidable",
+              "requires_same_session_observation"
+            ],
+            "title": "Entry Decidability",
+            "type": "string"
+          },
           "limit": {
             "anyOf": [
               {
@@ -9786,15 +9795,6 @@
           "markets": {
             "default": "prime",
             "title": "Markets",
-            "type": "string"
-          },
-          "mode": {
-            "default": "standard",
-            "enum": [
-              "standard",
-              "same_day"
-            ],
-            "title": "Mode",
             "type": "string"
           },
           "order": {
@@ -9861,6 +9861,16 @@
             "title": "Created At",
             "type": "string"
           },
+          "entry_decidability": {
+            "default": "pre_open_decidable",
+            "description": "entry decidability classification",
+            "enum": [
+              "pre_open_decidable",
+              "requires_same_session_observation"
+            ],
+            "title": "Entry Decidability",
+            "type": "string"
+          },
           "error": {
             "anyOf": [
               {
@@ -9917,16 +9927,6 @@
             ],
             "description": "ステータスメッセージ",
             "title": "Message"
-          },
-          "mode": {
-            "default": "standard",
-            "description": "screening mode",
-            "enum": [
-              "standard",
-              "same_day"
-            ],
-            "title": "Mode",
-            "type": "string"
           },
           "order": {
             "description": "並び順",
@@ -11012,7 +11012,8 @@
             "enum": [
               "standard",
               "next_session_round_trip",
-              "current_session_round_trip"
+              "current_session_round_trip",
+              "overnight_round_trip"
             ],
             "title": "Execution Semantics",
             "type": "string"
@@ -12866,6 +12867,22 @@
             "description": "表示名",
             "title": "Display Name"
           },
+          "entry_decidability": {
+            "anyOf": [
+              {
+                "enum": [
+                  "pre_open_decidable",
+                  "requires_same_session_observation"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "whether entry can be decided before the execution session opens",
+            "title": "Entry Decidability"
+          },
           "last_modified": {
             "anyOf": [
               {
@@ -12896,15 +12913,14 @@
             "description": "validation error when screening availability cannot be resolved",
             "title": "Screening Error"
           },
-          "screening_mode": {
+          "screening_support": {
             "default": "unsupported",
-            "description": "screening availability for analysis UI",
+            "description": "screening support classification for analysis UI",
             "enum": [
-              "standard",
-              "same_day",
+              "supported",
               "unsupported"
             ],
-            "title": "Screening Mode",
+            "title": "Screening Support",
             "type": "string"
           }
         },

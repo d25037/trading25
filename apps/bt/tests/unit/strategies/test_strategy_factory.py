@@ -200,6 +200,35 @@ class TestStrategyFactoryHelpers:
         assert created["shared_config"].current_session_round_trip is True
         assert created["exit_trigger_params"] is None
 
+    def test_create_strategy_accepts_empty_exit_trigger_for_overnight_round_trip(
+        self,
+        monkeypatch: pytest.MonkeyPatch,
+    ) -> None:
+        created: dict[str, object] = {}
+
+        def _fake_yaml_strategy(**kwargs):
+            created.update(kwargs)
+            return SimpleNamespace(**kwargs)
+
+        monkeypatch.setattr(
+            "src.domains.strategy.core.yaml_configurable_strategy.YamlConfigurableStrategy",
+            _fake_yaml_strategy,
+        )
+
+        strategy = StrategyFactory.create_strategy(
+            shared_config={
+                "dataset": "sample",
+                "stock_codes": ["1111"],
+                "execution_policy": {"mode": "overnight_round_trip"},
+            },
+            entry_filter_params={"volume_ratio_above": {"enabled": True}},
+            exit_trigger_params={},
+        )
+
+        assert strategy is not None
+        assert created["shared_config"].overnight_round_trip is True
+        assert created["exit_trigger_params"] is None
+
     def test_create_strategy_allows_same_day_signal_with_exit_triggers_when_round_trip_flag_is_off(
         self,
         monkeypatch: pytest.MonkeyPatch,

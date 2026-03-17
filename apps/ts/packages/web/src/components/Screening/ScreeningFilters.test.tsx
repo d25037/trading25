@@ -100,7 +100,7 @@ vi.mock('@/components/ui/select', () => {
 
 describe('ScreeningFilters', () => {
   const defaultParams: ScreeningParams = {
-    mode: 'standard',
+    entry_decidability: 'pre_open_decidable',
     markets: 'prime',
     recentDays: 10,
     sortBy: 'matchedDate',
@@ -113,7 +113,7 @@ describe('ScreeningFilters', () => {
   it('renders standard strategy controls and default summary', () => {
     render(
       <ScreeningFilters
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         params={defaultParams}
         onChange={vi.fn()}
         strategyOptions={strategyOptions}
@@ -123,9 +123,9 @@ describe('ScreeningFilters', () => {
 
     expect(screen.getByText('Filters')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'production/range_break_v15' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'All standard production' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All pre-open production' })).toBeInTheDocument();
     expect(
-      screen.getByText('No explicit selection: all standard production strategies are evaluated.')
+      screen.getByText('No explicit selection: all pre-open production strategies are evaluated.')
     ).toBeInTheDocument();
   });
 
@@ -135,7 +135,7 @@ describe('ScreeningFilters', () => {
 
     const { rerender } = render(
       <ScreeningFilters
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         params={defaultParams}
         onChange={onChange}
         strategyOptions={strategyOptions}
@@ -151,7 +151,7 @@ describe('ScreeningFilters', () => {
 
     rerender(
       <ScreeningFilters
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         params={{ ...defaultParams, strategies: 'production/range_break_v15,production/forward_eps_driven' }}
         onChange={onChange}
         strategyOptions={strategyOptions}
@@ -169,7 +169,7 @@ describe('ScreeningFilters', () => {
 
     rerender(
       <ScreeningFilters
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         params={{ ...defaultParams, strategies: 'production/range_break_v15' }}
         onChange={onChange}
         strategyOptions={strategyOptions}
@@ -183,7 +183,7 @@ describe('ScreeningFilters', () => {
       strategies: undefined,
     });
 
-    await user.click(screen.getByRole('button', { name: 'All standard production' }));
+    await user.click(screen.getByRole('button', { name: 'All pre-open production' }));
     expect(onChange).toHaveBeenLastCalledWith({
       ...defaultParams,
       strategies: undefined,
@@ -193,7 +193,7 @@ describe('ScreeningFilters', () => {
   it('shows loading and empty states with mode-specific labels', () => {
     const { rerender } = render(
       <ScreeningFilters
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         params={defaultParams}
         onChange={vi.fn()}
         strategyOptions={[]}
@@ -201,22 +201,22 @@ describe('ScreeningFilters', () => {
       />
     );
 
-    expect(screen.getByText('Loading standard production strategies...')).toBeInTheDocument();
+    expect(screen.getByText('Loading pre-open production strategies...')).toBeInTheDocument();
 
     rerender(
       <ScreeningFilters
-        mode="same_day"
-        params={{ ...defaultParams, mode: 'same_day' }}
+        entryDecidability="requires_same_session_observation"
+        params={{ ...defaultParams, entry_decidability: 'requires_same_session_observation' }}
         onChange={vi.fn()}
         strategyOptions={[]}
         strategiesLoading={false}
       />
     );
 
-    expect(screen.getByRole('button', { name: 'All same-day production' })).toBeInTheDocument();
-    expect(screen.getByText('No same-day production strategies available')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'All in-session production' })).toBeInTheDocument();
+    expect(screen.getByText('No in-session production strategies available')).toBeInTheDocument();
     expect(
-      screen.getByText('No explicit selection: all same-day production strategies are evaluated.')
+      screen.getByText('No explicit selection: all in-session production strategies are evaluated.')
     ).toBeInTheDocument();
   });
 
@@ -226,7 +226,7 @@ describe('ScreeningFilters', () => {
 
     render(
       <ScreeningFilters
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         params={defaultParams}
         onChange={onChange}
         strategyOptions={strategyOptions}

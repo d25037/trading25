@@ -2,10 +2,10 @@ import { useId } from 'react';
 import { JobHistoryTable, type JobHistoryColumn } from '@/components/Jobs/JobHistoryTable';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import type { ScreeningJobResponse, ScreeningMode } from '@/types/screening';
+import type { EntryDecidability, ScreeningJobResponse } from '@/types/screening';
 
 interface ScreeningJobHistoryTableProps {
-  mode: ScreeningMode;
+  entryDecidability: EntryDecidability;
   jobs: ScreeningJobResponse[] | undefined;
   isLoading: boolean;
   showHistory: boolean;
@@ -34,7 +34,7 @@ function truncateJobId(jobId: string): string {
 }
 
 export function ScreeningJobHistoryTable({
-  mode,
+  entryDecidability,
   jobs,
   isLoading,
   showHistory,
@@ -43,7 +43,10 @@ export function ScreeningJobHistoryTable({
   onSelectJob,
 }: ScreeningJobHistoryTableProps) {
   const switchId = useId();
-  const allStrategiesLabel = mode === 'same_day' ? '(all same-day production)' : '(all standard production)';
+  const allStrategiesLabel =
+    entryDecidability === 'requires_same_session_observation'
+      ? '(all in-session production)'
+      : '(all pre-open production)';
 
   const columns: JobHistoryColumn<ScreeningJobResponse>[] = [
     {

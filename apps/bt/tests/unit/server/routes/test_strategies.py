@@ -480,9 +480,11 @@ class TestListStrategies:
         data = resp.json()
         assert data["total"] == 2
         assert data["strategies"][0]["name"] == "production/range_break_v16"
-        assert data["strategies"][0]["screening_mode"] == "standard"
+        assert data["strategies"][0]["screening_support"] == "supported"
+        assert data["strategies"][0]["entry_decidability"] == "pre_open_decidable"
         assert data["strategies"][0]["screening_error"] is None
-        assert data["strategies"][1]["screening_mode"] == "same_day"
+        assert data["strategies"][1]["screening_support"] == "supported"
+        assert data["strategies"][1]["entry_decidability"] == "requires_same_session_observation"
         assert data["strategies"][1]["screening_error"] is None
 
     def test_exit_only_same_day_filter_stays_standard(self, client, mock_config_loader):
@@ -505,7 +507,8 @@ class TestListStrategies:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["strategies"][0]["screening_mode"] == "standard"
+        assert data["strategies"][0]["screening_support"] == "supported"
+        assert data["strategies"][0]["entry_decidability"] == "pre_open_decidable"
         assert data["strategies"][0]["screening_error"] is None
 
     def test_broken_strategy_returns_screening_error(self, client, mock_config_loader):
@@ -522,7 +525,8 @@ class TestListStrategies:
 
         assert resp.status_code == 200
         data = resp.json()
-        assert data["strategies"][0]["screening_mode"] == "unsupported"
+        assert data["strategies"][0]["screening_support"] == "unsupported"
+        assert data["strategies"][0]["entry_decidability"] is None
         assert data["strategies"][0]["screening_error"] == "bad yaml"
 
     def test_error_500(self, client, mock_config_loader):

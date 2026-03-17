@@ -4,10 +4,10 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ApiError } from '@/lib/api-client';
 import {
   createInitialAnalysisState,
+  DEFAULT_IN_SESSION_SCREENING_PARAMS,
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
-  DEFAULT_SAME_DAY_SCREENING_PARAMS,
+  DEFAULT_PRE_OPEN_SCREENING_PARAMS,
   DEFAULT_RANKING_PARAMS,
-  DEFAULT_SCREENING_PARAMS,
   useAnalysisStore,
 } from '@/stores/analysisStore';
 import type { MarketScreeningResponse, ScreeningJobResponse } from '@/types/screening';
@@ -17,11 +17,11 @@ const mockNavigate = vi.fn();
 const mockSetActiveSubTab = vi.fn((tab: string) => {
   mockRouteState.activeSubTab = tab;
 });
-const mockSetScreeningParams = vi.fn((params: typeof DEFAULT_SCREENING_PARAMS) => {
-  mockRouteState.screeningParams = params;
+const mockSetPreOpenScreeningParams = vi.fn((params: typeof DEFAULT_PRE_OPEN_SCREENING_PARAMS) => {
+  mockRouteState.preOpenScreeningParams = params;
 });
-const mockSetSameDayScreeningParams = vi.fn((params: typeof DEFAULT_SAME_DAY_SCREENING_PARAMS) => {
-  mockRouteState.sameDayScreeningParams = params;
+const mockSetInSessionScreeningParams = vi.fn((params: typeof DEFAULT_IN_SESSION_SCREENING_PARAMS) => {
+  mockRouteState.inSessionScreeningParams = params;
 });
 const mockSetRankingParams = vi.fn((params: typeof DEFAULT_RANKING_PARAMS) => {
   mockRouteState.rankingParams = params;
@@ -30,12 +30,12 @@ const mockSetFundamentalRankingParams = vi.fn((params: typeof DEFAULT_FUNDAMENTA
   mockRouteState.fundamentalRankingParams = params;
 });
 const mockRouteState = {
-  activeSubTab: 'screening' as string,
+  activeSubTab: 'preOpenScreening' as string,
   setActiveSubTab: mockSetActiveSubTab,
-  screeningParams: { ...DEFAULT_SCREENING_PARAMS },
-  setScreeningParams: mockSetScreeningParams,
-  sameDayScreeningParams: { ...DEFAULT_SAME_DAY_SCREENING_PARAMS },
-  setSameDayScreeningParams: mockSetSameDayScreeningParams,
+  preOpenScreeningParams: { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS },
+  setPreOpenScreeningParams: mockSetPreOpenScreeningParams,
+  inSessionScreeningParams: { ...DEFAULT_IN_SESSION_SCREENING_PARAMS },
+  setInSessionScreeningParams: mockSetInSessionScreeningParams,
   rankingParams: { ...DEFAULT_RANKING_PARAMS },
   setRankingParams: mockSetRankingParams,
   fundamentalRankingParams: { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS },
@@ -58,7 +58,12 @@ const mockUseScreeningResult = vi.fn();
 const mockCancelScreeningJob = vi.fn();
 let mockStrategiesQueryResult: {
   data: {
-    strategies: Array<{ name: string; category: string; screening_mode: 'standard' | 'same_day' | 'unsupported' }>;
+    strategies: Array<{
+      name: string;
+      category: string;
+      screening_support: 'supported' | 'unsupported';
+      entry_decidability?: 'pre_open_decidable' | 'requires_same_session_observation' | null;
+    }>;
   } | null;
   isLoading: boolean;
   error: Error | null;
@@ -66,7 +71,7 @@ let mockStrategiesQueryResult: {
 
 function createCachedScreeningResult(): MarketScreeningResponse {
   return {
-    mode: 'standard',
+    entry_decidability: 'pre_open_decidable',
     summary: {
       totalStocksScreened: 1,
       matchCount: 1,
@@ -117,7 +122,7 @@ function createScreeningJob(overrides: Partial<ScreeningJobResponse> = {}): Scre
     job_id: 'job-1',
     status: 'pending',
     created_at: '2026-02-18T00:00:00Z',
-    mode: 'standard',
+    entry_decidability: 'pre_open_decidable',
     markets: 'prime',
     recentDays: 10,
     sortBy: 'matchedDate',
@@ -213,12 +218,23 @@ describe('AnalysisPage', () => {
     mockStrategiesQueryResult = {
       data: {
         strategies: [
-          { name: 'production/range_break_v15', category: 'production', screening_mode: 'standard' },
-          { name: 'production/forward_eps_driven', category: 'production', screening_mode: 'standard' },
+          {
+            name: 'production/range_break_v15',
+            category: 'production',
+            screening_support: 'supported',
+            entry_decidability: 'pre_open_decidable',
+          },
+          {
+            name: 'production/forward_eps_driven',
+            category: 'production',
+            screening_support: 'supported',
+            entry_decidability: 'pre_open_decidable',
+          },
           {
             name: 'production/topix_gap_down_intraday_same_day',
             category: 'production',
-            screening_mode: 'same_day',
+            screening_support: 'supported',
+            entry_decidability: 'requires_same_session_observation',
           },
         ],
       },
@@ -227,15 +243,15 @@ describe('AnalysisPage', () => {
     };
     useAnalysisStore.persist?.clearStorage?.();
     useAnalysisStore.setState(createInitialAnalysisState());
-    mockRouteState.activeSubTab = 'screening';
-    mockRouteState.screeningParams = { ...DEFAULT_SCREENING_PARAMS };
-    mockRouteState.sameDayScreeningParams = { ...DEFAULT_SAME_DAY_SCREENING_PARAMS };
+    mockRouteState.activeSubTab = 'preOpenScreening';
+    mockRouteState.preOpenScreeningParams = { ...DEFAULT_PRE_OPEN_SCREENING_PARAMS };
+    mockRouteState.inSessionScreeningParams = { ...DEFAULT_IN_SESSION_SCREENING_PARAMS };
     mockRouteState.rankingParams = { ...DEFAULT_RANKING_PARAMS };
     mockRouteState.fundamentalRankingParams = { ...DEFAULT_FUNDAMENTAL_RANKING_PARAMS };
     mockNavigate.mockReset();
     mockSetActiveSubTab.mockClear();
-    mockSetScreeningParams.mockClear();
-    mockSetSameDayScreeningParams.mockClear();
+    mockSetPreOpenScreeningParams.mockClear();
+    mockSetInSessionScreeningParams.mockClear();
     mockSetRankingParams.mockClear();
     mockSetFundamentalRankingParams.mockClear();
     mockScreeningFilters.mockClear();
@@ -264,34 +280,34 @@ describe('AnalysisPage', () => {
 
     expect(mockScreeningFilters).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: 'standard',
+        entryDecidability: 'pre_open_decidable',
         strategyOptions: ['production/forward_eps_driven', 'production/range_break_v15'],
       })
     );
   });
 
-  it('shows same-day-only strategies in same-day screening', async () => {
+  it('shows in-session-only strategies in the in-session bucket', async () => {
     const user = userEvent.setup();
     const view = render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
     view.rerender(<AnalysisPage />);
 
     expect(mockScreeningFilters).toHaveBeenLastCalledWith(
       expect.objectContaining({
-        mode: 'same_day',
+        entryDecidability: 'requires_same_session_observation',
         strategyOptions: ['production/topix_gap_down_intraday_same_day'],
       })
     );
   });
 
   it('preserves saved strategy selections until the strategy catalog is loaded, then sanitizes invalid names', async () => {
-    mockRouteState.screeningParams = {
-      ...mockRouteState.screeningParams,
+    mockRouteState.preOpenScreeningParams = {
+      ...mockRouteState.preOpenScreeningParams,
       strategies: 'production/range_break_v15,production/missing_standard',
     };
-    mockRouteState.sameDayScreeningParams = {
-      ...mockRouteState.sameDayScreeningParams,
+    mockRouteState.inSessionScreeningParams = {
+      ...mockRouteState.inSessionScreeningParams,
       strategies: 'production/topix_gap_down_intraday_same_day,production/missing_same_day',
     };
     mockStrategiesQueryResult = {
@@ -302,19 +318,25 @@ describe('AnalysisPage', () => {
 
     const { rerender } = render(<AnalysisPage />);
 
-    expect(mockRouteState.screeningParams.strategies).toBe('production/range_break_v15,production/missing_standard');
-    expect(mockRouteState.sameDayScreeningParams.strategies).toBe(
+    expect(mockRouteState.preOpenScreeningParams.strategies).toBe('production/range_break_v15,production/missing_standard');
+    expect(mockRouteState.inSessionScreeningParams.strategies).toBe(
       'production/topix_gap_down_intraday_same_day,production/missing_same_day'
     );
 
     mockStrategiesQueryResult = {
       data: {
         strategies: [
-          { name: 'production/range_break_v15', category: 'production', screening_mode: 'standard' },
+          {
+            name: 'production/range_break_v15',
+            category: 'production',
+            screening_support: 'supported',
+            entry_decidability: 'pre_open_decidable',
+          },
           {
             name: 'production/topix_gap_down_intraday_same_day',
             category: 'production',
-            screening_mode: 'same_day',
+            screening_support: 'supported',
+            entry_decidability: 'requires_same_session_observation',
           },
         ],
       },
@@ -324,37 +346,37 @@ describe('AnalysisPage', () => {
     rerender(<AnalysisPage />);
 
     await waitFor(() => {
-      expect(mockRouteState.screeningParams.strategies).toBe('production/range_break_v15');
-      expect(mockRouteState.sameDayScreeningParams.strategies).toBe('production/topix_gap_down_intraday_same_day');
+      expect(mockRouteState.preOpenScreeningParams.strategies).toBe('production/range_break_v15');
+      expect(mockRouteState.inSessionScreeningParams.strategies).toBe('production/topix_gap_down_intraday_same_day');
     });
   });
 
-  it('uses matchedDate descending as default standard screening sort when running', async () => {
+  it('uses matchedDate descending as default pre-open screening sort when running', async () => {
     const user = userEvent.setup();
     render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Run Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Run Pre-Open Screening' }));
 
     expect(mockRunScreeningJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: 'standard',
+        entry_decidability: 'pre_open_decidable',
         sortBy: 'matchedDate',
         order: 'desc',
       })
     );
   });
 
-  it('runs same-day screening with same-day mode', async () => {
+  it('runs in-session screening with in-session decidability', async () => {
     const user = userEvent.setup();
     const view = render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
     view.rerender(<AnalysisPage />);
-    await user.click(screen.getByRole('button', { name: 'Run Same-Day Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Run In-Session Screening' }));
 
     expect(mockRunScreeningJob).toHaveBeenCalledWith(
       expect.objectContaining({
-        mode: 'same_day',
+        entry_decidability: 'requires_same_session_observation',
       })
     );
   });
@@ -379,13 +401,13 @@ describe('AnalysisPage', () => {
     expect(screen.getByText('Fundamental Ranking Filters')).toBeInTheDocument();
   });
 
-  it('switches to same-day screening tab', async () => {
+  it('switches to in-session screening tab', async () => {
     const user = userEvent.setup();
     const view = render(<AnalysisPage />);
 
-    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
     view.rerender(<AnalysisPage />);
-    expect(screen.getByRole('button', { name: 'Run Same-Day Screening' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run In-Session Screening' })).toBeInTheDocument();
   });
 
   it('navigates to chart when a stock is selected', async () => {
@@ -398,7 +420,7 @@ describe('AnalysisPage', () => {
 
   it('restores cached screening result after remount', () => {
     useAnalysisStore.setState({
-      screeningResult: createCachedScreeningResult(),
+      preOpenScreeningResult: createCachedScreeningResult(),
     });
 
     render(<AnalysisPage />);
@@ -416,8 +438,8 @@ describe('AnalysisPage', () => {
 
   it('clears stale screening job id and keeps cached result visible on 404', async () => {
     useAnalysisStore.setState({
-      activeScreeningJobId: 'stale-job',
-      screeningResult: createCachedScreeningResult(),
+      activePreOpenScreeningJobId: 'stale-job',
+      preOpenScreeningResult: createCachedScreeningResult(),
     });
     mockUseScreeningJobStatus.mockReturnValue({
       data: null,
@@ -427,7 +449,7 @@ describe('AnalysisPage', () => {
     render(<AnalysisPage />);
 
     await waitFor(() => {
-      expect(useAnalysisStore.getState().activeScreeningJobId).toBeNull();
+      expect(useAnalysisStore.getState().activePreOpenScreeningJobId).toBeNull();
     });
 
     expect(mockScreeningTable).toHaveBeenCalledWith(
@@ -454,11 +476,16 @@ describe('AnalysisPage', () => {
     expect(screen.queryByText('Screening Job Progress')).not.toBeInTheDocument();
   });
 
-  it('keeps screening history visibility separate for standard and same-day tabs', async () => {
+  it('keeps screening history visibility separate for pre-open and in-session tabs', async () => {
     const user = userEvent.setup();
     useAnalysisStore.setState({
-      screeningJobHistory: [createScreeningJob({ job_id: 'standard-job' })],
-      sameDayScreeningJobHistory: [createScreeningJob({ job_id: 'same-day-job', mode: 'same_day' })],
+      preOpenScreeningJobHistory: [createScreeningJob({ job_id: 'standard-job' })],
+      inSessionScreeningJobHistory: [
+        createScreeningJob({
+          job_id: 'same-day-job',
+          entry_decidability: 'requires_same_session_observation',
+        }),
+      ],
     });
 
     const view = render(<AnalysisPage />);
@@ -468,14 +495,14 @@ describe('AnalysisPage', () => {
     await user.click(standardToggle);
     expect(standardToggle).not.toBeChecked();
 
-    await user.click(screen.getByRole('button', { name: 'Same-Day Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Requires In-Session Observation' }));
     view.rerender(<AnalysisPage />);
 
     const sameDayToggle = screen.getByRole('switch', { name: 'Show History' });
     expect(sameDayToggle).toBeChecked();
     expect(screen.getByText('same-day...')).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: 'Screening' }));
+    await user.click(screen.getByRole('button', { name: 'Pre-Open Decidable' }));
     view.rerender(<AnalysisPage />);
 
     const restoredStandardToggle = screen.getByRole('switch', { name: 'Show History' });

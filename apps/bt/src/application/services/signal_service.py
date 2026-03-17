@@ -23,7 +23,7 @@ from src.application.services.screening_market_loader import (
 from src.domains.analytics.screening_requirements import build_strategy_data_requirements
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.domains.strategy.runtime.loader import ConfigLoader
-from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
+from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
 from src.domains.strategy.signals.processor import SignalProcessor
 from src.domains.strategy.signals.registry import SIGNAL_REGISTRY, SignalDefinition
 from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics

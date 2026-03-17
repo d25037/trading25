@@ -62,6 +62,7 @@ class TestSharedConfig:
         assert cfg.kelly_fraction == 1.0
         assert cfg.next_session_round_trip is False
         assert cfg.current_session_round_trip is False
+        assert cfg.overnight_round_trip is False
 
     def test_valid_directions(self):
         for d in ["longonly", "shortonly", "both"]:
@@ -167,6 +168,13 @@ class TestSharedConfig:
         with pytest.raises(ValidationError, match="current_session_round_trip"):
             self._make(
                 execution_policy={"mode": "current_session_round_trip"},
+                timeframe="weekly",
+            )
+
+    def test_overnight_round_trip_requires_daily_timeframe(self):
+        with pytest.raises(ValidationError, match="overnight_round_trip"):
+            self._make(
+                execution_policy={"mode": "overnight_round_trip"},
                 timeframe="weekly",
             )
 

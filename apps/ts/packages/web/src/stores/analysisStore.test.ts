@@ -12,10 +12,10 @@ describe('analysisStore', () => {
   });
 
   it('updates screening state', () => {
-    const { setActiveScreeningJobId, setScreeningResult } = useAnalysisStore.getState();
+    const { setActivePreOpenScreeningJobId, setPreOpenScreeningResult } = useAnalysisStore.getState();
 
-    setActiveScreeningJobId('job-1');
-    setScreeningResult({
+    setActivePreOpenScreeningJobId('job-1');
+    setPreOpenScreeningResult({
       summary: {
         totalStocksScreened: 1,
         matchCount: 1,
@@ -61,16 +61,16 @@ describe('analysisStore', () => {
     });
 
     const state = useAnalysisStore.getState();
-    expect(state.activeScreeningJobId).toBe('job-1');
-    expect(state.screeningResult?.results[0]?.stockCode).toBe('7203');
+    expect(state.activePreOpenScreeningJobId).toBe('job-1');
+    expect(state.preOpenScreeningResult?.results[0]?.stockCode).toBe('7203');
   });
 
-  it('updates same-day screening state independently', () => {
-    const { setActiveSameDayScreeningJobId, setSameDayScreeningResult } = useAnalysisStore.getState();
+  it('updates in-session screening state independently', () => {
+    const { setActiveInSessionScreeningJobId, setInSessionScreeningResult } = useAnalysisStore.getState();
 
-    setActiveSameDayScreeningJobId('same-day-job-1');
-    setSameDayScreeningResult({
-      mode: 'same_day',
+    setActiveInSessionScreeningJobId('same-day-job-1');
+    setInSessionScreeningResult({
+      entry_decidability: 'requires_same_session_observation',
       summary: {
         totalStocksScreened: 1,
         matchCount: 1,
@@ -100,13 +100,13 @@ describe('analysisStore', () => {
     });
 
     const state = useAnalysisStore.getState();
-    expect(state.activeSameDayScreeningJobId).toBe('same-day-job-1');
-    expect(state.sameDayScreeningResult?.mode).toBe('same_day');
+    expect(state.activeInSessionScreeningJobId).toBe('same-day-job-1');
+    expect(state.inSessionScreeningResult?.entry_decidability).toBe('requires_same_session_observation');
   });
 
   it('upserts screening job history and keeps latest first', () => {
-    const { upsertScreeningJobHistory } = useAnalysisStore.getState();
-    upsertScreeningJobHistory({
+    const { upsertPreOpenScreeningJobHistory } = useAnalysisStore.getState();
+    upsertPreOpenScreeningJobHistory({
       job_id: 'job-1',
       status: 'pending',
       created_at: '2026-02-18T09:00:00Z',
@@ -115,7 +115,7 @@ describe('analysisStore', () => {
       sortBy: 'matchedDate',
       order: 'desc',
     });
-    upsertScreeningJobHistory({
+    upsertPreOpenScreeningJobHistory({
       job_id: 'job-2',
       status: 'completed',
       created_at: '2026-02-18T10:00:00Z',
@@ -124,7 +124,7 @@ describe('analysisStore', () => {
       sortBy: 'matchedDate',
       order: 'desc',
     });
-    upsertScreeningJobHistory({
+    upsertPreOpenScreeningJobHistory({
       job_id: 'job-1',
       status: 'running',
       created_at: '2026-02-18T09:00:00Z',
@@ -135,9 +135,9 @@ describe('analysisStore', () => {
     });
 
     const state = useAnalysisStore.getState();
-    expect(state.screeningJobHistory).toHaveLength(2);
-    expect(state.screeningJobHistory[0]?.job_id).toBe('job-2');
-    expect(state.screeningJobHistory[1]?.job_id).toBe('job-1');
-    expect(state.screeningJobHistory[1]?.status).toBe('running');
+    expect(state.preOpenScreeningJobHistory).toHaveLength(2);
+    expect(state.preOpenScreeningJobHistory[0]?.job_id).toBe('job-2');
+    expect(state.preOpenScreeningJobHistory[1]?.job_id).toBe('job-1');
+    expect(state.preOpenScreeningJobHistory[1]?.status).toBe('running');
   });
 });

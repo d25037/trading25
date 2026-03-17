@@ -220,10 +220,10 @@ export function useMigrateIndicesRouteState(): void {
 export function useAnalysisRouteState(): {
   activeSubTab: AnalysisSubTab;
   setActiveSubTab: (tab: AnalysisSubTab) => void;
-  screeningParams: ScreeningParams;
-  setScreeningParams: (params: ScreeningParams) => void;
-  sameDayScreeningParams: ScreeningParams;
-  setSameDayScreeningParams: (params: ScreeningParams) => void;
+  preOpenScreeningParams: ScreeningParams;
+  setPreOpenScreeningParams: (params: ScreeningParams) => void;
+  inSessionScreeningParams: ScreeningParams;
+  setInSessionScreeningParams: (params: ScreeningParams) => void;
   rankingParams: RankingParams;
   setRankingParams: (params: RankingParams) => void;
   fundamentalRankingParams: FundamentalRankingParams;
@@ -237,14 +237,14 @@ export function useAnalysisRouteState(): {
     (
       updater: (currentState: {
         activeSubTab: AnalysisSubTab;
-        screeningParams: ScreeningParams;
-        sameDayScreeningParams: ScreeningParams;
+        preOpenScreeningParams: ScreeningParams;
+        inSessionScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }) => {
         activeSubTab: AnalysisSubTab;
-        screeningParams: ScreeningParams;
-        sameDayScreeningParams: ScreeningParams;
+        preOpenScreeningParams: ScreeningParams;
+        inSessionScreeningParams: ScreeningParams;
         rankingParams: RankingParams;
         fundamentalRankingParams: FundamentalRankingParams;
       }
@@ -263,9 +263,10 @@ export function useAnalysisRouteState(): {
   return {
     ...state,
     setActiveSubTab: (tab) => updateSearch((currentState) => ({ ...currentState, activeSubTab: tab })),
-    setScreeningParams: (params) => updateSearch((currentState) => ({ ...currentState, screeningParams: params })),
-    setSameDayScreeningParams: (params) =>
-      updateSearch((currentState) => ({ ...currentState, sameDayScreeningParams: params })),
+    setPreOpenScreeningParams: (params) =>
+      updateSearch((currentState) => ({ ...currentState, preOpenScreeningParams: params })),
+    setInSessionScreeningParams: (params) =>
+      updateSearch((currentState) => ({ ...currentState, inSessionScreeningParams: params })),
     setRankingParams: (params) => updateSearch((currentState) => ({ ...currentState, rankingParams: params })),
     setFundamentalRankingParams: (params) =>
       updateSearch((currentState) => ({ ...currentState, fundamentalRankingParams: params })),
@@ -283,6 +284,8 @@ export function useMigrateAnalysisRouteState(): void {
       'activeSubTab',
       'screeningParams',
       'sameDayScreeningParams',
+      'preOpenScreeningParams',
+      'inSessionScreeningParams',
       'rankingParams',
       'fundamentalRankingParams',
     ],

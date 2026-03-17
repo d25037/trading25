@@ -122,7 +122,7 @@ class StrategyFactory:
         ):
             raise ValueError(
                 "exit_trigger_params must be empty when "
-                f"shared_config.{mode_name} is true"
+                f"shared_config.execution_policy.mode is '{mode_name}'"
             )
 
     @classmethod

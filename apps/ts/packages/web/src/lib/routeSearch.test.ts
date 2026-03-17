@@ -72,7 +72,7 @@ describe('routeSearch', () => {
     const search = validateAnalysisSearch({
       tab: 'sameDayScreening',
       sameDayMarkets: '0113',
-      sameDayStrategies: 'production/same_day_strategy',
+      sameDayStrategies: 'production/in_session_strategy',
       sameDayRecentDays: '5',
       sameDaySortBy: 'matchStrategyCount',
       sameDayOrder: 'asc',
@@ -84,19 +84,19 @@ describe('routeSearch', () => {
 
     const state = getAnalysisStateFromSearch(search);
 
-    expect(state.activeSubTab).toBe('sameDayScreening');
-    expect(state.screeningParams.mode).toBe('standard');
-    expect(state.sameDayScreeningParams.mode).toBe('same_day');
-    expect(state.sameDayScreeningParams.sortBy).toBe('matchStrategyCount');
+    expect(state.activeSubTab).toBe('inSessionScreening');
+    expect(state.preOpenScreeningParams.entry_decidability).toBe('pre_open_decidable');
+    expect(state.inSessionScreeningParams.entry_decidability).toBe('requires_same_session_observation');
+    expect(state.inSessionScreeningParams.sortBy).toBe('matchStrategyCount');
 
     expect(serializeAnalysisSearch(state)).toEqual({
-      tab: 'sameDayScreening',
-      sameDayMarkets: '0113',
-      sameDayStrategies: 'production/same_day_strategy',
-      sameDayRecentDays: 5,
-      sameDaySortBy: 'matchStrategyCount',
-      sameDayOrder: 'asc',
-      sameDayLimit: 60,
+      tab: 'inSessionScreening',
+      inSessionMarkets: '0113',
+      inSessionStrategies: 'production/in_session_strategy',
+      inSessionRecentDays: 5,
+      inSessionSortBy: 'matchStrategyCount',
+      inSessionOrder: 'asc',
+      inSessionLimit: 60,
       rankingLimit: 25,
       fundamentalLimit: 30,
       forecastAboveRecentFyActuals: true,
@@ -112,8 +112,8 @@ describe('routeSearch', () => {
       })
     ).toEqual({
       tab: 'fundamentalRanking',
-      screeningStrategies: 'production/a',
-      sameDayStrategies: 'production/b',
+      preOpenStrategies: 'production/a',
+      inSessionStrategies: 'production/b',
       rankingLookbackDays: 5,
       forecastLookbackFyCount: 5,
     });

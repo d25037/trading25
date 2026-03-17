@@ -5997,16 +5997,16 @@ export interface components {
          */
         MarketScreeningResponse: {
             diagnostics?: components["schemas"]["ResponseDiagnostics"];
+            /**
+             * Entry Decidability
+             * @default pre_open_decidable
+             * @enum {string}
+             */
+            entry_decidability: "pre_open_decidable" | "requires_same_session_observation";
             /** Lastupdated */
             lastUpdated: string;
             /** Markets */
             markets: string[];
-            /**
-             * Mode
-             * @default standard
-             * @enum {string}
-             */
-            mode: "standard" | "same_day";
             /**
              * Order
              * @enum {string}
@@ -7174,6 +7174,12 @@ export interface components {
         ScreeningJobRequest: {
             /** Date */
             date?: string | null;
+            /**
+             * Entry Decidability
+             * @default pre_open_decidable
+             * @enum {string}
+             */
+            entry_decidability: "pre_open_decidable" | "requires_same_session_observation";
             /** Limit */
             limit?: number | null;
             /**
@@ -7181,12 +7187,6 @@ export interface components {
              * @default prime
              */
             markets: string;
-            /**
-             * Mode
-             * @default standard
-             * @enum {string}
-             */
-            mode: "standard" | "same_day";
             /**
              * Order
              * @default desc
@@ -7224,6 +7224,13 @@ export interface components {
              */
             created_at: string;
             /**
+             * Entry Decidability
+             * @description entry decidability classification
+             * @default pre_open_decidable
+             * @enum {string}
+             */
+            entry_decidability: "pre_open_decidable" | "requires_same_session_observation";
+            /**
              * Error
              * @description エラーメッセージ
              */
@@ -7250,13 +7257,6 @@ export interface components {
              * @description ステータスメッセージ
              */
             message?: string | null;
-            /**
-             * Mode
-             * @description screening mode
-             * @default standard
-             * @enum {string}
-             */
-            mode: "standard" | "same_day";
             /**
              * Order
              * @description 並び順
@@ -7769,7 +7769,7 @@ export interface components {
              * Execution Semantics
              * @enum {string}
              */
-            execution_semantics: "standard" | "next_session_round_trip" | "current_session_round_trip";
+            execution_semantics: "standard" | "next_session_round_trip" | "current_session_round_trip" | "overnight_round_trip";
             scope: components["schemas"]["CompiledSignalScope"];
         };
         /**
@@ -8650,6 +8650,11 @@ export interface components {
              */
             display_name?: string | null;
             /**
+             * Entry Decidability
+             * @description whether entry can be decided before the execution session opens
+             */
+            entry_decidability?: ("pre_open_decidable" | "requires_same_session_observation") | null;
+            /**
              * Last Modified
              * @description 最終更新日時
              */
@@ -8665,12 +8670,12 @@ export interface components {
              */
             screening_error?: string | null;
             /**
-             * Screening Mode
-             * @description screening availability for analysis UI
+             * Screening Support
+             * @description screening support classification for analysis UI
              * @default unsupported
              * @enum {string}
              */
-            screening_mode: "standard" | "same_day" | "unsupported";
+            screening_support: "supported" | "unsupported";
         };
         /**
          * StrategyMoveRequest

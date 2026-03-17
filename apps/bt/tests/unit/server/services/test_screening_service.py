@@ -8,15 +8,17 @@ import os
 import time
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import duckdb
 import pytest
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.domains.strategy.runtime.compiler import compile_runtime_strategy
-from src.domains.strategy.runtime.screening_mode import (
-    resolve_strategy_screening_mode,
+from src.domains.strategy.runtime.screening_profile import (
+    resolve_screening_profile,
 )
+from src.entrypoints.http.schemas.screening import EntryDecidability
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 from src.shared.paths.resolver import StrategyMetadata
@@ -90,7 +92,9 @@ def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) ->
         entry_signal_params=entry_params,
         exit_signal_params=SignalParams(),
     )
-    screening_mode = resolve_strategy_screening_mode(compiled_strategy)
+    screening_profile = resolve_screening_profile(compiled_strategy)
+    assert screening_profile.screening_support == "supported"
+    assert screening_profile.entry_decidability is not None
 
     return StrategyRuntime(
         name=f"production/{name}",
@@ -100,7 +104,7 @@ def _runtime(name: str, *, shared_overrides: dict[str, object] | None = None) ->
         exit_params=SignalParams(),
         shared_config=shared_config,
         compiled_strategy=compiled_strategy,
-        screening_mode=screening_mode,
+        entry_decidability=cast(EntryDecidability, screening_profile.entry_decidability),
     )
 
 
@@ -108,7 +112,11 @@ class TestMarketCodeCompatibility:
     def test_prime_and_numeric_prime_screen_same_universe(self, service, monkeypatch):
         runtime = _runtime("range_break_v15")
 
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [runtime])
+        monkeypatch.setattr(
+            service,
+            "_resolve_strategies",
+            lambda _strategies, *, entry_decidability: [runtime],
+        )
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",
@@ -160,7 +168,11 @@ class TestMarketCodeCompatibility:
         captured: dict[str, str | None] = {}
 
         monkeypatch.setattr(service, "_get_latest_market_date", lambda: "2026-02-17")
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [runtime])
+        monkeypatch.setattr(
+            service,
+            "_resolve_strategies",
+            lambda _strategies, *, entry_decidability: [runtime],
+        )
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",
@@ -239,8 +251,11 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        with pytest.raises(ValueError, match="No production strategies found for standard screening"):
-            service._resolve_strategies(None, mode="standard")
+        with pytest.raises(
+            ValueError,
+            match="No production strategies found for pre_open_decidable screening",
+        ):
+            service._resolve_strategies(None, entry_decidability="pre_open_decidable")
 
     def test_rejects_current_session_round_trip_strategy(
         self,
@@ -277,11 +292,12 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        same_day = service._resolve_strategies(None, mode="same_day")
-        assert [s.name for s in same_day] == ["production/current_session_demo"]
-        assert same_day[0].compiled_strategy.execution_semantics == (
-            "current_session_round_trip"
+        resolved = service._resolve_strategies(
+            None,
+            entry_decidability="pre_open_decidable",
         )
+        assert [s.name for s in resolved] == ["production/current_session_demo"]
+        assert resolved[0].compiled_strategy.execution_semantics == "current_session_round_trip"
 
     def test_exit_only_same_day_filter_remains_standard_screening(
         self,
@@ -317,7 +333,10 @@ class TestStrategyResolution:
             lambda _config: {"dataset": "primeExTopix500"},
         )
 
-        resolved = service._resolve_strategies(None, mode="standard")
+        resolved = service._resolve_strategies(
+            None,
+            entry_decidability="pre_open_decidable",
+        )
         assert [s.name for s in resolved] == ["production/exit_only_same_day"]
         assert resolved[0].compiled_strategy.execution_semantics == "standard"
 
@@ -349,7 +368,7 @@ class TestStrategyResolution:
             ValueError,
             match="Invalid production strategy config for screening: production/broken_strategy \\(bad yaml\\)",
         ):
-            service._resolve_strategies(None, mode="standard")
+            service._resolve_strategies(None, entry_decidability="pre_open_decidable")
 
     def test_resolves_production_only_and_supports_basename_and_fullname(
         self,
@@ -395,7 +414,10 @@ class TestStrategyResolution:
             lambda _config: {"dataset": "primeExTopix500"},
         )
 
-        auto_resolved = service._resolve_strategies(None, mode="standard")
+        auto_resolved = service._resolve_strategies(
+            None,
+            entry_decidability="pre_open_decidable",
+        )
         assert [s.name for s in auto_resolved] == [
             "production/forward_eps_driven",
             "production/range_break_v15",
@@ -403,7 +425,7 @@ class TestStrategyResolution:
 
         specified = service._resolve_strategies(
             "range_break_v15,production/forward_eps_driven",
-            mode="standard",
+            entry_decidability="pre_open_decidable",
         )
         assert [s.name for s in specified] == [
             "production/range_break_v15",
@@ -411,9 +433,12 @@ class TestStrategyResolution:
         ]
 
         with pytest.raises(ValueError, match="Invalid strategies"):
-            service._resolve_strategies("experimental/test_strategy", mode="standard")
+            service._resolve_strategies(
+                "experimental/test_strategy",
+                entry_decidability="pre_open_decidable",
+            )
 
-    def test_resolves_same_day_only_for_same_day_mode(
+    def test_resolves_in_session_only_for_in_session_decidability(
         self,
         service,
         monkeypatch,
@@ -464,7 +489,10 @@ class TestStrategyResolution:
             lambda config: config.get("shared_config", {}),
         )
 
-        resolved = service._resolve_strategies(None, mode="same_day")
+        resolved = service._resolve_strategies(
+            None,
+            entry_decidability="requires_same_session_observation",
+        )
         assert [s.name for s in resolved] == ["production/topix_gap_down_intraday_same_day"]
 
 
@@ -473,7 +501,11 @@ class TestAggregationAndSorting:
         s1 = _runtime("range_break_v15")
         s2 = _runtime("forward_eps_driven")
 
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [s1, s2])
+        monkeypatch.setattr(
+            service,
+            "_resolve_strategies",
+            lambda _strategies, *, entry_decidability: [s1, s2],
+        )
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",
@@ -537,7 +569,11 @@ class TestAggregationAndSorting:
         s1 = _runtime("range_break_v15")
         s2 = _runtime("forward_eps_driven")
 
-        monkeypatch.setattr(service, "_resolve_strategies", lambda _strategies, *, mode: [s1, s2])
+        monkeypatch.setattr(
+            service,
+            "_resolve_strategies",
+            lambda _strategies, *, entry_decidability: [s1, s2],
+        )
         monkeypatch.setattr(
             service,
             "_load_strategy_scores",

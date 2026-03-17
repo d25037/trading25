@@ -32,6 +32,7 @@ _CLOSE_EVENT_TIME = time(15, 0)
 _SUPPORTED_EXECUTION_MODES = {
     "next_session_round_trip",
     "current_session_round_trip",
+    "overnight_round_trip",
 }
 
 
@@ -158,6 +159,7 @@ class _CapturedExecutionAdapter:
         open_data: pd.DataFrame,
         close_data: pd.DataFrame,
         entries_data: pd.DataFrame,
+        execution_mode: str,
         entry_size: float,
         entry_size_type: int,
         direction: int,
@@ -174,6 +176,7 @@ class _CapturedExecutionAdapter:
             direction,
             init_cash,
             freq,
+            execution_mode,
         )
         self.round_trip_inputs = (
             open_data.copy(),
@@ -477,9 +480,12 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
     equity_points: list[dict[str, Any]] = []
     skipped_missing_prices: list[dict[str, Any]] = []
     skipped_zero_quantity: list[dict[str, Any]] = []
+    pending_day_pnl: dict[pd.Timestamp, float] = defaultdict(float)
 
-    for date_value in prepared.entries_data.index:
+    index_values = list(prepared.entries_data.index)
+    for row_idx, date_value in enumerate(index_values):
         trade_date = _to_timestamp(date_value)
+        current_equity += float(pending_day_pnl.pop(trade_date, 0.0))
         starting_equity = current_equity
         available_cash = starting_equity
         day_pnl = 0.0
@@ -487,17 +493,33 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
             if not bool(prepared.entries_data.at[date_value, code]):
                 continue
 
-            open_price = prepared.open_data.at[date_value, code]
-            close_price = prepared.close_data.at[date_value, code]
-            if pd.isna(open_price) or pd.isna(close_price):
+            exit_trade_date = trade_date
+            entry_price_raw = prepared.open_data.at[date_value, code]
+            exit_price_raw = prepared.close_data.at[date_value, code]
+            entry_event_time = _OPEN_EVENT_TIME
+            exit_event_time = _CLOSE_EVENT_TIME
+
+            if prepared.execution_mode == "overnight_round_trip":
+                if row_idx >= len(index_values) - 1:
+                    skipped_missing_prices.append(
+                        {"code": code, "date": str(trade_date.date())}
+                    )
+                    continue
+                exit_trade_date = _to_timestamp(index_values[row_idx + 1])
+                entry_price_raw = prepared.close_data.at[date_value, code]
+                exit_price_raw = prepared.open_data.at[exit_trade_date, code]
+                entry_event_time = _CLOSE_EVENT_TIME
+                exit_event_time = _OPEN_EVENT_TIME
+
+            if pd.isna(entry_price_raw) or pd.isna(exit_price_raw):
                 skipped_missing_prices.append(
                     {"code": code, "date": str(trade_date.date())}
                 )
                 continue
 
             budget = available_cash * prepared.allocation_per_asset
-            open_price_value = _to_float(open_price)
-            close_price_value = _to_float(close_price)
+            open_price_value = _to_float(entry_price_raw)
+            close_price_value = _to_float(exit_price_raw)
             quantity = _max_affordable_quantity(
                 budget=float(budget),
                 open_price=open_price_value,
@@ -529,8 +551,8 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
             pnl = notional_out - notional_in - fees_cost
             gross_return = ((close_price_value / open_price_value) - 1.0) * 100.0
             net_return = (pnl / max(notional_in, 1e-12)) * 100.0
-            open_ts = _daily_event_timestamp(trade_date, _OPEN_EVENT_TIME)
-            close_ts = _daily_event_timestamp(trade_date, _CLOSE_EVENT_TIME)
+            open_ts = _daily_event_timestamp(trade_date, entry_event_time)
+            close_ts = _daily_event_timestamp(exit_trade_date, exit_event_time)
             trade_plan = _TradePlan(
                 code=code,
                 trade_date=trade_date,
@@ -548,6 +570,7 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
                 {
                     "code": code,
                     "trade_date": str(trade_date.date()),
+                    "exit_date": str(exit_trade_date.date()),
                     "quantity": quantity,
                     "open_price": open_price_value,
                     "close_price": close_price_value,
@@ -556,7 +579,10 @@ def _build_verification_plan(prepared: _PreparedPortfolioInputs) -> _Verificatio
                     "pnl": pnl,
                 }
             )
-            day_pnl += pnl
+            if prepared.execution_mode == "overnight_round_trip":
+                pending_day_pnl[exit_trade_date] += pnl
+            else:
+                day_pnl += pnl
 
         current_equity += day_pnl
         day_return = 0.0 if starting_equity <= 0 else day_pnl / starting_equity

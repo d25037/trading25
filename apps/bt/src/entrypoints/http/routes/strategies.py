@@ -6,7 +6,7 @@ from fastapi import APIRouter, HTTPException
 from loguru import logger
 
 from src.domains.strategy.runtime.compiler import compile_strategy_config
-from src.domains.strategy.runtime.screening_mode import load_strategy_screening_config
+from src.domains.strategy.runtime.screening_profile import load_strategy_screening_config
 from src.entrypoints.http.schemas.strategy import (
     DefaultConfigResponse,
     DefaultConfigUpdateRequest,
@@ -21,12 +21,12 @@ from src.entrypoints.http.schemas.strategy import (
     StrategyMoveResponse,
     StrategyRenameRequest,
     StrategyRenameResponse,
-    StrategyScreeningMode,
     StrategyUpdateRequest,
     StrategyUpdateResponse,
     StrategyValidationRequest,
     StrategyValidationResponse,
 )
+from src.entrypoints.http.schemas.screening import EntryDecidability, ScreeningSupport
 from src.domains.strategy.runtime.loader import ConfigLoader
 from src.domains.strategy.runtime.models import try_validate_strategy_config_dict_strict
 
@@ -38,13 +38,13 @@ _config_loader = ConfigLoader()
 
 def _resolve_screening_metadata(
     strategy_name: str,
-) -> tuple[StrategyScreeningMode, str | None]:
+) -> tuple[ScreeningSupport, EntryDecidability | None, str | None]:
     try:
         loaded = load_strategy_screening_config(_config_loader, strategy_name)
-        return loaded.screening_mode, None
+        return loaded.screening_support, loaded.entry_decidability, None
     except Exception as exc:
         logger.warning(f"failed to resolve screening mode for {strategy_name}: {exc}")
-        return "unsupported", str(exc)
+        return "unsupported", None, str(exc)
 
 
 @router.get("/api/strategies", response_model=StrategyListResponse)
@@ -59,7 +59,7 @@ async def list_strategies() -> StrategyListResponse:
 
         strategies = []
         for m in metadata_list:
-            screening_mode, screening_error = _resolve_screening_metadata(m.name)
+            screening_support, entry_decidability, screening_error = _resolve_screening_metadata(m.name)
             strategies.append(
                 StrategyMetadataResponse(
                     name=m.name,
@@ -67,7 +67,8 @@ async def list_strategies() -> StrategyListResponse:
                     display_name=None,  # メタデータには含まれない
                     description=None,
                     last_modified=m.mtime if hasattr(m, "mtime") else None,
-                    screening_mode=screening_mode,
+                    screening_support=screening_support,
+                    entry_decidability=entry_decidability,
                     screening_error=screening_error,
                 )
             )

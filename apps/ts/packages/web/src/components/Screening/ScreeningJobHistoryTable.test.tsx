@@ -22,7 +22,7 @@ describe('ScreeningJobHistoryTable', () => {
   it('shows empty state', () => {
     render(
       <ScreeningJobHistoryTable
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         jobs={[]}
         isLoading={false}
         showHistory
@@ -41,7 +41,7 @@ describe('ScreeningJobHistoryTable', () => {
 
     render(
       <ScreeningJobHistoryTable
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         jobs={[job]}
         isLoading={false}
         showHistory
@@ -62,7 +62,7 @@ describe('ScreeningJobHistoryTable', () => {
     const job = createJob({ job_id: 'job-pending', status: 'pending' });
     render(
       <ScreeningJobHistoryTable
-        mode="standard"
+        entryDecidability="pre_open_decidable"
         jobs={[job]}
         isLoading={false}
         showHistory
@@ -82,7 +82,7 @@ describe('ScreeningJobHistoryTable', () => {
       const [showHistory, setShowHistory] = useState(true);
       return (
         <ScreeningJobHistoryTable
-          mode="standard"
+          entryDecidability="pre_open_decidable"
           jobs={[job]}
           isLoading={false}
           showHistory={showHistory}
@@ -113,7 +113,7 @@ describe('ScreeningJobHistoryTable', () => {
 
     render(
       <ScreeningJobHistoryTable
-        mode="same_day"
+        entryDecidability="requires_same_session_observation"
         jobs={[job]}
         isLoading={false}
         showHistory
@@ -123,6 +123,6 @@ describe('ScreeningJobHistoryTable', () => {
       />
     );
 
-    expect(screen.getByText('(all same-day production)')).toBeInTheDocument();
+    expect(screen.getByText('(all in-session production)')).toBeInTheDocument();
   });
 });
