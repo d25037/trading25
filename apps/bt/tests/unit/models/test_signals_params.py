@@ -18,8 +18,8 @@ from src.shared.models.signals.macro import (
     BetaSignalParams,
     IndexDailyChangeSignalParams,
     IndexMACDHistogramSignalParams,
+    IndexOpenGapRegimeSignalParams,
     MarginSignalParams,
-    OracleIndexOpenGapRegimeSignalParams,
 )
 from src.shared.models.signals.oscillator import RSISpreadSignalParams, RSIThresholdSignalParams
 from src.shared.models.signals.sector import (
@@ -176,7 +176,7 @@ class TestMacroSignalParams:
 
     def test_oracle_gap_threshold_order(self) -> None:
         with pytest.raises(ValidationError, match="gap_threshold_2_pct"):
-            OracleIndexOpenGapRegimeSignalParams(
+            IndexOpenGapRegimeSignalParams(
                 gap_threshold_1_pct=2.0,
                 gap_threshold_2_pct=1.0,
             )

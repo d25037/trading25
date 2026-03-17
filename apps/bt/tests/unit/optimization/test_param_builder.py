@@ -10,7 +10,7 @@ from src.domains.optimization.param_builder import (
 from src.shared.models.signals import (
     CrossoverSignalParams,
     FundamentalSignalParams,
-    OracleIndexOpenGapRegimeSignalParams,
+    IndexOpenGapRegimeSignalParams,
     PeriodExtremaBreakSignalParams,
     SignalParams,
     VolumeRatioAboveSignalParams,
@@ -94,7 +94,7 @@ class TestParamBuilder:
 
     def test_build_signal_params_preserves_index_open_gap_regime(self) -> None:
         base_params = SignalParams(
-            index_open_gap_regime=OracleIndexOpenGapRegimeSignalParams(
+            index_open_gap_regime=IndexOpenGapRegimeSignalParams(
                 enabled=True,
                 gap_threshold_1_pct=1.0,
                 gap_threshold_2_pct=2.0,
