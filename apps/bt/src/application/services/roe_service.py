@@ -7,7 +7,7 @@ local market.duckdb の statements を基に ROE を計算する。
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable, cast
 
 from src.application.services.analytics_data_provider import (
     AnalyticsDataProvider,
@@ -25,6 +25,7 @@ from src.entrypoints.http.schemas.analytics_roe import (
     ROEResultItem,
     ROESummary,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 def _to_response_item(result: Any) -> ROEResultItem:
@@ -105,7 +106,10 @@ class ROEService:
         elif date:
             normalized_date = date.replace("-", "")
             disclosed_date = f"{normalized_date[:4]}-{normalized_date[4:6]}-{normalized_date[6:8]}"
-            getter = getattr(self._provider, "get_statements_by_date", None)
+            getter = cast(
+                Callable[[str], list[dict[str, Any]]] | None,
+                getattr(self._provider, "get_statements_by_date", None),
+            )
             all_stmts = getter(disclosed_date) if callable(getter) else []
         else:
             all_stmts = []
@@ -168,5 +172,5 @@ class ROEService:
         )
 
 
-def create_market_roe_service(reader: object | None) -> ROEService:
+def create_market_roe_service(reader: MarketDbReader | None) -> ROEService:
     return ROEService(MarketAnalyticsDataProvider(reader=reader))

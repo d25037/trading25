@@ -30,6 +30,7 @@ from src.domains.analytics.margin_metrics import (
     compute_margin_turnover_days,
     compute_margin_volume_ratio,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 def _now_iso() -> str:
@@ -131,5 +132,5 @@ class MarginAnalyticsService:
         )
 
 
-def create_market_margin_analytics_service(reader: object | None) -> MarginAnalyticsService:
+def create_market_margin_analytics_service(reader: MarketDbReader | None) -> MarginAnalyticsService:
     return MarginAnalyticsService(MarketAnalyticsDataProvider(reader=reader))

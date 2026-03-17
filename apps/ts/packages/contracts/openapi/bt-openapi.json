@@ -4837,7 +4837,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース ('market' or dataset snapshot名)",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },
@@ -6221,8 +6221,8 @@
             "type": "array"
           },
           "source": {
-            "default": "topix500",
-            "description": "データソース（データセット名: topix500, topix100等）",
+            "default": "market",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },
@@ -7284,7 +7284,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース ('market' or dataset snapshot名)",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },

@@ -4946,7 +4946,7 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース ('market' or dataset snapshot名)
+             * @description データソース ('market' only)
              * @default market
              */
             source: string;
@@ -5713,8 +5713,8 @@ export interface components {
             indicators: ("margin_long_pressure" | "margin_flow_pressure" | "margin_turnover_days" | "margin_volume_ratio")[];
             /**
              * Source
-             * @description データソース（データセット名: topix500, topix100等）
-             * @default topix500
+             * @description データソース ('market' only)
+             * @default market
              */
             source: string;
             /**
@@ -6189,7 +6189,7 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース ('market' or dataset snapshot名)
+             * @description データソース ('market' only)
              * @default market
              */
             source: string;
