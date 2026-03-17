@@ -3,7 +3,7 @@
 
 GET  /api/signals/reference — シグナルリファレンスデータ返却
 GET  /api/signals/schema — SignalParams JSON Schema返却
-POST /api/signals/compute — シグナル計算（Phase 1: OHLCV系のみ）
+POST /api/signals/compute — chart/screening 検算用シグナル計算
 """
 
 from typing import Any
@@ -64,43 +64,8 @@ async def compute_signals(
     payload: SignalComputeRequest,
 ) -> SignalComputeResponse:
     """シグナル計算を実行し、発火日を返却
-
-    Phase 1: OHLCV系シグナルのみ対応
-    - oscillator: rsi_threshold, rsi_spread
-    - breakout: baseline_deviation, period_extrema_break, period_extrema_position,
-                atr_support_position, atr_support_cross, buy_and_hold
-    - trend: baseline_cross, baseline_position, retracement_position,
-             retracement_cross, crossover
-    - volatility: volatility_percentile, bollinger_position, bollinger_cross
-    - volume: volume_ratio_above, volume_ratio_below, trading_value, trading_value_range
-
-    Example request:
-    ```json
-    {
-        "stock_code": "7203",
-        "source": "market",
-        "timeframe": "daily",
-        "signals": [
-            {"type": "rsi_threshold", "params": {"threshold": 30}, "mode": "entry"},
-            {"type": "period_extrema_break", "params": {"period": 20}, "mode": "entry"}
-        ]
-    }
-    ```
-
-    Example response:
-    ```json
-    {
-        "stock_code": "7203",
-        "timeframe": "daily",
-        "signals": {
-            "rsi_threshold": {"trigger_dates": ["2025-01-15"], "count": 1},
-            "period_extrema_break": {"trigger_dates": ["2025-02-01"], "count": 1}
-        }
-    }
-    ```
     """
     try:
-        # SignalSpecをdict形式に変換
         signals_dicts = [
             {"type": s.type, "params": s.params, "mode": s.mode}
             for s in payload.signals
@@ -114,6 +79,7 @@ async def compute_signals(
                 signals=signals_dicts,
                 start_date=payload.start_date,
                 end_date=payload.end_date,
+                strategy_name=payload.strategy_name,
             )
             return SignalComputeResponse(**result)
         finally:

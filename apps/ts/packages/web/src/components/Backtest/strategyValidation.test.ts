@@ -2,8 +2,26 @@ import { describe, expect, it } from 'vitest';
 import type { SignalDefinition } from '@/types/backtest';
 import { mergeValidationResults, validateStrategyConfigLocally } from './strategyValidation';
 
+function makeSignalDefinition(
+  partial: Omit<SignalDefinition, 'signal_type' | 'chart'> & Partial<Pick<SignalDefinition, 'signal_type' | 'chart'>>
+): SignalDefinition {
+  return {
+    signal_type: partial.signal_type ?? partial.key.replace(/^fundamental_/, ''),
+    chart: partial.chart ?? {
+      supported: true,
+      supported_modes: ['entry', 'exit'],
+      supports_relative_mode: true,
+      requires_benchmark: false,
+      requires_sector_data: false,
+      requires_margin_data: false,
+      requires_statements_data: false,
+    },
+    ...partial,
+  };
+}
+
 const signalDefs: SignalDefinition[] = [
-  {
+  makeSignalDefinition({
     key: 'volume_ratio_above',
     name: 'Volume Ratio Above',
     category: 'volume',
@@ -17,9 +35,10 @@ const signalDefs: SignalDefinition[] = [
       { name: 'ratio_threshold', type: 'number', description: '', constraints: { gt: 0 } },
       { name: 'ma_type', type: 'select', description: '', options: ['sma', 'ema'] },
     ],
-  },
-  {
+  }),
+  makeSignalDefinition({
     key: 'fundamental_market_cap',
+    signal_type: 'market_cap',
     name: 'Market Cap',
     category: 'fundamental',
     description: '',
@@ -35,9 +54,10 @@ const signalDefs: SignalDefinition[] = [
       { name: 'condition', type: 'select', description: '', options: ['above', 'below'] },
       { name: 'use_floating_shares', type: 'boolean', description: '' },
     ],
-  },
-  {
+  }),
+  makeSignalDefinition({
     key: 'fundamental_forward_eps_growth',
+    signal_type: 'forward_eps_growth',
     name: 'Forward EPS Growth',
     category: 'fundamental',
     description: '',
@@ -52,7 +72,7 @@ const signalDefs: SignalDefinition[] = [
       { name: 'threshold', type: 'number', description: '', constraints: { gt: 0 } },
       { name: 'condition', type: 'select', description: '', options: ['above', 'below'] },
     ],
-  },
+  }),
 ];
 
 describe('validateStrategyConfigLocally', () => {
@@ -193,7 +213,7 @@ describe('validateStrategyConfigLocally', () => {
 
   it('ignores null numeric constraints from signal reference payload', () => {
     const withNullConstraint: SignalDefinition[] = [
-      {
+      makeSignalDefinition({
         key: 'risk_adjusted_return',
         name: 'Risk Adjusted Return',
         category: 'volatility',
@@ -211,7 +231,7 @@ describe('validateStrategyConfigLocally', () => {
             constraints: { ge: -5, le: 10, lt: null as unknown as number },
           },
         ],
-      },
+      }),
     ];
 
     const result = validateStrategyConfigLocally(
@@ -387,7 +407,7 @@ describe('validateStrategyConfigLocally', () => {
 
   it('validates numeric constraints for gt/ge/lt/le', () => {
     const constrainedDefs: SignalDefinition[] = [
-      {
+      makeSignalDefinition({
         key: 'constraint_signal',
         name: 'Constraint Signal',
         category: 'breakout',
@@ -403,7 +423,7 @@ describe('validateStrategyConfigLocally', () => {
           { name: 'lt_only', type: 'number', description: '', constraints: { lt: 10 } },
           { name: 'le_only', type: 'number', description: '', constraints: { le: 10 } },
         ],
-      },
+      }),
     ];
 
     const result = validateStrategyConfigLocally(

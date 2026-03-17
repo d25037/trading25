@@ -9,6 +9,24 @@ export interface AnalyticsClientConfig {
 
 export type JobStatus = 'pending' | 'running' | 'completed' | 'failed' | 'cancelled';
 
+export interface ResponseDiagnostics {
+  missing_required_data?: string[];
+  used_fields?: string[];
+  effective_period_type?: string | null;
+  warnings?: string[];
+}
+
+export interface DataProvenance {
+  source_kind: 'market' | 'dataset';
+  market_snapshot_id?: string | null;
+  dataset_snapshot_id?: string | null;
+  reference_date?: string | null;
+  loaded_domains?: string[];
+  strategy_name?: string | null;
+  strategy_fingerprint?: string | null;
+  warnings?: string[];
+}
+
 // ===== RANKING TYPES =====
 
 export interface RankingItem {
@@ -163,6 +181,8 @@ export interface MarketScreeningResponse {
   sortBy: ScreeningSortBy;
   order: SortOrder;
   lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
 }
 
 export interface ScreeningJobRequest {
@@ -224,6 +244,8 @@ export interface ROEResponse {
   results: ROEResultItem[];
   summary: ROESummary;
   lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
 }
 
 export interface ROEParams {

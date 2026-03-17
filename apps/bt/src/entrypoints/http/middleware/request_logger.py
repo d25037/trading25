@@ -23,6 +23,11 @@ from src.shared.observability.correlation import CORRELATION_ID_HEADER, get_corr
 from src.shared.observability.metrics import metrics_recorder
 
 
+def _escape_loguru_message(message: str) -> str:
+    """Escape braces so loguru doesn't treat exception text as a format string."""
+    return message.replace("{", "{{").replace("}", "}}")
+
+
 class RequestLoggerMiddleware(BaseHTTPMiddleware):
     """リクエスト/レスポンスをログに記録するミドルウェア
 
@@ -118,7 +123,7 @@ class RequestLoggerMiddleware(BaseHTTPMiddleware):
             "elapsed": elapsed_ms,
             "errorRate": round(metrics_recorder.error_rate(), 4),
         }
-        getattr(logger, log_level)(log_msg, **log_kwargs)
+        getattr(logger, log_level)(_escape_loguru_message(log_msg), **log_kwargs)
 
         body = {
             "status": "error",

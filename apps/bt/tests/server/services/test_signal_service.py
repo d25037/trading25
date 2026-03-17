@@ -1,222 +1,72 @@
-"""
-SignalService テスト
+"""SignalService tests for chart/screening parity paths."""
 
-OHLCV系シグナルの計算テスト
-"""
+from __future__ import annotations
 
-import threading
-from unittest.mock import MagicMock, patch
+from datetime import date
+from types import SimpleNamespace
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
 
-from datetime import date
-
-from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_data_errors import MarketDataError
 from src.application.services.signal_service import (
-    PHASE1_SIGNAL_NAMES,
     SignalService,
+    _LoadedSignalData,
+    _StrategyContext,
     _SIGNAL_DEFINITION_MAP,
     _build_signal_definition_map,
     _extract_trigger_dates,
     _get_signal_definition,
 )
+from src.shared.models.config import SharedConfig
+from src.shared.models.signals import SignalParams
 
 
 def _make_ohlcv_df(n: int = 5) -> pd.DataFrame:
-    return pd.DataFrame({
-        "Open": [100.0 + i for i in range(n)],
-        "High": [105.0 + i for i in range(n)],
-        "Low": [95.0 + i for i in range(n)],
-        "Close": [102.0 + i for i in range(n)],
-        "Volume": [1000 + i * 10 for i in range(n)],
-    }, index=pd.date_range("2025-01-01", periods=n))
+    return pd.DataFrame(
+        {
+            "Open": [100.0 + i for i in range(n)],
+            "High": [105.0 + i for i in range(n)],
+            "Low": [95.0 + i for i in range(n)],
+            "Close": [102.0 + i for i in range(n)],
+            "Volume": [1000 + i * 10 for i in range(n)],
+        },
+        index=pd.date_range("2025-01-01", periods=n),
+    )
 
 
-class TestGetSignalDefinition:
-    """_get_signal_definition関数のテスト"""
-
-    def test_volume_ratio_signal(self):
-        """出来高比率シグナルの定義取得"""
-        sig_def = _get_signal_definition("volume_ratio_above")
-        assert sig_def is not None
-        assert sig_def.name == "出来高比率上抜け"
-        assert sig_def.category == "volume"
-
-    def test_rsi_threshold_signal(self):
-        """RSI閾値シグナルの定義取得"""
-        sig_def = _get_signal_definition("rsi_threshold")
-        assert sig_def is not None
-        assert sig_def.name == "RSI閾値"
-        assert sig_def.category == "oscillator"
-
-    def test_unknown_signal(self):
-        """未知のシグナル"""
-        sig_def = _get_signal_definition("unknown_signal")
-        assert sig_def is None
+def _make_loaded_signal_data() -> _LoadedSignalData:
+    return _LoadedSignalData(
+        stock_code="7203",
+        daily=_make_ohlcv_df(),
+        margin_data=None,
+        statements_data=None,
+        benchmark_data=None,
+        sector_data=None,
+        stock_sector_name=None,
+        loaded_domains=["stock_data"],
+        warnings=[],
+    )
 
 
-class TestPhase1SignalNames:
-    """Phase 1対象シグナル名のテスト"""
-
-    def test_contains_expected_signals(self):
-        """必須シグナルが含まれていることを確認"""
-        expected = {
-            "rsi_threshold",
-            "rsi_spread",
-            "baseline_cross",
-            "baseline_deviation",
-            "baseline_position",
-            "period_extrema_break",
-            "period_extrema_position",
-            "volume_ratio_above",
-            "volume_ratio_below",
-            "trading_value",
-            "volatility_percentile",
-            "bollinger_position",
-            "bollinger_cross",
-        }
-        assert expected.issubset(PHASE1_SIGNAL_NAMES)
-
-    def test_excludes_fundamental_signals(self):
-        """ファンダメンタルシグナルが除外されていることを確認"""
-        fundamental_signals = {"per", "roe", "pbr"}
-        assert not fundamental_signals.intersection(PHASE1_SIGNAL_NAMES)
-
-
-class TestSignalService:
-    """SignalServiceのテスト"""
-
-    @pytest.fixture
-    def service(self):
-        return SignalService()
-
-    def test_init(self, service):
-        """インスタンス初期化"""
-        assert service._market_client is None
-
-    def test_phase1_signal_validation(self, service):
-        """Phase 1非対応シグナルの拒否テスト"""
-        # ダミーデータ
-        data = {
-            "ohlc_data": _make_ohlcv_df(1),
-            "close": pd.Series([102.0], index=pd.date_range("2025-01-01", periods=1)),
-            "execution_close": pd.Series([102.0], index=pd.date_range("2025-01-01", periods=1)),
-            "volume": pd.Series([1000], index=pd.date_range("2025-01-01", periods=1)),
-        }
-
-        # Phase 1非対応シグナル（例: per）はエラーになるべき
-        with pytest.raises(ValueError, match="Phase 1では未対応"):
-            service.compute_signal("per", {}, "entry", data)
-
-    @patch("src.application.services.signal_service.MarketAPIClient")
-    def test_load_market_source_prefers_market_reader(self, MockMarketClient, market_db_path):
-        reader = MarketDbReader(market_db_path)
-        try:
-            service = SignalService(market_reader=reader)
-            df = service.load_ohlcv("7203", "market")
-            assert len(df) == 3
-            assert list(df.columns) == ["Open", "High", "Low", "Close", "Volume"]
-            MockMarketClient.assert_not_called()
-        finally:
-            reader.close()
-
-    @patch("src.application.services.signal_service.DatasetAPIClient")
-    def test_load_dataset_source(self, MockDatasetClient):
-        service = SignalService()
-        mock_client = MagicMock()
-        mock_client.get_stock_ohlcv.return_value = _make_ohlcv_df()
-        mock_client.__enter__ = MagicMock(return_value=mock_client)
-        mock_client.__exit__ = MagicMock(return_value=False)
-        MockDatasetClient.return_value = mock_client
-
-        df = service.load_ohlcv("7203", "my_dataset")
-        assert len(df) == 5
-        mock_client.get_stock_ohlcv.assert_called_once_with("7203", None, None)
-
-    def test_load_market_source_without_reader_raises_structured_error(self):
-        service = SignalService()
-
-        with pytest.raises(MarketDataError, match="ローカルOHLCVデータがありません") as exc_info:
-            service.load_ohlcv("7203", "market")
-
-        assert exc_info.value.reason == "local_stock_data_missing"
-        assert exc_info.value.recovery == "market_db_sync"
-
-    def test_compute_signal_exit_disabled(self, service):
-        data = {
-            "ohlc_data": _make_ohlcv_df(3),
-            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
-            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
-            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
-        }
-
-        with pytest.raises(ValueError, match="Exitモード"):
-            service.compute_signal("buy_and_hold", {}, "exit", data)
-
-    def test_build_signal_params_unknown_raises(self, service):
-        with pytest.raises(ValueError, match="未対応のシグナル"):
-            service._build_signal_params("unknown_signal", {}, "entry")
-
-    def test_build_signal_params_nested_updates(self, service):
-        signal_params = service._build_signal_params(
-            "per",
-            {"threshold": 20.0, "condition": "above"},
-            "entry",
-        )
-        assert signal_params.fundamental.enabled is True
-        assert signal_params.fundamental.per.enabled is True
-        assert signal_params.fundamental.per.threshold == 20.0
-        assert signal_params.fundamental.per.condition == "above"
-
-    def test_update_top_level_field_unknown_is_noop(self, service):
-        from src.shared.models.signals import SignalParams
-
-        signal_params = SignalParams()
-        before = signal_params.model_dump()
-
-        service._update_top_level_field(signal_params, "unknown_field", {"threshold": 9.9})
-
-        assert signal_params.model_dump() == before
-
-    def test_update_nested_field_unknown_parent_is_noop(self, service):
-        from src.shared.models.signals import SignalParams
-
-        signal_params = SignalParams()
-        before = signal_params.model_dump()
-
-        service._update_nested_field(
-            signal_params,
-            ["unknown_parent", "per"],
-            {"threshold": 9.9},
-        )
-
-        assert signal_params.model_dump() == before
+def _make_shared_config() -> SharedConfig:
+    return SharedConfig.model_validate(
+        {"timeframe": "daily"},
+        context={"resolve_stock_codes": False},
+    )
 
 
 class TestSignalDefinitionMap:
-    """シグナル定義マッピングのテスト"""
-
-    def test_map_is_populated(self):
-        """マッピングが構築されていることを確認"""
+    def test_map_is_populated(self) -> None:
         assert len(_SIGNAL_DEFINITION_MAP) > 0
 
-    def test_build_signal_definition_map(self):
-        """_build_signal_definition_map関数のテスト"""
-        mapping = _build_signal_definition_map()
-        assert isinstance(mapping, dict)
-        assert "volume_ratio_above" in mapping
-        assert "rsi_threshold" in mapping
-
-    def test_nested_param_key_extraction(self):
-        """ネストされたparam_key（例: fundamental.per）からsignal_typeを正しく抽出"""
-        # fundamental.per -> "per" として登録されているか確認
+    def test_nested_param_key_extraction(self) -> None:
         mapping = _build_signal_definition_map()
         assert "per" in mapping
         assert mapping["per"].param_key == "fundamental.per"
 
-    def test_build_signal_definition_map_logs_duplicate_warning(self):
+    def test_duplicate_signal_type_logs_warning(self) -> None:
         sig_def = _get_signal_definition("volume_ratio_above")
         assert sig_def is not None
 
@@ -228,266 +78,526 @@ class TestSignalDefinitionMap:
         mock_logger.warning.assert_called_once()
 
 
-class TestThreadSafety:
-    """スレッドセーフティのテスト"""
+class TestSignalDefinitionLookup:
+    def test_volume_ratio_signal(self) -> None:
+        sig_def = _get_signal_definition("volume_ratio_above")
+        assert sig_def is not None
+        assert sig_def.name == "出来高比率上抜け"
+        assert sig_def.category == "volume"
 
-    def test_market_client_lazy_initialization(self):
-        """market_clientの遅延初期化テスト"""
-        service = SignalService()
-        assert service._market_client is None
-
-    def test_market_client_double_check_locking(self):
-        """ダブルチェックロッキングのテスト"""
-        service = SignalService()
-        results = []
-        errors = []
-
-        def access_client():
-            try:
-                client = service.market_client
-                results.append(client)
-            except Exception as e:
-                errors.append(e)
-
-        # 複数スレッドから同時にアクセス
-        threads = [threading.Thread(target=access_client) for _ in range(10)]
-        for t in threads:
-            t.start()
-        for t in threads:
-            t.join()
-
-        # エラーがないことを確認
-        assert len(errors) == 0
-        # すべて同じインスタンスを取得していることを確認
-        assert all(r is results[0] for r in results)
-
-    def test_close_closes_market_client(self):
-        service = SignalService()
-        mock_client = MagicMock()
-        service._market_client = mock_client
-
-        service.close()
-
-        mock_client.close.assert_called_once()
-        assert service._market_client is None
-
-
-class TestEmptySignalsValidation:
-    """空シグナルリストのバリデーションテスト"""
-
-    def test_empty_signals_returns_early(self):
-        """空シグナルリストの場合、OHLCVロードせずに早期リターン"""
-        service = SignalService()
-
-        # load_ohlcvが呼ばれないことを確認
-        with patch.object(service, "load_ohlcv") as mock_load:
-            result = service.compute_signals(
-                stock_code="7203",
-                source="market",
-                timeframe="daily",
-                signals=[],
-            )
-
-            # load_ohlcvは呼ばれていない
-            mock_load.assert_not_called()
-
-            # 結果は空のsignals辞書を含む
-            assert result["stock_code"] == "7203"
-            assert result["timeframe"] == "daily"
-            assert result["signals"] == {}
-
-
-class TestExceptionHandling:
-    """例外ハンドリングのテスト"""
-
-    def test_signal_computation_error_logged_with_traceback(self):
-        """シグナル計算エラー時にスタックトレースがログ出力される"""
-        service = SignalService()
-
-        # OHLCVデータをモック
-        mock_ohlcv = pd.DataFrame({
-            "Open": [100.0, 101.0, 102.0],
-            "High": [105.0, 106.0, 107.0],
-            "Low": [95.0, 96.0, 97.0],
-            "Close": [102.0, 103.0, 104.0],
-            "Volume": [1000, 1100, 1200],
-        }, index=pd.date_range("2025-01-01", periods=3))
-
-        with patch.object(service, "load_ohlcv", return_value=mock_ohlcv):
-            with patch("src.application.services.signal_service.logger") as mock_logger:
-                # 未知のシグナルを含むリクエスト
-                result = service.compute_signals(
-                    stock_code="7203",
-                    source="market",
-                    timeframe="daily",
-                    signals=[{"type": "unknown_signal", "params": {}}],
-                )
-
-                # logger.exceptionが呼ばれたことを確認
-                mock_logger.exception.assert_called()
-                call_args = mock_logger.exception.call_args[0][0]
-                assert "unknown_signal" in call_args
-
-                # エラー情報が結果に含まれる
-                assert "error" in result["signals"]["unknown_signal"]
+    def test_unknown_signal(self) -> None:
+        assert _get_signal_definition("unknown_signal") is None
 
 
 class TestExtractTriggerDates:
-    """_extract_trigger_dates関数のテスト（NaN/Inf検証対応）"""
-
-    def test_extracts_true_values(self):
-        """Trueの日付を正しく抽出"""
+    def test_extracts_true_values_only(self) -> None:
         series = pd.Series(
-            [True, False, True, False],
+            [True, False, True, None],
             index=pd.date_range("2025-01-01", periods=4),
         )
-        result = _extract_trigger_dates(series)
-        assert result == ["2025-01-01", "2025-01-03"]
+        assert _extract_trigger_dates(series) == ["2025-01-01", "2025-01-03"]
 
-    def test_handles_nan_values(self):
-        """NaN値を安全にスキップ"""
-        series = pd.Series(
-            [True, None, True, False],
-            index=pd.date_range("2025-01-01", periods=4),
-        )
-        result = _extract_trigger_dates(series)
-        # NaN（None）はスキップされ、Trueのみ抽出
-        assert result == ["2025-01-01", "2025-01-03"]
-
-    def test_handles_all_nan(self):
-        """全てNaNの場合は空リストを返す"""
-        series = pd.Series(
-            [None, None, None],
-            index=pd.date_range("2025-01-01", periods=3),
-        )
-        result = _extract_trigger_dates(series)
-        assert result == []
-
-    def test_handles_empty_series(self):
-        """空のシリーズの場合は空リストを返す"""
-        series = pd.Series([], dtype=bool)
-        result = _extract_trigger_dates(series)
-        assert result == []
-
-    def test_handles_all_false(self):
-        """全てFalseの場合は空リストを返す"""
-        series = pd.Series(
-            [False, False, False],
-            index=pd.date_range("2025-01-01", periods=3),
-        )
-        result = _extract_trigger_dates(series)
-        assert result == []
-
-    def test_non_datetime_index_is_stringified(self):
-        """非datetimeインデックスでも文字列化される"""
+    def test_non_datetime_index_is_stringified(self) -> None:
         series = pd.Series([True, False], index=[1, 2])
-        result = _extract_trigger_dates(series)
-        assert result == ["1"]
+        assert _extract_trigger_dates(series) == ["1"]
 
 
-class TestDateRangeValidation:
-    """日付範囲バリデーションのテスト"""
+class TestSignalService:
+    @pytest.fixture
+    def service(self) -> SignalService:
+        return SignalService()
 
-    def test_invalid_date_range_raises_error(self):
-        """start_date > end_dateの場合エラー"""
-        service = SignalService()
+    def test_empty_manual_request_returns_empty_response(self, service: SignalService) -> None:
+        result = service.compute_signals(
+            stock_code="7203",
+            source="market",
+            timeframe="daily",
+            signals=[],
+        )
 
+        assert result["stock_code"] == "7203"
+        assert result["signals"] == {}
+        assert result["provenance"]["source_kind"] == "market"
+
+    def test_invalid_date_range_raises(self, service: SignalService) -> None:
         with pytest.raises(ValueError, match="無効な日付範囲"):
             service.compute_signals(
                 stock_code="7203",
                 source="market",
                 timeframe="daily",
-                signals=[{"type": "volume_ratio_above", "params": {}}],
+                signals=[{"type": "buy_and_hold", "params": {}, "mode": "entry"}],
                 start_date=date(2025, 12, 31),
                 end_date=date(2025, 1, 1),
             )
 
-    def test_valid_date_range_no_error(self):
-        """有効な日付範囲はエラーにならない"""
-        service = SignalService()
-
-        # OHLCVデータをモック
-        mock_ohlcv = pd.DataFrame({
-            "Open": [100.0, 101.0, 102.0],
-            "High": [105.0, 106.0, 107.0],
-            "Low": [95.0, 96.0, 97.0],
-            "Close": [102.0, 103.0, 104.0],
-            "Volume": [1000, 1100, 1200],
-        }, index=pd.date_range("2025-01-01", periods=3))
-
-        with patch.object(service, "load_ohlcv", return_value=mock_ohlcv):
-            # エラーが発生しないことを確認
-            result = service.compute_signals(
+    def test_non_market_source_is_rejected(self, service: SignalService) -> None:
+        with pytest.raises(ValueError, match="source='market'"):
+            service.compute_signals(
                 stock_code="7203",
-                source="market",
+                source="dataset",
                 timeframe="daily",
-                signals=[],  # 空シグナルで早期リターン
-                start_date=date(2025, 1, 1),
-                end_date=date(2025, 12, 31),
+                signals=[{"type": "buy_and_hold", "params": {}, "mode": "entry"}],
             )
-            assert result is not None
 
-    def test_none_dates_no_validation(self):
-        """Noneの日付はバリデーションをスキップ"""
-        service = SignalService()
+    def test_unknown_signal_returns_error_result(self, service: SignalService) -> None:
+        data = {
+            "ohlc_data": _make_ohlcv_df(3),
+            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
+            "margin_data": None,
+            "statements_data": None,
+            "benchmark_data": None,
+            "sector_data": None,
+            "stock_sector_name": None,
+            "execution_data": None,
+            "is_relative_mode": False,
+        }
 
-        with patch.object(service, "load_ohlcv"):
-            result = service.compute_signals(
-                stock_code="7203",
-                source="market",
-                timeframe="daily",
-                signals=[],
+        result = service._compute_signal_result_from_params(
+            signal_type="unknown_signal",
+            mode="entry",
+            signal_params=SignalParams(),
+            data=data,
+        )
+
+        assert result["count"] == 0
+        assert "未対応のシグナル" in result["error"]
+        assert result["diagnostics"]["warnings"]
+
+    def test_fundamental_signal_reports_missing_required_data(self, service: SignalService) -> None:
+        data = {
+            "ohlc_data": _make_ohlcv_df(3),
+            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
+            "margin_data": None,
+            "statements_data": None,
+            "benchmark_data": None,
+            "sector_data": None,
+            "stock_sector_name": None,
+            "execution_data": None,
+            "is_relative_mode": False,
+        }
+        signal_params = service._build_signal_params(
+            "per",
+            {"threshold": 10.0, "condition": "below"},
+            "entry",
+        )
+
+        result = service._compute_signal_result_from_params(
+            signal_type="per",
+            mode="entry",
+            signal_params=signal_params,
+            data=data,
+        )
+
+        assert result["count"] == 0
+        assert result["diagnostics"]["missing_required_data"]
+        assert result["diagnostics"]["effective_period_type"] == signal_params.fundamental.period_type
+
+    def test_load_signal_data_without_market_reader_raises_structured_error(self, service: SignalService) -> None:
+        with pytest.raises(MarketDataError, match="ローカル市場データが初期化されていません") as exc_info:
+            service._load_signal_data(
+                "7203",
+                shared_config=_make_shared_config(),
+                entry_params=SignalParams(),
+                exit_params=SignalParams(),
                 start_date=None,
                 end_date=None,
             )
-            # エラーなく早期リターン
-            assert result["signals"] == {}
 
+        assert exc_info.value.reason == "market_db_missing"
+        assert exc_info.value.recovery == "market_db_sync"
 
-class TestResampleDataQualityValidation:
-    """リサンプル後のデータ品質検証テスト"""
-
-    def test_empty_resampled_data_raises_error(self):
-        """リサンプル後に空になった場合エラー"""
-        service = SignalService()
-
-        # 元データは存在するが、リサンプル後に空になるケース
-        mock_ohlcv = pd.DataFrame({
-            "Open": [100.0],
-            "High": [105.0],
-            "Low": [95.0],
-            "Close": [None],  # NaNでClose全欠損
-            "Volume": [1000],
-        }, index=pd.date_range("2025-01-01", periods=1))
-
-        with patch.object(service, "load_ohlcv", return_value=mock_ohlcv):
-            with pytest.raises(ValueError, match="リサンプル後データが不足"):
-                service.compute_signals(
-                    stock_code="7203",
-                    source="market",
-                    timeframe="weekly",  # リサンプルでCloseがNaNになりdropnaで空に
-                    signals=[{"type": "volume_ratio_above", "params": {}}],
-                )
-
-    def test_valid_resampled_data_no_error(self):
-        """有効なリサンプルデータはエラーにならない"""
-        service = SignalService()
-
-        # 十分なデータがあるケース
-        mock_ohlcv = pd.DataFrame({
-            "Open": [100.0, 101.0, 102.0, 103.0, 104.0],
-            "High": [105.0, 106.0, 107.0, 108.0, 109.0],
-            "Low": [95.0, 96.0, 97.0, 98.0, 99.0],
-            "Close": [102.0, 103.0, 104.0, 105.0, 106.0],
-            "Volume": [1000, 1100, 1200, 1300, 1400],
-        }, index=pd.date_range("2025-01-01", periods=5))
-
-        with patch.object(service, "load_ohlcv", return_value=mock_ohlcv):
-            # エラーが発生しないことを確認
+    def test_manual_overlay_returns_signal_results_and_provenance(self, service: SignalService) -> None:
+        with patch.object(service, "_load_signal_data", return_value=_make_loaded_signal_data()):
             result = service.compute_signals(
                 stock_code="7203",
                 source="market",
                 timeframe="daily",
-                signals=[],  # 空シグナルで早期リターンを回避するためsignalsを空に
+                signals=[{"type": "buy_and_hold", "params": {}, "mode": "entry"}],
             )
-            assert result is not None
+
+        assert result["signals"]["buy_and_hold"]["count"] == 5
+        assert result["signals"]["buy_and_hold"]["mode"] == "entry"
+        assert result["provenance"]["source_kind"] == "market"
+        assert "stock_data" in result["provenance"]["loaded_domains"]
+
+    def test_strategy_overlay_returns_combined_entry_and_strategy_provenance(self, service: SignalService) -> None:
+        entry_params = service._build_signal_params("buy_and_hold", {}, "entry")
+        exit_params = SignalParams()
+        strategy_context = _StrategyContext(
+            strategy_name="production/test_strategy",
+            strategy_fingerprint="fingerprint-123",
+            shared_config=_make_shared_config(),
+            entry_params=entry_params,
+            exit_params=exit_params,
+            compiled_strategy=None,
+        )
+
+        with patch.object(service, "_resolve_strategy_context", return_value=strategy_context):
+            with patch.object(service, "_load_signal_data", return_value=_make_loaded_signal_data()):
+                result = service.compute_signals(
+                    stock_code="7203",
+                    source="market",
+                    timeframe="daily",
+                    strategy_name="production/test_strategy",
+                )
+
+        assert result["strategy_name"] == "production/test_strategy"
+        assert result["combined_entry"]["count"] == 5
+        assert result["combined_exit"]["count"] == 0
+        assert "entry:buy_and_hold" in result["signals"]
+        assert result["provenance"]["strategy_name"] == "production/test_strategy"
+        assert result["provenance"]["strategy_fingerprint"] == "fingerprint-123"
+
+    def test_resample_helpers_cover_non_daily_branches(self, service: SignalService) -> None:
+        ohlcv = _make_ohlcv_df(10)
+        weekly = service._resample_ohlcv(ohlcv, "weekly")
+        monthly_ohlc = service._resample_ohlc(ohlcv[["Open", "High", "Low", "Close"]], "monthly")
+        aligned = service._resample_aligned_frame(
+            ohlcv[["Close"]],
+            pd.DatetimeIndex(pd.date_range("2025-01-01", periods=12)),
+        )
+
+        assert len(weekly) < len(ohlcv)
+        assert monthly_ohlc is not None
+        assert aligned is not None
+        assert aligned.index[-1] == pd.Timestamp("2025-01-12")
+
+    def test_resolve_strategy_context_hashes_loaded_config(self, service: SignalService) -> None:
+        loaded = SimpleNamespace(
+            config={"name": "demo", "signals": ["buy_and_hold"]},
+            shared_config=_make_shared_config(),
+            entry_params=service._build_signal_params("buy_and_hold", {}, "entry"),
+            exit_params=SignalParams(),
+            compiled_strategy={"kind": "compiled"},
+        )
+
+        with patch(
+            "src.application.services.signal_service.load_strategy_screening_config",
+            return_value=loaded,
+        ):
+            context = service._resolve_strategy_context("production/demo")
+
+        assert context.strategy_name == "production/demo"
+        assert len(context.strategy_fingerprint) == 64
+        assert context.compiled_strategy == {"kind": "compiled"}
+
+    def test_build_signal_params_updates_top_level_and_nested_fields(self, service: SignalService) -> None:
+        top_level = service._build_signal_params(
+            "rsi_threshold",
+            {"threshold": 70.0, "condition": "above"},
+            "entry",
+        )
+        nested = service._build_signal_params(
+            "per",
+            {"threshold": 12.0, "condition": "below"},
+            "entry",
+        )
+        untouched = SignalParams()
+
+        service._update_top_level_field(untouched, "missing_field", {"threshold": 10.0})
+        service._update_nested_field(untouched, ["missing_parent", "child"], {"threshold": 10.0})
+
+        assert top_level.rsi_threshold.enabled is True
+        assert top_level.rsi_threshold.threshold == 70.0
+        assert top_level.rsi_threshold.condition == "above"
+        assert nested.fundamental.enabled is True
+        assert nested.fundamental.per.enabled is True
+        assert nested.fundamental.per.threshold == 12.0
+        assert untouched.model_dump() == SignalParams().model_dump()
+
+    def test_build_signal_params_unknown_signal_raises(self, service: SignalService) -> None:
+        with pytest.raises(ValueError, match="未対応のシグナル"):
+            service._build_signal_params("unknown_signal", {}, "entry")
+
+    def test_load_signal_data_success_loads_optional_domains(self, service: SignalService) -> None:
+        service._market_reader = object()  # type: ignore[assignment]
+        daily = _make_ohlcv_df()
+        margin = pd.DataFrame({"Long": [1.0]}, index=[pd.Timestamp("2025-01-01")])
+        statements = pd.DataFrame({"EPS": [10.0]}, index=[pd.Timestamp("2025-01-01")])
+        benchmark = pd.DataFrame(
+            {"Open": [1.0], "High": [1.0], "Low": [1.0], "Close": [1.0]},
+            index=[pd.Timestamp("2025-01-01")],
+        )
+        sector_frame = pd.DataFrame(
+            {"Open": [2.0], "High": [2.0], "Low": [2.0], "Close": [2.0]},
+            index=[pd.Timestamp("2025-01-01")],
+        )
+        requirements = SimpleNamespace(
+            multi_data_key=SimpleNamespace(
+                start_date="2025-01-01",
+                end_date="2025-01-05",
+                include_margin_data=True,
+                include_statements_data=True,
+                period_type="FY",
+                include_forecast_revision=True,
+            ),
+            needs_benchmark=True,
+            benchmark_data_key=SimpleNamespace(start_date="2025-01-01", end_date="2025-01-05"),
+            needs_sector=True,
+            sector_data_key=SimpleNamespace(start_date="2025-01-01", end_date="2025-01-05"),
+        )
+
+        with (
+            patch(
+                "src.application.services.signal_service.build_strategy_data_requirements",
+                return_value=requirements,
+            ),
+            patch(
+                "src.application.services.signal_service.load_market_multi_data",
+                return_value=(
+                    {
+                        "7203": {
+                            "daily": daily,
+                            "margin_daily": margin,
+                            "statements_daily": statements,
+                        }
+                    },
+                    ["statements lagging"],
+                ),
+            ),
+            patch(
+                "src.application.services.signal_service.load_market_topix_data",
+                return_value=benchmark,
+            ),
+            patch(
+                "src.application.services.signal_service.load_market_sector_indices",
+                return_value={"transport": sector_frame},
+            ),
+            patch(
+                "src.application.services.signal_service.load_market_stock_sector_mapping",
+                return_value={"7203": "transport"},
+            ),
+        ):
+            loaded = service._load_signal_data(
+                "72030",
+                shared_config=_make_shared_config(),
+                entry_params=SignalParams(),
+                exit_params=SignalParams(),
+                start_date=date(2025, 1, 1),
+                end_date=date(2025, 1, 5),
+            )
+
+        assert loaded.stock_code == "7203"
+        assert loaded.stock_sector_name == "transport"
+        assert loaded.warnings == ["statements lagging"]
+        assert loaded.margin_data is not None
+        assert loaded.statements_data is not None
+        assert loaded.benchmark_data is not None
+        assert loaded.sector_data is not None
+        assert loaded.loaded_domains == [
+            "stock_data",
+            "margin_data",
+            "statements",
+            "topix_data",
+            "indices_data",
+        ]
+
+    def test_load_signal_data_missing_daily_when_stock_exists_raises_refresh_error(
+        self,
+        service: SignalService,
+    ) -> None:
+        service._market_reader = object()  # type: ignore[assignment]
+        requirements = SimpleNamespace(
+            multi_data_key=SimpleNamespace(
+                start_date="2025-01-01",
+                end_date="2025-01-05",
+                include_margin_data=False,
+                include_statements_data=False,
+                period_type="FY",
+                include_forecast_revision=False,
+            ),
+            needs_benchmark=False,
+            benchmark_data_key=None,
+            needs_sector=False,
+            sector_data_key=None,
+        )
+
+        with (
+            patch(
+                "src.application.services.signal_service.build_strategy_data_requirements",
+                return_value=requirements,
+            ),
+            patch(
+                "src.application.services.signal_service.load_market_multi_data",
+                return_value=({"7203": {}}, []),
+            ),
+            patch(
+                "src.application.services.signal_service.stock_exists_in_reader",
+                return_value=True,
+            ),
+        ):
+            with pytest.raises(MarketDataError, match="ローカルOHLCVデータがありません") as exc_info:
+                service._load_signal_data(
+                    "7203",
+                    shared_config=_make_shared_config(),
+                    entry_params=SignalParams(),
+                    exit_params=SignalParams(),
+                    start_date=None,
+                    end_date=None,
+                )
+
+        assert exc_info.value.reason == "local_stock_data_missing"
+        assert exc_info.value.recovery == "stock_refresh"
+
+    def test_load_signal_data_missing_daily_when_stock_missing_raises_not_found(
+        self,
+        service: SignalService,
+    ) -> None:
+        service._market_reader = object()  # type: ignore[assignment]
+        requirements = SimpleNamespace(
+            multi_data_key=SimpleNamespace(
+                start_date="2025-01-01",
+                end_date="2025-01-05",
+                include_margin_data=False,
+                include_statements_data=False,
+                period_type="FY",
+                include_forecast_revision=False,
+            ),
+            needs_benchmark=False,
+            benchmark_data_key=None,
+            needs_sector=False,
+            sector_data_key=None,
+        )
+
+        with (
+            patch(
+                "src.application.services.signal_service.build_strategy_data_requirements",
+                return_value=requirements,
+            ),
+            patch(
+                "src.application.services.signal_service.load_market_multi_data",
+                return_value=({}, []),
+            ),
+            patch(
+                "src.application.services.signal_service.stock_exists_in_reader",
+                return_value=False,
+            ),
+        ):
+            with pytest.raises(MarketDataError, match="ローカル市場データに存在しません") as exc_info:
+                service._load_signal_data(
+                    "7203",
+                    shared_config=_make_shared_config(),
+                    entry_params=SignalParams(),
+                    exit_params=SignalParams(),
+                    start_date=None,
+                    end_date=None,
+                )
+
+        assert exc_info.value.reason == "stock_not_found"
+
+    def test_build_signal_data_raises_when_resampled_close_is_missing(self, service: SignalService) -> None:
+        bad_daily = _make_ohlcv_df().assign(Close=float("nan"))
+        loaded = _LoadedSignalData(
+            stock_code="7203",
+            daily=bad_daily,
+            margin_data=None,
+            statements_data=None,
+            benchmark_data=None,
+            sector_data=None,
+            stock_sector_name=None,
+            loaded_domains=["stock_data"],
+            warnings=[],
+        )
+
+        with pytest.raises(ValueError, match="リサンプル後データが不足しています"):
+            service._build_signal_data(loaded, "daily")
+
+    def test_exit_disabled_signal_returns_error_without_processor_call(self, service: SignalService) -> None:
+        data = {
+            "ohlc_data": _make_ohlcv_df(3),
+            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
+            "margin_data": None,
+            "statements_data": None,
+            "benchmark_data": None,
+            "sector_data": None,
+            "stock_sector_name": None,
+            "execution_data": None,
+            "is_relative_mode": False,
+        }
+        signal_params = service._build_signal_params("buy_and_hold", {}, "entry")
+
+        result = service._compute_signal_result_from_params(
+            signal_type="buy_and_hold",
+            mode="exit",
+            signal_params=signal_params,
+            data=data,
+        )
+
+        assert result["count"] == 0
+        assert "Exitモードでは使用できません" in result["error"]
+        assert result["diagnostics"]["warnings"]
+
+    def test_exit_mode_uses_exit_processor(self, service: SignalService) -> None:
+        data = {
+            "ohlc_data": _make_ohlcv_df(3),
+            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
+            "margin_data": None,
+            "statements_data": None,
+            "benchmark_data": None,
+            "sector_data": None,
+            "stock_sector_name": None,
+            "execution_data": None,
+            "is_relative_mode": False,
+        }
+        signal_params = service._build_signal_params("rsi_threshold", {"threshold": 70.0}, "exit")
+        exit_series = pd.Series([False, True, False], index=data["ohlc_data"].index)
+
+        with patch.object(service._signal_processor, "apply_exit_signals", return_value=exit_series) as mock_exit:
+            result = service._compute_signal_result_from_params(
+                signal_type="rsi_threshold",
+                mode="exit",
+                signal_params=signal_params,
+                data=data,
+            )
+
+        mock_exit.assert_called_once()
+        assert result["trigger_dates"] == ["2025-01-02"]
+
+    def test_signal_processor_exception_is_captured_in_result(self, service: SignalService) -> None:
+        data = {
+            "ohlc_data": _make_ohlcv_df(3),
+            "close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "execution_close": pd.Series([102.0, 103.0, 104.0], index=pd.date_range("2025-01-01", periods=3)),
+            "volume": pd.Series([1000, 1100, 1200], index=pd.date_range("2025-01-01", periods=3)),
+            "margin_data": None,
+            "statements_data": None,
+            "benchmark_data": None,
+            "sector_data": None,
+            "stock_sector_name": None,
+            "execution_data": None,
+            "is_relative_mode": False,
+        }
+        signal_params = service._build_signal_params("buy_and_hold", {}, "entry")
+
+        with patch.object(service._signal_processor, "apply_entry_signals", side_effect=RuntimeError("boom")):
+            result = service._compute_signal_result_from_params(
+                signal_type="buy_and_hold",
+                mode="entry",
+                signal_params=signal_params,
+                data=data,
+            )
+
+        assert result["count"] == 0
+        assert result["error"] == "boom"
+        assert "boom" in result["diagnostics"]["warnings"]
+
+    def test_extract_strategy_signal_specs_includes_exit_entries(self, service: SignalService) -> None:
+        entry_params = service._build_signal_params("buy_and_hold", {}, "entry")
+        exit_params = service._build_signal_params(
+            "rsi_threshold",
+            {"threshold": 70.0, "condition": "above"},
+            "exit",
+        )
+
+        specs = service._extract_strategy_signal_specs(entry_params, exit_params)
+
+        assert ("buy_and_hold", "entry", entry_params) in specs
+        assert ("rsi_threshold", "exit", exit_params) in specs

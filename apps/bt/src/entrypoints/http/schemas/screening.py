@@ -10,6 +10,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.entrypoints.http.schemas.analytics_common import (
+    DataProvenance,
+    ResponseDiagnostics,
+)
+
 ScreeningMode = Literal["standard", "oracle"]
 ScreeningSortBy = Literal[
     "bestStrategyScore",
@@ -67,3 +72,5 @@ class MarketScreeningResponse(BaseModel):
     sortBy: ScreeningSortBy
     order: SortOrder
     lastUpdated: str
+    provenance: DataProvenance
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)

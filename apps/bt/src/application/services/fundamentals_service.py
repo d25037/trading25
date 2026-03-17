@@ -8,29 +8,32 @@ from typing import Any
 import pandas as pd
 from loguru import logger
 
+from src.application.services.analytics_provenance import build_market_provenance
 from src.domains.fundamentals import (
     DailyValuationDataPoint as DomainDailyValuationDataPoint,
     FundamentalDataPoint as DomainFundamentalDataPoint,
     FundamentalsCalculator,
 )
+from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 from src.entrypoints.http.schemas.fundamentals import (
     DailyValuationDataPoint,
     FundamentalDataPoint,
     FundamentalsComputeRequest,
     FundamentalsComputeResponse,
 )
-from src.infrastructure.external_api.jquants_client import JQuantsAPIClient, StockInfo
-from src.infrastructure.data_access.clients import get_market_client
+from src.infrastructure.external_api.jquants_client import JQuantsStatement, StockInfo
+from src.infrastructure.data_access.clients import DirectMarketClient
 
 # Backward-compatible symbol for tests patching module-local client constructor.
-MarketAPIClient = get_market_client
+MarketDataClient = DirectMarketClient
 
 
 class FundamentalsService:
     """Service for fundamentals API orchestration."""
 
     def __init__(self) -> None:
-        self._jquants_client: JQuantsAPIClient | None = None
+        # Legacy slot kept for backward-compatible cleanup/tests.
+        self._jquants_client: Any | None = None
         self._market_client: Any | None = None
         self._calculator = FundamentalsCalculator()
 
@@ -38,15 +41,9 @@ class FundamentalsService:
         self.close()
 
     @property
-    def jquants_client(self) -> JQuantsAPIClient:
-        if self._jquants_client is None:
-            self._jquants_client = JQuantsAPIClient()
-        return self._jquants_client
-
-    @property
     def market_client(self) -> Any:
         if self._market_client is None:
-            self._market_client = MarketAPIClient()
+            self._market_client = MarketDataClient()
         return self._market_client
 
     def close(self) -> None:
@@ -69,9 +66,131 @@ class FundamentalsService:
     ) -> DailyValuationDataPoint:
         return DailyValuationDataPoint(**data_point.model_dump())
 
+    @staticmethod
+    def _normalize_optional_scalar(value: Any) -> Any | None:
+        if value is None:
+            return None
+        if isinstance(value, pd.Timestamp):
+            return value.strftime("%Y-%m-%d")
+        if pd.isna(value):
+            return None
+        return value
+
+    @classmethod
+    def _normalize_optional_float(cls, value: Any) -> float | None:
+        normalized = cls._normalize_optional_scalar(value)
+        if normalized is None:
+            return None
+        return float(normalized)
+
+    @classmethod
+    def _normalize_optional_text(cls, value: Any) -> str | None:
+        normalized = cls._normalize_optional_scalar(value)
+        if normalized is None:
+            return None
+        return str(normalized)
+
+    @classmethod
+    def _normalize_required_text(cls, value: Any, fallback: str = "") -> str:
+        normalized = cls._normalize_optional_text(value)
+        return normalized if normalized is not None else fallback
+
+    @classmethod
+    def _to_market_statement(
+        cls,
+        symbol: str,
+        disclosed_at: Any,
+        row: pd.Series,
+    ) -> JQuantsStatement:
+        disclosed_date = cls._normalize_required_text(disclosed_at)
+        period_end = (
+            cls._normalize_optional_text(row.get("periodEnd"))
+            or cls._normalize_optional_text(row.get("curPerEn"))
+            or disclosed_date
+        )
+        code = cls._normalize_required_text(row.get("code"), fallback=symbol)
+        doc_type = cls._normalize_required_text(row.get("typeOfDocument"))
+        period_type = cls._normalize_required_text(row.get("typeOfCurrentPeriod"))
+        dividend_fy = cls._normalize_optional_float(row.get("dividendFY"))
+        forecast_dividend_fy = cls._normalize_optional_float(row.get("forecastDividendFY"))
+        next_year_forecast_dividend_fy = cls._normalize_optional_float(
+            row.get("nextYearForecastDividendFY")
+        )
+
+        return JQuantsStatement(
+            DiscDate=disclosed_date,
+            Code=code,
+            DocType=doc_type,
+            CurPerType=period_type,
+            CurPerSt=period_end,
+            CurPerEn=period_end,
+            CurFYSt=period_end,
+            CurFYEn=period_end,
+            NxtFYSt=None,
+            NxtFYEn=None,
+            Sales=cls._normalize_optional_float(row.get("sales")),
+            OP=cls._normalize_optional_float(row.get("operatingProfit")),
+            OdP=cls._normalize_optional_float(row.get("ordinaryProfit")),
+            NP=cls._normalize_optional_float(row.get("profit")),
+            EPS=cls._normalize_optional_float(row.get("earningsPerShare")),
+            DEPS=None,
+            TA=cls._normalize_optional_float(row.get("totalAssets")),
+            Eq=cls._normalize_optional_float(row.get("equity")),
+            EqAR=None,
+            BPS=cls._normalize_optional_float(row.get("bps")),
+            CFO=cls._normalize_optional_float(row.get("operatingCashFlow")),
+            CFI=cls._normalize_optional_float(row.get("investingCashFlow")),
+            CFF=cls._normalize_optional_float(row.get("financingCashFlow")),
+            CashEq=cls._normalize_optional_float(row.get("cashAndEquivalents")),
+            ShOutFY=cls._normalize_optional_float(row.get("sharesOutstanding")),
+            TrShFY=cls._normalize_optional_float(row.get("treasuryShares")),
+            AvgSh=cls._normalize_optional_float(row.get("sharesOutstanding")),
+            FEPS=cls._normalize_optional_float(row.get("forecastEps")),
+            NxFEPS=cls._normalize_optional_float(row.get("nextYearForecastEarningsPerShare")),
+            DivFY=dividend_fy,
+            DivAnn=dividend_fy,
+            PayoutRatioAnn=cls._normalize_optional_float(row.get("payoutRatio")),
+            FDivFY=forecast_dividend_fy,
+            FDivAnn=forecast_dividend_fy,
+            FPayoutRatioAnn=cls._normalize_optional_float(row.get("forecastPayoutRatio")),
+            NxFDivFY=next_year_forecast_dividend_fy,
+            NxFDivAnn=next_year_forecast_dividend_fy,
+            NxFPayoutRatioAnn=cls._normalize_optional_float(row.get("nextYearForecastPayoutRatio")),
+            NCSales=None,
+            NCOP=None,
+            NCOdP=None,
+            NCNP=None,
+            NCEPS=None,
+            NCTA=None,
+            NCEq=None,
+            NCEqAR=None,
+            NCBPS=None,
+            FNCEPS=None,
+            NxFNCEPS=None,
+        )
+
+    def _get_market_statements(self, symbol: str) -> list[JQuantsStatement]:
+        try:
+            df = self.market_client.get_statements(
+                symbol,
+                period_type="all",
+                actual_only=False,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to get statements from market DB for {symbol}: {e}")
+            return []
+
+        if df.empty:
+            return []
+
+        statements: list[JQuantsStatement] = []
+        for disclosed_at, row in df.sort_index().iterrows():
+            statements.append(self._to_market_statement(symbol, disclosed_at, row))
+        return statements
+
     def _get_stock_info(self, symbol: str) -> StockInfo | None:
         try:
-            return self.jquants_client.get_stock_info(symbol)
+            return self.market_client.get_stock_info(symbol)
         except Exception as e:
             logger.warning(f"Failed to get stock info for {symbol}: {e}")
             return None
@@ -94,7 +213,7 @@ class FundamentalsService:
     ) -> FundamentalsComputeResponse:
         logger.debug(f"Computing fundamentals for {request.symbol}")
 
-        statements = self.jquants_client.get_statements(request.symbol)
+        statements = self._get_market_statements(request.symbol)
 
         if not statements:
             logger.debug(f"No financial statements found for {request.symbol}")
@@ -104,6 +223,14 @@ class FundamentalsService:
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
+                provenance=build_market_provenance(
+                    loaded_domains=("statements", "stock_data", "stocks"),
+                ),
+                diagnostics=ResponseDiagnostics(
+                    missing_required_data=["statements"],
+                    used_fields=["statements"],
+                    effective_period_type=request.period_type,
+                ),
             )
 
         stock_info = self._get_stock_info(request.symbol)
@@ -136,6 +263,14 @@ class FundamentalsService:
                 tradingValuePeriod=request.trading_value_period,
                 forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
                 lastUpdated=datetime.now().isoformat(),
+                provenance=build_market_provenance(
+                    loaded_domains=("statements", "stock_data", "stocks"),
+                ),
+                diagnostics=ResponseDiagnostics(
+                    missing_required_data=["filtered_statements"],
+                    used_fields=["statements", "stock_data.close"],
+                    effective_period_type=request.period_type,
+                ),
             )
 
         price_map = self._calculator._get_stock_prices_for_statements(
@@ -227,6 +362,19 @@ class FundamentalsService:
             tradingValuePeriod=request.trading_value_period,
             forecastEpsLookbackFyCount=request.forecast_eps_lookback_fy_count,
             lastUpdated=datetime.now().isoformat(),
+            provenance=build_market_provenance(
+                loaded_domains=("statements", "stock_data", "stocks"),
+            ),
+            diagnostics=ResponseDiagnostics(
+                missing_required_data=[],
+                used_fields=[
+                    "statements.earnings_per_share",
+                    "statements.forecast_eps",
+                    "statements.equity",
+                    "stock_data.close",
+                ],
+                effective_period_type=request.period_type,
+            ),
         )
 
 

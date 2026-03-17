@@ -164,8 +164,8 @@ class TestSignalProcessorBeta(unittest.TestCase):
             benchmark_data=None,  # ベンチマークデータなし
         )
 
-        # β値シグナルはスキップされ、基本シグナルがそのまま返される
-        self.assertTrue((result == self.base_signal).all())
+        # 必須データ不足は fail-closed で False 扱い
+        self.assertFalse(result.any())
 
     def test_beta_signal_integration_narrow_range(self):
         """β値範囲が狭い場合の統合テスト"""

@@ -61,6 +61,8 @@ from src.entrypoints.http.schemas.screening import (
     ScreeningSummary,
     SortOrder,
 )
+from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
+from src.application.services.analytics_provenance import build_market_provenance
 from src.application.services.market_code_alias import resolve_market_codes
 from src.application.services.screening_market_loader import (
     load_market_multi_data,
@@ -389,6 +391,17 @@ class ScreeningService:
             sortBy=sort_by,
             order=order,
             lastUpdated=_now_iso(),
+            provenance=build_market_provenance(
+                reference_date=effective_reference_date,
+                loaded_domains=("stock_data", "stocks", "topix_data", "indices_data", "margin_data", "statements"),
+                warnings=summary.warnings,
+            ),
+            diagnostics=ResponseDiagnostics(
+                missing_required_data=[],
+                used_fields=["stock_data", "stocks", "topix_data", "indices_data", "margin_data", "statements"],
+                effective_period_type="multi",
+                warnings=summary.warnings,
+            ),
         )
 
         total_duration_ms = round((perf_counter() - run_started) * 1000, 2)

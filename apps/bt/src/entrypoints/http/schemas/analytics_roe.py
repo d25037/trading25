@@ -8,6 +8,11 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
+from src.entrypoints.http.schemas.analytics_common import (
+    DataProvenance,
+    ResponseDiagnostics,
+)
+
 
 class ROEMetadata(BaseModel):
     """ROE 計算メタデータ"""
@@ -44,3 +49,5 @@ class ROEResponse(BaseModel):
     results: list[ROEResultItem]
     summary: ROESummary
     lastUpdated: str
+    provenance: DataProvenance
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)

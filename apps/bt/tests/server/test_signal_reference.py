@@ -34,6 +34,7 @@ class TestBuildSignalReference:
         result = build_signal_reference()
         required_keys = {
             "key",
+            "signal_type",
             "name",
             "category",
             "description",
@@ -43,9 +44,16 @@ class TestBuildSignalReference:
             "exit_disabled",
             "data_requirements",
             "availability_profiles",
+            "chart",
         }
         for signal in result["signals"]:
             assert required_keys.issubset(signal.keys()), f"Missing keys in signal '{signal.get('name', 'unknown')}'"
+
+    def test_signal_reference_includes_chart_capability(self):
+        result = build_signal_reference()
+        signal = next(item for item in result["signals"] if item["signal_type"] == "volume_ratio_above")
+        assert signal["chart"]["supported"] is True
+        assert signal["chart"]["supports_relative_mode"] is False
 
     def test_signal_reference_includes_availability_profiles(self):
         result = build_signal_reference()

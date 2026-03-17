@@ -16,6 +16,29 @@ from src.entrypoints.http.schemas.fundamentals import (
 )
 
 
+def _build_mock_response(
+    *,
+    symbol: str,
+    company_name: str | None,
+    data: list[FundamentalDataPoint],
+) -> FundamentalsComputeResponse:
+    return FundamentalsComputeResponse(
+        symbol=symbol,
+        companyName=company_name,
+        data=data,
+        latestMetrics=None,
+        dailyValuation=None,
+        tradingValuePeriod=15,
+        lastUpdated="2024-05-15T10:00:00",
+        provenance={
+            "source_kind": "market",
+            "reference_date": "2024-05-15",
+            "loaded_domains": ["statements", "stock_data"],
+            "warnings": [],
+        },
+    )
+
+
 @pytest.fixture
 def client():
     """TestClient fixture"""
@@ -27,9 +50,9 @@ class TestFundamentalsComputeEndpoint:
 
     def test_compute_success(self, client: TestClient):
         """正常なリクエストで指標が計算される"""
-        mock_response = FundamentalsComputeResponse(
+        mock_response = _build_mock_response(
             symbol="7203",
-            companyName="トヨタ自動車",
+            company_name="トヨタ自動車",
             data=[
                 FundamentalDataPoint(
                     date="2024-03-31",
@@ -69,10 +92,6 @@ class TestFundamentalsComputeEndpoint:
                     prevCashAndEquivalents=None,
                 )
             ],
-            latestMetrics=None,
-            dailyValuation=None,
-            tradingValuePeriod=15,
-            lastUpdated="2024-05-15T10:00:00",
         )
 
         with patch(
@@ -93,14 +112,10 @@ class TestFundamentalsComputeEndpoint:
 
     def test_compute_with_all_params(self, client: TestClient):
         """全パラメータを指定したリクエスト"""
-        mock_response = FundamentalsComputeResponse(
+        mock_response = _build_mock_response(
             symbol="7203",
-            companyName=None,
+            company_name=None,
             data=[],
-            latestMetrics=None,
-            dailyValuation=None,
-            tradingValuePeriod=15,
-            lastUpdated="2024-05-15T10:00:00",
         )
 
         with patch(
@@ -122,14 +137,10 @@ class TestFundamentalsComputeEndpoint:
 
     def test_compute_no_data(self, client: TestClient):
         """データが見つからない場合"""
-        mock_response = FundamentalsComputeResponse(
+        mock_response = _build_mock_response(
             symbol="9999",
-            companyName=None,
+            company_name=None,
             data=[],
-            latestMetrics=None,
-            dailyValuation=None,
-            tradingValuePeriod=15,
-            lastUpdated="2024-05-15T10:00:00",
         )
 
         with patch(
@@ -220,14 +231,10 @@ class TestFundamentalsSchemaValidation:
         valid_types = ["all", "FY", "1Q", "2Q", "3Q"]
 
         for period_type in valid_types:
-            mock_response = FundamentalsComputeResponse(
+            mock_response = _build_mock_response(
                 symbol="7203",
-                companyName=None,
+                company_name=None,
                 data=[],
-                latestMetrics=None,
-                dailyValuation=None,
-                tradingValuePeriod=15,
-                lastUpdated="2024-05-15T10:00:00",
             )
 
             with patch(

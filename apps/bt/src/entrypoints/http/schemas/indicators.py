@@ -9,6 +9,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from src.entrypoints.http.schemas.analytics_common import (
+    DataProvenance,
+    ResponseDiagnostics,
+)
+
 
 def _normalize_supported_benchmark_code(v: str | None) -> str | None:
     if v is None:
@@ -22,8 +27,8 @@ def _normalize_supported_benchmark_code(v: str | None) -> str | None:
 
 def _validate_source_name(v: str) -> str:
     normalized = v.strip()
-    if not normalized:
-        raise ValueError("source must not be empty")
+    if normalized != "market":
+        raise ValueError("source='market' のみ対応しています")
     return normalized
 
 
@@ -199,7 +204,7 @@ class IndicatorComputeRequest(BaseModel):
     )
     source: str = Field(
         default="market",
-        description="データソース ('market' or dataset snapshot名)",
+        description="データソース ('market' only)",
     )
     timeframe: Literal["daily", "weekly", "monthly"] = Field(
         default="daily", description="時間枠"
@@ -257,6 +262,8 @@ class IndicatorComputeResponse(BaseModel):
         default=None,
         description="OHLCVデータ (output='ohlcv'時のみ)",
     )
+    provenance: DataProvenance
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
 
 
 # ===== Margin Indicator =====
@@ -269,8 +276,8 @@ class MarginIndicatorRequest(BaseModel):
         min_length=1, max_length=10, description="銘柄コード"
     )
     source: str = Field(
-        default="topix500",
-        description="データソース（データセット名: topix500, topix100等）",
+        default="market",
+        description="データソース ('market' only)",
     )
     indicators: list[
         Literal[
@@ -286,6 +293,11 @@ class MarginIndicatorRequest(BaseModel):
     start_date: date | None = Field(default=None, description="開始日")
     end_date: date | None = Field(default=None, description="終了日")
 
+    @field_validator("source")
+    @classmethod
+    def validate_source(cls, v: str) -> str:
+        return _validate_source_name(v)
+
 
 class MarginIndicatorResponse(BaseModel):
     """信用指標レスポンス"""
@@ -294,6 +306,8 @@ class MarginIndicatorResponse(BaseModel):
     indicators: dict[str, list[dict[str, Any]]] = Field(
         description="信用指標結果"
     )
+    provenance: DataProvenance
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)
 
 
 # ===== OHLCV Resample =====
@@ -322,7 +336,7 @@ class OHLCVResampleRequest(BaseModel):
     )
     source: str = Field(
         default="market",
-        description="データソース ('market' or dataset snapshot名)",
+        description="データソース ('market' only)",
     )
     timeframe: Literal["daily", "weekly", "monthly"] = Field(
         default="weekly", description="出力時間枠"

@@ -15,6 +15,8 @@ export type PortfolioSubTab = 'portfolios' | 'watchlists';
 
 export interface ChartsRouteSearch {
   symbol?: string;
+  strategy?: string;
+  matchedDate?: string;
 }
 
 export interface PortfolioRouteSearch {
@@ -142,12 +144,28 @@ function assignAnalysisSearchParams<T extends object>(
 
 export function validateChartsSearch(search: Record<string, unknown>): ChartsRouteSearch {
   const symbol = normalizeString(search.symbol);
-  return symbol ? { symbol } : {};
+  const strategy = normalizeString(search.strategy);
+  const matchedDate = normalizeString(search.matchedDate);
+  const next: ChartsRouteSearch = {};
+  if (symbol) next.symbol = symbol;
+  if (strategy) next.strategy = strategy;
+  if (matchedDate) next.matchedDate = matchedDate;
+  return next;
 }
 
-export function serializeChartsSearch(symbol: string | null | undefined): ChartsRouteSearch {
-  const normalizedSymbol = normalizeString(symbol);
-  return normalizedSymbol ? { symbol: normalizedSymbol } : {};
+export function serializeChartsSearch(params: {
+  symbol?: string | null;
+  strategy?: string | null;
+  matchedDate?: string | null;
+}): ChartsRouteSearch {
+  const normalizedSymbol = normalizeString(params.symbol);
+  const normalizedStrategy = normalizeString(params.strategy);
+  const normalizedMatchedDate = normalizeString(params.matchedDate);
+  const next: ChartsRouteSearch = {};
+  if (normalizedSymbol) next.symbol = normalizedSymbol;
+  if (normalizedStrategy) next.strategy = normalizedStrategy;
+  if (normalizedMatchedDate) next.matchedDate = normalizedMatchedDate;
+  return next;
 }
 
 export function validatePortfolioSearch(search: Record<string, unknown>): PortfolioRouteSearch {
@@ -471,7 +489,9 @@ export function prunePersistedStoreFields(storage: Storage, key: string, fields:
 }
 
 export function extractLegacyChartsSearch(state: Record<string, unknown>): ChartsRouteSearch {
-  return serializeChartsSearch(typeof state.selectedSymbol === 'string' ? state.selectedSymbol : null);
+  return serializeChartsSearch({
+    symbol: typeof state.selectedSymbol === 'string' ? state.selectedSymbol : null,
+  });
 }
 
 export function extractLegacyPortfolioSearch(state: Record<string, unknown>): PortfolioRouteSearch {

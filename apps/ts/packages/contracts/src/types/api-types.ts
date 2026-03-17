@@ -15,6 +15,24 @@ export interface ApiStockDataResponse {
   lastUpdated: string;
 }
 
+export interface ResponseDiagnostics {
+  missing_required_data?: string[];
+  used_fields?: string[];
+  effective_period_type?: string | null;
+  warnings?: string[];
+}
+
+export interface DataProvenance {
+  source_kind: 'market' | 'dataset';
+  market_snapshot_id?: string | null;
+  dataset_snapshot_id?: string | null;
+  reference_date?: string | null;
+  loaded_domains?: string[];
+  strategy_name?: string | null;
+  strategy_fingerprint?: string | null;
+  warnings?: string[];
+}
+
 export interface IndicatorValue {
   time: string;
   value: number;
@@ -48,6 +66,8 @@ export interface ApiMarginVolumeRatioResponse {
   longRatio: ApiMarginVolumeRatioData[];
   shortRatio: ApiMarginVolumeRatioData[];
   lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
 }
 
 // ===== MARGIN PRESSURE INDICATORS =====
@@ -117,6 +137,8 @@ export interface ApiMarginPressureIndicatorsResponse {
   turnoverDays: ApiMarginTurnoverDaysData[];
   /** Last updated timestamp */
   lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
 }
 
 export interface ApiTopixDataPoint {
@@ -291,6 +313,8 @@ export interface ApiFundamentalsResponse {
   forecastEpsLookbackFyCount: number;
   /** Last updated timestamp */
   lastUpdated: string;
+  provenance: DataProvenance;
+  diagnostics: ResponseDiagnostics;
 }
 
 // ===== FACTOR REGRESSION ANALYSIS =====

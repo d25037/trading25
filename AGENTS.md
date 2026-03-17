@@ -45,6 +45,7 @@ JQUANTS API ──→ FastAPI (:3002) ──→ Data Plane
 - Screening API は非同期ジョブ方式（`POST /api/analytics/screening/jobs` / `GET /api/analytics/screening/jobs/{id}` / `POST /api/analytics/screening/jobs/{id}/cancel` / `GET /api/analytics/screening/result/{id}`）を SoT とする。旧 `GET /api/analytics/screening` は 410
 - Screening 実行時のデータ SoT は `market.duckdb`（`stock_data` / `topix_data` / `indices_data` / `stocks` / `margin_data`）とし、dataset へのフォールバックを禁止する
 - `Charts`/`Analysis` の `stock_data` 読み取りは 4桁/5桁コード混在を正規化し、同日重複行は 4桁コード優先で 1 行化する。`stocks` 欠落時でも `stock_data` からの OHLCV 取得を継続する
+- Screening / Charts / Backtest / Signal semantics の SoT matrix は [`docs/architecture-sot-matrix.md`](docs/architecture-sot-matrix.md) を参照する
 - Strategy 設定検証の SoT は backend strict validation（`/api/strategies/{name}/validate` と保存時検証）で、frontend のローカル検証は補助扱い（deprecated）
 - Backtest family（`backtest` / `attribution` / `optimize` / `lab`）は `shared_config.next_session_round_trip=true` をサポートし、entry signal の翌営業日 `Open` で建てて同日 `Close` で閉じる。`screening` はこのモードを unsupported error で拒否する
 - Strategy YAML更新の SoT は `/api/strategies/{name}` で、`production` / `experimental` を更新可能（`production` は既存ファイルの編集のみ許可）。`rename` / `delete` は引き続き `experimental` 限定

@@ -22,6 +22,7 @@ import {
   serializePortfolioSearch,
   validateAnalysisSearch,
   validateBacktestSearch,
+  validateChartsSearch,
   validatePortfolioSearch,
   type AnalysisRouteSearch,
   type PortfolioSubTab,
@@ -64,24 +65,43 @@ function useLegacySearchMigration<TSearch extends object>(params: {
 
 export function useChartsRouteState(): {
   selectedSymbol: string | null;
+  strategyName: string | null;
+  matchedDate: string | null;
   setSelectedSymbol: (symbol: string | null, options?: { replace?: boolean }) => void;
 } {
   const navigate = useNavigate();
   const search = chartsRoute.useSearch();
   const selectedSymbol = search.symbol ?? null;
+  const strategyName = search.strategy ?? null;
+  const matchedDate = search.matchedDate ?? null;
 
   const setSelectedSymbol = useCallback(
     (symbol: string | null, options?: { replace?: boolean }) => {
       void navigate({
         to: '/charts',
         replace: options?.replace ?? false,
-        search: serializeChartsSearch(symbol),
+        search: (current: Record<string, unknown>) => {
+          const currentSearch = validateChartsSearch(current);
+          const nextSymbol = typeof symbol === 'string' ? symbol.trim() || null : null;
+
+          if (nextSymbol == null) {
+            return serializeChartsSearch({ symbol: null, strategy: null, matchedDate: null });
+          }
+
+          const preserveMatchedDate = currentSearch.symbol === nextSymbol ? currentSearch.matchedDate ?? null : null;
+
+          return serializeChartsSearch({
+            symbol: nextSymbol,
+            strategy: currentSearch.strategy ?? null,
+            matchedDate: preserveMatchedDate,
+          });
+        },
       });
     },
     [navigate]
   );
 
-  return { selectedSymbol, setSelectedSymbol };
+  return { selectedSymbol, strategyName, matchedDate, setSelectedSymbol };
 }
 
 export function useMigrateChartsRouteState(): void {
@@ -90,7 +110,7 @@ export function useMigrateChartsRouteState(): void {
     storageType: 'local',
     storageKey: 'trading25-chart-store',
     pruneFields: ['selectedSymbol'],
-    hasManagedSearchValues: Boolean(search.symbol),
+    hasManagedSearchValues: Boolean(search.symbol) || Boolean(search.strategy) || Boolean(search.matchedDate),
     extractLegacySearch: extractLegacyChartsSearch,
     to: '/charts',
   });

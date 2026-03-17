@@ -18,6 +18,8 @@ interface BtMarginResponse {
     margin_flow_pressure?: BtMarginRecord[];
     margin_turnover_days?: BtMarginRecord[];
   };
+  provenance: MarginPressureIndicatorsResponse['provenance'];
+  diagnostics: MarginPressureIndicatorsResponse['diagnostics'];
 }
 
 interface BtMarginRecord {
@@ -65,6 +67,8 @@ function transformBtMarginResponse(response: BtMarginResponse, period: number): 
     flowPressure,
     turnoverDays,
     lastUpdated: new Date().toISOString(),
+    provenance: response.provenance,
+    diagnostics: response.diagnostics,
   };
 }
 

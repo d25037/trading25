@@ -63,7 +63,7 @@ describe('ScreeningTable', () => {
 
     await user.click(screen.getByText('7203'));
 
-    expect(onStockClick).toHaveBeenCalledWith('7203');
+    expect(onStockClick).toHaveBeenCalledWith('7203', 'range_break_v15', '2026-01-07');
   });
 
   it('virtualizes rows when result count exceeds threshold', () => {

@@ -1,26 +1,31 @@
 """
 ROE Calculation Service
 
-JQuants API から取得した財務諸表データを基に ROE を計算する。
-Hono shared/fundamental-analysis/roe.ts と同等のロジック。
+local market.duckdb の statements を基に ROE を計算する。
 """
 
 from __future__ import annotations
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Callable, cast
 
-from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
+from src.application.services.analytics_data_provider import (
+    AnalyticsDataProvider,
+    MarketAnalyticsDataProvider,
+)
+from src.application.services.analytics_provenance import build_market_provenance
 from src.domains.fundamentals.roe import (
     calculate_single_roe as _calculate_single_roe_domain,
     should_prefer as _should_prefer,
 )
+from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 from src.entrypoints.http.schemas.analytics_roe import (
     ROEMetadata,
     ROEResponse,
     ROEResultItem,
     ROESummary,
 )
+from src.infrastructure.db.market.market_reader import MarketDbReader
 
 
 def _to_response_item(result: Any) -> ROEResultItem:
@@ -39,28 +44,51 @@ def _to_response_item(result: Any) -> ROEResultItem:
     )
 
 
-def _calculate_single_roe(
-    stmt: dict[str, Any],
-    annualize: bool = True,
-    prefer_consolidated: bool = True,
-    min_equity: float = 1000,
-) -> ROEResultItem | None:
-    result = _calculate_single_roe_domain(
-        stmt,
-        annualize=annualize,
-        prefer_consolidated=prefer_consolidated,
-        min_equity=min_equity,
-    )
-    if result is None:
-        return None
-    return _to_response_item(result)
+def _statement_row_to_roe_input(stmt: dict[str, Any]) -> dict[str, Any]:
+    return {
+        "Code": stmt.get("Code", ""),
+        "CurPerType": stmt.get("CurPerType", ""),
+        "CurPerEn": stmt.get("CurPerEn", "") or stmt.get("DiscDate", ""),
+        "DocType": stmt.get("DocType", ""),
+        "NP": stmt.get("NP"),
+        "Eq": stmt.get("Eq"),
+    }
 
 
 class ROEService:
     """ROE 計算サービス"""
 
-    def __init__(self, client: JQuantsAsyncClient) -> None:
-        self._client = client
+    def __init__(self, provider: AnalyticsDataProvider) -> None:
+        self._provider = provider
+
+    def close(self) -> None:
+        close = getattr(self._provider, "close", None)
+        if callable(close):
+            close()
+
+    def _get_statements_for_codes(self, codes: list[str]) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for code in codes:
+            df = self._provider.get_statements(
+                code,
+                period_type="all",
+                actual_only=False,
+            )
+            if df.empty:
+                continue
+            for disclosed_at, row in df.sort_index().iterrows():
+                results.append(
+                    {
+                        "Code": row.get("code", code),
+                        "DiscDate": str(disclosed_at)[:10],
+                        "DocType": row.get("typeOfDocument", ""),
+                        "CurPerType": row.get("typeOfCurrentPeriod", ""),
+                        "CurPerEn": row.get("periodEnd", row.get("curPerEn", str(disclosed_at)[:10])),
+                        "NP": row.get("profit"),
+                        "Eq": row.get("equity"),
+                    }
+                )
+        return results
 
     async def calculate_roe(
         self,
@@ -72,27 +100,20 @@ class ROEService:
         sort_by: str = "roe",
         limit: int = 50,
     ) -> ROEResponse:
-        """ROE を計算して返す
-
-        code または date のいずれかが必須。
-        """
-        # コード指定の場合
         if code:
-            codes = [c.strip() for c in code.split(",")]
-            all_stmts: list[dict[str, Any]] = []
-            for c in codes:
-                body = await self._client.get("/fins/summary", {"code": c})
-                stmts = body.get("data", [])
-                all_stmts.extend(stmts)
+            codes = [c.strip() for c in code.split(",") if c.strip()]
+            all_stmts = self._get_statements_for_codes(codes)
         elif date:
-            # 日付指定: 全銘柄の特定日の statements
             normalized_date = date.replace("-", "")
-            body = await self._client.get("/fins/summary", {"date": normalized_date})
-            all_stmts = body.get("data", [])
+            disclosed_date = f"{normalized_date[:4]}-{normalized_date[4:6]}-{normalized_date[6:8]}"
+            getter = cast(
+                Callable[[str], list[dict[str, Any]]] | None,
+                getattr(self._provider, "get_statements_by_date", None),
+            )
+            all_stmts = getter(disclosed_date) if callable(getter) else []
         else:
             all_stmts = []
 
-        # 銘柄ごとに最適な statement を選択
         best: dict[str, dict[str, Any]] = {}
         for stmt in all_stmts:
             stmt_code = str(stmt.get("Code", ""))[:4]
@@ -102,14 +123,18 @@ class ROEService:
             else:
                 best[stmt_code] = stmt
 
-        # ROE 計算
         results: list[ROEResultItem] = []
         for stmt in best.values():
-            item = _calculate_single_roe(stmt, annualize, prefer_consolidated, min_equity)
-            if item:
-                results.append(item)
+            normalized_stmt = _statement_row_to_roe_input(stmt)
+            result = _calculate_single_roe_domain(
+                normalized_stmt,
+                annualize=annualize,
+                prefer_consolidated=prefer_consolidated,
+                min_equity=min_equity,
+            )
+            if result is not None:
+                results.append(_to_response_item(result))
 
-        # ソート
         if sort_by == "code":
             results.sort(key=lambda r: r.metadata.code)
         elif sort_by == "date":
@@ -117,10 +142,7 @@ class ROEService:
         else:
             results.sort(key=lambda r: r.roe, reverse=True)
 
-        # リミット
         results = results[:limit]
-
-        # サマリー
         if results:
             roes = [r.roe for r in results]
             summary = ROESummary(
@@ -132,8 +154,23 @@ class ROEService:
         else:
             summary = ROESummary(averageROE=0, maxROE=0, minROE=0, totalCompanies=0)
 
+        diagnostics = ResponseDiagnostics(
+            missing_required_data=[] if all_stmts else ["statements"],
+            used_fields=["statements.profit", "statements.equity", "statements.type_of_current_period"],
+            effective_period_type="mixed",
+        )
+
         return ROEResponse(
             results=results,
             summary=summary,
             lastUpdated=datetime.now(UTC).isoformat(),
+            provenance=build_market_provenance(
+                reference_date=date,
+                loaded_domains=("statements",),
+            ),
+            diagnostics=diagnostics,
         )
+
+
+def create_market_roe_service(reader: MarketDbReader | None) -> ROEService:
+    return ROEService(MarketAnalyticsDataProvider(reader=reader))

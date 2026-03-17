@@ -31,6 +31,16 @@ describe('analysisStore', () => {
       sortBy: 'matchedDate',
       order: 'desc',
       lastUpdated: '2026-02-18T00:00:00Z',
+      provenance: {
+        source_kind: 'market',
+        loaded_domains: ['stock_data', 'statements'],
+        reference_date: '2026-02-18',
+      },
+      diagnostics: {
+        missing_required_data: [],
+        used_fields: [],
+        warnings: [],
+      },
       results: [
         {
           stockCode: '7203',
@@ -76,6 +86,16 @@ describe('analysisStore', () => {
       sortBy: 'matchedDate',
       order: 'desc',
       lastUpdated: '2026-02-18T00:00:00Z',
+      provenance: {
+        source_kind: 'market',
+        loaded_domains: ['stock_data', 'statements'],
+        reference_date: '2026-02-18',
+      },
+      diagnostics: {
+        missing_required_data: [],
+        used_fields: [],
+        warnings: [],
+      },
       results: [],
     });
 

@@ -567,6 +567,12 @@ class TestScreening:
                 "sortBy": "matchedDate",
                 "order": "desc",
                 "lastUpdated": "2026-01-01T00:00:00Z",
+                "provenance": {
+                    "source_kind": "market",
+                    "reference_date": "2026-01-01",
+                    "loaded_domains": ["stock_data", "stocks"],
+                    "warnings": [],
+                },
             }
         }
 

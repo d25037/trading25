@@ -26,7 +26,7 @@ export interface MultiTimeframeSignalMarkers {
   monthly: SignalMarker[];
 }
 
-export function useMultiTimeframeChart(selectedSymbol: string | null) {
+export function useMultiTimeframeChart(selectedSymbol: string | null, strategyName: string | null) {
   const { settings } = useChartStore();
 
   logger.debug('useMultiTimeframeChart called', { selectedSymbol, relativeMode: settings.relativeMode });
@@ -40,9 +40,9 @@ export function useMultiTimeframeChart(selectedSymbol: string | null) {
   const monthlyInd = useBtIndicators(selectedSymbol, 'monthly', settings);
 
   // apps/bt/ API signals
-  const dailySig = useBtSignals(selectedSymbol, 'daily', settings.signalOverlay, settings.relativeMode);
-  const weeklySig = useBtSignals(selectedSymbol, 'weekly', settings.signalOverlay, settings.relativeMode);
-  const monthlySig = useBtSignals(selectedSymbol, 'monthly', settings.signalOverlay, settings.relativeMode);
+  const dailySig = useBtSignals(selectedSymbol, 'daily', settings.signalOverlay, strategyName, settings.relativeMode);
+  const weeklySig = useBtSignals(selectedSymbol, 'weekly', settings.signalOverlay, strategyName, settings.relativeMode);
+  const monthlySig = useBtSignals(selectedSymbol, 'monthly', settings.signalOverlay, strategyName, settings.relativeMode);
 
   const isLoading =
     ohlcv.isLoading ||
@@ -98,6 +98,7 @@ export function useMultiTimeframeChart(selectedSymbol: string | null) {
   return {
     chartData,
     signalMarkers,
+    signalResponse: dailySig.response,
     isLoading,
     error,
     selectedSymbol,

@@ -15,6 +15,7 @@ function makeSignal(type: string, enabled = true): SignalConfig {
 function makeDefinition(key: string, dataRequirements: string[]): SignalDefinition {
   return {
     key,
+    signal_type: key.replace(/^fundamental_/, ''),
     name: key,
     category: 'test',
     description: '',
@@ -23,6 +24,15 @@ function makeDefinition(key: string, dataRequirements: string[]): SignalDefiniti
     yaml_snippet: '',
     exit_disabled: false,
     data_requirements: dataRequirements,
+    chart: {
+      supported: true,
+      supported_modes: ['entry', 'exit'],
+      supports_relative_mode: true,
+      requires_benchmark: false,
+      requires_sector_data: false,
+      requires_margin_data: false,
+      requires_statements_data: false,
+    },
   };
 }
 

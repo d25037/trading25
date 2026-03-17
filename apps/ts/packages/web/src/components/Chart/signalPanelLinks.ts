@@ -69,7 +69,10 @@ function findSignalDefinition(
   definitions: SignalDefinition[]
 ): SignalDefinition | null {
   for (const definition of definitions) {
-    if (isSignalDefinitionMatch(signalType, definition.key)) {
+    if (
+      definition.signal_type === signalType ||
+      isSignalDefinitionMatch(signalType, definition.key)
+    ) {
       return definition;
     }
   }

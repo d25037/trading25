@@ -217,6 +217,21 @@ describe('routeSearch', () => {
     });
   });
 
+  it('prunes persisted raw records without removing remaining fields', () => {
+    const storage = createMemoryStorage({
+      rawRecord: JSON.stringify({
+        selectedSymbol: '7203',
+        settings: { visibleBars: 180 },
+      }),
+    });
+
+    prunePersistedStoreFields(storage, 'rawRecord', ['selectedSymbol']);
+
+    expect(JSON.parse(storage.getItem('rawRecord') ?? '{}')).toEqual({
+      settings: { visibleBars: 180 },
+    });
+  });
+
   it('handles malformed or non-record persisted state safely', () => {
     const storage = createMemoryStorage({
       invalid: '{',
@@ -259,5 +274,27 @@ describe('routeSearch', () => {
     ).toEqual({
       dataset: 'snapshot-a',
     });
+  });
+
+  it('extracts legacy searches with safe defaults when persisted payloads are malformed', () => {
+    expect(
+      extractLegacyAnalysisSearch({
+        activeSubTab: 'not-a-tab',
+        screeningParams: 'bad',
+        oracleScreeningParams: null,
+        rankingParams: 1,
+        fundamentalRankingParams: false,
+      })
+    ).toEqual({});
+
+    expect(
+      extractLegacyBacktestSearch({
+        activeSubTab: 'not-a-tab',
+        selectedStrategy: 123,
+        selectedResultJobId: [],
+        selectedDatasetName: null,
+        activeLabType: 'unknown',
+      })
+    ).toEqual({});
   });
 });

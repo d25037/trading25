@@ -102,8 +102,8 @@ class TestResampleEndpoint:
             assert call_args[0][0] == "7203"
             assert call_args[0][1] == "market"
 
-    def test_resample_with_dataset_snapshot_source(self, client, mock_ohlcv_data):
-        """dataset snapshot名が source として渡されること"""
+    def test_resample_rejects_non_market_source(self, client, mock_ohlcv_data):
+        """chart SoT では source='market' 以外を許可しない"""
         with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
             mock_service = MockService.return_value
             mock_service.load_ohlcv.return_value = mock_ohlcv_data
@@ -115,9 +115,8 @@ class TestResampleEndpoint:
                 "timeframe": "daily",
             })
 
-            assert response.status_code == 200
-            call_args = mock_service.load_ohlcv.call_args
-            assert call_args[0][1] == "primeExTopix500"
+            assert response.status_code == 422
+            mock_service.load_ohlcv.assert_not_called()
 
     def test_resample_with_benchmark(self, client, mock_ohlcv_data, mock_benchmark_data):
         """ベンチマーク指定（相対OHLC）が正しく動作すること"""
@@ -451,21 +450,15 @@ class TestResampleAPIErrors:
                 {"field": "reason", "message": "stock_not_found"},
             ]
 
-    def test_api_not_found_with_dataset_source_and_topix_does_not_misclassify_topix(self, client):
-        with patch("src.entrypoints.http.routes.ohlcv.IndicatorService") as MockService:
-            mock_service = MockService.return_value
-            mock_service.load_ohlcv.side_effect = APINotFoundError("Resource not found: Stock not found")
+    def test_invalid_source_with_topix_returns_422(self, client):
+        response = client.post("/api/ohlcv/resample", json={
+            "stock_code": "9999",
+            "source": "primeExTopix500",
+            "timeframe": "weekly",
+            "benchmark_code": "topix",
+        })
 
-            response = client.post("/api/ohlcv/resample", json={
-                "stock_code": "9999",
-                "source": "primeExTopix500",
-                "timeframe": "weekly",
-                "benchmark_code": "topix",
-            })
-
-            assert response.status_code == 404
-            assert response.json()["message"] == "Resource not found: Stock not found"
-            assert response.json().get("details") is None
+        assert response.status_code == 422
 
     def test_api_error_returns_status_code(self, client):
         """APIError が適切なステータスコードで返ること"""

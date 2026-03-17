@@ -10,6 +10,11 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from src.entrypoints.http.schemas.analytics_common import (
+    DataProvenance,
+    ResponseDiagnostics,
+)
+
 
 class FundamentalsComputeRequest(BaseModel):
     """Request body for fundamentals computation."""
@@ -206,3 +211,5 @@ class FundamentalsComputeResponse(BaseModel):
         description="Lookback FY count used for forecast EPS comparison indicator",
     )
     lastUpdated: str = Field(..., description="Last updated timestamp (ISO 8601)")
+    provenance: DataProvenance
+    diagnostics: ResponseDiagnostics = Field(default_factory=ResponseDiagnostics)

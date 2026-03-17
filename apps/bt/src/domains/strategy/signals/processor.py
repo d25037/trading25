@@ -636,11 +636,14 @@ class SignalProcessor:
 
             # 2. 必須データチェック
             if signal_def.data_checker and not signal_def.data_checker(data_sources):
-                # データ不足でスキップ - デバッグログ出力
+                # 必須データ不足は fail-closed とし、判定結果を False に固定する。
                 missing = self._describe_missing_requirements(signal_def, data_sources)
                 logger.warning(
-                    f"⚠️  {signal_def.name}シグナル: 必須データ不足によりスキップ "
+                    f"⚠️  {signal_def.name}シグナル: 必須データ不足のため False 扱い "
                     f"(不足: {missing})"
+                )
+                signal_conditions.append(
+                    pd.Series(False, index=base_signal.index, dtype=bool)
                 )
                 return
 

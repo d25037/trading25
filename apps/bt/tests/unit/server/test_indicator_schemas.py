@@ -5,6 +5,7 @@ Indicator Schemas ユニットテスト
 import pytest
 from pydantic import ValidationError
 
+from src.entrypoints.http.schemas.analytics_common import DataProvenance
 from src.entrypoints.http.schemas.indicators import (
     ATRParams,
     ATRSupportParams,
@@ -173,13 +174,13 @@ class TestIndicatorComputeRequest:
         assert req.timeframe == "daily"
         assert req.nan_handling == "include"
 
-    def test_source_accepts_dataset_snapshot_name(self):
-        req = IndicatorComputeRequest(
-            stock_code="7203",
-            source="primeExTopix500",
-            indicators=[IndicatorSpec(type="sma", params={"period": 20})],
-        )
-        assert req.source == "primeExTopix500"
+    def test_source_rejects_non_market(self):
+        with pytest.raises(ValidationError):
+            IndicatorComputeRequest(
+                stock_code="7203",
+                source="primeExTopix500",
+                indicators=[IndicatorSpec(type="sma", params={"period": 20})],
+            )
 
     def test_source_rejects_blank(self):
         with pytest.raises(ValidationError):
@@ -223,12 +224,12 @@ class TestIndicatorComputeRequest:
 
 
 class TestOHLCVResampleRequest:
-    def test_source_accepts_dataset_snapshot_name(self):
-        req = OHLCVResampleRequest(
-            stock_code="7203",
-            source="primeExTopix500",
-        )
-        assert req.source == "primeExTopix500"
+    def test_source_rejects_non_market(self):
+        with pytest.raises(ValidationError):
+            OHLCVResampleRequest(
+                stock_code="7203",
+                source="primeExTopix500",
+            )
 
     def test_source_rejects_blank(self):
         with pytest.raises(ValidationError):
@@ -249,6 +250,11 @@ class TestIndicatorComputeResponse:
             indicators={
                 "sma_20": [{"date": "2024-01-01", "value": 100.5}],
             },
+            provenance=DataProvenance(
+                source_kind="market",
+                reference_date="2024-01-01",
+                loaded_domains=["stock_data"],
+            ),
         )
         assert resp.stock_code == "7203"
         assert "sma_20" in resp.indicators
@@ -264,6 +270,15 @@ class TestMarginIndicatorRequest:
         )
         assert len(req.indicators) == 2
         assert req.average_period == 15
+        assert req.source == "market"
+
+    def test_source_rejects_non_market(self):
+        with pytest.raises(ValidationError):
+            MarginIndicatorRequest(
+                stock_code="7203",
+                source="topix500",
+                indicators=["margin_long_pressure"],
+            )
 
     def test_invalid_indicator_type(self):
         with pytest.raises(ValidationError):

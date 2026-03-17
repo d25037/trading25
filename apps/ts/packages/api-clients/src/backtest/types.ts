@@ -610,6 +610,16 @@ export interface SignalFieldDefinition {
   constraints?: FieldConstraints;
 }
 
+export interface SignalChartCapability {
+  supported?: boolean;
+  supported_modes?: string[];
+  supports_relative_mode?: boolean;
+  requires_benchmark?: boolean;
+  requires_sector_data?: boolean;
+  requires_margin_data?: boolean;
+  requires_statements_data?: boolean;
+}
+
 export type SignalExecutionSemantics =
   | 'standard'
   | 'next_session_round_trip'
@@ -623,6 +633,7 @@ export interface SignalAvailabilityProfile {
 
 export interface SignalDefinition {
   key: string;
+  signal_type: string;
   name: string;
   category: string;
   description: string;
@@ -632,6 +643,7 @@ export interface SignalDefinition {
   exit_disabled: boolean;
   data_requirements: string[];
   availability_profiles?: SignalAvailabilityProfile[];
+  chart: SignalChartCapability;
 }
 
 export interface SignalCategory {

@@ -13,6 +13,8 @@ from typing import Any, cast
 import pandas as pd
 from loguru import logger
 
+from src.application.services.analytics_data_provider import MarketAnalyticsDataProvider
+from src.application.services.analytics_provenance import build_market_provenance
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.data_access.clients import get_dataset_client, get_market_client
 from src.application.services.market_data_errors import MarketDataError
@@ -35,6 +37,7 @@ from src.domains.strategy.indicators.indicator_registry import (
 from src.domains.strategy.indicators.relative_ohlcv import (
     calculate_relative_ohlcv,
 )
+from src.entrypoints.http.schemas.analytics_common import ResponseDiagnostics
 
 
 MARGIN_REGISTRY: dict[str, Any] = {
@@ -178,6 +181,8 @@ class IndicatorService:
         output: str = "indicators",
     ) -> dict[str, Any]:
         """複数インジケーターを一括計算"""
+        if source != "market":
+            raise ValueError("source='market' のみ対応しています")
         ohlcv = self.load_ohlcv(stock_code, source, start_date, end_date)
         source_bars = len(ohlcv)
 
@@ -202,6 +207,9 @@ class IndicatorService:
                         "volume": _clean_value(row["Volume"]),
                     }
                 )
+            loaded_domains = ["stock_data"]
+            if benchmark_code:
+                loaded_domains.append("topix_data")
             return {
                 "stock_code": stock_code,
                 "timeframe": timeframe,
@@ -211,6 +219,14 @@ class IndicatorService:
                 },
                 "indicators": {},
                 "ohlcv": ohlcv_records,
+                "provenance": build_market_provenance(
+                    loaded_domains=loaded_domains,
+                ).model_dump(mode="json"),
+                "diagnostics": ResponseDiagnostics(
+                    missing_required_data=[],
+                    used_fields=["stock_data.open", "stock_data.high", "stock_data.low", "stock_data.close", "stock_data.volume"],
+                    warnings=[],
+                ).model_dump(mode="json"),
             }
 
         results: dict[str, list[dict[str, Any]]] = {}
@@ -224,11 +240,23 @@ class IndicatorService:
             key, records = compute_fn(ohlcv, params, nan_handling)
             results[key] = records
 
+        loaded_domains = ["stock_data"]
+        if benchmark_code:
+            loaded_domains.append("topix_data")
+
         return {
             "stock_code": stock_code,
             "timeframe": timeframe,
             "meta": {"bars": len(ohlcv)},
             "indicators": results,
+            "provenance": build_market_provenance(
+                loaded_domains=loaded_domains,
+            ).model_dump(mode="json"),
+            "diagnostics": ResponseDiagnostics(
+                missing_required_data=[],
+                used_fields=["stock_data.open", "stock_data.high", "stock_data.low", "stock_data.close", "stock_data.volume"],
+                warnings=[],
+            ).model_dump(mode="json"),
         }
 
     def compute_margin_indicators(
@@ -241,22 +269,24 @@ class IndicatorService:
         end_date: date | None = None,
     ) -> dict[str, Any]:
         """信用指標を計算"""
-        from src.infrastructure.external_api.jquants_client import JQuantsAPIClient
-
-        _ = source  # for backward compatibility
+        if source != "market":
+            raise ValueError("source='market' のみ対応しています")
         sd = start_date.isoformat() if start_date else None
         ed = end_date.isoformat() if end_date else None
 
-        with JQuantsAPIClient() as jquants_client:
-            margin_df = jquants_client.get_margin_interest(stock_code, sd, ed)
-            if margin_df.empty:
-                raise ValueError(f"銘柄 {stock_code} の信用データが取得できません")
+        if self._market_reader is None:
+            raise MarketDataError(
+                "ローカル市場データが初期化されていません",
+                reason="market_db_missing",
+                recovery="market_db_sync",
+            )
 
-        if self._market_reader is not None:
-            ohlcv = load_stock_ohlcv_df(self._market_reader, stock_code, sd, ed)
-        else:
-            with MarketAPIClient() as market_client:
-                ohlcv = market_client.get_stock_ohlcv(stock_code, sd, ed)
+        provider = MarketAnalyticsDataProvider(reader=self._market_reader)
+        margin_df = provider.get_margin(stock_code, sd, ed)
+        if margin_df.empty:
+            raise ValueError(f"銘柄 {stock_code} の信用データが取得できません")
+
+        ohlcv = load_stock_ohlcv_df(self._market_reader, stock_code, sd, ed)
 
         if ohlcv.empty:
             raise ValueError(f"銘柄 {stock_code} のOHLCVデータが取得できません")
@@ -274,6 +304,13 @@ class IndicatorService:
         return {
             "stock_code": stock_code,
             "indicators": results,
+            "provenance": build_market_provenance(
+                loaded_domains=("margin_data", "stock_data"),
+            ).model_dump(mode="json"),
+            "diagnostics": ResponseDiagnostics(
+                missing_required_data=[],
+                used_fields=["margin_data.long_margin_volume", "margin_data.short_margin_volume", "stock_data.volume"],
+            ).model_dump(mode="json"),
         }
 
 

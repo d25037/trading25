@@ -14,6 +14,7 @@ import {
 } from '@/constants/fundamentalsHistoryMetrics';
 import { ApiError } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
+import { logger } from '@/utils/logger';
 import { ChartsPage } from './ChartsPage';
 
 const mockUseMultiTimeframeChart = vi.fn();
@@ -26,11 +27,13 @@ const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
 const mockChartsRouteState = {
   selectedSymbol: '7203' as string | null,
+  strategyName: null as string | null,
+  matchedDate: null as string | null,
   setSelectedSymbol: vi.fn(),
 };
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
-  useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
+  useMultiTimeframeChart: (...args: unknown[]) => mockUseMultiTimeframeChart(...args),
 }));
 
 vi.mock('@/hooks/usePageRouteState', () => ({
@@ -109,7 +112,14 @@ vi.mock('@/stores/chartStore', () => ({
 }));
 
 vi.mock('@/components/Chart/ChartControls', () => ({
-  ChartControls: () => <div>Chart Controls</div>,
+  ChartControls: ({ onSelectSymbol }: { onSelectSymbol: (symbol: string) => void }) => (
+    <div>
+      <div>Chart Controls</div>
+      <button type="button" onClick={() => onSelectSymbol('6758')}>
+        Select 6758
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/Chart/StockChart', () => ({
@@ -237,6 +247,8 @@ describe('ChartsPage', () => {
     mockFundamentalsHistoryPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
     mockChartsRouteState.selectedSymbol = '7203';
+    mockChartsRouteState.strategyName = null;
+    mockChartsRouteState.matchedDate = null;
     mockChartsRouteState.setSelectedSymbol.mockReset();
 
     mockSettings.showPPOChart = true;
@@ -379,6 +391,7 @@ describe('ChartsPage', () => {
   });
 
   it('renders empty state when no symbol selected', () => {
+    const debugSpy = vi.spyOn(logger, 'debug').mockImplementation(() => {});
     mockChartsRouteState.selectedSymbol = null;
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
@@ -395,9 +408,12 @@ describe('ChartsPage', () => {
 
     renderChartsPage();
     expect(screen.getByText(/Start Trading Analysis/i)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: '7203' }));
+    expect(debugSpy).toHaveBeenCalledWith('Symbol selected from popular list', { symbol: '7203' });
   });
 
   it('renders generic error message when error is not an Error instance', () => {
+    const reloadSpy = vi.spyOn(window.location, 'reload').mockImplementation(() => {});
     mockUseMultiTimeframeChart.mockReturnValue({
       chartData: null,
       isLoading: false,
@@ -413,6 +429,8 @@ describe('ChartsPage', () => {
 
     renderChartsPage();
     expect(screen.getByText('An unexpected error occurred while fetching market data')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Try Again/i }));
+    expect(reloadSpy).toHaveBeenCalledOnce();
   });
 
   it('renders chart panels when data is available', () => {
@@ -463,6 +481,46 @@ describe('ChartsPage', () => {
       metricOrder: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
       metricVisibility: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     });
+  });
+
+  it('passes screening verification context into chart rendering and symbol changes', async () => {
+    const user = userEvent.setup();
+    mockChartsRouteState.strategyName = 'production/demo';
+    mockChartsRouteState.matchedDate = '2026-03-14';
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      signalMarkers: { daily: [], weekly: [], monthly: [] },
+      signalResponse: {
+        provenance: {
+          source_kind: 'market',
+          strategy_name: 'production/demo',
+          loaded_domains: ['stock_data', 'statements'],
+        },
+        diagnostics: {},
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+
+    expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', 'production/demo');
+    expect(screen.getByText('production/demo (strategy)')).toBeInTheDocument();
+    expect(screen.getByText('2026-03-14')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Select 6758' }));
+
+    expect(mockChartsRouteState.setSelectedSymbol).toHaveBeenCalledWith('6758');
   });
 
   it('refreshes the selected symbol and invalidates related chart queries', async () => {
@@ -524,6 +582,45 @@ describe('ChartsPage', () => {
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-stats'] });
       expect(invalidateSpy).toHaveBeenCalledWith({ queryKey: ['db-validation'] });
     });
+  });
+
+  it('shows refresh error feedback when stock refresh fails', async () => {
+    const user = userEvent.setup();
+    const mutate = vi.fn((_request, options) => {
+      options?.onError?.(new Error('refresh failed'));
+    });
+    mockUseRefreshStocks.mockReturnValue({
+      mutate,
+      isPending: false,
+      error: null,
+    });
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+    await user.click(screen.getByRole('button', { name: /Stock Refresh/i }));
+
+    expect(mutate).toHaveBeenCalledWith(
+      { codes: ['7203'] },
+      expect.objectContaining({
+        onSuccess: expect.any(Function),
+        onError: expect.any(Function),
+      })
+    );
+    expect(await screen.findByText('refresh failed')).toBeInTheDocument();
   });
 
   it('hides panel sections and disables related queries when panel flags are off', () => {

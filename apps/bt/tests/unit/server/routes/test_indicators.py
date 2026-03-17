@@ -14,6 +14,19 @@ client = TestClient(app)
 client_app = cast(Any, client.app)
 
 
+def _market_provenance() -> dict[str, Any]:
+    return {
+        "source_kind": "market",
+        "market_snapshot_id": None,
+        "dataset_snapshot_id": None,
+        "reference_date": "2024-01-01",
+        "loaded_domains": ["stock_data"],
+        "strategy_name": None,
+        "strategy_fingerprint": None,
+        "warnings": [],
+    }
+
+
 class TestComputeEndpoint:
     """POST /api/indicators/compute テスト"""
 
@@ -26,6 +39,7 @@ class TestComputeEndpoint:
             "indicators": {
                 "sma_20": [{"date": "2024-01-01", "value": 100.5}],
             },
+            "provenance": _market_provenance(),
         }
 
         response = client.post(
@@ -42,17 +56,7 @@ class TestComputeEndpoint:
         assert "sma_20" in data["indicators"]
         mock_compute.assert_called_once()
 
-    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
-    def test_compute_with_dataset_snapshot_source(self, mock_compute: MagicMock):
-        mock_compute.return_value = {
-            "stock_code": "7203",
-            "timeframe": "daily",
-            "meta": {"bars": 500},
-            "indicators": {
-                "sma_20": [{"date": "2024-01-01", "value": 100.5}],
-            },
-        }
-
+    def test_compute_rejects_non_market_source(self):
         response = client.post(
             "/api/indicators/compute",
             json={
@@ -62,8 +66,7 @@ class TestComputeEndpoint:
             },
         )
 
-        assert response.status_code == 200
-        assert mock_compute.call_args.args[1] == "primeExTopix500"
+        assert response.status_code == 422
 
     def test_compute_rejects_blank_source(self):
         response = client.post(
@@ -141,10 +144,7 @@ class TestComputeEndpoint:
             {"field": "recovery", "message": "market_db_sync"},
         ]
 
-    @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
-    def test_compute_dataset_not_found_with_topix_does_not_misclassify_topix(self, mock_compute: MagicMock):
-        mock_compute.side_effect = APINotFoundError("Resource not found: Stock not found")
-
+    def test_compute_invalid_source_with_topix_returns_422(self):
         response = client.post(
             "/api/indicators/compute",
             json={
@@ -155,9 +155,7 @@ class TestComputeEndpoint:
             },
         )
 
-        assert response.status_code == 404
-        assert response.json()["message"] == "Resource not found: Stock not found"
-        assert response.json().get("details") is None
+        assert response.status_code == 422
 
     @patch("src.entrypoints.http.routes.indicators.IndicatorService.compute_indicators")
     def test_compute_local_stock_data_missing_details_when_only_stock_data_exists(
@@ -290,6 +288,7 @@ class TestComputeEndpoint:
                 "rsi_14": [{"date": "2024-01-01", "value": 55.0}],
                 "macd_12_26_9": [{"date": "2024-01-01", "macd": 0.5, "signal": 0.3, "histogram": 0.2}],
             },
+            "provenance": _market_provenance(),
         }
 
         response = client.post(
@@ -317,6 +316,7 @@ class TestComputeEndpoint:
             "indicators": {
                 "risk_adjusted_return_60_sortino": [{"date": "2024-01-01", "value": 1.23}],
             },
+            "provenance": _market_provenance(),
         }
 
         response = client.post(
@@ -390,6 +390,10 @@ class TestMarginEndpoint:
                 "margin_long_pressure": [
                     {"date": "2024-01-01", "pressure": 1.5, "longVol": 100000, "shortVol": 20000, "avgVolume": 50000.0}
                 ],
+            },
+            "provenance": {
+                **_market_provenance(),
+                "loaded_domains": ["margin_data", "stock_data"],
             },
         }
 

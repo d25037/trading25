@@ -15,6 +15,7 @@ import pandas as pd
 from src.infrastructure.db.market.dataset_snapshot_reader import DatasetSnapshotReader
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
+from src.infrastructure.external_api.jquants_client import StockInfo
 from src.infrastructure.external_api.dataset.helpers import (
     convert_dated_response,
     convert_index_response,
@@ -23,6 +24,7 @@ from src.infrastructure.external_api.dataset.helpers import (
 from src.infrastructure.external_api.dataset_client import DatasetAPIClient
 from src.infrastructure.external_api.market_client import MarketAPIClient
 from src.shared.config.settings import get_settings
+from src.shared.models.types import normalize_period_type
 from src.shared.utils.snapshot_ids import (
     normalize_dataset_snapshot_name,
     normalize_market_snapshot_id,
@@ -35,6 +37,12 @@ _dataset_db_lock = threading.Lock()
 
 _market_reader_cache: dict[str, MarketDbReader] = {}
 _market_reader_lock = threading.Lock()
+
+_STATEMENTS_ACTUAL_ONLY_COLUMNS = (
+    "earnings_per_share",
+    "profit",
+    "equity",
+)
 
 
 def close_all_cached_data_access_clients() -> None:
@@ -56,6 +64,19 @@ def close_all_cached_data_access_clients() -> None:
         close = getattr(reader, "close", None)
         if callable(close):
             close()
+
+
+def _resolve_statements_period_filter_values(period_type: str) -> tuple[str, ...]:
+    normalized = normalize_period_type(period_type) or "all"
+    if normalized == "all":
+        return ()
+    if normalized == "1Q":
+        return ("1Q", "Q1")
+    if normalized == "2Q":
+        return ("2Q", "Q2")
+    if normalized == "3Q":
+        return ("3Q", "Q3")
+    return (normalized,)
 
 
 def _rows_to_records(
@@ -445,6 +466,150 @@ class DirectMarketClient:
     def close(self) -> None:
         # Market readers are cached process-wide for reuse and closed on shutdown.
         return None
+
+    def get_stock_info(self, stock_code: str) -> StockInfo | None:
+        reader = _resolve_market_reader()
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return None
+
+        placeholders = ",".join("?" for _ in candidates)
+        row = reader.query_one(
+            f"""
+            SELECT
+                code,
+                company_name,
+                company_name_english,
+                market_code,
+                market_name,
+                sector_17_code,
+                sector_17_name,
+                sector_33_code,
+                sector_33_name,
+                scale_category,
+                listed_date
+            FROM stocks
+            WHERE code IN ({placeholders})
+            ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+            LIMIT 1
+            """,
+            tuple(candidates),
+        )
+        if row is None:
+            return None
+
+        return StockInfo(
+            code=str(row["code"]),
+            companyName=str(row["company_name"]),
+            companyNameEnglish=str(row["company_name_english"] or ""),
+            marketCode=str(row["market_code"]),
+            marketName=str(row["market_name"]),
+            sector17Code=str(row["sector_17_code"]),
+            sector17Name=str(row["sector_17_name"]),
+            sector33Code=str(row["sector_33_code"]),
+            sector33Name=str(row["sector_33_name"]),
+            scaleCategory=str(row["scale_category"] or ""),
+            listedDate=str(row["listed_date"]),
+        )
+
+    def get_statements(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+        period_type: str = "all",
+        actual_only: bool = True,
+    ) -> pd.DataFrame:
+        reader = _resolve_market_reader()
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return pd.DataFrame()
+
+        code_placeholders = ",".join("?" for _ in candidates)
+        params: list[str] = list(candidates)
+        where_conditions = [f"code IN ({code_placeholders})"]
+
+        if start_date:
+            where_conditions.append("disclosed_date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("disclosed_date <= ?")
+            params.append(end_date)
+
+        period_values = _resolve_statements_period_filter_values(period_type)
+        if period_values:
+            period_placeholders = ",".join("?" for _ in period_values)
+            where_conditions.append(
+                f"type_of_current_period IN ({period_placeholders})"
+            )
+            params.extend(period_values)
+
+        if actual_only:
+            actual_clause = " OR ".join(
+                f"{column} IS NOT NULL" for column in _STATEMENTS_ACTUAL_ONLY_COLUMNS
+            )
+            where_conditions.append(f"({actual_clause})")
+
+        sql = f"""
+            WITH ranked AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY disclosed_date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM statements
+                WHERE {" AND ".join(where_conditions)}
+            )
+            SELECT *
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY disclosed_date
+        """
+        rows = reader.query(sql, tuple(params))
+        return _to_statements_df(rows)
+
+    def get_margin(
+        self,
+        stock_code: str,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> pd.DataFrame:
+        reader = _resolve_market_reader()
+        candidates = stock_code_candidates(stock_code)
+        if not candidates:
+            return pd.DataFrame()
+
+        placeholders = ",".join("?" for _ in candidates)
+        params: list[str] = list(candidates)
+        where_conditions = [f"code IN ({placeholders})"]
+        if start_date:
+            where_conditions.append("date >= ?")
+            params.append(start_date)
+        if end_date:
+            where_conditions.append("date <= ?")
+            params.append(end_date)
+
+        sql = f"""
+            WITH ranked AS (
+                SELECT
+                    date,
+                    long_margin_volume,
+                    short_margin_volume,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY date
+                        ORDER BY CASE WHEN length(code) = 4 THEN 0 ELSE 1 END
+                    ) AS rn
+                FROM margin_data
+                WHERE {" AND ".join(where_conditions)}
+            )
+            SELECT date, long_margin_volume, short_margin_volume
+            FROM ranked
+            WHERE rn = 1
+            ORDER BY date
+        """
+        rows = reader.query(sql, tuple(params))
+        return _to_margin_df(rows)
 
     def get_stock_ohlcv(
         self,

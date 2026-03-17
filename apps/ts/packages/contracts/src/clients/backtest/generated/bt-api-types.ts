@@ -51,10 +51,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get fundamental analysis metrics for a stock
-         * @description ファンダメンタルズ分析指標を取得
-         */
+        /** Get fundamental analysis metrics for a stock */
         get: operations["get_fundamentals_api_analytics_fundamentals__symbol__get"];
         put?: never;
         post?: never;
@@ -111,10 +108,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Roe
-         * @description ROE (自己資本利益率) を計算
-         */
+        /** Get Roe */
         get: operations["get_roe_api_analytics_roe_get"];
         put?: never;
         post?: never;
@@ -265,10 +259,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Margin Pressure
-         * @description マージンプレッシャー指標を取得
-         */
+        /** Get Margin Pressure */
         get: operations["get_margin_pressure_api_analytics_stocks__symbol__margin_pressure_get"];
         put?: never;
         post?: never;
@@ -285,10 +276,7 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /**
-         * Get Margin Ratio
-         * @description マージン出来高比率を取得
-         */
+        /** Get Margin Ratio */
         get: operations["get_margin_ratio_api_analytics_stocks__symbol__margin_ratio_get"];
         put?: never;
         post?: never;
@@ -1299,8 +1287,8 @@ export interface paths {
          *     - **Forecast**: Forecast EPS, Forecast Change Rate
          *
          *     **Data Sources**:
-         *     - Financial statements: JQuants API via apps/ts/api proxy
-         *     - Stock prices: market.duckdb via apps/ts/api proxy
+         *     - Financial statements: local `market.duckdb`
+         *     - Stock prices: local `market.duckdb`
          *
          *     **Response includes**:
          *     - `data`: Array of fundamental data points sorted by date (descending)
@@ -2168,40 +2156,6 @@ export interface paths {
         /**
          * Compute Signals
          * @description シグナル計算を実行し、発火日を返却
-         *
-         *     Phase 1: OHLCV系シグナルのみ対応
-         *     - oscillator: rsi_threshold, rsi_spread
-         *     - breakout: baseline_deviation, period_extrema_break, period_extrema_position,
-         *                 atr_support_position, atr_support_cross, buy_and_hold
-         *     - trend: baseline_cross, baseline_position, retracement_position,
-         *              retracement_cross, crossover
-         *     - volatility: volatility_percentile, bollinger_position, bollinger_cross
-         *     - volume: volume_ratio_above, volume_ratio_below, trading_value, trading_value_range
-         *
-         *     Example request:
-         *     ```json
-         *     {
-         *         "stock_code": "7203",
-         *         "source": "market",
-         *         "timeframe": "daily",
-         *         "signals": [
-         *             {"type": "rsi_threshold", "params": {"threshold": 30}, "mode": "entry"},
-         *             {"type": "period_extrema_break", "params": {"period": 20}, "mode": "entry"}
-         *         ]
-         *     }
-         *     ```
-         *
-         *     Example response:
-         *     ```json
-         *     {
-         *         "stock_code": "7203",
-         *         "timeframe": "daily",
-         *         "signals": {
-         *             "rsi_threshold": {"trigger_dates": ["2025-01-15"], "count": 1},
-         *             "period_extrema_break": {"trigger_dates": ["2025-02-01"], "count": 1}
-         *         }
-         *     }
-         *     ```
          */
         post: operations["compute_signals_api_signals_compute_post"];
         delete?: never;
@@ -3385,6 +3339,31 @@ export interface components {
              */
             per?: number | null;
         };
+        /**
+         * DataProvenance
+         * @description Common provenance payload for SoT-backed analytics responses.
+         */
+        DataProvenance: {
+            /** Dataset Snapshot Id */
+            dataset_snapshot_id?: string | null;
+            /** Loaded Domains */
+            loaded_domains?: string[];
+            /** Market Snapshot Id */
+            market_snapshot_id?: string | null;
+            /** Reference Date */
+            reference_date?: string | null;
+            /**
+             * Source Kind
+             * @enum {string}
+             */
+            source_kind: "market" | "dataset";
+            /** Strategy Fingerprint */
+            strategy_fingerprint?: string | null;
+            /** Strategy Name */
+            strategy_name?: string | null;
+            /** Warnings */
+            warnings?: string[];
+        };
         /** DatasetCreateRequest */
         DatasetCreateRequest: {
             /**
@@ -4447,6 +4426,7 @@ export interface components {
              * @description Fundamental data points sorted by date descending
              */
             data: components["schemas"]["FundamentalDataPoint"][];
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /**
              * Forecastepslookbackfycount
              * @description Lookback FY count used for forecast EPS comparison indicator
@@ -4460,6 +4440,7 @@ export interface components {
             lastUpdated: string;
             /** @description Latest metrics with daily valuation */
             latestMetrics?: components["schemas"]["FundamentalDataPoint"] | null;
+            provenance: components["schemas"]["DataProvenance"];
             /**
              * Symbol
              * @description Stock code
@@ -4965,7 +4946,7 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース ('market' or dataset snapshot名)
+             * @description データソース ('market' only)
              * @default market
              */
             source: string;
@@ -4992,6 +4973,7 @@ export interface components {
          * @description インジケーター計算レスポンス
          */
         IndicatorComputeResponse: {
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /**
              * Indicators
              * @description インジケーター結果 {key: [{date, value, ...}]} (output='ohlcv'時は空)
@@ -5015,6 +4997,7 @@ export interface components {
             ohlcv?: {
                 [key: string]: unknown;
             }[] | null;
+            provenance: components["schemas"]["DataProvenance"];
             /**
              * Stock Code
              * @description 銘柄コード
@@ -5730,8 +5713,8 @@ export interface components {
             indicators: ("margin_long_pressure" | "margin_flow_pressure" | "margin_turnover_days" | "margin_volume_ratio")[];
             /**
              * Source
-             * @description データソース（データセット名: topix500, topix100等）
-             * @default topix500
+             * @description データソース ('market' only)
+             * @default market
              */
             source: string;
             /**
@@ -5750,6 +5733,7 @@ export interface components {
          * @description 信用指標レスポンス
          */
         MarginIndicatorResponse: {
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /**
              * Indicators
              * @description 信用指標結果
@@ -5759,6 +5743,7 @@ export interface components {
                     [key: string]: unknown;
                 }[];
             };
+            provenance: components["schemas"]["DataProvenance"];
             /**
              * Stock Code
              * @description 銘柄コード
@@ -5815,12 +5800,14 @@ export interface components {
              * @description Rolling average period in days
              */
             averagePeriod: number;
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /** Flowpressure */
             flowPressure: components["schemas"]["MarginFlowPressureData"][];
             /** Lastupdated */
             lastUpdated: string;
             /** Longpressure */
             longPressure: components["schemas"]["MarginLongPressureData"][];
+            provenance: components["schemas"]["DataProvenance"];
             /** Symbol */
             symbol: string;
             /** Turnoverdays */
@@ -5921,10 +5908,12 @@ export interface components {
          * @description マージン出来高比率レスポンス
          */
         MarginVolumeRatioResponse: {
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /** Lastupdated */
             lastUpdated: string;
             /** Longratio */
             longRatio: components["schemas"]["MarginVolumeRatioData"][];
+            provenance: components["schemas"]["DataProvenance"];
             /** Shortratio */
             shortRatio: components["schemas"]["MarginVolumeRatioData"][];
             /** Symbol */
@@ -6007,6 +5996,7 @@ export interface components {
          * @description マーケットスクリーニングレスポンス
          */
         MarketScreeningResponse: {
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /** Lastupdated */
             lastUpdated: string;
             /** Markets */
@@ -6022,6 +6012,7 @@ export interface components {
              * @enum {string}
              */
             order: "asc" | "desc";
+            provenance: components["schemas"]["DataProvenance"];
             /** Recentdays */
             recentDays: number;
             /** Referencedate */
@@ -6198,7 +6189,7 @@ export interface components {
             relative_options?: components["schemas"]["RelativeOHLCOptions"] | null;
             /**
              * Source
-             * @description データソース ('market' or dataset snapshot名)
+             * @description データソース ('market' only)
              * @default market
              */
             source: string;
@@ -6965,6 +6956,20 @@ export interface components {
             handle_zero_division: "skip" | "zero" | "null";
         };
         /**
+         * ResponseDiagnostics
+         * @description Common diagnostics payload for analytics-style responses.
+         */
+        ResponseDiagnostics: {
+            /** Effective Period Type */
+            effective_period_type?: string | null;
+            /** Missing Required Data */
+            missing_required_data?: string[];
+            /** Used Fields */
+            used_fields?: string[];
+            /** Warnings */
+            warnings?: string[];
+        };
+        /**
          * ROEMetadata
          * @description ROE 計算メタデータ
          */
@@ -6990,8 +6995,10 @@ export interface components {
          * @description ROE 分析レスポンス
          */
         ROEResponse: {
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /** Lastupdated */
             lastUpdated: string;
+            provenance: components["schemas"]["DataProvenance"];
             /** Results */
             results: components["schemas"]["ROEResultItem"][];
             summary: components["schemas"]["ROESummary"];
@@ -7776,6 +7783,44 @@ export interface components {
             label: string;
         };
         /**
+         * SignalChartCapability
+         * @description Chart overlay capability metadata.
+         */
+        SignalChartCapability: {
+            /**
+             * Requires Benchmark
+             * @default false
+             */
+            requires_benchmark: boolean;
+            /**
+             * Requires Margin Data
+             * @default false
+             */
+            requires_margin_data: boolean;
+            /**
+             * Requires Sector Data
+             * @default false
+             */
+            requires_sector_data: boolean;
+            /**
+             * Requires Statements Data
+             * @default false
+             */
+            requires_statements_data: boolean;
+            /**
+             * Supported
+             * @default true
+             */
+            supported: boolean;
+            /** Supported Modes */
+            supported_modes?: string[];
+            /**
+             * Supports Relative Mode
+             * @default true
+             */
+            supports_relative_mode: boolean;
+        };
+        /**
          * SignalComputeRequest
          * @description シグナル計算リクエスト
          */
@@ -7787,12 +7832,12 @@ export interface components {
             end_date?: string | null;
             /**
              * Signals
-             * @description 計算するシグナル一覧（最大5個）
+             * @description 計算するシグナル一覧（strategy_name 未指定時のみ、最大5個）
              */
             signals?: components["schemas"]["SignalSpec"][];
             /**
              * Source
-             * @description データソース ('market' or dataset名)
+             * @description データソース ('market' only)
              * @default market
              */
             source: string;
@@ -7807,6 +7852,11 @@ export interface components {
              */
             stock_code: string;
             /**
+             * Strategy Name
+             * @description chart検算用の戦略名。指定時は signals を省略する
+             */
+            strategy_name?: string | null;
+            /**
              * Timeframe
              * @description 時間枠
              * @default daily
@@ -7819,6 +7869,12 @@ export interface components {
          * @description シグナル計算レスポンス
          */
         SignalComputeResponse: {
+            /** @description strategy_name 指定時の合成 entry シグナル */
+            combined_entry?: components["schemas"]["SignalResult"] | null;
+            /** @description strategy_name 指定時の合成 exit シグナル */
+            combined_exit?: components["schemas"]["SignalResult"] | null;
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
+            provenance: components["schemas"]["DataProvenance"];
             /**
              * Signals
              * @description シグナル結果 {signal_type: SignalResult}
@@ -7831,6 +7887,11 @@ export interface components {
              * @description 銘柄コード
              */
             stock_code: string;
+            /**
+             * Strategy Name
+             * @description 検算対象戦略
+             */
+            strategy_name?: string | null;
             /**
              * Timeframe
              * @description 時間枠
@@ -7878,6 +7939,7 @@ export interface components {
             availability_profiles?: components["schemas"]["SignalAvailabilityProfile"][];
             /** Category */
             category: string;
+            chart?: components["schemas"]["SignalChartCapability"];
             /** Data Requirements */
             data_requirements?: string[];
             /** Description */
@@ -7897,6 +7959,11 @@ export interface components {
             /** Name */
             name: string;
             /**
+             * Signal Type
+             * @description chart/signal API で使用する signal type
+             */
+            signal_type: string;
+            /**
              * Usage Hint
              * @description entry_purpose + exit_purposeから自動合成
              */
@@ -7914,11 +7981,22 @@ export interface components {
              * @description 発火回数
              */
             count: number;
+            diagnostics?: components["schemas"]["ResponseDiagnostics"];
             /**
              * Error
              * @description エラーメッセージ（計算失敗時）
              */
             error?: string | null;
+            /**
+             * Label
+             * @description 表示用ラベル
+             */
+            label?: string | null;
+            /**
+             * Mode
+             * @description シグナルモード
+             */
+            mode?: ("entry" | "exit") | null;
             /**
              * Trigger Dates
              * @description シグナル発火日リスト (YYYY-MM-DD)

@@ -300,6 +300,47 @@ class TestSignalProcessor:
         assert any("statements:ForwardForecastEPS" in message for message in warning_messages)
         assert all("ベンチマークデータ" not in message for message in warning_messages)
 
+    def test_missing_required_data_fails_closed_for_entry(self):
+        """有効なentryシグナルで必須データ不足なら全期間Falseに倒す"""
+        dummy_signal = _signal_definition(
+            name="Forward EPS成長率",
+            signal_func=lambda **_kwargs: self.base_signal,
+            param_key="test.forward",
+            data_checker=lambda _data: False,
+            data_requirements=["statements:ForwardForecastEPS"],
+        )
+
+        with patch("src.domains.strategy.signals.processor.SIGNAL_REGISTRY", [dummy_signal]):
+            result = self.processor.apply_signals(
+                base_signal=self.base_signal,
+                signal_type="entry",
+                ohlc_data=self.test_data,
+                signal_params=self.signal_params,
+            )
+
+        assert result.dtype == bool
+        assert not result.any()
+
+    def test_missing_required_data_keeps_base_signal_for_exit(self):
+        """有効なexitシグナルで必須データ不足でも fail-closed は False 発火に留める"""
+        dummy_signal = _signal_definition(
+            name="Forward EPS成長率",
+            signal_func=lambda **_kwargs: self.base_signal,
+            param_key="test.forward",
+            data_checker=lambda _data: False,
+            data_requirements=["statements:ForwardForecastEPS"],
+        )
+
+        with patch("src.domains.strategy.signals.processor.SIGNAL_REGISTRY", [dummy_signal]):
+            result = self.processor.apply_signals(
+                base_signal=self.base_signal,
+                signal_type="exit",
+                ohlc_data=self.test_data,
+                signal_params=self.signal_params,
+            )
+
+        pd.testing.assert_series_equal(result, self.base_signal)
+
     def test_apply_signals_raises_when_close_all_nan(self):
         data = self.test_data.copy()
         data["Close"] = [float("nan")] * len(data)

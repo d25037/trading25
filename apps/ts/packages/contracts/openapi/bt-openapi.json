@@ -1717,6 +1717,93 @@
         "title": "DailyValuationDataPoint",
         "type": "object"
       },
+      "DataProvenance": {
+        "description": "Common provenance payload for SoT-backed analytics responses.",
+        "properties": {
+          "dataset_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dataset Snapshot Id"
+          },
+          "loaded_domains": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Loaded Domains",
+            "type": "array"
+          },
+          "market_snapshot_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Market Snapshot Id"
+          },
+          "reference_date": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reference Date"
+          },
+          "source_kind": {
+            "enum": [
+              "market",
+              "dataset"
+            ],
+            "title": "Source Kind",
+            "type": "string"
+          },
+          "strategy_fingerprint": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Fingerprint"
+          },
+          "strategy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strategy Name"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "required": [
+          "source_kind"
+        ],
+        "title": "DataProvenance",
+        "type": "object"
+      },
       "DatasetCreateRequest": {
         "additionalProperties": false,
         "properties": {
@@ -3833,6 +3920,9 @@
             "title": "Data",
             "type": "array"
           },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "forecastEpsLookbackFyCount": {
             "default": 3,
             "description": "Lookback FY count used for forecast EPS comparison indicator",
@@ -3855,6 +3945,9 @@
             ],
             "description": "Latest metrics with daily valuation"
           },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
+          },
           "symbol": {
             "description": "Stock code",
             "title": "Symbol",
@@ -3870,7 +3963,8 @@
           "symbol",
           "data",
           "tradingValuePeriod",
-          "lastUpdated"
+          "lastUpdated",
+          "provenance"
         ],
         "title": "FundamentalsComputeResponse",
         "type": "object"
@@ -4743,7 +4837,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース ('market' or dataset snapshot名)",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },
@@ -4788,6 +4882,9 @@
       "IndicatorComputeResponse": {
         "description": "インジケーター計算レスポンス",
         "properties": {
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "indicators": {
             "additionalProperties": {
               "items": {
@@ -4822,6 +4919,9 @@
             "description": "OHLCVデータ (output='ohlcv'時のみ)",
             "title": "Ohlcv"
           },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
+          },
           "stock_code": {
             "description": "銘柄コード",
             "title": "Stock Code",
@@ -4835,7 +4935,8 @@
         },
         "required": [
           "stock_code",
-          "timeframe"
+          "timeframe",
+          "provenance"
         ],
         "title": "IndicatorComputeResponse",
         "type": "object"
@@ -6120,8 +6221,8 @@
             "type": "array"
           },
           "source": {
-            "default": "topix500",
-            "description": "データソース（データセット名: topix500, topix100等）",
+            "default": "market",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },
@@ -6156,6 +6257,9 @@
       "MarginIndicatorResponse": {
         "description": "信用指標レスポンス",
         "properties": {
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "indicators": {
             "additionalProperties": {
               "items": {
@@ -6168,6 +6272,9 @@
             "title": "Indicators",
             "type": "object"
           },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
+          },
           "stock_code": {
             "description": "銘柄コード",
             "title": "Stock Code",
@@ -6176,7 +6283,8 @@
         },
         "required": [
           "stock_code",
-          "indicators"
+          "indicators",
+          "provenance"
         ],
         "title": "MarginIndicatorResponse",
         "type": "object"
@@ -6292,6 +6400,9 @@
             "title": "Averageperiod",
             "type": "integer"
           },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "flowPressure": {
             "items": {
               "$ref": "#/components/schemas/MarginFlowPressureData"
@@ -6309,6 +6420,9 @@
             },
             "title": "Longpressure",
             "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
           },
           "symbol": {
             "maxLength": 4,
@@ -6330,7 +6444,8 @@
           "longPressure",
           "flowPressure",
           "turnoverDays",
-          "lastUpdated"
+          "lastUpdated",
+          "provenance"
         ],
         "title": "MarginPressureIndicatorsResponse",
         "type": "object"
@@ -6517,6 +6632,9 @@
       "MarginVolumeRatioResponse": {
         "description": "マージン出来高比率レスポンス",
         "properties": {
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
@@ -6527,6 +6645,9 @@
             },
             "title": "Longratio",
             "type": "array"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
           },
           "shortRatio": {
             "items": {
@@ -6546,7 +6667,8 @@
           "symbol",
           "longRatio",
           "shortRatio",
-          "lastUpdated"
+          "lastUpdated",
+          "provenance"
         ],
         "title": "MarginVolumeRatioResponse",
         "type": "object"
@@ -6706,6 +6828,9 @@
       "MarketScreeningResponse": {
         "description": "マーケットスクリーニングレスポンス",
         "properties": {
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
@@ -6733,6 +6858,9 @@
             ],
             "title": "Order",
             "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
           },
           "recentDays": {
             "title": "Recentdays",
@@ -6777,7 +6905,8 @@
           "recentDays",
           "sortBy",
           "order",
-          "lastUpdated"
+          "lastUpdated",
+          "provenance"
         ],
         "title": "MarketScreeningResponse",
         "type": "object"
@@ -7155,7 +7284,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース ('market' or dataset snapshot名)",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },
@@ -9197,6 +9326,45 @@
         "title": "RelativeOHLCOptions",
         "type": "object"
       },
+      "ResponseDiagnostics": {
+        "description": "Common diagnostics payload for analytics-style responses.",
+        "properties": {
+          "effective_period_type": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Effective Period Type"
+          },
+          "missing_required_data": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missing Required Data",
+            "type": "array"
+          },
+          "used_fields": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Used Fields",
+            "type": "array"
+          },
+          "warnings": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Warnings",
+            "type": "array"
+          }
+        },
+        "title": "ResponseDiagnostics",
+        "type": "object"
+      },
       "ROEMetadata": {
         "description": "ROE 計算メタデータ",
         "properties": {
@@ -9252,9 +9420,15 @@
       "ROEResponse": {
         "description": "ROE 分析レスポンス",
         "properties": {
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "lastUpdated": {
             "title": "Lastupdated",
             "type": "string"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
           },
           "results": {
             "items": {
@@ -9270,7 +9444,8 @@
         "required": [
           "results",
           "summary",
-          "lastUpdated"
+          "lastUpdated",
+          "provenance"
         ],
         "title": "ROEResponse",
         "type": "object"
@@ -10873,6 +11048,50 @@
         "title": "SignalCategorySchema",
         "type": "object"
       },
+      "SignalChartCapability": {
+        "description": "Chart overlay capability metadata.",
+        "properties": {
+          "requires_benchmark": {
+            "default": false,
+            "title": "Requires Benchmark",
+            "type": "boolean"
+          },
+          "requires_margin_data": {
+            "default": false,
+            "title": "Requires Margin Data",
+            "type": "boolean"
+          },
+          "requires_sector_data": {
+            "default": false,
+            "title": "Requires Sector Data",
+            "type": "boolean"
+          },
+          "requires_statements_data": {
+            "default": false,
+            "title": "Requires Statements Data",
+            "type": "boolean"
+          },
+          "supported": {
+            "default": true,
+            "title": "Supported",
+            "type": "boolean"
+          },
+          "supported_modes": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Supported Modes",
+            "type": "array"
+          },
+          "supports_relative_mode": {
+            "default": true,
+            "title": "Supports Relative Mode",
+            "type": "boolean"
+          }
+        },
+        "title": "SignalChartCapability",
+        "type": "object"
+      },
       "SignalComputeRequest": {
         "description": "シグナル計算リクエスト",
         "properties": {
@@ -10890,7 +11109,7 @@
             "title": "End Date"
           },
           "signals": {
-            "description": "計算するシグナル一覧（最大5個）",
+            "description": "計算するシグナル一覧（strategy_name 未指定時のみ、最大5個）",
             "items": {
               "$ref": "#/components/schemas/SignalSpec"
             },
@@ -10900,7 +11119,7 @@
           },
           "source": {
             "default": "market",
-            "description": "データソース ('market' or dataset名)",
+            "description": "データソース ('market' only)",
             "title": "Source",
             "type": "string"
           },
@@ -10924,6 +11143,18 @@
             "title": "Stock Code",
             "type": "string"
           },
+          "strategy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "chart検算用の戦略名。指定時は signals を省略する",
+            "title": "Strategy Name"
+          },
           "timeframe": {
             "default": "daily",
             "description": "時間枠",
@@ -10945,6 +11176,34 @@
       "SignalComputeResponse": {
         "description": "シグナル計算レスポンス",
         "properties": {
+          "combined_entry": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "strategy_name 指定時の合成 entry シグナル"
+          },
+          "combined_exit": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/SignalResult"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "strategy_name 指定時の合成 exit シグナル"
+          },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
+          "provenance": {
+            "$ref": "#/components/schemas/DataProvenance"
+          },
           "signals": {
             "additionalProperties": {
               "$ref": "#/components/schemas/SignalResult"
@@ -10958,6 +11217,18 @@
             "title": "Stock Code",
             "type": "string"
           },
+          "strategy_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "検算対象戦略",
+            "title": "Strategy Name"
+          },
           "timeframe": {
             "description": "時間枠",
             "title": "Timeframe",
@@ -10967,7 +11238,8 @@
         "required": [
           "stock_code",
           "timeframe",
-          "signals"
+          "signals",
+          "provenance"
         ],
         "title": "SignalComputeResponse",
         "type": "object"
@@ -11090,6 +11362,9 @@
             "title": "Category",
             "type": "string"
           },
+          "chart": {
+            "$ref": "#/components/schemas/SignalChartCapability"
+          },
           "data_requirements": {
             "items": {
               "type": "string"
@@ -11122,6 +11397,11 @@
             "title": "Name",
             "type": "string"
           },
+          "signal_type": {
+            "description": "chart/signal API で使用する signal type",
+            "title": "Signal Type",
+            "type": "string"
+          },
           "usage_hint": {
             "description": "entry_purpose + exit_purposeから自動合成",
             "title": "Usage Hint",
@@ -11134,6 +11414,7 @@
         },
         "required": [
           "key",
+          "signal_type",
           "name",
           "category",
           "description",
@@ -11152,6 +11433,9 @@
             "title": "Count",
             "type": "integer"
           },
+          "diagnostics": {
+            "$ref": "#/components/schemas/ResponseDiagnostics"
+          },
           "error": {
             "anyOf": [
               {
@@ -11163,6 +11447,34 @@
             ],
             "description": "エラーメッセージ（計算失敗時）",
             "title": "Error"
+          },
+          "label": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "表示用ラベル",
+            "title": "Label"
+          },
+          "mode": {
+            "anyOf": [
+              {
+                "enum": [
+                  "entry",
+                  "exit"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "シグナルモード",
+            "title": "Mode"
           },
           "trigger_dates": {
             "description": "シグナル発火日リスト (YYYY-MM-DD)",
@@ -14252,7 +14564,6 @@
     },
     "/api/analytics/fundamentals/{symbol}": {
       "get": {
-        "description": "ファンダメンタルズ分析指標を取得",
         "operationId": "get_fundamentals_api_analytics_fundamentals__symbol__get",
         "parameters": [
           {
@@ -14624,7 +14935,6 @@
     },
     "/api/analytics/roe": {
       "get": {
-        "description": "ROE (自己資本利益率) を計算",
         "operationId": "get_roe_api_analytics_roe_get",
         "parameters": [
           {
@@ -15365,7 +15675,6 @@
     },
     "/api/analytics/stocks/{symbol}/margin-pressure": {
       "get": {
-        "description": "マージンプレッシャー指標を取得",
         "operationId": "get_margin_pressure_api_analytics_stocks__symbol__margin_pressure_get",
         "parameters": [
           {
@@ -15452,7 +15761,6 @@
     },
     "/api/analytics/stocks/{symbol}/margin-ratio": {
       "get": {
-        "description": "マージン出来高比率を取得",
         "operationId": "get_margin_ratio_api_analytics_stocks__symbol__margin_ratio_get",
         "parameters": [
           {
@@ -20124,7 +20432,7 @@
     },
     "/api/fundamentals/compute": {
       "post": {
-        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: JQuants API via apps/ts/api proxy\n- Stock prices: market.duckdb via apps/ts/api proxy\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Latest metrics with daily valuation applied\n- `dailyValuation`: Daily PER/PBR time-series for charting",
+        "description": "Compute fundamental analysis metrics for a stock symbol.\n\n**Calculated Metrics** (17 types):\n- **Valuation**: PER, PBR\n- **Profitability**: ROE, ROA, Operating Margin, Net Margin\n- **Per-share**: EPS, BPS, Diluted EPS\n- **FCF**: FCF, FCF Yield, FCF Margin\n- **Time-series**: Daily PER/PBR valuation\n- **Forecast**: Forecast EPS, Forecast Change Rate\n\n**Data Sources**:\n- Financial statements: local `market.duckdb`\n- Stock prices: local `market.duckdb`\n\n**Response includes**:\n- `data`: Array of fundamental data points sorted by date (descending)\n- `latestMetrics`: Latest metrics with daily valuation applied\n- `dailyValuation`: Daily PER/PBR time-series for charting",
         "operationId": "compute_fundamentals_api_fundamentals_compute_post",
         "requestBody": {
           "content": {
@@ -24216,7 +24524,7 @@
     },
     "/api/signals/compute": {
       "post": {
-        "description": "シグナル計算を実行し、発火日を返却\n\nPhase 1: OHLCV系シグナルのみ対応\n- oscillator: rsi_threshold, rsi_spread\n- breakout: baseline_deviation, period_extrema_break, period_extrema_position,\n            atr_support_position, atr_support_cross, buy_and_hold\n- trend: baseline_cross, baseline_position, retracement_position,\n         retracement_cross, crossover\n- volatility: volatility_percentile, bollinger_position, bollinger_cross\n- volume: volume_ratio_above, volume_ratio_below, trading_value, trading_value_range\n\nExample request:\n```json\n{\n    \"stock_code\": \"7203\",\n    \"source\": \"market\",\n    \"timeframe\": \"daily\",\n    \"signals\": [\n        {\"type\": \"rsi_threshold\", \"params\": {\"threshold\": 30}, \"mode\": \"entry\"},\n        {\"type\": \"period_extrema_break\", \"params\": {\"period\": 20}, \"mode\": \"entry\"}\n    ]\n}\n```\n\nExample response:\n```json\n{\n    \"stock_code\": \"7203\",\n    \"timeframe\": \"daily\",\n    \"signals\": {\n        \"rsi_threshold\": {\"trigger_dates\": [\"2025-01-15\"], \"count\": 1},\n        \"period_extrema_break\": {\"trigger_dates\": [\"2025-02-01\"], \"count\": 1}\n    }\n}\n```",
+        "description": "シグナル計算を実行し、発火日を返却",
         "operationId": "compute_signals_api_signals_compute_post",
         "requestBody": {
           "content": {
