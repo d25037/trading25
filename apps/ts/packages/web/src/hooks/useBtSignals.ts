@@ -1,7 +1,9 @@
 import { useQuery } from '@tanstack/react-query';
 import { useMemo } from 'react';
+import { useSignalReference } from '@/hooks/useBacktest';
 import { apiPost } from '@/lib/api-client';
 import type { SignalOverlaySettings } from '@/stores/chartStore';
+import type { SignalDefinition } from '@/types/backtest';
 
 export interface BtSignalSpec {
   type: string;
@@ -62,6 +64,13 @@ export const btSignalKeys = {
   compute: (stockCode: string, timeframe: string, specsKey: string, strategyName: string | null) =>
     ['bt-signals', 'compute', stockCode, timeframe, specsKey, strategyName ?? 'manual'] as const,
 };
+
+const FALLBACK_RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES = new Set([
+  'volume_ratio_above',
+  'volume_ratio_below',
+  'trading_value',
+  'trading_value_range',
+]);
 
 export interface SignalMarker {
   time: string;
@@ -141,16 +150,43 @@ function mapBtResponseToMarkers(
 
 const EMPTY_MARKERS: SignalMarker[] = [];
 
+function supportsRelativeMode(
+  signalType: string,
+  definitionsByType: Map<string, SignalDefinition>
+): boolean {
+  const definition = definitionsByType.get(signalType);
+  if (definition) {
+    return definition.chart?.supports_relative_mode !== false;
+  }
+  return !FALLBACK_RELATIVE_MODE_UNSUPPORTED_SIGNAL_TYPES.has(signalType);
+}
+
 export function useBtSignals(
   stockCode: string | null,
   timeframe: 'daily' | 'weekly' | 'monthly',
   settings: SignalOverlaySettings | undefined,
-  strategyName: string | null
+  strategyName: string | null,
+  relativeMode: boolean
 ) {
+  const { data: signalReference } = useSignalReference();
   const specs = useMemo(() => buildSignalSpecs(settings), [settings]);
-  const specsKey = useMemo(() => JSON.stringify({ specs }), [specs]);
+  const definitionsByType = useMemo(
+    () => new Map((signalReference?.signals ?? []).map((definition) => [definition.signal_type, definition])),
+    [signalReference?.signals]
+  );
+  const filteredManualSpecs = useMemo(() => {
+    if (!relativeMode) {
+      return specs;
+    }
+    return specs.filter((spec) => supportsRelativeMode(spec.type, definitionsByType));
+  }, [definitionsByType, relativeMode, specs]);
+  const specsKey = useMemo(
+    () => JSON.stringify({ specs: filteredManualSpecs, relativeMode }),
+    [filteredManualSpecs, relativeMode]
+  );
   const isManualOverlayEnabled = settings?.enabled ?? false;
-  const shouldRun = !!stockCode && (Boolean(strategyName) || (isManualOverlayEnabled && specs.length > 0));
+  const shouldRun =
+    !!stockCode && (Boolean(strategyName) || (isManualOverlayEnabled && filteredManualSpecs.length > 0));
 
   const query = useQuery({
     queryKey: btSignalKeys.compute(stockCode ?? '', timeframe, specsKey, strategyName),
@@ -160,7 +196,7 @@ export function useBtSignals(
         stock_code: stockCode,
         source: 'market',
         timeframe,
-        ...(strategyName ? { strategy_name: strategyName } : { signals: specs }),
+        ...(strategyName ? { strategy_name: strategyName } : { signals: filteredManualSpecs }),
       };
       return apiPost<BtSignalComputeResponse>('/api/signals/compute', request);
     },

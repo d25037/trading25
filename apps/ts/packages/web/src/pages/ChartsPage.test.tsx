@@ -27,11 +27,13 @@ const mockFundamentalsPanelProps = vi.fn<(props: unknown) => void>();
 const mockFundamentalsHistoryPanelProps = vi.fn<(props: unknown) => void>();
 const mockChartsRouteState = {
   selectedSymbol: '7203' as string | null,
+  strategyName: null as string | null,
+  matchedDate: null as string | null,
   setSelectedSymbol: vi.fn(),
 };
 
 vi.mock('@/components/Chart/hooks/useMultiTimeframeChart', () => ({
-  useMultiTimeframeChart: () => mockUseMultiTimeframeChart(),
+  useMultiTimeframeChart: (...args: unknown[]) => mockUseMultiTimeframeChart(...args),
 }));
 
 vi.mock('@/hooks/usePageRouteState', () => ({
@@ -110,7 +112,14 @@ vi.mock('@/stores/chartStore', () => ({
 }));
 
 vi.mock('@/components/Chart/ChartControls', () => ({
-  ChartControls: () => <div>Chart Controls</div>,
+  ChartControls: ({ onSelectSymbol }: { onSelectSymbol: (symbol: string) => void }) => (
+    <div>
+      <div>Chart Controls</div>
+      <button type="button" onClick={() => onSelectSymbol('6758')}>
+        Select 6758
+      </button>
+    </div>
+  ),
 }));
 
 vi.mock('@/components/Chart/StockChart', () => ({
@@ -238,6 +247,8 @@ describe('ChartsPage', () => {
     mockFundamentalsHistoryPanelProps.mockReset();
     mockFactorRegressionPanelProps.mockReset();
     mockChartsRouteState.selectedSymbol = '7203';
+    mockChartsRouteState.strategyName = null;
+    mockChartsRouteState.matchedDate = null;
     mockChartsRouteState.setSelectedSymbol.mockReset();
 
     mockSettings.showPPOChart = true;
@@ -470,6 +481,46 @@ describe('ChartsPage', () => {
       metricOrder: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_ORDER,
       metricVisibility: DEFAULT_FUNDAMENTALS_HISTORY_METRIC_VISIBILITY,
     });
+  });
+
+  it('passes screening verification context into chart rendering and symbol changes', async () => {
+    const user = userEvent.setup();
+    mockChartsRouteState.strategyName = 'production/demo';
+    mockChartsRouteState.matchedDate = '2026-03-14';
+    mockUseMultiTimeframeChart.mockReturnValue({
+      chartData: {
+        daily: {
+          candlestickData: [{ time: '2024-01-01', open: 1, high: 2, low: 0.5, close: 1.5, volume: 100 }],
+          indicators: { atrSupport: [], nBarSupport: [], ppo: [] },
+          bollingerBands: [],
+          volumeComparison: [],
+          tradingValueMA: [],
+        },
+      },
+      signalMarkers: { daily: [], weekly: [], monthly: [] },
+      signalResponse: {
+        provenance: {
+          source_kind: 'market',
+          strategy_name: 'production/demo',
+          loaded_domains: ['stock_data', 'statements'],
+        },
+        diagnostics: {},
+      },
+      isLoading: false,
+      error: null,
+      selectedSymbol: '7203',
+    });
+    mockUseStockInfo.mockReturnValue({ data: { companyName: 'Test Co' } });
+
+    renderChartsPage();
+
+    expect(mockUseMultiTimeframeChart).toHaveBeenCalledWith('7203', 'production/demo');
+    expect(screen.getByText('production/demo (strategy)')).toBeInTheDocument();
+    expect(screen.getByText('2026-03-14')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: 'Select 6758' }));
+
+    expect(mockChartsRouteState.setSelectedSymbol).toHaveBeenCalledWith('6758');
   });
 
   it('refreshes the selected symbol and invalidates related chart queries', async () => {

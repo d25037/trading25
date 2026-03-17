@@ -40,9 +40,9 @@ export function useMultiTimeframeChart(selectedSymbol: string | null, strategyNa
   const monthlyInd = useBtIndicators(selectedSymbol, 'monthly', settings);
 
   // apps/bt/ API signals
-  const dailySig = useBtSignals(selectedSymbol, 'daily', settings.signalOverlay, strategyName);
-  const weeklySig = useBtSignals(selectedSymbol, 'weekly', settings.signalOverlay, strategyName);
-  const monthlySig = useBtSignals(selectedSymbol, 'monthly', settings.signalOverlay, strategyName);
+  const dailySig = useBtSignals(selectedSymbol, 'daily', settings.signalOverlay, strategyName, settings.relativeMode);
+  const weeklySig = useBtSignals(selectedSymbol, 'weekly', settings.signalOverlay, strategyName, settings.relativeMode);
+  const monthlySig = useBtSignals(selectedSymbol, 'monthly', settings.signalOverlay, strategyName, settings.relativeMode);
 
   const isLoading =
     ohlcv.isLoading ||

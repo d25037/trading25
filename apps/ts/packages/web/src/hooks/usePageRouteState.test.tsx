@@ -92,12 +92,47 @@ describe('usePageRouteState', () => {
     expect(routeSearchState.indices).toEqual({ code: 'nk225' });
     expect(mockNavigate).toHaveBeenNthCalledWith(
       1,
-      expect.objectContaining({ to: '/charts', replace: true, search: { symbol: '6758' } })
+      expect.objectContaining({ to: '/charts', replace: true, search: expect.any(Function) })
     );
     expect(mockNavigate).toHaveBeenNthCalledWith(
       2,
       expect.objectContaining({ to: '/indices', replace: true, search: { code: 'nk225' } })
     );
+  });
+
+  it('preserves strategy context and drops matched date when charts symbol changes', () => {
+    routeSearchState.charts = {
+      symbol: '7203',
+      strategy: 'production/demo',
+      matchedDate: '2026-03-14',
+    };
+
+    const { result } = renderHook(() => useChartsRouteState());
+
+    act(() => {
+      result.current.setSelectedSymbol('6758');
+    });
+
+    expect(routeSearchState.charts).toEqual({
+      symbol: '6758',
+      strategy: 'production/demo',
+    });
+  });
+
+  it('clears strategy context when charts symbol is cleared', () => {
+    routeSearchState.charts = {
+      symbol: '7203',
+      strategy: 'production/demo',
+      matchedDate: '2026-03-14',
+    };
+
+    const { result } = renderHook(() => useChartsRouteState());
+
+    act(() => {
+      result.current.setSelectedSymbol(null);
+    });
+
+    expect(routeSearchState.charts).toEqual({});
   });
 
   it('preserves portfolio state across sequential updates', () => {

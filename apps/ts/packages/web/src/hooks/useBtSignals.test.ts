@@ -1,5 +1,6 @@
 import { renderHook, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { useSignalReference } from '@/hooks/useBacktest';
 import { apiPost } from '@/lib/api-client';
 import { createTestWrapper } from '@/test-utils';
 import type { SignalOverlaySettings } from '@/stores/chartStore';
@@ -9,7 +10,12 @@ vi.mock('@/lib/api-client', () => ({
   apiPost: vi.fn(),
 }));
 
+vi.mock('@/hooks/useBacktest', () => ({
+  useSignalReference: vi.fn(),
+}));
+
 const mockApiPost = vi.mocked(apiPost);
+const mockUseSignalReference = vi.mocked(useSignalReference);
 
 const manualSettings: SignalOverlaySettings = {
   enabled: true,
@@ -29,22 +35,42 @@ const manualSettings: SignalOverlaySettings = {
   ],
 };
 
+const relativeModeSettings: SignalOverlaySettings = {
+  enabled: true,
+  signals: [
+    {
+      type: 'buy_and_hold',
+      params: {},
+      mode: 'entry',
+      enabled: true,
+    },
+    {
+      type: 'trading_value',
+      params: { period: 15, threshold_value: 100000000, direction: 'above' },
+      mode: 'entry',
+      enabled: true,
+    },
+  ],
+};
+
 describe('btSignalKeys', () => {
   it('builds stable query keys for manual and strategy overlays', () => {
-    expect(btSignalKeys.compute('7203', 'daily', '{"specs":[]}', null)).toEqual([
+    expect(btSignalKeys.compute('7203', 'daily', '{"specs":[],"relativeMode":false}', null)).toEqual([
       'bt-signals',
       'compute',
       '7203',
       'daily',
-      '{"specs":[]}',
+      '{"specs":[],"relativeMode":false}',
       'manual',
     ]);
-    expect(btSignalKeys.compute('7203', 'weekly', '{"specs":[]}', 'production/demo')).toEqual([
+    expect(
+      btSignalKeys.compute('7203', 'weekly', '{"specs":[],"relativeMode":true}', 'production/demo')
+    ).toEqual([
       'bt-signals',
       'compute',
       '7203',
       'weekly',
-      '{"specs":[]}',
+      '{"specs":[],"relativeMode":true}',
       'production/demo',
     ]);
   });
@@ -69,11 +95,13 @@ describe('buildSignalSpecs', () => {
 describe('useBtSignals', () => {
   beforeEach(() => {
     mockApiPost.mockReset();
+    mockUseSignalReference.mockReset();
+    mockUseSignalReference.mockReturnValue({ data: null } as never);
   });
 
   it('does not call the API when there is no runnable overlay', () => {
     const { wrapper } = createTestWrapper();
-    renderHook(() => useBtSignals(null, 'daily', manualSettings, null), { wrapper });
+    renderHook(() => useBtSignals(null, 'daily', manualSettings, null, false), { wrapper });
     expect(mockApiPost).not.toHaveBeenCalled();
   });
 
@@ -105,7 +133,7 @@ describe('useBtSignals', () => {
     });
 
     const { wrapper } = createTestWrapper();
-    const { result } = renderHook(() => useBtSignals('7203', 'daily', manualSettings, null), { wrapper });
+    const { result } = renderHook(() => useBtSignals('7203', 'daily', manualSettings, null, false), { wrapper });
 
     await waitFor(() => {
       expect(result.current.response).not.toBeNull();
@@ -143,6 +171,111 @@ describe('useBtSignals', () => {
     ]);
   });
 
+  it('filters unsupported manual signals in relative mode using signal reference metadata', async () => {
+    mockUseSignalReference.mockReturnValue({
+      data: {
+        signals: [
+          {
+            signal_type: 'buy_and_hold',
+            chart: { supports_relative_mode: true },
+          },
+          {
+            signal_type: 'trading_value',
+            chart: { supports_relative_mode: false },
+          },
+        ],
+      },
+    } as never);
+    mockApiPost.mockResolvedValueOnce({
+      stock_code: '7203',
+      timeframe: 'daily',
+      strategy_name: null,
+      signals: {
+        buy_and_hold: {
+          label: 'Buy & Hold',
+          mode: 'entry',
+          trigger_dates: ['2025-01-03'],
+          count: 1,
+        },
+      },
+      provenance: {
+        source_kind: 'market',
+        loaded_domains: ['stock_data'],
+      },
+      diagnostics: {},
+    });
+
+    const { wrapper } = createTestWrapper();
+    renderHook(() => useBtSignals('7203', 'daily', relativeModeSettings, null, true), { wrapper });
+
+    await waitFor(() => {
+      expect(mockApiPost).toHaveBeenCalledTimes(1);
+    });
+
+    expect(mockApiPost).toHaveBeenCalledWith('/api/signals/compute', {
+      stock_code: '7203',
+      source: 'market',
+      timeframe: 'daily',
+      signals: [
+        {
+          type: 'buy_and_hold',
+          params: {},
+          mode: 'entry',
+        },
+      ],
+    });
+  });
+
+  it('refetches manual overlays when relative mode changes', async () => {
+    mockUseSignalReference.mockReturnValue({ data: null } as never);
+    mockApiPost
+      .mockResolvedValueOnce({
+        stock_code: '7203',
+        timeframe: 'daily',
+        strategy_name: null,
+        signals: {},
+        provenance: { source_kind: 'market', loaded_domains: ['stock_data'] },
+        diagnostics: {},
+      })
+      .mockResolvedValueOnce({
+        stock_code: '7203',
+        timeframe: 'daily',
+        strategy_name: null,
+        signals: {},
+        provenance: { source_kind: 'market', loaded_domains: ['stock_data'] },
+        diagnostics: {},
+      });
+
+    const { wrapper } = createTestWrapper();
+    const { rerender } = renderHook(
+      ({ relativeMode }) => useBtSignals('7203', 'daily', relativeModeSettings, null, relativeMode),
+      {
+        wrapper,
+        initialProps: { relativeMode: false },
+      }
+    );
+
+    await waitFor(() => {
+      expect(mockApiPost).toHaveBeenCalledTimes(1);
+    });
+
+    rerender({ relativeMode: true });
+
+    await waitFor(() => {
+      expect(mockApiPost).toHaveBeenCalledTimes(2);
+    });
+
+    expect(mockApiPost.mock.calls[0]?.[1]).toMatchObject({
+      signals: [
+        { type: 'buy_and_hold' },
+        { type: 'trading_value' },
+      ],
+    });
+    expect(mockApiPost.mock.calls[1]?.[1]).toMatchObject({
+      signals: [{ type: 'buy_and_hold' }],
+    });
+  });
+
   it('posts strategy overlays and maps combined entry and exit markers', async () => {
     mockApiPost.mockResolvedValueOnce({
       stock_code: '7203',
@@ -171,7 +304,7 @@ describe('useBtSignals', () => {
 
     const { wrapper } = createTestWrapper();
     const { result } = renderHook(
-      () => useBtSignals('7203', 'weekly', { enabled: false, signals: [] }, 'production/demo'),
+      () => useBtSignals('7203', 'weekly', { enabled: false, signals: [] }, 'production/demo', true),
       { wrapper }
     );
 

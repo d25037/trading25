@@ -22,6 +22,7 @@ import {
   serializePortfolioSearch,
   validateAnalysisSearch,
   validateBacktestSearch,
+  validateChartsSearch,
   validatePortfolioSearch,
   type AnalysisRouteSearch,
   type PortfolioSubTab,
@@ -79,7 +80,22 @@ export function useChartsRouteState(): {
       void navigate({
         to: '/charts',
         replace: options?.replace ?? false,
-        search: serializeChartsSearch({ symbol }),
+        search: (current: Record<string, unknown>) => {
+          const currentSearch = validateChartsSearch(current);
+          const nextSymbol = typeof symbol === 'string' ? symbol.trim() || null : null;
+
+          if (nextSymbol == null) {
+            return serializeChartsSearch({ symbol: null, strategy: null, matchedDate: null });
+          }
+
+          const preserveMatchedDate = currentSearch.symbol === nextSymbol ? currentSearch.matchedDate ?? null : null;
+
+          return serializeChartsSearch({
+            symbol: nextSymbol,
+            strategy: currentSearch.strategy ?? null,
+            matchedDate: preserveMatchedDate,
+          });
+        },
       });
     },
     [navigate]
