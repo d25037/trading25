@@ -159,7 +159,7 @@ describe('usePageRouteState', () => {
   it('preserves analysis params across sequential updates', () => {
     const { result } = renderHook(() => useAnalysisRouteState());
 
-    expect(result.current.activeSubTab).toBe('screening');
+    expect(result.current.activeSubTab).toBe('preOpenScreening');
     expect(result.current.rankingParams).toEqual(DEFAULT_RANKING_PARAMS);
 
     act(() => {
@@ -270,7 +270,7 @@ describe('usePageRouteState', () => {
     await waitFor(() => {
       expect(routeSearchState.analysis).toEqual({
         tab: 'fundamentalRanking',
-        screeningStrategies: 'production/a',
+        preOpenStrategies: 'production/a',
         rankingLimit: 15,
         forecastLookbackFyCount: 5,
       });

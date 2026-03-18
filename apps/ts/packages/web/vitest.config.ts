@@ -1,11 +1,15 @@
+import { availableParallelism } from 'node:os';
 import react from '@vitejs/plugin-react';
 import { defineConfig } from 'vitest/config';
+
+const MAX_TEST_WORKERS = Math.max(1, Math.min(4, availableParallelism()));
 
 export default defineConfig({
 	plugins: [react()],
 	test: {
 		globals: true,
 		environment: 'happy-dom',
+		maxWorkers: MAX_TEST_WORKERS,
 		include: ['src/**/*.{test,spec}.{js,ts,tsx}'],
 		exclude: ['node_modules', 'dist'],
 		setupFiles: ['./src/test-setup.ts'],

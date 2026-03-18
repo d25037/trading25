@@ -22,7 +22,7 @@ def test_needs_data_requirement_matches_prefix_and_enabled_checker() -> None:
     entry = SignalParams()
     exit_ = SignalParams()
     registry = [
-        SimpleNamespace(data_requirements=["benchmark:topix"], enabled_checker=lambda _params: True),
+        SimpleNamespace(data_requirements=["benchmark_close"], enabled_checker=lambda _params: True),
         SimpleNamespace(data_requirements=["margin"], enabled_checker=lambda _params: False),
     ]
 
@@ -69,7 +69,7 @@ def test_build_strategy_data_requirements_resolves_keys_and_flags() -> None:
 
     registry = [
         SimpleNamespace(data_requirements=["margin"], enabled_checker=lambda _params: True),
-        SimpleNamespace(data_requirements=["benchmark:topix"], enabled_checker=lambda _params: True),
+        SimpleNamespace(data_requirements=["benchmark_close"], enabled_checker=lambda _params: True),
         SimpleNamespace(data_requirements=["sector"], enabled_checker=lambda _params: False),
     ]
 

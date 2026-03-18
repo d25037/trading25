@@ -19,6 +19,7 @@ from src.application.services.signal_service import (
     _extract_trigger_dates,
     _get_signal_definition,
 )
+from src.domains.strategy.runtime.compiler import compile_runtime_strategy
 from src.shared.models.config import SharedConfig
 from src.shared.models.signals import SignalParams
 
@@ -54,6 +55,19 @@ def _make_shared_config() -> SharedConfig:
     return SharedConfig.model_validate(
         {"timeframe": "daily"},
         context={"resolve_stock_codes": False},
+    )
+
+
+def _make_compiled_strategy(
+    *,
+    entry_params: SignalParams | None = None,
+    exit_params: SignalParams | None = None,
+) -> object:
+    return compile_runtime_strategy(
+        strategy_name="test_signal_service",
+        shared_config=_make_shared_config(),
+        entry_signal_params=entry_params or SignalParams(),
+        exit_signal_params=exit_params or SignalParams(),
     )
 
 
@@ -159,6 +173,7 @@ class TestSignalService:
             mode="entry",
             signal_params=SignalParams(),
             data=data,
+            compiled_strategy=_make_compiled_strategy(),
         )
 
         assert result["count"] == 0
@@ -190,6 +205,7 @@ class TestSignalService:
             mode="entry",
             signal_params=signal_params,
             data=data,
+            compiled_strategy=_make_compiled_strategy(entry_params=signal_params),
         )
 
         assert result["count"] == 0
@@ -527,6 +543,7 @@ class TestSignalService:
             mode="exit",
             signal_params=signal_params,
             data=data,
+            compiled_strategy=_make_compiled_strategy(entry_params=signal_params),
         )
 
         assert result["count"] == 0
@@ -556,6 +573,7 @@ class TestSignalService:
                 mode="exit",
                 signal_params=signal_params,
                 data=data,
+                compiled_strategy=_make_compiled_strategy(exit_params=signal_params),
             )
 
         mock_exit.assert_called_once()
@@ -583,6 +601,7 @@ class TestSignalService:
                 mode="entry",
                 signal_params=signal_params,
                 data=data,
+                compiled_strategy=_make_compiled_strategy(entry_params=signal_params),
             )
 
         assert result["count"] == 0
