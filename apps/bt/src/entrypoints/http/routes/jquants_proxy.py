@@ -16,12 +16,13 @@ from src.entrypoints.http.schemas.jquants import (
     ApiMarginInterestResponse,
     AuthStatusResponse,
     DailyQuotesResponse,
+    N225OptionsExplorerResponse,
     RawStatementsResponse,
     StatementsResponse,
     TopixRawResponse,
 )
 
-from src.application.services.jquants_proxy_service import JQuantsProxyService
+from src.application.services.jquants_proxy_service import JQuantsProxyService, _normalize_jquants_date
 
 router = APIRouter(prefix="/api/jquants", tags=["JQuants Proxy"])
 
@@ -129,3 +130,20 @@ async def get_topix(
     """TOPIX 指数データを取得（生フォーマット）"""
     service = _get_proxy_service(request)
     return await service.get_topix(date_from, date_to, date)
+
+
+@router.get("/options/225", response_model=N225OptionsExplorerResponse)
+async def get_options_225(
+    request: Request,
+    date: str | None = Query(None, description="Trade date (YYYY-MM-DD or YYYYMMDD)"),
+) -> N225OptionsExplorerResponse:
+    """日経225オプション四本値 explorer データを取得"""
+    normalized_date: str | None = None
+    if date is not None:
+        try:
+            normalized_date = _normalize_jquants_date(date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    service = _get_proxy_service(request)
+    return await service.get_options_225(normalized_date)

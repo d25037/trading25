@@ -250,3 +250,75 @@ class TopixRawResponse(BaseModel):
     """TOPIX 生データレスポンス"""
 
     topix: list[TopixRawItem]
+
+
+# --- N225 Options Explorer ---
+
+
+class N225OptionsNumericRange(BaseModel):
+    """N225 options numeric range summary."""
+
+    min: float | None = None
+    max: float | None = None
+
+
+class N225OptionItem(BaseModel):
+    """Normalized Nikkei 225 option daily bar item."""
+
+    date: str = Field(description="Trade date (YYYY-MM-DD)")
+    code: str = Field(description="Option code")
+    wholeDayOpen: NullableFloat = None
+    wholeDayHigh: NullableFloat = None
+    wholeDayLow: NullableFloat = None
+    wholeDayClose: NullableFloat = None
+    nightSessionOpen: NullableFloat = None
+    nightSessionHigh: NullableFloat = None
+    nightSessionLow: NullableFloat = None
+    nightSessionClose: NullableFloat = None
+    daySessionOpen: NullableFloat = None
+    daySessionHigh: NullableFloat = None
+    daySessionLow: NullableFloat = None
+    daySessionClose: NullableFloat = None
+    volume: NullableFloat = None
+    openInterest: NullableFloat = None
+    turnoverValue: NullableFloat = None
+    contractMonth: str | None = None
+    strikePrice: NullableFloat = None
+    onlyAuctionVolume: NullableFloat = None
+    emergencyMarginTriggerDivision: str | None = None
+    emergencyMarginTriggerLabel: str | None = None
+    putCallDivision: str | None = None
+    putCallLabel: str | None = None
+    lastTradingDay: str | None = None
+    specialQuotationDay: str | None = None
+    settlementPrice: NullableFloat = None
+    theoreticalPrice: NullableFloat = None
+    baseVolatility: NullableFloat = None
+    underlyingPrice: NullableFloat = None
+    impliedVolatility: NullableFloat = None
+    interestRate: NullableFloat = None
+
+
+class N225OptionsSummary(BaseModel):
+    """N225 options summary for the resolved date."""
+
+    totalCount: int = Field(ge=0)
+    putCount: int = Field(ge=0)
+    callCount: int = Field(ge=0)
+    totalVolume: float = Field(ge=0)
+    totalOpenInterest: float = Field(ge=0)
+    strikePriceRange: N225OptionsNumericRange
+    underlyingPriceRange: N225OptionsNumericRange
+    settlementPriceRange: N225OptionsNumericRange
+
+
+class N225OptionsExplorerResponse(BaseModel):
+    """Normalized N225 options explorer response."""
+
+    requestedDate: str | None = Field(default=None, description="Requested date if explicitly provided")
+    resolvedDate: str = Field(description="Resolved trade date (YYYY-MM-DD)")
+    lastUpdated: str = Field(description="Last updated timestamp (ISO 8601)")
+    sourceCallCount: int = Field(ge=0, description="Number of external API calls used to fetch the resolved date")
+    availableContractMonths: list[str]
+    items: list[N225OptionItem]
+    summary: N225OptionsSummary

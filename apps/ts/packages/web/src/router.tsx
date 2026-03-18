@@ -4,6 +4,7 @@ import {
   validateBacktestSearch,
   validateChartsSearch,
   validateIndicesSearch,
+  validateOptions225Search,
   validatePortfolioSearch,
 } from '@/lib/routeSearch';
 import { MainLayout } from '@/components/Layout/MainLayout';
@@ -12,6 +13,7 @@ import { BacktestPage } from '@/pages/BacktestPage';
 import { ChartsPage } from '@/pages/ChartsPage';
 import { HistoryPage } from '@/pages/HistoryPage';
 import { IndicesPage } from '@/pages/IndicesPage';
+import { N225OptionsPage } from '@/pages/N225OptionsPage';
 import { PortfolioPage } from '@/pages/PortfolioPage';
 import { SettingsPage } from '@/pages/SettingsPage';
 
@@ -83,6 +85,13 @@ export const indicesRoute = createRoute({
   component: IndicesPage,
 });
 
+export const options225Route = createRoute({
+  getParentRoute: () => rootRoute,
+  path: '/options-225',
+  validateSearch: validateOptions225Search,
+  component: N225OptionsPage,
+});
+
 export const analysisRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: '/analysis',
@@ -122,6 +131,7 @@ const routeTree = rootRoute.addChildren([
   chartsRoute,
   portfolioRoute,
   indicesRoute,
+  options225Route,
   analysisRoute,
   backtestRoute,
   historyRoute,

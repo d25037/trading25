@@ -11,11 +11,13 @@ import {
   serializeAnalysisSearch,
   serializeBacktestSearch,
   serializeIndicesSearch,
+  serializeOptions225Search,
   serializePortfolioSearch,
   validateAnalysisSearch,
   validateBacktestSearch,
   validateChartsSearch,
   validateIndicesSearch,
+  validateOptions225Search,
   validatePortfolioSearch,
 } from './routeSearch';
 
@@ -294,6 +296,42 @@ describe('routeSearch', () => {
         selectedResultJobId: [],
         selectedDatasetName: null,
         activeLabType: 'unknown',
+      })
+    ).toEqual({});
+  });
+
+  it('validates and normalizes options-225 search params', () => {
+    expect(
+      validateOptions225Search({
+        date: '2026-03-18',
+        putCall: 'put',
+        contractMonth: '2026-04',
+        strikeMin: '34000',
+        strikeMax: 36000,
+        sortBy: 'volume',
+        order: 'asc',
+      })
+    ).toEqual({
+      date: '2026-03-18',
+      putCall: 'put',
+      contractMonth: '2026-04',
+      strikeMin: 34000,
+      strikeMax: 36000,
+      sortBy: 'volume',
+      order: 'asc',
+    });
+  });
+
+  it('omits default values when serializing options-225 search params', () => {
+    expect(
+      serializeOptions225Search({
+        date: null,
+        putCall: 'all',
+        contractMonth: null,
+        strikeMin: null,
+        strikeMax: null,
+        sortBy: 'openInterest',
+        order: 'desc',
       })
     ).toEqual({});
   });

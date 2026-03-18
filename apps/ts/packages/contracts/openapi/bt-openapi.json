@@ -7172,6 +7172,497 @@
         "title": "MatchedStrategyItem",
         "type": "object"
       },
+      "N225OptionItem": {
+        "description": "Normalized Nikkei 225 option daily bar item.",
+        "properties": {
+          "baseVolatility": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Basevolatility"
+          },
+          "code": {
+            "description": "Option code",
+            "title": "Code",
+            "type": "string"
+          },
+          "contractMonth": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contractmonth"
+          },
+          "date": {
+            "description": "Trade date (YYYY-MM-DD)",
+            "title": "Date",
+            "type": "string"
+          },
+          "daySessionClose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daysessionclose"
+          },
+          "daySessionHigh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daysessionhigh"
+          },
+          "daySessionLow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daysessionlow"
+          },
+          "daySessionOpen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Daysessionopen"
+          },
+          "emergencyMarginTriggerDivision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergencymargintriggerdivision"
+          },
+          "emergencyMarginTriggerLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Emergencymargintriggerlabel"
+          },
+          "impliedVolatility": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Impliedvolatility"
+          },
+          "interestRate": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Interestrate"
+          },
+          "lastTradingDay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lasttradingday"
+          },
+          "nightSessionClose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nightsessionclose"
+          },
+          "nightSessionHigh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nightsessionhigh"
+          },
+          "nightSessionLow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nightsessionlow"
+          },
+          "nightSessionOpen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nightsessionopen"
+          },
+          "onlyAuctionVolume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Onlyauctionvolume"
+          },
+          "openInterest": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Openinterest"
+          },
+          "putCallDivision": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Putcalldivision"
+          },
+          "putCallLabel": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Putcalllabel"
+          },
+          "settlementPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Settlementprice"
+          },
+          "specialQuotationDay": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Specialquotationday"
+          },
+          "strikePrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Strikeprice"
+          },
+          "theoreticalPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Theoreticalprice"
+          },
+          "turnoverValue": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Turnovervalue"
+          },
+          "underlyingPrice": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Underlyingprice"
+          },
+          "volume": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Volume"
+          },
+          "wholeDayClose": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wholedayclose"
+          },
+          "wholeDayHigh": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wholedayhigh"
+          },
+          "wholeDayLow": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wholedaylow"
+          },
+          "wholeDayOpen": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Wholedayopen"
+          }
+        },
+        "required": [
+          "date",
+          "code"
+        ],
+        "title": "N225OptionItem",
+        "type": "object"
+      },
+      "N225OptionsExplorerResponse": {
+        "description": "Normalized N225 options explorer response.",
+        "properties": {
+          "availableContractMonths": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Availablecontractmonths",
+            "type": "array"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/N225OptionItem"
+            },
+            "title": "Items",
+            "type": "array"
+          },
+          "lastUpdated": {
+            "description": "Last updated timestamp (ISO 8601)",
+            "title": "Lastupdated",
+            "type": "string"
+          },
+          "requestedDate": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Requested date if explicitly provided",
+            "title": "Requesteddate"
+          },
+          "resolvedDate": {
+            "description": "Resolved trade date (YYYY-MM-DD)",
+            "title": "Resolveddate",
+            "type": "string"
+          },
+          "sourceCallCount": {
+            "description": "Number of external API calls used to fetch the resolved date",
+            "minimum": 0,
+            "title": "Sourcecallcount",
+            "type": "integer"
+          },
+          "summary": {
+            "$ref": "#/components/schemas/N225OptionsSummary"
+          }
+        },
+        "required": [
+          "resolvedDate",
+          "lastUpdated",
+          "sourceCallCount",
+          "availableContractMonths",
+          "items",
+          "summary"
+        ],
+        "title": "N225OptionsExplorerResponse",
+        "type": "object"
+      },
+      "N225OptionsNumericRange": {
+        "description": "N225 options numeric range summary.",
+        "properties": {
+          "max": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max"
+          },
+          "min": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Min"
+          }
+        },
+        "title": "N225OptionsNumericRange",
+        "type": "object"
+      },
+      "N225OptionsSummary": {
+        "description": "N225 options summary for the resolved date.",
+        "properties": {
+          "callCount": {
+            "minimum": 0,
+            "title": "Callcount",
+            "type": "integer"
+          },
+          "putCount": {
+            "minimum": 0,
+            "title": "Putcount",
+            "type": "integer"
+          },
+          "settlementPriceRange": {
+            "$ref": "#/components/schemas/N225OptionsNumericRange"
+          },
+          "strikePriceRange": {
+            "$ref": "#/components/schemas/N225OptionsNumericRange"
+          },
+          "totalCount": {
+            "minimum": 0,
+            "title": "Totalcount",
+            "type": "integer"
+          },
+          "totalOpenInterest": {
+            "minimum": 0,
+            "title": "Totalopeninterest",
+            "type": "number"
+          },
+          "totalVolume": {
+            "minimum": 0,
+            "title": "Totalvolume",
+            "type": "number"
+          },
+          "underlyingPriceRange": {
+            "$ref": "#/components/schemas/N225OptionsNumericRange"
+          }
+        },
+        "required": [
+          "totalCount",
+          "putCount",
+          "callCount",
+          "totalVolume",
+          "totalOpenInterest",
+          "strikePriceRange",
+          "underlyingPriceRange",
+          "settlementPriceRange"
+        ],
+        "title": "N225OptionsSummary",
+        "type": "object"
+      },
       "OHLCRecord": {
         "properties": {
           "close": {
@@ -21128,6 +21619,88 @@
           }
         },
         "summary": "Get Listed Info",
+        "tags": [
+          "JQuants Proxy"
+        ]
+      }
+    },
+    "/api/jquants/options/225": {
+      "get": {
+        "description": "日経225オプション四本値 explorer データを取得",
+        "operationId": "get_options_225_api_jquants_options_225_get",
+        "parameters": [
+          {
+            "description": "Trade date (YYYY-MM-DD or YYYYMMDD)",
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Trade date (YYYY-MM-DD or YYYYMMDD)",
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/N225OptionsExplorerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "Get Options 225",
         "tags": [
           "JQuants Proxy"
         ]

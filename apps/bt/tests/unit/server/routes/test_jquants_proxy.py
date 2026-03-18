@@ -16,6 +16,9 @@ from src.entrypoints.http.schemas.jquants import (
     ApiListedInfoResponse,
     ApiMarginInterestResponse,
     DailyQuotesResponse,
+    N225OptionsExplorerResponse,
+    N225OptionsSummary,
+    N225OptionsNumericRange,
     RawStatementsResponse,
     StatementsResponse,
     TopixRawResponse,
@@ -192,6 +195,41 @@ class TestTopix:
         ):
             resp = app_client.get("/api/jquants/topix")
             assert resp.status_code == 200
+
+
+class TestN225Options:
+    def test_options_225_success(self, app_client):
+        mock_response = N225OptionsExplorerResponse(
+            requestedDate="2026-03-18",
+            resolvedDate="2026-03-18",
+            lastUpdated="2026-03-18T00:00:00Z",
+            sourceCallCount=2,
+            availableContractMonths=["2026-04"],
+            items=[],
+            summary=N225OptionsSummary(
+                totalCount=0,
+                putCount=0,
+                callCount=0,
+                totalVolume=0,
+                totalOpenInterest=0,
+                strikePriceRange=N225OptionsNumericRange(),
+                underlyingPriceRange=N225OptionsNumericRange(),
+                settlementPriceRange=N225OptionsNumericRange(),
+            ),
+        )
+        with patch.object(
+            _proxy_service(app_client),
+            "get_options_225",
+            new_callable=AsyncMock,
+            return_value=mock_response,
+        ):
+            resp = app_client.get("/api/jquants/options/225?date=2026-03-18")
+            assert resp.status_code == 200
+            assert resp.json()["resolvedDate"] == "2026-03-18"
+
+    def test_options_225_invalid_date_returns_422(self, app_client):
+        resp = app_client.get("/api/jquants/options/225?date=2026-13-40")
+        assert resp.status_code == 422
 
 
 class TestHealthAlias:

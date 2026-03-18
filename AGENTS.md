@@ -89,6 +89,7 @@ bun run --filter @trading25/contracts bt:sync   # bt の OpenAPI → TS型生成
 - `JQuantsProxyService` は in-memory TTL + singleflight を使用
   - `/markets/margin-interest`: 5分
   - `/fins/summary`（`/statements` / `/statements/raw` で共有）: 15分
+  - `/derivatives/bars/daily/options/225`: 5分。`date` 未指定時の latest resolution も同TTLで共有する
 - 実外部呼び出しは `event="jquants_fetch"`、キャッシュ状態は `event="jquants_proxy_cache"` で構造化ログ出力
 - market sync の fetch planner は `event="sync_fetch_strategy"` を出力し、各 stage の選択結果（bulk/rest, 推定request数, 実request数, cache hit/miss）を観測可能にする
 
@@ -181,7 +182,7 @@ bun run --filter @trading25/web e2e:smoke  # web E2E smoke（Playwright）
 - `analysis screening`（web）は production 戦略を動的選択し、非同期ジョブ（2秒ポーリング）で実行する。`sortBy` 既定は `matchedDate`、`order` 既定は `desc`。`backtestMetric` は廃止
 - Analysis `Screening / Daily Ranking / Fundamental Ranking` の結果テーブルは大量件数時に virtualization を適用する
 - Analysis 画面は `Screening / Daily Ranking / Fundamental Ranking` の3タブ構成。Fundamental Ranking は `Forecast High / Forecast Low / Actual High / Actual Low` の4サブタブで最新EPSランキングを表示する
-- `/charts` `symbol`、`/portfolio` `tab|portfolioId|watchlistId`、`/indices` `code`、`/analysis` `tab + filter params`、`/backtest` `tab|strategy|resultJobId|dataset|labType` は Router search params を SoT にし、再訪/共有可能な UI 選択状態を URL で復元する
+- `/charts` `symbol`、`/portfolio` `tab|portfolioId|watchlistId`、`/indices` `code`、`/options-225` `date|putCall|contractMonth|strikeMin|strikeMax|sortBy|order`、`/analysis` `tab + filter params`、`/backtest` `tab|strategy|resultJobId|dataset|labType` は Router search params を SoT にし、再訪/共有可能な UI 選択状態を URL で復元する
 - Charts の sidebar 設定はカテゴリ別 Dialog（Chart Settings / Panel Layout / Fundamental Metrics / FY History Metrics / Overlay / Sub-Chart / Signal Overlay）で編集する。Fundamental 系パネル（Fundamentals / FY History / Margin Pressure / Factor Regression）は `fundamentalsPanelOrder` で表示順を保持・編集し、Fundamentals パネル内部の指標は `fundamentalsMetricOrder` / `fundamentalsMetricVisibility`、FY History パネル内部の指標は `fundamentalsHistoryMetricOrder` / `fundamentalsHistoryMetricVisibility` で順序・表示ON/OFFを保持する。Fundamentals パネル高さは表示中指標数に応じて動的に変化する
 - Portfolio / Watchlist の銘柄追加入力はチャート検索と同等の銘柄サーチ（コード/銘柄名）を使う。追加送信 payload は `companyName` 必須（候補選択時は候補名、未選択時はコードをフォールバック）。Watchlist 追加の送信は 4 桁コードのみ許可する
 - Fundamentals summary の予想EPS表示は `revisedForecastEps > adjustedForecastEps > forecastEps` の優先順位を SoT とする

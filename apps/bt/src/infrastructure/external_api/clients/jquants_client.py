@@ -55,6 +55,7 @@ class JQuantsAsyncClient:
         "/equities/bars/daily": "data",
         "/indices/bars/daily": "data",
         "/indices/bars/daily/topix": "data",
+        "/derivatives/bars/daily/options/225": "data",
         "/equities/master": "data",
         "/fins/summary": "data",
         "/markets/margin-interest": "data",

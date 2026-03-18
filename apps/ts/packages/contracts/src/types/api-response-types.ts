@@ -184,6 +184,72 @@ export interface IndexDataResponse {
   lastUpdated: string;
 }
 
+// ===== N225 OPTIONS TYPES =====
+
+export type Options225PutCallFilter = 'all' | 'put' | 'call';
+export type Options225SortBy = 'openInterest' | 'volume' | 'strikePrice' | 'impliedVolatility' | 'wholeDayClose';
+
+export interface N225OptionsNumericRange {
+  min: number | null;
+  max: number | null;
+}
+
+export interface N225OptionItem {
+  date: string;
+  code: string;
+  wholeDayOpen: number | null;
+  wholeDayHigh: number | null;
+  wholeDayLow: number | null;
+  wholeDayClose: number | null;
+  nightSessionOpen: number | null;
+  nightSessionHigh: number | null;
+  nightSessionLow: number | null;
+  nightSessionClose: number | null;
+  daySessionOpen: number | null;
+  daySessionHigh: number | null;
+  daySessionLow: number | null;
+  daySessionClose: number | null;
+  volume: number | null;
+  openInterest: number | null;
+  turnoverValue: number | null;
+  contractMonth: string | null;
+  strikePrice: number | null;
+  onlyAuctionVolume: number | null;
+  emergencyMarginTriggerDivision: string | null;
+  emergencyMarginTriggerLabel: string | null;
+  putCallDivision: string | null;
+  putCallLabel: string | null;
+  lastTradingDay: string | null;
+  specialQuotationDay: string | null;
+  settlementPrice: number | null;
+  theoreticalPrice: number | null;
+  baseVolatility: number | null;
+  underlyingPrice: number | null;
+  impliedVolatility: number | null;
+  interestRate: number | null;
+}
+
+export interface N225OptionsSummary {
+  totalCount: number;
+  putCount: number;
+  callCount: number;
+  totalVolume: number;
+  totalOpenInterest: number;
+  strikePriceRange: N225OptionsNumericRange;
+  underlyingPriceRange: N225OptionsNumericRange;
+  settlementPriceRange: N225OptionsNumericRange;
+}
+
+export interface N225OptionsExplorerResponse {
+  requestedDate: string | null;
+  resolvedDate: string;
+  lastUpdated: string;
+  sourceCallCount: number;
+  availableContractMonths: string[];
+  items: N225OptionItem[];
+  summary: N225OptionsSummary;
+}
+
 // ===== SYNC TYPES =====
 
 export type SyncMode = 'auto' | 'initial' | 'incremental' | 'indices-only' | 'repair';

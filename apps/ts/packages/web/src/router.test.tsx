@@ -20,6 +20,10 @@ vi.mock('@/pages/IndicesPage', () => ({
   IndicesPage: () => <h1>Indices Page</h1>,
 }));
 
+vi.mock('@/pages/N225OptionsPage', () => ({
+  N225OptionsPage: () => <h1>N225 Options Page</h1>,
+}));
+
 vi.mock('@/pages/AnalysisPage', () => ({
   AnalysisPage: () => <h1>Analysis Page</h1>,
 }));
@@ -99,6 +103,15 @@ describe('router', () => {
       expect(screen.getByRole('heading', { name: 'Market DB Page' })).toBeInTheDocument();
     });
     expect(window.location.pathname).toBe('/market-db');
+  });
+
+  it('renders n225 options page when path is /options-225', async () => {
+    renderRouterAt('/options-225');
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'N225 Options Page' })).toBeInTheDocument();
+    });
+    expect(window.location.pathname).toBe('/options-225');
   });
 
   it('redirects legacy /settings path to /market-db', async () => {

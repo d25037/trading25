@@ -1,4 +1,9 @@
-import type { ScreeningSortBy, SortOrder } from '@trading25/contracts/types/api-response-types';
+import type {
+  Options225PutCallFilter,
+  Options225SortBy,
+  ScreeningSortBy,
+  SortOrder,
+} from '@trading25/contracts/types/api-response-types';
 import {
   DEFAULT_FUNDAMENTAL_RANKING_PARAMS,
   DEFAULT_IN_SESSION_SCREENING_PARAMS,
@@ -27,6 +32,16 @@ export interface PortfolioRouteSearch {
 
 export interface IndicesRouteSearch {
   code?: string;
+}
+
+export interface Options225RouteSearch {
+  date?: string;
+  putCall?: Options225PutCallFilter;
+  contractMonth?: string;
+  strikeMin?: number;
+  strikeMax?: number;
+  sortBy?: Options225SortBy;
+  order?: SortOrder;
 }
 
 export interface AnalysisRouteSearch {
@@ -73,6 +88,14 @@ const ANALYSIS_SUB_TABS: AnalysisSubTab[] = ['preOpenScreening', 'inSessionScree
 const PORTFOLIO_SUB_TABS: PortfolioSubTab[] = ['portfolios', 'watchlists'];
 const BACKTEST_SUB_TABS: BacktestSubTab[] = ['runner', 'results', 'attribution', 'strategies', 'status', 'dataset', 'lab'];
 const LAB_TYPES: LabType[] = ['generate', 'evolve', 'optimize', 'improve'];
+const OPTIONS_225_PUT_CALL_VALUES: Options225PutCallFilter[] = ['all', 'put', 'call'];
+const OPTIONS_225_SORT_VALUES: Options225SortBy[] = [
+  'openInterest',
+  'volume',
+  'strikePrice',
+  'impliedVolatility',
+  'wholeDayClose',
+];
 const SCREENING_SORT_VALUES: ScreeningSortBy[] = ['bestStrategyScore', 'matchedDate', 'stockCode', 'matchStrategyCount'];
 const SORT_ORDER_VALUES: SortOrder[] = ['asc', 'desc'];
 
@@ -98,6 +121,19 @@ function normalizePositiveInt(value: unknown): number | undefined {
   if (typeof value === 'string' && value.trim().length > 0) {
     const parsed = Number.parseInt(value, 10);
     if (Number.isInteger(parsed) && parsed > 0) {
+      return parsed;
+    }
+  }
+  return undefined;
+}
+
+function normalizeFiniteNumber(value: unknown): number | undefined {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === 'string' && value.trim().length > 0) {
+    const parsed = Number.parseFloat(value);
+    if (Number.isFinite(parsed)) {
       return parsed;
     }
   }
@@ -219,6 +255,44 @@ export function validateIndicesSearch(search: Record<string, unknown>): IndicesR
 export function serializeIndicesSearch(code: string | null | undefined): IndicesRouteSearch {
   const normalizedCode = normalizeString(code);
   return normalizedCode ? { code: normalizedCode } : {};
+}
+
+export function validateOptions225Search(search: Record<string, unknown>): Options225RouteSearch {
+  const next: Options225RouteSearch = {};
+  assignIfDefined(next, 'date', normalizeString(search.date));
+  assignIfDefined(next, 'putCall', normalizeEnum(search.putCall, OPTIONS_225_PUT_CALL_VALUES));
+  assignIfDefined(next, 'contractMonth', normalizeString(search.contractMonth));
+  assignIfDefined(next, 'strikeMin', normalizeFiniteNumber(search.strikeMin));
+  assignIfDefined(next, 'strikeMax', normalizeFiniteNumber(search.strikeMax));
+  assignIfDefined(next, 'sortBy', normalizeEnum(search.sortBy, OPTIONS_225_SORT_VALUES));
+  assignIfDefined(next, 'order', normalizeEnum(search.order, SORT_ORDER_VALUES));
+  return next;
+}
+
+export function serializeOptions225Search(state: {
+  date: string | null;
+  putCall: Options225PutCallFilter;
+  contractMonth: string | null;
+  strikeMin: number | null;
+  strikeMax: number | null;
+  sortBy: Options225SortBy;
+  order: SortOrder;
+}): Options225RouteSearch {
+  const next: Options225RouteSearch = {};
+
+  assignIfDefined(next, 'date', normalizeString(state.date));
+  assignIfDefinedAndNotDefault(next, 'putCall', state.putCall, 'all');
+  assignIfDefined(next, 'contractMonth', normalizeString(state.contractMonth));
+  if (typeof state.strikeMin === 'number' && Number.isFinite(state.strikeMin)) {
+    next.strikeMin = state.strikeMin;
+  }
+  if (typeof state.strikeMax === 'number' && Number.isFinite(state.strikeMax)) {
+    next.strikeMax = state.strikeMax;
+  }
+  assignIfDefinedAndNotDefault(next, 'sortBy', state.sortBy, 'openInterest');
+  assignIfDefinedAndNotDefault(next, 'order', state.order, 'desc');
+
+  return next;
 }
 
 export function validateAnalysisSearch(search: Record<string, unknown>): AnalysisRouteSearch {

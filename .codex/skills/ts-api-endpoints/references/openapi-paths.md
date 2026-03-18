@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **124**
+Total paths: **125**
 
 ## /api/analytics
 
@@ -127,6 +127,7 @@ Total paths: **124**
 | `/api/jquants/daily-quotes` | `GET` |
 | `/api/jquants/indices` | `GET` |
 | `/api/jquants/listed-info` | `GET` |
+| `/api/jquants/options/225` | `GET` |
 | `/api/jquants/statements` | `GET` |
 | `/api/jquants/statements/raw` | `GET` |
 | `/api/jquants/stocks/{symbol}/margin-interest` | `GET` |

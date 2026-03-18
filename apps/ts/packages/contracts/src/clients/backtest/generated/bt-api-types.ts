@@ -1447,6 +1447,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/jquants/options/225": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Options 225
+         * @description 日経225オプション四本値 explorer データを取得
+         */
+        get: operations["get_options_225_api_jquants_options_225_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/jquants/statements": {
         parameters: {
             query?: never;
@@ -6138,6 +6158,142 @@ export interface components {
             strategyName: string;
             /** Strategyscore */
             strategyScore?: number | null;
+        };
+        /**
+         * N225OptionItem
+         * @description Normalized Nikkei 225 option daily bar item.
+         */
+        N225OptionItem: {
+            /** Basevolatility */
+            baseVolatility?: number | null;
+            /**
+             * Code
+             * @description Option code
+             */
+            code: string;
+            /** Contractmonth */
+            contractMonth?: string | null;
+            /**
+             * Date
+             * @description Trade date (YYYY-MM-DD)
+             */
+            date: string;
+            /** Daysessionclose */
+            daySessionClose?: number | null;
+            /** Daysessionhigh */
+            daySessionHigh?: number | null;
+            /** Daysessionlow */
+            daySessionLow?: number | null;
+            /** Daysessionopen */
+            daySessionOpen?: number | null;
+            /** Emergencymargintriggerdivision */
+            emergencyMarginTriggerDivision?: string | null;
+            /** Emergencymargintriggerlabel */
+            emergencyMarginTriggerLabel?: string | null;
+            /** Impliedvolatility */
+            impliedVolatility?: number | null;
+            /** Interestrate */
+            interestRate?: number | null;
+            /** Lasttradingday */
+            lastTradingDay?: string | null;
+            /** Nightsessionclose */
+            nightSessionClose?: number | null;
+            /** Nightsessionhigh */
+            nightSessionHigh?: number | null;
+            /** Nightsessionlow */
+            nightSessionLow?: number | null;
+            /** Nightsessionopen */
+            nightSessionOpen?: number | null;
+            /** Onlyauctionvolume */
+            onlyAuctionVolume?: number | null;
+            /** Openinterest */
+            openInterest?: number | null;
+            /** Putcalldivision */
+            putCallDivision?: string | null;
+            /** Putcalllabel */
+            putCallLabel?: string | null;
+            /** Settlementprice */
+            settlementPrice?: number | null;
+            /** Specialquotationday */
+            specialQuotationDay?: string | null;
+            /** Strikeprice */
+            strikePrice?: number | null;
+            /** Theoreticalprice */
+            theoreticalPrice?: number | null;
+            /** Turnovervalue */
+            turnoverValue?: number | null;
+            /** Underlyingprice */
+            underlyingPrice?: number | null;
+            /** Volume */
+            volume?: number | null;
+            /** Wholedayclose */
+            wholeDayClose?: number | null;
+            /** Wholedayhigh */
+            wholeDayHigh?: number | null;
+            /** Wholedaylow */
+            wholeDayLow?: number | null;
+            /** Wholedayopen */
+            wholeDayOpen?: number | null;
+        };
+        /**
+         * N225OptionsExplorerResponse
+         * @description Normalized N225 options explorer response.
+         */
+        N225OptionsExplorerResponse: {
+            /** Availablecontractmonths */
+            availableContractMonths: string[];
+            /** Items */
+            items: components["schemas"]["N225OptionItem"][];
+            /**
+             * Lastupdated
+             * @description Last updated timestamp (ISO 8601)
+             */
+            lastUpdated: string;
+            /**
+             * Requesteddate
+             * @description Requested date if explicitly provided
+             */
+            requestedDate?: string | null;
+            /**
+             * Resolveddate
+             * @description Resolved trade date (YYYY-MM-DD)
+             */
+            resolvedDate: string;
+            /**
+             * Sourcecallcount
+             * @description Number of external API calls used to fetch the resolved date
+             */
+            sourceCallCount: number;
+            summary: components["schemas"]["N225OptionsSummary"];
+        };
+        /**
+         * N225OptionsNumericRange
+         * @description N225 options numeric range summary.
+         */
+        N225OptionsNumericRange: {
+            /** Max */
+            max?: number | null;
+            /** Min */
+            min?: number | null;
+        };
+        /**
+         * N225OptionsSummary
+         * @description N225 options summary for the resolved date.
+         */
+        N225OptionsSummary: {
+            /** Callcount */
+            callCount: number;
+            /** Putcount */
+            putCount: number;
+            settlementPriceRange: components["schemas"]["N225OptionsNumericRange"];
+            strikePriceRange: components["schemas"]["N225OptionsNumericRange"];
+            /** Totalcount */
+            totalCount: number;
+            /** Totalopeninterest */
+            totalOpenInterest: number;
+            /** Totalvolume */
+            totalVolume: number;
+            underlyingPriceRange: components["schemas"]["N225OptionsNumericRange"];
         };
         /** OHLCRecord */
         OHLCRecord: {
@@ -13940,6 +14096,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ApiListedInfoResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_options_225_api_jquants_options_225_get: {
+        parameters: {
+            query?: {
+                /** @description Trade date (YYYY-MM-DD or YYYYMMDD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["N225OptionsExplorerResponse"];
                 };
             };
             /** @description Bad Request */

@@ -29,6 +29,7 @@ describe('Header', () => {
     expect(screen.getByText('Charts')).toBeInTheDocument();
     expect(screen.getByText('Portfolio')).toBeInTheDocument();
     expect(screen.getByText('Indices')).toBeInTheDocument();
+    expect(screen.getByText('N225 Options')).toBeInTheDocument();
     expect(screen.getByText('Analysis')).toBeInTheDocument();
     expect(screen.getByText('Backtest')).toBeInTheDocument();
     expect(screen.getByText('Market DB')).toBeInTheDocument();
