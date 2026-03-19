@@ -38,6 +38,14 @@ from src.infrastructure.db.market.market_db import METADATA_KEYS
 from src.infrastructure.db.market.time_series_store import (
     TimeSeriesInspection,
 )
+from src.application.services.options_225 import (
+    OPTIONS_225_SYNTHETIC_INDEX_CATEGORY,
+    OPTIONS_225_SYNTHETIC_INDEX_CODE,
+    OPTIONS_225_SYNTHETIC_INDEX_NAME,
+    OPTIONS_225_SYNTHETIC_INDEX_NAME_EN,
+    build_synthetic_underpx_index_rows,
+    normalize_options_225_raw_row,
+)
 from src.infrastructure.db.market.query_helpers import (
     expand_stock_code,
     normalize_stock_code,
@@ -76,6 +84,7 @@ class SyncMarketDbLike(Protocol):
     def set_sync_metadata(self, key: str, value: str) -> None: ...
     def mark_stock_adjustments_resolved(self, codes: list[str] | None = None) -> int: ...
     def upsert_stocks(self, rows: list[dict[str, Any]]) -> Any: ...
+    def get_topix_dates(self, *, start_date: str | None = None, end_date: str | None = None) -> list[str]: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
     def get_stocks_needing_refresh(self, limit: int | None = None) -> list[str]: ...
@@ -113,11 +122,13 @@ class SyncTimeSeriesStoreLike(Protocol):
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> int: ...
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
+    def index_options_225_data(self) -> None: ...
     def index_margin_data(self) -> None: ...
     def index_statements(self) -> None: ...
 
@@ -194,6 +205,39 @@ _BULK_INDEX_KEY_ALIASES: dict[str, str] = {
     "sector_name": "SectorName",
     "indexcode": "Code",
     "index_code": "Code",
+}
+
+_BULK_OPTIONS_225_KEY_ALIASES: dict[str, str] = {
+    "date": "Date",
+    "code": "Code",
+    "o": "O",
+    "h": "H",
+    "l": "L",
+    "c": "C",
+    "eo": "EO",
+    "eh": "EH",
+    "el": "EL",
+    "ec": "EC",
+    "ao": "AO",
+    "ah": "AH",
+    "al": "AL",
+    "ac": "AC",
+    "vo": "Vo",
+    "oi": "OI",
+    "va": "Va",
+    "cm": "CM",
+    "strike": "Strike",
+    "vooa": "VoOA",
+    "emmrgntrgdiv": "EmMrgnTrgDiv",
+    "pcdiv": "PCDiv",
+    "ltd": "LTD",
+    "sqd": "SQD",
+    "settle": "Settle",
+    "theo": "Theo",
+    "basevol": "BaseVol",
+    "underpx": "UnderPx",
+    "iv": "IV",
+    "ir": "IR",
 }
 
 _BULK_MARGIN_KEY_ALIASES: dict[str, str] = {
@@ -468,6 +512,10 @@ def _normalize_bulk_stock_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any
 
 def _normalize_bulk_indices_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return _normalize_bulk_row_keys(rows, _BULK_INDEX_KEY_ALIASES)
+
+
+def _normalize_bulk_options_225_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    return _normalize_bulk_row_keys(rows, _BULK_OPTIONS_225_KEY_ALIASES)
 
 
 def _normalize_bulk_margin_rows(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -966,18 +1014,22 @@ def _emit_fetch_detail(ctx: SyncContext, detail: dict[str, Any]) -> None:
 
 
 class IndicesOnlySyncStrategy:
-    """指数のみ同期: 指数マスタ + 指数データ（~52 API calls）"""
+    """指数同期: 指数マスタ + 指数データ + optional N225 options sync."""
+
+    def __init__(self, *, include_options: bool = True) -> None:
+        self._include_options = include_options
 
     def estimate_api_calls(self) -> int:
-        return 52
+        return 70 if self._include_options else 52
 
     async def execute(self, ctx: SyncContext) -> SyncResult:
         total_calls = 0
         errors: list[str] = []
+        total_steps = 3 if self._include_options else 2
 
         try:
             # 1. 指数マスタ（ローカルカタログ）を補完
-            ctx.on_progress("indices_master", 0, 2, "Syncing index master catalog...")
+            ctx.on_progress("indices_master", 0, total_steps, "Syncing index master catalog...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -986,7 +1038,7 @@ class IndicesOnlySyncStrategy:
             target_code_set = {_normalize_index_code(code) for code in target_codes}
 
             # 2. 各指数のデータ取得
-            ctx.on_progress("indices_data", 1, 2, f"Fetching data for {len(target_codes)} indices...")
+            ctx.on_progress("indices_data", 1, total_steps, f"Fetching data for {len(target_codes)} indices...")
             decision = await _plan_fetch_method(
                 ctx,
                 stage="indices_data",
@@ -998,7 +1050,7 @@ class IndicesOnlySyncStrategy:
                 ctx,
                 progress_stage="indices_data",
                 current=1,
-                total=2,
+                total=total_steps,
                 endpoint="/indices/bars/daily",
                 decision=decision,
                 target_label=f"{len(target_codes)} codes",
@@ -1013,7 +1065,7 @@ class IndicesOnlySyncStrategy:
                         ctx,
                         progress_stage="indices_data",
                         current=1,
-                        total=2,
+                        total=total_steps,
                         endpoint="/indices/bars/daily",
                         method="bulk",
                         target_label=f"{len(target_codes)} codes",
@@ -1056,7 +1108,7 @@ class IndicesOnlySyncStrategy:
                     ctx,
                     progress_stage="indices_data",
                     current=1,
-                    total=2,
+                    total=total_steps,
                     endpoint="/indices/bars/daily",
                     method="rest",
                     target_label=f"{len(target_codes)} codes",
@@ -1069,7 +1121,7 @@ class IndicesOnlySyncStrategy:
                         ctx.on_progress(
                             "indices_data",
                             1,
-                            2,
+                            total_steps,
                             f"Fetching /indices/bars/daily via REST: {i}/{len(target_codes)} codes...",
                         )
                     try:
@@ -1105,7 +1157,28 @@ class IndicesOnlySyncStrategy:
                     bulk_result=bulk_result,
                 )
 
-            await _index_indices_rows(ctx)
+            if not self._include_options:
+                await _index_indices_rows(ctx)
+                return SyncResult(
+                    success=len(errors) == 0,
+                    totalApiCalls=total_calls,
+                    errors=errors,
+                )
+
+            options_dates = await asyncio.to_thread(ctx.market_db.get_topix_dates)
+            ctx.on_progress("options_225", 2, total_steps, f"Fetching N225 options for {len(options_dates)} dates...")
+            options_result = await _sync_options_225_dates(
+                ctx,
+                date_targets=options_dates,
+                progress_stage="options_225",
+                progress_current=2,
+                progress_total=total_steps,
+                stage_name="options_225_indices_only",
+            )
+            total_calls += int(options_result["api_calls"])
+            errors.extend(cast(list[str], options_result["errors"]))
+            if bool(options_result["cancelled"]):
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             return SyncResult(
                 success=len(errors) == 0,
@@ -1135,7 +1208,7 @@ class InitialSyncStrategy:
 
         try:
             # Step 1: TOPIX
-            ctx.on_progress("topix", 0, 7, "Fetching TOPIX data...")
+            ctx.on_progress("topix", 0, 8, "Fetching TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1165,7 +1238,7 @@ class InitialSyncStrategy:
             dates_processed = len(topix_rows)
 
             # Step 2: 銘柄マスタ
-            ctx.on_progress("stocks", 1, 7, "Fetching stock master data...")
+            ctx.on_progress("stocks", 1, 8, "Fetching stock master data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1179,7 +1252,7 @@ class InitialSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
             # Step 3: listed markets fundamentals（初回: code指定フル取得）
-            ctx.on_progress("fundamentals", 2, 7, "Fetching listed-market fundamentals (full)...")
+            ctx.on_progress("fundamentals", 2, 8, "Fetching listed-market fundamentals (full)...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1193,7 +1266,7 @@ class InitialSyncStrategy:
                 ctx,
                 fundamentals_target_rows,
                 progress_current=2,
-                progress_total=7,
+                progress_total=8,
             )
             total_calls += fundamentals_sync["api_calls"]
             fundamentals_updated += fundamentals_sync["updated"]
@@ -1203,7 +1276,7 @@ class InitialSyncStrategy:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
             # Step 4: 株価データ（日付ベース、TOPIX 日付を使用）
-            ctx.on_progress("stock_data", 3, 7, "Fetching daily stock prices...")
+            ctx.on_progress("stock_data", 3, 8, "Fetching daily stock prices...")
             trading_dates = sorted({r["date"] for r in topix_rows})
             from_date, to_date = _select_bulk_candidates_from_dates(trading_dates)
             decision = await _plan_fetch_method(
@@ -1221,7 +1294,7 @@ class InitialSyncStrategy:
                 ctx,
                 progress_stage="stock_data",
                 current=3,
-                total=7,
+                total=8,
                 endpoint="/equities/bars/daily",
                 decision=decision,
                 target_label=f"{len(trading_dates)} dates",
@@ -1233,7 +1306,7 @@ class InitialSyncStrategy:
                 endpoint="/equities/bars/daily",
                 progress_stage="stock_data",
                 current=3,
-                total=7,
+                total=8,
                 target_count=len(trading_dates),
             )
 
@@ -1247,7 +1320,7 @@ class InitialSyncStrategy:
                         ctx,
                         progress_stage="stock_data",
                         current=3,
-                        total=7,
+                        total=8,
                         endpoint="/equities/bars/daily",
                         method="bulk",
                         target_label=f"{len(trading_dates)} dates",
@@ -1287,7 +1360,7 @@ class InitialSyncStrategy:
                             ctx,
                             progress_stage="stock_data",
                             current=3,
-                            total=7,
+                            total=8,
                             endpoint="/equities/bars/daily",
                             reason="bulk_fetch_failed",
                             reason_detail=_summarize_exception(e),
@@ -1304,7 +1377,7 @@ class InitialSyncStrategy:
                     ctx,
                     progress_stage="stock_data",
                     current=3,
-                    total=7,
+                    total=8,
                     endpoint="/equities/bars/daily",
                     method="rest",
                     target_label=f"{len(trading_dates)} dates",
@@ -1319,7 +1392,7 @@ class InitialSyncStrategy:
                         ctx.on_progress(
                             "stock_data",
                             3,
-                            7,
+                            8,
                             f"Fetching /equities/bars/daily via REST: {i}/{len(trading_dates)} dates...",
                         )
                     try:
@@ -1368,14 +1441,29 @@ class InitialSyncStrategy:
             await asyncio.to_thread(ctx.market_db.mark_stock_adjustments_resolved, None)
 
             # Step 5: 指数データ
-            ctx.on_progress("indices", 4, 7, "Fetching index data...")
-            indices_strategy = IndicesOnlySyncStrategy()
+            ctx.on_progress("indices", 4, 8, "Fetching index data...")
+            indices_strategy = IndicesOnlySyncStrategy(include_options=False)
             indices_result = await indices_strategy.execute(ctx)
             total_calls += indices_result.totalApiCalls
             errors.extend(indices_result.errors)
 
-            # Step 6: 信用残データ
-            ctx.on_progress("margin", 5, 7, "Fetching margin data...")
+            # Step 6: N225 options data
+            ctx.on_progress("options_225", 5, 8, f"Fetching N225 options for {len(trading_dates)} dates...")
+            options_sync = await _sync_options_225_dates(
+                ctx,
+                date_targets=trading_dates,
+                progress_stage="options_225",
+                progress_current=5,
+                progress_total=8,
+                stage_name="options_225_initial",
+            )
+            total_calls += int(options_sync["api_calls"])
+            errors.extend(cast(list[str], options_sync["errors"]))
+            if bool(options_sync["cancelled"]):
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            # Step 7: 信用残データ
+            ctx.on_progress("margin", 6, 8, "Fetching margin data...")
             all_stock_codes = _collect_unique_codes(
                 [str(row.get("code", "")) for row in stock_rows if row.get("code")]
             )
@@ -1389,8 +1477,8 @@ class InitialSyncStrategy:
             margin_sync = await _sync_margin_data(
                 ctx,
                 margin_target_codes,
-                progress_current=5,
-                progress_total=7,
+                progress_current=6,
+                progress_total=8,
                 stage_name="margin_initial",
                 trading_frontier=margin_frontier,
                 skipped_market_count=max(len(all_stock_codes) - len(margin_target_codes), 0),
@@ -1400,8 +1488,8 @@ class InitialSyncStrategy:
             if margin_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 7: メタデータ更新
-            ctx.on_progress("finalize", 6, 7, "Finalizing sync...")
+            # Step 8: メタデータ更新
+            ctx.on_progress("finalize", 7, 8, "Finalizing sync...")
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["INIT_COMPLETED"], "true")
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
@@ -1410,7 +1498,7 @@ class InitialSyncStrategy:
             else:
                 await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["FAILED_DATES"], "[]")
 
-            ctx.on_progress("complete", 7, 7, "Sync complete!")
+            ctx.on_progress("complete", 8, 8, "Sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
@@ -1452,7 +1540,7 @@ class IncrementalSyncStrategy:
                 )
 
             # Step 1: TOPIX（増分）
-            ctx.on_progress("topix", 0, 6, "Fetching incremental TOPIX data...")
+            ctx.on_progress("topix", 0, 7, "Fetching incremental TOPIX data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1504,7 +1592,7 @@ class IncrementalSyncStrategy:
             topix_rows = topix_batch.rows
 
             # Step 2: 銘柄マスタ更新
-            ctx.on_progress("stocks", 1, 6, "Updating stock master...")
+            ctx.on_progress("stocks", 1, 7, "Updating stock master...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1518,7 +1606,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.upsert_stocks, stock_rows)
 
             # Step 3: 新しい日付の株価データ
-            ctx.on_progress("stock_data", 2, 6, "Fetching new stock data...")
+            ctx.on_progress("stock_data", 2, 7, "Fetching new stock data...")
             if last_date:
                 new_dates = sorted(
                     {
@@ -1546,7 +1634,7 @@ class IncrementalSyncStrategy:
                 ctx,
                 progress_stage="stock_data",
                 current=2,
-                total=6,
+                total=7,
                 endpoint="/equities/bars/daily",
                 decision=decision_stock_data,
                 target_label=f"{len(new_dates)} dates",
@@ -1558,7 +1646,7 @@ class IncrementalSyncStrategy:
                 endpoint="/equities/bars/daily",
                 progress_stage="stock_data",
                 current=2,
-                total=6,
+                total=7,
                 target_count=len(new_dates),
             )
 
@@ -1572,7 +1660,7 @@ class IncrementalSyncStrategy:
                         ctx,
                         progress_stage="stock_data",
                         current=2,
-                        total=6,
+                        total=7,
                         endpoint="/equities/bars/daily",
                         method="bulk",
                         target_label=f"{len(new_dates)} dates",
@@ -1612,7 +1700,7 @@ class IncrementalSyncStrategy:
                             ctx,
                             progress_stage="stock_data",
                             current=2,
-                            total=6,
+                            total=7,
                             endpoint="/equities/bars/daily",
                             reason="bulk_fetch_failed",
                             reason_detail=_summarize_exception(e),
@@ -1629,7 +1717,7 @@ class IncrementalSyncStrategy:
                     ctx,
                     progress_stage="stock_data",
                     current=2,
-                    total=6,
+                    total=7,
                     endpoint="/equities/bars/daily",
                     method="rest",
                     target_label=f"{len(new_dates)} dates",
@@ -1643,7 +1731,7 @@ class IncrementalSyncStrategy:
                         ctx.on_progress(
                             "stock_data",
                             2,
-                            6,
+                            7,
                             f"Fetching /equities/bars/daily via REST: {i}/{len(new_dates)} dates...",
                         )
                     try:
@@ -1688,7 +1776,7 @@ class IncrementalSyncStrategy:
                 await asyncio.to_thread(ctx.market_db.mark_stock_adjustments_resolved, None)
 
             # Step 4: 指数データ（増分）
-            ctx.on_progress("indices", 3, 6, "Fetching incremental index data...")
+            ctx.on_progress("indices", 3, 7, "Fetching incremental index data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1751,7 +1839,7 @@ class IncrementalSyncStrategy:
                 ctx,
                 progress_stage="indices",
                 current=3,
-                total=6,
+                total=7,
                 endpoint="/indices/bars/daily",
                 decision=decision_indices,
                 target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
@@ -1766,7 +1854,7 @@ class IncrementalSyncStrategy:
                         ctx,
                         progress_stage="indices",
                         current=3,
-                        total=6,
+                        total=7,
                         endpoint="/indices/bars/daily",
                         method="bulk",
                         target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
@@ -1831,7 +1919,7 @@ class IncrementalSyncStrategy:
                     ctx,
                     progress_stage="indices",
                     current=3,
-                    total=6,
+                    total=7,
                     endpoint="/indices/bars/daily",
                     method="rest",
                     target_label=f"{len(target_codes)} codes + {len(fallback_dates)} dates",
@@ -1844,7 +1932,7 @@ class IncrementalSyncStrategy:
                         ctx.on_progress(
                             "indices",
                             3,
-                            6,
+                            7,
                             f"Fetching /indices/bars/daily via REST: {code_idx}/{len(target_codes)} codes...",
                         )
 
@@ -1890,7 +1978,7 @@ class IncrementalSyncStrategy:
                         ctx.on_progress(
                             "indices",
                             3,
-                            6,
+                            7,
                             f"Fetching /indices/bars/daily via REST: {date_idx}/{len(fallback_dates)} dates...",
                         )
 
@@ -1930,8 +2018,36 @@ class IncrementalSyncStrategy:
 
             await _index_indices_rows(ctx)
 
-            # Step 5: listed markets fundamentals（増分: date 指定 + 欠損補完）
-            ctx.on_progress("fundamentals", 4, 6, "Fetching incremental listed-market fundamentals...")
+            # Step 5: N225 options（増分）
+            last_options_225_date = inspection.latest_options_225_date
+            options_new_dates = (
+                sorted(
+                    {
+                        r["date"]
+                        for r in topix_rows
+                        if r.get("date") and _is_date_after(r["date"], last_options_225_date)
+                    },
+                    key=_date_sort_key,
+                )
+                if last_options_225_date
+                else sorted({r["date"] for r in topix_rows if r.get("date")}, key=_date_sort_key)
+            )
+            ctx.on_progress("options_225", 4, 7, f"Fetching N225 options for {len(options_new_dates)} new dates...")
+            options_sync = await _sync_options_225_dates(
+                ctx,
+                date_targets=options_new_dates,
+                progress_stage="options_225",
+                progress_current=4,
+                progress_total=7,
+                stage_name="options_225_incremental",
+            )
+            total_calls += int(options_sync["api_calls"])
+            errors.extend(cast(list[str], options_sync["errors"]))
+            if bool(options_sync["cancelled"]):
+                return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
+
+            # Step 6: listed markets fundamentals（増分: date 指定 + 欠損補完）
+            ctx.on_progress("fundamentals", 5, 7, "Fetching incremental listed-market fundamentals...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1944,8 +2060,8 @@ class IncrementalSyncStrategy:
             fundamentals_sync = await _sync_fundamentals_incremental(
                 ctx,
                 fundamentals_target_rows,
-                progress_current=4,
-                progress_total=6,
+                progress_current=5,
+                progress_total=7,
             )
             total_calls += fundamentals_sync["api_calls"]
             fundamentals_updated += fundamentals_sync["updated"]
@@ -1954,8 +2070,8 @@ class IncrementalSyncStrategy:
             if fundamentals_sync["cancelled"]:
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
-            # Step 6: 信用残データ（増分 + 欠損コードバックフィル）
-            ctx.on_progress("margin", 5, 6, "Fetching incremental margin data...")
+            # Step 7: 信用残データ（増分 + 欠損コードバックフィル）
+            ctx.on_progress("margin", 6, 7, "Fetching incremental margin data...")
             if ctx.cancelled.is_set():
                 return SyncResult(success=False, totalApiCalls=total_calls, errors=["Cancelled"])
 
@@ -1972,8 +2088,8 @@ class IncrementalSyncStrategy:
             margin_sync = await _sync_margin_data(
                 ctx,
                 margin_target_codes,
-                progress_current=5,
-                progress_total=6,
+                progress_current=6,
+                progress_total=7,
                 stage_name="margin_incremental",
                 anchor=inspection.margin_max,
                 existing_margin_codes=set(inspection.margin_codes),
@@ -1989,7 +2105,7 @@ class IncrementalSyncStrategy:
             now_iso = datetime.now(UTC).isoformat()
             await asyncio.to_thread(ctx.market_db.set_sync_metadata, METADATA_KEYS["LAST_SYNC_DATE"], now_iso)
 
-            ctx.on_progress("complete", 6, 6, "Incremental sync complete!")
+            ctx.on_progress("complete", 7, 7, "Incremental sync complete!")
             return SyncResult(
                 success=len(errors) == 0,
                 totalApiCalls=total_calls,
@@ -2098,6 +2214,159 @@ def _scale_repair_progress(current: int, total: int, *, base: int) -> int:
 
 def _cancelled_sync_result(total_api_calls: int) -> SyncResult:
     return SyncResult(success=False, totalApiCalls=total_api_calls, errors=["Cancelled"])
+
+
+async def _sync_options_225_dates(
+    ctx: SyncContext,
+    *,
+    date_targets: list[str],
+    progress_stage: str,
+    progress_current: int,
+    progress_total: int,
+    stage_name: str,
+) -> dict[str, Any]:
+    target_dates = sorted(
+        {
+            normalized
+            for normalized in (_normalize_iso_date_text(value) for value in date_targets)
+            if normalized is not None
+        },
+        key=_date_sort_key,
+    )
+    if not target_dates:
+        ctx.on_progress(progress_stage, progress_current, progress_total, "No N225 options dates to sync.")
+        return {"api_calls": 0, "errors": [], "cancelled": False}
+
+    from_date, to_date = _select_bulk_candidates_from_dates(target_dates)
+    decision = await _plan_fetch_method(
+        ctx,
+        stage=stage_name,
+        endpoint="/derivatives/bars/daily/options/225",
+        estimated_rest_calls=max(len(target_dates), 1),
+        date_from=from_date,
+        date_to=to_date,
+        exact_dates=target_dates,
+    )
+    api_calls = decision.planner_api_calls
+    errors: list[str] = []
+    _emit_fetch_strategy_progress(
+        ctx,
+        progress_stage=progress_stage,
+        current=progress_current,
+        total=progress_total,
+        endpoint="/derivatives/bars/daily/options/225",
+        decision=decision,
+        target_label=f"{len(target_dates)} dates",
+    )
+
+    target_date_set = _build_target_date_set(target_dates)
+    used_rest_fallback = False
+    stage_api_calls = 0
+    bulk_result: BulkFetchResult | None = None
+    if decision.method == "bulk" and decision.plan is not None:
+        try:
+            _emit_fetch_execution_progress(
+                ctx,
+                progress_stage=progress_stage,
+                current=progress_current,
+                total=progress_total,
+                endpoint="/derivatives/bars/daily/options/225",
+                method="bulk",
+                target_label=f"{len(target_dates)} dates",
+            )
+
+            async def _consume_options_bulk_rows(
+                batch_rows: list[dict[str, Any]],
+                _file_info: BulkFileInfo,
+            ) -> None:
+                normalized_rows = _convert_options_225_rows(_normalize_bulk_options_225_rows(batch_rows))
+                if target_date_set is not None:
+                    normalized_rows[:] = [row for row in normalized_rows if row.get("date") in target_date_set]
+                rows = validate_rows_required_fields(
+                    normalized_rows,
+                    required_fields=("code", "date"),
+                    dedupe_keys=("code", "date"),
+                    stage="options_225",
+                )
+                if not rows:
+                    return
+                await _publish_options_225_rows(ctx, rows)
+                await _publish_synthetic_nikkei_rows(ctx, rows)
+
+            bulk_result = await _get_bulk_service(ctx).fetch_with_plan(
+                decision.plan,
+                on_rows_batch=_consume_options_bulk_rows,
+                accumulate_rows=False,
+            )
+            api_calls += bulk_result.api_calls
+            stage_api_calls += bulk_result.api_calls
+            _log_sync_fetch_execution(
+                stage=stage_name,
+                endpoint="/derivatives/bars/daily/options/225",
+                decision=decision,
+                executed="bulk",
+                actual_api_calls=stage_api_calls,
+                fallback=False,
+                bulk_result=bulk_result,
+            )
+        except Exception as e:
+            used_rest_fallback = True
+            logger.warning("options_225 bulk fetch failed, falling back to REST: {}", e)
+
+    if decision.method == "rest" or used_rest_fallback:
+        _emit_fetch_execution_progress(
+            ctx,
+            progress_stage=progress_stage,
+            current=progress_current,
+            total=progress_total,
+            endpoint="/derivatives/bars/daily/options/225",
+            method="rest",
+            target_label=f"{len(target_dates)} dates",
+            fallback=used_rest_fallback,
+        )
+        for index, target_date in enumerate(target_dates, start=1):
+            if ctx.cancelled.is_set():
+                return {"api_calls": api_calls, "errors": errors, "cancelled": True}
+            if index > 1 and index % 50 == 0:
+                ctx.on_progress(
+                    progress_stage,
+                    progress_current,
+                    progress_total,
+                    f"Fetching /derivatives/bars/daily/options/225 via REST: {index}/{len(target_dates)} dates...",
+                )
+            try:
+                payload, page_calls = await _get_paginated_rows_with_call_count(
+                    ctx.client,
+                    "/derivatives/bars/daily/options/225",
+                    params={"date": target_date},
+                )
+                api_calls += page_calls
+                stage_api_calls += page_calls
+                rows = validate_rows_required_fields(
+                    _convert_options_225_rows(payload),
+                    required_fields=("code", "date"),
+                    dedupe_keys=("code", "date"),
+                    stage="options_225",
+                )
+                if rows:
+                    await _publish_options_225_rows(ctx, rows)
+                    await _publish_synthetic_nikkei_rows(ctx, rows)
+            except Exception as e:
+                errors.append(f"Options {target_date}: {e}")
+                logger.warning("Options date {} sync error: {}", target_date, e)
+        _log_sync_fetch_execution(
+            stage=stage_name,
+            endpoint="/derivatives/bars/daily/options/225",
+            decision=decision,
+            executed="rest",
+            actual_api_calls=stage_api_calls,
+            fallback=used_rest_fallback,
+            bulk_result=bulk_result,
+        )
+
+    await _index_options_225_rows(ctx)
+    await _index_indices_rows(ctx)
+    return {"api_calls": api_calls, "errors": errors, "cancelled": False}
 
 
 async def _sync_fundamentals_initial(
@@ -3210,6 +3479,30 @@ async def _upsert_indices_rows_with_master_backfill(
     await _publish_indices_rows(ctx, rows)
 
 
+async def _publish_synthetic_nikkei_rows(
+    ctx: SyncContext,
+    rows: list[dict[str, Any]],
+) -> int:
+    synthetic_rows = build_synthetic_underpx_index_rows(rows)
+    if not synthetic_rows:
+        return 0
+
+    await asyncio.to_thread(
+        ctx.market_db.upsert_index_master,
+        [
+            {
+                "code": OPTIONS_225_SYNTHETIC_INDEX_CODE,
+                "name": OPTIONS_225_SYNTHETIC_INDEX_NAME,
+                "name_english": OPTIONS_225_SYNTHETIC_INDEX_NAME_EN,
+                "category": OPTIONS_225_SYNTHETIC_INDEX_CATEGORY,
+                "data_start_date": min(str(row["date"]) for row in synthetic_rows),
+                "created_at": datetime.now(UTC).isoformat(),
+            }
+        ],
+    )
+    return await _publish_indices_rows(ctx, synthetic_rows)
+
+
 async def _publish_topix_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
     if not rows:
         return 0
@@ -3229,6 +3522,13 @@ async def _publish_indices_rows(ctx: SyncContext, rows: list[dict[str, Any]]) ->
         return 0
     store = _require_time_series_store(ctx)
     return await asyncio.to_thread(store.publish_indices_data, rows)
+
+
+async def _publish_options_225_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
+    if not rows:
+        return 0
+    store = _require_time_series_store(ctx)
+    return await asyncio.to_thread(store.publish_options_225_data, rows)
 
 
 async def _publish_margin_rows(ctx: SyncContext, rows: list[dict[str, Any]]) -> int:
@@ -3258,6 +3558,11 @@ async def _index_stock_data_rows(ctx: SyncContext) -> None:
 async def _index_indices_rows(ctx: SyncContext) -> None:
     store = _require_time_series_store(ctx)
     await asyncio.to_thread(store.index_indices_data)
+
+
+async def _index_options_225_rows(ctx: SyncContext) -> None:
+    store = _require_time_series_store(ctx)
+    await asyncio.to_thread(store.index_options_225_data)
 
 
 async def _index_margin_rows(ctx: SyncContext) -> None:
@@ -3309,6 +3614,14 @@ def _convert_stock_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "created_at": datetime.now(UTC).isoformat(),
         })
     return rows
+
+
+def _convert_options_225_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    created_at = datetime.now(UTC).isoformat()
+    return [
+        normalize_options_225_raw_row(item, created_at=created_at)
+        for item in data
+    ]
 
 
 def _convert_stock_data_rows(data: list[dict[str, Any]]) -> list[dict[str, Any]]:

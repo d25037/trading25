@@ -647,6 +647,11 @@ export interface MarketStatsResponse {
     dateRange: { min: string; max: string } | null;
     byCategory: Record<string, number>;
   };
+  options225: {
+    count: number;
+    dateCount: number;
+    dateRange: { min: string; max: string } | null;
+  };
   margin: {
     count: number;
     uniqueStockCount: number;
@@ -689,6 +694,15 @@ export interface MarketValidationResponse {
     missingDates: string[];
     missingDatesCount: number;
   };
+  options225: {
+    count: number;
+    dateCount: number;
+    dateRange: { min: string; max: string } | null;
+    missingUnderlyingPriceDatesCount: number;
+    missingUnderlyingPriceDates: string[];
+    conflictingUnderlyingPriceDatesCount: number;
+    conflictingUnderlyingPriceDates: string[];
+  };
   margin: {
     count: number;
     uniqueStockCount: number;
@@ -723,6 +737,8 @@ export interface MarketValidationResponse {
     failedDates: ValidationSampleWindow;
     adjustmentEvents: ValidationSampleWindow;
     stocksNeedingRefresh: ValidationSampleWindow;
+    options225MissingUnderlyingPriceDates: ValidationSampleWindow;
+    options225ConflictingUnderlyingPriceDates: ValidationSampleWindow;
     missingListedMarketStocks: ValidationSampleWindow;
     fundamentalsEmptySkippedCodes: ValidationSampleWindow;
     marginEmptySkippedCodes: ValidationSampleWindow;

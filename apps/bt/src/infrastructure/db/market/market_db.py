@@ -36,6 +36,7 @@ _STATS_TABLES: tuple[str, ...] = (
     "stock_data",
     "topix_data",
     "indices_data",
+    "options_225_data",
     "margin_data",
     "statements",
     "sync_metadata",
@@ -227,6 +228,44 @@ class MarketDb:
         )
         self._execute(
             """
+            CREATE TABLE IF NOT EXISTS options_225_data (
+                code TEXT,
+                date TEXT,
+                whole_day_open DOUBLE,
+                whole_day_high DOUBLE,
+                whole_day_low DOUBLE,
+                whole_day_close DOUBLE,
+                night_session_open DOUBLE,
+                night_session_high DOUBLE,
+                night_session_low DOUBLE,
+                night_session_close DOUBLE,
+                day_session_open DOUBLE,
+                day_session_high DOUBLE,
+                day_session_low DOUBLE,
+                day_session_close DOUBLE,
+                volume DOUBLE,
+                open_interest DOUBLE,
+                turnover_value DOUBLE,
+                contract_month TEXT,
+                strike_price DOUBLE,
+                only_auction_volume DOUBLE,
+                emergency_margin_trigger_division TEXT,
+                put_call_division TEXT,
+                last_trading_day TEXT,
+                special_quotation_day TEXT,
+                settlement_price DOUBLE,
+                theoretical_price DOUBLE,
+                base_volatility DOUBLE,
+                underlying_price DOUBLE,
+                implied_volatility DOUBLE,
+                interest_rate DOUBLE,
+                created_at TEXT,
+                PRIMARY KEY (code, date)
+            )
+            """
+        )
+        self._execute(
+            """
             CREATE TABLE IF NOT EXISTS margin_data (
                 code TEXT,
                 date TEXT,
@@ -363,6 +402,30 @@ class MarketDb:
         row = self._fetchone("SELECT MAX(date) FROM stock_data")
         return str(row[0]) if row and row[0] is not None else None
 
+    def get_topix_dates(
+        self,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> list[str]:
+        """topix_data の取引日一覧を取得。"""
+        if not self._table_exists("topix_data"):
+            return []
+        sql = "SELECT date FROM topix_data"
+        params: list[Any] = []
+        conditions: list[str] = []
+        if start_date:
+            conditions.append("date >= ?")
+            params.append(start_date)
+        if end_date:
+            conditions.append("date <= ?")
+            params.append(end_date)
+        if conditions:
+            sql += " WHERE " + " AND ".join(conditions)
+        sql += " ORDER BY date"
+        rows = self._fetchall(sql, params)
+        return [str(row[0]) for row in rows if row and row[0]]
+
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         """indices_data の銘柄コードごとの最新取引日を取得。"""
         if not self._table_exists("indices_data"):
@@ -379,6 +442,13 @@ class MarketDb:
             for row in rows
             if row and row[0] and row[1]
         }
+
+    def get_latest_options_225_date(self) -> str | None:
+        """options_225_data の最新取引日を取得。"""
+        if not self._table_exists("options_225_data"):
+            return None
+        row = self._fetchone("SELECT MAX(date) FROM options_225_data")
+        return str(row[0]) if row and row[0] is not None else None
 
     def get_latest_margin_date(self) -> str | None:
         """margin_data の最新日付を取得。"""
@@ -682,6 +752,94 @@ class MarketDb:
         )
         return len(rows)
 
+    def upsert_options_225_data(self, rows: list[dict[str, Any]]) -> int:
+        """options_225_data テーブルに upsert。"""
+        if not rows:
+            return 0
+        self._assert_writable()
+        params = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("whole_day_open"),
+                row.get("whole_day_high"),
+                row.get("whole_day_low"),
+                row.get("whole_day_close"),
+                row.get("night_session_open"),
+                row.get("night_session_high"),
+                row.get("night_session_low"),
+                row.get("night_session_close"),
+                row.get("day_session_open"),
+                row.get("day_session_high"),
+                row.get("day_session_low"),
+                row.get("day_session_close"),
+                row.get("volume"),
+                row.get("open_interest"),
+                row.get("turnover_value"),
+                row.get("contract_month"),
+                row.get("strike_price"),
+                row.get("only_auction_volume"),
+                row.get("emergency_margin_trigger_division"),
+                row.get("put_call_division"),
+                row.get("last_trading_day"),
+                row.get("special_quotation_day"),
+                row.get("settlement_price"),
+                row.get("theoretical_price"),
+                row.get("base_volatility"),
+                row.get("underlying_price"),
+                row.get("implied_volatility"),
+                row.get("interest_rate"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        self._executemany(
+            """
+            INSERT INTO options_225_data (
+                code, date, whole_day_open, whole_day_high, whole_day_low, whole_day_close,
+                night_session_open, night_session_high, night_session_low, night_session_close,
+                day_session_open, day_session_high, day_session_low, day_session_close,
+                volume, open_interest, turnover_value, contract_month, strike_price,
+                only_auction_volume, emergency_margin_trigger_division, put_call_division,
+                last_trading_day, special_quotation_day, settlement_price, theoretical_price,
+                base_volatility, underlying_price, implied_volatility, interest_rate, created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT (code, date) DO UPDATE
+            SET whole_day_open = excluded.whole_day_open,
+                whole_day_high = excluded.whole_day_high,
+                whole_day_low = excluded.whole_day_low,
+                whole_day_close = excluded.whole_day_close,
+                night_session_open = excluded.night_session_open,
+                night_session_high = excluded.night_session_high,
+                night_session_low = excluded.night_session_low,
+                night_session_close = excluded.night_session_close,
+                day_session_open = excluded.day_session_open,
+                day_session_high = excluded.day_session_high,
+                day_session_low = excluded.day_session_low,
+                day_session_close = excluded.day_session_close,
+                volume = excluded.volume,
+                open_interest = excluded.open_interest,
+                turnover_value = excluded.turnover_value,
+                contract_month = excluded.contract_month,
+                strike_price = excluded.strike_price,
+                only_auction_volume = excluded.only_auction_volume,
+                emergency_margin_trigger_division = excluded.emergency_margin_trigger_division,
+                put_call_division = excluded.put_call_division,
+                last_trading_day = excluded.last_trading_day,
+                special_quotation_day = excluded.special_quotation_day,
+                settlement_price = excluded.settlement_price,
+                theoretical_price = excluded.theoretical_price,
+                base_volatility = excluded.base_volatility,
+                underlying_price = excluded.underlying_price,
+                implied_volatility = excluded.implied_volatility,
+                interest_rate = excluded.interest_rate,
+                created_at = excluded.created_at
+            """,
+            params,
+        )
+        return len(rows)
+
     def upsert_margin_data(self, rows: list[dict[str, Any]]) -> int:
         """margin_data テーブルに upsert。"""
         if not rows:
@@ -779,7 +937,12 @@ class MarketDb:
             SET name = excluded.name,
                 name_english = excluded.name_english,
                 category = excluded.category,
-                data_start_date = COALESCE(excluded.data_start_date, index_master.data_start_date),
+                data_start_date = CASE
+                    WHEN excluded.data_start_date IS NULL THEN index_master.data_start_date
+                    WHEN index_master.data_start_date IS NULL THEN excluded.data_start_date
+                    WHEN excluded.data_start_date < index_master.data_start_date THEN excluded.data_start_date
+                    ELSE index_master.data_start_date
+                END,
                 created_at = excluded.created_at,
                 updated_at = excluded.updated_at
             """,
@@ -883,6 +1046,92 @@ class MarketDb:
             "dateRange": {"min": str(row[2]), "max": str(row[3])},
             "byCategory": by_category,
         }
+
+    def get_options_225_data_range(self) -> dict[str, Any] | None:
+        """options_225_data 統計。"""
+        if not self._table_exists("options_225_data"):
+            return None
+        row = self._fetchone(
+            """
+            SELECT
+                COUNT(*),
+                COUNT(DISTINCT date),
+                MIN(date),
+                MAX(date)
+            FROM options_225_data
+            """
+        )
+        if row is None or row[2] is None:
+            return {
+                "count": 0,
+                "dateCount": 0,
+                "dateRange": None,
+            }
+        return {
+            "count": int(row[0] or 0),
+            "dateCount": int(row[1] or 0),
+            "dateRange": {"min": str(row[2]), "max": str(row[3])},
+        }
+
+    def get_options_225_underlying_price_issue_dates(
+        self,
+        *,
+        issue_type: str,
+        limit: int = 20,
+    ) -> list[str]:
+        """UnderPx integrity issue dates for options_225_data."""
+        if limit <= 0 or not self._table_exists("options_225_data"):
+            return []
+        predicate = self._options_225_underlying_issue_predicate(issue_type)
+        rows = self._fetchall(
+            f"""
+            WITH per_date AS (
+                SELECT
+                    date,
+                    COUNT(*) FILTER (WHERE underlying_price IS NOT NULL) AS non_null_count,
+                    COUNT(DISTINCT underlying_price) FILTER (WHERE underlying_price IS NOT NULL) AS distinct_count
+                FROM options_225_data
+                GROUP BY date
+            )
+            SELECT date
+            FROM per_date
+            WHERE {predicate}
+            ORDER BY date DESC
+            LIMIT ?
+            """,
+            [int(limit)],
+        )
+        return [str(row[0]) for row in rows if row and row[0]]
+
+    def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int:
+        """Count UnderPx integrity issues for options_225_data."""
+        if not self._table_exists("options_225_data"):
+            return 0
+        predicate = self._options_225_underlying_issue_predicate(issue_type)
+        row = self._fetchone(
+            f"""
+            WITH per_date AS (
+                SELECT
+                    date,
+                    COUNT(*) FILTER (WHERE underlying_price IS NOT NULL) AS non_null_count,
+                    COUNT(DISTINCT underlying_price) FILTER (WHERE underlying_price IS NOT NULL) AS distinct_count
+                FROM options_225_data
+                GROUP BY date
+            )
+            SELECT COUNT(*)
+            FROM per_date
+            WHERE {predicate}
+            """
+        )
+        return int(row[0] or 0) if row else 0
+
+    @staticmethod
+    def _options_225_underlying_issue_predicate(issue_type: str) -> str:
+        if issue_type == "missing":
+            return "non_null_count = 0"
+        if issue_type == "conflicting":
+            return "distinct_count > 1"
+        raise ValueError(f"Unsupported options_225 issue type: {issue_type}")
 
     def get_index_master_category_counts(self) -> dict[str, int]:
         return self._load_index_master_category_counts()

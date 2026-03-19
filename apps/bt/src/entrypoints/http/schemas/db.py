@@ -53,6 +53,12 @@ class IndicesStats(BaseModel):
     byCategory: dict[str, int] = Field(default_factory=dict)
 
 
+class Options225Stats(BaseModel):
+    count: int = 0
+    dateCount: int = 0
+    dateRange: DateRange | None = None
+
+
 class MarginStats(BaseModel):
     count: int = 0
     uniqueStockCount: int = 0
@@ -86,6 +92,7 @@ class MarketStatsResponse(BaseModel):
     stocks: StockStats
     stockData: StockDataStats
     indices: IndicesStats
+    options225: Options225Stats
     margin: MarginStats
     fundamentals: FundamentalsStats
     lastUpdated: str
@@ -124,6 +131,16 @@ class MarginValidation(BaseModel):
     emptySkippedCodes: list[str] = Field(default_factory=list)
 
 
+class Options225Validation(BaseModel):
+    count: int = 0
+    dateCount: int = 0
+    dateRange: DateRange | None = None
+    missingUnderlyingPriceDatesCount: int = 0
+    missingUnderlyingPriceDates: list[str] = Field(default_factory=list)
+    conflictingUnderlyingPriceDatesCount: int = 0
+    conflictingUnderlyingPriceDates: list[str] = Field(default_factory=list)
+
+
 class FundamentalsValidation(BaseModel):
     count: int = 0
     uniqueStockCount: int = 0
@@ -149,6 +166,8 @@ class ValidationSampleWindows(BaseModel):
     failedDates: ValidationSampleWindow
     adjustmentEvents: ValidationSampleWindow
     stocksNeedingRefresh: ValidationSampleWindow
+    options225MissingUnderlyingPriceDates: ValidationSampleWindow
+    options225ConflictingUnderlyingPriceDates: ValidationSampleWindow
     missingListedMarketStocks: ValidationSampleWindow
     fundamentalsEmptySkippedCodes: ValidationSampleWindow
     marginEmptySkippedCodes: ValidationSampleWindow
@@ -163,6 +182,7 @@ class MarketValidationResponse(BaseModel):
     topix: TopixStats
     stocks: StockStats
     stockData: StockDataValidation
+    options225: Options225Validation
     margin: MarginValidation
     fundamentals: FundamentalsValidation
     failedDates: list[str] = Field(default_factory=list)

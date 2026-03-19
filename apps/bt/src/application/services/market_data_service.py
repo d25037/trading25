@@ -8,6 +8,8 @@ Hono market-data-service.ts と同等のロジック。
 from __future__ import annotations
 
 from src.infrastructure.db.market.market_reader import MarketDbReader
+from src.application.services.market_data_errors import MarketDataError
+from src.application.services.options_225 import build_options_225_response
 from src.infrastructure.db.market.query_helpers import stock_code_candidates
 from src.application.services.market_code_alias import resolve_market_codes
 from src.entrypoints.http.schemas.market_data import (
@@ -16,6 +18,7 @@ from src.entrypoints.http.schemas.market_data import (
     MarketStockData,
     StockInfo,
 )
+from src.entrypoints.http.schemas.jquants import N225OptionsExplorerResponse
 
 
 def _stock_code_candidates(code: str) -> tuple[str, ...]:
@@ -219,3 +222,86 @@ class MarketDataService:
             )
             for row in rows
         ]
+
+    def get_options_225(self, date: str | None = None) -> N225OptionsExplorerResponse:
+        """日経225オプション四本値 explorer データを DuckDB から取得。"""
+        table_exists = self._reader.query_one(
+            """
+            SELECT 1
+            FROM information_schema.tables
+            WHERE table_name = 'options_225_data'
+            LIMIT 1
+            """
+        )
+        if table_exists is None:
+            raise MarketDataError(
+                "日経225オプションのローカルデータがありません",
+                reason="options_225_data_missing",
+                recovery="market_db_sync",
+            )
+
+        resolved_date = date
+        if resolved_date is None:
+            latest_row = self._reader.query_one("SELECT MAX(date) AS max_date FROM options_225_data")
+            resolved_date = latest_row["max_date"] if latest_row is not None else None
+
+        if not resolved_date:
+            raise MarketDataError(
+                "日経225オプションのローカルデータがありません",
+                reason="options_225_data_missing",
+                recovery="market_db_sync",
+            )
+
+        rows = self._reader.query(
+            """
+            SELECT
+                date,
+                code,
+                whole_day_open,
+                whole_day_high,
+                whole_day_low,
+                whole_day_close,
+                night_session_open,
+                night_session_high,
+                night_session_low,
+                night_session_close,
+                day_session_open,
+                day_session_high,
+                day_session_low,
+                day_session_close,
+                volume,
+                open_interest,
+                turnover_value,
+                contract_month,
+                strike_price,
+                only_auction_volume,
+                emergency_margin_trigger_division,
+                put_call_division,
+                last_trading_day,
+                special_quotation_day,
+                settlement_price,
+                theoretical_price,
+                base_volatility,
+                underlying_price,
+                implied_volatility,
+                interest_rate
+            FROM options_225_data
+            WHERE date = ?
+            ORDER BY contract_month NULLS LAST, strike_price NULLS LAST, code
+            """,
+            (resolved_date,),
+        )
+        if not rows:
+            raise MarketDataError(
+                f"日経225オプションのローカルデータが {resolved_date} にありません",
+                reason="options_225_data_missing",
+                recovery="market_db_sync",
+            )
+
+        normalized_rows = [dict(row.items()) for row in rows]
+        return build_options_225_response(
+            requested_date=date,
+            resolved_date=str(resolved_date),
+            normalized_rows=normalized_rows,
+            source_call_count=0,
+        )

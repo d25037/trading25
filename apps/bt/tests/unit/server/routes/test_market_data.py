@@ -181,3 +181,41 @@ class TestGetTopix:
         data = resp.json()
         record = data[0]
         assert set(record.keys()) == {"date", "open", "high", "low", "close"}
+
+
+class TestGetOptions225:
+    def test_200_latest(self, client_with_market_db):
+        resp = client_with_market_db.get("/api/market/options/225")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["requestedDate"] is None
+        assert data["resolvedDate"] == "2024-01-17"
+        assert data["sourceCallCount"] == 0
+        assert len(data["items"]) == 2
+
+    def test_200_requested_date(self, client_with_market_db):
+        resp = client_with_market_db.get("/api/market/options/225?date=2024-01-16")
+
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["requestedDate"] == "2024-01-16"
+        assert data["resolvedDate"] == "2024-01-16"
+        assert len(data["items"]) == 1
+        assert data["items"][0]["underlyingPrice"] == 36100.0
+
+    def test_404_missing_date(self, client_with_market_db):
+        resp = client_with_market_db.get("/api/market/options/225?date=2024-01-18")
+
+        assert resp.status_code == 404
+        data = resp.json()
+        assert data["status"] == "error"
+        assert data["details"] == [
+            {"field": "reason", "message": "options_225_data_missing"},
+            {"field": "recovery", "message": "market_db_sync"},
+        ]
+
+    def test_422_invalid_date(self, client_with_market_db):
+        resp = client_with_market_db.get("/api/market/options/225?date=202401")
+
+        assert resp.status_code == 422

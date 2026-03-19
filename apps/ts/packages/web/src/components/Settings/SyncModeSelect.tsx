@@ -12,7 +12,7 @@ const SYNC_MODE_OPTIONS: { value: SyncMode; label: string; description: string }
   { value: 'auto', label: 'Auto', description: 'Detect initial/incremental from DuckDB SoT state' },
   { value: 'initial', label: 'Initial', description: 'Rebuild DuckDB SoT from scratch' },
   { value: 'incremental', label: 'Incremental', description: 'Backfill missing dates and append latest market data' },
-  { value: 'indices-only', label: 'Indices Only', description: 'Resync index series only (indices_data)' },
+  { value: 'indices-only', label: 'Indices Only', description: 'Resync index series plus synthetic Nikkei UnderPx data' },
   {
     value: 'repair',
     label: 'Repair Warnings',

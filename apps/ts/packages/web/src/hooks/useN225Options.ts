@@ -13,7 +13,7 @@ const STALE_TIME = 5 * 60 * 1000;
 async function fetchN225Options(options: UseN225OptionsOptions = {}): Promise<N225OptionsExplorerResponse> {
   const { date } = options;
   logger.debug('Fetching N225 options data', { date });
-  const data = await apiGet<N225OptionsExplorerResponse>('/api/jquants/options/225', { date });
+  const data = await apiGet<N225OptionsExplorerResponse>('/api/market/options/225', { date });
   logger.debug('N225 options data fetched', { resolvedDate: data.resolvedDate, itemCount: data.items.length });
   return data;
 }

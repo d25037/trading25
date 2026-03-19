@@ -77,6 +77,7 @@ class DummyMarketDb:
         self.topix_rows: list[dict[str, Any]] = []
         self.index_master_rows: list[dict[str, Any]] = []
         self.indices_rows: list[dict[str, Any]] = []
+        self.options_225_rows: list[dict[str, Any]] = []
         self.margin_rows: list[dict[str, Any]] = []
         self.statements_rows: list[dict[str, Any]] = []
         self.metadata: dict[str, str] = {}
@@ -100,6 +101,34 @@ class DummyMarketDb:
 
     def get_latest_indices_data_dates(self) -> dict[str, str]:
         return dict(self.latest_indices_data_dates)
+
+    def get_topix_dates(
+        self,
+        *,
+        start_date: str | None = None,
+        end_date: str | None = None,
+    ) -> list[str]:
+        dates = sorted(
+            {
+                normalized
+                for normalized in (
+                    _normalize_iso_date_text(row.get("date"))
+                    for row in self.topix_rows
+                    if row.get("date")
+                )
+                if normalized is not None
+            },
+            key=_date_sort_key,
+        )
+        if start_date is not None:
+            normalized_start = _normalize_iso_date_text(start_date)
+            if normalized_start is not None:
+                dates = [value for value in dates if not _is_date_after(normalized_start, value)]
+        if end_date is not None:
+            normalized_end = _normalize_iso_date_text(end_date)
+            if normalized_end is not None:
+                dates = [value for value in dates if not _is_date_after(value, normalized_end)]
+        return dates
 
     def get_latest_margin_date(self) -> str | None:
         margin_dates = [
@@ -275,6 +304,21 @@ class DummyMarketDb:
         self.margin_rows = list(upserted.values())
         return len(rows)
 
+    def upsert_options_225_data(self, rows: list[dict[str, Any]]) -> int:
+        upserted = {
+            (str(row["code"]), str(row["date"])): dict(row)
+            for row in self.options_225_rows
+            if row.get("code") and row.get("date")
+        }
+        for row in rows:
+            code = str(row.get("code", "")).strip()
+            row_date = str(row.get("date", "")).strip()
+            if not code or not row_date:
+                continue
+            upserted[(code, row_date)] = dict(row)
+        self.options_225_rows = list(upserted.values())
+        return len(rows)
+
     def upsert_statements(self, rows: list[dict[str, Any]]) -> int:
         upserted: dict[tuple[str, str], dict[str, Any]] = {
             (str(row["code"]), str(row["disclosed_date"])): dict(row)
@@ -390,6 +434,14 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         },
         key=_date_sort_key,
     )
+    options_225_dates = sorted(
+        {
+            str(row.get("date"))
+            for row in market_db.options_225_rows
+            if row.get("date")
+        },
+        key=_date_sort_key,
+    )
     margin_codes = {
         str(row.get("code"))
         for row in market_db.margin_rows
@@ -410,6 +462,11 @@ def _inspection_from_market_db(market_db: DummyMarketDb) -> TimeSeriesInspection
         indices_max=indices_dates[-1] if indices_dates else _latest_date(list(latest_indices_dates.values())),
         indices_date_count=len(indices_dates),
         latest_indices_dates=latest_indices_dates,
+        options_225_count=len(market_db.options_225_rows),
+        options_225_min=options_225_dates[0] if options_225_dates else None,
+        options_225_max=options_225_dates[-1] if options_225_dates else None,
+        options_225_date_count=len(options_225_dates),
+        latest_options_225_date=options_225_dates[-1] if options_225_dates else None,
         margin_count=len(market_db.margin_rows),
         margin_min=margin_dates[0] if margin_dates else market_db.get_latest_margin_date(),
         margin_max=margin_dates[-1] if margin_dates else market_db.get_latest_margin_date(),
@@ -439,6 +496,9 @@ class DummyTimeSeriesStore:
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int:
         return self._market_db.upsert_indices_data(rows)
 
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int:
+        return self._market_db.upsert_options_225_data(rows)
+
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
         return self._market_db.upsert_margin_data(rows)
 
@@ -452,6 +512,9 @@ class DummyTimeSeriesStore:
         return None
 
     def index_indices_data(self) -> None:
+        return None
+
+    def index_options_225_data(self) -> None:
         return None
 
     def index_margin_data(self) -> None:
@@ -518,6 +581,7 @@ class DummyClient:
         daily_quotes: list[dict[str, Any]] | None = None,
         indices_quotes: list[dict[str, Any]] | None = None,
         master_quotes: list[dict[str, Any]] | None = None,
+        options_quotes: list[dict[str, Any]] | None = None,
         margin_by_code: dict[str, list[dict[str, Any]]] | None = None,
         daily_error_dates: set[str] | None = None,
         fins_by_code: dict[str, list[dict[str, Any]]] | None = None,
@@ -530,6 +594,7 @@ class DummyClient:
         self.daily_quotes = daily_quotes
         self.indices_quotes = indices_quotes
         self.master_quotes = master_quotes
+        self.options_quotes = options_quotes
         self.margin_by_code = margin_by_code or {}
         self.daily_error_dates = daily_error_dates or set()
         self.fins_by_code = fins_by_code or {}
@@ -649,6 +714,28 @@ class DummyClient:
                 {"Code": code or "72030", "Date": "2026-02-06", "LongVol": 900, "ShrtVol": 250},
                 {"Code": code or "72030", "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
             ]
+        if path == "/derivatives/bars/daily/options/225":
+            requested_date = self._normalize_date((params or {}).get("date"))
+            if self.options_quotes is not None:
+                rows: list[dict[str, Any]] = []
+                for source in self.options_quotes:
+                    row = dict(source)
+                    row_date = self._normalize_date(row.get("Date") or row.get("date"))
+                    if requested_date and row_date and row_date != requested_date:
+                        continue
+                    rows.append(row)
+                return rows
+            option_date = requested_date or "2026-02-06"
+            return [
+                {
+                    "Date": option_date,
+                    "Code": "131040018",
+                    "CM": "2026-04",
+                    "Strike": 20000,
+                    "PCDiv": "1",
+                    "UnderPx": 39000.0,
+                }
+            ]
         if path == "/equities/bars/daily":
             if self.daily_quotes is not None:
                 rows: list[dict[str, Any]] = []
@@ -766,6 +853,18 @@ class InitialSyncClient:
                 {"Code": code, "Date": "2026-02-06", "LongVol": 900, "ShrtVol": 250},
                 {"Code": code, "Date": "2026-02-10", "LongVol": 1000, "ShrtVol": 200},
             ]
+        if path == "/derivatives/bars/daily/options/225":
+            option_date = DummyClient._normalize_date((params or {}).get("date")) or "2026-02-06"
+            return [
+                {
+                    "Date": option_date,
+                    "Code": "131040018",
+                    "CM": "2026-04",
+                    "Strike": 20000,
+                    "PCDiv": "1",
+                    "UnderPx": 39000.0,
+                }
+            ]
         if path == "/indices/bars/daily":
             return [{"Date": "2026-02-10", "O": 102, "H": 103, "L": 101, "C": 102, "SectorName": "TOPIX"}]
         return []
@@ -777,6 +876,8 @@ class IndicesOnlyClient:
 
     async def get_paginated(self, path: str, params: dict[str, Any] | None = None) -> list[dict[str, Any]]:
         self.calls.append((path, params))
+        if path == "/derivatives/bars/daily/options/225":
+            return []
         if path != "/indices/bars/daily":
             raise RuntimeError(f"unexpected path: {path}")
         if (params or {}).get("code") == "9999":
@@ -1996,8 +2097,50 @@ async def test_incremental_sync_skips_index_rows_with_missing_date() -> None:
 
     assert result.success
     assert result.errors == []
-    assert len(market_db.indices_rows) == 1
-    assert market_db.indices_rows[0]["date"] == "2026-02-10"
+    non_synthetic_rows = [row for row in market_db.indices_rows if row.get("code") != "N225_UNDERPX"]
+    assert len(non_synthetic_rows) == 1
+    assert non_synthetic_rows[0]["date"] == "2026-02-10"
+
+
+@pytest.mark.asyncio
+async def test_incremental_sync_publishes_options_225_and_synthetic_nikkei() -> None:
+    market_db = DummyMarketDb(latest_trading_date="20260206")
+    client = DummyClient(
+        options_quotes=[
+            {
+                "Date": "2026-02-10",
+                "Code": "131040018",
+                "CM": "2026-04",
+                "Strike": 32000,
+                "PCDiv": "1",
+                "UnderPx": 39000.0,
+            },
+            {
+                "Date": "2026-02-10",
+                "Code": "141040018",
+                "CM": "2026-04",
+                "Strike": 36000,
+                "PCDiv": "2",
+                "UnderPx": 39000.0,
+            },
+        ]
+    )
+
+    ctx = _build_ctx(
+        client=client,
+        market_db=market_db,
+        cancelled=asyncio.Event(),
+        on_progress=lambda *_: None,
+    )
+
+    result = await IncrementalSyncStrategy().execute(ctx)
+
+    assert result.success
+    assert len(market_db.options_225_rows) == 2
+    assert any(row.get("code") == "N225_UNDERPX" for row in market_db.index_master_rows)
+    synthetic_rows = [row for row in market_db.indices_rows if row.get("code") == "N225_UNDERPX"]
+    assert len(synthetic_rows) == 1
+    assert synthetic_rows[0]["close"] == 39000.0
 
 
 @pytest.mark.asyncio
@@ -2167,8 +2310,9 @@ async def test_incremental_sync_rechecks_anchor_date_for_index_discovery() -> No
     assert result.success
     assert result.errors == []
     assert any(path == "/indices/bars/daily" and params == {"date": "20260210"} for path, params in client.calls)
-    assert len(market_db.indices_rows) == 1
-    assert market_db.indices_rows[0]["code"] == "0040"
+    non_synthetic_rows = [row for row in market_db.indices_rows if row.get("code") != "N225_UNDERPX"]
+    assert len(non_synthetic_rows) == 1
+    assert non_synthetic_rows[0]["code"] == "0040"
 
 
 @pytest.mark.asyncio
@@ -3424,7 +3568,7 @@ def test_strategy_selection_and_api_call_estimates() -> None:
     assert isinstance(get_strategy("repair"), RepairSyncStrategy)
     assert isinstance(get_strategy("unknown"), InitialSyncStrategy)
 
-    assert IndicesOnlySyncStrategy().estimate_api_calls() == 52
+    assert IndicesOnlySyncStrategy().estimate_api_calls() == 70
     assert InitialSyncStrategy().estimate_api_calls() == 3200
     assert IncrementalSyncStrategy().estimate_api_calls() == 180
     assert RepairSyncStrategy().estimate_api_calls() == 400

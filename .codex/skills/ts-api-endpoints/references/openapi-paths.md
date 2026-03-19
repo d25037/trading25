@@ -2,7 +2,7 @@
 
 Generated from `apps/ts/packages/contracts/openapi/bt-openapi.json`. Do not edit manually.
 
-Total paths: **125**
+Total paths: **126**
 
 ## /api/analytics
 
@@ -151,6 +151,7 @@ Total paths: **125**
 
 | Path | Methods |
 |---|---|
+| `/api/market/options/225` | `GET` |
 | `/api/market/stocks` | `GET` |
 | `/api/market/stocks/{code}` | `GET` |
 | `/api/market/stocks/{code}/ohlcv` | `GET` |

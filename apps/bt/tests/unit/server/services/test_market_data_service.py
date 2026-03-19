@@ -6,6 +6,7 @@ from typing import cast
 
 import pytest
 
+from src.application.services.market_data_errors import MarketDataError
 from src.infrastructure.db.market.market_reader import MarketDbReader
 from src.application.services.market_data_service import MarketDataService, _stock_code_candidates
 
@@ -180,3 +181,45 @@ class TestGetTopix:
         """データなしは None"""
         result = service.get_topix(start_date="2025-01-01")
         assert result is None
+
+
+class TestGetOptions225:
+    def test_resolves_latest_date(self, service):
+        result = service.get_options_225()
+
+        assert result.requestedDate is None
+        assert result.resolvedDate == "2024-01-17"
+        assert result.sourceCallCount == 0
+        assert result.availableContractMonths == ["2024-04"]
+        assert len(result.items) == 2
+        assert result.summary.totalCount == 2
+        assert result.summary.putCount == 1
+        assert result.summary.callCount == 1
+
+    def test_gets_requested_date(self, service):
+        result = service.get_options_225("2024-01-16")
+
+        assert result.requestedDate == "2024-01-16"
+        assert result.resolvedDate == "2024-01-16"
+        assert len(result.items) == 1
+        assert result.items[0].code == "131040018"
+        assert result.items[0].underlyingPrice == 36100.0
+
+    def test_raises_when_table_is_missing(self):
+        class MockReader:
+            def query_one(self, sql, params=()):  # noqa: ANN001, ANN201
+                del params
+                if "information_schema.tables" in sql:
+                    return None
+                raise AssertionError(f"unexpected query_one: {sql}")
+
+            def query(self, sql, params=()):  # noqa: ANN001, ANN201
+                raise AssertionError(f"unexpected query: {sql} {params}")
+
+        svc = MarketDataService(cast(MarketDbReader, MockReader()))
+
+        with pytest.raises(MarketDataError) as exc_info:
+            svc.get_options_225()
+
+        assert exc_info.value.reason == "options_225_data_missing"
+        assert exc_info.value.recovery == "market_db_sync"

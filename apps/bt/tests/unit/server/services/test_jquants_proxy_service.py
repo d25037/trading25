@@ -3,12 +3,22 @@
 from __future__ import annotations
 
 import asyncio
+from datetime import UTC, datetime
 from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
 
 from src.application.services.jquants_proxy_service import JQuantsProxyService
+
+
+class _FrozenJstDateTime(datetime):
+    @classmethod
+    def now(cls, tz=None):  # noqa: ANN206
+        fixed = cls(2026, 3, 18, 9, 0, 0, tzinfo=UTC)
+        if tz is None:
+            return fixed.replace(tzinfo=None)
+        return fixed.astimezone(tz)
 
 
 def _daily_quote_item(code: str = "72030") -> dict[str, object]:
@@ -488,7 +498,8 @@ async def test_get_options_225_singleflight_coalesces_in_flight_requests() -> No
 
 
 @pytest.mark.asyncio
-async def test_get_options_225_resolves_recent_available_date() -> None:
+async def test_get_options_225_resolves_recent_available_date(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setattr("src.application.services.jquants_proxy_service.datetime", _FrozenJstDateTime)
     client = AsyncMock()
     client.get_paginated_with_meta = AsyncMock(
         side_effect=[
@@ -508,7 +519,10 @@ async def test_get_options_225_resolves_recent_available_date() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_options_225_without_date_reuses_latest_resolution_cache() -> None:
+async def test_get_options_225_without_date_reuses_latest_resolution_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr("src.application.services.jquants_proxy_service.datetime", _FrozenJstDateTime)
     client = AsyncMock()
     client.get_paginated_with_meta = AsyncMock(
         side_effect=[

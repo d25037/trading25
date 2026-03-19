@@ -55,8 +55,13 @@ vi.mock('@/components/Chart/StockChart', () => ({
   StockChart: () => <div>StockChart</div>,
 }));
 
+vi.mock('@/components/Chart/LinePriceChart', () => ({
+  LinePriceChart: () => <div>LinePriceChart</div>,
+}));
+
 const makeIndicesList = () => ({
   indices: [
+    { code: 'N225_UNDERPX', name: '日経平均', category: 'synthetic' },
     { code: '1321', name: 'TOPIX', category: 'topix' },
     { code: '1305', name: 'TOPIX-33 Energy', category: 'sector33' },
   ] satisfies IndexItem[],
@@ -89,6 +94,20 @@ const makeTopixIndexData = () => ({
   ],
   code: '1321',
   name: 'TOPIX',
+});
+
+const makeSyntheticIndexData = () => ({
+  data: [
+    {
+      date: '2026-02-13',
+      open: 39000,
+      high: 39000,
+      low: 39000,
+      close: 39000,
+    },
+  ],
+  code: 'N225_UNDERPX',
+  name: '日経平均',
 });
 
 beforeEach(() => {
@@ -224,11 +243,42 @@ describe('IndicesPage', () => {
     render(<IndicesPage />);
 
     fireEvent.keyDown(window, { key: 'ArrowUp' });
-    expect(mockSetSelectedIndexCode).toHaveBeenCalledWith('1305');
+    expect(mockSetSelectedIndexCode).toHaveBeenCalledWith('N225_UNDERPX');
     expect(scrollIntoViewMock).toHaveBeenCalled();
 
     fireEvent.keyDown(window, { key: 'Enter' });
     expect(mockSetSelectedIndexCode).toHaveBeenCalledTimes(1);
+  });
+
+  it('renders synthetic Nikkei in benchmarks section with line chart', () => {
+    selectedIndexCode = 'N225_UNDERPX';
+    mockUseIndicesList.mockReturnValue({
+      data: makeIndicesList(),
+      isLoading: false,
+      error: null,
+    });
+    mockUseIndexData.mockImplementation((code: string | null) => {
+      if (code === 'N225_UNDERPX') {
+        return {
+          data: makeSyntheticIndexData(),
+          isLoading: false,
+          error: null,
+        };
+      }
+      return {
+        data: null,
+        isLoading: false,
+        error: null,
+      };
+    });
+
+    render(<IndicesPage />);
+
+    expect(screen.getByText('Benchmarks')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Select 日経平均' })).toBeInTheDocument();
+    expect(screen.getByText('UnderPx derived daily reference series')).toBeInTheDocument();
+    expect(screen.getByText('LinePriceChart')).toBeInTheDocument();
+    expect(screen.queryByText('StockChart')).not.toBeInTheDocument();
   });
 
   it('renders indices loading and sidebar error states', () => {

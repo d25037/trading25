@@ -41,6 +41,29 @@ def _topix_rows() -> list[dict[str, object]]:
     ]
 
 
+def _options_225_rows() -> list[dict[str, object]]:
+    return [
+        {
+            "code": "131040018",
+            "date": "2026-02-10",
+            "contract_month": "2026-04",
+            "strike_price": 32000.0,
+            "put_call_division": "1",
+            "underlying_price": 39000.0,
+            "created_at": "2026-02-10T00:00:00+00:00",
+        },
+        {
+            "code": "141040018",
+            "date": "2026-02-11",
+            "contract_month": "2026-04",
+            "strike_price": 36000.0,
+            "put_call_division": "2",
+            "underlying_price": 39200.0,
+            "created_at": "2026-02-11T00:00:00+00:00",
+        },
+    ]
+
+
 def test_create_time_series_store_returns_none_for_unsupported_backend(tmp_path: Path) -> None:
     store = create_time_series_store(
         backend="sqlite",
@@ -96,6 +119,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
             }
         ]
     )
+    store.publish_options_225_data(_options_225_rows())
     store.publish_margin_data(
         [
             {
@@ -130,6 +154,7 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     store.index_topix_data()
     store.index_stock_data()
     store.index_indices_data()
+    store.index_options_225_data()
     store.index_margin_data()
     store.index_statements()
 
@@ -146,6 +171,11 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.indices_min == "2026-02-10"
     assert inspection.indices_max == "2026-02-10"
     assert inspection.indices_date_count == 1
+    assert inspection.options_225_count == 2
+    assert inspection.options_225_min == "2026-02-10"
+    assert inspection.options_225_max == "2026-02-11"
+    assert inspection.options_225_date_count == 2
+    assert inspection.latest_options_225_date == "2026-02-11"
     assert inspection.margin_count == 2
     assert inspection.margin_min == "2026-02-07"
     assert inspection.margin_max == "2026-02-10"
@@ -158,6 +188,23 @@ def test_duckdb_store_inspect_reports_core_stats(tmp_path: Path) -> None:
     assert inspection.statement_non_null_counts["earnings_per_share"] == 2
     assert inspection.statement_non_null_counts["profit"] == 1
     assert inspection.statement_non_null_counts["unknown_column"] == 0
+
+    store.close()
+
+
+def test_index_options_225_data_exports_parquet(tmp_path: Path) -> None:
+    parquet_dir = tmp_path / "market-timeseries" / "parquet"
+    store = create_time_series_store(
+        backend="duckdb-parquet",
+        duckdb_path=str(tmp_path / "market-timeseries" / "market.duckdb"),
+        parquet_dir=str(parquet_dir),
+    )
+    assert store is not None
+
+    store.publish_options_225_data(_options_225_rows())
+    store.index_options_225_data()
+
+    assert (parquet_dir / "options_225_data.parquet").exists()
 
     store.close()
 

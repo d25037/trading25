@@ -1,6 +1,7 @@
 import { ArrowDown, ArrowUp, ArrowUpDown, ChevronRight, Loader2, TrendingDown, TrendingUp } from 'lucide-react';
 import { useNavigate } from '@tanstack/react-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { LinePriceChart } from '@/components/Chart/LinePriceChart';
 import { StockChart } from '@/components/Chart/StockChart';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -13,10 +14,11 @@ import type { IndexItem } from '@/types/indices';
 type SortField = 'tradingValue' | 'changePercentage' | 'code';
 type SortOrder = 'asc' | 'desc';
 
-const CATEGORY_ORDER = ['topix', 'sector17', 'sector33', 'market', 'style', 'growth', 'reit'];
+const CATEGORY_ORDER = ['synthetic', 'topix', 'sector17', 'sector33', 'market', 'style', 'growth', 'reit'];
 
 // Category display names
 const CATEGORY_LABELS: Record<string, string> = {
+  synthetic: 'Benchmarks',
   topix: 'TOPIX',
   sector33: '33 Sectors',
   sector17: 'TOPIX-17 Sectors',
@@ -366,6 +368,7 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
   const { data, isLoading, error } = useIndexData(code);
 
   const isSectorIndex = indexInfo?.category === 'sector33' || indexInfo?.category === 'sector17';
+  const isSyntheticIndex = indexInfo?.category === 'synthetic';
   const sectorType = indexInfo?.category as 'sector33' | 'sector17' | undefined;
 
   // Convert IndexDataPoint to StockDataPoint format
@@ -377,6 +380,14 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
       high: point.high,
       low: point.low,
       close: point.close,
+    }));
+  }, [data]);
+
+  const lineData = useMemo(() => {
+    if (!data?.data) return [];
+    return data.data.map((point) => ({
+      time: point.date,
+      value: point.close,
     }));
   }, [data]);
 
@@ -430,6 +441,7 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
           <div>
             <h2 className="text-2xl font-bold text-white">{data.name}</h2>
             <p className="text-white/80">Code: {data.code}</p>
+            {isSyntheticIndex ? <p className="mt-1 text-xs text-white/75">UnderPx derived daily reference series</p> : null}
           </div>
           {latestPrice !== null && (
             <div className="text-right text-white">
@@ -443,11 +455,11 @@ function IndexChart({ code, indexInfo, onStockClick }: IndexChartProps) {
       {/* Chart */}
       <Card className="glass-panel overflow-hidden">
         <CardHeader className="border-b border-border/30">
-          <CardTitle>Price Chart ({chartData.length} data points)</CardTitle>
+          <CardTitle>Price Chart ({isSyntheticIndex ? lineData.length : chartData.length} data points)</CardTitle>
         </CardHeader>
         <CardContent className="p-0">
           <div className="h-[400px]">
-            <StockChart data={chartData} />
+            {isSyntheticIndex ? <LinePriceChart data={lineData} /> : <StockChart data={chartData} />}
           </div>
         </CardContent>
       </Card>

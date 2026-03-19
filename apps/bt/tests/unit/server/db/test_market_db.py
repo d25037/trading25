@@ -35,6 +35,7 @@ class TestMarketDbBasics:
         assert stats["stock_data"] == 0
         assert stats["topix_data"] == 0
         assert stats["indices_data"] == 0
+        assert stats["options_225_data"] == 0
         assert stats["margin_data"] == 0
         assert stats["sync_metadata"] == 0
 
@@ -43,6 +44,7 @@ class TestMarketDbBasics:
         assert "stocks" in schema["required_tables"]
         assert "stock_data" in schema["required_tables"]
         assert "topix_data" in schema["required_tables"]
+        assert "options_225_data" in schema["required_tables"]
         assert "margin_data" in schema["required_tables"]
         assert "sync_metadata" in schema["required_tables"]
 
@@ -194,6 +196,65 @@ class TestMarketDbUpserts:
         assert market_db.upsert_margin_data(
             [{"code": "7203", "date": "2024-01-15", "long_margin_volume": 1000.0, "short_margin_volume": 200.0}]
         ) == 1
+        assert market_db.upsert_options_225_data(
+            [
+                {
+                    "code": "131040018",
+                    "date": "2024-01-15",
+                    "contract_month": "2024-04",
+                    "strike_price": 32000.0,
+                    "put_call_division": "1",
+                    "underlying_price": 36000.0,
+                }
+            ]
+        ) == 1
+
+    def test_options_225_range_and_underlying_issue_counts(self, market_db: MarketDb) -> None:
+        market_db.upsert_options_225_data(
+            [
+                {
+                    "code": "131040018",
+                    "date": "2024-01-15",
+                    "underlying_price": 36000.0,
+                },
+                {
+                    "code": "141040018",
+                    "date": "2024-01-15",
+                    "underlying_price": 36000.0,
+                },
+                {
+                    "code": "131040019",
+                    "date": "2024-01-16",
+                    "underlying_price": None,
+                },
+                {
+                    "code": "141040019",
+                    "date": "2024-01-16",
+                    "underlying_price": None,
+                },
+                {
+                    "code": "131040020",
+                    "date": "2024-01-17",
+                    "underlying_price": 36100.0,
+                },
+                {
+                    "code": "141040020",
+                    "date": "2024-01-17",
+                    "underlying_price": 36200.0,
+                },
+            ]
+        )
+
+        assert market_db.get_latest_options_225_date() == "2024-01-17"
+        assert market_db.get_options_225_data_range() == {
+            "count": 6,
+            "dateCount": 3,
+            "dateRange": {"min": "2024-01-15", "max": "2024-01-17"},
+        }
+        assert market_db.get_options_225_underlying_price_issue_count(issue_type="missing") == 1
+        assert market_db.get_options_225_underlying_price_issue_dates(issue_type="missing") == ["2024-01-16"]
+        assert market_db.get_options_225_underlying_price_issue_count(issue_type="conflicting") == 1
+        assert market_db.get_options_225_underlying_price_issue_dates(issue_type="conflicting") == ["2024-01-17"]
 
     def test_upsert_statements_merges_non_null_fields_on_conflict(self, market_db: MarketDb) -> None:
         market_db.upsert_statements(
@@ -278,6 +339,22 @@ class TestMarketDbUpserts:
         )
         assert name_row is not None and name_row[0] == "TOPIX Updated"
         assert count_row is not None and count_row[0] == 1
+
+    def test_upsert_index_master_preserves_earliest_data_start_date(self, market_db: MarketDb) -> None:
+        market_db.upsert_index_master(
+            [{"code": "N225_UNDERPX", "name": "日経平均", "category": "synthetic", "data_start_date": "2024-01-16"}]
+        )
+        market_db.upsert_index_master(
+            [{"code": "N225_UNDERPX", "name": "日経平均", "category": "synthetic", "data_start_date": "2024-01-20"}]
+        )
+
+        data_start_row = _query_one(
+            market_db.db_path,
+            "SELECT data_start_date FROM index_master WHERE code='N225_UNDERPX'",
+        )
+
+        assert data_start_row is not None
+        assert data_start_row[0] == "2024-01-16"
 
 
 class TestMarketDbDerivedStats:

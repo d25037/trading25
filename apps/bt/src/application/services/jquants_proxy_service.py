@@ -15,6 +15,11 @@ from zoneinfo import ZoneInfo
 from loguru import logger
 from fastapi import HTTPException
 
+from src.application.services.options_225 import (
+    build_options_225_response,
+    normalize_options_225_date,
+    normalize_options_225_raw_row,
+)
 from src.infrastructure.external_api.clients.jquants_client import JQuantsAsyncClient
 from src.shared.observability.correlation import get_correlation_id
 from src.shared.observability.metrics import metrics_recorder
@@ -28,10 +33,7 @@ from src.entrypoints.http.schemas.jquants import (
     AuthStatusResponse,
     DailyQuoteItem,
     DailyQuotesResponse,
-    N225OptionItem,
     N225OptionsExplorerResponse,
-    N225OptionsNumericRange,
-    N225OptionsSummary,
     RawStatementItem,
     RawStatementsResponse,
     StatementItem,
@@ -53,14 +55,6 @@ OPTIONS_225_LOOKBACK_DAYS = 14
 TOKYO_TIMEZONE = ZoneInfo("Asia/Tokyo")
 OPTIONS_225_PATH = "/derivatives/bars/daily/options/225"
 OPTIONS_225_LATEST_CACHE_KEY = f"{OPTIONS_225_PATH}:latest"
-PUT_CALL_LABELS = {
-    "1": "put",
-    "2": "call",
-}
-EMERGENCY_MARGIN_TRIGGER_LABELS = {
-    "001": "emergency_margin_triggered",
-    "002": "settlement_price_calculation",
-}
 
 
 def _build_cache_key(path: str, params: dict[str, Any]) -> str:
@@ -69,25 +63,7 @@ def _build_cache_key(path: str, params: dict[str, Any]) -> str:
 
 
 def _normalize_jquants_date(value: str) -> str:
-    raw = value.strip()
-    if not raw:
-        raise ValueError("date must not be empty")
-
-    formats = ("%Y-%m-%d", "%Y%m%d")
-    for date_format in formats:
-        try:
-            return datetime.strptime(raw, date_format).date().isoformat()
-        except ValueError:
-            continue
-
-    raise ValueError("date must be YYYY-MM-DD or YYYYMMDD")
-
-
-def _range_from_values(values: list[float | None]) -> N225OptionsNumericRange:
-    filtered = [value for value in values if value is not None]
-    if not filtered:
-        return N225OptionsNumericRange()
-    return N225OptionsNumericRange(min=min(filtered), max=max(filtered))
+    return normalize_options_225_date(value)
 
 
 class JQuantsProxyService:
@@ -422,25 +398,13 @@ class JQuantsProxyService:
     ) -> dict[str, Any]:
         if not rows:
             raise HTTPException(status_code=404, detail=f"No N225 options data found for {resolved_date}")
-
-        items = [self._map_options_225_item(row).model_dump() for row in rows]
-        contract_months = sorted(
-            {
-                item["contractMonth"]
-                for item in items
-                if isinstance(item.get("contractMonth"), str) and item["contractMonth"]
-            }
+        response = build_options_225_response(
+            requested_date=None,
+            resolved_date=resolved_date,
+            normalized_rows=[normalize_options_225_raw_row(row) for row in rows],
+            source_call_count=call_count,
         )
-        summary = self._build_options_225_summary(items).model_dump()
-
-        return {
-            "resolvedDate": resolved_date,
-            "lastUpdated": _now_iso(),
-            "sourceCallCount": call_count,
-            "availableContractMonths": contract_months,
-            "items": items,
-            "summary": summary,
-        }
+        return response.model_dump()
 
     async def _resolve_recent_options_225_date(self) -> tuple[str, list[dict[str, Any]], int]:
         today = datetime.now(TOKYO_TIMEZONE).date()
@@ -460,73 +424,13 @@ class JQuantsProxyService:
             ),
         )
 
-    def _map_options_225_item(self, item: dict[str, Any]) -> N225OptionItem:
-        put_call_division = item.get("PutCallDivision")
-        emergency_division = item.get("EmergencyMarginTriggerDivision")
-        emergency_label = (
-            EMERGENCY_MARGIN_TRIGGER_LABELS.get(emergency_division)
-            if isinstance(emergency_division, str)
-            else None
-        )
-        put_call_label = PUT_CALL_LABELS.get(put_call_division) if isinstance(put_call_division, str) else None
-        return N225OptionItem(
-            date=item.get("Date", ""),
-            code=str(item.get("Code", "")),
-            wholeDayOpen=item.get("WholeDayOpen"),
-            wholeDayHigh=item.get("WholeDayHigh"),
-            wholeDayLow=item.get("WholeDayLow"),
-            wholeDayClose=item.get("WholeDayClose"),
-            nightSessionOpen=item.get("NightSessionOpen"),
-            nightSessionHigh=item.get("NightSessionHigh"),
-            nightSessionLow=item.get("NightSessionLow"),
-            nightSessionClose=item.get("NightSessionClose"),
-            daySessionOpen=item.get("DaySessionOpen"),
-            daySessionHigh=item.get("DaySessionHigh"),
-            daySessionLow=item.get("DaySessionLow"),
-            daySessionClose=item.get("DaySessionClose"),
-            volume=item.get("Volume"),
-            openInterest=item.get("OpenInterest"),
-            turnoverValue=item.get("TurnoverValue"),
-            contractMonth=item.get("ContractMonth"),
-            strikePrice=item.get("StrikePrice"),
-            onlyAuctionVolume=item.get("Volume(OnlyAuction)"),
-            emergencyMarginTriggerDivision=emergency_division,
-            emergencyMarginTriggerLabel=emergency_label,
-            putCallDivision=put_call_division,
-            putCallLabel=put_call_label,
-            lastTradingDay=item.get("LastTradingDay"),
-            specialQuotationDay=item.get("SpecialQuotationDay"),
-            settlementPrice=item.get("SettlementPrice"),
-            theoreticalPrice=item.get("TheoreticalPrice"),
-            baseVolatility=item.get("BaseVolatility"),
-            underlyingPrice=item.get("UnderlyingPrice"),
-            impliedVolatility=item.get("ImpliedVolatility"),
-            interestRate=item.get("InterestRate"),
-        )
-
-    def _build_options_225_summary(self, items: list[dict[str, Any]]) -> N225OptionsSummary:
-        put_count = sum(1 for item in items if item.get("putCallDivision") == "1")
-        call_count = sum(1 for item in items if item.get("putCallDivision") == "2")
-        total_volume = sum(float(value) for value in (item.get("volume") for item in items) if value is not None)
-        total_open_interest = sum(
-            float(value) for value in (item.get("openInterest") for item in items) if value is not None
-        )
-        return N225OptionsSummary(
-            totalCount=len(items),
-            putCount=put_count,
-            callCount=call_count,
-            totalVolume=total_volume,
-            totalOpenInterest=total_open_interest,
-            strikePriceRange=_range_from_values([item.get("strikePrice") for item in items]),
-            underlyingPriceRange=_range_from_values([item.get("underlyingPrice") for item in items]),
-            settlementPriceRange=_range_from_values([item.get("settlementPrice") for item in items]),
-        )
-
     async def get_options_225(self, requested_date: str | None = None) -> N225OptionsExplorerResponse:
         normalized_requested_date = _normalize_jquants_date(requested_date) if requested_date else None
         if normalized_requested_date is not None:
             payload = await self._get_cached_options_225_payload(normalized_requested_date)
-            return N225OptionsExplorerResponse(requestedDate=normalized_requested_date, **payload)
+            return N225OptionsExplorerResponse.model_validate(
+                {**payload, "requestedDate": normalized_requested_date}
+            )
 
         async def fetch_latest_payload() -> dict[str, Any]:
             resolved_date, rows, call_count = await self._resolve_recent_options_225_date()
@@ -538,4 +442,6 @@ class JQuantsProxyService:
             fetcher=fetch_latest_payload,
         )
         self._log_cache_state(OPTIONS_225_PATH, state, OPTIONS_225_LATEST_CACHE_KEY)
-        return N225OptionsExplorerResponse(requestedDate=normalized_requested_date, **payload)
+        return N225OptionsExplorerResponse.model_validate(
+            {**payload, "requestedDate": normalized_requested_date}
+        )

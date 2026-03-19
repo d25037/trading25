@@ -11,6 +11,10 @@ from typing import Literal
 
 from fastapi import APIRouter, HTTPException, Query, Request
 
+from src.application.services.market_data_errors import MarketDataError
+from src.application.services.options_225 import normalize_options_225_date
+from src.entrypoints.http.error_utils import market_data_http_exception
+from src.entrypoints.http.schemas.jquants import N225OptionsExplorerResponse
 from src.entrypoints.http.schemas.market_data import (
     MarketOHLCRecord,
     MarketOHLCVRecord,
@@ -101,3 +105,26 @@ def get_topix(
             detail="Market database not found or TOPIX data not available",
         )
     return result
+
+
+@router.get(
+    "/api/market/options/225",
+    response_model=N225OptionsExplorerResponse,
+    summary="日経225オプション四本値取得（DuckDB）",
+)
+def get_options_225(
+    request: Request,
+    date: str | None = Query(default=None, description="取引日 (YYYY-MM-DD or YYYYMMDD)"),
+) -> N225OptionsExplorerResponse:
+    normalized_date: str | None = None
+    if date is not None:
+        try:
+            normalized_date = normalize_options_225_date(date)
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    service = _get_market_data_service(request)
+    try:
+        return service.get_options_225(normalized_date)
+    except MarketDataError as exc:
+        raise market_data_http_exception(exc) from exc

@@ -6945,6 +6945,9 @@
           "margin": {
             "$ref": "#/components/schemas/MarginStats"
           },
+          "options225": {
+            "$ref": "#/components/schemas/Options225Stats"
+          },
           "stockData": {
             "$ref": "#/components/schemas/StockDataStats"
           },
@@ -6971,6 +6974,7 @@
           "stocks",
           "stockData",
           "indices",
+          "options225",
           "margin",
           "fundamentals",
           "lastUpdated"
@@ -7082,6 +7086,9 @@
           "margin": {
             "$ref": "#/components/schemas/MarginValidation"
           },
+          "options225": {
+            "$ref": "#/components/schemas/Options225Validation"
+          },
           "recommendations": {
             "items": {
               "type": "string"
@@ -7134,6 +7141,7 @@
           "topix",
           "stocks",
           "stockData",
+          "options225",
           "margin",
           "fundamentals",
           "sampleWindows",
@@ -8338,6 +8346,82 @@
           "params"
         ],
         "title": "OptimizeTrialItem",
+        "type": "object"
+      },
+      "Options225Stats": {
+        "properties": {
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "title": "Options225Stats",
+        "type": "object"
+      },
+      "Options225Validation": {
+        "properties": {
+          "conflictingUnderlyingPriceDates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Conflictingunderlyingpricedates",
+            "type": "array"
+          },
+          "conflictingUnderlyingPriceDatesCount": {
+            "default": 0,
+            "title": "Conflictingunderlyingpricedatescount",
+            "type": "integer"
+          },
+          "count": {
+            "default": 0,
+            "title": "Count",
+            "type": "integer"
+          },
+          "dateCount": {
+            "default": 0,
+            "title": "Datecount",
+            "type": "integer"
+          },
+          "dateRange": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/src__server__schemas__db__DateRange"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "missingUnderlyingPriceDates": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Missingunderlyingpricedates",
+            "type": "array"
+          },
+          "missingUnderlyingPriceDatesCount": {
+            "default": 0,
+            "title": "Missingunderlyingpricedatescount",
+            "type": "integer"
+          }
+        },
+        "title": "Options225Validation",
         "type": "object"
       },
       "PerformanceSummary": {
@@ -14271,6 +14355,12 @@
           "missingListedMarketStocks": {
             "$ref": "#/components/schemas/ValidationSampleWindow"
           },
+          "options225ConflictingUnderlyingPriceDates": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
+          "options225MissingUnderlyingPriceDates": {
+            "$ref": "#/components/schemas/ValidationSampleWindow"
+          },
           "stockDataMissingDates": {
             "$ref": "#/components/schemas/ValidationSampleWindow"
           },
@@ -14283,6 +14373,8 @@
           "failedDates",
           "adjustmentEvents",
           "stocksNeedingRefresh",
+          "options225MissingUnderlyingPriceDates",
+          "options225ConflictingUnderlyingPriceDates",
           "missingListedMarketStocks",
           "fundamentalsEmptySkippedCodes",
           "marginEmptySkippedCodes"
@@ -22801,6 +22893,87 @@
         "summary": "Get Lab Optimize Recommendation",
         "tags": [
           "Lab"
+        ]
+      }
+    },
+    "/api/market/options/225": {
+      "get": {
+        "operationId": "get_options_225_api_market_options_225_get",
+        "parameters": [
+          {
+            "description": "取引日 (YYYY-MM-DD or YYYYMMDD)",
+            "in": "query",
+            "name": "date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "取引日 (YYYY-MM-DD or YYYYMMDD)",
+              "title": "Date"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/N225OptionsExplorerResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "400": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Bad Request"
+          },
+          "404": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Not Found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          },
+          "500": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ErrorResponse"
+                }
+              }
+            },
+            "description": "Internal Server Error"
+          }
+        },
+        "summary": "日経225オプション四本値取得（DuckDB）",
+        "tags": [
+          "Market Data"
         ]
       }
     },

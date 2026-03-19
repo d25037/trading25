@@ -16,12 +16,14 @@ class MarketTimeSeriesStore(Protocol):
     def publish_topix_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_stock_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_indices_data(self, rows: list[dict[str, Any]]) -> int: ...
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int: ...
     def publish_statements(self, rows: list[dict[str, Any]]) -> int: ...
 
     def index_topix_data(self) -> None: ...
     def index_stock_data(self) -> None: ...
     def index_indices_data(self) -> None: ...
+    def index_options_225_data(self) -> None: ...
     def index_margin_data(self) -> None: ...
     def index_statements(self) -> None: ...
 
@@ -62,6 +64,11 @@ class TimeSeriesInspection:
     indices_max: str | None = None
     indices_date_count: int = 0
     latest_indices_dates: dict[str, str] = field(default_factory=dict)
+    options_225_count: int = 0
+    options_225_min: str | None = None
+    options_225_max: str | None = None
+    options_225_date_count: int = 0
+    latest_options_225_date: str | None = None
     margin_count: int = 0
     margin_min: str | None = None
     margin_max: str | None = None
@@ -92,6 +99,7 @@ class DuckDbParquetTimeSeriesStore:
         # 高カーディナリティ表は export 時の全件 sort が支配的になりやすいため非ソートで出力する。
         "stock_data": _TableSpec("stock_data", "stock_data.parquet"),
         "indices_data": _TableSpec("indices_data", "indices_data.parquet"),
+        "options_225_data": _TableSpec("options_225_data", "options_225_data.parquet"),
         "margin_data": _TableSpec("margin_data", "margin_data.parquet"),
         "statements": _TableSpec("statements", "statements.parquet", "disclosed_date, code"),
     }
@@ -212,6 +220,44 @@ class DuckDbParquetTimeSeriesStore:
                     low DOUBLE,
                     close DOUBLE,
                     sector_name TEXT,
+                    created_at TEXT,
+                    PRIMARY KEY (code, date)
+                )
+                """
+            )
+            self._conn.execute(
+                """
+                CREATE TABLE IF NOT EXISTS options_225_data (
+                    code TEXT,
+                    date TEXT,
+                    whole_day_open DOUBLE,
+                    whole_day_high DOUBLE,
+                    whole_day_low DOUBLE,
+                    whole_day_close DOUBLE,
+                    night_session_open DOUBLE,
+                    night_session_high DOUBLE,
+                    night_session_low DOUBLE,
+                    night_session_close DOUBLE,
+                    day_session_open DOUBLE,
+                    day_session_high DOUBLE,
+                    day_session_low DOUBLE,
+                    day_session_close DOUBLE,
+                    volume DOUBLE,
+                    open_interest DOUBLE,
+                    turnover_value DOUBLE,
+                    contract_month TEXT,
+                    strike_price DOUBLE,
+                    only_auction_volume DOUBLE,
+                    emergency_margin_trigger_division TEXT,
+                    put_call_division TEXT,
+                    last_trading_day TEXT,
+                    special_quotation_day TEXT,
+                    settlement_price DOUBLE,
+                    theoretical_price DOUBLE,
+                    base_volatility DOUBLE,
+                    underlying_price DOUBLE,
+                    implied_volatility DOUBLE,
+                    interest_rate DOUBLE,
                     created_at TEXT,
                     PRIMARY KEY (code, date)
                 )
@@ -402,6 +448,94 @@ class DuckDbParquetTimeSeriesStore:
             self._dirty_tables.add("indices_data")
         return len(rows)
 
+    def publish_options_225_data(self, rows: list[dict[str, Any]]) -> int:
+        if not rows:
+            return 0
+        values = [
+            (
+                row.get("code"),
+                row.get("date"),
+                row.get("whole_day_open"),
+                row.get("whole_day_high"),
+                row.get("whole_day_low"),
+                row.get("whole_day_close"),
+                row.get("night_session_open"),
+                row.get("night_session_high"),
+                row.get("night_session_low"),
+                row.get("night_session_close"),
+                row.get("day_session_open"),
+                row.get("day_session_high"),
+                row.get("day_session_low"),
+                row.get("day_session_close"),
+                row.get("volume"),
+                row.get("open_interest"),
+                row.get("turnover_value"),
+                row.get("contract_month"),
+                row.get("strike_price"),
+                row.get("only_auction_volume"),
+                row.get("emergency_margin_trigger_division"),
+                row.get("put_call_division"),
+                row.get("last_trading_day"),
+                row.get("special_quotation_day"),
+                row.get("settlement_price"),
+                row.get("theoretical_price"),
+                row.get("base_volatility"),
+                row.get("underlying_price"),
+                row.get("implied_volatility"),
+                row.get("interest_rate"),
+                row.get("created_at"),
+            )
+            for row in rows
+        ]
+        with self._lock:
+            self._conn.executemany(
+                """
+                INSERT INTO options_225_data (
+                    code, date, whole_day_open, whole_day_high, whole_day_low, whole_day_close,
+                    night_session_open, night_session_high, night_session_low, night_session_close,
+                    day_session_open, day_session_high, day_session_low, day_session_close,
+                    volume, open_interest, turnover_value, contract_month, strike_price,
+                    only_auction_volume, emergency_margin_trigger_division, put_call_division,
+                    last_trading_day, special_quotation_day, settlement_price, theoretical_price,
+                    base_volatility, underlying_price, implied_volatility, interest_rate, created_at
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT (code, date) DO UPDATE
+                SET whole_day_open = excluded.whole_day_open,
+                    whole_day_high = excluded.whole_day_high,
+                    whole_day_low = excluded.whole_day_low,
+                    whole_day_close = excluded.whole_day_close,
+                    night_session_open = excluded.night_session_open,
+                    night_session_high = excluded.night_session_high,
+                    night_session_low = excluded.night_session_low,
+                    night_session_close = excluded.night_session_close,
+                    day_session_open = excluded.day_session_open,
+                    day_session_high = excluded.day_session_high,
+                    day_session_low = excluded.day_session_low,
+                    day_session_close = excluded.day_session_close,
+                    volume = excluded.volume,
+                    open_interest = excluded.open_interest,
+                    turnover_value = excluded.turnover_value,
+                    contract_month = excluded.contract_month,
+                    strike_price = excluded.strike_price,
+                    only_auction_volume = excluded.only_auction_volume,
+                    emergency_margin_trigger_division = excluded.emergency_margin_trigger_division,
+                    put_call_division = excluded.put_call_division,
+                    last_trading_day = excluded.last_trading_day,
+                    special_quotation_day = excluded.special_quotation_day,
+                    settlement_price = excluded.settlement_price,
+                    theoretical_price = excluded.theoretical_price,
+                    base_volatility = excluded.base_volatility,
+                    underlying_price = excluded.underlying_price,
+                    implied_volatility = excluded.implied_volatility,
+                    interest_rate = excluded.interest_rate,
+                    created_at = excluded.created_at
+                """,
+                values,
+            )
+            self._dirty_tables.add("options_225_data")
+        return len(rows)
+
     def publish_margin_data(self, rows: list[dict[str, Any]]) -> int:
         if not rows:
             return 0
@@ -469,6 +603,9 @@ class DuckDbParquetTimeSeriesStore:
     def index_indices_data(self) -> None:
         self._export_if_dirty("indices_data")
 
+    def index_options_225_data(self) -> None:
+        self._export_if_dirty("options_225_data")
+
     def index_margin_data(self) -> None:
         self._export_if_dirty("margin_data")
 
@@ -512,6 +649,16 @@ class DuckDbParquetTimeSeriesStore:
                 GROUP BY code
                 """
             ).fetchall()
+            options_225_row_raw = self._conn.execute(
+                """
+                SELECT
+                    COUNT(*) AS count,
+                    MIN(date) AS min_date,
+                    MAX(date) AS max_date,
+                    COUNT(DISTINCT date) AS date_count
+                FROM options_225_data
+                """
+            ).fetchone()
             margin_row_raw = self._conn.execute(
                 """
                 SELECT
@@ -547,6 +694,9 @@ class DuckDbParquetTimeSeriesStore:
             topix_row = topix_row_raw if topix_row_raw is not None else (0, None, None)
             stock_row = stock_row_raw if stock_row_raw is not None else (0, None, None, 0)
             indices_row = indices_row_raw if indices_row_raw is not None else (0, None, None, 0)
+            options_225_row = (
+                options_225_row_raw if options_225_row_raw is not None else (0, None, None, 0)
+            )
             margin_row = margin_row_raw if margin_row_raw is not None else (0, None, None, 0)
             statements_row = statements_row_raw if statements_row_raw is not None else (0, None)
             missing_stock_dates_count = int(missing_count_row[0] or 0) if missing_count_row else 0
@@ -614,6 +764,11 @@ class DuckDbParquetTimeSeriesStore:
                 indices_max=cast(str | None, indices_row[2]),
                 indices_date_count=int(indices_row[3] or 0),
                 latest_indices_dates=latest_indices_dates,
+                options_225_count=int(options_225_row[0] or 0),
+                options_225_min=cast(str | None, options_225_row[1]),
+                options_225_max=cast(str | None, options_225_row[2]),
+                options_225_date_count=int(options_225_row[3] or 0),
+                latest_options_225_date=cast(str | None, options_225_row[2]),
                 margin_count=int(margin_row[0] or 0),
                 margin_min=cast(str | None, margin_row[1]),
                 margin_max=cast(str | None, margin_row[2]),

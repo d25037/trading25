@@ -160,7 +160,32 @@ def test_get_market_stats_handles_empty_ranges_and_fundamentals_target_codes() -
     assert result.stockData.averageStocksPerDay == 0
     assert result.indices.dateRange is None
     assert result.indices.byCategory == {"sector33": 1}
+    assert result.options225.count == 0
+    assert result.options225.dateRange is None
     assert result.margin.count == 0
     assert result.margin.dateRange is None
     assert result.fundamentals.listedMarketCoverage.coverageRatio == 0
     assert result.fundamentals.listedMarketCoverage.issuerAliasCoveredCount == 0
+
+
+def test_get_market_stats_includes_options_225_ranges() -> None:
+    market_db = DummyMarketDb()
+    inspection = TimeSeriesInspection(
+        source="duckdb-parquet",
+        options_225_count=3,
+        options_225_min="2024-01-16",
+        options_225_max="2024-01-17",
+        options_225_date_count=2,
+        statement_codes=set(),
+    )
+
+    result = db_stats_service.get_market_stats(
+        market_db=market_db,
+        time_series_store=DummyStore(inspection),
+    )
+
+    assert result.options225.count == 3
+    assert result.options225.dateCount == 2
+    assert result.options225.dateRange is not None
+    assert result.options225.dateRange.min == "2024-01-16"
+    assert result.options225.dateRange.max == "2024-01-17"

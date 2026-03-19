@@ -38,12 +38,16 @@ class DummyMarketDb:
         adjustment_events: list[dict[str, Any]] | None = None,
         fundamentals_target_codes: set[str] | None = None,
         fundamentals_target_rows: list[dict[str, str]] | None = None,
+        options_225_missing_underlying_dates: list[str] | None = None,
+        options_225_conflicting_underlying_dates: list[str] | None = None,
     ) -> None:
         self._initialized = initialized
         self._stocks_needing_refresh = stocks_needing_refresh or []
         self._adjustment_events = adjustment_events or []
         self._fundamentals_target_codes = fundamentals_target_codes or {"1301", "7203"}
         self._fundamentals_target_rows = fundamentals_target_rows
+        self._options_225_missing_underlying_dates = options_225_missing_underlying_dates or []
+        self._options_225_conflicting_underlying_dates = options_225_conflicting_underlying_dates or []
         self._metadata = {
             "init_completed": "true",
             "last_sync_date": "2026-02-28T00:00:00+00:00",
@@ -90,6 +94,25 @@ class DummyMarketDb:
             }
             for code in sorted(self._fundamentals_target_codes)
         ]
+
+    def get_options_225_underlying_price_issue_dates(
+        self,
+        *,
+        issue_type: str,
+        limit: int = 20,
+    ) -> list[str]:
+        issues = self._resolve_options_225_issue_dates(issue_type)
+        return list(issues[:limit])
+
+    def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int:
+        return len(self._resolve_options_225_issue_dates(issue_type))
+
+    def _resolve_options_225_issue_dates(self, issue_type: str) -> list[str]:
+        if issue_type == "missing":
+            return list(self._options_225_missing_underlying_dates)
+        if issue_type == "conflicting":
+            return list(self._options_225_conflicting_underlying_dates)
+        raise ValueError(f"Unsupported options_225 issue type: {issue_type}")
 
 
 def test_validate_market_db_uses_missing_dates_total_count_from_inspection() -> None:
@@ -256,6 +279,38 @@ def test_validate_market_db_limits_adjustment_event_samples_but_uses_total_count
     assert result.adjustmentEventsCount == 25
     assert len(result.adjustmentEvents) == 20
     assert result.sampleWindows.adjustmentEvents.truncated is True
+
+
+def test_validate_market_db_reports_options_225_underlying_issues() -> None:
+    market_db = DummyMarketDb(
+        options_225_missing_underlying_dates=["2024-01-16"],
+        options_225_conflicting_underlying_dates=["2024-01-17"],
+    )
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            options_225_count=4,
+            options_225_min="2024-01-16",
+            options_225_max="2024-01-17",
+            options_225_date_count=2,
+            statements_count=10,
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.options225.count == 4
+    assert result.options225.missingUnderlyingPriceDatesCount == 1
+    assert result.options225.conflictingUnderlyingPriceDatesCount == 1
+    assert result.sampleWindows.options225MissingUnderlyingPriceDates.truncated is False
+    assert result.sampleWindows.options225ConflictingUnderlyingPriceDates.truncated is False
 
 
 def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -> None:

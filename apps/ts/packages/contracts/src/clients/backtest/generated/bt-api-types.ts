@@ -1727,6 +1727,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/market/options/225": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** 日経225オプション四本値取得（DuckDB） */
+        get: operations["get_options_225_api_market_options_225_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/market/stocks": {
         parameters: {
             query?: never;
@@ -6059,6 +6076,7 @@ export interface components {
             /** Lastupdated */
             lastUpdated: string;
             margin: components["schemas"]["MarginStats"];
+            options225: components["schemas"]["Options225Stats"];
             stockData: components["schemas"]["StockDataStats"];
             stocks: components["schemas"]["StockStats"];
             storage: components["schemas"]["StorageStats"];
@@ -6123,6 +6141,7 @@ export interface components {
             /** Lastupdated */
             lastUpdated: string;
             margin: components["schemas"]["MarginValidation"];
+            options225: components["schemas"]["Options225Validation"];
             /** Recommendations */
             recommendations?: string[];
             sampleWindows: components["schemas"]["ValidationSampleWindows"];
@@ -6687,6 +6706,48 @@ export interface components {
              * @description トライアル番号
              */
             trial: number;
+        };
+        /** Options225Stats */
+        Options225Stats: {
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+        };
+        /** Options225Validation */
+        Options225Validation: {
+            /** Conflictingunderlyingpricedates */
+            conflictingUnderlyingPriceDates?: string[];
+            /**
+             * Conflictingunderlyingpricedatescount
+             * @default 0
+             */
+            conflictingUnderlyingPriceDatesCount: number;
+            /**
+             * Count
+             * @default 0
+             */
+            count: number;
+            /**
+             * Datecount
+             * @default 0
+             */
+            dateCount: number;
+            dateRange?: components["schemas"]["src__server__schemas__db__DateRange"] | null;
+            /** Missingunderlyingpricedates */
+            missingUnderlyingPriceDates?: string[];
+            /**
+             * Missingunderlyingpricedatescount
+             * @default 0
+             */
+            missingUnderlyingPriceDatesCount: number;
         };
         /** PerformanceSummary */
         PerformanceSummary: {
@@ -9242,6 +9303,8 @@ export interface components {
             fundamentalsEmptySkippedCodes: components["schemas"]["ValidationSampleWindow"];
             marginEmptySkippedCodes: components["schemas"]["ValidationSampleWindow"];
             missingListedMarketStocks: components["schemas"]["ValidationSampleWindow"];
+            options225ConflictingUnderlyingPriceDates: components["schemas"]["ValidationSampleWindow"];
+            options225MissingUnderlyingPriceDates: components["schemas"]["ValidationSampleWindow"];
             stockDataMissingDates: components["schemas"]["ValidationSampleWindow"];
             stocksNeedingRefresh: components["schemas"]["ValidationSampleWindow"];
         };
@@ -14933,6 +14996,65 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["LabOptimizeRecommendationResponse"];
+                };
+            };
+            /** @description Bad Request */
+            400: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Not Found */
+            404: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+            /** @description Internal Server Error */
+            500: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
+    get_options_225_api_market_options_225_get: {
+        parameters: {
+            query?: {
+                /** @description 取引日 (YYYY-MM-DD or YYYYMMDD) */
+                date?: string | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["N225OptionsExplorerResponse"];
                 };
             };
             /** @description Bad Request */

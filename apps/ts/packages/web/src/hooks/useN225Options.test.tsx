@@ -50,7 +50,7 @@ describe('useN225Options', () => {
     const { result } = renderHook(() => useN225Options({ date: '2026-03-18' }), { wrapper });
 
     await waitFor(() => expect(result.current.isSuccess).toBe(true));
-    expect(apiGet).toHaveBeenCalledWith('/api/jquants/options/225', { date: '2026-03-18' });
+    expect(apiGet).toHaveBeenCalledWith('/api/market/options/225', { date: '2026-03-18' });
   });
 
   it('does not retry client errors', async () => {

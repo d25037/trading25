@@ -37,6 +37,20 @@ function formatTimestamp(value?: string | null): string {
 }
 
 const ACTIVE_SYNC_JOB_STORAGE_KEY = 'trading25.settings.sync.activeJobId';
+const EMPTY_OPTIONS_225_STATS = {
+  count: 0,
+  dateCount: 0,
+  dateRange: null,
+} as const;
+const EMPTY_OPTIONS_225_VALIDATION = {
+  count: 0,
+  dateCount: 0,
+  dateRange: null,
+  missingUnderlyingPriceDatesCount: 0,
+  missingUnderlyingPriceDates: [],
+  conflictingUnderlyingPriceDatesCount: 0,
+  conflictingUnderlyingPriceDates: [],
+} as const;
 
 function readPersistedActiveSyncJobId(): string | null {
   if (typeof window === 'undefined') {
@@ -347,6 +361,7 @@ function buildSnapshotSummaryItems(
 
 function buildCoverageItems(dbStats: MarketStatsResponse): SnapshotCoverageItem[] {
   const fundamentalsCoverage = dbStats.fundamentals.listedMarketCoverage;
+  const options225 = dbStats.options225 ?? EMPTY_OPTIONS_225_STATS;
   return [
     {
       label: 'Stock Data',
@@ -374,6 +389,15 @@ function buildCoverageItems(dbStats: MarketStatsResponse): SnapshotCoverageItem[
         `Rows: ${formatCount(dbStats.indices.dataCount)}`,
         `Master entries: ${formatCount(dbStats.indices.masterCount)}`,
         `Categories: ${formatCategoryBreakdown(dbStats.indices.byCategory)}`,
+      ],
+    },
+    {
+      label: 'N225 Options',
+      value: options225.dateRange?.max ?? 'n/a',
+      meta: [
+        `Range: ${formatDateRange(options225.dateRange)}`,
+        `Rows: ${formatCount(options225.count)}`,
+        `Trading dates: ${formatCount(options225.dateCount)}`,
       ],
     },
     {
@@ -435,6 +459,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
   const fundamentals = dbValidation.fundamentals;
   const margin = dbValidation.margin;
   const sampleWindows = dbValidation.sampleWindows;
+  const options225 = dbValidation.options225 ?? EMPTY_OPTIONS_225_VALIDATION;
 
   appendValidationDiagnostic(diagnostics, dbValidation.stockData.missingDatesCount, {
     label: 'Missing Stock Dates',
@@ -473,6 +498,22 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
   appendValidationDiagnostic(diagnostics, margin.orphanCount, {
     label: 'Margin Orphans',
     helpText: 'margin_data contains codes that are missing from stocks metadata.',
+  });
+
+  appendValidationDiagnostic(diagnostics, options225.missingUnderlyingPriceDatesCount, {
+    label: 'N225 UnderPx Missing Dates',
+    helpText: 'These option dates exist locally but every contract is missing UnderPx.',
+    sampleItems: options225.missingUnderlyingPriceDates,
+    sampleLabel: 'Sample dates',
+    sampleHint: buildSampleHint(sampleWindows?.options225MissingUnderlyingPriceDates),
+  });
+
+  appendValidationDiagnostic(diagnostics, options225.conflictingUnderlyingPriceDatesCount, {
+    label: 'N225 UnderPx Conflicts',
+    helpText: 'Multiple distinct UnderPx values were stored for the same trade date.',
+    sampleItems: options225.conflictingUnderlyingPriceDates,
+    sampleLabel: 'Sample dates',
+    sampleHint: buildSampleHint(sampleWindows?.options225ConflictingUnderlyingPriceDates),
   });
 
   appendValidationDiagnostic(diagnostics, dbValidation.integrityIssuesCount, {

@@ -249,6 +249,43 @@ def market_timeseries_dir(tmp_path: Path) -> str:
         )
     """)
 
+    conn.execute("""
+        CREATE TABLE options_225_data (
+            code TEXT NOT NULL,
+            date TEXT NOT NULL,
+            whole_day_open DOUBLE,
+            whole_day_high DOUBLE,
+            whole_day_low DOUBLE,
+            whole_day_close DOUBLE,
+            night_session_open DOUBLE,
+            night_session_high DOUBLE,
+            night_session_low DOUBLE,
+            night_session_close DOUBLE,
+            day_session_open DOUBLE,
+            day_session_high DOUBLE,
+            day_session_low DOUBLE,
+            day_session_close DOUBLE,
+            volume DOUBLE,
+            open_interest DOUBLE,
+            turnover_value DOUBLE,
+            contract_month TEXT,
+            strike_price DOUBLE,
+            only_auction_volume DOUBLE,
+            emergency_margin_trigger_division TEXT,
+            put_call_division TEXT,
+            last_trading_day TEXT,
+            special_quotation_day TEXT,
+            settlement_price DOUBLE,
+            theoretical_price DOUBLE,
+            base_volatility DOUBLE,
+            underlying_price DOUBLE,
+            implied_volatility DOUBLE,
+            interest_rate DOUBLE,
+            created_at TEXT,
+            PRIMARY KEY (code, date)
+        )
+    """)
+
     conn.execute(
         "INSERT INTO stocks VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         ("72030", "トヨタ自動車", "TOYOTA MOTOR", "prime", "プライム", "S17_1", "輸送用機器", "S33_1", "輸送用機器", "TOPIX Large70", "1949-05-16", None, None),
@@ -284,6 +321,10 @@ def market_timeseries_dir(tmp_path: Path) -> str:
         "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
         ("0001", "電気機器", "Electric Appliances", "sector33", "2010-01-04"),
     )
+    conn.execute(
+        "INSERT INTO index_master VALUES (?, ?, ?, ?, ?)",
+        ("N225_UNDERPX", "日経平均", "Nikkei 225 (UnderPx derived)", "synthetic", "2024-01-16"),
+    )
 
     for d in ("2024-01-15", "2024-01-16", "2024-01-17"):
         conn.execute(
@@ -294,6 +335,123 @@ def market_timeseries_dir(tmp_path: Path) -> str:
             "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
             ("0001", d, 1200.0, 1220.0, 1190.0, 1210.0, "電気機器", None),
         )
+    conn.execute(
+        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("N225_UNDERPX", "2024-01-16", 36100.0, 36100.0, 36100.0, 36100.0, "日経平均", None),
+    )
+    conn.execute(
+        "INSERT INTO indices_data VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        ("N225_UNDERPX", "2024-01-17", 36250.0, 36250.0, 36250.0, 36250.0, "日経平均", None),
+    )
+
+    options_rows = [
+        (
+            "131040018",
+            "2024-01-16",
+            10.0,
+            12.0,
+            9.0,
+            11.0,
+            9.0,
+            11.0,
+            8.0,
+            10.0,
+            10.0,
+            12.0,
+            9.0,
+            11.0,
+            100.0,
+            250.0,
+            110000.0,
+            "2024-04",
+            32000.0,
+            0.0,
+            None,
+            "1",
+            "2024-04-11",
+            "2024-04-12",
+            11.0,
+            10.5,
+            18.0,
+            36100.0,
+            22.0,
+            0.5,
+            None,
+        ),
+        (
+            "131040018",
+            "2024-01-17",
+            12.0,
+            13.0,
+            11.0,
+            12.5,
+            11.0,
+            12.0,
+            10.0,
+            11.0,
+            12.0,
+            13.0,
+            11.0,
+            12.5,
+            120.0,
+            260.0,
+            130000.0,
+            "2024-04",
+            32000.0,
+            0.0,
+            None,
+            "1",
+            "2024-04-11",
+            "2024-04-12",
+            12.0,
+            11.5,
+            18.5,
+            36250.0,
+            23.0,
+            0.5,
+            None,
+        ),
+        (
+            "141040018",
+            "2024-01-17",
+            20.0,
+            21.0,
+            18.0,
+            19.5,
+            19.0,
+            20.0,
+            18.0,
+            19.0,
+            20.0,
+            21.0,
+            18.0,
+            19.5,
+            90.0,
+            180.0,
+            175000.0,
+            "2024-04",
+            36000.0,
+            0.0,
+            None,
+            "2",
+            "2024-04-11",
+            "2024-04-12",
+            19.0,
+            19.2,
+            17.5,
+            36250.0,
+            19.0,
+            0.5,
+            None,
+        ),
+    ]
+    conn.executemany(
+        """
+        INSERT INTO options_225_data VALUES
+        (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        options_rows,
+    )
 
     conn.close()
     return str(base_dir)

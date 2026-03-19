@@ -29,6 +29,7 @@ from src.entrypoints.http.schemas.db import (
     IntegrityIssue,
     MarginValidation,
     MarketValidationResponse,
+    Options225Validation,
     ValidationSampleWindow,
     ValidationSampleWindows,
     StockDataValidation,
@@ -41,6 +42,7 @@ _STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT = 20
 _FAILED_DATES_SAMPLE_LIMIT = 10
 _ADJUSTMENT_EVENTS_SAMPLE_LIMIT = 20
 _STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT = 20
+_OPTIONS_225_SAMPLE_LIMIT = 20
 _MISSING_LISTED_MARKET_STOCKS_SAMPLE_LIMIT = 20
 _EMPTY_SKIPPED_CODES_SAMPLE_LIMIT = 20
 
@@ -102,6 +104,8 @@ class ValidationMarketDbLike(Protocol):
     def get_stocks_needing_refresh_count(self) -> int: ...
     def get_fundamentals_target_codes(self) -> set[str]: ...
     def get_fundamentals_target_stock_rows(self) -> list[dict[str, str]]: ...
+    def get_options_225_underlying_price_issue_dates(self, *, issue_type: str, limit: int = 20) -> list[str]: ...
+    def get_options_225_underlying_price_issue_count(self, *, issue_type: str) -> int: ...
 
 
 class ValidationTimeSeriesStoreLike(Protocol):
@@ -166,6 +170,20 @@ def validate_market_db(
         )
     )
     margin_empty_skipped_count = len(margin_empty_skipped_codes)
+    options_225_missing_underlying_dates = market_db.get_options_225_underlying_price_issue_dates(
+        issue_type="missing",
+        limit=_OPTIONS_225_SAMPLE_LIMIT,
+    )
+    options_225_missing_underlying_dates_count = market_db.get_options_225_underlying_price_issue_count(
+        issue_type="missing"
+    )
+    options_225_conflicting_underlying_dates = market_db.get_options_225_underlying_price_issue_dates(
+        issue_type="conflicting",
+        limit=_OPTIONS_225_SAMPLE_LIMIT,
+    )
+    options_225_conflicting_underlying_dates_count = market_db.get_options_225_underlying_price_issue_count(
+        issue_type="conflicting"
+    )
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT)
@@ -210,6 +228,14 @@ def validate_market_db(
         recommendations.append(
             f"Run repair sync to backfill fundamentals for {missing_fundamentals_count} listed-market stocks"
         )
+    if options_225_missing_underlying_dates_count > 0:
+        recommendations.append(
+            f"Run sync again or inspect raw options data for {options_225_missing_underlying_dates_count} dates with missing UnderPx"
+        )
+    if options_225_conflicting_underlying_dates_count > 0:
+        recommendations.append(
+            f"Inspect options ingestion for {options_225_conflicting_underlying_dates_count} dates with conflicting UnderPx values"
+        )
     if fundamentals_empty_skipped_count > 0:
         recommendations.append(
             f"Fundamentals backfill skipped for {fundamentals_empty_skipped_count} listed-market stocks after empty responses at disclosed frontier {fundamentals_frontier or 'n/a'}"
@@ -237,6 +263,8 @@ def validate_market_db(
         or failed_dates
         or all_needing_count > 0
         or missing_fundamentals_count > 0
+        or options_225_missing_underlying_dates_count > 0
+        or options_225_conflicting_underlying_dates_count > 0
         or fundamentals_empty_skipped_count > 0
         or fundamentals_failed_dates
         or fundamentals_failed_codes
@@ -270,6 +298,21 @@ def validate_market_db(
         else None,
         missingDates=missing_dates[:_STOCK_DATA_MISSING_DATES_SAMPLE_LIMIT],
         missingDatesCount=missing_dates_count,
+    )
+
+    options_225_val = Options225Validation(
+        count=inspection.options_225_count,
+        dateCount=inspection.options_225_date_count,
+        dateRange=DateRange(
+            min=inspection.options_225_min,
+            max=inspection.options_225_max,
+        )
+        if inspection.options_225_min and inspection.options_225_max
+        else None,
+        missingUnderlyingPriceDatesCount=options_225_missing_underlying_dates_count,
+        missingUnderlyingPriceDates=options_225_missing_underlying_dates,
+        conflictingUnderlyingPriceDatesCount=options_225_conflicting_underlying_dates_count,
+        conflictingUnderlyingPriceDates=options_225_conflicting_underlying_dates,
     )
 
     margin_val = MarginValidation(
@@ -309,6 +352,7 @@ def validate_market_db(
         topix=topix,
         stocks=stocks_stats,
         stockData=stock_data_val,
+        options225=options_225_val,
         margin=margin_val,
         fundamentals=fundamentals_val,
         failedDates=failed_dates[:_FAILED_DATES_SAMPLE_LIMIT],
@@ -341,6 +385,16 @@ def validate_market_db(
                 total_count=all_needing_count,
                 returned_count=len(sample_needing),
                 limit=_STOCKS_NEEDING_REFRESH_SAMPLE_LIMIT,
+            ),
+            options225MissingUnderlyingPriceDates=_build_sample_window(
+                total_count=options_225_missing_underlying_dates_count,
+                returned_count=len(options_225_val.missingUnderlyingPriceDates),
+                limit=_OPTIONS_225_SAMPLE_LIMIT,
+            ),
+            options225ConflictingUnderlyingPriceDates=_build_sample_window(
+                total_count=options_225_conflicting_underlying_dates_count,
+                returned_count=len(options_225_val.conflictingUnderlyingPriceDates),
+                limit=_OPTIONS_225_SAMPLE_LIMIT,
             ),
             missingListedMarketStocks=_build_sample_window(
                 total_count=missing_fundamentals_count,

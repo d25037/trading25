@@ -25,6 +25,7 @@ from src.entrypoints.http.schemas.db import (
     ListedMarketCoverage,
     MarginStats,
     MarketStatsResponse,
+    Options225Stats,
     StockDataStats,
     StorageStats,
     StockStats,
@@ -170,6 +171,14 @@ def get_market_stats(
         byCategory=index_master_by_category,
     )
 
+    options_225 = Options225Stats(
+        count=inspection.options_225_count,
+        dateCount=inspection.options_225_date_count,
+        dateRange=DateRange(min=inspection.options_225_min, max=inspection.options_225_max)
+        if inspection.options_225_min and inspection.options_225_max
+        else None,
+    )
+
     margin = MarginStats(
         count=inspection.margin_count,
         uniqueStockCount=len(inspection.margin_codes),
@@ -207,6 +216,7 @@ def get_market_stats(
         stocks=stocks_stats,
         stockData=stock_data,
         indices=indices,
+        options225=options_225,
         margin=margin,
         fundamentals=fundamentals,
         lastUpdated=datetime.now(UTC).isoformat(),
