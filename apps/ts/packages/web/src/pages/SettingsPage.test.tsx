@@ -125,6 +125,11 @@ beforeEach(() => {
         dateRange: { min: '2016-02-29', max: '2026-02-27' },
         byCategory: { sector33: 33, sector17: 17, style: 5 },
       },
+      options225: {
+        count: 0,
+        dateCount: 0,
+        dateRange: null,
+      },
       margin: {
         count: 2400,
         uniqueStockCount: 1200,
@@ -164,6 +169,15 @@ beforeEach(() => {
         dateRange: { min: '2024-01-01', max: '2026-02-27' },
         missingDatesCount: 12,
         missingDates: ['2026-02-27', '2026-02-20'],
+      },
+      options225: {
+        count: 0,
+        dateCount: 0,
+        dateRange: null,
+        missingUnderlyingPriceDatesCount: 0,
+        missingUnderlyingPriceDates: [],
+        conflictingUnderlyingPriceDatesCount: 0,
+        conflictingUnderlyingPriceDates: [],
       },
       margin: {
         count: 2400,
@@ -208,6 +222,7 @@ beforeEach(() => {
       recommendations: [
         'Run repair sync to refresh 100 stocks with pending adjustment backfill',
         'Run repair sync to backfill fundamentals for 7 listed-market stocks',
+        'Run indices-only sync to ingest N225 options data into options_225_data',
       ],
       lastUpdated: '2026-03-01T12:00:01Z',
     },
@@ -403,12 +418,18 @@ describe('SettingsPage', () => {
     expect(screen.getByText('Snapshot Summary')).toBeInTheDocument();
     expect(screen.getByText('Data Coverage')).toBeInTheDocument();
     expect(screen.getByText('Validation Diagnostics')).toBeInTheDocument();
+    expect(screen.getByText('Actionable Warnings')).toBeInTheDocument();
+    expect(screen.getByText('Informational Diagnostics')).toBeInTheDocument();
     expect(screen.getByText('Last Stock Refresh')).toBeInTheDocument();
     expect(screen.getByText('Local Storage')).toBeInTheDocument();
     expect(screen.getAllByText('12 KB').length).toBeGreaterThan(0);
     expect(screen.getByText('Stock Data')).toBeInTheDocument();
     expect(screen.getByText('Fundamentals')).toBeInTheDocument();
+    expect(screen.getAllByText('N225 Options').length).toBeGreaterThan(0);
+    expect(screen.getByText('Not ingested')).toBeInTheDocument();
+    expect(screen.getByText('Status: No local options chain yet (TOPIX latest 2026-02-27)')).toBeInTheDocument();
     expect(screen.getByText('Alias covered: 6')).toBeInTheDocument();
+    expect(screen.getByText('N225 Options Missing Locally')).toBeInTheDocument();
     expect(screen.getByText('Margin Orphans')).toBeInTheDocument();
     expect(screen.getByText('Missing Stock Dates')).toBeInTheDocument();
     expect(screen.getByText('12')).toBeInTheDocument();
@@ -429,8 +450,209 @@ describe('SettingsPage', () => {
       screen.getAllByText('Run repair sync to refresh 100 stocks with pending adjustment backfill').length
     ).toBeGreaterThan(0);
     expect(screen.getAllByText('Run repair sync to backfill fundamentals for 7 listed-market stocks').length).toBeGreaterThan(0);
+    expect(screen.getByText('Run indices-only sync to ingest N225 options data into options_225_data')).toBeInTheDocument();
     expect(screen.getByText('Warning Recovery')).toBeInTheDocument();
     expect(screen.getByText('Repair Warnings')).toBeInTheDocument();
+  });
+
+  it('renders stale N225 options as an actionable warning instead of a silent date', () => {
+    mockUseDbStats.mockReturnValue({
+      data: {
+        initialized: true,
+        lastSync: '2026-02-28T02:29:45.768793+00:00',
+        timeSeriesSource: 'duckdb-parquet',
+        databaseSize: 4096,
+        storage: {
+          duckdbBytes: 4096,
+          parquetBytes: 8192,
+          totalBytes: 12288,
+        },
+        topix: {
+          count: 2450,
+          dateRange: { min: '2016-02-29', max: '2026-02-27' },
+        },
+        stocks: {
+          total: 3800,
+          byMarket: { Prime: 1800, Standard: 1200, Growth: 800 },
+        },
+        stockData: {
+          count: 1200000,
+          dateCount: 520,
+          dateRange: { min: '2024-01-01', max: '2026-02-27' },
+          averageStocksPerDay: 2307.69,
+        },
+        indices: {
+          masterCount: 75,
+          dataCount: 56000,
+          dateCount: 520,
+          dateRange: { min: '2016-02-29', max: '2026-02-27' },
+          byCategory: { sector33: 33, sector17: 17, style: 5 },
+        },
+        options225: {
+          count: 12,
+          dateCount: 2,
+          dateRange: { min: '2026-02-20', max: '2026-02-20' },
+        },
+        margin: {
+          count: 2400,
+          uniqueStockCount: 1200,
+          dateCount: 120,
+          dateRange: { min: '2024-01-05', max: '2026-02-27' },
+        },
+        fundamentals: {
+          count: 9800,
+          uniqueStockCount: 2500,
+          latestDisclosedDate: '2026-02-26',
+          listedMarketCoverage: {
+            listedMarketStocks: 2500,
+            coveredStocks: 2499,
+            missingStocks: 1,
+            coverageRatio: 0.9996,
+            issuerAliasCoveredCount: 0,
+            emptySkippedCount: 0,
+          },
+        },
+        lastUpdated: '2026-03-01T12:00:00Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'warning',
+        initialized: true,
+        lastSync: '2026-02-28T02:29:45.768793+00:00',
+        lastStocksRefresh: '2026-03-01T03:00:00Z',
+        timeSeriesSource: 'duckdb-parquet',
+        topix: { count: 2450, dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+        stocks: { total: 3800, byMarket: { Prime: 1800 } },
+        stockData: {
+          count: 1200000,
+          dateRange: { min: '2024-01-01', max: '2026-02-27' },
+          missingDatesCount: 0,
+          missingDates: [],
+        },
+        options225: {
+          count: 12,
+          dateCount: 2,
+          dateRange: { min: '2026-02-20', max: '2026-02-20' },
+          missingUnderlyingPriceDatesCount: 0,
+          missingUnderlyingPriceDates: [],
+          conflictingUnderlyingPriceDatesCount: 0,
+          conflictingUnderlyingPriceDates: [],
+        },
+        margin: {
+          count: 2400,
+          uniqueStockCount: 1200,
+          dateCount: 120,
+          dateRange: { min: '2024-01-05', max: '2026-02-27' },
+          orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
+        },
+        fundamentals: {
+          count: 9800,
+          uniqueStockCount: 2500,
+          latestDisclosedDate: '2026-02-26',
+          missingListedMarketStocksCount: 1,
+          missingListedMarketStocks: ['1301'],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
+          failedDatesCount: 0,
+          failedCodesCount: 0,
+        },
+        failedDates: [],
+        failedDatesCount: 0,
+        adjustmentEvents: [],
+        adjustmentEventsCount: 0,
+        stocksNeedingRefresh: [],
+        stocksNeedingRefreshCount: 0,
+        integrityIssues: [],
+        integrityIssuesCount: 0,
+        sampleWindows: {
+          stockDataMissingDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          failedDates: { returnedCount: 0, totalCount: 0, limit: 10, truncated: false },
+          adjustmentEvents: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          stocksNeedingRefresh: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          options225MissingUnderlyingPriceDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          options225ConflictingUnderlyingPriceDates: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          missingListedMarketStocks: { returnedCount: 1, totalCount: 1, limit: 20, truncated: false },
+          fundamentalsEmptySkippedCodes: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+          marginEmptySkippedCodes: { returnedCount: 0, totalCount: 0, limit: 20, truncated: false },
+        },
+        recommendations: [
+          'Run indices-only sync to refresh N225 options data through 2026-02-27 (latest local options date: 2026-02-20)',
+        ],
+        lastUpdated: '2026-03-01T12:00:01Z',
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('N225 Options Stale')).toBeInTheDocument();
+    expect(screen.getByText('2026-02-20 (stale)')).toBeInTheDocument();
+    expect(screen.getByText('Status: Behind TOPIX latest 2026-02-27')).toBeInTheDocument();
+    expect(
+      screen.getAllByText(
+        'Run indices-only sync to refresh N225 options data through 2026-02-27 (latest local options date: 2026-02-20)'
+      ).length
+    ).toBeGreaterThan(0);
+  });
+
+  it('does not count N225 options sync gaps as repair targets', () => {
+    mockUseDbValidation.mockReturnValue({
+      data: {
+        status: 'warning',
+        initialized: true,
+        topix: { count: 2450, dateRange: { min: '2016-02-29', max: '2026-02-27' } },
+        stockData: { missingDatesCount: 0, missingDates: [] },
+        options225: {
+          count: 0,
+          dateCount: 0,
+          dateRange: null,
+          missingUnderlyingPriceDatesCount: 0,
+          missingUnderlyingPriceDates: [],
+          conflictingUnderlyingPriceDatesCount: 0,
+          conflictingUnderlyingPriceDates: [],
+        },
+        margin: {
+          count: 0,
+          uniqueStockCount: 0,
+          dateCount: 0,
+          dateRange: null,
+          orphanCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
+        },
+        fundamentals: {
+          missingListedMarketStocksCount: 0,
+          missingListedMarketStocks: [],
+          issuerAliasCoveredCount: 0,
+          emptySkippedCount: 0,
+          emptySkippedCodes: [],
+          failedDatesCount: 0,
+          failedCodesCount: 0,
+        },
+        failedDatesCount: 0,
+        stocksNeedingRefreshCount: 0,
+        integrityIssuesCount: 0,
+        recommendations: ['Run indices-only sync to ingest N225 options data into options_225_data'],
+      },
+      isLoading: false,
+      error: null,
+      refetch: vi.fn(),
+    });
+
+    render(<SettingsPage />);
+
+    expect(screen.getByText('N225 Options Missing Locally')).toBeInTheDocument();
+    expect(screen.getByText('Repair signals')).toBeInTheDocument();
+    expect(screen.getByText('No Repairs Needed')).toBeInTheDocument();
   });
 
   it('renders manual stock refresh controls alongside snapshot info', () => {

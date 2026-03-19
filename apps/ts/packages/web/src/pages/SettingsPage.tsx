@@ -222,6 +222,21 @@ interface ValidationDiagnostic {
   sampleHint?: string;
 }
 
+interface ValidationDiagnosticSections {
+  warningDiagnostics: ValidationDiagnostic[];
+  informationalDiagnostics: ValidationDiagnostic[];
+}
+
+interface Options225CoverageDisplay {
+  value: string;
+  status: string;
+}
+
+interface ValidationDiagnosticListProps {
+  diagnostics: ValidationDiagnostic[];
+  emptyMessage: string;
+}
+
 interface RepairTargets {
   stocksNeedingRefresh: number;
   missingListedMarketFundamentals: number;
@@ -287,6 +302,40 @@ function formatDateRange(range: { min: string; max: string } | null | undefined)
     return 'n/a';
   }
   return `${range.min} -> ${range.max}`;
+}
+
+function isDateBefore(lhs: string | null | undefined, rhs: string | null | undefined): boolean {
+  if (!lhs || !rhs) {
+    return false;
+  }
+  return lhs < rhs;
+}
+
+function buildOptions225CoverageDisplay(
+  stats: MarketStatsResponse['options225'],
+  topix: MarketStatsResponse['topix']
+): Options225CoverageDisplay {
+  const topixLatest = topix.dateRange?.max ?? null;
+  const optionsLatest = stats.dateRange?.max ?? null;
+
+  if (stats.count <= 0 && topix.count > 0) {
+    return {
+      value: 'Not ingested',
+      status: `Status: No local options chain yet (TOPIX latest ${topixLatest ?? 'n/a'})`,
+    };
+  }
+
+  if (isDateBefore(optionsLatest, topixLatest)) {
+    return {
+      value: `${optionsLatest ?? 'n/a'} (stale)`,
+      status: `Status: Behind TOPIX latest ${topixLatest ?? 'n/a'}`,
+    };
+  }
+
+  return {
+    value: optionsLatest ?? 'n/a',
+    status: 'Status: In sync with local TOPIX coverage',
+  };
 }
 
 function formatCategoryBreakdown(byCategory: Record<string, number>): string {
@@ -362,6 +411,7 @@ function buildSnapshotSummaryItems(
 function buildCoverageItems(dbStats: MarketStatsResponse): SnapshotCoverageItem[] {
   const fundamentalsCoverage = dbStats.fundamentals.listedMarketCoverage;
   const options225 = dbStats.options225 ?? EMPTY_OPTIONS_225_STATS;
+  const optionsDisplay = buildOptions225CoverageDisplay(options225, dbStats.topix);
   return [
     {
       label: 'Stock Data',
@@ -393,8 +443,9 @@ function buildCoverageItems(dbStats: MarketStatsResponse): SnapshotCoverageItem[
     },
     {
       label: 'N225 Options',
-      value: options225.dateRange?.max ?? 'n/a',
+      value: optionsDisplay.value,
       meta: [
+        optionsDisplay.status,
         `Range: ${formatDateRange(options225.dateRange)}`,
         `Rows: ${formatCount(options225.count)}`,
         `Trading dates: ${formatCount(options225.dateCount)}`,
@@ -454,14 +505,77 @@ function appendValidationDiagnostic(
   });
 }
 
-function buildValidationDiagnostics(dbValidation: MarketValidationResponse): ValidationDiagnostic[] {
-  const diagnostics: ValidationDiagnostic[] = [];
+function ValidationDiagnosticList({ diagnostics, emptyMessage }: ValidationDiagnosticListProps) {
+  if (diagnostics.length <= 0) {
+    return <p className="text-sm text-muted-foreground">{emptyMessage}</p>;
+  }
+
+  return (
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+      {diagnostics.map((diagnostic) => (
+        <div key={diagnostic.label} className="rounded-xl border border-border/70 bg-card/80 p-3">
+          <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{diagnostic.label}</p>
+          <p className="mt-2 text-lg font-semibold text-foreground">{formatCount(diagnostic.value)}</p>
+          <p className="mt-2 text-xs text-muted-foreground">{diagnostic.helpText}</p>
+          {diagnostic.sampleItems && diagnostic.sampleItems.length > 0 ? (
+            <p className="mt-2 text-xs text-muted-foreground">
+              {diagnostic.sampleLabel ?? 'Sample'}: {diagnostic.sampleItems.join(', ')}
+            </p>
+          ) : null}
+          {diagnostic.sampleHint ? (
+            <p className="mt-2 text-xs text-muted-foreground">{diagnostic.sampleHint}</p>
+          ) : null}
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function buildOptions225CoverageWarning(
+  dbValidation: MarketValidationResponse
+): ValidationDiagnostic | null {
+  const options225 = dbValidation.options225 ?? EMPTY_OPTIONS_225_VALIDATION;
+  const topixCount = dbValidation.topix?.count ?? 0;
+  const topixLatest = dbValidation.topix?.dateRange?.max;
+  const optionsLatest = options225.dateRange?.max;
+
+  if (dbValidation.initialized === true && topixCount > 0 && (options225.count ?? 0) <= 0) {
+    return {
+      label: 'N225 Options Missing Locally',
+      value: 1,
+      helpText:
+        `No local N225 options chain is stored yet. Run Database Sync with \`indices-only\` or \`incremental\` to ingest \`options_225_data\` through ${topixLatest ?? 'the latest TOPIX date'}.`,
+    };
+  }
+
+  if (topixCount > 0 && isDateBefore(optionsLatest, topixLatest)) {
+    return {
+      label: 'N225 Options Stale',
+      value: 1,
+      helpText:
+        `Local N225 options data stops at ${optionsLatest ?? 'n/a'} while TOPIX is synced through ${topixLatest ?? 'n/a'}. Run Database Sync with \`indices-only\` to refresh \`options_225_data\`.`,
+    };
+  }
+
+  return null;
+}
+
+function buildValidationDiagnosticSections(
+  dbValidation: MarketValidationResponse
+): ValidationDiagnosticSections {
+  const warningDiagnostics: ValidationDiagnostic[] = [];
+  const informationalDiagnostics: ValidationDiagnostic[] = [];
   const fundamentals = dbValidation.fundamentals;
   const margin = dbValidation.margin;
   const sampleWindows = dbValidation.sampleWindows;
   const options225 = dbValidation.options225 ?? EMPTY_OPTIONS_225_VALIDATION;
 
-  appendValidationDiagnostic(diagnostics, dbValidation.stockData.missingDatesCount, {
+  const options225CoverageWarning = buildOptions225CoverageWarning(dbValidation);
+  if (options225CoverageWarning) {
+    warningDiagnostics.push(options225CoverageWarning);
+  }
+
+  appendValidationDiagnostic(warningDiagnostics, dbValidation.stockData.missingDatesCount, {
     label: 'Missing Stock Dates',
     helpText: 'Trading dates present in TOPIX but missing from stock_data.',
     sampleItems: dbValidation.stockData.missingDates,
@@ -469,7 +583,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.stockDataMissingDates),
   });
 
-  appendValidationDiagnostic(diagnostics, dbValidation.failedDatesCount, {
+  appendValidationDiagnostic(warningDiagnostics, dbValidation.failedDatesCount, {
     label: 'Failed Sync Dates',
     helpText: 'These dates failed during sync and still need a retry.',
     sampleItems: dbValidation.failedDates,
@@ -477,7 +591,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.failedDates),
   });
 
-  appendValidationDiagnostic(diagnostics, dbValidation.stocksNeedingRefreshCount, {
+  appendValidationDiagnostic(warningDiagnostics, dbValidation.stocksNeedingRefreshCount, {
     label: 'Stocks Needing Refresh',
     helpText: 'Adjustment-aware repair will refresh these stock series.',
     sampleItems: dbValidation.stocksNeedingRefresh,
@@ -485,7 +599,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.stocksNeedingRefresh),
   });
 
-  appendValidationDiagnostic(diagnostics, dbValidation.adjustmentEventsCount, {
+  appendValidationDiagnostic(warningDiagnostics, dbValidation.adjustmentEventsCount, {
     label: 'Adjustment Events',
     helpText: 'Recent split or reverse-split events tracked from stock_data.',
     sampleItems: (dbValidation.adjustmentEvents ?? []).map(
@@ -495,12 +609,12 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.adjustmentEvents),
   });
 
-  appendValidationDiagnostic(diagnostics, margin.orphanCount, {
+  appendValidationDiagnostic(warningDiagnostics, margin.orphanCount, {
     label: 'Margin Orphans',
     helpText: 'margin_data contains codes that are missing from stocks metadata.',
   });
 
-  appendValidationDiagnostic(diagnostics, options225.missingUnderlyingPriceDatesCount, {
+  appendValidationDiagnostic(warningDiagnostics, options225.missingUnderlyingPriceDatesCount, {
     label: 'N225 UnderPx Missing Dates',
     helpText: 'These option dates exist locally but every contract is missing UnderPx.',
     sampleItems: options225.missingUnderlyingPriceDates,
@@ -508,7 +622,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.options225MissingUnderlyingPriceDates),
   });
 
-  appendValidationDiagnostic(diagnostics, options225.conflictingUnderlyingPriceDatesCount, {
+  appendValidationDiagnostic(warningDiagnostics, options225.conflictingUnderlyingPriceDatesCount, {
     label: 'N225 UnderPx Conflicts',
     helpText: 'Multiple distinct UnderPx values were stored for the same trade date.',
     sampleItems: options225.conflictingUnderlyingPriceDates,
@@ -516,7 +630,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.options225ConflictingUnderlyingPriceDates),
   });
 
-  appendValidationDiagnostic(diagnostics, dbValidation.integrityIssuesCount, {
+  appendValidationDiagnostic(warningDiagnostics, dbValidation.integrityIssuesCount, {
     label: 'Readiness Issues',
     helpText: 'Chart or backtest readiness checks are currently failing.',
     sampleItems: (dbValidation.integrityIssues ?? []).map(
@@ -525,7 +639,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleLabel: 'Issue codes',
   });
 
-  appendValidationDiagnostic(diagnostics, fundamentals.missingListedMarketStocksCount, {
+  appendValidationDiagnostic(warningDiagnostics, fundamentals.missingListedMarketStocksCount, {
     label: 'Missing Listed-Market Fundamentals',
     helpText: 'Repair sync will retry these listed-market issuers.',
     sampleItems: fundamentals.missingListedMarketStocks,
@@ -533,7 +647,7 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.missingListedMarketStocks),
   });
 
-  appendValidationDiagnostic(diagnostics, fundamentals.emptySkippedCount, {
+  appendValidationDiagnostic(informationalDiagnostics, fundamentals.emptySkippedCount, {
     label: 'Unsupported/Empty Fundamentals',
     helpText: 'Suppressed until a newer disclosure frontier is available.',
     sampleItems: fundamentals.emptySkippedCodes,
@@ -541,12 +655,12 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.fundamentalsEmptySkippedCodes),
   });
 
-  appendValidationDiagnostic(diagnostics, fundamentals.issuerAliasCoveredCount, {
+  appendValidationDiagnostic(informationalDiagnostics, fundamentals.issuerAliasCoveredCount, {
     label: 'Preferred Alias Covered',
     helpText: 'Preferred-share listed codes already covered by parent issuer statements.',
   });
 
-  appendValidationDiagnostic(diagnostics, margin.emptySkippedCount, {
+  appendValidationDiagnostic(informationalDiagnostics, margin.emptySkippedCount, {
     label: 'Unsupported/Empty Margin Codes',
     helpText: 'Suppressed until a newer margin frontier is available.',
     sampleItems: margin.emptySkippedCodes,
@@ -554,7 +668,10 @@ function buildValidationDiagnostics(dbValidation: MarketValidationResponse): Val
     sampleHint: buildSampleHint(sampleWindows?.marginEmptySkippedCodes),
   });
 
-  return diagnostics;
+  return {
+    warningDiagnostics,
+    informationalDiagnostics,
+  };
 }
 
 function resolveRepairTargets(dbValidation: MarketValidationResponse | undefined): RepairTargets {
@@ -600,7 +717,12 @@ function SnapshotDetails({
   const recommendations = dbValidation?.recommendations ?? [];
   const summaryItems = buildSnapshotSummaryItems(dbStats, dbValidation);
   const coverageItems = dbStats ? buildCoverageItems(dbStats) : [];
-  const validationDiagnostics = dbValidation ? buildValidationDiagnostics(dbValidation) : [];
+  const validationDiagnostics = dbValidation
+    ? buildValidationDiagnosticSections(dbValidation)
+    : {
+        warningDiagnostics: [],
+        informationalDiagnostics: [],
+      };
 
   return (
     <div className="space-y-4">
@@ -647,27 +769,27 @@ function SnapshotDetails({
       {dbValidation ? (
         <div className="rounded-xl border border-border/70 bg-background/60 p-4">
           <p className="font-medium">Validation Diagnostics</p>
-          {validationDiagnostics.length > 0 ? (
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              {validationDiagnostics.map((diagnostic) => (
-                <div key={diagnostic.label} className="rounded-xl border border-border/70 bg-card/80 p-3">
-                  <p className="text-[11px] uppercase tracking-[0.18em] text-muted-foreground">{diagnostic.label}</p>
-                  <p className="mt-2 text-lg font-semibold text-foreground">{formatCount(diagnostic.value)}</p>
-                  <p className="mt-2 text-xs text-muted-foreground">{diagnostic.helpText}</p>
-                  {diagnostic.sampleItems && diagnostic.sampleItems.length > 0 ? (
-                    <p className="mt-2 text-xs text-muted-foreground">
-                      {diagnostic.sampleLabel ?? 'Sample'}: {diagnostic.sampleItems.join(', ')}
-                    </p>
-                  ) : null}
-                  {diagnostic.sampleHint ? (
-                    <p className="mt-2 text-xs text-muted-foreground">{diagnostic.sampleHint}</p>
-                  ) : null}
-                </div>
-              ))}
+          <div className="mt-3 space-y-4">
+            <div className="space-y-3">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-amber-700">
+                Actionable Warnings
+              </p>
+              <ValidationDiagnosticList
+                diagnostics={validationDiagnostics.warningDiagnostics}
+                emptyMessage="No actionable validation diagnostics."
+              />
             </div>
-          ) : (
-            <p className="mt-3 text-sm text-muted-foreground">No outstanding validation diagnostics.</p>
-          )}
+
+            <div className="space-y-3">
+              <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                Informational Diagnostics
+              </p>
+              <ValidationDiagnosticList
+                diagnostics={validationDiagnostics.informationalDiagnostics}
+                emptyMessage="No additional informational diagnostics."
+              />
+            </div>
+          </div>
         </div>
       ) : null}
 
@@ -873,7 +995,8 @@ function WarningRecoverySection({
           <CardTitle className="text-xl">Warning Recovery</CardTitle>
         </div>
         <CardDescription>
-          Resolve DuckDB snapshot warnings in one async job instead of running one-off repairs stock by stock.
+          Resolve only the DuckDB snapshot warnings that `repair` sync can actually fix. N225 options coverage gaps must
+          be handled from Database Sync.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
@@ -898,7 +1021,8 @@ function WarningRecoverySection({
           </div>
         </div>
         <p className="text-xs text-muted-foreground">
-          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill listed-market fundamentals.
+          Runs `repair` sync mode to bulk-refresh adjustment-affected stock series and backfill listed-market
+          fundamentals. It does not ingest `options_225_data`; use Database Sync with `indices-only` for options gaps.
         </p>
         <div className="flex items-center justify-between rounded-xl border border-border/70 bg-background/60 p-3">
           <div>

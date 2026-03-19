@@ -313,6 +313,108 @@ def test_validate_market_db_reports_options_225_underlying_issues() -> None:
     assert result.sampleWindows.options225ConflictingUnderlyingPriceDates.truncated is False
 
 
+def test_validate_market_db_treats_fundamentals_empty_skips_as_info() -> None:
+    market_db = DummyMarketDb(
+        fundamentals_target_codes={"25935", "464A"},
+        fundamentals_target_rows=[
+            {"code": "25935", "company_name": "伊藤園（優先株式）", "market_code": "0111"},
+            {"code": "464A", "company_name": "ＱＰＳホールディングス", "market_code": "0113"},
+        ],
+    )
+    market_db._metadata[METADATA_KEYS["FUNDAMENTALS_LAST_DISCLOSED_DATE"]] = "2026-03-06"
+    market_db._metadata[METADATA_KEYS["FUNDAMENTALS_EMPTY_CODES"]] = (
+        '{"frontier":"2026-03-06","codes":["464A"]}'
+    )
+
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-03-06",
+            stock_count=10,
+            stock_date_count=3,
+            stock_max="2026-03-06",
+            indices_count=10,
+            options_225_count=4,
+            options_225_max="2026-03-06",
+            options_225_date_count=2,
+            margin_count=1,
+            margin_date_count=1,
+            statements_count=1,
+            latest_statement_disclosed_date="2026-03-06",
+            statement_codes={"2593"},
+            statement_non_null_counts={
+                column: 1 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "healthy"
+    assert result.fundamentals.missingListedMarketStocksCount == 0
+    assert result.fundamentals.emptySkippedCount == 1
+    assert result.fundamentals.emptySkippedCodes == ["464A"]
+    assert not any("Fundamentals backfill skipped" in rec for rec in result.recommendations)
+
+
+def test_validate_market_db_warns_when_options_225_local_data_is_missing() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-03-06",
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            statements_count=10,
+            latest_statement_disclosed_date="2026-03-06",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert result.options225.count == 0
+    assert any(
+        "Run indices-only sync to ingest N225 options data into options_225_data" in rec
+        for rec in result.recommendations
+    )
+
+
+def test_validate_market_db_warns_when_options_225_local_data_is_stale() -> None:
+    market_db = DummyMarketDb()
+    store = DummyTimeSeriesStore(
+        TimeSeriesInspection(
+            source="duckdb-parquet",
+            topix_count=10,
+            topix_max="2026-03-06",
+            stock_count=10,
+            stock_date_count=3,
+            indices_count=10,
+            options_225_count=4,
+            options_225_max="2026-03-04",
+            options_225_date_count=2,
+            statements_count=10,
+            latest_statement_disclosed_date="2026-03-06",
+            statement_codes={"1301", "7203"},
+            statement_non_null_counts={"earnings_per_share": 10},
+        )
+    )
+
+    result = validate_market_db(market_db=market_db, time_series_store=store)
+
+    assert result.status == "warning"
+    assert any(
+        "Run indices-only sync to refresh N225 options data through 2026-03-06" in rec
+        for rec in result.recommendations
+    )
+    assert any("latest local options date: 2026-03-04" in rec for rec in result.recommendations)
+
+
 def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -> None:
     market_db = DummyMarketDb(
         fundamentals_target_codes={"25935", "464A", "94345"},
@@ -339,16 +441,23 @@ def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -
             stock_date_count=3,
             stock_max="2026-03-06",
             indices_count=10,
+            options_225_count=4,
+            options_225_max="2026-03-06",
+            options_225_date_count=2,
+            margin_count=1,
+            margin_date_count=1,
             statements_count=2,
             latest_statement_disclosed_date="2026-03-06",
             statement_codes={"2593", "9434"},
-            statement_non_null_counts={"earnings_per_share": 2},
+            statement_non_null_counts={
+                column: 2 for column in db_validation_service._SIGNAL_STATEMENT_COLUMNS
+            },
         )
     )
 
     result = validate_market_db(market_db=market_db, time_series_store=store)
 
-    assert result.status == "warning"
+    assert result.status == "healthy"
     assert result.fundamentals.missingListedMarketStocksCount == 0
     assert result.fundamentals.issuerAliasCoveredCount == 2
     assert result.fundamentals.emptySkippedCount == 1
@@ -356,8 +465,8 @@ def test_validate_market_db_applies_alias_coverage_and_frontier_empty_caches() -
     assert result.sampleWindows.fundamentalsEmptySkippedCodes.truncated is False
     assert result.margin.emptySkippedCount == 1
     assert result.margin.emptySkippedCodes == ["4957"]
-    assert any("Fundamentals backfill skipped for 1 listed-market stocks" in rec for rec in result.recommendations)
-    assert any("Margin backfill skipped for 1 stocks" in rec for rec in result.recommendations)
+    assert not any("Fundamentals backfill skipped" in rec for rec in result.recommendations)
+    assert not any("Margin backfill skipped" in rec for rec in result.recommendations)
 
 
 def test_build_readiness_issues_marks_all_missing_branches() -> None:

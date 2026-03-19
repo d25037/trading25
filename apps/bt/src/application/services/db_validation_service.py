@@ -184,6 +184,11 @@ def validate_market_db(
     options_225_conflicting_underlying_dates_count = market_db.get_options_225_underlying_price_issue_count(
         issue_type="conflicting"
     )
+    options_225_missing_local_data = _is_options_225_local_data_missing(
+        initialized=initialized,
+        inspection=inspection,
+    )
+    options_225_stale_local_data = _is_options_225_local_data_stale(inspection)
 
     # Adjustment events
     adjustment_events = market_db.get_adjustment_events(limit=_ADJUSTMENT_EVENTS_SAMPLE_LIMIT)
@@ -228,6 +233,16 @@ def validate_market_db(
         recommendations.append(
             f"Run repair sync to backfill fundamentals for {missing_fundamentals_count} listed-market stocks"
         )
+    if options_225_missing_local_data:
+        recommendations.append(
+            "Run indices-only sync to ingest N225 options data into options_225_data"
+        )
+    if options_225_stale_local_data:
+        recommendations.append(
+            "Run indices-only sync to refresh N225 options data "
+            f"through {inspection.topix_max or 'the latest TOPIX date'} "
+            f"(latest local options date: {inspection.options_225_max or 'n/a'})"
+        )
     if options_225_missing_underlying_dates_count > 0:
         recommendations.append(
             f"Run sync again or inspect raw options data for {options_225_missing_underlying_dates_count} dates with missing UnderPx"
@@ -236,10 +251,6 @@ def validate_market_db(
         recommendations.append(
             f"Inspect options ingestion for {options_225_conflicting_underlying_dates_count} dates with conflicting UnderPx values"
         )
-    if fundamentals_empty_skipped_count > 0:
-        recommendations.append(
-            f"Fundamentals backfill skipped for {fundamentals_empty_skipped_count} listed-market stocks after empty responses at disclosed frontier {fundamentals_frontier or 'n/a'}"
-        )
     if fundamentals_failed_dates:
         recommendations.append(
             f"Retry {len(fundamentals_failed_dates)} failed fundamentals dates"
@@ -247,10 +258,6 @@ def validate_market_db(
     if fundamentals_failed_codes:
         recommendations.append(
             f"Retry {len(fundamentals_failed_codes)} failed fundamentals codes"
-        )
-    if margin_empty_skipped_count > 0:
-        recommendations.append(
-            f"Margin backfill skipped for {margin_empty_skipped_count} stocks after empty responses at trading frontier {margin_frontier or 'n/a'}"
         )
     recommendations.extend(readiness_recommendations)
 
@@ -263,12 +270,12 @@ def validate_market_db(
         or failed_dates
         or all_needing_count > 0
         or missing_fundamentals_count > 0
+        or options_225_missing_local_data
+        or options_225_stale_local_data
         or options_225_missing_underlying_dates_count > 0
         or options_225_conflicting_underlying_dates_count > 0
-        or fundamentals_empty_skipped_count > 0
         or fundamentals_failed_dates
         or fundamentals_failed_codes
-        or margin_empty_skipped_count > 0
         or integrity_issues
     ):
         status = "warning"
@@ -457,6 +464,31 @@ def _build_statement_coverage(
         limit_missing=limit_missing,
         limit_empty=20,
     )
+
+
+def _is_options_225_local_data_missing(
+    *,
+    initialized: bool,
+    inspection: TimeSeriesInspection,
+) -> bool:
+    return (
+        initialized
+        and inspection.topix_count > 0
+        and inspection.options_225_count <= 0
+    )
+
+
+def _is_options_225_local_data_stale(inspection: TimeSeriesInspection) -> bool:
+    topix_max = normalize_frontier_date(inspection.topix_max)
+    options_max = normalize_frontier_date(inspection.options_225_max)
+    if (
+        inspection.topix_count <= 0
+        or inspection.options_225_count <= 0
+        or topix_max is None
+        or options_max is None
+    ):
+        return False
+    return options_max < topix_max
 
 
 def _build_readiness_issues(
